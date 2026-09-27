@@ -82,6 +82,16 @@ const SECOND_REQUEST = {
 
 const TWO_REQUEST_FINALS = { input: 8, output: 900 + 4000, reasoning: null, cache: { read: 2200, write: 250, write1h: 200 } }
 
+function parentAgentCall(toolCallId: string) {
+  return {
+    type: "assistant",
+    uuid: `call-${toolCallId}`,
+    session_id: "sdk-session-1",
+    parent_tool_use_id: null,
+    message: { content: [{ type: "tool_use", id: toolCallId, name: "Agent", input: { description: "Find the project name", subagent_type: "general-purpose" } }] },
+  }
+}
+
 describe("claudeSdkAdapter", () => {
   for (const failed of [false, true]) {
   test(`task notification cannot consume the authoritative Bash ${failed ? "error" : "output"}`, () => {
@@ -990,6 +1000,7 @@ describe("claudeSdkAdapter", () => {
 
   test("U5: a background subagent dropped from the live set gets the terminal it was never sent", () => {
     const ledger = createClaudeTaskLedger()
+    claudeSubagentObservations(parentAgentCall("tool-agent-1"), ledger)
     claudeSubagentObservations({
       type: "system",
       subtype: "task_started",
@@ -1118,6 +1129,8 @@ describe("claudeSdkAdapter", () => {
       tool_use_result: { status: "completed", agentId: "agent-42", content: [{ type: "text", text: "first report" }] },
     }, createClaudeTaskLedger())).toEqual([])
 
+    const ledger = createClaudeTaskLedger()
+    claudeSubagentObservations(parentAgentCall("tool-agent-1"), ledger)
     expect(claudeSubagentObservations({
       type: "user",
       uuid: "single-agent-result",
@@ -1127,7 +1140,7 @@ describe("claudeSdkAdapter", () => {
         content: [{ type: "tool_result", tool_use_id: "tool-agent-1", content: "first report" }],
       },
       tool_use_result: { status: "completed", agentId: "agent-42", content: [{ type: "text", text: "first report" }] },
-    }, createClaudeTaskLedger())).toEqual([{
+    }, ledger)).toEqual([{
       observationId: "claude:agent-result:single-agent-result:tool-agent-1",
       harnessExecutionId: "sdk-session-1",
       toolCallId: "tool-agent-1",
@@ -1137,6 +1150,61 @@ describe("claudeSdkAdapter", () => {
       providerKind: "claude-agent",
       transcript: { kind: "messages" },
     }])
+  })
+
+  test("U5: every frame of a Task call the parent made names that call as the subagent's spawn", () => {
+    const ledger = createClaudeTaskLedger()
+    const edges = [
+      parentAgentCall("toolu_1"),
+      { type: "system", subtype: "task_started", uuid: "started", session_id: "sdk-session-1", task_id: "task-1", tool_use_id: "toolu_1", description: "Find the project name", subagent_type: "general-purpose", spawn_depth: 1 },
+      { type: "system", subtype: "task_notification", uuid: "notified", session_id: "sdk-session-1", task_id: "task-1", tool_use_id: "toolu_1", status: "completed", summary: "Found it" },
+      {
+        type: "user",
+        uuid: "result",
+        session_id: "sdk-session-1",
+        parent_tool_use_id: null,
+        message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "Found it" }] },
+        tool_use_result: { status: "completed", agentId: "agent-1", content: [{ type: "text", text: "Found it" }] },
+      },
+    ].flatMap((frame) => claudeSubagentObservations(frame, ledger).map(({ toolCallId, toolCallRole }) => ({ toolCallId, toolCallRole })))
+
+    expect(edges).toEqual(Array(4).fill({ toolCallId: "toolu_1", toolCallRole: "spawn" }))
+  })
+
+  test("U5: a subagent a skill's forked execution runs keeps its call for routing but has no spawn edge", () => {
+    const ledger = createClaudeTaskLedger()
+    claudeSubagentObservations({
+      type: "assistant",
+      uuid: "skill-call",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_use", id: "toolu_skill", name: "Skill", input: { skill: "review-lanes" } }] },
+    }, ledger)
+    const forkResult = claudeSubagentObservations({
+      type: "user",
+      uuid: "skill-result",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_skill", content: "Skill completed (forked execution)." }] },
+      tool_use_result: { status: "forked", agentId: "agent-fork", content: [{ type: "text", text: "done" }] },
+    }, ledger)
+    const lane = [
+      { type: "system", subtype: "task_started", uuid: "lane-started", session_id: "sdk-session-1", task_id: "task-lane", tool_use_id: "toolu_forked_agent", description: "Review lane one", subagent_type: "general-purpose" },
+      { type: "system", subtype: "task_notification", uuid: "lane-notified", session_id: "sdk-session-1", task_id: "task-lane", tool_use_id: "toolu_forked_agent", status: "completed", summary: "Reviewed" },
+    ].flatMap((frame) => claudeSubagentObservations(frame, ledger))
+
+    expect(forkResult).toEqual([{
+      observationId: "claude:agent-result:skill-result:toolu_skill",
+      harnessExecutionId: "sdk-session-1",
+      toolCallId: "toolu_skill",
+      status: "completed",
+      providerId: "agent-fork",
+      providerKind: "claude-agent",
+      transcript: { kind: "messages" },
+    }])
+    expect(lane.map(({ stableCorrelationId, toolCallId, toolCallRole }) => ({ stableCorrelationId, toolCallId, toolCallRole }))).toEqual(
+      Array(2).fill({ stableCorrelationId: "task-lane", toolCallId: "toolu_forked_agent", toolCallRole: undefined }),
+    )
   })
 
   test("U5: subagent progress usage does not update the parent context gauge", () => {

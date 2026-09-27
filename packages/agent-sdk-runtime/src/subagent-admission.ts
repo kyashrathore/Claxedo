@@ -14,7 +14,9 @@ export type SubagentObservation = {
   harnessExecutionId?: string
   subagentKey?: string
   stableCorrelationId?: string
+  /** Correlation: every observation naming this call joins one row, whether or not the call places it. */
   toolCallId?: string
+  /** Placement: the row's edge to `toolCallId`, given only for a call the parent's own transcript carries. */
   toolCallRole?: SubagentToolCallRole
   mode?: SubagentMode
   status?: SubagentStatus
@@ -184,9 +186,7 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
         }
         return existing
       }
-      if (!!input.observation.toolCallId !== !!input.observation.toolCallRole) {
-        throw new Error("subagent tool-call edges require both toolCallId and toolCallRole")
-      }
+      requirePlacedCall(input.observation)
       if (input.observation.providerKind === "claxedo" && input.observation.toolCallId) {
         const key = input.observation.subagentKey
         const bound = key ? bindings.get(scoped(input.parentSessionId, key)) : undefined
@@ -328,6 +328,10 @@ function observationEventInput(observation: SubagentObservation) {
     ...(observation.attention !== undefined ? { attention: observation.attention } : {}),
     ...(observation.wake ? { wake: observation.wake } : {}),
   }
+}
+
+function requirePlacedCall(observation: SubagentObservation) {
+  if (observation.toolCallRole && !observation.toolCallId) throw new Error("a subagent tool-call role requires its toolCallId")
 }
 
 function correlationKeys(observation: SubagentObservation) {

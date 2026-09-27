@@ -22,6 +22,12 @@ export type ClaudeTaskRecord = {
  * `cat`, a fetch, another MCP server — so a result binds a child only when
  * this ledger saw the call it answers.
  *
+ * A task's frames name a `tool_use_id`, but that call is a spawn part of the
+ * parent's transcript only when the parent's own assistant message carried it
+ * as an Agent call. A skill's forked execution runs as a task named by the
+ * Skill call, and a lane it forks names a call only the fork made; the ledger
+ * records the parent's Agent calls so only those become spawn edges.
+ *
  * A subagent's frames name the Agent call that spawned it in
  * `parent_tool_use_id`, so a subagent's own subagent names a call the parent
  * never made. The ledger records each such call against the first-level
@@ -40,6 +46,9 @@ export type ClaudeTaskLedger = {
    * dropped; an id that left without ever being introduced belongs to no row.
    */
   replaceLive(taskIds: readonly string[]): ClaudeTaskRecord[]
+  /** Records an Agent call from the parent's own assistant message. */
+  startSpawnCall(toolUseId: string): void
+  isSpawnCall(toolUseId: string): boolean
   startHostSubagentCall(toolUseId: string): void
   isHostSubagentCall(toolUseId: string): boolean
   /** Records an Agent call a subagent made, under the subagent `spawnerKey` names. */
@@ -51,6 +60,7 @@ export type ClaudeTaskLedger = {
 
 export function createClaudeTaskLedger(): ClaudeTaskLedger {
   const tasks = new Map<string, ClaudeTaskRecord>()
+  const spawnCalls = new Set<string>()
   const hostSubagentCalls = new Set<string>()
   const firstLevelByNestedCall = new Map<string, string>()
   let live = new Set<string>()
@@ -67,6 +77,12 @@ export function createClaudeTaskLedger(): ClaudeTaskLedger {
       const departed = [...live].flatMap((taskId) => next.has(taskId) ? [] : tasks.get(taskId) ?? [])
       live = next
       return departed
+    },
+    startSpawnCall(toolUseId) {
+      spawnCalls.add(toolUseId)
+    },
+    isSpawnCall(toolUseId) {
+      return spawnCalls.has(toolUseId)
     },
     startHostSubagentCall(toolUseId) {
       hostSubagentCalls.add(toolUseId)

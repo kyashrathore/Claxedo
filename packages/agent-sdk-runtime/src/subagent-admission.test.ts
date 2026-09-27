@@ -256,13 +256,35 @@ describe("subagent host admission", () => {
     })).rejects.toThrow("conflicting immutable subagent childSessionId binding")
   })
 
-  test("rejects partial role-bearing tool-call edges before persistence", async () => {
+  test("rejects a tool-call role without its call before persistence", async () => {
     const item = harness()
     await expect(item.boundary.admit("parent", {
       observationId: "bad-edge",
-      toolCallId: "call-without-role",
-    })).rejects.toThrow("require both toolCallId and toolCallRole")
+      toolCallRole: "spawn",
+    })).rejects.toThrow("a subagent tool-call role requires its toolCallId")
     expect(item.store.records()).toEqual([])
+  })
+
+  test("a call without a role joins observations into one row and records no edge", async () => {
+    const item = harness()
+    const started = await item.boundary.admit("parent", {
+      observationId: "fork-started",
+      harnessExecutionId: "run-1",
+      stableCorrelationId: "task-1",
+      toolCallId: "skill-call",
+      status: "running",
+    })
+    const finished = await item.boundary.admit("parent", {
+      observationId: "fork-result",
+      harnessExecutionId: "run-1",
+      toolCallId: "skill-call",
+      providerKind: "claude-agent",
+      providerId: "agent-1",
+      status: "completed",
+    })
+
+    expect(finished.subagentKey).toBe(started.subagentKey)
+    expect(item.published.map(({ event }) => event.toolCallRole)).toEqual([undefined, undefined])
   })
 
   test("a harness tool edge naming a claxedo key the host never minted is refused as unknown and leaves no row", async () => {

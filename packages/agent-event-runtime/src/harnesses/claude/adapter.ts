@@ -472,6 +472,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
   if (message.type === "assistant" && !claudeChildCorrelationKey(message)) {
     return assistantToolBlocks(message).flatMap(({ tool }) => {
       if (!isTaskTool(tool.toolName) || isHostSubagentTool(tool.toolName) || !tool.toolCallId) return []
+      ledger.startSpawnCall(tool.toolCallId)
       return [{
         observationId: `claude:agent-tool:${wrapperId}:${tool.toolCallId}`,
         ...(harnessExecutionId ? { harnessExecutionId } : {}),
@@ -508,8 +509,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
     return [{
       observationId: `claude:agent-result:${wrapperId}:${sole.toolCallId}`,
       ...(harnessExecutionId ? { harnessExecutionId } : {}),
-      toolCallId: sole.toolCallId,
-      toolCallRole: "spawn" as const,
+      ...taskCall(sole.toolCallId, ledger),
       // `forked` delivers the call's result through a forked execution — the
       // delegation is done; no `task_notification` ever follows for it, so
       // leaving it `running` strands the row until the turn-end sweep marks it
@@ -554,7 +554,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       }
       ledger.start(record)
       if (!admittedTask(record)) return []
-      return [taskObservation(message, wrapperId, {
+      return [taskObservation(message, wrapperId, ledger, {
         status: "running",
         description: text(message.description),
         subagentType: text(message.subagent_type),
@@ -562,14 +562,14 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
     }
     case "task_progress":
       if (!admittedTask(ledger.get(text(message.task_id)))) return []
-      return [taskObservation(message, wrapperId, {
+      return [taskObservation(message, wrapperId, ledger, {
         status: "running",
         description: text(message.description),
         subagentType: text(message.subagent_type),
       })]
     case "task_notification":
       if (!admittedTask(ledger.get(text(message.task_id)))) return []
-      return [taskObservation(message, wrapperId, {
+      return [taskObservation(message, wrapperId, ledger, {
         status: message.status === "completed" ? "completed" : message.status === "failed" ? "failed" : "killed",
         description: text(message.summary),
       })]
@@ -582,7 +582,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       // bookkeeping no row renders, and an observation carrying none of the
       // three fields below is a revision the reader cannot act on.
       if (!status && !mode && !text(patch.description)) return []
-      return [taskObservation(message, wrapperId, {
+      return [taskObservation(message, wrapperId, ledger, {
         ...(status ? { status } : {}),
         ...(mode ? { mode } : {}),
         description: text(patch.description),
@@ -597,7 +597,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
     case "background_tasks_changed":
       return ledger
         .replaceLive(liveTaskIds(message))
-        .flatMap((record) => admittedTask(record) ? [departedTaskObservation(record, wrapperId)] : [])
+        .flatMap((record) => admittedTask(record) ? [departedTaskObservation(record, wrapperId, ledger)] : [])
     default:
       return []
   }
@@ -619,12 +619,12 @@ function liveTaskIds(message: Record<string, unknown>) {
  * end was never reported, and it settles the child turn the same way a kill
  * does, so a notification arriving behind the level still states the truth.
  */
-function departedTaskObservation(record: ClaudeTaskRecord, wrapperId: string): ClaudeSubagentObservation {
+function departedTaskObservation(record: ClaudeTaskRecord, wrapperId: string, ledger: ClaudeTaskLedger): ClaudeSubagentObservation {
   return {
     observationId: `claude:background_tasks_changed:${wrapperId}:${record.taskId}`,
     ...(record.harnessExecutionId ? { harnessExecutionId: record.harnessExecutionId } : {}),
     stableCorrelationId: record.taskId,
-    ...(record.toolUseId ? { toolCallId: record.toolUseId, toolCallRole: "spawn" as const } : {}),
+    ...taskCall(record.toolUseId, ledger),
     status: "interrupted",
     providerKind: "claude-agent",
     transcript: { kind: "messages" },
@@ -636,9 +636,21 @@ function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
   return undefined
 }
 
+/**
+ * A task's call id routes its frames and joins its observations into one row,
+ * and is a spawn edge only for an Agent call the parent itself made: a Skill
+ * call's forked execution, or a call only a fork made, has no spawn part in the
+ * parent's transcript to hold the subagent's chip.
+ */
+function taskCall(toolCallId: string | undefined, ledger: ClaudeTaskLedger): Pick<ClaudeSubagentObservation, "toolCallId" | "toolCallRole"> {
+  if (!toolCallId) return {}
+  return ledger.isSpawnCall(toolCallId) ? { toolCallId, toolCallRole: "spawn" } : { toolCallId }
+}
+
 function taskObservation(
   message: Record<string, unknown>,
   observationId: string,
+  ledger: ClaudeTaskLedger,
   update: Omit<ClaudeSubagentObservation, "observationId" | "harnessExecutionId" | "stableCorrelationId" | "toolCallId" | "toolCallRole" | "providerKind" | "transcript">,
 ): ClaudeSubagentObservation {
   const taskId = text(message.task_id)
@@ -646,9 +658,7 @@ function taskObservation(
     observationId: `claude:${text(message.subtype)}:${observationId}`,
     ...(text(message.session_id) ? { harnessExecutionId: text(message.session_id) } : {}),
     ...(taskId ? { stableCorrelationId: taskId } : {}),
-    ...(text(message.tool_use_id)
-      ? { toolCallId: text(message.tool_use_id), toolCallRole: "spawn" }
-      : {}),
+    ...taskCall(text(message.tool_use_id), ledger),
     ...(update.mode ? { mode: update.mode } : {}),
     ...(update.status ? { status: update.status } : {}),
     ...(update.subagentType ? { subagentType: update.subagentType } : {}),
