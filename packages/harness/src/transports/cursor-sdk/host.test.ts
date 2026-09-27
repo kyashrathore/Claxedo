@@ -35,10 +35,13 @@ function fixture(stage: "open" | "send", cancel?: () => Promise<void>, terminal?
 }
 
 for (const kind of ["run", "title"] as const) test(`${kind} stream failure releases the session for the next run`, async () => {
-  const broken = { then: (_resolve: unknown, reject: (error: Error) => void) => reject(new Error("stream broke")) }
-  const f = fixture("send", undefined, broken as unknown as Promise<void>)
+  let breakStream!: (error: Error) => void
+  const f = fixture("send", undefined, new Promise<void>((_resolve, reject) => { breakStream = reject }))
   f.resume.resolve()
-  await f.runtime.receive({ id: 1, kind, session, prompt: "work" })
+  const running = f.runtime.receive({ id: 1, kind, session, prompt: "work" })
+  await f.streaming.promise
+  breakStream(new Error("stream broke"))
+  await running
   await f.runtime.receive({ id: 2, kind, session, prompt: "next" })
   expect(f.replies).toEqual([{ id: 1, kind: "error", message: "stream broke" }, { id: 2, kind: "error", message: "stream broke" }])
   if (kind === "title") expect(f.closed()).toBe(2)
