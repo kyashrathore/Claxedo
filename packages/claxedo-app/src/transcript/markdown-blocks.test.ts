@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
 import { transcriptMarkdownExtensions } from "@/ui/utils"
 import { blockEntry, enhanceTextBlock, entryBase, initialResult, type RenderedBlock } from "./markdown-blocks"
-import { getCachedMarkdown } from "./markdown-cache"
+import { getCachedMarkdown, touchCachedMarkdown } from "./markdown-cache"
 import { project } from "./markdown-stream"
 
 const parser = new Marked(...transcriptMarkdownExtensions)
@@ -78,5 +78,26 @@ describe("a completed reply's markdown blocks", () => {
     )
     expect(changed).toEqual([1, 2])
     expect(reply.enhanced.map((block) => block?.key)).toEqual(reply.painted.map((block) => block.key))
+  })
+})
+
+describe("a part's first paint from the block cache", () => {
+  test("a block the cache misses is rendered alone, and the part's other blocks keep their cached html", () => {
+    const key = "part-cache-hit"
+    const text = ["# Cached heading", "A cached paragraph.", "The tail that changed."].join("\n\n")
+    const projection = project(undefined, text, false)
+    const base = entryBase(text, key)!
+    projection.blocks.slice(0, 2).forEach((block, index) => {
+      touchCachedMarkdown(blockEntry(base, index, block.mode), { raw: block.raw, hash: `cached-${index}`, html: `<p>cached ${index}</p>` })
+    })
+
+    const painted = initialResult(text, key, projection, "reply").blocks
+
+    expect(painted.map((block) => (block.mode === "code" ? undefined : block.html))).toEqual([
+      "<p>cached 0</p>",
+      "<p>cached 1</p>",
+      expect.not.stringMatching(/^<p>cached/),
+    ])
+    expect(painted.map((block) => block.key)).toEqual(projection.blocks.map((block, index) => `reply:${key}:${index}:${block.mode}`))
   })
 })

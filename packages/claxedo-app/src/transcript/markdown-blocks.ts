@@ -85,37 +85,29 @@ export function blockEntry(base: string, index: number, mode: Block["mode"]) {
   return `${base}:${index}:${mode}`
 }
 
-function cachedRenderResult(
-  text: string,
-  key: string | undefined,
-  projection: Projection,
+function cachedBlock(
+  base: string | undefined,
   owner: string,
-): RenderResult | undefined {
-  if (!text) return { text, blocks: [] }
-  const base = entryBase(text, key)
-  if (!base) return undefined
-  const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
-    if (block.mode === "code") {
-      if (!block.complete) return []
-      const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeThemeName)
-      if (!cached) return []
-      return [
-        {
-          key: markdownBlockKey(owner, key, index, block.mode),
-          mode: block.mode,
-          raw: block.raw,
-          hash: blockHash(block.raw, true),
-          complete: true,
-          ...cached,
-        },
-      ]
+  key: string | undefined,
+  index: number,
+  block: Block,
+): RenderedBlock | undefined {
+  if (block.mode === "code") {
+    if (!block.complete) return undefined
+    const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeThemeName)
+    if (!cached) return undefined
+    return {
+      key: markdownBlockKey(owner, key, index, block.mode),
+      mode: block.mode,
+      raw: block.raw,
+      hash: blockHash(block.raw, true),
+      complete: true,
+      ...cached,
     }
-    const cached = getCachedMarkdown(blockEntry(base, index, block.mode))
-    if (cached?.raw !== block.raw) return []
-    return [{ key: markdownBlockKey(owner, key, index, block.mode), mode: block.mode, ...cached, final: true }]
-  })
-  if (blocks.length !== projection.blocks.length) return undefined
-  return { text, blocks }
+  }
+  const cached = base ? getCachedMarkdown(blockEntry(base, index, block.mode)) : undefined
+  if (cached?.raw !== block.raw) return undefined
+  return { key: markdownBlockKey(owner, key, index, block.mode), mode: block.mode, ...cached, final: true }
 }
 
 export function syncRenderResult(text: string, projection: Projection, owner: string, cacheKey: string | undefined): RenderResult {
@@ -131,14 +123,13 @@ function finalFirstPaint(initial: RenderResult | undefined, text: string, index:
   return block
 }
 
-export function initialResult(
-  text: string,
-  key: string | undefined,
-  projection: Projection,
-  owner: string,
-): RenderResult | undefined {
+export function initialResult(text: string, key: string | undefined, projection: Projection, owner: string): RenderResult {
   if (!text) return { text, blocks: [] }
-  return cachedRenderResult(text, key, projection, owner) ?? syncRenderResult(text, projection, owner, key)
+  const base = entryBase(text, key)
+  return {
+    text,
+    blocks: projection.blocks.map((block, index) => cachedBlock(base, owner, key, index, block) ?? syncBlock(owner, key, index, block)),
+  }
 }
 
 export async function enhanceTextBlock(input: {
