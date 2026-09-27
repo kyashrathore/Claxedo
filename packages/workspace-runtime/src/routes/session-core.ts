@@ -332,6 +332,25 @@ function createdSessionBody(session: unknown, created: Record<string, unknown>) 
   return { ...rec(session), ...created }
 }
 
+type SessionFirstInput = { prompt: SessionPromptBody } | { goal: string }
+
+/**
+ * A create's first prompt or goal. `delivery` is refused: a session that does
+ * not exist yet has no running turn to queue behind or steer.
+ */
+function sessionFirstInput(wire: Record<string, unknown>): SessionFirstInput | { invalid: string } | undefined {
+  if (wire.prompt === undefined && wire.goal === undefined) return undefined
+  if (wire.prompt !== undefined && wire.goal !== undefined) return { invalid: "A session starts with a prompt or a goal, not both" }
+  if (wire.goal !== undefined) {
+    const objective = str(rec(wire.goal)?.objective)
+    return objective === undefined ? { invalid: "goal.objective must be a string" } : { goal: objective }
+  }
+  const prompt = rec(wire.prompt)
+  if (!prompt) return { invalid: "prompt must be an object" }
+  if (prompt.delivery !== undefined) return { invalid: "A new session has no running turn to queue behind or steer" }
+  return { prompt: parseSessionPromptBody(prompt) }
+}
+
 async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {
   try {
     await opts.childSessions?.onTurnSettled(sessionId, directory)
@@ -672,38 +691,43 @@ async function resolveGoalRuntime(
   return noStoreJson(c, errorBody("goal_runtime_unavailable", "Goal runtime is unavailable"), 503)
 }
 
+type GoalInvocation = (input: {
+  c: Ctx
+  sessionId: string
+  directory: RuntimeDirectory
+  runtime: AgentRuntime
+}) => Promise<Response> | Response
+
 /**
- * The scaffold every `/session/:id/goal*` route shares: admit the operation,
- * resolve the session's directory, resolve its Goal runtime, and translate a
- * thrown `AgentRuntimeGoalError` into its typed HTTP response.
- *
- * Each endpoint supplies only the runtime call that makes it different, so a
- * new admission or error rule lands on every Goal endpoint at once instead of
- * being copied into each handler.
+ * The scaffold every Goal start or control shares, `/session/:id/goal*` and a
+ * create that carries its first goal alike: admit the operation, resolve the
+ * Goal runtime, and translate a thrown `AgentRuntimeGoalError` into its typed
+ * HTTP response. Each caller supplies only the runtime call that makes it
+ * different, so a new admission or error rule lands on every Goal endpoint at
+ * once instead of being copied into each handler.
  */
-function goalRoute(
-  opts: Opts,
-  operation: SessionAccessOperation,
-  invoke: (input: {
-    c: Ctx
-    sessionId: string
-    directory: RuntimeDirectory
-    runtime: AgentRuntime
-  }) => Promise<Response> | Response,
-) {
+function goalRoute(opts: Opts, operation: SessionAccessOperation, invoke: GoalInvocation) {
   return async (c: Ctx): Promise<Response> => {
     const sessionId = routeParam(c, "id")
     const guarded = await sessionOperationGuard(opts, c, sessionId, operation)
     if (guarded) return guarded
-    const directory = await opts.resolveDirectory(c, { sessionId })
-    const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-    if (runtime instanceof Response) return runtime
-    try {
-      return await invoke({ c, sessionId, directory, runtime })
-    } catch (error) {
-      return goalRuntimeErrorResponse(c, error)
-    }
+    return invokeGoalRuntime(opts, c, sessionId, await opts.resolveDirectory(c, { sessionId }), invoke)
   }
+}
+
+async function invokeGoalRuntime(opts: Opts, c: Ctx, sessionId: string, directory: RuntimeDirectory, invoke: GoalInvocation) {
+  const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+  if (runtime instanceof Response) return runtime
+  try {
+    return await invoke({ c, sessionId, directory, runtime })
+  } catch (error) {
+    return goalRuntimeErrorResponse(c, error)
+  }
+}
+
+function goalStartInvocation(objective: string): GoalInvocation {
+  return async ({ c, sessionId, directory, runtime }) =>
+    goalMutationResponse(c, await runtime.goals.start({ sessionId, objective }, directory), 201)
 }
 
 /**
@@ -1580,6 +1604,215 @@ export function createSessionRoutes(opts: Opts) {
     }
   }
   /**
+   * `failed` is a runtime that refused the turn within the bound. prompt_async
+   * still answers 204 for it because the refusal also reaches the event
+   * stream; a caller that must not keep what it made for the prompt reads it
+   * here, and waits out `turn` before undoing anything the turn's own cleanup
+   * still writes to.
+   */
+  const admitPrompt = async (
+    c: Ctx,
+    input: { sessionId: string; directory: RuntimeDirectory; adapter: AgentHarnessAdapter; body: SessionPromptBody },
+  ): Promise<{ answer: Response; turn?: Promise<void>; failed?: { error: unknown } }> => {
+    const { sessionId: id, directory, adapter } = input
+    const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: input.body }) ?? input.body
+    const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
+    if (permissionRefusal) return { answer: permissionRefusal }
+    let settleAdmissionAnswer: ((response: Response) => void) | undefined
+    if (body.messageID) {
+      const pending = promptAdmissions.get(id)?.get(body.messageID)
+      if (pending) return { answer: (await pending).clone() }
+      const admissions = promptAdmissions.get(id) ?? new Map<string, Promise<Response>>()
+      admissions.set(body.messageID, new Promise<Response>((resolve) => {
+        settleAdmissionAnswer = resolve
+      }))
+      promptAdmissions.set(id, admissions)
+    }
+    // A stored answer outlives its request, so it must not survive a
+    // failure that happens before the harness is asked to run anything:
+    // the retry that arrives once the cause is gone would join the stale
+    // failure and the turn would never run.
+    let admittedForExecution = false
+    let turn: Promise<void> | undefined
+    let failed: { error: unknown } | undefined
+    const admit = async (): Promise<Response> => {
+      if (body.messageID && c.req.header("x-claxedo-idempotency-retry") === "1") {
+        const messages = await opts.getMessages?.(c, directory, id)
+          ?? await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
+        const projected = messages.some((message) => asRecord(message.info)?.id === body.messageID)
+        const session = projected
+          ? undefined
+          : await readRuntimeSession(opts, c, directory, id, adapter)
+        if (
+          projected
+          || session?.status === "busy"
+          || session?.status === "recovering"
+          || session?.status === "retry"
+        ) {
+          admittedForExecution = true
+          return c.body(null, 204)
+        }
+      }
+      body.messageID ??= `msg_${randomUUID()}`
+      const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
+      if (body.delivery && (!runtime || !opts.queuedPrompts)) {
+        return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
+      }
+      const access = sessionAccessContext(c)
+      if (body.delivery) {
+        if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
+        const requester = await queuedPromptRequester(opts, c, id, body.messageID)
+        if ("refused" in requester) return requester.refused
+        const submission = { sessionId: id, body, ...requester }
+        if (body.delivery === "queue") {
+          try { opts.queuedPrompts.queue(submission) }
+          catch (error) { return c.json({ error: streamTurnErrorMessage(error) }, 503) }
+          admittedForExecution = true
+          return c.json({ delivery: "queue" })
+        }
+        const result = await opts.queuedPrompts.steer(submission)
+        admittedForExecution = true
+        if (result.ok) return c.json({ delivery: "steer" })
+        return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
+      }
+      const lostTurn = captureTurnTarget()
+      const turnAdmission = await acquireManagedPromptLease({
+        opts,
+        c,
+        sessionId: id,
+        turnId: body.messageID,
+        onLost: () => containLostTurn({ runtime: runtime?.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
+      })
+      if (turnAdmission.rejected) return turnAdmission.rejected
+      let settleAdmission: ((error?: unknown) => void) | undefined
+      const admission = runtime
+        ? new Promise<unknown>((resolve) => {
+            settleAdmission = resolve
+          })
+        : undefined
+      let runTurn: () => Promise<SessionPromptTurnResult>
+      if (runtime) {
+        runTurn = () => runRuntimePromptTurn({
+          runtime,
+          sessionId: id,
+          directory,
+          body,
+          publishGlobal: opts.publishGlobal,
+          createActiveTurnScope: opts.createActiveTurnScope
+            ? () => turnScope(
+                opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
+                turnAdmission.lease,
+              )
+            : undefined,
+          ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
+          streamErrorMessage: streamTurnErrorMessage,
+          onTurnTarget: lostTurn.set,
+          onAdmissionSettled: settleAdmission,
+          actor: access.actor,
+          author: access.author,
+        })
+      } else {
+        const binding = await requireExecutionBinding(opts, c, directory, id, adapter)
+        await applyTurnPermissionMode({ adapter, binding, modeId: body.permissionMode })
+        let admitted: AdmittedSessionPromptTurn
+        try {
+          admitted = await admitSessionPromptTurn({ adapter, binding, sessionId: id, directory, body })
+        } catch (error) {
+          const refusal = sessionTurnRefusal(error)
+          if (!refusal) throw error
+          await turnAdmission.lease?.release().catch(() => undefined)
+          return turnRefused(c, refusal, streamTurnErrorMessage(error))
+        }
+        runTurn = () => runSessionPromptTurn({
+          adapter,
+          admitted,
+          sessionId: id,
+          directory,
+          body,
+          publishGlobal: opts.publishGlobal,
+          publishUserMessage: false,
+          streamErrorMessage: streamTurnErrorMessage,
+          createActiveTurnScope: opts.createActiveTurnScope
+            ? ({ adapter, directory, sessionId }) => turnScope(
+                opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
+                turnAdmission.lease,
+              )
+            : undefined,
+          ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
+        })
+      }
+      await opts.childSessions?.onTurnStarted(id, directory)
+      // The turn runs detached: the response must not wait for the model.
+      admittedForExecution = true
+      turn = (async () => {
+        try {
+          const turn = await runTurn()
+          if (!turnAdmission.lease?.lost()) {
+            await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+          }
+        } catch (error) {
+          settleAdmission?.(error)
+          if (isAgentRuntimeTurnConflictError(error)) return
+          // The real message goes through sessionError (→ firstTurnErrorData)
+          // so it classifies (unmatched → "unknown") and the original text
+          // reaches the raw-detail disclosure.
+          opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
+        } finally {
+          const leaseLost = turnAdmission.lease?.lost() ?? false
+          if (!leaseLost) {
+            await flushDocumentsAfterTurn(opts, id)
+            if (opts.afterMessageCheckpoint) {
+              const messages = runtime
+                ? await runtime.events.list(id, directory)
+                : await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
+              await after(opts.afterMessageCheckpoint(c, directory, id, messages))
+            }
+          }
+          await turnAdmission.lease?.release().catch(() => undefined)
+          await settleChildTurn(opts, id, directory)
+        }
+      })()
+      const admissionError = admission ? await awaitAdmissionAck(admission) : undefined
+      // Admission did not settle within the bound — honor prompt_async's
+      // fire-and-forget contract rather than block on a wedged turn.
+      if (admissionError === ADMISSION_ACK_TIMED_OUT) return c.body(null, 204)
+      if (isAgentRuntimeTurnConflictError(admissionError)) {
+        releasePromptAdmission(id, body.messageID)
+        return turnAdmissionConflict(c)
+      }
+      if (admissionError !== undefined) failed = { error: admissionError }
+      return c.body(null, 204)
+    }
+    try {
+      const answer = await admit()
+      settleAdmissionAnswer?.(answer.clone())
+      return { answer, ...(turn ? { turn } : {}), ...(failed ? { failed } : {}) }
+    } catch (error) {
+      settleAdmissionAnswer?.(requestErrorResponse(error, c))
+      throw error
+    } finally {
+      if (!admittedForExecution) releasePromptAdmission(id, body.messageID)
+    }
+  }
+  const admitFirstInput = async (
+    c: Ctx,
+    input: { sessionId: string; directory: RuntimeDirectory; adapter: AgentHarnessAdapter; first: SessionFirstInput },
+  ): Promise<{ created: Record<string, unknown> } | { refused: Response } | { failed: unknown }> => {
+    const { sessionId, directory } = input
+    if ("goal" in input.first) {
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_start")
+      if (guarded) return { refused: guarded }
+      const answer = await invokeGoalRuntime(opts, c, sessionId, directory, goalStartInvocation(input.first.goal))
+      return answer.status === 201 ? { created: { goal: await answer.json() } } : { refused: answer }
+    }
+    const guarded = await sessionOperationGuard(opts, c, sessionId, "prompt")
+    if (guarded) return { refused: guarded }
+    const admission = await admitPrompt(c, { sessionId, directory, adapter: input.adapter, body: input.first.prompt })
+    if (admission.answer.status === 204 && !admission.failed) return { created: { prompt: { delivery: "start" } } }
+    await Promise.allSettled([admission.turn])
+    return admission.failed ? { failed: admission.failed.error } : { refused: admission.answer }
+  }
+  /**
    * Recovery is registered ahead of every gate this router adds, so a request
    * to inspect or contain a session is not queued behind the serving path it
    * is about. The workspace host owes the same of its own closing gate.
@@ -1699,6 +1932,11 @@ export function createSessionRoutes(opts: Opts) {
         return c.json(errorBody("session_group_invalid", `${group.field}: ${group.message}`), 400)
       }
       if (group) body.group = group.group
+      const first = sessionFirstInput(wire)
+      if (first && "invalid" in first) return c.json(errorBody("session_first_input_invalid", first.invalid), 400)
+      if (first && body.parentID) {
+        return c.json(errorBody("session_first_input_invalid", "A child session is started by its parent, not by its create"), 400)
+      }
       const children = opts.childSessions
       if ((body.parentID || body.clientRequestId) && !children) {
         return c.json(errorBody("child_sessions_unsupported", "This runtime cannot create child sessions"), 501)
@@ -1749,6 +1987,17 @@ export function createSessionRoutes(opts: Opts) {
         const creator = sessionAccessContext(c).actor?.actorId
         let start: AgentSessionStartBinding | undefined
         let claimed: string | undefined
+        const publishFailed = (message: string) => opts.publishSessionLifecycle?.({
+          type: "session.lifecycle",
+          phase: "failed",
+          ...(start ? { start } : {}),
+          directory,
+          ...(draftId ? { draftId } : {}),
+          ...(workspaceId ? { workspaceId } : {}),
+          ...(creator ? { actorId: creator } : {}),
+          message,
+          ts: Date.now(),
+        })
         try {
           // Checking the id and claiming it in two steps lets two creates for
           // one id both pass and both drive the harness. The pair is one
@@ -1935,51 +2184,57 @@ export function createSessionRoutes(opts: Opts) {
             ...(subagentKey ? { subagentKey } : {}),
             ...(childMode.mode ? { permissionMode: childMode.mode.id } : {}),
           }
+          const createdId = session.id
+          const undoCreated = async (reason: string, cause: unknown) => {
+            if (managed) {
+              await compensateRegistration({ opts, c, adapter, directory, sessionId: createdId, operationId: operationId!, reason })
+            } else if (!existing) {
+              await rollbackCreatedSession(opts, c, adapter, directory, createdId, cause)
+            }
+          }
+          const refuseCreated = async (response: Response, message: string, reason: string) => {
+            if (start) opts.sessionStarts!.finish(start, { status: "failed", error: message })
+            await undoCreated(reason, new Error(message))
+            publishFailed(message)
+            return response
+          }
           const registration = await registerCreatedSession(opts, c, session.id, operationId, body.title)
           if (registration.kind === "ambiguous") {
             return registration.response
           }
           if (registration.kind === "denied") {
-            if (start) opts.sessionStarts!.finish(start, { status: "failed", error: "Session creator registration was denied" })
-            await compensateRegistration({
-              opts,
-              c,
-              adapter,
-              directory,
-              sessionId: session.id,
-              operationId: operationId!,
-              reason: `registration_denied_${registration.response.status}`,
-            })
-            opts.publishSessionLifecycle?.({
-              type: "session.lifecycle",
-              phase: "failed",
-              ...(start ? { start } : {}),
-              directory,
-              ...(draftId ? { draftId } : {}),
-              ...(workspaceId ? { workspaceId } : {}),
-              ...(creator ? { actorId: creator } : {}),
-              message: "Session creator registration was denied",
-              ts: Date.now(),
-            })
-            return registration.response
+            return await refuseCreated(
+              registration.response,
+              "Session creator registration was denied",
+              `registration_denied_${registration.response.status}`,
+            )
           }
           try {
             await after(opts.afterCreateSession?.(c, directory, session))
           } catch (error) {
-            if (managed) {
-              await compensateRegistration({
-                opts,
-                c,
-                adapter,
-                directory,
-                sessionId: session.id,
-                operationId: operationId!,
-                reason: `post_create_projection_failed: ${errorMessage(error)}`,
-              })
-            } else if (!existing) {
-              await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
-            }
+            await undoCreated(`post_create_projection_failed: ${errorMessage(error)}`, error)
             throw error
+          }
+          const firstAdmission = first
+            ? await admitFirstInput(c, { sessionId: session.id, directory, adapter, first })
+            : { created: {} }
+          if ("failed" in firstAdmission) {
+            await undoCreated(`first_input_failed: ${errorMessage(firstAdmission.failed)}`, firstAdmission.failed)
+            throw firstAdmission.failed
+          }
+          if ("refused" in firstAdmission) {
+            return await refuseCreated(
+              firstAdmission.refused,
+              "The session's first input was refused",
+              `first_input_refused_${firstAdmission.refused.status}`,
+            )
+          }
+          if (first) {
+            // Admission can already have retitled the session from its first
+            // prompt; the answer is what the create's projection records.
+            const admitted = await readRuntimeSession(opts, c, directory, session.id, adapter)
+            if (!admitted) throw new Error(`Created session ${session.id} has no persisted session row`)
+            session = admitted
           }
           if (body.parentID && children) {
             opts.publishGlobal(withDir(compatScope(directory, session.id), sessionUpdated(session)))
@@ -1999,22 +2254,12 @@ export function createSessionRoutes(opts: Opts) {
             info: sessionLifecycleInfo({ session, directory, title: body.title, workspaceId }),
             ts: Date.now(),
           })
-          return c.json(createdSessionBody(normalizeSession(session, directory), created), 201)
+          return c.json(createdSessionBody(normalizeSession(session, directory), { ...created, ...firstAdmission.created }), 201)
         } catch (error) {
           if (start && opts.sessionStarts?.get(start.sessionId)?.status === "starting") {
             opts.sessionStarts.finish(start, { status: "failed", error: errorMessage(error) })
           }
-          opts.publishSessionLifecycle?.({
-            type: "session.lifecycle",
-            phase: "failed",
-            ...(start ? { start } : {}),
-            directory,
-            ...(draftId ? { draftId } : {}),
-            ...(workspaceId ? { workspaceId } : {}),
-            ...(creator ? { actorId: creator } : {}),
-            message: errorMessage(error),
-            ts: Date.now(),
-          })
+          publishFailed(errorMessage(error))
           // A create that was REFUSED carries its own status — an unknown harness
           // is a 400, an id that belongs to another workspace is a 409. Flattening
           // those into 500 tells the caller the runtime broke when in fact the
@@ -2078,14 +2323,8 @@ export function createSessionRoutes(opts: Opts) {
       noStoreJson(c, await runtime.goals.capabilities(sessionId, directory))))
     .get("/session/:id/goal", goalRoute(opts, "goal_read", async ({ c, sessionId, directory, runtime }) =>
       noStoreJson(c, await runtime.goals.read(sessionId, directory))))
-    .post("/session/:id/goal", goalRoute(opts, "goal_start", async ({ c, sessionId, directory, runtime }) => {
-      const body = await boundedJsonRecord(c)
-      return goalMutationResponse(
-        c,
-        await runtime.goals.start({ sessionId, objective: str(body.objective) ?? "" }, directory),
-        201,
-      )
-    }))
+    .post("/session/:id/goal", goalRoute(opts, "goal_start", async (input) =>
+      goalStartInvocation(str((await boundedJsonRecord(input.c)).objective) ?? "")(input)))
     .post("/session/:id/goal/pause", goalRoute(opts, "goal_pause", async ({ c, sessionId, directory, runtime }) =>
       goalMutationResponse(c, await runtime.goals.pause(sessionId, directory))))
     .post("/session/:id/goal/resume", goalRoute(opts, "goal_resume", async ({ c, sessionId, directory, runtime }) =>
@@ -2654,183 +2893,8 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
-      const parsedBody = parseSessionPromptBody(await boundedJsonBody(c))
-      const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
-      if (permissionRefusal) return permissionRefusal
-      let settleAdmissionAnswer: ((response: Response) => void) | undefined
-      if (body.messageID) {
-        const pending = promptAdmissions.get(id)?.get(body.messageID)
-        if (pending) return (await pending).clone()
-        const admissions = promptAdmissions.get(id) ?? new Map<string, Promise<Response>>()
-        admissions.set(body.messageID, new Promise<Response>((resolve) => {
-          settleAdmissionAnswer = resolve
-        }))
-        promptAdmissions.set(id, admissions)
-      }
-      // A stored answer outlives its request, so it must not survive a
-      // failure that happens before the harness is asked to run anything:
-      // the retry that arrives once the cause is gone would join the stale
-      // failure and the turn would never run.
-      let admittedForExecution = false
-      const admit = async (): Promise<Response> => {
-        if (body.messageID && c.req.header("x-claxedo-idempotency-retry") === "1") {
-          const messages = await opts.getMessages?.(c, directory, id)
-            ?? await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
-          const projected = messages.some((message) => asRecord(message.info)?.id === body.messageID)
-          const session = projected
-            ? undefined
-            : await readRuntimeSession(opts, c, directory, id, adapter)
-          if (
-            projected
-            || session?.status === "busy"
-            || session?.status === "recovering"
-            || session?.status === "retry"
-          ) {
-            admittedForExecution = true
-            return c.body(null, 204)
-          }
-        }
-        body.messageID ??= `msg_${randomUUID()}`
-        const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
-        if (body.delivery && (!runtime || !opts.queuedPrompts)) {
-          return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-        }
-        const access = sessionAccessContext(c)
-        if (body.delivery) {
-          if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-          const requester = await queuedPromptRequester(opts, c, id, body.messageID)
-          if ("refused" in requester) return requester.refused
-          const submission = { sessionId: id, body, ...requester }
-          if (body.delivery === "queue") {
-            try { opts.queuedPrompts.queue(submission) }
-            catch (error) { return c.json({ error: streamTurnErrorMessage(error) }, 503) }
-            admittedForExecution = true
-            return c.json({ delivery: "queue" })
-          }
-          const result = await opts.queuedPrompts.steer(submission)
-          admittedForExecution = true
-          if (result.ok) return c.json({ delivery: "steer" })
-          return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
-        }
-        const lostTurn = captureTurnTarget()
-        const turnAdmission = await acquireManagedPromptLease({
-          opts,
-          c,
-          sessionId: id,
-          turnId: body.messageID,
-          onLost: () => containLostTurn({ runtime: runtime?.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
-        })
-        if (turnAdmission.rejected) return turnAdmission.rejected
-        let settleAdmission: ((error?: unknown) => void) | undefined
-        const admission = runtime
-          ? new Promise<unknown>((resolve) => {
-              settleAdmission = resolve
-            })
-          : undefined
-        let runTurn: () => Promise<SessionPromptTurnResult>
-        if (runtime) {
-          runTurn = () => runRuntimePromptTurn({
-            runtime,
-            sessionId: id,
-            directory,
-            body,
-            publishGlobal: opts.publishGlobal,
-            createActiveTurnScope: opts.createActiveTurnScope
-              ? () => turnScope(
-                  opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
-                  turnAdmission.lease,
-                )
-              : undefined,
-            ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-            streamErrorMessage: streamTurnErrorMessage,
-            onTurnTarget: lostTurn.set,
-            onAdmissionSettled: settleAdmission,
-            actor: access.actor,
-            author: access.author,
-          })
-        } else {
-          const binding = await requireExecutionBinding(opts, c, directory, id, adapter)
-          await applyTurnPermissionMode({ adapter, binding, modeId: body.permissionMode })
-          let admitted: AdmittedSessionPromptTurn
-          try {
-            admitted = await admitSessionPromptTurn({ adapter, binding, sessionId: id, directory, body })
-          } catch (error) {
-            const refusal = sessionTurnRefusal(error)
-            if (!refusal) throw error
-            await turnAdmission.lease?.release().catch(() => undefined)
-            return turnRefused(c, refusal, streamTurnErrorMessage(error))
-          }
-          runTurn = () => runSessionPromptTurn({
-            adapter,
-            admitted,
-            sessionId: id,
-            directory,
-            body,
-            publishGlobal: opts.publishGlobal,
-            publishUserMessage: false,
-            streamErrorMessage: streamTurnErrorMessage,
-            createActiveTurnScope: opts.createActiveTurnScope
-              ? ({ adapter, directory, sessionId }) => turnScope(
-                  opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
-                  turnAdmission.lease,
-                )
-              : undefined,
-            ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-          })
-        }
-        await opts.childSessions?.onTurnStarted(id, directory)
-        // The turn runs detached: the response must not wait for the model. The
-        // IIFE has its own catch/finally, so nothing here can reject unobserved.
-        admittedForExecution = true
-        void (async () => {
-          try {
-            const turn = await runTurn()
-            if (!turnAdmission.lease?.lost()) {
-              await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
-            }
-          } catch (error) {
-            settleAdmission?.(error)
-            if (isAgentRuntimeTurnConflictError(error)) return
-            // The real message goes through sessionError (→ firstTurnErrorData)
-            // so it classifies (unmatched → "unknown") and the original text
-            // reaches the raw-detail disclosure.
-            opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
-          } finally {
-            const leaseLost = turnAdmission.lease?.lost() ?? false
-            if (!leaseLost) {
-              await flushDocumentsAfterTurn(opts, id)
-              if (opts.afterMessageCheckpoint) {
-                const messages = runtime
-                  ? await runtime.events.list(id, directory)
-                  : await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
-                await after(opts.afterMessageCheckpoint(c, directory, id, messages))
-              }
-            }
-            await turnAdmission.lease?.release().catch(() => undefined)
-            await settleChildTurn(opts, id, directory)
-          }
-        })()
-        const admissionError = admission ? await awaitAdmissionAck(admission) : undefined
-        // Admission did not settle within the bound — honor prompt_async's
-        // fire-and-forget contract rather than block on a wedged turn.
-        if (admissionError === ADMISSION_ACK_TIMED_OUT) return c.body(null, 204)
-        if (isAgentRuntimeTurnConflictError(admissionError)) {
-          releasePromptAdmission(id, body.messageID)
-          return turnAdmissionConflict(c)
-        }
-        return c.body(null, 204)
-      }
-      try {
-        const answer = await admit()
-        settleAdmissionAnswer?.(answer.clone())
-        return answer
-      } catch (error) {
-        settleAdmissionAnswer?.(requestErrorResponse(error, c))
-        throw error
-      } finally {
-        if (!admittedForExecution) releasePromptAdmission(id, body.messageID)
-      }
+      const body = parseSessionPromptBody(await boundedJsonBody(c))
+      return (await admitPrompt(c, { sessionId: id, directory, adapter, body })).answer
     })
     .get("/agent", async (c) => {
       const adapter = await opts.resolveAdapter(c)
