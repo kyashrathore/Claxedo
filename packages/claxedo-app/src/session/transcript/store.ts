@@ -2,12 +2,11 @@ import { createMemo, onCleanup } from "solid-js"
 import { unreachable } from "@/lib/machine"
 import type { Server, ServerEvent, SessionRef } from "@/server"
 import type { SessionLoadState, SessionView } from "@/session"
+import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
 import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
 import { settleTurn } from "./settle"
-import type { TranscriptConversation } from "@/transcript"
-import { isPendingMessage, searchById } from "./merge"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
 import { sendPrompt, showSent, stopTurn } from "./send"
@@ -41,11 +40,6 @@ function loadState(phase: SessionPhase): SessionLoadState {
   }
 }
 
-function isPending(context: TranscriptContext, messageId: string): boolean {
-  const { found, index } = searchById(context.data.messages, messageId)
-  return found && isPendingMessage(context.data.messages[index])
-}
-
 function sessionView(context: TranscriptContext): SessionView {
   const { ref, deps, data, phase, older, goal, queue } = context
   const state = createMemo(() => loadState(phase.state()))
@@ -59,7 +53,6 @@ function sessionView(context: TranscriptContext): SessionView {
     parts: (messageId) => data.parts[messageId] ?? NO_PARTS,
     pendingDeltas: context.deltas.pending,
     commitDeltas: context.deltas.commit,
-    isPendingMessage: (messageId) => isPending(context, messageId),
     conversation: (): TranscriptConversation | undefined => (phase.state().kind === "loading" ? undefined : data),
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,
     queue,

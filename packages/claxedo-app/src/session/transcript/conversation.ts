@@ -1,7 +1,8 @@
 import { produce, type SetStoreFunction } from "solid-js/store"
 import type { QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
-import { isPendingMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
-import type { SessionMessage, TranscriptData } from "./model"
+import type { ConversationMessage } from "@/transcript"
+import { isOptimisticMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
+import type { TranscriptData } from "./model"
 import { partHasText, textIsPresent } from "./text-presence"
 
 export type SetTranscript = SetStoreFunction<TranscriptData>
@@ -23,11 +24,11 @@ function pageParts(page: TranscriptPage): TranscriptPart[] {
   return page.entries.flatMap((entry) => entry.parts)
 }
 
-function pageMessages(page: TranscriptPage): SessionMessage[] {
+function pageMessages(page: TranscriptPage): ConversationMessage[] {
   return page.entries.map((entry) => entry.info).filter(isPresentationMessage)
 }
 
-export function upsertMessage(set: SetTranscript, message: SessionMessage): void {
+export function upsertMessage(set: SetTranscript, message: ConversationMessage): void {
   set("messages", (messages) => {
     const { found, index } = searchById(messages, message.id)
     const next = messages.slice()
@@ -103,7 +104,7 @@ export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
   const freshIds = new Set(fresh.map((message) => message.id))
   const kept = new Set<string>()
   set("messages", (messages) => {
-    const older = messages.filter((message) => isPendingMessage(message) || (fromId !== undefined && message.id < fromId))
+    const older = messages.filter((message) => isOptimisticMessage(message) || (fromId !== undefined && message.id < fromId))
     for (const message of older) kept.add(message.id)
     return mergeSortedById(older, fresh)
   })
@@ -124,7 +125,7 @@ function mergedParts(current: readonly TranscriptPart[] | undefined, canonical: 
   return [...canonical.map((part) => mergedPart(byId.get(part.id), part)), ...current.filter((part) => !known.has(part.id))]
 }
 
-function withLatestTurn(messages: readonly SessionMessage[], fresh: readonly SessionMessage[]): SessionMessage[] {
+function withLatestTurn(messages: readonly ConversationMessage[], fresh: readonly ConversationMessage[]): ConversationMessage[] {
   const freshIds = new Set(fresh.map((message) => message.id))
   const at = messages.findIndex((message) => freshIds.has(message.id))
   const current = new Map(messages.map((message) => [message.id, message]))
@@ -143,11 +144,11 @@ export function mergeLatestTurn(set: SetTranscript, page: TranscriptPage): void 
 export function dropQueuedStubs(set: SetTranscript, data: TranscriptData, queued: readonly QueuedPrompt[]): void {
   const queuedIds = new Set(queued.map((item) => item.messageId).filter((id): id is string => id !== undefined))
   if (queuedIds.size === 0) return
-  if (!data.messages.some((message) => isPendingMessage(message) && queuedIds.has(message.id))) return
-  set("messages", (messages) => messages.filter((message) => !(isPendingMessage(message) && queuedIds.has(message.id))))
+  if (!data.messages.some((message) => isOptimisticMessage(message) && queuedIds.has(message.id))) return
+  set("messages", (messages) => messages.filter((message) => !(isOptimisticMessage(message) && queuedIds.has(message.id))))
 }
 
-export function lastUserMessageId(messages: readonly SessionMessage[]): string | undefined {
+export function lastUserMessageId(messages: readonly ConversationMessage[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index].role === "user") return messages[index].id
   }

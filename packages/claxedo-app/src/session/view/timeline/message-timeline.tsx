@@ -59,7 +59,7 @@ import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineLoadingRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
-import { isOptimisticMessage, isRuntimeMessage } from "@/transcript"
+import { isOptimisticMessage, isRuntimeMessage } from "../../transcript/merge"
 import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,

@@ -1,13 +1,10 @@
-import type { AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
 import { unreachable } from "@/lib/machine"
 import type { AppError, FileDiff, ServerEvent, TranscriptPart } from "@/server"
 import type { OlderState } from "@/session"
-import type { OptimisticUserMessage } from "@/transcript"
-
-export type SessionMessage = AgentPresentationMessage | OptimisticUserMessage
+import type { ConversationMessage } from "@/transcript"
 
 export type TranscriptData = {
-  messages: SessionMessage[]
+  messages: ConversationMessage[]
   parts: Record<string, TranscriptPart[]>
   fragmentParts: ReadonlySet<string>
   partsWithText: Record<string, true>

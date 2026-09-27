@@ -1,13 +1,14 @@
 import type { AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
 import { readField, readString } from "@claxedo/helpers/readers"
 import type { TranscriptMessage, TranscriptPart } from "@/server"
-import type { OptimisticUserMessage } from "@/transcript"
-import type { SessionMessage } from "./model"
+import type { ConversationMessage, OptimisticUserMessage } from "@/transcript"
 
 export const isPresentationMessage = (info: TranscriptMessage): info is AgentPresentationMessage =>
   info.role === "user" || info.role === "assistant"
 
-export const isPendingMessage = (message: SessionMessage): message is OptimisticUserMessage => "origin" in message
+export const isOptimisticMessage = (message: ConversationMessage): message is OptimisticUserMessage => "origin" in message
+
+export const isRuntimeMessage = (message: ConversationMessage): message is AgentPresentationMessage => !isOptimisticMessage(message)
 
 export type Found = { readonly found: boolean; readonly index: number }
 
@@ -51,8 +52,8 @@ export function mergedPart(current: TranscriptPart | undefined, next: Transcript
   return current && settledPart(current) && !settledPart(next) ? current : next
 }
 
-export function mergedMessage(current: SessionMessage | undefined, next: SessionMessage): SessionMessage {
-  if (!current || isPendingMessage(current) || isPendingMessage(next)) return next
+export function mergedMessage(current: ConversationMessage | undefined, next: ConversationMessage): ConversationMessage {
+  if (!current || isOptimisticMessage(current) || isOptimisticMessage(next)) return next
   if (current.role !== "assistant" || next.role !== "assistant") return next
   const completed = next.time.completed ?? current.time.completed
   const error = next.error ?? current.error

@@ -126,3 +126,26 @@ test("a listed status is a read at the page's send time: a newer event beats it,
   })
   expect(stale.statuses.get(sessionId("a1"))).toMatchObject({ status: { kind: "idle" }, source: "event" })
 })
+
+test("a turn's status that lands before its session's row is the row's status once the row arrives", () => {
+  const live = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [row(ALPHA, "a1", 50)])]) })
+  const created = row(ALPHA, "a2", 60)
+  const working = { type: "statusChanged" as const, ref: created.ref, status: { kind: "working" as const }, at: 1_100 }
+
+  const creator = run(
+    live,
+    { type: "createStarted", clientRequestId: "r1", row: { ...created, ref: { ...created.ref, sessionId: sessionId("pending:r1") } } },
+    working,
+    { type: "createConfirmed", clientRequestId: "r1", row: created },
+  )
+  expect(shown(creator)).toEqual(["a2", "a1"])
+  expect(creator.statuses.get(sessionId("a2"))?.status).toEqual({ kind: "working" })
+
+  const watcher = run(live, working, { type: "rereadStarted" }, {
+    type: "rereadFetched",
+    mode: "refresh",
+    window: window([page(ALPHA, [created, row(ALPHA, "a1", 50)])], [], 1_200),
+  })
+  expect(shown(watcher)).toEqual(["a2", "a1"])
+  expect(watcher.statuses.get(sessionId("a2"))?.status).toEqual({ kind: "working" })
+})

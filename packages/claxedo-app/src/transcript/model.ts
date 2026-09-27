@@ -22,11 +22,3 @@ export type TranscriptConversation = {
   readonly fragmentParts: ReadonlySet<string>
   readonly partsWithText: Readonly<Record<string, true>>
 }
-
-export function isOptimisticMessage(message: ConversationMessage): message is OptimisticUserMessage {
-  return "origin" in message
-}
-
-export function isRuntimeMessage(message: ConversationMessage): message is AgentPresentationMessage {
-  return !isOptimisticMessage(message)
-}

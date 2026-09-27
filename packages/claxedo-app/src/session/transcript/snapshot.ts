@@ -2,13 +2,13 @@ import { toAppError, type SessionReads, type SessionSurfaceRead, type Transcript
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
-import { isPendingMessage } from "./merge"
+import { isOptimisticMessage } from "./merge"
 import { completeLatestTurn, surfaceFragments } from "./latest-turn"
 import { isReading } from "./model"
 
 function hasOlderLoaded(context: TranscriptContext, transcript: TranscriptPage): boolean {
   const first = transcript.entries[0]?.info.id
-  return first !== undefined && context.data.messages.some((message) => !isPendingMessage(message) && message.id < first)
+  return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && message.id < first)
 }
 
 function landSurface(context: TranscriptContext, surface: SessionSurfaceRead): void {

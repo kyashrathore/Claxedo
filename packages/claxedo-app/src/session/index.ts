@@ -85,7 +85,6 @@ export type SessionView = {
   readonly parts: (messageId: string) => readonly TranscriptPart[]
   readonly pendingDeltas: Accessor<boolean>
   readonly commitDeltas: () => void
-  readonly isPendingMessage: (messageId: string) => boolean
   readonly conversation: Accessor<TranscriptConversation | undefined>
   readonly turnSettlePending: (userMessageId: string) => boolean
   readonly queue: QueuedMessages
