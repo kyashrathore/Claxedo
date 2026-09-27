@@ -1,6 +1,21 @@
+import { Button } from "@kobalte/core/button"
 import { DropdownMenu } from "@kobalte/core/dropdown-menu"
 import { ContextMenu } from "@kobalte/core/context-menu"
-import { Show, splitProps, type Component, type ComponentProps, type JSX, type ParentProps } from "solid-js"
+import {
+  createContext,
+  createEffect,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+  Show,
+  splitProps,
+  useContext,
+  type Component,
+  type ComponentProps,
+  type JSX,
+  type ParentProps,
+} from "solid-js"
+import { adoptElement } from "./adopt-element"
 import "./menu-v2.css"
 
 const ChevronRight: Component = () => (
@@ -182,8 +197,97 @@ function MenuV2Content(props: ComponentProps<typeof DropdownMenu.Content>) {
   )
 }
 
+type MenuV2Lazy = {
+  readonly id: string
+  readonly wake: () => void
+  readonly setTrigger: (element: HTMLElement | undefined, props: ComponentProps<typeof DropdownMenu.Trigger> | undefined) => void
+  readonly setPortal: (props: ComponentProps<typeof DropdownMenu.Portal> | undefined) => void
+}
+
+const MenuV2LazyContext = createContext<MenuV2Lazy>()
+
+/**
+ * A menu that has never opened is its trigger alone, drawn as Kobalte draws a
+ * closed trigger. Kobalte's menu mounts on the trigger's first pointerenter or
+ * focusin, which precede every pointerdown and keydown that can open it for
+ * mouse, touch, pen and keyboard, so Kobalte receives the real press itself.
+ */
 function MenuV2Root(props: ComponentProps<typeof DropdownMenu>) {
-  return <DropdownMenu {...props} />
+  const [local, rootProps] = splitProps(props, ["children", "id"])
+  const id = local.id ?? `dropdownmenu-${createUniqueId()}`
+  const [live, setLive] = createSignal(props.open === true || props.defaultOpen === true)
+  const [trigger, setTriggerState] = createSignal<{ element: HTMLElement | undefined; props: ComponentProps<typeof DropdownMenu.Trigger> }>()
+  const [portal, setPortal] = createSignal<ComponentProps<typeof DropdownMenu.Portal>>()
+  createEffect(() => {
+    if (props.open) setLive(true)
+  })
+  const lazy: MenuV2Lazy = {
+    id,
+    wake: () => setLive(true),
+    setTrigger: (element, triggerProps) => setTriggerState(triggerProps ? { element, props: triggerProps } : undefined),
+    setPortal: (portalProps) => setPortal(() => portalProps),
+  }
+  return (
+    <MenuV2LazyContext.Provider value={lazy}>
+      {local.children}
+      <Show when={live()}>
+        <DropdownMenu {...rootProps} id={id}>
+          <Show when={trigger()}>
+            {(current) => {
+              const [, triggerRest] = splitProps(current().props, ["children", "as", "ref"])
+              return (
+                <DropdownMenu.Trigger
+                  {...triggerRest}
+                  id={current().props.id ?? `${id}-trigger`}
+                  as={adoptElement(() => current().element)}
+                />
+              )
+            }}
+          </Show>
+          <Show when={portal()}>
+            {(current) => {
+              const [portalChildren, portalRest] = splitProps(current(), ["children"])
+              return <DropdownMenu.Portal {...portalRest}>{portalChildren.children}</DropdownMenu.Portal>
+            }}
+          </Show>
+        </DropdownMenu>
+      </Show>
+    </MenuV2LazyContext.Provider>
+  )
+}
+
+function MenuV2Trigger(props: ComponentProps<typeof DropdownMenu.Trigger>) {
+  const lazy = useContext(MenuV2LazyContext)
+  if (!lazy) return <DropdownMenu.Trigger {...props} />
+  const handlers = Object.keys(props).filter((key) => /^on[A-Z]/.test(key)) as (keyof typeof props)[]
+  const [local, , rest] = splitProps(props, ["children", "ref"], handlers)
+  lazy.setTrigger(undefined, props)
+  onCleanup(() => lazy.setTrigger(undefined, undefined))
+  return (
+    <Button
+      {...rest}
+      ref={(node: HTMLElement) => {
+        lazy.setTrigger(node, props)
+        if (typeof local.ref === "function") (local.ref as (node: HTMLElement) => void)(node)
+      }}
+      id={props.id ?? `${lazy.id}-trigger`}
+      aria-haspopup="true"
+      aria-expanded={false}
+      data-closed=""
+      onPointerEnter={lazy.wake}
+      onFocusIn={lazy.wake}
+    >
+      {local.children}
+    </Button>
+  )
+}
+
+function MenuV2Portal(props: ComponentProps<typeof DropdownMenu.Portal>) {
+  const lazy = useContext(MenuV2LazyContext)
+  if (!lazy) return <DropdownMenu.Portal {...props} />
+  lazy.setPortal(props)
+  onCleanup(() => lazy.setPortal(undefined))
+  return undefined
 }
 
 function MenuV2ContextRoot(props: ComponentProps<typeof ContextMenu>) {
@@ -208,8 +312,8 @@ const MenuV2Context = Object.assign(MenuV2ContextRoot, {
 })
 
 export const MenuV2 = Object.assign(MenuV2Root, {
-  Trigger: DropdownMenu.Trigger,
-  Portal: DropdownMenu.Portal,
+  Trigger: MenuV2Trigger as typeof DropdownMenu.Trigger,
+  Portal: MenuV2Portal as typeof DropdownMenu.Portal,
   Content: MenuV2Content,
   Item: MenuV2Item,
   CheckboxItem: MenuV2CheckboxItem,
