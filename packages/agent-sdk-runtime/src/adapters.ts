@@ -2,7 +2,6 @@ export type {
   AdapterCancelOutcome,
   AgentHarnessAdapter,
   AgentHarnessAdapterCore,
-  AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
   AgentGoalMutationFailure,
@@ -37,6 +36,7 @@ export type {
   ShellCommandInput,
   SummarizeSessionInput,
 } from "./adapter-contract"
+export type { AgentHarnessAdapterHealth } from "./harness-health"
 export { requireGoalResource, resolvedModelFromConfigOptions } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
 export { AgentHarnessEngineError, isAgentHarnessEngineError } from "./harness-engine-error"

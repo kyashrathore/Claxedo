@@ -31,7 +31,7 @@ import {
   type SdkPluginConfig,
 } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOption, AgentQuestionAnswer } from "../../index"
-import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"

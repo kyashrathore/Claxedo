@@ -14,6 +14,7 @@ import type {
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
+import type { AgentHarnessAdapterHealth } from "./harness-health"
 import type { AgentProcessObserver } from "./process-observer"
 import type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 import type { SessionTitleRequest } from "./title-generation"
@@ -48,17 +49,6 @@ export type AdapterCancelOutcome = {
 export type SteerResult =
   | { ok: true }
   | { ok: false; status: "no_active_turn" | "declined" | "unsupported" | "unknown"; message: string }
-
-export type AgentHarnessAdapterHealth = {
-  status: "ok" | "degraded" | "unavailable"
-  reason?: string
-  message?: string
-  sessions?: Array<{
-    id: string
-    status?: string | null
-    message?: string | null
-  }>
-}
 
 export type AgentHarnessAdapterHealthContext = {
   /** Restrict health to the session being observed instead of workspace history. */

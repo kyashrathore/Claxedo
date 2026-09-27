@@ -39,7 +39,6 @@ import type {
 import type {
   AdapterCancelOutcome,
   AgentHarnessAdapter,
-  AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
   AgentGoalResource,
@@ -48,6 +47,7 @@ import type {
   AgentPermissionModeState,
   AgentSessionCreateOptions,
 } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import {  type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { acpRuntimeHealth } from "./health"
 import {

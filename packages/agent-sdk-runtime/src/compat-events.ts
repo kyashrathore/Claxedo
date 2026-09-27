@@ -16,7 +16,7 @@ import type {
 import { parseAgentContentPart } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { AgentHarnessAdapterHealth } from "./adapter-contract"
+import type { AgentHarnessAdapterHealth } from "./harness-health"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 

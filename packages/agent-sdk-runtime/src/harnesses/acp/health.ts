@@ -1,4 +1,5 @@
-import type { AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealthContext } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import type { AgentRuntimeStoreCore } from "../shared/runtime-store"
 import type { RetirementResult } from "../../launch"
 

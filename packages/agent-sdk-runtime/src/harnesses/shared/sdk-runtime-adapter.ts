@@ -34,13 +34,13 @@ import type {
   AgentConfigOptions,
   AgentGoalResource,
   AgentHarnessAdapter,
-  AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentPermissionModeState,
   AgentSessionCreateOptions,
   AgentTurnWriteContext,
   SteerResult,
 } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import { turnWriteFence } from "../../adapter-contract"
 import { generateDriverTitle, pushDriverTitle, type SessionTitleRequest } from "./sdk-runtime-title"
 import type { HarnessCapabilities } from "../../capabilities"

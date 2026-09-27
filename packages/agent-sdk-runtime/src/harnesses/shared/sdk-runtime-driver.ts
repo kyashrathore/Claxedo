@@ -13,10 +13,10 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import type {
   AgentGoalResource,
-  AgentHarnessAdapterHealth,
   AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
 } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
 import type { AgentProcessObserver } from "../../process-observer"

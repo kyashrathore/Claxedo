@@ -1,4 +1,4 @@
-import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth } from "../../harness-health"
 
 /**
  * A driver's record of the process it lost under a turn, kept until a
