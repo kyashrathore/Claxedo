@@ -6,6 +6,7 @@ import type { AgentExecutionBinding, RecoveryOutcome } from "@claxedo/agent-runt
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { asRecord } from "@claxedo/helpers/guards"
 import { sessionError, withDir } from "../compat-events"
+import { errorMessage } from "../error-message"
 import {
   admitSessionPromptTurn,
   compatScope,
@@ -172,7 +173,7 @@ export async function deferredTurnGrant(opts: Opts, c: Ctx, request: DeferredTur
       path: c.req.path,
     })
   } catch (error) {
-    return { refused: error instanceof Error ? error.message : "Session creation failed" }
+    return { refused: errorMessage(error) }
   }
   return decision.allowed ? { grant: decision.grant } : { refused: decision.message }
 }

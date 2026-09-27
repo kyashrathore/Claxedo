@@ -643,6 +643,23 @@ describe("a relayed prompt queued on a plane that mints deferred grants", () => 
     expect(starts).toEqual([])
   })
 
+  test("a plane that throws a non-Error while minting has its value reported in the refusal", async () => {
+    const queue = durableQueue()
+    const { app } = grantingRoutes(runtimeDouble({ starts: [], deliveries: ["start"] }), queue.host, {
+      relayed: true,
+      grant: () => { throw { message: "plane unreachable" } },
+    })
+
+    const queued = await app.request("http://localhost/session/session_1/prompt_async", relayedPrompt({
+      messageID: "msg_queue", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue",
+    }))
+    expect(queued.status).toBe(503)
+    expect(await queued.json()).toMatchObject({
+      error: { code: "queued_prompt_grant_refused", message: "Session session_1 did not grant the queued turn msg_queue: plane unreachable" },
+    })
+    expect(queue.store.listQueuedPrompts()).toEqual([])
+  })
+
   test("the machine's own user over loopback queues without a grant, whatever the plane could mint", async () => {
     const queue = durableQueue()
     const rows = persistedRows(queue)
