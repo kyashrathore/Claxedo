@@ -1295,6 +1295,64 @@ void describe("RuntimeStore", () => {
     store.close()
   })
 
+  void it("reads a pending or running tool of a settled message back errored, as the page read gives it", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const append = (info: Record<string, unknown>) =>
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messageUpdated({ sessionID: "s1", ...info } as any) })
+    const part = (part: Record<string, unknown>) =>
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", ...part } as any) })
+    append({ id: "user-1", role: "user", time: { created: 1 } })
+    append({ id: "assistant-1", role: "assistant", parentID: "user-1", time: { created: 2, completed: 5 } })
+    part({ id: "pending", messageID: "assistant-1", type: "tool", callID: "call-1", tool: "read", state: { status: "pending", input: {}, raw: "" } })
+    append({ id: "assistant-2", role: "assistant", parentID: "user-1", time: { created: 8 }, error: { name: "UnknownError", data: { message: "prompt timed out" } } })
+    part({ id: "running", messageID: "assistant-2", type: "tool", callID: "call-2", tool: "bash", state: { status: "running", input: { command: "ls" }, time: { start: 7 } } })
+    const stored = db(store).prepare("SELECT id, json_extract(data_json, '$.state.status') AS status FROM part ORDER BY id").all()
+    assert.deepEqual(stored, [{ id: "pending", status: "pending" }, { id: "running", status: "running" }])
+
+    const page = store.getMessagePage("s1", { view: "latest-turn" })?.messages.flatMap((message) => message.parts)
+    const pending = store.getPart("s1", "assistant-1", "pending")
+    const running = store.getPart("s1", "assistant-2", "running")
+    assert.deepEqual(pending, page?.find((part) => part.id === "pending"))
+    assert.deepEqual(running, page?.find((part) => part.id === "running"))
+    assert.deepEqual(pending?.type === "tool" && pending.state, { status: "error", input: {}, raw: "", error: "Tool execution interrupted", time: { start: 5, end: 5 } })
+    assert.deepEqual(running?.type === "tool" && running.state, { status: "error", input: { command: "ls" }, error: "Tool execution interrupted", time: { start: 7, end: 8 } })
+    store.close()
+  })
+
+  void it("reads no part through another message or session, even one whose ids exist elsewhere", () => {
+    const store = new RuntimeStore(tmp())
+    for (const sessionId of ["s1", "s2"]) {
+      store.bindSession({ sessionId, directory: "/work", agentSessionId: `a-${sessionId}`, createdAt: 1 })
+      for (const [id, role] of [[`${sessionId}-user`, "user"], [`${sessionId}-assistant`, "assistant"]]) {
+        store.appendEvent({ sessionId, agentSessionId: `a-${sessionId}`, payload: messageUpdated({ sessionID: sessionId, id, role, time: { created: 1 } } as any) })
+        store.appendEvent({ sessionId, agentSessionId: `a-${sessionId}`, payload: messagePartUpdated({ sessionID: sessionId, id: `${id}-text`, messageID: id, type: "text", text: id } as any) })
+      }
+    }
+
+    assert.equal(store.getPart("s1", "s1-assistant", "s1-assistant-text")?.id, "s1-assistant-text")
+    assert.equal(store.getPart("s1", "s1-assistant", "s1-user-text"), undefined)
+    assert.equal(store.getPart("s1", "s1-assistant", "s2-assistant-text"), undefined)
+    assert.equal(store.getPart("s1", "s2-assistant", "s2-assistant-text"), undefined)
+    assert.equal(store.getPart("s2", "s1-assistant", "s1-assistant-text"), undefined)
+    store.close()
+  })
+
+  void it("reads one part of a many-part message without parsing its siblings", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messageUpdated({ sessionID: "s1", id: "assistant-1", role: "assistant", time: { created: 1, completed: 2 } } as any) })
+    for (let index = 0; index < 50; index += 1) {
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", id: `tool-${index}`, messageID: "assistant-1", type: "tool", callID: `call-${index}`, tool: "bash", state: { status: "completed", input: {}, output: `out ${index}`, title: "", metadata: {}, time: { start: 1, end: 2 } } } as any) })
+    }
+    // JSON.parse throws on any of these rows, so the read succeeds only if it parses none of them.
+    db(store).prepare("UPDATE part SET data_json = 'not-json' WHERE id != 'tool-25'").run()
+
+    const part = store.getPart("s1", "assistant-1", "tool-25")
+    assert.equal(part?.type === "tool" && part.state.status === "completed" && part.state.output, "out 25")
+    store.close()
+  })
+
   void it("outlines the newest turns from their users alone: capped prompt snippets, parsing no assistant part and no part outside the window", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
