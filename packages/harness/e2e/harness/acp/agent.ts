@@ -13,6 +13,7 @@ import {
   type CancelNotification,
   type ContentBlock,
   type InitializeResponse,
+  type McpCapabilities,
   type NewSessionResponse,
   type NewSessionRequest,
   type LoadSessionRequest,
@@ -63,14 +64,15 @@ export class ScriptedAgent implements Agent {
 
   constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true,
     private readonly restoreMode: "load" | "resume" = "resume", private readonly startupQuestion = process.env.SCRIPTED_ACP_START_QUESTION === "1",
-    private readonly groups: readonly string[] = process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals", "health"]) {
+    private readonly groups: readonly string[] = process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals", "health"],
+    private readonly mcpCapabilities: McpCapabilities = { http: true, sse: true }) {
     this.goalRequest = scriptedGoals(dir)
   }
 
   initialize(): InitializeResponse {
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: { image: true, embeddedContext: true }, mcpCapabilities: { http: true, sse: true } },
+      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: { image: true, embeddedContext: true }, mcpCapabilities: this.mcpCapabilities },
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } },
         ...(this.groups.includes("goals") ? { goal: scriptedGoalExtension } : {}),

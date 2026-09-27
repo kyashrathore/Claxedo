@@ -23,7 +23,7 @@ test("a gate that exits without creation identity retires its reservation withou
     process.env.CLAXEDO_LAUNCH_GATE_CHILD = failedGate
     await expect(launchOwnedProcess(input)).rejects.toBeInstanceOf(LaunchRefusedError)
     expect(prepared).toHaveLength(1)
-    const record = await ownership.read(prepared[0]!.launchId)
+    const record = await ownership.read(prepared[0].launchId)
     expect(record?.identity).toBeUndefined()
     expect(record?.activationAuthorizedAt).toBeUndefined()
     expect(record?.activationAcknowledgedAt).toBeUndefined()

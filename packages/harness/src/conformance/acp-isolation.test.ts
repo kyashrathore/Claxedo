@@ -1,14 +1,14 @@
-import { expect, spyOn, test } from "bun:test"
+import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { ScriptedAgent } from "../../e2e/harness/acp/agent"
 import { startScriptedAcpWebSocket } from "../../e2e/harness/acp/websocket"
 import { startScriptedAcpHttp } from "../../e2e/harness/acp/http"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
 import { filterMcpServers } from "../capabilities/mcp-filter"
 import { AcpTransport } from "../transports/acp"
+import type { McpCapabilities } from "@agentclientprotocol/sdk"
 import type { AcpConnectionOptions } from "../transports/acp/connection"
 import type { PendingRequest, ProjectedMcpServer } from "../contract"
 import { setupConformance, type ConformanceBackend } from "./test-support/run"
@@ -16,15 +16,15 @@ import { setupConformance, type ConformanceBackend } from "./test-support/run"
 type Backend = ConformanceBackend & { connection: AcpConnectionOptions }
 type Context = Awaited<ReturnType<typeof setupConformance>>
 
-async function backend(kind: "websocket" | "streamable-http", restoreMode: "load" | "resume"): Promise<Backend> {
+async function backend(kind: "websocket" | "streamable-http", restoreMode: "load" | "resume", mcpCapabilities?: McpCapabilities): Promise<Backend> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "acp-isolation-"))
   await writeAcpScript(directory, "permission", { steps: [
     { kind: "permission", tool: "execute", title: "Hold this workspace's turn" },
     { kind: "text", text: "released" },
   ] })
   const peer = kind === "websocket"
-    ? await startScriptedAcpWebSocket(directory, { restoreMode })
-    : await startScriptedAcpHttp(directory, { restoreMode })
+    ? await startScriptedAcpWebSocket(directory, { restoreMode, mcpCapabilities })
+    : await startScriptedAcpHttp(directory, { restoreMode, mcpCapabilities })
   return {
     directory, connection: { kind, url: peer.url }, locality: "remote",
     harness: { id: "scripted-acp", access: "connection" },
@@ -45,8 +45,10 @@ async function backend(kind: "websocket" | "streamable-http", restoreMode: "load
   }
 }
 
-function setup(kind: "websocket" | "streamable-http" = "websocket", restoreMode: "load" | "resume" = "resume") {
-  return setupConformance({ name: "ACP isolation", backend: () => backend(kind, restoreMode),
+const capabilityCases: McpCapabilities[] = [{}, { http: true }, { sse: true }, { http: true, sse: true }]
+
+function setup(kind: "websocket" | "streamable-http" = "websocket", restoreMode: "load" | "resume" = "resume", mcpCapabilities?: McpCapabilities) {
+  return setupConformance({ name: "ACP isolation", backend: () => backend(kind, restoreMode, mcpCapabilities),
     makeTransport: (services, state) => new AcpTransport(services, (state as Backend).connection, filterMcpServers,
       async () => { throw new Error("Unexpected missing session") }),
   })
@@ -54,16 +56,11 @@ function setup(kind: "websocket" | "streamable-http" = "websocket", restoreMode:
 
 for (const kind of ["websocket", "streamable-http"] as const) {
   for (const restoreMode of ["load", "resume"] as const) {
-    for (const capabilities of [undefined, { http: true }, { sse: true }, { http: true, sse: true }]) {
+    for (const capabilities of capabilityCases) {
       test(`remote ACP ${kind} ${restoreMode} sends only declared MCP transports: ${JSON.stringify(capabilities)}`, async () => {
-        const initialize = ScriptedAgent.prototype.initialize
-        const handshake = spyOn(ScriptedAgent.prototype, "initialize").mockImplementation(function (this: ScriptedAgent) {
-          const response = initialize.call(this)
-          return { ...response, agentCapabilities: { ...response.agentCapabilities, mcpCapabilities: capabilities } }
-        })
         let context: Context | undefined
         try {
-          context = await setup(kind, restoreMode)
+          context = await setup(kind, restoreMode, capabilities)
           expect(context.transport.fork).toBeDefined()
           await context.transport.fork!.fork(context.session, "message")
           const binding = context.session.binding
@@ -73,14 +70,13 @@ for (const kind of ["websocket", "streamable-http"] as const) {
           const calls = (await readAcpRequests(context.backend.directory)).filter((row) => methods.includes(row.method))
           expect(calls.map((row) => row.method)).toEqual(methods)
           const expected = context.start.projection.mcpServers.filter((server) =>
-            server.origin === "configured" && server.kind !== "stdio" && capabilities?.[server.kind])
+            server.origin === "configured" && server.kind !== "stdio" && capabilities[server.kind])
           for (const call of calls) {
             expect(call.params.mcpServers).toEqual(expected.map(wireServer))
             expect(JSON.stringify(call)).not.toContain("first-party-token")
             expect(JSON.stringify(call)).not.toContain("plugin-token")
           }
         } finally {
-          handshake.mockRestore()
           await context?.close()
         }
       })
