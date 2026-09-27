@@ -53,9 +53,15 @@ function codeBlock(token: Token): { text: string; lang: string | undefined } | u
   }
 }
 
+const closingFencePrefix = { "`": /^[ \t]{0,3}`*$/, "~": /^[ \t]{0,3}~*$/ }
+
 function openCode(raw: string) {
   const newline = raw.indexOf("\n")
-  return newline < 0 ? "" : raw.slice(newline + 1)
+  if (newline < 0) return ""
+  const body = raw.slice(newline + 1)
+  const last = body.lastIndexOf("\n")
+  const closing = closingFencePrefix[raw.match(/^[ \t]{0,3}~/) ? "~" : "`"]
+  return closing.test(body.slice(last + 1)) ? body.slice(0, Math.max(last, 0)) : body
 }
 
 function open(raw: string) {
@@ -177,16 +183,11 @@ export function project(previous: Projection | undefined, text: string, live: bo
   const tail = previous.blocks.at(-1)
   const suffix = text.slice(previous.text.length)
   if (!suffix) return { text, blocks: stream(text, live) }
-  if (tail?.mode !== "code" || tail.complete || closesFence(tail.raw, suffix)) return { text, blocks: extend(previous, text) }
+  if (tail?.mode !== "code" || tail.complete || !tail.raw.includes("\n") || closesFence(tail.raw, suffix))
+    return { text, blocks: extend(previous, text) }
+  const raw = tail.raw + suffix
   return {
     text,
-    blocks: [
-      ...previous.blocks.slice(0, -1),
-      {
-        ...tail,
-        raw: tail.raw + suffix,
-        src: tail.src + suffix,
-      },
-    ],
+    blocks: [...previous.blocks.slice(0, -1), { ...tail, raw, src: openCode(raw) }],
   }
 }

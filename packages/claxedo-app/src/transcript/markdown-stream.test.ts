@@ -17,3 +17,28 @@ test("a first-paint block parsed from the projection's tokens matches a parse of
     }
   }
 })
+
+const fenced = [
+  "Intro\n\n```python\ndef total(rows):\n    return sum(rows)\n```",
+  "```ts\nconst a = 1\n\nconst b = 2\n```\n\nAfter",
+  "```json\n{\n  \"last\": true\n}\n```",
+  "~~~~md\ntrailing blank line\n\n~~~~",
+]
+
+test("while a fence streams it draws only lines its closed block will have, whatever the chunk size", () => {
+  for (const text of fenced) {
+    const closed = project(undefined, text, false).blocks.find((block) => block.mode === "code")!
+    for (let size = 1; size <= 8; size++) {
+      let streamed: ReturnType<typeof project> | undefined
+      for (let end = size; end < text.length + size; end += size) {
+        streamed = project(streamed, text.slice(0, end), true)
+        const open = streamed.blocks.find((block) => block.mode === "code" && !block.complete)
+        if (!open) continue
+        expect(closed.src.slice(0, open.src.length)).toBe(open.src)
+        if (open.raw.includes("\n")) expect(open.language).toBe(closed.language)
+      }
+    }
+    const beforeClose = text.slice(0, text.search(/\n(```|~~~~)(\n|$)/) + 1)
+    expect(project(undefined, beforeClose, true).blocks.find((block) => block.mode === "code")!.src).toBe(closed.src)
+  }
+})
