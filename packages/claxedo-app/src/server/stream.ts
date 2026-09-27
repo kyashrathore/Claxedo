@@ -1,5 +1,6 @@
 import { batch } from "solid-js"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
+import { EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-event-runtime/contracts"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
@@ -10,7 +11,6 @@ export type StreamOptions = {
   readonly onFrame: (frame: unknown) => void
   readonly onGap: () => void
   readonly onState?: (state: ConnectionState) => void
-  readonly heartbeatTimeoutMs?: number
 }
 
 export type Stream = {
@@ -24,7 +24,6 @@ type ConnectionEvent = { readonly type: "opened" } | { readonly type: "dropped" 
 
 type StreamRun = {
   readonly options: StreamOptions
-  readonly heartbeatTimeoutMs: number
   readonly connection: Machine<ConnectionState, ConnectionEvent>
   cursor: string | undefined
   closed: boolean
@@ -35,7 +34,6 @@ type StreamRun = {
 
 const RECONNECT_BASE_MS = 250
 const RECONNECT_CEILING_MS = 15_000
-const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 
 function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
   const ceiling = Math.min(RECONNECT_CEILING_MS, RECONNECT_BASE_MS * 2 ** attempt)
@@ -63,7 +61,7 @@ function send(run: StreamRun, event: ConnectionEvent) {
 
 function armWatchdog(run: StreamRun) {
   if (run.watchdog) clearTimeout(run.watchdog)
-  run.watchdog = setTimeout(() => run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" })), run.heartbeatTimeoutMs)
+  run.watchdog = setTimeout(() => run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" })), EVENT_STREAM_STALL_TIMEOUT_MS)
 }
 
 function parsedFrame(data: string): unknown {
@@ -157,7 +155,6 @@ function close(run: StreamRun) {
 export function openStream(options: StreamOptions): Stream {
   const run: StreamRun = {
     options,
-    heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS,
     connection: machine<ConnectionState, ConnectionEvent>({ kind: "connecting" }, connectionTransition),
     cursor: undefined,
     closed: false,

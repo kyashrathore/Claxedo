@@ -1,5 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, expect, jest, test } from "bun:test"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
 import { openStream } from "./stream"
 
 afterEach(() => {
@@ -46,5 +47,39 @@ test("the stream keeps reconnecting past many failed attempts and re-reads the g
   expect(opens).toBeGreaterThan(failures)
   expect(states).not.toContain("offline")
   expect(gaps).toBe(1)
+  stream.close()
+})
+
+test("a stream outlives two missed heartbeats and a beat of jitter, and drops when the fourth beat is missed", async () => {
+  jest.useFakeTimers()
+  let push: (frame: string) => void = () => undefined
+  const stream = openStream({
+    open: async ({ signal }) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          push = (frame) => controller.enqueue(new TextEncoder().encode(frame))
+          signal.addEventListener("abort", () => controller.error(signal.reason))
+        },
+      })
+      return new Response(body, { headers: { "content-type": "text/event-stream" } })
+    },
+    onFrame: () => undefined,
+    onGap: () => undefined,
+  })
+  const heartbeat = () => push('data: {"type":"heartbeat"}\n\n')
+  await settle()
+  heartbeat()
+  await settle()
+  jest.advanceTimersByTime(4 * EVENT_STREAM_HEARTBEAT_MS - 1)
+  await settle()
+  expect(stream.state().kind).toBe("connected")
+  heartbeat()
+  await settle()
+  jest.advanceTimersByTime(4 * EVENT_STREAM_HEARTBEAT_MS - 1)
+  await settle()
+  expect(stream.state().kind).toBe("connected")
+  jest.advanceTimersByTime(1)
+  await settle()
+  expect(stream.state()).toMatchObject({ kind: "reconnecting", afterLive: true })
   stream.close()
 })
