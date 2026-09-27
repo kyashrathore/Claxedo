@@ -2723,13 +2723,15 @@ export class RuntimeStore {
     return max.ord + 1
   }
 
-  private partOrd(messageId: string, partId: string) {
+  private partOrd(sessionId: string, messageId: string, partId: string) {
     const row = this.db.prepare<{ ord: number }>("SELECT ord FROM part WHERE id = ?").get(partId)
     if (row) return row.ord
     const max = requireRow(
       this.db
-        .prepare<{ ord: number }>("SELECT COALESCE(MAX(ord), -1) AS ord FROM part WHERE message_id = ?")
-        .get(messageId),
+        .prepare<{ ord: number }>(
+          "SELECT COALESCE(MAX(ord), -1) AS ord FROM part WHERE session_id = ? AND message_id = ?",
+        )
+        .get(sessionId, messageId),
       "part max ord",
     )
     return max.ord + 1
@@ -2762,8 +2764,8 @@ export class RuntimeStore {
       .prepare(
         "INSERT OR REPLACE INTO part (id, session_id, message_id, ord, data_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(id, sessionId, messageId, this.partOrd(messageId, id), JSON.stringify(part), ts)
-    this.supersedeProvisionalParts(messageId)
+      .run(id, sessionId, messageId, this.partOrd(sessionId, messageId, id), JSON.stringify(part), ts)
+    this.supersedeProvisionalParts(sessionId, messageId)
   }
 
   /**
@@ -2803,12 +2805,17 @@ export class RuntimeStore {
    * its own arrival, or the duplicate persists until the engine happens to
    * rewrite a part — and if it never does, the prompt stays doubled.
    *
-   * Scoped to this message twice over — the query and the predicate both bind
-   * to `messageId` — so a canonical part on one message can never retire
-   * another's. Either guard alone would do; both are cheap.
+   * Scoped to this message twice over — the query binds `messageId`, and
+   * `isProvisionalPartId` only matches ids derived from it — so a canonical
+   * part on one message can never retire another's. The query also binds
+   * `sessionId` because `(session_id, message_id)` is the part index's prefix;
+   * by `message_id` alone SQLite scans every part in the workspace, on every
+   * settle of a streaming reply.
    */
-  private supersedeProvisionalParts(messageId: string) {
-    const rows = this.db.prepare<{ id: string }>("SELECT id FROM part WHERE message_id = ?").all(messageId)
+  private supersedeProvisionalParts(sessionId: string, messageId: string) {
+    const rows = this.db
+      .prepare<{ id: string }>("SELECT id FROM part WHERE session_id = ? AND message_id = ?")
+      .all(sessionId, messageId)
     const stale: string[] = []
     let canonical = 0
     for (const row of rows) {

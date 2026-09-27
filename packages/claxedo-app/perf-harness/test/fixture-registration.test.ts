@@ -120,7 +120,7 @@ describe("corpus registration", () => {
     }
   })
 
-  test("removes the preparation index when a transcript cannot be imported", async () => {
+  test("leaves the stock schema and no partial journal when a transcript cannot be imported", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-fixture-import-failure-"))
     try {
       const dataDirectory = path.join(root, "data")

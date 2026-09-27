@@ -142,6 +142,46 @@ describe("RuntimeStore performance", () => {
     store.close()
   })
 
+  it("keeps a streaming part's writes flat as the workspace's other parts grow", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    // Every part write looks up its own message's parts to assign order and
+    // retire provisionals. Other sessions' parts share the table, and a lookup
+    // that misses the (session_id, message_id) index reads all of them.
+    const data = JSON.stringify({ type: "text", text: "x".repeat(1024) })
+    database(store).exec("BEGIN")
+    for (const index of Array.from({ length: 50_000 }, (_, value) => value)) {
+      database(store).prepare(`
+        INSERT INTO part (id, session_id, message_id, ord, data_json, updated_at)
+        VALUES (?, ?, ?, 0, ?, 0)
+      `).run(`p${index}`, `s-other${index % 50}`, `m${index}`, data)
+    }
+    database(store).exec("COMMIT")
+
+    const started = performance.now()
+    for (const index of Array.from({ length: 200 }, (_, value) => value)) {
+      store.appendEvent({
+        sessionId: "s1",
+        payload: messagePartUpdated({
+          id: "streaming",
+          sessionID: "s1",
+          messageID: "m-live",
+          type: "text",
+          text: "y".repeat(index),
+        }),
+      })
+    }
+    const elapsed = performance.now() - started
+    assert(elapsed < 200, `200 part writes beside 50k other parts took ${elapsed.toFixed(1)}ms`)
+    store.close()
+  })
+
   it("bounds repeated full-snapshot journal storage to the latest part state", () => {
     const root = tmp()
     const store = new RuntimeStore(root)

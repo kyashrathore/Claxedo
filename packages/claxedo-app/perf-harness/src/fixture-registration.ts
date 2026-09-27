@@ -1,6 +1,5 @@
 import path from "node:path"
 import { mkdir } from "node:fs/promises"
-import { Database } from "bun:sqlite"
 import type { OpenCodeCorpus } from "./opencode-corpus"
 import { loadRuntimeStore, loadSessionMetaStore, loadWorkspaceStore } from "./production-modules"
 import type { RegisteredWorkspace } from "./production-modules"
@@ -58,15 +57,7 @@ export async function registerCorpusSessions(input: { dataDirectory: string; cor
     for (const [projectId, members] of projects) {
       const root = path.join(input.dataDirectory, "agent-core", projectId)
       const store = new RuntimeStore(root)
-      let preparation: Database | undefined
-      let indexed = false
       try {
-        preparation = new Database(path.join(root, "state.db"))
-        // The canonical writer assigns order and checks provisional parts by
-        // message_id. Accelerate only this offline import; measured runtimes
-        // must reopen the stock schema and keep their normal query behavior.
-        preparation.exec("CREATE INDEX corpus_import_part_message_ord_id_idx ON part(message_id, ord, id)")
-        indexed = true
         for (const session of members.toSorted((left, right) => right.created - left.created)) {
           store.bindSession({
             sessionId: session.id,
@@ -87,19 +78,7 @@ export async function registerCorpusSessions(input: { dataDirectory: string; cor
         }
         store.flush()
       } finally {
-        try {
-          store.close()
-        } finally {
-          try {
-            if (indexed) {
-              preparation!.exec("DROP INDEX corpus_import_part_message_ord_id_idx")
-              preparation!.exec("VACUUM")
-              preparation!.exec("PRAGMA wal_checkpoint(TRUNCATE)")
-            }
-          } finally {
-            preparation?.close(true)
-          }
-        }
+        store.close()
       }
     }
     // The rail reads the control-plane inventory before inactive workspace runtimes
