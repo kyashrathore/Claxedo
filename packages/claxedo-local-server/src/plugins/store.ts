@@ -11,7 +11,7 @@ export class LivePluginStoreError extends Error {
   }
 }
 
-export async function readJsonFileIfPresent(file: string): Promise<unknown | undefined> {
+export async function readJsonFileIfPresent(file: string): Promise<unknown> {
   let text: string
   try {
     text = await fs.readFile(file, "utf8")

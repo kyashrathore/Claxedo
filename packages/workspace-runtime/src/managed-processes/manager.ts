@@ -31,7 +31,7 @@ import { runGit } from "../git"
 import * as PortLease from "./port-lease"
 import { Process } from "./schema"
 import { errorMessage } from "../error-message"
-import { rec, str } from "../json-value"
+import { rec } from "../json-value"
 import { findFreePort, findPidOnPort, tryPort } from "./port-picker"
 import type { ProcessObserver } from "./process-observer"
 import { resolveWorkspaceCommandPaths, resolveWorkspacePath } from "../target"
@@ -50,11 +50,6 @@ interface PortRegistryEntry {
 
 const globalPortRegistry = new Map<number, PortRegistryEntry>()
 const globalPortReservations = new Map<number, string>()
-
-/** The `code` an errno-style rejection carries, when it carries one. */
-function code(err: unknown): string | undefined {
-  return str(rec(err)?.code)
-}
 
 function registerPort(port: number, entry: PortRegistryEntry): void {
   globalPortReservations.delete(port)
