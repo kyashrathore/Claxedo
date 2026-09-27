@@ -6,10 +6,9 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 
 // A folder project created by a signed caller on the self-hosted server, seen
-// through the routes the web app reads: the project list this server answers
-// for itself, and the signed workspace resolve. Both must name the same
-// workspace on its real directory, or the app treats the folder as a
-// workspace served by some other machine.
+// through this server's own current-project read and the signed workspace
+// resolve. Both must name the same workspace on its real directory, or a
+// client treats the folder as a workspace served by some other machine.
 
 let dataDir: string
 let previousEnv: Record<string, string | undefined>
@@ -17,6 +16,7 @@ let services: Awaited<ReturnType<typeof import("./app").createDefaultLocalContro
 let composed: ReturnType<typeof import("./app").createSelfHostedApp>
 let owner: Awaited<ReturnType<typeof signUp>>
 let stranger: typeof owner
+let folder: string
 
 beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-signed-folder-"))
@@ -95,9 +95,10 @@ function gitRepository() {
 }
 
 describe("a folder project on the signed self-hosted server", () => {
-  test("is listed by /project and resolves to its real directory for its creator", async () => {
+  test("is the current project of its real directory for its creator", async () => {
     const headers = owner.headers
     const directory = gitRepository()
+    folder = directory
 
     const created = await composed.app.request("/api/claxedo/projects", {
       method: "POST",
@@ -108,21 +109,21 @@ describe("a folder project on the signed self-hosted server", () => {
     const { project } = await created.json() as { project: { id: string; directory: string | null } }
     expect(project.directory).toBe(directory)
 
-    const listed = await composed.app.request("/project", { headers })
-    expect(listed.status).toBe(200)
-    const projects = await listed.json() as Array<{
+    const current = await composed.app.request(`/project/current?directory=${encodeURIComponent(directory)}`, { headers })
+    expect(current.status).toBe(200)
+    const row = await current.json() as {
       id: string
       worktree: string
       workspaces: Record<string, { id: string; kind: string; session_authority?: string }>
-    }>
-    expect(projects.map((item) => item.id)).toEqual([project.id])
-    expect(projects[0]).toMatchObject({ worktree: directory })
-    expect(Object.values(projects[0].workspaces).map((workspace) => workspace.kind)).toEqual(["local"])
+    }
+    expect(row.id).toBe(project.id)
+    expect(row).toMatchObject({ worktree: directory })
+    expect(Object.values(row.workspaces).map((workspace) => workspace.kind)).toEqual(["local"])
     // The app reaches this workspace over loopback but must still reserve
     // before `POST /session`, because this composition injected a managed
     // authority into its embedded runtimes. Nothing on the client can derive
     // that, so the catalog row states it.
-    expect(Object.values(projects[0].workspaces).map((workspace) => workspace.session_authority))
+    expect(Object.values(row.workspaces).map((workspace) => workspace.session_authority))
       .toEqual(["managed-private"])
 
     const resolved = await composed.app.request(
@@ -132,7 +133,7 @@ describe("a folder project on the signed self-hosted server", () => {
     expect(resolved.status).toBe(200)
     const body = await resolved.json() as Record<string, unknown>
     expect(body).toMatchObject({
-      workspaceId: Object.keys(projects[0].workspaces)[0],
+      workspaceId: Object.keys(row.workspaces)[0],
       projectId: project.id,
       directory,
       backing: { kind: "local-worktree" },
@@ -145,8 +146,8 @@ describe("a folder project on the signed self-hosted server", () => {
   })
 
   test("stays hidden from a different signed user", async () => {
-    const listed = await composed.app.request("/project", { headers: stranger.headers })
-    expect(listed.status).toBe(200)
-    await expect(listed.json()).resolves.toEqual([])
+    const current = await composed.app.request(`/project/current?directory=${encodeURIComponent(folder)}`, { headers: stranger.headers })
+    expect(current.status).toBe(404)
+    await expect(current.json()).resolves.toMatchObject({ error: { code: "project_not_found" } })
   })
 })

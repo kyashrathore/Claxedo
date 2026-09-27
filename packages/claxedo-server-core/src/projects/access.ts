@@ -2,15 +2,8 @@ import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import { requireAuthority, type ProjectAction, type WorkspaceAuthority } from "../platform/auth/authority"
 import { asProjectId } from "../platform/auth/branded-id"
 
-/**
- * One caller's reach over the projects a server stores.
- *
- * `local` is the unsigned local product rather than a permission: the shell's
- * `/project/current` creates a workspace for a directory only there, because
- * only there is a directory the caller names theirs by definition.
- */
+/** One caller's reach over the projects a server stores. */
 export type ProjectAccess = {
-  local: boolean
   allowed: (projectId: string, action: ProjectAction) => Promise<boolean>
 }
 
@@ -30,10 +23,9 @@ export function projectAccess(
   auth: SignedControlPlaneAuth | undefined,
   services: { authority?: WorkspaceAuthority } | undefined,
 ): ProjectAccess {
-  if (!auth) return { local: true, allowed: async () => true }
+  if (!auth) return { allowed: async () => true }
   const authority = requireAuthority(services)
   return {
-    local: false,
     allowed: async (projectId, action) =>
       (await authority.authorizeProject(auth, { projectId: asProjectId(projectId), action })).ok,
   }

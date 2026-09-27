@@ -1,9 +1,7 @@
 import type { UpgradeWebSocket } from "./event-stream-response"
 import { Hono } from "hono"
 import { randomUUID } from "node:crypto"
-import { listCommands } from "@claxedo/server-core/agent-config/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
   controlPlaneAuthContext,
@@ -16,10 +14,9 @@ import { controlPlaneRouteAuth, signedRouteAuth } from "../platform/http/control
 import { roleAtLeast, type WorkspaceRole } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { MiddlewareHandler } from "hono"
 import { createControlPlaneEventsHandler, signedControlPlaneEventVisibleTo } from "./events"
-import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./file-browser"
+import { allFilesBody, directoryEntriesBody, findFilesBody, findTextBody } from "./file-browser"
 import { bootPath, workspaceInput } from "./request-context"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
-import { sandboxFetchOptionsForRequest } from "../workspace/sandbox-fetch-options"
 import { projectRoutes } from "./project-routes"
 
 const WORKSPACE_ROLES: readonly WorkspaceRole[] = ["viewer", "editor", "admin", "owner"]
@@ -44,18 +41,15 @@ export function ShellRoutes(options: ShellRouteOptions = {}) {
 
 /**
  * Workspace-scoped shell paths. `/global/health`, `/api/cp/events` (which
- * resolves its own per-principal subscription), `/command`, and the
- * `/project*` family (which authorizes per-project) are deliberately absent.
+ * resolves its own per-principal subscription) and `/project/current` (which
+ * authorizes per-project) are deliberately absent.
  */
 const WORKSPACE_SCOPED_PATHS = new Set([
   "/path",
   "/find",
   "/find/file",
   "/file",
-  "/file/content",
-  "/file/status",
   "/file/all",
-  "/agent",
   "/experimental/worktree",
   "/experimental/worktree/reset",
 ])
@@ -194,27 +188,7 @@ function shellRoutes(options: ShellRouteOptions) {
     .get("/find", async (c) => c.json(await findTextBody(c)))
     .get("/find/file", async (c) => c.json(await findFilesBody(c)))
     .get("/file", async (c) => c.json(await directoryEntriesBody(c)))
-    .get("/file/content", async (c) => c.json(await fileContentBody(c)))
-    .get("/file/status", async (c) => c.json(await fileStatusBody(c)))
     .get("/file/all", async (c) => c.json(await allFilesBody(c)))
-    .get("/agent", async (c) => {
-      const input = workspaceInput(c)
-      const ws = await resolveWorkspace({
-        workspaceId: input.workspaceId,
-        directory: input.directory,
-      })
-      if (!ws) return c.json({ error: { code: "workspace_required", message: "Workspace is required" } }, 400)
-      const url = new URL("/agent", "http://workspace-runtime.local")
-      url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
-      const response = await sandboxFetch(
-        ws,
-        `${url.pathname}${url.search}`,
-        undefined,
-        await sandboxFetchOptionsForRequest(c.req.raw, ws.id, options),
-      )
-      return new Response(response.body, { status: response.status, headers: response.headers })
-    })
-    .get("/command", async (c) => c.json(await listCommands()))
     .route("/", projectRoutes(options))
     .post("/experimental/worktree", createWorktree)
     .get("/experimental/worktree", listWorktreeDirectories)

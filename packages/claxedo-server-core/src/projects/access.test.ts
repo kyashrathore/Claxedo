@@ -14,16 +14,14 @@ function authorityAnswering(ok: boolean) {
 }
 
 describe("project access", () => {
-  test("no signed caller is the local product: every project, and workspace creation allowed", async () => {
+  test("no signed caller is the local product: every project is allowed", async () => {
     const access = projectAccess(undefined, undefined)
-    expect(access.local).toBe(true)
     await expect(access.allowed("prj_anything", "write")).resolves.toBe(true)
   })
 
   test("a signed caller is decided by the authority, which is asked for the exact project and action", async () => {
     const granting = authorityAnswering(true)
     const access = projectAccess(signed, { authority: granting.services })
-    expect(access.local).toBe(false)
     await expect(access.allowed("prj_1", "write")).resolves.toBe(true)
     expect(granting.authorizeProject).toHaveBeenCalledWith(signed, { projectId: "prj_1", action: "write" })
 

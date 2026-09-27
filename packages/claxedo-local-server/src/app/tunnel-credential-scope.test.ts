@@ -367,11 +367,9 @@ describe.each(["viewer", "editor"] as const)("a workspace %s on this machine's t
     const token = mintRelayToken({ workspaceId: granted, role })
 
     const inventory = await Promise.all([
-      relay!.request({ workspaceId: granted, token, path: "/project" }),
       relay!.request({ workspaceId: granted, token, path: "/project/current" }),
       // The selector a caller controls, naming the workspace it was not given.
       relay!.request({ workspaceId: granted, token, path: `/project/current?directory=${other}` }),
-      relay!.request({ workspaceId: granted, token, path: "/project/prj_1", method: "PATCH", body: { name: "taken" } }),
       // The relay strips `/workspaces/:id` before forwarding, so a path that
       // still names one is a caller trying to re-enter the family.
       relay!.request({ workspaceId: granted, token, path: `/workspaces/${other}/api/wr/health` }),
@@ -380,7 +378,7 @@ describe.each(["viewer", "editor"] as const)("a workspace %s on this machine's t
     // one: the tunnel answers for the workspace it opened, and no other.
     const foreign = await relay!.request({ workspaceId: other, token, path: "/api/wr/health" })
 
-    expect(inventory.map((answer) => answer.status)).toEqual([403, 403, 403, 403, 403])
+    expect(inventory.map((answer) => answer.status)).toEqual([403, 403, 403])
     expect(foreign.status).toBe(403)
   })
 

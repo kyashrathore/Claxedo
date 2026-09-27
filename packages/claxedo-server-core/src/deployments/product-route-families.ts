@@ -102,7 +102,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     owner: "local-server",
     serves: "Project, file, diff, search, VCS, worktree, and process surfaces backed by Workspace Runtime.",
     paths: [
-      "/project",
       "/project/",
       "/file",
       "/file/",
@@ -110,8 +109,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
       "/find/",
       "/path",
       "/vcs",
-      "/agent",
-      "/command",
       "/question",
       "/session/status",
       "/mcp",

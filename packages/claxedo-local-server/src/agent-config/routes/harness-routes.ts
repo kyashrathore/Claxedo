@@ -139,6 +139,6 @@ async function localOnly(c: Context, options: AgentConfigRouteOptions) {
 
 
 
-export async function sandboxFetchOptions(c: Context, options: AgentConfigRouteOptions, workspaceId: string) {
+async function sandboxFetchOptions(c: Context, options: AgentConfigRouteOptions, workspaceId: string) {
   return sandboxFetchOptionsForRequest(c.req.raw, workspaceId, options)
 }

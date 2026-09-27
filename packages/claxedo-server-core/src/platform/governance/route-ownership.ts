@@ -98,11 +98,8 @@ const ROUTE_RULES = [
     RouteDomain.AgentConfigRegistry,
     central,
   ),
-  // `/command` has central no-directory Claxedo client-presentation in
-  // ClientPresentationRoutes, but workspace-scoped cloud/Relay requests can still
-  // route to workspace-runtime. Keep the static ownership classifier aligned
-  // with that runtime-routed path while the canonical command-management API
-  // remains the Agent Config Registry.
+  // Workspace-runtime serves `/command`; the canonical command-management API
+  // is the Agent Config Registry's.
   exact(
     ["/command"],
     RouteDomain.AgentConfigRegistry,
