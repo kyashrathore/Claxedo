@@ -244,37 +244,14 @@ export const desktopAccountComposition: Policy = {
     requiredPackages: ["electron"],
   },
 
-  // Control-plane transport resilience: `account/no-reuse-fetch.ts` (reviewed
-  // owner of the fresh-connection node http(s) fetch) joins through
-  // `account/index.ts`, adding `node:https` to the composition closure.
-  // 2026-09-01: +1 — the account composition now reaches the host-connector
-  // protocol's shared types through the supervisor's assignment ops
-  // (workspace.assignHost via runAccountOperation). 17/7.
-  // +2 modules / -1 package (2026-09-06, oxlint type-aware sweep). The same two
-  // `shared/` owners the base composition took, reached independently here:
-  // `shared/node-error.ts` through `account/electron-seams.ts` and
-  // `shared/json-read.ts` through `account/account-service.ts`. Both are leaves
-  // over node builtins already in this closure, so they add no capability — they
-  // are the errno narrowing and the JSON read this composition already did
-  // inline, named once instead of copied.
-  // The package ceiling TIGHTENS 7 -> 6 for the same reason as the base
-  // composition: `account/no-reuse-fetch.ts` no longer imports `node:stream`.
-  // Re-measured, no headroom in either number.
-  // +1 package (2026-09-06): `account/identity.ts` reads its OIDC claims
-  // through `trimToUndefined` from `@claxedo/helpers/string` (reviewed owner
-  // `packages/claxedo-helpers/src/string.ts`) instead of a local copy that
-  // shadowed the canonical two-arg `stringClaim` in `/guards`. No host API
-  // behind that subpath; module count unchanged. 19/7.
-  // +1 module / 0 packages (2026-09-07): reviewed owner
-  // `account/cli-credential-file.ts`, the account's opt-in mirror into the
-  // `claxedo` CLI's credential file. It belongs here because the credential it
-  // mirrors never leaves this composition, and its only import beyond siblings
-  // is `@claxedo/helpers/claxedo-credentials`, the file's shape and path —
-  // already a package edge of this closure. Re-measured, no headroom: 20/7.
-  // -1 module (2026-09-27): `shared/json-read.ts` is gone; `account-service.ts`
-  // reads through `@claxedo/helpers/readers`, outside `roots`, on a package
-  // edge this closure already had. 19/7, no headroom.
-  ceilings: { modules: 19, packages: 7 },
+  // 18 modules and 7 packages, no headroom. `account/no-reuse-fetch.ts`, the
+  // fresh-connection node http(s) fetch, brings `node:https`.
+  // `account/cli-credential-file.ts` mirrors the account's credential into the
+  // `claxedo` CLI's credential file; that credential never leaves this
+  // composition, and `@claxedo/helpers/claxedo-credentials` is its file shape
+  // and path. The `@claxedo/helpers` subpaths (`fs`, `guards`, `readers`,
+  // `string`) are leaves over node builtins already in this closure.
+  ceilings: { modules: 18, packages: 7 },
   // The emitted list names the credential-bearing half only. `hosted-operations.ts`
   // and `account-ipc.ts` are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and
@@ -367,7 +344,7 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // 1,210 modules and 38 packages, no headroom. The Review tab's
+  // 1,204 modules and 38 packages, no headroom. The Review tab's
   // `review/loaded-diff-identity.ts` is its own module because the benchmark
   // driver imports it to compute the identity it waits for. The workbench
   // store's pane handover (`workbench/handover.ts`, `workbench/reveal-holds.ts`)
@@ -377,7 +354,7 @@ export const desktopRenderer: Policy = {
   // packages; its source is not walked. `@claxedo/agent-event-runtime/contracts`
   // is one too: it owns the event streams' heartbeat and the stall timeout the
   // app's stream reader drops a silent stream after.
-  ceilings: { modules: 1210, packages: 38 },
+  ceilings: { modules: 1204, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
