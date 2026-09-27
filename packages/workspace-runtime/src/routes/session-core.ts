@@ -28,7 +28,8 @@ import type {
   AgentInteractionResult,
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import { readFirstPage, type FirstPageRequest } from "@claxedo/agent-sdk-runtime/first-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -240,6 +241,29 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
     limit: parsedLimit,
     ...(before !== undefined ? { before } : {}),
   }
+}
+
+const FIRST_PAGE_MAX_EXTENT = 2000
+
+function extentQuery(c: Ctx, name: "rows" | "cols"): number {
+  const value = c.req.query(name)
+  if (value === undefined || !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > FIRST_PAGE_MAX_EXTENT) {
+    throw new HTTPException(400, { message: `${name} must be an integer between 1 and ${FIRST_PAGE_MAX_EXTENT}` })
+  }
+  return Number(value)
+}
+
+/** The first page an outline read asks for with `rows`, `cols` and `reasoning`; an outline read without them asks for none. */
+function firstPageRequest(c: Ctx): Omit<FirstPageRequest, "cancelledAssistantMessageId"> | undefined {
+  const reasoning = c.req.query("reasoning")
+  if (c.req.query("rows") === undefined && c.req.query("cols") === undefined && reasoning === undefined) return undefined
+  if (reasoning !== "0" && reasoning !== "1") throw new HTTPException(400, { message: "reasoning must be 0 or 1" })
+  return { rows: extentQuery(c, "rows"), cols: extentQuery(c, "cols"), reasoning: reasoning === "1" }
+}
+
+function cancelledAssistantMessageId(session: unknown): string | undefined {
+  const lastTurn = rec(rec(session)?.lastTurn)
+  return lastTurn?.status === "cancelled" ? str(lastTurn.assistantMessageId) : undefined
 }
 
 function messagePageResponse(c: Ctx, page: AgentMessagePage) {
@@ -1005,15 +1029,37 @@ async function sessionFact<T>(read: () => Promise<T | Response>): Promise<Sessio
   }
 }
 
+async function readMessagePage(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, pageInput: AgentMessagePageInput): Promise<AgentMessagePage> {
+  const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+  try {
+    const page = await opts.getMessagePage?.(c, directory, sessionId, pageInput, adapter)
+    if (page) return page
+  } catch (error) {
+    throwMessagePageError(error, 500)
+  }
+  if (!adapter.getMessagePage) throw new HTTPException(501, { message: "message paging is not supported for this session" })
+  try {
+    return await adapter.getMessagePage(await requireExecutionBinding(opts, c, directory, sessionId, adapter), pageInput)
+  } catch (error) {
+    throwMessagePageError(error, 502)
+  }
+}
+
+async function readPresentedSession(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
+  const session = await readRuntimeSession(opts, c, directory, sessionId)
+  if (session) await after(opts.afterGetSession?.(c, directory, session))
+  return session
+}
+
 /**
- * `GET /session/:id?view=open`: the row plus every fact a reader needs to open
- * the session, read by the producers the per-fact routes use. The session
+ * `GET /session/:id?view=open`: every fact a reader needs beside the row to
+ * open the session, read by the producers the per-fact routes use. The session
  * read's own guard admits them all: no session access policy tells one read
  * operation from another, because each classifies an operation only by its
  * `sessionAccessWriteClass`, and a read has none. The rows are narrowed to
  * this session here rather than filtered through the policy.
  */
-async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, session: unknown) {
+async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
   const own = <T extends { sessionID: string }>(rows: T[] | Response) =>
     rows instanceof Response ? rows : rows.filter((row) => row.sessionID === sessionId)
   const [status, permissions, questions, todos, goal, subagents] = await Promise.all([
@@ -1024,7 +1070,7 @@ async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, 
     sessionFact(() => readSessionGoal(opts, c, directory, sessionId)),
     sessionFact(() => listSessionSubagents(opts, c, directory, sessionId)),
   ])
-  return { session: normalizeSession(session, directory), status, permissions, questions, todos, goal, subagents }
+  return { status, permissions, questions, todos, goal, subagents }
 }
 
 /**
@@ -1646,10 +1692,9 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId })
       const view = c.req.query("view")
       if (view !== undefined && view !== "open") return noStoreJson(c, errorBody("session_view_unknown", `Unknown session view ${view}`), 400)
-      const session = await readRuntimeSession(opts, c, directory, sessionId)
+      const session = await readPresentedSession(opts, c, directory, sessionId)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
-      await after(opts.afterGetSession?.(c, directory, session))
-      if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId, session))
+      if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId))
       return noStoreJson(c, normalizeSession(session, directory))
     })
     .get("/session/:id/config-options", async (c) => {
@@ -1900,26 +1945,7 @@ export function createSessionRoutes(opts: Opts) {
           return noStoreJson(c, { ...snapshot, session: normalizeSession(session, directory) })
         }
       }
-      if (pageInput) {
-        const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-        try {
-          const page = await opts.getMessagePage?.(c, directory, sessionId, pageInput, adapter)
-          if (page) return messagePageResponse(c, page)
-        } catch (error) {
-          throwMessagePageError(error, 500)
-        }
-        if (adapter.getMessagePage) {
-          try {
-            return messagePageResponse(c, await adapter.getMessagePage(
-              await requireExecutionBinding(opts, c, directory, sessionId, adapter),
-              pageInput,
-            ))
-          } catch (error) {
-            throwMessagePageError(error, 502)
-          }
-        }
-        throw new HTTPException(501, { message: "message paging is not supported for this session" })
-      }
+      if (pageInput) return messagePageResponse(c, await readMessagePage(opts, c, directory, sessionId, pageInput))
       const replay = await opts.getMessages?.(c, directory, sessionId)
       if (replay) {
         if (!snapshotRequested) return noStoreJson(c, replay)
@@ -1943,10 +1969,18 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       if (!opts.getTurnOutline) throw new HTTPException(501, { message: "turn outlines are not supported for this session" })
+      const request = firstPageRequest(c)
       const directory = await opts.resolveDirectory(c, { sessionId })
-      const outline = await opts.getTurnOutline(c, directory, sessionId)
-      if (!outline) return noStoreJson(c, sessionNotFound(), 404)
-      return noStoreJson(c, outline)
+      const session = await readPresentedSession(opts, c, directory, sessionId)
+      const outline = session ? await opts.getTurnOutline(c, directory, sessionId) : undefined
+      if (!session || !outline) return noStoreJson(c, sessionNotFound(), 404)
+      const page = request
+        ? await readFirstPage(
+            (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }),
+            { ...request, cancelledAssistantMessageId: cancelledAssistantMessageId(session) },
+          )
+        : undefined
+      return noStoreJson(c, { session: normalizeSession(session, directory), outline, ...(page ? { page } : {}) })
     })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.

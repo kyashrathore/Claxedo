@@ -635,23 +635,74 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{ view: "latest-turn", before: "before-user" }])
   })
 
-  test("serves the session's turn outline from the runtime store, and names a missing session or an absent store", async () => {
+  test("answers an outline read with the session's row and its turn outline, and names a missing session or an absent store", async () => {
     const outline: TurnOutline = {
       turns: [{ id: "user-1", createdAt: 1, user: "why?" }],
       complete: true,
     }
     const app = routes({ adapter: adapter(), getTurnOutline: (_directory, sessionId) => (sessionId === "session-1" ? outline : undefined) })
 
-    const served = await app.request("http://localhost/session/session-1/message/../outline".replace("/message/..", ""))
+    const served = await app.request("http://localhost/session/session-1/outline")
     expect(served.status).toBe(200)
     expect(served.headers.get("cache-control")).toBe("no-store")
-    expect(await served.json()).toEqual(outline)
+    expect(await served.json()).toEqual({ session: await (await app.request("http://localhost/session/session-1")).json(), outline })
 
     const missing = await app.request("http://localhost/session/session-2/outline")
     expect(missing.status).toBe(404)
 
     const unsupported = await routes({ adapter: adapter() }).request("http://localhost/session/session-1/outline")
     expect(unsupported.status).toBe(501)
+  })
+
+  test("a first read's page walks back one whole turn at a time and folds each turn the fold decision folds", async () => {
+    const turn = (index: number): AgentMessage[] => {
+      const user = `user-${index}`
+      const worked = `assistant-${index}-a`
+      const answered = `assistant-${index}-b`
+      const assistant = (id: string, parts: AgentMessage["parts"]) => ({
+        info: { id, sessionID: "session-1", role: "assistant", parentID: user, time: { created: 2, completed: 3 } },
+        parts,
+      }) as AgentMessage
+      return [
+        { info: { id: user, sessionID: "session-1", role: "user", time: { created: 1 } }, parts: [{ id: `${user}-p`, sessionID: "session-1", messageID: user, type: "text", text: `Prompt ${index}` }] } as AgentMessage,
+        assistant(worked, [
+          { id: `${worked}-t`, sessionID: "session-1", messageID: worked, type: "text", text: "Looking." },
+          { id: `${worked}-r`, sessionID: "session-1", messageID: worked, type: "tool", callID: "c", tool: "read", state: { status: "completed", input: {}, output: "x", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+        ]),
+        assistant(answered, [{ id: `${answered}-t`, sessionID: "session-1", messageID: answered, type: "text", text: `Answer ${index}.` }]),
+      ]
+    }
+    const turns = Array.from({ length: 30 }, (_, index) => turn(index))
+    const reads: AgentMessagePageInput[] = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          reads.push(page)
+          const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
+          return { messages: turns[end - 1] ?? [], ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
+        },
+      }),
+      getTurnOutline: () => ({ turns: [], complete: true }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/outline?rows=10&cols=100&reasoning=0")
+
+    expect(response.status).toBe(200)
+    const { page } = await response.json()
+    expect(reads).toEqual([{ view: "latest-turn" }, { view: "latest-turn", before: "29" }, { view: "latest-turn", before: "28" }])
+    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["27", "28", "29"])
+    expect(page.turns[2]).toEqual({
+      messages: [turns[29]![0], { ...turns[29]![1], parts: [] }, turns[29]![2]],
+      foldableCount: 2,
+      cursor: "29",
+    })
+  })
+
+  test("a first read names every extent it needs and refuses one out of range", async () => {
+    const app = routes({ adapter: adapter(), getTurnOutline: () => ({ turns: [], complete: true }) })
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=0&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes", "rows=10&cols=2001&reasoning=1"]) {
+      expect((await app.request(`http://localhost/session/session-1/outline?${query}`)).status).toBe(400)
+    }
   })
 
   test("returns unsupported instead of violating a bounded request with full history", async () => {
@@ -1290,7 +1341,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     const view = await opened.json()
     expect(decisions).toEqual(["session_open:session_meta_read"])
     expect(filtered).toEqual([])
-    expect(view.session).toEqual(await (await routes.request("http://localhost/session/session_open")).json())
+    expect(view).not.toHaveProperty("session")
     expect(view.status).toEqual({ value: (await (await routes.request("http://localhost/session/status")).json()).session_open })
     expect(view.permissions).toEqual({ value: await (await routes.request("http://localhost/permission")).json() })
     expect(view.questions).toEqual({ value: await (await routes.request("http://localhost/question")).json() })
@@ -2807,7 +2858,7 @@ describe("createSessionRoutes engine refusals", () => {
         message: "opencode answered permission.request.list for /workspace with status 500",
       },
     }
-    expect(view.session.id).toBe("session_1")
+    expect(view).not.toHaveProperty("session")
     expect(view.permissions).toEqual(refusal)
     expect(view.questions).toEqual(refusal)
     expect(view.todos).toEqual({ value: [] })
