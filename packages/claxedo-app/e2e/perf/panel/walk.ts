@@ -104,8 +104,13 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
       await runner.measure(name, "expand-all", run, { kind: "review", openCount: changedCount }, () => page.locator("button[aria-label='Expand all']").click())
       await runner.measure(name, "collapse-all", run, { kind: "review", openCount: 0 }, () => page.locator("button[aria-label='Collapse all']").click())
     }
-    await runner.measure(name, "expand-one", 1, { kind: "review", openCount: 1 }, () => page.locator(`button[aria-label='Toggle diff for ${workspace.changed[0]}']`).click())
-    await runner.measure(name, "collapse-one", 1, { kind: "review", openCount: 0 }, () => page.locator(`button[aria-label='Toggle diff for ${workspace.changed[0]}']`).click())
+    for (let run = 1; run <= RUNS; run += 1) {
+      const toggle = page.locator(`button[aria-label='Toggle diff for ${workspace.changed[run % changedCount]}']`)
+      await settle(page)
+      await runner.measure(name, "expand-one", run, { kind: "review", openCount: 1 }, () => toggle.click())
+      await settle(page)
+      await runner.measure(name, "collapse-one", run, { kind: "review", openCount: 0 }, () => toggle.click())
+    }
   })
   await section("maximize", async () => {
     for (let run = 1; run <= Math.min(RUNS, 3); run += 1) {
