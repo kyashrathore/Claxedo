@@ -30,18 +30,24 @@ async function firstPaintedTranscript(app: Page, sessionId: string): Promise<() 
 type SentFramesWindow = Window & { __sentFrames?: Promise<boolean[]> }
 
 async function recordSentMessage(app: Page, text: string): Promise<() => Promise<boolean[]>> {
+  await app.evaluate(installPaintedFrames)
   await app.evaluate((needle) => {
+    const paintedFrames = window.__claxedoPaintedFrames
+    if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
     ;(window as SentFramesWindow).__sentFrames = new Promise<boolean[]>((resolve) => {
       const frames: boolean[] = []
-      const painted = new MessageChannel()
-      const afterPaint = () => painted.port2.postMessage(undefined)
-      painted.port1.onmessage = () => {
-        const sent = [...document.querySelectorAll('[data-component="user-message"]')]
-        frames.push(sent.some((node) => node.textContent?.includes(needle) && node.checkVisibility({ opacityProperty: true, visibilityProperty: true })))
-        if (document.querySelector('[data-testid="session-page-root"] [data-component="text-part"]') || frames.length > 3000) return resolve(frames)
-        requestAnimationFrame(afterPaint)
-      }
-      requestAnimationFrame(afterPaint)
+      paintedFrames({
+        sample: () => ({
+          sent: [...document.querySelectorAll('[data-component="user-message"]')].some((node) => node.textContent?.includes(needle) && node.checkVisibility({ opacityProperty: true, visibilityProperty: true })),
+          answered: document.querySelector('[data-testid="session-page-root"] [data-component="text-part"]') !== null,
+        }),
+        painted: (frame) => {
+          frames.push(frame.sent)
+          if (!frame.answered && frames.length <= 3000) return
+          resolve(frames)
+          return true
+        },
+      })
     })
   }, text)
   return () => app.evaluate(() => (window as SentFramesWindow).__sentFrames!)
