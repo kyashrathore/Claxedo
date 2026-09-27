@@ -1,3 +1,4 @@
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createEffect, on, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 
@@ -47,9 +48,9 @@ export function TextReveal(props: {
   let outRef: HTMLSpanElement | undefined
   let rootRef: HTMLSpanElement | undefined
   let frame: number | undefined
-
-  const win = () => inRef?.scrollWidth ?? 0
-  const wout = () => outRef?.scrollWidth ?? 0
+  let entering = 0
+  let leaving = 0
+  let sizedBy: "entering" | "both" = "entering"
 
   const widen = (next: number) => {
     if (next <= 0) return
@@ -60,29 +61,37 @@ export function TextReveal(props: {
     setState("width", `${next}px`)
   }
 
+  createResizeObserver(
+    () => [inRef!, outRef!],
+    (rect, element) => {
+      if (element === inRef) entering = Math.round(rect.width)
+      else leaving = Math.round(rect.width)
+      widen(sizedBy === "both" ? Math.max(entering, leaving) : entering)
+    },
+  )
+
   createEffect(
     on(
       () => props.text,
       (next, prev) => {
         if (next === prev) return
         if (typeof next === "string" && typeof prev === "string" && next.startsWith(prev)) {
+          sizedBy = "entering"
           setState("cur", next)
-          widen(win())
           return
         }
+        sizedBy = "both"
         setState("swapping", true)
         setState("old", prev)
         setState("cur", next)
 
         if (typeof requestAnimationFrame !== "function") {
-          widen(Math.max(win(), wout()))
           rootRef?.offsetHeight
           setState("swapping", false)
           return
         }
         if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
         frame = requestAnimationFrame(() => {
-          widen(Math.max(win(), wout()))
           rootRef?.offsetHeight
           setState("swapping", false)
           frame = undefined
@@ -92,7 +101,6 @@ export function TextReveal(props: {
   )
 
   onMount(() => {
-    widen(win())
     const fonts = typeof document !== "undefined" ? document.fonts : undefined
     if (typeof requestAnimationFrame !== "function") {
       setState("ready", true)
@@ -102,10 +110,7 @@ export function TextReveal(props: {
       requestAnimationFrame(() => setState("ready", true))
       return
     }
-    void fonts.ready.finally(() => {
-      widen(win())
-      requestAnimationFrame(() => setState("ready", true))
-    })
+    void fonts.ready.finally(() => requestAnimationFrame(() => setState("ready", true)))
   })
 
   onCleanup(() => {

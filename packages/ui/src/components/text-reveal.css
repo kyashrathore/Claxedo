@@ -38,6 +38,10 @@
     justify-items: start;
     align-items: center;
     overflow: visible;
+    /* The width starts as auto and the first measurement lands after mount, when
+       transitions may already be on; under an inherited interpolate-size: allow-keywords
+       that first auto-to-px change would animate for the whole duration. */
+    interpolate-size: numeric-only;
     transition: width var(--_dur) var(--_spring-soft);
   }
 

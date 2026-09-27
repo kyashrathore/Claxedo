@@ -1,0 +1,108 @@
+Subject: text-reveal: widths come from a ResizeObserver
+
+What: TextReveal records its entering and leaving widths from a ResizeObserver and widens
+its track from there, instead of reading scrollWidth at mount, on every growth of the
+text and again after fonts load. The track interpolates only numeric widths.
+Why: each scrollWidth read forced a synchronous layout of whatever the page had dirtied,
+which on a session switch was the whole incoming transcript (16-17 ms per switch in a
+mid-stream trace). Under an inherited interpolate-size: allow-keywords the first
+measured width would otherwise animate from auto.
+
+diff --git a/src/components/text-reveal.css b/src/components/text-reveal.css
+index 80e12168bb..f236bab3a3 100644
+--- a/src/components/text-reveal.css
++++ b/src/components/text-reveal.css
+@@ -38,6 +38,10 @@
+     justify-items: start;
+     align-items: center;
+     overflow: visible;
++    /* The width starts as auto and the first measurement lands after mount, when
++       transitions may already be on; under an inherited interpolate-size: allow-keywords
++       that first auto-to-px change would animate for the whole duration. */
++    interpolate-size: numeric-only;
+     transition: width var(--_dur) var(--_spring-soft);
+   }
+ 
+diff --git a/src/components/text-reveal.tsx b/src/components/text-reveal.tsx
+index 7162a3cb4b..c39a792495 100644
+--- a/src/components/text-reveal.tsx
++++ b/src/components/text-reveal.tsx
+@@ -1,3 +1,4 @@
++import { createResizeObserver } from "@solid-primitives/resize-observer"
+ import { createEffect, on, onCleanup, onMount } from "solid-js"
+ import { createStore } from "solid-js/store"
+ 
+@@ -47,9 +48,9 @@ export function TextReveal(props: {
+   let outRef: HTMLSpanElement | undefined
+   let rootRef: HTMLSpanElement | undefined
+   let frame: number | undefined
+-
+-  const win = () => inRef?.scrollWidth ?? 0
+-  const wout = () => outRef?.scrollWidth ?? 0
++  let entering = 0
++  let leaving = 0
++  let sizedBy: "entering" | "both" = "entering"
+ 
+   const widen = (next: number) => {
+     if (next <= 0) return
+@@ -60,29 +61,37 @@ export function TextReveal(props: {
+     setState("width", `${next}px`)
+   }
+ 
++  createResizeObserver(
++    () => [inRef!, outRef!],
++    (rect, element) => {
++      if (element === inRef) entering = Math.round(rect.width)
++      else leaving = Math.round(rect.width)
++      widen(sizedBy === "both" ? Math.max(entering, leaving) : entering)
++    },
++  )
++
+   createEffect(
+     on(
+       () => props.text,
+       (next, prev) => {
+         if (next === prev) return
+         if (typeof next === "string" && typeof prev === "string" && next.startsWith(prev)) {
++          sizedBy = "entering"
+           setState("cur", next)
+-          widen(win())
+           return
+         }
++        sizedBy = "both"
+         setState("swapping", true)
+         setState("old", prev)
+         setState("cur", next)
+ 
+         if (typeof requestAnimationFrame !== "function") {
+-          widen(Math.max(win(), wout()))
+           rootRef?.offsetHeight
+           setState("swapping", false)
+           return
+         }
+         if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
+         frame = requestAnimationFrame(() => {
+-          widen(Math.max(win(), wout()))
+           rootRef?.offsetHeight
+           setState("swapping", false)
+           frame = undefined
+@@ -92,7 +101,6 @@ export function TextReveal(props: {
+   )
+ 
+   onMount(() => {
+-    widen(win())
+     const fonts = typeof document !== "undefined" ? document.fonts : undefined
+     if (typeof requestAnimationFrame !== "function") {
+       setState("ready", true)
+@@ -102,10 +110,7 @@ export function TextReveal(props: {
+       requestAnimationFrame(() => setState("ready", true))
+       return
+     }
+-    void fonts.ready.finally(() => {
+-      widen(win())
+-      requestAnimationFrame(() => setState("ready", true))
+-    })
++    void fonts.ready.finally(() => requestAnimationFrame(() => setState("ready", true)))
+   })
+ 
+   onCleanup(() => {
