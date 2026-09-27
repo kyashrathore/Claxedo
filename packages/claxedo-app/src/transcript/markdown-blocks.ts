@@ -5,7 +5,6 @@ import { transcriptMarked, type Block, type Projection } from "./markdown-stream
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { getCachedCodeHighlight } from "./markdown-code-cache"
-import { rendererClock, traceRenderer } from "./markdown-trace"
 
 export type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code">; final: boolean })
@@ -158,16 +157,11 @@ export async function enhanceTextBlock(input: {
       touchCachedMarkdown(entry, cached)
       return { key, mode, ...cached, final: true }
     }
-    traceRenderer(`markdown.parsemiss.${cached ? "raw-mismatch" : "no-entry"}.chars-${block.src.length}`)
-  } else {
-    traceRenderer(`markdown.parsemiss.no-key.chars-${block.src.length}`)
   }
 
   const hash = blockHash(block.raw, true)
   const parsed = await input.parse(block.src)
-  const sanitizeStarted = rendererClock()
   const safe = sanitizeMarkdown(parsed)
-  traceRenderer(`markdown.sanitize.chars-${block.src.length}`, sanitizeStarted)
   if (entry) touchCachedMarkdown(entry, { raw: block.raw, hash, html: safe })
   return { key, mode, raw: block.raw, hash, html: safe, final: true }
 }

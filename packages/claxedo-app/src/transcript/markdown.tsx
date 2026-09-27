@@ -41,12 +41,10 @@ import {
   type RenderedBlock,
   type RenderResult,
 } from "./markdown-blocks"
-import { rendererClock, traceRenderer } from "./markdown-trace"
-import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
+import { highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
-import { parseMarkdownMeasured } from "./markdown-parse-timing"
 import { createImageWaits, stabilizeImages, type ImageFiles, type ImageWaits } from "./markdown-images"
 import { nextIdleSlice } from "@/lib/idle"
 import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
@@ -292,7 +290,6 @@ function renderMermaidBlocks(root: HTMLElement) {
     const source = (code.textContent ?? "").trimEnd()
     if (!source.trim()) continue
     if (largeMermaid(source) && wrapper.dataset.mermaidRenderRequested !== source) {
-      traceMermaid("defer", source)
       wrapper.setAttribute("data-mermaid-state", "deferred")
       wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
       const existing = wrapper.querySelector<HTMLElement>('[data-slot="mermaid-render-button"]')
@@ -322,21 +319,14 @@ function renderMermaidBlocks(root: HTMLElement) {
       continue
     }
     wrapper.setAttribute("data-mermaid-source", source)
-    traceMermaid("render", source)
-    const renderStarted = rendererClock()
     void renderMermaidSource(source)
       .then(async (svg) => {
         await nextIdleSlice()
-        traceMermaid("generate", source, renderStarted)
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
-        const sanitizeStarted = rendererClock()
         const safe = sanitizeSvg(svg)
-        traceMermaid("sanitize", source, sanitizeStarted)
         if (!safe) throw new Error("mermaid: SVG failed sanitization")
         touchCachedMermaidSvg(source, safe)
-        const commitStarted = rendererClock()
         commitMermaidDiagram(wrapper, source, safe)
-        traceMermaid("commit", source, commitStarted)
       })
       .catch((error: unknown) => {
         console.warn("A mermaid diagram could not be rendered; its code block stays", { error })
@@ -397,17 +387,6 @@ function isControl(node: Node) {
   if (!(node instanceof HTMLElement)) return false
   const slot = node.getAttribute("data-slot")
   return slot === "markdown-copy-button" || slot === "markdown-view-button" || slot === "markdown-rich-controls"
-}
-
-function traceMermaid(
-  action: "defer" | "render" | "generate" | "sanitize" | "commit",
-  source: string,
-  started?: number,
-) {
-  traceRenderer(
-    `mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`,
-    started,
-  )
 }
 
 function largeMermaid(source: string) {
@@ -553,12 +532,7 @@ export function Markdown(
     if (liveBlock?.key !== key || liveBlock.raw !== block.raw) liveBlock = syncBlock(owner, local.cacheKey, index, block)
     return liveBlock
   }
-  const projection = createMemo<Projection | undefined>((previous) => {
-    const started = rendererClock()
-    const result = project(previous, local.text, local.streaming ?? false)
-    traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
-    return result
-  }, undefined)
+  const projection = createMemo<Projection | undefined>((previous) => project(previous, local.text, local.streaming ?? false), undefined)
   const initial = initialResult(local.text, local.cacheKey, projection()!, owner)
   const [html] = createResource(
     () => {
@@ -591,12 +565,7 @@ export function Markdown(
         src.projection.blocks.map(async (block, index) => {
           if (block.mode === "code") {
             const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
-            const started = rendererClock()
-            if (!block.complete) traceRenderer(`markdown.highlightmiss.incomplete.chars-${block.src.length}`)
-            else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeTheme.name))
-              traceRenderer(`markdown.highlightmiss.no-entry.chars-${block.src.length}`)
             const result = await code(block.src, block.language, blockKey, block.complete)
-            traceRenderer(`markdown.highlight.chars-${block.src.length}.language-${result.language}`, started)
             return {
               key: blockKey,
               mode: block.mode,
@@ -618,12 +587,7 @@ export function Markdown(
             index,
             block,
             mode: block.mode,
-            parse: (text) =>
-              parseMarkdownMeasured({
-                parse: () => marked.parse(text),
-                clock: rendererClock,
-                trace: (mode, started) => traceRenderer(`markdown.parse.${mode}.chars-${text.length}`, started),
-              }),
+            parse: async (text) => marked.parse(text),
           })
         }),
       )
@@ -668,7 +632,6 @@ export function Markdown(
       return
     }
 
-    const commitStarted = rendererClock()
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
       if (!nextCodeKeys.has(key)) disposeCode(key)
@@ -686,7 +649,6 @@ export function Markdown(
     edges.mark(container)
     if (!copyCleanup) copyCleanup = setupCodeCopy(container, labels)
     if (!linkCleanup) linkCleanup = setupLinkOpen(container, openImage)
-    traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
   })
 
   createRenderEffect(
@@ -753,13 +715,11 @@ function updateBlock(
   images: ImageWaits,
   data?: ImageFiles,
 ) {
-  const started = rendererClock()
   const current = container.children[index]
   if (block.mode === "code") {
     if (current instanceof HTMLDivElement && current.dataset.markdownKey === block.key && drawnCodeUnchanged(current, block)) return
     const node = updateCodeBlock(container, current, block, labels)
     if (block.complete) renderMermaidBlocks(node)
-    traceRenderer(`markdown.block.code.chars-${block.raw.length}`, started)
     return
   }
   if (
@@ -775,14 +735,11 @@ function updateBlock(
   next.dataset.markdownHash = block.hash
   next.style.display = "contents"
   next.innerHTML = block.html
-  const decorateStarted = rendererClock()
   decorate(next, images, data)
-  traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
 
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)
     attachControls(next, labels)
-    traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
     return
   }
 
@@ -798,7 +755,6 @@ function updateBlock(
     },
   })
   attachControls(current, labels)
-  traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
 }
 
 function updateCodeBlock(
