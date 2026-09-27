@@ -13,11 +13,10 @@ describe("remote access over the production Node HTTP adapter", () => {
       relayConfigured: true,
       authenticate: async () => { throw new ControlPlaneAuthError(401, "missing_bearer_token", "Sign in required") },
       service: {
-        status: vi.fn(async () => ({ enabled: false, enrolled: false, secondDeviceOpen: false })),
+        status: vi.fn(async () => ({ enabled: false, enrolled: false })),
         devices,
         revoke: vi.fn(async () => ({ revoked: false })),
         rename: vi.fn(async () => ({ displayName: "Renamed" })),
-        markSecondDeviceOpen: vi.fn(async () => ({ recorded: false })),
       },
     })
     const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })

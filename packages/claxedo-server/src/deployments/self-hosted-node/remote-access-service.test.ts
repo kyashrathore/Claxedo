@@ -390,20 +390,16 @@ describe("remote access service", () => {
     }])
   })
 
-  test("status reports enrollment, tunnel liveness, and second-device proof from the authority", async () => {
+  test("status reports enrollment and tunnel liveness from the authority", async () => {
     const { service, machineTunnelActive } = setup()
-    await expect(service.status(undefined)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
-    await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
+    await expect(service.status(undefined)).resolves.toEqual({ enrolled: false, enabled: false })
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false })
 
     await service.enable(auth, { startAtLogin: false })
-    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: false })
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true })
 
     machineTunnelActive.mockReturnValue(false)
-    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: false, secondDeviceOpen: false })
-    machineTunnelActive.mockReturnValue(true)
-
-    await expect(service.markSecondDeviceOpen(auth, "ws_1")).resolves.toEqual({ recorded: true })
-    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: true })
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: false })
   })
 
   // The bootstrap declares this, and a client compares it against the host a
@@ -437,7 +433,7 @@ describe("remote access service", () => {
     // Revoke retires the shared workspaces with the machine: nothing routable,
     // and nothing left to read.
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).rejects.toThrow("Workspace not found")
-    await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false })
 
     // Enabling again re-proves the key and shares this machine's projects
     // afresh, reviving the retired rows.
@@ -471,7 +467,7 @@ describe("remote access service", () => {
       expect.objectContaining({ host_id: "host_machine", enrolled_via: "account" }),
     ])
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true, host_id: "host_machine" })
-    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: false })
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true })
     await expect(service.hostId()).resolves.toBe("host_machine")
   })
 

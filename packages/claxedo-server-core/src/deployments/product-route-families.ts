@@ -201,7 +201,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "remote-access-owner",
     owner: "server",
-    serves: "The owner's view of their enrolled machines: status, devices, revoke, second-device open.",
+    serves: "The owner's view of their enrolled machines: status, devices, rename, revoke.",
     paths: ["/api/claxedo/remote-access", "/api/claxedo/remote-access/"],
   },
   {

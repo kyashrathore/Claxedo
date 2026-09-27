@@ -233,7 +233,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/remote-access",
       "/api/claxedo/remote-access/devices",
       "/api/claxedo/remote-access/devices/:hostId",
-      "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
       "/api/runtime-authority/session-authorize",
       "/api/workspace",
       "/api/workspace/:id",
