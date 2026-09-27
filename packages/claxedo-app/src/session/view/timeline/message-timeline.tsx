@@ -95,7 +95,7 @@ import {
 } from "./timeline-file-paths"
 import { createTimelineLinkOpen } from "./timeline-link-open"
 import { createMessageNavRoom } from "./message-nav-layout"
-import { messageNavCurrentId, messageNavPreview, messageNavVisible } from "./message-nav-preview"
+import { messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import type { MessageTimelineProps } from "./message-timeline-props"
 import type { ConversationMessage } from "@/transcript"
@@ -668,13 +668,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return messages.find((message) => message.id === id) ?? props.currentMessage ?? messages.at(-1)
   })
   const updateViewportMessage = (root: HTMLDivElement) => {
-    const id = messageNavCurrentId(
-      virtualizer.getVirtualItems().flatMap((item) => {
-        const row = timelineRows()[item.index]
-        return row ? [{ id: row.userMessageId, start: item.start }] : []
-      }),
-      root.scrollTop + 100,
-    )
+    const item = virtualizer.getVirtualItemForOffset(root.scrollTop + 100)
+    const id = item ? timelineRows()[item.index]?.userMessageId : undefined
     if (id !== viewportMessageId()) setViewportMessageId(id)
   }
 
