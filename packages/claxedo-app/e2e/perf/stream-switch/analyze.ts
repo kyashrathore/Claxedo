@@ -22,8 +22,9 @@ async function stdev(file: string) {
 
 const report = []
 const gaps: { at: number; gap: number }[] = []
-for (const [round, { frames, inputs, timeOrigin }] of recording.rounds.entries()) {
-gaps.push(...frames.slice(1).map((frame, index) => ({ at: frame.raf, gap: frame.raf - frames[index]!.raf })).filter((entry) => entry.gap > 34))
+for (const [round, { frames, overtaken, inputs, timeOrigin }] of recording.rounds.entries()) {
+const painted = [...frames.map((frame) => frame.at), ...overtaken].sort((a, b) => a - b)
+gaps.push(...painted.slice(1).map((at, index) => ({ at, gap: at - painted[index]! })).filter((entry) => entry.gap > 34))
 for (const [index, input] of inputs.entries()) {
   const end = Math.min(input.at + WINDOW_MS, inputs[index + 1]?.at ?? Infinity)
   const window = frames.filter((frame) => frame.at >= input.at && frame.at <= end)
@@ -34,7 +35,6 @@ for (const [index, input] of inputs.entries()) {
   const shots = recording.screencast.filter((shot) => shot.wall >= wallIn - 20 && shot.wall <= timeOrigin + end)
   const pixels = await Promise.all(shots.map(async (shot) => ({ ...shot, ms: Math.round(shot.wall - wallIn), stdev: await stdev(shot.file) })))
   const blankShots = pixels.filter((shot) => shot.stdev < BLANK_STDEV)
-  const nextRaf = window[0]?.raf
   report.push({
     round,
     switch: index,
@@ -45,7 +45,7 @@ for (const [index, input] of inputs.entries()) {
     domBlankMs: domBlank.map((frame) => Math.round(frame.at - input.at)),
     lostAfterReveal: afterReveal.map((frame) => `+${Math.round(frame.at - input.at)} ${describe(frame)}`),
     blankShots: blankShots.map((shot) => `${shot.file}@+${shot.ms}ms sd=${shot.stdev.toFixed(1)}`),
-    firstRafAfterInput: nextRaf === undefined ? undefined : Math.round(nextRaf - input.at),
+    firstPaintAfterInput: window[0] === undefined ? undefined : Math.round(window[0].at - input.at),
     domStates: [...new Set(window.slice(0, Math.max(revealIndex + 2, 3)).map((frame) => `+${Math.round(frame.at - input.at)} ${describe(frame)}`))],
   })
 }

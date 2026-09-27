@@ -14,23 +14,27 @@ type ReturnFrame = { at: number; shown: boolean; length: number; tail: string; r
 type ReturnWindow = Window & { __returnFrames?: Promise<ReturnFrame[]> }
 
 async function recordReturn(page: Page, sessionId: string, frames: number) {
-  await page.evaluate("globalThis.__name = (target) => target")
   await page.evaluate(
     ({ id, count }) => {
       ;(window as ReturnWindow).__returnFrames = new Promise<ReturnFrame[]>((resolve) => {
         const out: ReturnFrame[] = []
         const started = performance.now()
-        const painted = new MessageChannel()
-        const afterPaint = () => painted.port2.postMessage(undefined)
-        painted.port1.onmessage = () => {
-          const root = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${id}"]`)
-          const shown = !!root?.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true }) && !!root.querySelector("[data-timeline-key]")
-          const text = shown ? (root!.querySelector("[data-session-timeline-root]")?.textContent ?? "") : ""
-          if (shown || out.length > 0) out.push({ at: Math.round(performance.now() - started), shown, length: text.length, tail: text.slice(-60), rows: root?.querySelectorAll("[data-timeline-key]").length ?? 0 })
-          if (out.length >= count) return resolve(out)
-          requestAnimationFrame(afterPaint)
-        }
-        requestAnimationFrame(afterPaint)
+        const paintedFrames = window.__claxedoPaintedFrames
+        if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
+        paintedFrames({
+          sample: () => {
+            const root = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${id}"]`)
+            const shown = !!root?.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true }) && !!root.querySelector("[data-timeline-key]")
+            const text = shown ? (root!.querySelector("[data-session-timeline-root]")?.textContent ?? "") : ""
+            return { shown, length: text.length, tail: text.slice(-60), rows: root?.querySelectorAll("[data-timeline-key]").length ?? 0 }
+          },
+          painted: (frame, at) => {
+            if (frame.shown || out.length > 0) out.push({ at: Math.round(at - started), ...frame })
+            if (out.length < count) return
+            resolve(out)
+            return true
+          },
+        })
       })
     },
     { id: sessionId, count: frames },

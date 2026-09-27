@@ -1,6 +1,7 @@
 import { chromium, type Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { prepareHarness } from "../harness/global-setup"
 import { startStack } from "../harness/stack"
 import { sessionRoute, UI } from "../harness/ui-names"
@@ -52,6 +53,8 @@ async function main() {
   try {
     const workspace = await stack.daemon.makeWorkspace("first-send", "First send")
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light", locale: "en-US", timezoneId: "UTC" })
+    await context.addInitScript("globalThis.__name = (target) => target")
+    await context.addInitScript(installPaintedFrames)
     await context.addInitScript({ path: path.join(import.meta.dirname, "first-send-probe.js") })
     const page = await context.newPage()
     const runs: Marks[] = []

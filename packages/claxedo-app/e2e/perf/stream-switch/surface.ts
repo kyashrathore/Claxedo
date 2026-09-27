@@ -1,4 +1,4 @@
-import { chromium, type CDPSession, type Page } from "@playwright/test"
+import { chromium, type BrowserContext, type CDPSession, type Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { AcpScript } from "../../harness/acp/script"
@@ -9,6 +9,7 @@ import { git } from "../../harness/git"
 import { prepareHarness } from "../../harness/global-setup"
 import { startStack } from "../../harness/stack"
 import type { Workspace } from "../../harness/workspaces"
+import { installPaintedFrames } from "../../../perf-harness/src/browser/painted-frames"
 import { seedScriptedSession } from "../seed"
 import type { ScreenBounds } from "./screen"
 
@@ -24,6 +25,12 @@ export type Surface = {
 }
 
 const PROBE = path.join(import.meta.dirname, "probe.js")
+
+async function installProbe(context: BrowserContext) {
+  await context.addInitScript("globalThis.__name = (target) => target")
+  await context.addInitScript(installPaintedFrames)
+  await context.addInitScript({ path: PROBE })
+}
 
 export const dwell = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -60,7 +67,7 @@ export async function webSurface(scale: number): Promise<Surface> {
     daemonLog: () => stack.daemon.log(),
     open: async () => {
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: scale, colorScheme: "light", locale: "en-US", timezoneId: "UTC" })
-      await context.addInitScript({ path: PROBE })
+      await installProbe(context)
       const page = await context.newPage()
       return { page, cdp: await context.newCDPSession(page) }
     },
@@ -91,7 +98,7 @@ export async function desktopSurface(): Promise<Surface> {
         window.setPosition(0, 40)
         window.focus()
       })
-      await page.context().addInitScript({ path: PROBE })
+      await installProbe(page.context())
       const bounds = await desktop.electron.evaluate(({ BrowserWindow }) => {
         const window = BrowserWindow.getAllWindows().find((candidate) => candidate.isVisible()) ?? BrowserWindow.getAllWindows()[0]!
         return window.getContentBounds()

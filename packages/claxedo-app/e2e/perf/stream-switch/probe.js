@@ -1,5 +1,5 @@
 ;(() => {
-  const state = { recording: false, frames: [], inputs: [], loafs: [] }
+  const state = { recording: false, frames: [], overtaken: [], inputs: [], loafs: [] }
   window.__switchProbe = state
 
   const painted = (element) => element.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })
@@ -36,20 +36,7 @@
     }
   }
 
-  const channel = new MessageChannel()
-  let rafAt = 0
-  channel.port1.onmessage = () => {
-    if (!state.recording) return
-    const panes = [...document.querySelectorAll('[data-testid="session-page-root"]')].map(pane)
-    const rail = document.querySelector('[data-testid="rail-sidebar-session-row"][data-active="true"]')?.dataset.sessionId ?? ""
-    state.frames.push({ raf: rafAt, at: performance.now(), rail, url: location.pathname, panes })
-  }
-  function frame(at) {
-    if (!state.recording) return
-    rafAt = at
-    channel.port2.postMessage(0)
-    requestAnimationFrame(frame)
-  }
+  let stopFrames = () => {}
 
   document.addEventListener(
     "pointerdown",
@@ -77,12 +64,22 @@
   state.start = () => {
     state.recording = true
     state.frames = []
+    state.overtaken = []
     state.inputs = []
     state.loafs = []
-    requestAnimationFrame(frame)
+    stopFrames = window.__claxedoPaintedFrames({
+      sample: () => ({
+        rail: document.querySelector('[data-testid="rail-sidebar-session-row"][data-active="true"]')?.dataset.sessionId ?? "",
+        url: location.pathname,
+        panes: [...document.querySelectorAll('[data-testid="session-page-root"]')].map(pane),
+      }),
+      painted: (frame, at) => void state.frames.push({ ...frame, at }),
+      overtaken: (_, at) => void state.overtaken.push(at),
+    })
   }
   state.stop = () => {
+    stopFrames()
     state.recording = false
-    return { timeOrigin: performance.timeOrigin, frames: state.frames, inputs: state.inputs, loafs: state.loafs }
+    return { timeOrigin: performance.timeOrigin, frames: state.frames, overtaken: state.overtaken, inputs: state.inputs, loafs: state.loafs }
   }
 })()
