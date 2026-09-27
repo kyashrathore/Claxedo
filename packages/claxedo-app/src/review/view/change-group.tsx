@@ -1,8 +1,9 @@
 import { For, Show, type JSX } from "solid-js"
-import { basename, parentPath } from "@/files"
+import { parentPath } from "@/files"
 import { useTranslator } from "@/i18n"
 import type { ChangeStatus } from "@/server"
 import { ClaxedoIcon as Icon, SemanticIcon, DiffChanges, Spinner } from "@/ui"
+import { getFilename } from "@/ui/utils"
 import type { GitAction } from "../git-actions"
 import { reviewDictionary, type ReviewKey } from "../i18n"
 
@@ -117,7 +118,7 @@ export function ChangeRow(props: {
           {STATUS_LETTER[props.entry.status]}
         </span>
         <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span class="min-w-0 truncate text-text-base">{basename(props.entry.path)}</span>
+          <span class="min-w-0 truncate text-text-base">{getFilename(props.entry.path)}</span>
           <Show when={parentPath(props.entry.path)}>
             {(directory) => <span class="min-w-0 truncate text-11-regular text-text-weak/70">{directory()}</span>}
           </Show>

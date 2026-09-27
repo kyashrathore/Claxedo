@@ -1,5 +1,6 @@
 import { Show, splitProps } from "solid-js"
 import { FieldV2 } from "@opencode-ai/ui/v2/field-v2"
+import { copyText } from "@/lib/clipboard"
 import { TextInputV2, type TextInputV2Props } from "@opencode-ai/ui/v2/text-input-v2"
 
 export interface TextFieldProps
@@ -26,7 +27,7 @@ export function TextField(props: TextFieldProps) {
         value={local.value ?? ""}
         onInput={(event) => local.onChange?.(event.currentTarget.value)}
         showCopyButton={local.copyable}
-        onCopyClick={() => void navigator.clipboard.writeText(local.value ?? "")}
+        onCopyClick={() => void copyText(local.value ?? "")}
       />
       <Show when={local.description}>{(description) => <FieldV2.Suffix>{description()}</FieldV2.Suffix>}</Show>
       <Show when={local.error}>

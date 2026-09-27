@@ -1,4 +1,5 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
+import { copyText } from "@/lib/clipboard"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { useI18n } from "@/i18n"
 import { ClaxedoIconButton, showToast } from "@/ui"
@@ -22,10 +23,10 @@ function FolderEntry(props: { readonly directory: string }): JSX.Element {
   const t = usePluginsText()
   const [copied, setCopied] = createSignal(false)
   const copy = () =>
-    void navigator.clipboard.writeText(props.directory).then(
-      () => setCopied(true),
-      (error: unknown) => showToast({ variant: "error", description: t("plugins.manifest.copyFailed", { reason: failureReason(error) }) }),
-    )
+    void copyText(props.directory).then((result) => {
+      if (result.copied) return setCopied(true)
+      showToast({ variant: "error", description: t("plugins.manifest.copyFailed", { reason: failureReason(result.error) }) })
+    })
   return (
     <div class="plugin-manifest-entry">
       <dt>{t("plugins.manifest.folder")}</dt>

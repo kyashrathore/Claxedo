@@ -1,6 +1,7 @@
 import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
 import { createEffect, createMemo, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { getFilename } from "@/ui/utils"
 import { useTranscriptI18n } from "./i18n"
 import {
   dataUrlFromMediaValue,
@@ -272,7 +273,7 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
       <Match when={isBinary()}>
         <div class="flex min-h-56 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
           <div class="text-14-semibold text-text-strong">
-            {cfg()?.path?.split("/").pop() ?? i18n.t("transcript.fileMedia.binary.title")}
+            {cfg()?.path === undefined ? i18n.t("transcript.fileMedia.binary.title") : getFilename(cfg()?.path)}
           </div>
           <div class="text-14-regular text-text-weak">
             {(() => {

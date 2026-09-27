@@ -1,9 +1,11 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
-import { basename, isMediaPath, parentPath } from "@/files"
+import { isMediaPath, parentPath } from "@/files"
 import { useTranslator } from "@/i18n"
+import { copyText } from "@/lib/clipboard"
 import type { FileContent } from "@/server"
 import { FileMedia } from "@/transcript"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2, Button, DiffChanges, FileIcon, Tooltip } from "@/ui"
+import { getFilename } from "@/ui/utils"
 import { MAX_DIFF_CHANGED_LINES } from "../diff-content"
 import { reviewDictionary } from "../i18n"
 
@@ -40,7 +42,7 @@ function RowControls(props: { readonly file: string; readonly onViewFile?: (file
           aria-label={t("review.copy")}
           onClick={(event) => {
             event.stopPropagation()
-            void navigator.clipboard?.writeText(props.file)
+            void copyText(props.file)
           }}
         >
           <Icon name="copy" size="small" />
@@ -84,7 +86,7 @@ export function ReviewFileHeaderContent(props: {
       <Show when={directory()}>
         <span data-slot="session-review-directory">{`‪${directory()}/‬`}</span>
       </Show>
-      <span data-slot="session-review-filename">{`‪${basename(file())}‬`}</span>
+      <span data-slot="session-review-filename">{`‪${getFilename(file())}‬`}</span>
       <div data-slot="session-review-trigger-actions">
         <div class="ui-session-review-row-summary">
           <Switch>
