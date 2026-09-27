@@ -2,6 +2,7 @@ import type { CDPSession, Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { installPaintedFrames } from "../../../perf-harness/src/browser/painted-frames"
 import { installRecorder, type Predicate, type Recording } from "./recorder"
 import { createSourceMapper, summarizeProfile, summarizeTrace, type CpuProfile, type TraceEvent } from "./trace"
 
@@ -21,9 +22,6 @@ export type Result = {
   readonly inputToClickMs: number
   readonly readyFrame: number
   readonly readyFrameFromClick: number
-  readonly inputToReadyFrameEndMs: number
-  readonly inputToReadyPaintedMs: number
-  readonly worstPaintedGapMs: number
   readonly inputToSettledMs: number
   readonly inputToShellSettledMs: number | undefined
   readonly worstFrameMs: number
@@ -60,6 +58,7 @@ export class Runner {
 
   async attach() {
     this.cdp ??= await this.page.context().newCDPSession(this.page)
+    await this.page.evaluate(installPaintedFrames)
     await this.page.evaluate(installRecorder)
     if (this.listening) return
     this.listening = true
@@ -109,7 +108,6 @@ export class Runner {
     const cutoff = recording.settledAt ?? recording.readyAt ?? Number.POSITIVE_INFINITY
     const deltas = frames.filter((at) => at <= cutoff + 1).map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
     const quietDeltas = frames.map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
-    const paintedGaps = recording.painted.filter((_, index) => (frames[index] ?? Infinity) <= cutoff + 1).map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
     const worstQuiet = Math.max(0, ...quietDeltas)
     const worstQuietAt = quietDeltas.indexOf(worstQuiet) >= 0 ? (frames[quietDeltas.indexOf(worstQuiet)] ?? 0) - recording.inputAt : -1
     const requests = this.requests.map((request) => ({ ...request, startMs: Math.round(request.startMs - pageEpoch - recording.inputAt) })).filter((request) => request.startMs >= -5)
@@ -121,9 +119,6 @@ export class Runner {
       clickToReadyMs: recording.readyAt === undefined || recording.actAt === undefined ? -1 : recording.readyAt - recording.actAt,
       inputToClickMs: recording.actAt === undefined ? -1 : recording.actAt - recording.inputAt,
       readyFrameFromClick: recording.readyFrame === undefined || actAt === undefined ? -1 : recording.readyFrame - recording.frames.filter((at) => at < actAt).length,
-      inputToReadyFrameEndMs: recording.readyFrameEnd === undefined ? -1 : recording.readyFrameEnd - recording.inputAt,
-      inputToReadyPaintedMs: recording.readyFrame === undefined ? -1 : (recording.painted[recording.readyFrame - 1] ?? -1) - recording.inputAt,
-      worstPaintedGapMs: paintedGaps.length ? Math.max(...paintedGaps) : -1,
       inputToSettledMs: recording.settledAt === undefined ? -1 : recording.settledAt - recording.inputAt,
       inputToShellSettledMs: recording.shellSettledAt === undefined ? undefined : recording.shellSettledAt - recording.inputAt,
       worstFrameMs: Math.max(0, ...deltas), framesOver16_7: deltas.filter((delta) => delta > 16.7).length, frameCount: deltas.length,
@@ -133,7 +128,7 @@ export class Runner {
     }
     this.results.push(result)
     const loafText = result.loafs.map((loaf) => `LoAF ${loaf.duration.toFixed(1)}ms(block ${loaf.blocking.toFixed(0)}) [${loaf.scripts.map((script) => `${script.fn || "(anon)"} ${script.duration.toFixed(1)}ms${script.forced ? ` forced ${script.forced.toFixed(1)}` : ""}`).join("; ")}]`).join("\n      ")
-    console.log(`[${this.variant}/${workspace}] ${interaction} #${run}: ready ${result.inputToReadyMs.toFixed(1)}ms frame#${result.readyFrame} (click +${result.inputToClickMs.toFixed(1)} -> ready ${result.clickToReadyMs.toFixed(1)} frame#${result.readyFrameFromClick}) (frame end ${result.inputToReadyFrameEndMs.toFixed(1)}, painted ${result.inputToReadyPaintedMs.toFixed(1)}, worst painted gap ${result.worstPaintedGapMs.toFixed(1)}) settled ${result.inputToSettledMs.toFixed(1)} shell ${result.inputToShellSettledMs?.toFixed(1) ?? "-"} worst ${result.worstFrameMs.toFixed(1)}ms over16.7=${result.framesOver16_7}/${result.frameCount} quiet-worst ${result.worstFrameToQuietMs.toFixed(1)}ms@${result.worstFrameToQuietAtMs.toFixed(0)} over=${result.framesOver16_7ToQuiet} load ${result.load}`)
+    console.log(`[${this.variant}/${workspace}] ${interaction} #${run}: ready ${result.inputToReadyMs.toFixed(1)}ms frame#${result.readyFrame} (click +${result.inputToClickMs.toFixed(1)} -> ready ${result.clickToReadyMs.toFixed(1)} frame#${result.readyFrameFromClick}) settled ${result.inputToSettledMs.toFixed(1)} shell ${result.inputToShellSettledMs?.toFixed(1) ?? "-"} worst ${result.worstFrameMs.toFixed(1)}ms over16.7=${result.framesOver16_7}/${result.frameCount} quiet-worst ${result.worstFrameToQuietMs.toFixed(1)}ms@${result.worstFrameToQuietAtMs.toFixed(0)} over=${result.framesOver16_7ToQuiet} load ${result.load}`)
     if (process.env.PANEL_DEBUG === "1") console.log(`      frames: ${recording.signatures.slice(0, 6).join(" || ")}`)
     if (requests.length) console.log(`      requests: ${requests.map((request) => `${request.url} +${request.startMs}ms ${request.ms}ms`).join(" | ")}`)
     if (loafText) console.log(`      ${loafText}`)

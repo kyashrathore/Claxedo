@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test"
+import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { restingPanelWidth } from "../../src/panel/width"
 import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
 
@@ -9,25 +10,25 @@ type PaintedFrame = { readonly width: string; readonly available: number }
 function paintedWidths(app: Page) {
   return app.getByTestId("workspace-panel-shell").evaluate(
     (aside) =>
-      new Promise<PaintedFrame[]>((resolve) => {
+      new Promise<PaintedFrame[]>((resolve, reject) => {
         const frames: PaintedFrame[] = []
-        const channel = new MessageChannel()
-        channel.port1.onmessage = () => {
-          if (aside.style.display === "none") return
-          frames.push({ width: aside.style.width, available: aside.parentElement?.clientWidth ?? 0 })
-          if (frames.length === 16) resolve(frames)
-        }
-        const next = () => {
-          if (frames.length >= 16) return
-          channel.port2.postMessage(0)
-          requestAnimationFrame(next)
-        }
-        requestAnimationFrame(next)
+        const paintedFrames = window.__claxedoPaintedFrames
+        if (!paintedFrames) return reject(new Error("installPaintedFrames has not run in this page"))
+        paintedFrames({
+          sample: () => (aside.style.display === "none" ? undefined : { width: aside.style.width, available: aside.parentElement?.clientWidth ?? 0 }),
+          painted: (frame) => {
+            if (frame) frames.push(frame)
+            if (frames.length < 16) return false
+            resolve(frames)
+            return true
+          },
+        })
       }),
   )
 }
 
 async function openAndRecord(app: Page) {
+  await app.evaluate(installPaintedFrames)
   const frames = paintedWidths(app)
   await app.getByRole("button", { name: UI.openPanel }).click()
   const painted = await frames

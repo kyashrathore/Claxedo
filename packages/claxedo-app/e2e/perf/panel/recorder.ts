@@ -21,11 +21,9 @@ export type Recording = {
   readonly actAt: number | undefined
   readonly readyAt: number | undefined
   readonly readyFrame: number | undefined
-  readonly readyFrameEnd: number | undefined
   readonly settledAt: number | undefined
   readonly shellSettledAt: number | undefined
   readonly frames: readonly number[]
-  readonly painted: readonly number[]
   readonly loafs: readonly Loaf[]
   readonly longTasks: readonly { readonly start: number; readonly duration: number }[]
   readonly signatures: readonly string[]
@@ -45,14 +43,13 @@ export function installRecorder() {
   type State = {
     predicate: Predicate | undefined
     inputAt: number | undefined
+    handledAt: number | undefined
     actAt: number | undefined
     readyAt: number | undefined
     readyFrame: number | undefined
-    readyFrameEnd: number | undefined
     settledAt: number | undefined
     shellSettledAt: number | undefined
     frames: number[]
-    painted: number[]
     loafs: Loaf[]
     longTasks: { start: number; duration: number }[]
     signatures: string[]
@@ -63,8 +60,8 @@ export function installRecorder() {
     deadline: number
   }
   const state: State = {
-    predicate: undefined, inputAt: undefined, actAt: undefined, readyAt: undefined, readyFrame: undefined, readyFrameEnd: undefined, settledAt: undefined, shellSettledAt: undefined,
-    frames: [], painted: [], loafs: [], longTasks: [], signatures: [], stable: 0, previous: "", resolve: undefined, reject: undefined, deadline: 0,
+    predicate: undefined, inputAt: undefined, handledAt: undefined, actAt: undefined, readyAt: undefined, readyFrame: undefined, settledAt: undefined, shellSettledAt: undefined,
+    frames: [], loafs: [], longTasks: [], signatures: [], stable: 0, previous: "", resolve: undefined, reject: undefined, deadline: 0,
   }
   const visible = (element: Element | null | undefined) => {
     if (!element) return false
@@ -170,8 +167,8 @@ export function installRecorder() {
   }
   const finish = () => {
     const recording: Recording = {
-      inputAt: state.inputAt ?? -1, actAt: state.actAt, readyAt: state.readyAt, readyFrame: state.readyFrame, readyFrameEnd: state.readyFrameEnd, settledAt: state.settledAt, shellSettledAt: state.shellSettledAt,
-      frames: state.frames, painted: state.painted, loafs: state.loafs, longTasks: state.longTasks, signatures: state.signatures, timeOrigin: performance.timeOrigin,
+      inputAt: state.inputAt ?? -1, actAt: state.actAt, readyAt: state.readyAt, readyFrame: state.readyFrame, settledAt: state.settledAt, shellSettledAt: state.shellSettledAt,
+      frames: state.frames, loafs: state.loafs, longTasks: state.longTasks, signatures: state.signatures, timeOrigin: performance.timeOrigin,
     }
     const resolve = state.resolve
     state.predicate = undefined
@@ -179,15 +176,24 @@ export function installRecorder() {
     state.reject = undefined
     resolve?.(recording)
   }
-  const painted = new MessageChannel()
-  const afterPaint = (message: MessageEvent<number>) => {
-    if (!state.predicate || state.inputAt === undefined) return
-    const index = message.data
-    const at = state.frames[index - 1] ?? 0
-    state.painted[index - 1] = performance.now()
+  const sample = () => {
+    if (!state.predicate) return undefined
+    if (state.inputAt === undefined) {
+      if (performance.now() > state.deadline) {
+        state.reject?.(new Error("no trusted input arrived"))
+        state.predicate = undefined
+      }
+      return undefined
+    }
     const host = shell()
-    if (state.shellSettledAt === undefined && host?.dataset.shellSettled === "true" && at > state.inputAt + 20) state.shellSettledAt = at
-    const { ready, signature, debug } = evaluate(state.predicate)
+    return { ...evaluate(state.predicate), shellSettled: !host || host.dataset.shellSettled === "true", shellPresent: !!host }
+  }
+  const painted = (frame: ReturnType<typeof sample>, at: number) => {
+    if (!frame || !state.predicate || state.inputAt === undefined) return
+    state.frames.push(at)
+    const index = state.frames.length
+    if (state.shellSettledAt === undefined && frame.shellPresent && frame.shellSettled && at > state.inputAt + 20) state.shellSettledAt = at
+    const { ready, signature, debug } = frame
     if (!ready && debug && state.readyAt === undefined) state.signatures.push(`f${index}:${debug}`)
     if (ready && state.readyAt === undefined) {
       state.readyAt = at
@@ -201,32 +207,22 @@ export function installRecorder() {
       state.settledAt = at
       performance.mark("rec:settled")
     }
-    const shellDone = !host || host.dataset.shellSettled === "true"
-    if (state.settledAt !== undefined && shellDone && at >= state.settledAt + 200) return finish()
+    if (state.settledAt !== undefined && frame.shellSettled && at >= state.settledAt + 200) return finish()
     if (performance.now() > state.deadline) {
       state.reject?.(new Error(`predicate not ready: ${JSON.stringify(state.predicate)} last=${state.signatures.slice(-3).join(" | ")} debug=${(evaluate(state.predicate) as { debug?: string }).debug ?? ""}`))
       state.predicate = undefined
     }
   }
-  painted.port1.onmessage = afterPaint
-  const frame = (at: number) => {
-    requestAnimationFrame(frame)
-    if (!state.predicate) return
-    if (state.inputAt === undefined) {
-      if (performance.now() > state.deadline) {
-        state.reject?.(new Error("no trusted input arrived"))
-        state.predicate = undefined
-      }
-      return
-    }
-    state.frames.push(at)
-    if (state.readyAt !== undefined && state.readyFrameEnd === undefined) state.readyFrameEnd = at
-    painted.port2.postMessage(state.frames.length)
+  const paintedFrames = window.__claxedoPaintedFrames
+  if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
+  const overtaken = (startedAt: number, at: number) => {
+    if (state.predicate && state.handledAt !== undefined && startedAt > state.handledAt) state.frames.push(at)
   }
-  requestAnimationFrame(frame)
+  paintedFrames({ sample, painted, overtaken })
   const onInput = (event: Event) => {
     if (!event.isTrusted || !state.predicate || state.inputAt !== undefined) return
     state.inputAt = event.timeStamp
+    state.handledAt = performance.now()
     performance.mark("rec:input")
   }
   const onAct = (event: Event) => {
@@ -257,14 +253,13 @@ export function installRecorder() {
     arm: (predicate) => {
       state.predicate = predicate
       state.inputAt = undefined
+      state.handledAt = undefined
       state.actAt = undefined
       state.readyAt = undefined
       state.readyFrame = undefined
-      state.readyFrameEnd = undefined
       state.settledAt = undefined
       state.shellSettledAt = undefined
       state.frames = []
-      state.painted = []
       state.loafs = []
       state.longTasks = []
       state.signatures = []
