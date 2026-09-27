@@ -168,6 +168,20 @@ test("older: a page that overlaps a turn whose tool body the reader loaded keeps
   })
 })
 
+test("older: a refused page keeps the older cursor, so the reader can page again", async () => {
+  const { server: base, deps } = fakeServer()
+  const refused = new ServerError({ class: "network", message: "An older page cannot be read while the session's machine is offline" })
+  const server = { ...base, sessions: { ...base.sessions, page: async () => Promise.reject(refused) } } as unknown as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await loadOlder(context)
+    expect(context.older.state()).toMatchObject({ kind: "failed", error: { class: "network" } })
+    expect(context.olderCursor()).toBe("before-the-turn")
+    dispose()
+  })
+})
+
 test("snapshot: a refused requests read leaves the transcript on screen and names the failure for its Retry, and the next read clears it", async () => {
   const refused = new ServerError({ class: "network", status: 502, code: "harness_engine_error", message: "The engine refused the permission list" })
   const answers = [Promise.reject(refused), Promise.resolve([])]

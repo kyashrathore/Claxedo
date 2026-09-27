@@ -49,9 +49,9 @@ test("transcript reads: a cloud session reads a part from the control plane, or 
   ])
 })
 
-test("transcript reads: an offline machine's session pages nothing and refuses a part rather than reading the machine", async () => {
+test("transcript reads: an offline machine's session refuses an older page and a part rather than reading the machine", async () => {
   const server = fakeServer({ reachable: () => false, machine: true })
-  expect((await readTurnPageBefore(server.context, ref, shape, "cursor_older")).entries).toEqual([])
+  await expect(readTurnPageBefore(server.context, ref, shape, "cursor_older")).rejects.toMatchObject({ class: "network" })
   await expect(readPart(server.context, ref, "msg_2", "prt_3")).rejects.toMatchObject({ class: "network" })
   expect(server.runtimeCalls).toEqual([])
 })

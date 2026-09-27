@@ -98,7 +98,7 @@ test("session reads: a running cloud workspace's session reads its outline and p
   expect([...server.runtimeCalls].sort()).toEqual([sessionEndpoint(ref), openPath].sort())
 })
 
-test("session reads: an offline machine's session renders its published row, reads nothing from the machine, and pages nothing older", async () => {
+test("session reads: an offline machine's session renders its published row, reads nothing from the machine, and refuses an older page", async () => {
   const server = fakeServer({ reachable: () => false, machine: true })
   const reads = readSession(server.context, ref, shape)
 
@@ -110,7 +110,7 @@ test("session reads: an offline machine's session renders its published row, rea
   expect(await reads.requests).toEqual([])
   expect(server.requests.filter((path) => path.includes("/messages") || path.includes("/outline"))).toEqual([])
   expect(server.runtimeCalls).toEqual([])
-  expect((await readTurnPageBefore(server.context, ref, shape, "cursor_older")).entries).toEqual([])
+  await expect(readTurnPageBefore(server.context, ref, shape, "cursor_older")).rejects.toMatchObject({ class: "network" })
   expect(server.runtimeCalls).toEqual([])
 })
 

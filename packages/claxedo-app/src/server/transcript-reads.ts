@@ -5,8 +5,6 @@ import { withQuery, type RuntimeRoute } from "./transport"
 import type { PageShape, SessionRef, TranscriptPage, TranscriptPart } from "./types"
 import { partFromWire, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 
-const NO_PAGE: TranscriptPage = { entries: [] }
-
 async function runtimeBody(context: SessionContext, where: RuntimeRoute, path: string, what: string): Promise<unknown> {
   const response = await context.transport.runtime(where, path)
   if (!response.ok) throw await responseError(response, what)
@@ -36,7 +34,7 @@ export function readTurnPageBefore(context: SessionContext, ref: SessionRef, sha
     ref,
     async (where) => turnPageFromWire(await runtimeBody(context, where, path, "Transcript page")),
     (workspaceId) => readCentralTurnPage(context, workspaceId, ref, shape, before),
-    () => NO_PAGE,
+    () => offlineRefusal("An older page"),
   )
 }
 
