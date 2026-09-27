@@ -48,6 +48,48 @@ for (const fold of ["terminal", "headers"] as const) {
       await expect(app.locator(`[data-session-id="${session.id}"][data-testid="session-page-root"]`)).not.toContainText("Still output 8.")
     })
 
+    test(`12 only a turn with two foldable groups shows a fold row, on a cold open, a warm return and a live settle (fold=${fold})`, async ({ stack, api, app }) => {
+      const workspace = await stack.daemon.makeWorkspace("fold-rows", "Fold rows")
+      const session = await api.createSession(workspace.directory, { title: "Groups", harness: SCRIPTED_ACP_HARNESS })
+      const tool = (name: string): AcpStep => ({ kind: "tool", tool: "execute", title: `cat ${name}.log`, input: { command: `cat ${name}.log` }, text: `${name} output` })
+      const turn = async (name: string, steps: AcpStep[]) => {
+        const script = `groups-${name.replaceAll(" ", "-")}`
+        await stack.acp.write(script, { steps: [...steps, { kind: "text", text: `${name} answer.` }] })
+        await api.prompt(workspace.directory, session.id, `${name}: go. ${acpScriptToken(script)}`)
+      }
+      await turn("Answer only", [])
+      await turn("One tool", [tool("one")])
+      await turn("Two groups", [{ kind: "text", text: "Checking two." }, tool("two")])
+      await seedTurns(stack, api, workspace.directory, "Elsewhere", 1)
+      await recordStillness(app, { sessionId: session.id, marker: "Two groups answer." })
+      await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+      await expect(app.getByText("Two groups answer.")).toBeVisible()
+      const timeline = app.locator(`[data-session-id="${session.id}"][data-testid="session-page-root"]`)
+      const folds = timeline.locator('[data-component="turn-fold"]')
+      const cold = sinceFirstReady(await stillnessAfter(app, IDLE_MS))
+      expect(cold.scrollHeightDelta, "scrollHeight change after the cold open's first paint").toBe(0)
+      await expect(folds, "fold rows on a cold open").toHaveCount(1)
+      expect((await folds.boundingBox())?.y, "the fold row sits in the turn with two groups").toBeGreaterThan(await top(app, "Two groups: go."))
+
+      const rail = app.getByRole("navigation", { name: UI.rail })
+      await rail.getByRole("button", { name: "Elsewhere", exact: true }).click()
+      await expect(app.getByText("Elsewhere reply line 6.").first()).toBeVisible()
+      const from = await now(app)
+      await rail.getByRole("button", { name: "Groups", exact: true }).click()
+      const warm = sinceFirstReady(await stillnessAfter(app, IDLE_MS), from)
+      expect(warm.scrollHeightDelta, "scrollHeight change after the return's first frame").toBe(0)
+      await expect(folds, "fold rows on a warm return").toHaveCount(1)
+
+      await turn("Live one tool", [tool("live-one")])
+      await expect(timeline.getByText("Live one tool answer.")).toBeVisible()
+      await expectNothingAnimating(app)
+      await expect(folds, "fold rows after a one-tool turn settles live").toHaveCount(1)
+      await turn("Live two groups", [{ kind: "text", text: "Checking live two." }, tool("live-two")])
+      await expect(timeline.getByText("Live two groups answer.")).toBeVisible()
+      await expectNothingAnimating(app)
+      await expect(folds, "fold rows after a two-group turn settles live").toHaveCount(2)
+    })
+
     test(`12 opening a header row reads its whole part once, draws its body and moves nothing above it (fold=${fold})`, async ({ stack, api, app }) => {
       const workspace = await stack.daemon.makeWorkspace("open-row", "Open row")
       const session = await seedShellTurns(stack, api, workspace.directory, "Row", 6, false)

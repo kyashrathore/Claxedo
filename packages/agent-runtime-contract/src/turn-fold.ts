@@ -251,7 +251,6 @@ export type TurnFoldStatus = {
   interrupted?: boolean
   errored?: boolean
   busy?: boolean
-  partsPending?: boolean
   foldWhenSettled?: boolean
   userChoice?: boolean
 }
@@ -268,7 +267,7 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
     !running &&
     status.foldWhenSettled !== false &&
     status.settled &&
-    (status.foldableCount >= FOLD_MINIMUM || !!status.partsPending)
+    status.foldableCount >= FOLD_MINIMUM
   const explainsItself = !!status.interrupted || !!status.errored
   return {
     canFold,

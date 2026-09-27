@@ -15,7 +15,6 @@ import type {
 import type { SessionStatus } from "@/server"
 import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import {
-  FOLD_MINIMUM,
   assistantMessageSettled,
   cancelledAssistantMessageId,
   countFoldableGroups,
@@ -167,7 +166,6 @@ export namespace Timeline {
       endTimes.length && typeof createdTime === "number"
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
-    const partsPending = folded !== undefined
     const working = isActive && (status === "working" || status === "retrying" || settlePending)
     const decided = turnFoldDecision({
       foldableCount,
@@ -175,10 +173,9 @@ export namespace Timeline {
       interrupted,
       errored: !!error,
       busy: working,
-      partsPending,
       userChoice: isFoldedChoice(userMessage.id),
     })
-    const opening = partsPending && !decided.folded && !working
+    const opening = folded !== undefined && !decided.folded && !working
     const fold = opening ? { ...decided, folded: true } : decided
     const turnTokens = assistantMessages.reduce((sum, message) => {
       const t = message.tokens
@@ -201,7 +198,7 @@ export namespace Timeline {
         TimelineRow.TurnFold({
           userMessageId: userMessage.id,
           durationMs,
-          foldCount: Math.max(foldableCount, FOLD_MINIMUM),
+          foldCount: foldableCount,
           folded: fold.folded,
           opening,
           tokens: turnTokens,
