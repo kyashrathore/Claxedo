@@ -8,14 +8,13 @@ import {
   type PanelProfile,
   type PanelTarget,
 } from "./workspace-panel-scenario"
-import { COUNTER_END_MARK } from "./workspace-panel-trace-reading"
 
 export async function waitForPanelOwner(
   page: Page,
   profile: PanelProfile,
   target: PanelTarget,
   fixture: FixtureEvidence,
-  options: { markEnd?: boolean; expectedReviewOpenCount?: number; observerToken?: string } = {},
+  options: { expectedReviewOpenCount?: number; observerToken?: string } = {},
 ) {
   return readNumber(await page.evaluate(async ({
     profile,
@@ -23,8 +22,6 @@ export async function waitForPanelOwner(
     directory,
     files,
     changed,
-    endMark,
-    markEnd,
     expectedReviewOpenCount,
     expectedReviewIdentity,
     observerToken,
@@ -176,10 +173,6 @@ export async function waitForPanelOwner(
           if (frameStable === undefined || settled) return
           if (frameStable === 1) stableSince = paintedAt
           if (frameStable < 2) return
-          if (window.__claxedoPublicPanelTrace?.active && markEnd) {
-            performance.clearMarks(endMark)
-            performance.mark(endMark, { startTime: stableSince })
-          }
           complete(stableSince)
           return true
         },
@@ -191,8 +184,6 @@ export async function waitForPanelOwner(
     directory: target.workspaceDirectory,
     files: fixture.files,
     changed: fixture.changed,
-    endMark: COUNTER_END_MARK,
-    markEnd: options.markEnd ?? true,
     expectedReviewOpenCount: options.expectedReviewOpenCount,
     expectedReviewIdentity: loadedDiffIdentity(fixture.changed),
     observerToken: options.observerToken,

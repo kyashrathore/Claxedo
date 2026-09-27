@@ -574,7 +574,6 @@ describe("Claxedo public driver", () => {
           expectedPartIds: [],
         },
         { manifest: {} as never, files: ["src/a.ts"], changed: ["src/a.ts"], openFiles: ["src/a.ts", "src/b.ts"] },
-        { markEnd: false },
       )
 
       expect(sampledAt.length).toBeGreaterThanOrEqual(5)

@@ -256,7 +256,6 @@ async function measureNavigation(
     const hooks: ActivationHooks = {
       onArmed: async () => {
         panelReadyPromise = waitForPanelOwner(page, panel.profile, destination, panel.fixture, {
-          markEnd: false,
           expectedReviewOpenCount: panel.expectedReviewOpenCount,
           observerToken: panelObserverToken,
         })
