@@ -181,7 +181,7 @@ export namespace Timeline {
     const partById = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
     const partOfRef = (ref: PartRef) => {
       const found = partById.get(ref.partId)
-      return found ? { ...untrack(() => ({ ...found })), userOpen: isPartExpanded(ref.partId) } : found
+      return found ? { type: untrack(() => found.type), userOpen: isPartExpanded(ref.partId) } : found
     }
     const liveFoldableCount = countFoldableGroups(groupSegments(assistantPartRefs).flat(), partOfRef)
     const foldableCount = Math.max(liveFoldableCount, priorFoldableCount(userMessage.id) ?? 0)
