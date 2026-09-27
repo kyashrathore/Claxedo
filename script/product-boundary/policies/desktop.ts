@@ -188,7 +188,9 @@ export const desktopMainComposition: Policy = {
   // are `@claxedo/helpers/readers`, the one owner the app reads through too;
   // `@claxedo/helpers` was already a package edge and sits outside `roots`.
   // 101/27, no headroom.
-  ceilings: { modules: 101, packages: 27 },
+  // -1 module (2026-09-27): `main/native-markdown.ts` is gone with the native
+  // Markdown renderer nothing called. 100/27, no headroom.
+  ceilings: { modules: 100, packages: 27 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
