@@ -54,7 +54,7 @@ function describe(event: TraceEvent, mapper: Mapper): string {
   const ms = ((event.dur ?? 0) / 1000).toFixed(1)
   if (event.name === "FunctionCall") {
     const url = String(data.url ?? "").split("/").pop() ?? ""
-    const where = url ? mapper.map(url, Number(data.lineNumber ?? 0) + 1, Number(data.columnNumber ?? 0)) : ""
+    const where = url ? mapper.map(url, Number(data.lineNumber ?? 1), Number(data.columnNumber ?? 1) - 1) : ""
     return `${ms}ms FunctionCall ${String(data.functionName ?? "(anon)")} ${where}`
   }
   if (event.name === "EventDispatch") return `${ms}ms Event:${String(data.type ?? "")}`
