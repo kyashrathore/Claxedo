@@ -92,11 +92,9 @@ export namespace Timeline {
     getMessageParts: (messageId: string) => Part[],
     hasText: (part: Part) => boolean,
     assistantMessages: AssistantMessage[],
-    first: boolean,
     showReasoning: boolean,
     status: SessionStatus["kind"],
     isActive: boolean,
-    firstTurnRecovery = first,
     isFoldedChoice: (userMessageId: string) => boolean | undefined = () => undefined,
     lastTurn?: TurnOutcome,
     visibleAssistantMessageIds?: ReadonlySet<string>,
@@ -107,7 +105,6 @@ export namespace Timeline {
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
-    const previousUserMessage = !first
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
@@ -132,8 +129,6 @@ export namespace Timeline {
       ...(index > 0 ? [{ type: "interrupted" as const }] : []),
       ...segment.map((group) => ({ type: "part" as const, group })),
     ])
-    if (previousUserMessage) rows.push(TimelineRow.TurnGap({ userMessageId: userMessage.id }))
-
     if (comments.length > 0)
       rows.push(
         TimelineRow.CommentStrip({

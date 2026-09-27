@@ -36,7 +36,6 @@ export type MessageTimelineProps = {
   setScrollToMessage?: (fn: ((id: string, behavior: ScrollBehavior) => boolean) | undefined) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void; settle: () => void }) => void
   onFirstTurnRecovery?: (kind: SessionErrorClass, userMessageId: string) => unknown
-  firstTurnRecovery?: boolean
   title: () => string | undefined
   parentId?: string
   queued?: QueuedMessages

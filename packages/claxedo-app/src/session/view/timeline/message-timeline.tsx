@@ -410,7 +410,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: samePartsRecord },
         )
-        const first = createMemo(() => indexAccessor() === 0)
+        const gap = TimelineRow.TurnGap({ userMessageId: userMessage.id })
         const last = createMemo(() => indexAccessor() === props.userMessages.length - 1)
         const visibleAssistantMessageIds = createMemo(() => {
           if (initialTurnExpanded() || !last()) return undefined
@@ -447,7 +447,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: sameArrayItems },
         )
-        return createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
+        const turnRows = createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
           const withText = new Set(textParts())
           const rows = Timeline.constructMessageRows(
@@ -455,11 +455,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
             (messageId) => parts[messageId] ?? emptyParts,
             (part) => withText.has(part.id),
             turnAssistants(),
-            first(),
             host.settings.showReasoningSummaries(),
             turnStatus(),
             isActive(),
-            props.firstTurnRecovery !== false && first(),
             (userMessageId) => turnFold.isFolded(userMessageId),
             turnOutcome(),
             visibleAssistantMessageIds(),
@@ -474,6 +472,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
           return TimelineRow.reuse(previous, rows)
         }))
+        return { gap, rows: turnRows }
       },
     ),
   )
@@ -494,7 +493,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const timelineRows = createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
     thinkingHoldRevision()
-    const rows = messageRowMemos().flatMap((memo) => memo())
+    const rows = messageRowMemos().flatMap((turn, index) => (index === 0 ? turn.rows() : [turn.gap, ...turn.rows()]))
     const hiddenTurns = hiddenTurnsRow()
     if (hiddenTurns) rows.unshift(hiddenTurns)
     const wantThinking = rows.some((row) => row._tag === "Thinking")
