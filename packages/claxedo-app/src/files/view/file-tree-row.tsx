@@ -35,7 +35,7 @@ function DirectoryRow(props: { readonly tree: TreeRowContext; readonly node: Fil
         onClick={toggle}
       >
         <FileTreeNode node={props.node} level={props.level} active={props.tree.active()} kinds={props.tree.kinds()} marks={props.tree.marks()}>
-          <div class="flex size-4 items-center justify-center text-icon-weak-base transition-colors group-hover/filetree:text-icon-base">
+          <div class="flex size-4 items-center justify-center text-icon-weak-base transition-colors">
             <IconV2 name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
           </div>
         </FileTreeNode>

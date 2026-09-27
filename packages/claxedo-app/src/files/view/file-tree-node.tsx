@@ -133,17 +133,7 @@ export function FileRowIcon(props: { readonly node: FileNode; readonly kind: Cha
         )}
       </Match>
       <Match when={true}>
-        <span class="filetree-iconpair size-4">
-          <FileIcon
-            node={iconNode(props.node)}
-            class="size-4 filetree-icon filetree-icon--color opacity-0 group-hover/filetree:opacity-100"
-          />
-          <FileIcon
-            node={iconNode(props.node)}
-            class="size-4 filetree-icon filetree-icon--mono group-hover/filetree:opacity-0"
-            mono
-          />
-        </span>
+        <FileIcon node={iconNode(props.node)} class="size-4 filetree-icon filetree-icon--mono" mono />
       </Match>
     </Switch>
   )
