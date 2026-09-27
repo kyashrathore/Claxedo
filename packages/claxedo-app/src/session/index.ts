@@ -110,7 +110,6 @@ export type SessionView = {
   readonly olderState: Accessor<OlderState>
   readonly outline: Accessor<OutlineState>
   readonly loadOlder: () => Promise<void>
-  readonly loadOlderTurn: () => Promise<void>
   readonly loadTurn: (userMessageId: string) => Promise<void>
   readonly reload: () => Promise<void>
   readonly send: (input: PromptInput) => Promise<void>

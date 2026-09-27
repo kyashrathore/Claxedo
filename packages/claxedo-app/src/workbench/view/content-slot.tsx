@@ -26,7 +26,6 @@ export function ContentSlot(props: {
   const paneId = createMemo(() => props.paneOf(props.contentId))
   const presence = createMemo(() => props.presence(props.contentId))
   const visible = createMemo(() => presence() !== "hidden")
-  const revealed = createMemo(() => presence() === "shown")
   const rectPane = () => paneId() ?? props.heldBy(props.contentId) ?? null
   const focused = createMemo(() => {
     const id = paneId()
@@ -49,7 +48,6 @@ export function ContentSlot(props: {
     paneId,
     isFocused: focused,
     isVisible: visible,
-    isRevealed: revealed,
     element: () => element,
     onKeyDown: (handler) => onCleanup(props.surfaceKeys.subscribe(slot, handler)),
     requestClose: (opts) => {

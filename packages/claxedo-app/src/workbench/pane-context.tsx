@@ -4,7 +4,6 @@ export type PaneContext = {
   readonly paneId: () => string | null
   readonly isFocused: () => boolean
   readonly isVisible: () => boolean
-  readonly isRevealed: () => boolean
   readonly element: () => HTMLDivElement | undefined
   readonly onKeyDown: (handler: (event: KeyboardEvent) => void) => void
   readonly requestClose: (opts?: { destroyContent: boolean }) => void
@@ -25,8 +24,4 @@ export function usePaneContext(): PaneContext {
 export function holdPaneReveal(pending: Accessor<boolean>): void {
   const release = useContext(Context)?.holdReveal(pending)
   if (release) onCleanup(release)
-}
-
-export function paneRevealed(): Accessor<boolean> {
-  return useContext(Context)?.isRevealed ?? (() => true)
 }

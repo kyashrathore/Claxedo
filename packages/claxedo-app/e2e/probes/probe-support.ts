@@ -48,7 +48,7 @@ export function eventLog(server: ServerHandle) {
   return { seen, next, mark: () => seen.length }
 }
 
-export const PROBE_VIEWPORT = { rows: 40, cols: 100, reasoning: false }
+export const PROBE_VIEWPORT = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
 
 export async function surfaceOf(server: ServerHandle, ref: SessionRef) {
   const reads = server.sessions.read(ref, PROBE_VIEWPORT)

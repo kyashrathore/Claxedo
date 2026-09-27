@@ -89,7 +89,7 @@ test("snapshot: a first read lands its row, outline and page in one update, and 
     expect(context.data.folded.size).toBe(0)
     expect(context.latestTurnRead.current).toBe(wholeTurn)
 
-    await loadOlder(context, "page")
+    await loadOlder(context)
     expect(olderReads).toEqual(["before-the-turn"])
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
@@ -122,33 +122,16 @@ test("older: a page that lands is out of flight before it is announced, so a wat
       on(
         () => context.older.state().kind,
         (kind) => {
-          if (kind === "idle" && context.olderCursor() !== undefined) void loadOlder(context, "page")
+          if (kind === "idle" && context.olderCursor() !== undefined) void loadOlder(context)
         },
         { defer: true },
       ),
     )
-    await loadOlder(context, "page")
+    await loadOlder(context)
     await idle()
     expect(olderReads).toEqual(["before-the-turn", "before-msg-1"])
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
-    dispose()
-  })
-})
-
-test("older: a whole-turn read pages from the same cursor, in the same slot, and lands the turn above like a page", async () => {
-  const { server, deps, olderReads, turnReads } = fakeServer()
-  await createRoot(async (dispose) => {
-    const context = createTranscriptContext(server, ref, deps)
-    await readSnapshot(context)
-    const turn = loadOlder(context, "turn")
-    expect(loadOlder(context, "page"), "a page asked for while the turn is in flight joins it").toBe(turn)
-    await turn
-    expect(turnReads).toEqual(["before-the-turn"])
-    expect(olderReads).toEqual([])
-    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
-    expect(context.olderCursor()).toBeUndefined()
-    expect(context.older.state().kind).toBe("idle")
     dispose()
   })
 })

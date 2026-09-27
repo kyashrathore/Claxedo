@@ -7,7 +7,7 @@ import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
-import { holdPaneReveal, paneRevealed, useWorkbench } from "@/workbench"
+import { holdPaneReveal, useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
 import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
 import { SessionTimeline, userMessages } from "./session-timeline"
@@ -80,7 +80,7 @@ function SessionBody(props: {
   }
   const users = createMemo(() => userMessages(props.view))
   const turns = createMemo(() => navTurns(props.view.outline(), users()))
-  const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working, revealed: paneRevealed() })
+  const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
   const blocked = () => props.view.requests().length > 0
   const peek = createFloatingPeek({
