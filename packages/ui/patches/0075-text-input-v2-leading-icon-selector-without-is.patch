@@ -1,0 +1,26 @@
+Subject: text-input-v2: the leading-icon rule is two selectors, not an :is()
+
+What: `[data-slot="text-input-v2-leading-icon"] :is(svg, [data-slot="icon-svg"])`
+becomes the two selectors it stood for, one ending in `svg` and one in
+`[data-slot="icon-svg"]`.
+Why: Blink files a rule under its rightmost compound, and an `:is()` there goes
+in the bucket every element is tested against. Ending in a tag and an
+attribute, the rule is tested only against svgs and `data-slot` holders. Both
+icon components put `data-slot="icon-svg"` on the svg itself, so an icon still
+matches the attribute form, whose specificity equals the `:is()` form's, and
+keeps the same computed style.
+
+diff --git a/src/v2/components/text-input-v2.css b/src/v2/components/text-input-v2.css
+index 1427846766..89ea59ef8c 100644
+--- a/src/v2/components/text-input-v2.css
++++ b/src/v2/components/text-input-v2.css
+@@ -73,7 +73,8 @@
+   color: var(--v2-icon-icon-muted);
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] :is(svg, [data-slot="icon-svg"]) {
++[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] svg,
++[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] [data-slot="icon-svg"] {
+   display: block;
+   flex: none;
+ }

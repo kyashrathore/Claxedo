@@ -73,7 +73,8 @@
   color: var(--v2-icon-icon-muted);
 }
 
-[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] :is(svg, [data-slot="icon-svg"]) {
+[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] svg,
+[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] [data-slot="icon-svg"] {
   display: block;
   flex: none;
 }
