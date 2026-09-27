@@ -7,6 +7,7 @@ import { txt } from "@claxedo/server-core/session/meta/shape"
 import { runtimeJson, verifiedRuntimeJson } from "./runtime-transport"
 import {
   messagesPayload,
+  pulledCloudWorkspace,
   pulledSession,
   relayRole,
   runtimePath,
@@ -230,17 +231,7 @@ async function workspaceForPull(
   if (auth?.mode !== "signed") {
     throw new ControlPlaneProtocolError(404, "workspace_not_found", `workspace ${workspaceId} not found`)
   }
-  const authority = requireAuthority(services)
-  const orgId = txt(opened?.workspace?.org_id)
-    ?? (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(auth)) : undefined)
-  const projectId = txt(opened?.workspace?.project_id)
-  const ws = {
-    id: workspaceId,
-    ...(orgId ? { org_id: orgId } : {}),
-    ...(projectId ? { project_id: projectId } : {}),
-    directory: `workspace:${workspaceId}`,
-    kind: "cloud",
-  } satisfies SessionProjectionWorkspace
+  const ws = pulledCloudWorkspace(workspaceId, opened?.workspace, ControlPlaneProtocolError)
   return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
 }
 

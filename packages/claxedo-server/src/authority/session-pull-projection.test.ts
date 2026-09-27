@@ -82,12 +82,11 @@ function presentAuthority() {
     })),
     openWorkspace: vi.fn(async () => ({
       role: "owner",
-      workspace: { org_id: "org_1", backing: "cloud-vm" },
+      workspace: { org_id: "org_1", project_id: "project_1", backing: "cloud-vm" },
     })),
     authorizeSessionWrite: vi.fn(async () => {}),
     upsertSessionVisibility: vi.fn(async () => ({})),
     syncSessionMessages: vi.fn(async (_auth: unknown, _input: { messages: unknown[] }) => ({})),
-    resolveOrgId: vi.fn(async () => "org_1"),
   }
 }
 
@@ -206,6 +205,66 @@ describe("central projection: pulled session metadata", () => {
       { id: "session-1", title: "Hosted", time: { created: 100, updated: 200 } },
     )
   })
+
+  test.each(["signed http", "hosted"] as const)(
+    "%s pull projects a cloud session under the authority's org and project",
+    async (flow) => {
+      mocks.resolveWorkspace.mockResolvedValue(undefined)
+      const svc = services()
+      svc.authority = presentAuthority() as never
+      const runtime = async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1") {
+          return Response.json({ id: "session-1", projectID: "runtime_project", time: { created: 100, updated: 200 } })
+        }
+        return new Response("not found", { status: 404 })
+      }
+      if (flow === "hosted") stubHostedTransport(svc, runtime)
+
+      await (flow === "hosted"
+        ? pullHostedControlSession(svc, undefined, signedAuth, { workspaceId: "ws_1", sessionId: "session-1" })
+        : pullControlSession(svc, { runtimeFetch: ({ path }) => runtime(path) }, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          }))
+
+      expect(svc.projectionStore.sync_session_meta).toHaveBeenCalledWith(
+        { id: "ws_1", org_id: "org_1", project_id: "project_1", directory: "workspace:ws_1", kind: "cloud" },
+        expect.objectContaining({ id: "session-1" }),
+      )
+    },
+  )
+
+  test.each((["signed http", "hosted"] as const).flatMap((flow) => [
+    [flow, "organization", { project_id: "project_1", backing: "cloud-vm" }],
+    [flow, "project", { org_id: "org_1", backing: "cloud-vm" }],
+  ] as const))(
+    "%s pull refuses a cloud workspace the authority returns without its %s",
+    async (flow, _label, workspace) => {
+      mocks.resolveWorkspace.mockResolvedValue(undefined)
+      const svc = services()
+      const authority = { ...presentAuthority(), openWorkspace: vi.fn(async () => ({ role: "owner", workspace })) }
+      svc.authority = authority as never
+      const runtime = vi.fn(async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", time: { created: 100, updated: 200 } })
+        return new Response("not found", { status: 404 })
+      })
+      const fetch = flow === "hosted" ? stubHostedTransport(svc, runtime) : undefined
+
+      const pull = flow === "hosted"
+        ? pullHostedControlSession(svc, undefined, signedAuth, { workspaceId: "ws_1", sessionId: "session-1" })
+        : pullControlSession(svc, { runtimeFetch: ({ path }) => runtime(path) }, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+
+      await expect(pull).rejects.toMatchObject({ status: 409, code: "workspace_identity_required" })
+      expect(runtime).not.toHaveBeenCalled()
+      if (fetch) expect(fetch).not.toHaveBeenCalled()
+      expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
+    },
+  )
 
   test.each(["http", "hosted"] as const)(
     "%s checkpoint refreshes the settled runtime title in projection and signed visibility",

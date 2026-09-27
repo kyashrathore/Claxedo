@@ -10,6 +10,7 @@ import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/g
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   messagesPayload,
+  pulledCloudWorkspace,
   pulledSession,
   relayRole,
   runtimePath,
@@ -39,27 +40,16 @@ async function hostedWorkspaceForPull(
   workspaceId: string,
 ) {
   const signed = requireSignedAuth(auth)
-  const authority = requireAuthority(services)
-  const opened = await authority.openWorkspace(signed, { workspaceId })
-  const role = relayRole(asRecord(opened)?.role)
+  const opened = await requireAuthority(services).openWorkspace(signed, { workspaceId })
+  const role = relayRole(opened.role)
   if (!role) throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace access is denied")
-  const workspace = asRecord(asRecord(opened)?.workspace)
-  const orgId =
-    txt(workspace?.org_id) ??
-    txt(workspace?.orgId) ??
-    (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(signed)) : undefined)
-  const ws = {
-    id: workspaceId,
-    ...(orgId ? { org_id: orgId } : {}),
-    directory: `workspace:${workspaceId}`,
-    kind: "cloud",
-  } satisfies SessionProjectionWorkspace
-  return { workspaceId, ws, workspace, role }
+  const ws = pulledCloudWorkspace(workspaceId, opened.workspace, HostedSessionPullError)
+  return { workspaceId, ws, workspace: opened.workspace, role }
 }
 
 type RuntimePullInput = {
   workspaceId: string
-  ws: SessionProjectionWorkspace
+  ws: ReturnType<typeof pulledCloudWorkspace>
   hostId: string
   routingId?: string
   homeRegion: ClaxedoRegion
@@ -80,14 +70,6 @@ async function runtimeFetch(
       "Workspace runtime pull transport is not configured",
     )
   }
-  const orgId = input.ws.org_id
-  if (!orgId) {
-    throw new HostedSessionPullError(
-      409,
-      "workspace_org_required",
-      "Workspace is missing org identity for runtime token minting",
-    )
-  }
   const signed = requireSignedAuth(auth)
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
@@ -96,7 +78,7 @@ async function runtimeFetch(
     principalKind: "user",
     auth: signed,
     ...await resolveRuntimeActor(requireAuthority(services), signed),
-    orgId,
+    orgId: input.ws.org_id,
     role: input.role,
     ttlMs: 10 * 60_000,
   })

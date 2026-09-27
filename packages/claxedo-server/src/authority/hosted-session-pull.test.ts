@@ -82,6 +82,7 @@ describe("hosted session pull", () => {
         workspace: {
           backing: "cloud-vm",
           org_id: "org_1",
+          project_id: "project_1",
         },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
@@ -162,6 +163,7 @@ describe("hosted session pull", () => {
         workspace: {
           backing: "local-worktree",
           org_id: "org_1",
+          project_id: "project_1",
           home_region: "eu-west",
         },
       })),
@@ -239,6 +241,7 @@ describe("hosted session pull", () => {
         workspace: {
           backing: "local-worktree",
           org_id: "org_1",
+          project_id: "project_1",
         },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
@@ -290,7 +293,7 @@ describe("hosted session pull", () => {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { backing: "cloud-vm", org_id: "org_1" },
+        workspace: { backing: "cloud-vm", org_id: "org_1", project_id: "project_1" },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -347,7 +350,7 @@ describe("hosted session pull", () => {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { backing: "cloud-vm", org_id: "org_1" },
+        workspace: { backing: "cloud-vm", org_id: "org_1", project_id: "project_1" },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
       syncSessionMessages,
