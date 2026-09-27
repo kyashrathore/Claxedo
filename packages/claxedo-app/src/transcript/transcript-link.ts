@@ -1,6 +1,6 @@
-import { transcriptLinkPrefixes, transcriptLinkRunSource, transcriptLinkUriAllowed } from "@/ui"
+import { transcriptLinkPrefixes, transcriptLinkRunSource, transcriptLinkUriAllowed } from "@/ui/utils"
 
-export { transcriptLinkUriPattern } from "@/ui"
+export { transcriptLinkUriPattern } from "@/ui/utils"
 
 const prefixAlternation = transcriptLinkPrefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
 

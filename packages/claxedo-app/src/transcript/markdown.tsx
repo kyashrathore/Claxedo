@@ -1,5 +1,5 @@
-import { useMarked, markdownEnhances, transcriptMarkdownExtensions, useDialog, ImagePreview, Icon, IconButton, Tooltip } from "@/ui"
-import { checksum, reportUiError } from "@/ui/utils"
+import { useMarked, useDialog, ImagePreview, Icon, IconButton, Tooltip } from "@/ui"
+import { reportUiError } from "@/ui/utils"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
 import { useOptionalData } from "./data"
@@ -17,8 +17,6 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
-import { bundledLanguages } from "shiki"
-import { Marked } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
@@ -29,15 +27,20 @@ import {
 } from "./markdown-worker"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
+import { getCachedMermaidSvg, sanitizeSvg, touchCachedMermaidSvg } from "./markdown-cache"
 import {
-  getCachedMarkdown,
-  getCachedMermaidSvg,
-  sanitizeMarkdown,
-  sanitizeSvg,
-  touchCachedMarkdown,
-  touchCachedMermaidSvg,
-  type MarkdownCacheEntry,
-} from "./markdown-cache"
+  blockHash,
+  codeLanguageName,
+  enhanceTextBlock,
+  entryBase,
+  fallback,
+  initialResult,
+  syncBlock,
+  syncRenderResult,
+  type RenderedBlock,
+  type RenderResult,
+} from "./markdown-blocks"
+import { rendererClock, traceRenderer } from "./markdown-trace"
 import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
@@ -47,80 +50,8 @@ import { createImageWaits, stabilizeImages, type ImageFiles, type ImageWaits } f
 import { nextIdleSlice } from "@/lib/idle"
 import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
 
-type RenderedBlock =
-  | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code">; final: boolean })
-  | {
-      key: string
-      mode: "code"
-      raw: string
-      hash: string
-      language: string
-      complete: boolean
-      generation: number
-      stable: MarkdownToken[]
-      unstable: MarkdownToken[]
-    }
-
-type RenderResult = {
-  text: string
-  blocks: RenderedBlock[]
-}
-
 const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
 const highlightedCodeTokenLimit = 800
-
-function escape(text: string) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
-
-function fallback(markdown: string) {
-  return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
-}
-
-const syncParser = new Marked(...transcriptMarkdownExtensions)
-
-function blockHash(raw: string, final: boolean) {
-  const hash = checksum(raw) ?? ""
-  return final ? hash : `${hash}:first-paint`
-}
-
-function syncRichHtml(src: string): { html: string; final: boolean } {
-  try {
-    const parsed = syncParser.parse(src, { async: false })
-    if (typeof parsed !== "string") return { html: fallback(src), final: false }
-    return { html: sanitizeMarkdown(parsed), final: !markdownEnhances(parsed) }
-  } catch {
-    return { html: fallback(src), final: false }
-  }
-}
-
-function syncBlock(owner: string, cacheKey: string | undefined, index: number, block: Block): RenderedBlock {
-  const key = markdownBlockKey(owner, cacheKey, index, block.mode)
-  if (block.mode === "code") {
-    return {
-      key,
-      mode: "code",
-      raw: block.raw,
-      hash: blockHash(block.raw, true),
-      language: block.language ?? "text",
-      complete: !!block.complete,
-      stable: [],
-      generation: 0,
-      unstable: [[block.src, ""] as MarkdownToken],
-    }
-  }
-  const { html, final } = syncRichHtml(block.src)
-  return { key, mode: block.mode, raw: block.raw, hash: blockHash(block.raw, final), html, final }
-}
-
-function codeLanguageName(language: string | undefined) {
-  return language && language in bundledLanguages ? language : "text"
-}
 
 async function code(text: string, language: string | undefined, key: string, complete = false) {
   const name = codeLanguageName(language)
@@ -480,26 +411,6 @@ function traceMermaid(
   )
 }
 
-function rendererClock(): number | undefined {
-  if (typeof performance === "undefined") return undefined
-  return performance.now()
-}
-
-interface PerfTraceWindow extends Window {
-  __claxedoPerfTrace?: boolean
-  __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
-}
-
-function traceRenderer(name: string, started?: number) {
-  if (typeof window === "undefined") return
-  const target: PerfTraceWindow = window
-  if (!target.__claxedoPerfTrace) return
-  target.__claxedoPerfRendererPhases?.push({
-    name,
-    durationMs: started === undefined ? 0 : performance.now() - started,
-  })
-}
-
 function largeMermaid(source: string) {
   return source.length > 4_000 || source.split("\n", 33).length > 32
 }
@@ -657,63 +568,6 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
   }
 }
 
-function cachedRenderResult(
-  text: string,
-  key: string | undefined,
-  projection: Projection,
-  owner: string,
-): RenderResult | undefined {
-  if (!text) return { text, blocks: [] }
-  const base = key ?? checksum(text)
-  if (!base) return undefined
-  const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
-    if (block.mode === "code") {
-      if (!block.complete) return []
-      const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeTheme.name)
-      if (!cached) return []
-      return [
-        {
-          key: markdownBlockKey(owner, key, index, block.mode),
-          mode: block.mode,
-          raw: block.raw,
-          hash: blockHash(block.raw, true),
-          complete: true,
-          ...cached,
-        },
-      ]
-    }
-    const cacheKey = `${base}:${index}:${block.mode}`
-    const cached = getCachedMarkdown(cacheKey)
-    if (cached?.raw !== block.raw) return []
-    return [{ key: markdownBlockKey(owner, key, index, block.mode), mode: block.mode, ...cached, final: true }]
-  })
-  if (blocks.length !== projection.blocks.length) return undefined
-  return { text, blocks }
-}
-
-function syncRenderResult(text: string, projection: Projection, owner: string, cacheKey: string | undefined): RenderResult {
-  return {
-    text,
-    blocks: projection.blocks.map((block, index) => syncBlock(owner, cacheKey, index, block)),
-  }
-}
-
-function finalFirstPaint(initial: RenderResult | undefined, text: string, index: number, raw: string) {
-  const block = initial?.text === text ? initial.blocks[index] : undefined
-  if (!block || block.mode === "code" || !block.final || block.raw !== raw) return undefined
-  return block
-}
-
-function initialResult(
-  text: string,
-  key: string | undefined,
-  projection: Projection,
-  owner: string,
-): RenderResult | undefined {
-  if (!text) return { text, blocks: [] }
-  return cachedRenderResult(text, key, projection, owner) ?? syncRenderResult(text, projection, owner, key)
-}
-
 export function Markdown(
   props: ComponentProps<"div"> & {
     text: string
@@ -775,13 +629,11 @@ export function Markdown(
         } satisfies RenderResult
       if (!src.text) return { text: src.text, blocks: [] } satisfies RenderResult
 
-      const base = src.key ?? checksum(src.text)
+      const base = entryBase(src.text, src.key)
       return Promise.all(
         src.projection.blocks.map(async (block, index) => {
-          const key = base ? `${base}:${index}:${block.mode}` : undefined
-          const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
-
           if (block.mode === "code") {
+            const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
             const started = rendererClock()
             if (!block.complete) traceRenderer(`markdown.highlightmiss.incomplete.chars-${block.src.length}`)
             else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), codeTheme.name))
@@ -800,34 +652,22 @@ export function Markdown(
 
           if (src.streaming && block.mode === "live") return renderSync(index, block)
 
-          const painted = finalFirstPaint(initial, src.text, index, block.raw)
-          if (painted) {
-            if (key) touchCachedMarkdown(key, { raw: painted.raw, hash: painted.hash, html: painted.html })
-            return painted
-          }
-
-          if (key) {
-            const cached = getCachedMarkdown(key)
-            if (cached?.raw === block.raw) {
-              touchCachedMarkdown(key, cached)
-              return { key: blockKey, mode: block.mode, ...cached, final: true }
-            }
-            traceRenderer(`markdown.parsemiss.${cached ? "raw-mismatch" : "no-entry"}.chars-${block.src.length}`)
-          } else {
-            traceRenderer(`markdown.parsemiss.no-key.chars-${block.src.length}`)
-          }
-
-          const hash = blockHash(block.raw, true)
-          const parsed = await parseMarkdownMeasured({
-            parse: () => marked.parse(block.src),
-            clock: rendererClock,
-            trace: (mode, started) => traceRenderer(`markdown.parse.${mode}.chars-${block.src.length}`, started),
+          return enhanceTextBlock({
+            initial,
+            owner,
+            cacheKey: src.key,
+            base,
+            text: src.text,
+            index,
+            block,
+            mode: block.mode,
+            parse: (text) =>
+              parseMarkdownMeasured({
+                parse: () => marked.parse(text),
+                clock: rendererClock,
+                trace: (mode, started) => traceRenderer(`markdown.parse.${mode}.chars-${text.length}`, started),
+              }),
           })
-          const sanitizeStarted = rendererClock()
-          const safe = sanitizeMarkdown(parsed)
-          traceRenderer(`markdown.sanitize.chars-${block.src.length}`, sanitizeStarted)
-          if (key) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
-          return { key: blockKey, mode: block.mode, raw: block.raw, hash, html: safe, final: true }
         }),
       )
         .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)

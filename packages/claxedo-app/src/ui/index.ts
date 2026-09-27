@@ -53,7 +53,7 @@ export { CheckboxV2 as Checkbox, type CheckboxV2Props as CheckboxProps } from "@
 export { Collapsible } from "@opencode-ai/ui/collapsible"
 export { createSimpleContext } from "@opencode-ai/ui/context"
 export { FileComponentProvider, useFileComponent } from "@opencode-ai/ui/context/file"
-export { MarkedProvider, markdownEnhances, transcriptLinkPrefixes, transcriptLinkRunSource, transcriptLinkUriAllowed, transcriptLinkUriPattern, transcriptMarkdownExtensions, useMarked } from "@opencode-ai/ui/context/marked"
+export { MarkedProvider, useMarked } from "@opencode-ai/ui/context/marked"
 export { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
 export { DockShell, DockShellForm, DockTray } from "@opencode-ai/ui/dock-surface"
 export { useFilteredList } from "@opencode-ai/ui/hooks"

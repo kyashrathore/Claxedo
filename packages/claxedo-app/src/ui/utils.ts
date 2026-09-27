@@ -4,4 +4,12 @@ export { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/ui
 export { reportUiError } from "@opencode-ai/ui/utils/report-error"
 export { readableText } from "@opencode-ai/ui/utils/text"
 export { withAlpha } from "@opencode-ai/ui/theme/color"
+export {
+  markdownEnhances,
+  transcriptLinkPrefixes,
+  transcriptLinkRunSource,
+  transcriptLinkUriAllowed,
+  transcriptLinkUriPattern,
+  transcriptMarkdownExtensions,
+} from "@opencode-ai/ui/context/marked"
 export type { HexColor } from "@opencode-ai/ui/theme/types"
