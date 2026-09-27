@@ -110,10 +110,7 @@ export function Composer(props: ComposerProps) {
       agentNames={() => []}
       currentAgentName={() => ""}
       onAgentSelect={() => undefined}
-      statusStage={() => undefined}
       stoppable={composer.working}
-      abort={() => void composer.send.stop()}
-      onRetry={() => undefined}
       booting={composer.booting}
       working={composer.working}
       blank={controller.blank}
