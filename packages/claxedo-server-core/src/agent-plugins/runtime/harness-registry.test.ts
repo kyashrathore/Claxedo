@@ -4,6 +4,7 @@ import {
   CLAUDE_AGENT_ACP,
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
   agentPluginHarnessDescriptor,
+  agentPluginHarnessRecord,
   agentPluginHarnessTargets,
   allSupportedAgentPluginHarnesses,
   isAgentPluginHarnessId,
@@ -11,9 +12,27 @@ import {
 
 describe("Agent Plugins harness registry", () => {
   test("has one descriptor for every supported harness and no implicit harnesses", () => {
-    expect(AGENT_PLUGIN_HARNESS_REGISTRY.map((harness) => harness.id)).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES)
-    expect(new Set(AGENT_PLUGIN_HARNESS_REGISTRY.map((harness) => harness.id)).size).toBe(AGENT_PLUGIN_HARNESS_REGISTRY.length)
+    expect(Object.keys(AGENT_PLUGIN_HARNESS_REGISTRY)).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES)
+    for (const id of SUPPORTED_AGENT_PLUGIN_HARNESSES) {
+      expect(agentPluginHarnessDescriptor(id)).toEqual({ id, ...AGENT_PLUGIN_HARNESS_REGISTRY[id] })
+      expect(isAgentPluginHarnessId(id)).toBe(true)
+    }
     expect(isAgentPluginHarnessId("pi")).toBe(false)
+  })
+
+  test("builds exactly one value per registered harness", () => {
+    const calls: string[] = []
+    const record = agentPluginHarnessRecord((id) => {
+      calls.push(id)
+      return { id }
+    })
+    expect(calls).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES)
+    expect(Object.keys(record)).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES)
+    for (const id of SUPPORTED_AGENT_PLUGIN_HARNESSES) expect(record[id]).toEqual({ id })
+  })
+
+  test.each(["toString", "constructor", "__proto__", "", null, undefined, 1, {}])("rejects non-harness %s", (value) => {
+    expect(isAgentPluginHarnessId(value)).toBe(false)
   })
 
   test("expands all to a copy of today's explicit registry", () => {
