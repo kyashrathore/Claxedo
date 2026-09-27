@@ -342,11 +342,17 @@ function checkpointRuntime(state: WorkspaceRuntimeState): SandboxCheckpointRunti
   }
 }
 
-export async function touchSandbox(state: WorkspaceRuntimeState) {
+async function touchSandbox(state: WorkspaceRuntimeState) {
   if (!state.remote) return
   const identity = await supervisorDriverIdentity(state, "existing")
   if (!identity) return
   await (await createSupervisorSandboxManager(state, identity)).touch(state.ws.id)
+}
+
+export function keepSandboxAlive(state: WorkspaceRuntimeState) {
+  touchSandbox(state).catch((error: unknown) => {
+    log.warn("Sandbox keepalive failed", { workspaceId: state.ws.id, error: String(error) })
+  })
 }
 
 type RecordedSandboxAttach =
@@ -798,7 +804,7 @@ function startSandboxHealthMonitor(state: WorkspaceRuntimeState) {
         signal: AbortSignal.timeout(10_000),
       })
       if (res.ok) {
-        touchSandbox(state).catch(() => {})
+        keepSandboxAlive(state)
         updateSupervisorSandboxLease(state.ws.id, { last_activity_at: now() })
         return
       }

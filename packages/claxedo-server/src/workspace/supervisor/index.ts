@@ -14,7 +14,7 @@ import {
   sandboxAuthoritySatisfied,
   startSandbox,
   stopSandbox,
-  touchSandbox,
+  keepSandboxAlive,
   type SandboxBindings,
 } from "./sandbox"
 import {
@@ -200,7 +200,7 @@ export function getSupervisorSandboxTarget(workspaceId: string) {
 export function touchSupervisorSandbox(workspaceId: string) {
   const item = runtimes.get(workspaceId)
   if (!item?.remote) return
-  touchSandbox(item).catch(() => {})
+  keepSandboxAlive(item)
 }
 
 export function getSupervisorSandboxStatus(workspaceId: string) {

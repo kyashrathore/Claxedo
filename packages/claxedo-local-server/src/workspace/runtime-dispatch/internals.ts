@@ -10,8 +10,11 @@ import type { RelayTokenInput } from "@claxedo/server-core/adapters/relay-port"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
 import { resolveIngressProvenance } from "./ingress-provenance"
+
+const log = Log.create({ service: "runtime-dispatch" })
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 
@@ -340,7 +343,11 @@ async function forwardRuntimeRequest(
 
   const res = await fetch(req)
   workspaceSupervisor().markUse(hit.workspaceId)
-  if (options?.sandboxManager?.touch) void options.sandboxManager.touch(hit.workspaceId).catch(() => undefined)
+  if (options?.sandboxManager?.touch) {
+    void options.sandboxManager.touch(hit.workspaceId).catch((error: unknown) => {
+      log.warn("Sandbox keepalive failed", { workspaceId: hit.workspaceId, error: String(error) })
+    })
+  }
   if (!options?.sandboxManager) workspaceSupervisor().touch(hit.workspaceId)
   const responseHeaders = runtimeProxyResponseHeaders(res.headers)
   const contentType = res.headers.get("content-type") ?? ""
