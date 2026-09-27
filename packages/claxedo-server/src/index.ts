@@ -144,7 +144,6 @@ export {
   type MirrorAdapter,
   type MirrorController,
 } from "./adapters/central-store/mirror"
-export { createClaxedoClient, type ClaxedoClientOptions, type ClaxedoRequestOptions } from "./client"
 export {
   startWorkspaceHostTunnel,
   stopAllWorkspaceHostTunnels,
