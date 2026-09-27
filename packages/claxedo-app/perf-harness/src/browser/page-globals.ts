@@ -49,29 +49,6 @@ declare global {
     readonly scripts?: readonly PerformanceScriptTiming[]
   }
 
-  /**
-   * One element whose box moved in a layout shift.
-   *
-   * @see https://w3c.github.io/layout-instability/#sec-layout-shift-attribution
-   */
-  interface LayoutShiftAttribution {
-    readonly node?: Node | null
-    readonly previousRect: DOMRectReadOnly
-    readonly currentRect: DOMRectReadOnly
-  }
-
-  /**
-   * Layout Instability's fields, also absent from the installed `lib.dom`.
-   * Present on `layout-shift` entries and absent elsewhere, so optional.
-   *
-   * @see https://w3c.github.io/layout-instability/
-   */
-  interface PerformanceEntry {
-    readonly value?: number
-    readonly hadRecentInput?: boolean
-    readonly sources?: readonly LayoutShiftAttribution[]
-  }
-
   interface Window {
     __claxedoPaintedFrames?: PaintedFrames
   }
