@@ -162,6 +162,7 @@ describe("desktop-local product contract", () => {
       "/api/control/sessions/:sessionId/capabilities",
       "/api/control/sessions/:sessionId/gateway",
       "/api/control/sessions/:sessionId/messages",
+      "/api/control/sessions/:sessionId/outline",
       "/api/control/sessions/:sessionId/participants",
       "/api/control/sessions/:sessionId/shares",
       "/api/control/teams/:teamId/members",
