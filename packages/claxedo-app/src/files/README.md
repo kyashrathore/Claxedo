@@ -15,6 +15,7 @@ Owns: the Files navigator and the file tab the workspace panel shows, and the se
 - Trees, contents, search results and status are the adapter's query data, refreshed only by its `filesChanged` invalidation. Nothing here copies them.
 - Only `src/server/` turns a placement into a directory; paths here are always relative to the placement.
 - A focus line is re-applied for 5 s after the focus request, because the viewer's rebuilds can reset the scroll position right after the first reveal.
+- The navigator's search input removes itself from the document on cleanup (`releaseChromiumAutofillAnchor`). Chromium's AutofillAgent keeps a persistent handle on the last focused text field until an element that is not a form control takes focus; the autofocused search input is that field, so an unmounted navigator stayed reachable from it (rows, shell, scroll view) as a detached tree until the composer was focused. Removing the input cuts the tree loose: measured over 5 unmounts, 0 navigator nodes retained, DOM after GC flat at about 2990.
 
 ## Flows
 
