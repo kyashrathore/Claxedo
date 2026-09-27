@@ -235,7 +235,15 @@ export function createProfiler(options: {
   }
 
   function currentInterval(at: number) {
-    return !interactive && at - startedAt < startupDurationMs ? startupIntervalMs : steadyIntervalMs
+    if (!interactive && at - startedAt < startupDurationMs) return startupIntervalMs
+    return listeners.size > 0 ? steadyIntervalMs : DIAGNOSTICS_ROLLUP_BUCKET_MS
+  }
+
+  function reschedule() {
+    if (disposed || inFlight || timer === undefined) return
+    clock.clearTimeout(timer)
+    timer = undefined
+    schedulePeriodic()
   }
 
   function scheduleBurst() {
@@ -557,10 +565,7 @@ export function createProfiler(options: {
     markInteractive() {
       if (disposed || interactive) return
       interactive = true
-      if (inFlight || timer === undefined) return
-      clock.clearTimeout(timer)
-      timer = undefined
-      schedulePeriodic()
+      reschedule()
     },
     getSnapshot() {
       return trim(clock.now())
@@ -580,6 +585,8 @@ export function createProfiler(options: {
       if (activate && options.source.setDemanded) {
         options.source.setDemanded(true)
         runCollection("manual")
+      } else if (activate) {
+        reschedule()
       }
       return () => {
         if (!listeners.delete(listener) || listeners.size > 0) return

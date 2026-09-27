@@ -6,6 +6,7 @@ import {
   aggregateInterval,
   compactMetricPoints,
   createProfiler,
+  DIAGNOSTICS_ROLLUP_BUCKET_MS,
   type DiagnosticsClock,
   type DiagnosticsObservation,
   type DiagnosticsSource,
@@ -223,6 +224,7 @@ describe("bounded desktop profiler", () => {
         return [observation(at, 10, "1000", 1, 1_000)]
       }),
     })
+    profiler.subscribe(() => {})
 
     clock.advance(500)
     expect(calls).toBe(2)
@@ -255,12 +257,50 @@ describe("bounded desktop profiler", () => {
       }),
     })
 
+    profiler.subscribe(() => {})
     clock.advance(100)
     profiler.markInteractive()
     clock.advance(1_999)
     expect(calls).toBe(1)
     clock.advance(1)
     expect(calls).toBe(2)
+    profiler.dispose()
+  })
+
+  test("with nobody subscribed, samples once per rollup bucket, and a subscriber brings the steady cadence back at once", () => {
+    const clock = new FakeClock()
+    let calls = 0
+    const profiler = createProfiler({
+      clock,
+      startupIntervalMs: 500,
+      startupDurationMs: 120_000,
+      steadyIntervalMs: 2_000,
+      source: source((at) => {
+        calls++
+        return [observation(at, 10, "1000", 1, 1_000)]
+      }),
+    })
+
+    profiler.markInteractive()
+    expect(calls).toBe(1)
+    clock.advance(DIAGNOSTICS_ROLLUP_BUCKET_MS - 1)
+    expect(calls).toBe(1)
+    clock.advance(1)
+    expect(calls).toBe(2)
+
+    const unsubscribe = profiler.subscribe(() => {})
+    clock.advance(2_000)
+    expect(calls).toBe(3)
+    clock.advance(2_000)
+    expect(calls).toBe(4)
+
+    unsubscribe()
+    clock.advance(2_000)
+    expect(calls, "the tick already scheduled").toBe(5)
+    clock.advance(DIAGNOSTICS_ROLLUP_BUCKET_MS - 1)
+    expect(calls).toBe(5)
+    clock.advance(1)
+    expect(calls).toBe(6)
     profiler.dispose()
   })
 
