@@ -23,7 +23,7 @@
       "matchPackageNames": [
         "better-auth", "@better-auth/oauth-provider", "@npmcli/agent", "@silvia-odwyer/photon-node",
         "@ai-sdk/xai", "@ai-sdk/google", "@modelcontextprotocol/sdk", "@pierre/diffs",
-        "@tanstack/solid-query", "@tanstack/virtual-core", "@kobalte/core", "tokentracker-cli"
+        "@solidjs/router", "@tanstack/solid-query", "@tanstack/virtual-core", "@kobalte/core", "tokentracker-cli"
       ],
       "groupName": "patched dependencies (regenerate patches/ first)",
       "labels": ["needs-patch-regeneration"]

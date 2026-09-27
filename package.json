@@ -126,6 +126,7 @@
     "@ai-sdk/google@3.0.73": "patches/@ai-sdk%2Fgoogle@3.0.73.patch",
     "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
     "@pierre/diffs@1.4.3": "patches/@pierre%2Fdiffs@1.4.3.patch",
+    "@solidjs/router@0.15.4": "patches/@solidjs%2Frouter@0.15.4.patch",
     "@tanstack/solid-query@5.99.2": "patches/@tanstack%2Fsolid-query@5.99.2.patch",
     "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
     "@kobalte/core@0.13.12": "patches/@kobalte%2Fcore@0.13.12.patch",
