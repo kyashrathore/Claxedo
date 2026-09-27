@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { emitClaxedoServerBundle } from "./bundle-claxedo-server"
 
 /**
  * The server the desktop ships must contain ONE copy of each stateful module.
@@ -38,7 +38,7 @@ const OUT = path.join(os.tmpdir(), `claxedo-bundle-instance-${process.pid}`)
  */
 let bundled: Promise<unknown> | undefined
 function bundleOnce() {
-  bundled ??= bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
+  bundled ??= emitClaxedoServerBundle(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
   return bundled
 }
 
@@ -46,14 +46,10 @@ afterAll(() => {
   fs.rmSync(OUT, { recursive: true, force: true })
 })
 
-/**
- * Every emitted JS file, entry and chunks alike. The staged `node_modules`
- * beside them is the SDK closure the bundle resolves at runtime, not output.
- */
 function emitted(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return entry.name === "node_modules" ? [] : emitted(full)
+    if (entry.isDirectory()) return emitted(full)
     return entry.name.endsWith(".js") ? [full] : []
   })
 }

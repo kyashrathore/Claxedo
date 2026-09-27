@@ -19,11 +19,46 @@ const require = createRequire(import.meta.url)
 
 export async function bundleClaxedoServer(source: string, destination: string) {
   const pending = `${destination}.pending-${process.pid}`
-  fs.rmSync(pending, { recursive: true, force: true })
+  const { outputBytes } = await emitClaxedoServerBundle(source, pending)
+  const [platform, arch] = resolveTargetOsArch().split("-")
+  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch })
+  await stagePluginToolchain(path.join(pending, "node_modules"), { platform: platform, arch: arch })
+
+  fs.rmSync(destination, { recursive: true, force: true })
+  fs.renameSync(pending, destination)
+  fs.rmSync(`${destination}.js`, { force: true })
+
+  const entry = path.join(destination, "index.js")
+  return {
+    entry,
+    /**
+     * The chunk `index.js` reaches by dynamic import — i.e. the product entry,
+     * and with it the whole 9.11 MB static closure the shipped compile cache is
+     * generated from.
+     *
+     * The build needs this because the boot stub REFUSES to run without a valid
+     * server environment, so a generator that entered through `index.js` would
+     * throw before the dynamic import and cache nothing. It enters here
+     * instead. Read back out of the emitted entry rather than predicted from
+     * the bundler's options: the chunk name carries a content hash, and a
+     * predicted name that drifted would silently generate an empty cache.
+     */
+    deferredEntry: resolveDeferredServerEntry(entry),
+    outputBytes,
+  }
+}
+
+/**
+ * The server's own emitted code and the data files it resolves beside itself,
+ * without the runtime `node_modules` that `bundleClaxedoServer` stages next to
+ * it (31.7k files, 382 MiB on darwin-arm64).
+ */
+export async function emitClaxedoServerBundle(source: string, outdir: string) {
+  fs.rmSync(outdir, { recursive: true, force: true })
 
   const result = await runBunBuild("Failed to bundle claxedo-server", {
     entrypoints: [source],
-    outdir: pending,
+    outdir,
     target: "node",
     format: "esm",
     splitting: true,
@@ -59,10 +94,10 @@ export async function bundleClaxedoServer(source: string, destination: string) {
       },
     ],
   }, {
-    // The staging directory is created before the build and only promoted to
-    // `dist` on success, so a failed build must remove it or it is orphaned
-    // under a pid-suffixed name that nothing ever collects.
-    onFailure: () => fs.rmSync(pending, { recursive: true, force: true }),
+    // `bundleClaxedoServer` emits into a pid-suffixed staging directory that is
+    // only promoted on success, so a failed build must remove it or nothing
+    // ever collects it.
+    onFailure: () => fs.rmSync(outdir, { recursive: true, force: true }),
   })
 
   const outputBytes = result.outputs.reduce((total, output) => total + fs.statSync(output.path).size, 0)
@@ -79,40 +114,15 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   // relative path would keep resolving after that edge moved, and the only
   // symptom is an empty database on a fresh profile.
   const migrationsSource = resolveLocalServerMigrationJournal()
-  for (const parent of [pending, path.join(pending, "chunks")]) {
+  for (const parent of [outdir, path.join(outdir, "chunks")]) {
     fs.cpSync(migrationsSource, path.join(parent, "claxedo-migration"), { recursive: true })
   }
 
   // @cursor/sdk ships as a webpack bundle with numeric lazy chunks (986.js, …).
   // Bun inlines the entry into chunks/index-*.js but does not emit those siblings,
   // so cursor-sdk session create fails at runtime until they sit beside the entry.
-  copyCursorSdkLazyChunks(path.join(pending, "chunks"))
-  const [platform, arch] = resolveTargetOsArch().split("-")
-  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch })
-  await stagePluginToolchain(path.join(pending, "node_modules"), { platform: platform, arch: arch })
-
-  fs.rmSync(destination, { recursive: true, force: true })
-  fs.renameSync(pending, destination)
-  fs.rmSync(`${destination}.js`, { force: true })
-
-  const entry = path.join(destination, "index.js")
-  return {
-    entry,
-    /**
-     * The chunk `index.js` reaches by dynamic import — i.e. the product entry,
-     * and with it the whole 9.11 MB static closure the shipped compile cache is
-     * generated from.
-     *
-     * The build needs this because the boot stub REFUSES to run without a valid
-     * server environment, so a generator that entered through `index.js` would
-     * throw before the dynamic import and cache nothing. It enters here
-     * instead. Read back out of the emitted entry rather than predicted from
-     * the bundler's options: the chunk name carries a content hash, and a
-     * predicted name that drifted would silently generate an empty cache.
-     */
-    deferredEntry: resolveDeferredServerEntry(entry),
-    outputBytes,
-  }
+  copyCursorSdkLazyChunks(path.join(outdir, "chunks"))
+  return { outputBytes }
 }
 
 /**
