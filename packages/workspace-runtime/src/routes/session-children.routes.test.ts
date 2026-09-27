@@ -38,6 +38,8 @@ function fixture(input: {
    */
   withRuntime?: boolean
   refuseTurn?: (sessionId: string) => Error | undefined
+  /** What the host's store read answers for a persisted row, given what the fixture has recorded so far. */
+  read?: (row: AgentSession, calls: { prompts: readonly unknown[] }) => AgentSession | null
 } = {}) {
   const store = new MemoryRuntimeStore()
   const origins = new Map<string, SessionTurnOrigin>()
@@ -217,7 +219,11 @@ function fixture(input: {
       return session
     },
     listSessions: async (_c, directory) => store.listSessions(directory),
-    getSession: ({ sessionId }) => store.getSession(sessionId) ?? null,
+    getSession: ({ sessionId }) => {
+      const row = store.getSession(sessionId)
+      if (!row) return null
+      return input.read ? input.read(row, calls) : row
+    },
     getMessages: ({ sessionId }) => messages.get(sessionId) ?? [],
     listSubagents: ({ parentSessionId }) => store.listSubagents(parentSessionId),
     afterDeleteSession: ({ sessionId }) => {
@@ -259,6 +265,30 @@ function fixture(input: {
 }
 
 describe("POST /session with parentID", () => {
+  test("a child that reads back with no times is deleted before its parent admits or announces it", async () => {
+    const item = fixture({ read: (row) => row.parentID ? { id: row.id, parentID: row.parentID } : row })
+    item.seedParent("parent")
+
+    const response = await item.create({ parentID: "parent", title: "Child" })
+
+    expect(response.status).toBe(500)
+    expect(item.calls.deleted).toEqual(item.calls.created)
+    expect(item.store.listSubagents("parent")).toEqual([])
+    expect(item.runtimeEvents).toEqual([])
+    expect(item.calls.projected).toEqual([])
+  })
+
+  test("a session whose first prompt was admitted and that then reads back with no times is undone", async () => {
+    const item = fixture({ read: (row, calls) => calls.prompts.length > 0 ? { id: row.id } : row })
+
+    const response = await item.create({ title: "Solo", prompt: { parts: [{ type: "text", text: "hello" }] } })
+
+    expect(response.status).toBe(500)
+    expect(item.calls.prompts).toHaveLength(1)
+    expect(item.calls.deleted).toEqual(item.calls.created)
+    expect(item.store.getSession(item.calls.created[0]!)).toBeNull()
+  })
+
   test("publishes the persisted child relationship to the control-plane projection", async () => {
     const item = fixture()
     item.seedParent("parent")

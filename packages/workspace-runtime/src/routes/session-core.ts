@@ -1467,6 +1467,7 @@ export function createSessionRoutes(opts: Opts) {
             if (childMode.mode) {
               await adapter.setPermissionMode!(await requireExecutionBinding(opts, c, directory, session.id, adapter), childMode.mode.id)
             }
+            ;({ session, time } = await readCreatedSession(opts, c, adapter, directory, session.id))
             if (body.parentID && children) {
               const harness = requestedHarness ?? config.harness ?? (opts.getSessionConfig
                 ? (await opts.getSessionConfig(c, directory, session.id, adapter)).harness
@@ -1498,7 +1499,6 @@ export function createSessionRoutes(opts: Opts) {
                 ...(wakeOrigin ? { origin: wakeOrigin } : {}),
               })).subagentKey
             }
-            ;({ session, time } = await readCreatedSession(opts, c, adapter, directory, session.id))
           } catch (error) {
             if (!existing) await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
@@ -1556,9 +1556,12 @@ export function createSessionRoutes(opts: Opts) {
           if (first) {
             // Admission can already have retitled the session from its first
             // prompt; the answer is what the create's projection records.
-            const admitted = await readRuntimeSession(opts, c, directory, session.id, adapter)
-            if (!admitted) throw new Error(`Created session ${session.id} has no persisted session row`)
-            session = admitted
+            try {
+              ;({ session } = await readCreatedSession(opts, c, adapter, directory, session.id))
+            } catch (error) {
+              await undoCreated(`first_input_read_back_failed: ${errorMessage(error)}`, error)
+              throw error
+            }
           }
           if (body.parentID && children) {
             opts.publishGlobal(withDir(compatScope(directory, session.id), sessionUpdated(session)))
