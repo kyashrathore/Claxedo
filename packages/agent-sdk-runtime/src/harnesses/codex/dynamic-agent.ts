@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto"
 import type { JsonRecord } from "../shared/sdk-runtime-driver"
 import { asRecord } from "@claxedo/helpers/guards"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
@@ -19,7 +18,13 @@ export async function spawnDynamicCodexAgent(input: {
   frame: JsonRecord
   permissionModeId?: string
 }) {
-  const callId = text(input.params.callId) ?? randomUUID()
+  const callId = text(input.params.callId)
+  if (!callId) {
+    return {
+      contentItems: [{ type: "inputText", text: "spawn_agent requires a callId." }],
+      success: false,
+    }
+  }
   const args = asRecord(input.params.arguments) ?? {}
   const prompt = text(args.message) ?? text(args.prompt) ?? text(args.description)
   if (!prompt) {

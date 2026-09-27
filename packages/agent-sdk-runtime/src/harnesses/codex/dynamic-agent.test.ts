@@ -98,4 +98,17 @@ describe("spawnDynamicCodexAgent", () => {
 
     expect(process.listeners.size).toBe(0)
   })
+
+  test("refuses a spawn_agent request without a callId and starts no child, since an edge needs the call its part carries", async () => {
+    const process = new FakeDynamicProcess()
+    const observations: JsonRecord[] = []
+    const request = input(process, observations)
+
+    await expect(spawnDynamicCodexAgent({ ...request, params: { arguments: request.params.arguments } })).resolves.toEqual({
+      contentItems: [{ type: "inputText", text: "spawn_agent requires a callId." }],
+      success: false,
+    })
+    expect(observations).toEqual([])
+    expect(process.requests).toEqual([])
+  })
 })
