@@ -145,6 +145,7 @@ describe("two-user signed app transport", () => {
       title: "Signed private session",
     })
     await authority.registerRuntimeSession({
+      updatedAt: Date.now(),
       principalKind: "user",
       actorId: aliceIdentity.token_identifier,
       actorKind: "human",
@@ -166,6 +167,7 @@ describe("two-user signed app transport", () => {
       turnId: "msg_alice",
     })
     await authority.syncSessionMessages(aliceAuth, {
+      updatedAt: Date.now(),
       workspaceId: "ws_signed_private",
       sessionId: "ses_signed_private",
       messages: [{ id: "msg_alice", role: "user", text: "Alice wrote this" }],
@@ -251,6 +253,7 @@ describe("two-user signed app transport", () => {
       turnId: "msg_bob",
     })
     await expect(authority.syncSessionMessages(bobAuth, {
+      updatedAt: Date.now(),
       workspaceId: "ws_signed_private",
       sessionId: "ses_signed_private",
       messages: [

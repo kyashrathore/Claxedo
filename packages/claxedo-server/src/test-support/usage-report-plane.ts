@@ -98,6 +98,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     const operationId = `op_${sessionId}`
     await store.reserveSession(owner, { operationId, sessionId, workspaceId, kind: "create" })
     await store.registerRuntimeSession({
+      updatedAt: Date.now(),
       principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human", operationId, sessionId, workspaceId,
     })
     if (!store.grantSessionShare) throw new Error("the SQLite authority grants session shares")

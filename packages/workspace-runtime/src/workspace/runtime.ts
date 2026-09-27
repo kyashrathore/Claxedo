@@ -2259,6 +2259,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)
     },
+    sessionUpdatedAt(sessionId: string) {
+      const time = store().getSession(sessionId)?.time
+      return time?.updated ?? time?.created
+    },
     drivenOnlyByMachineUser(sessionId: string, ownerActorId?: string) {
       const current = store()
       return !!current.getSession(sessionId) && current.relayedTurnInLineage?.(sessionId, ownerActorId) === false

@@ -224,12 +224,13 @@ export function onEmbeddedWorkspaceRuntime(listener: EmbeddedWorkspaceRuntimeLis
 }
 
 /**
- * Whether a runtime mounted in THIS process holds a transcript for the
- * session. False for a workspace with no runtime up, so a caller that needs a
- * yes must be on a request the dispatcher already mounted one for.
+ * The session's update time on a runtime mounted in THIS process, present
+ * only when that runtime holds a transcript for it. Undefined for a workspace
+ * with no runtime up, so a caller that needs one must be on a request the
+ * dispatcher already mounted a runtime for.
  */
-export function embeddedWorkspaceRuntimeHoldsSession(workspaceId: string, sessionId: string) {
-  return hosts.get(workspaceId)?.host.hasSession(sessionId) ?? false
+export function embeddedWorkspaceRuntimeSessionUpdatedAt(workspaceId: string, sessionId: string) {
+  return hosts.get(workspaceId)?.host.sessionUpdatedAt(sessionId)
 }
 
 /**

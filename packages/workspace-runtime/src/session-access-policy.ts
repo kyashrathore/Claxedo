@@ -107,6 +107,8 @@ export type SessionAccessPolicyInput = {
   operation: SessionAccessOperation
   sessionId?: string
   sessionTitle?: string
+  /** The session's update time on this runtime, which a registration or an adoption lists the session at. */
+  sessionUpdatedAt?: number
   /** Immutable reserve/register operation created before runtime creation. */
   registrationOperationId?: string
   method?: string

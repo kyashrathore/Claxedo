@@ -240,9 +240,9 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(creates).toBe(0)
   })
 
-  test("registers the exact reserved operation before returning create success", async () => {
+  test("registers the exact reserved operation at the created session's own update time before returning create success", async () => {
     const calls: unknown[] = []
-    const fixture = { ...adapter(), getSession: async () => null, createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }) }
+    const fixture = { ...adapter(), getSession: persistedAt(7), createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }) }
     const policy = managedPolicy({
       registerSession: async (value) => {
         calls.push(value)
@@ -263,6 +263,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
       sessionId: "ses_1",
       registrationOperationId: "op_create_1",
       sessionTitle: "Private",
+      sessionUpdatedAt: 7,
       actor: { actorId: "actor_1", actorKind: "human" },
       authority: { orgId: "org_1", workspaceId: "ws_1", role: "editor" },
     })
@@ -311,7 +312,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const calls: string[] = []
     const fixture = {
       ...adapter(),
-      getSession: async () => null,
+      getSession: persistedAt(7),
       createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
       deleteSession: async () => { calls.push("delete") },
     }
@@ -329,6 +330,32 @@ describe("createSessionRoutes private-session lifecycle", () => {
       body: JSON.stringify({ id: "ses_1" }),
     })
     expect(response.status).toBe(403)
+    expect(calls).toEqual(["begin", "delete", "complete"])
+  })
+
+  test("a created session with no update time to list it at is never registered, and its creation is undone", async () => {
+    const calls: string[] = []
+    const fixture = {
+      ...adapter(),
+      getSession: async () => null,
+      createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
+      deleteSession: async () => { calls.push("delete") },
+    }
+    const policy = managedPolicy({
+      registerSession: async () => { calls.push("register"); return { allowed: true } },
+      beginRegistrationCompensation: async () => { calls.push("begin"); return { allowed: true } },
+      completeRegistrationCompensation: async () => { calls.push("complete"); return { allowed: true } },
+    })
+    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-claxedo-session-registration-operation": "op_create_1",
+      },
+      body: JSON.stringify({ id: "ses_1" }),
+    })
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ error: { code: "session_update_time_missing" } })
     expect(calls).toEqual(["begin", "delete", "complete"])
   })
 
@@ -353,7 +380,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const calls: unknown[] = []
     const fixture = {
       ...adapter(),
-      getSession: async () => null,
+      getSession: async (binding: AgentExecutionBinding) => binding.sessionId === "ses_child" ? persistedAt(9)(binding) : null,
       forkSession: async (binding: AgentExecutionBinding, messageId: string, childId?: string) => {
         calls.push({ parentId: binding.sessionId, messageId, directory: binding.directory, childId })
         return { id: childId! }
@@ -380,6 +407,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(calls[1]).toMatchObject({
       sessionId: "ses_child",
       registrationOperationId: "op_fork_1",
+      sessionUpdatedAt: 9,
       actor: { actorId: "actor_1", actorKind: "human" },
     })
     expect(await response.json()).toEqual({ id: "ses_child" })
@@ -949,6 +977,10 @@ function routes(input: {
     await next()
   })
   return app.route("/", created)
+}
+
+function persistedAt(updated: number) {
+  return async (binding: AgentExecutionBinding) => ({ id: binding.sessionId, time: { created: 1, updated } })
 }
 
 function registrationPolicy(

@@ -186,6 +186,7 @@ async function reserveAndRegister(
     title: input.title,
   })
   return await sessions.registerRuntimeSession({
+    updatedAt: Date.now(),
     principalKind: "user",
     actorId: auth.principal!.actorId,
     actorKind: "human",
@@ -300,7 +301,7 @@ describe("D1 private multiplayer session authority", () => {
       }), { deploymentId: "deployment-a", now: input.now })
       const operation = phase === "reserve"
         ? raced.reserveRuntimeSession(principal, intent)
-        : raced.registerRuntimeSession({ ...principal, operationId: intent.operationId,
+        : raced.registerRuntimeSession({ updatedAt: Date.now(), ...principal, operationId: intent.operationId,
             sessionId: intent.sessionId, workspaceId: intent.workspaceId })
       const outcome = await operation.then(() => "accepted", () => "refused")
       expect(batches).toBe(1)
@@ -635,6 +636,7 @@ describe("D1 private multiplayer session authority", () => {
     expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([])
     await expect(
       input.sessions.registerRuntimeSession({
+        updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
         actorKind: "human",
@@ -646,6 +648,7 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toMatchObject({ code: "registration_transition_denied" })
     await expect(
       input.sessions.registerRuntimeSession({
+        updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
         actorKind: "human",
@@ -708,6 +711,7 @@ describe("D1 private multiplayer session authority", () => {
     })
     await expect(
       input.sessions.registerRuntimeSession({
+        updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
         actorKind: "human",
@@ -734,6 +738,7 @@ describe("D1 private multiplayer session authority", () => {
     })
     await expect(
       input.sessions.registerRuntimeSession({
+        updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
         actorKind: "human",
@@ -776,6 +781,7 @@ describe("D1 private multiplayer session authority", () => {
 
     await expect(
       input.sessions.registerRuntimeSession({
+        updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
         actorKind: "human",
@@ -1016,6 +1022,7 @@ describe("D1 private multiplayer session authority", () => {
     })
     await expect(
       input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages,
@@ -1050,6 +1057,7 @@ describe("D1 private multiplayer session authority", () => {
 
     await expect(
       input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages,
@@ -1059,6 +1067,7 @@ describe("D1 private multiplayer session authority", () => {
     ).resolves.toEqual({ ok: true, applied: false, maxEventOrdinal: 7 })
     await expect(
       input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages: [...messages, { info: { id: "m4", role: "assistant" }, parts: [] }],
@@ -1076,6 +1085,7 @@ describe("D1 private multiplayer session authority", () => {
     })
     await expect(
       input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages,
@@ -1086,6 +1096,7 @@ describe("D1 private multiplayer session authority", () => {
     expect(takeover.fencingToken).toBeGreaterThan(aliceTurn.fencingToken)
     await expect(
       input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages: [{ info: { role: "user" }, parts: [] }],
@@ -1095,6 +1106,7 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toMatchObject({ code: "invalid_input" })
     await expect(
       input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
         sessionId: "ses_unknown",
         workspaceId: "ws_main",
         messages,
@@ -1198,6 +1210,7 @@ describe("D1 private multiplayer session authority", () => {
       kind: "create",
     })
     await input.sessions.registerRuntimeSession({
+      updatedAt: Date.now(),
       ...agent,
       operationId: "op_agent",
       sessionId: "ses_agent",

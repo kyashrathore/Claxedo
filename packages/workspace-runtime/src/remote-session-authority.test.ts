@@ -81,6 +81,7 @@ describe("remote workspace session authority", () => {
       ...input,
       operation: "session_create",
       registrationOperationId: "op_register_1",
+      sessionUpdatedAt: 1_234,
     })).allowed).toBe(true)
     expect(requests.map((request) => ({
       authorization: new Headers(request.init?.headers).get("authorization"),
@@ -88,7 +89,7 @@ describe("remote workspace session authority", () => {
     }))).toEqual([
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "read" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write", writeClass: "agent_turn" } },
-      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register", operationId: "op_register_1" } },
+      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register", operationId: "op_register_1", updatedAt: 1_234 } },
     ])
   })
 

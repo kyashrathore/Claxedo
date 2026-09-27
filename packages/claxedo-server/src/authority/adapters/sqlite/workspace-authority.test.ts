@@ -45,6 +45,7 @@ async function registerPrivateSession(input: {
     ...(input.title ? { title: input.title } : {}),
   })
   await input.authority.registerRuntimeSession({
+    updatedAt: Date.now(),
     principalKind: "user",
     actorId: input.auth.user.tokenIdentifier,
     actorKind: "human",
@@ -460,6 +461,7 @@ describe("sqlite workspace authority", () => {
       turnIds: ["msg_1"],
     })
     await authority.syncSessionMessages(owner, {
+      updatedAt: Date.now(),
       sessionId: "ses_1",
       workspaceId: "ws_s",
       messages: [{ info: { id: "msg_1", role: "user" }, parts: [] }],
@@ -509,6 +511,7 @@ describe("sqlite workspace authority", () => {
       turnIds: ["msg_1", "msg_3", "msg_5"],
     })
     await authority.syncSessionMessages(owner, {
+      updatedAt: Date.now(),
       sessionId: "ses_page",
       workspaceId: "ws_page",
       messages,
@@ -607,12 +610,14 @@ describe("sqlite workspace authority", () => {
     const older = [{ info: { id: "msg_old", role: "assistant" }, parts: [] }]
 
     await expect(authority.syncSessionMessages(owner, {
+      updatedAt: Date.now(),
       workspaceId: "ws_ordinal",
       sessionId: "ses_ordinal",
       messages: newer,
       maxEventOrdinal: 12,
     })).resolves.toMatchObject({ ok: true, applied: true, maxEventOrdinal: 12 })
     await expect(authority.syncSessionMessages(owner, {
+      updatedAt: Date.now(),
       workspaceId: "ws_ordinal",
       sessionId: "ses_ordinal",
       messages: older,
@@ -681,6 +686,7 @@ describe("sqlite workspace authority", () => {
       turnIds: ["msg_keep"],
     })
     await authority.syncSessionMessages(owner, {
+      updatedAt: Date.now(),
       sessionId: "ses_delete_rollback",
       workspaceId: "ws_delete_rollback",
       messages: [{ info: { id: "msg_keep", role: "user" }, parts: [] }],

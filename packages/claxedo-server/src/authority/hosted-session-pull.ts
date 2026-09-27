@@ -67,7 +67,8 @@ function sessionVisibility(input: unknown) {
 
 function messagesPayload(input: unknown) {
   const row = asRecord(input)
-  if (!row || !Array.isArray(row.messages) || !asRecord(row.session)) {
+  const session = asRecord(row?.session)
+  if (!row || !Array.isArray(row.messages) || !session) {
     throw new HostedSessionPullError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -96,11 +97,20 @@ function messagesPayload(input: unknown) {
       "Workspace runtime returned an invalid message snapshot fence",
     )
   }
+  const { updatedAt } = sessionStamp(session)
+  if (updatedAt === undefined) {
+    throw new HostedSessionPullError(
+      502,
+      "workspace_runtime_snapshot_invalid",
+      "Workspace runtime returned a message snapshot whose session has no update time",
+    )
+  }
   return {
     messages: row.messages,
     maxEventOrdinal,
     fencingToken,
-    session: row.session,
+    session,
+    updatedAt,
   }
 }
 
@@ -319,6 +329,7 @@ export async function pullHostedControlSessionMessages(
       workspaceId: target.workspaceId,
       sessionId: input.sessionId,
       messages,
+      updatedAt: payload.updatedAt,
       maxEventOrdinal,
       ...(fencingToken === undefined ? {} : { fencingToken }),
       intakeReady,

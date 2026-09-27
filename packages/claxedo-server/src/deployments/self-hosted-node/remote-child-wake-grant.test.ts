@@ -316,6 +316,7 @@ test("a restarted host delivers the wake as the original actor by presenting the
   expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
 
   await expect(authority.syncSessionMessages(alice, {
+    updatedAt: Date.now(),
     sessionId: PARENT,
     workspaceId: WORKSPACE,
     fencingToken: admitted[0].fencing_token,

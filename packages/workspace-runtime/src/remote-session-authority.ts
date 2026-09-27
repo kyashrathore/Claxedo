@@ -47,7 +47,7 @@ export type AdoptRefusedSession = (
   input: SessionAuthorityInput,
   refusal: {
     denial: Exclude<SessionAccessDecision, { allowed: true }>
-    adopt: () => Promise<SessionAccessDecision>
+    adopt: (updatedAt: number) => Promise<SessionAccessDecision>
     reauthorize: () => Promise<SessionAccessDecision>
   },
 ) => Promise<SessionAccessDecision>
@@ -129,7 +129,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     if (decision.allowed || !adoptRefused) return decision
     return adoptRefused(input, {
       denial: decision,
-      adopt: () => request(input, "adopt", decodeAllowed),
+      adopt: (updatedAt) => request({ ...input, sessionUpdatedAt: updatedAt }, "adopt", decodeAllowed),
       reauthorize: () => request(input, action, decodeAllowed, classified),
     })
   }
@@ -340,6 +340,9 @@ function authorityRequestBody(
     ...(requestOptions?.parentSessionId ? { parentSessionId: requestOptions.parentSessionId } : {}),
     ...((action === "register" || action === "reserve" || action === "adopt") && input.sessionTitle
       ? { title: input.sessionTitle }
+      : {}),
+    ...((action === "register" || action === "adopt") && input.sessionUpdatedAt !== undefined
+      ? { updatedAt: input.sessionUpdatedAt }
       : {}),
     ...(action === "turn_grant"
       ? {

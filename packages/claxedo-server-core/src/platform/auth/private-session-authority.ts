@@ -36,7 +36,20 @@ export type PrivateSessionRegistrationResult = {
   state: PrivateSessionRegistrationState
 }
 
-export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & {
+/**
+ * The session's update time as its runtime reports it. The listed row carries
+ * only the runtime's clock: a reader keeps the newer of the listed row and the
+ * runtime's own session read, and a row stamped by the authority's later clock
+ * would outrank every read of the session made before it.
+ */
+type RuntimeSessionStamp = { updatedAt: number }
+
+export function requireRuntimeSessionStamp(value: number, refuse: (message: string) => Error) {
+  if (!Number.isSafeInteger(value) || value < 0) throw refuse("updatedAt must be the runtime's session update time")
+  return value
+}
+
+export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & RuntimeSessionStamp & {
   operationId: string
   sessionId: string
   workspaceId: string
@@ -51,7 +64,7 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
  */
 export type SessionPageQuery = SessionListKeysetPage & ({ projectId: string } | { workspaceId: string })
 
-export type AdoptRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & {
+export type AdoptRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & RuntimeSessionStamp & {
   sessionId: string
   workspaceId: string
   /** The machine the caller reached the session through; names the enrollment whose owner may adopt. */
@@ -270,7 +283,7 @@ export type PrivateSessionAuthority = {
   readSessionOutline: (auth: SignedControlPlaneAuth, input: { sessionId: string; workspaceId: string }) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
-    input: {
+    input: RuntimeSessionStamp & {
       sessionId: string
       workspaceId: string
       messages: unknown[]

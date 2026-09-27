@@ -124,6 +124,7 @@ test("a wake recovered after restart redeems the grant its create minted, runs a
   // a producer for, and attributes it to that producer rather than to whoever
   // is syncing.
   await expect(authority.syncSessionMessages(alice, {
+    updatedAt: Date.now(),
     sessionId: PARENT,
     workspaceId: WORKSPACE,
     fencingToken: admitted[0].fencing_token,

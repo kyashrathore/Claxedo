@@ -27,6 +27,7 @@ import {
   type SessionPageQuery,
   type SessionWriteClass,
   type TransitionPrivateSessionRegistrationInput,
+  requireRuntimeSessionStamp,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SESSION_TURN_AUTHORITY_METHODS,
@@ -338,6 +339,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       title?: string
+      updatedAt: number
     },
   ) {
     const actor = await this.requireRuntimeActor(input)
@@ -345,6 +347,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const sessionId = requireText(input.sessionId, "sessionId")
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const title = optionalText(input.title, "title", 2_000)
+    const updatedAt = requireRuntimeSessionStamp(input.updatedAt, (message) => new D1SessionAuthorityError("invalid_input", message))
     const result = await this.database
       .prepare(
         `
@@ -362,7 +365,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         "Runtime registration title does not match the reservation",
       )
     }
-    return await this.registerReservation(actor, result)
+    return await this.registerReservation(actor, result, updatedAt)
   }
 
   /**
@@ -383,6 +386,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       workspaceId: string
       hostId: string
       title?: string
+      updatedAt: number
     },
   ) {
     const actor = await this.requireRuntimeActor(input)
@@ -390,6 +394,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const hostId = requireText(input.hostId, "hostId")
     const title = optionalText(input.title, "title", 2_000)
+    const updatedAt = requireRuntimeSessionStamp(input.updatedAt, (message) => new D1SessionAuthorityError("invalid_input", message))
     const operationId = sessionAdoptionOperationId(sessionId)
     const workspace = await this.requireWorkspaceAccess(actor, workspaceId, "write")
     const assignment = await this.database
@@ -464,7 +469,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         on conflict do nothing
       `,
           )
-          .bind(now, now, operationId, actor.actorId),
+          .bind(now, updatedAt, operationId, actor.actorId),
         this.database
           .prepare(
             `
@@ -1627,11 +1632,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
+      updatedAt: number
     },
   ) {
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
+    const updatedAt = requireRuntimeSessionStamp(args.updatedAt, (message) => new D1SessionAuthorityError("invalid_input", message))
     await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
     if (args.intakeReady) {
       throw new D1SessionAuthorityError("invalid_input", "Session intake is not owned by the D1 session authority")
@@ -1696,7 +1703,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             snapshot_hash = ?,
             snapshot_token = ?,
             max_event_ordinal = coalesce(?, max_event_ordinal),
-            updated_at = ?
+            updated_at = max(updated_at, ?)
           where session_id = ? and workspace_id = ? and deleted_at is null
             and ${eventGuard}
             and ${updateFenceGuard}
@@ -1707,7 +1714,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               snapshotHash,
               snapshotToken,
               maxEventOrdinal ?? null,
-              now,
+              updatedAt,
               sessionId,
               workspaceId,
               ...eventBindings,
@@ -1856,7 +1863,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return { ok: true }
   }
 
-  private async registerReservation(actor: Principal, registration: RegistrationRow) {
+  private async registerReservation(actor: Principal, registration: RegistrationRow, updatedAt: number) {
     await this.requireWorkspaceAccess(actor, registration.workspace_id, "write")
     if (registration.state === "registered") {
       const existing = await this.session(registration.session_id)
@@ -1925,7 +1932,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         on conflict do nothing
       `,
           )
-          .bind(now, now, registration.operation_id, actor.actorId),
+          .bind(now, updatedAt, registration.operation_id, actor.actorId),
         this.database
           .prepare(
             `
@@ -2044,13 +2051,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           `
       update sessions set
         title = coalesce(?, title),
-        updated_at = max(updated_at, coalesce(?, ?)),
+        updated_at = max(updated_at, coalesce(?, updated_at)),
         deleted_at = null
       where session_id = ? and workspace_id = ? and deleted_at is null
         and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
     `,
         )
-        .bind(row.title ?? null, row.updatedAt ?? null, now, row.sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+        .bind(row.title ?? null, row.updatedAt ?? null, row.sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
     )
     if (replace) {
       statements.push(

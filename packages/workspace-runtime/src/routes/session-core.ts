@@ -567,13 +567,14 @@ function registrationOperationId(c: Ctx) {
   return value || undefined
 }
 
-function registrationInput(c: Ctx, sessionId: string, operationId: string, title?: string) {
+function registrationInput(c: Ctx, sessionId: string, operationId: string, title?: string, updatedAt?: number) {
   return {
     ...sessionAccessContext(c),
     operation: "session_create" as const,
     sessionId,
     registrationOperationId: operationId,
     ...(title ? { sessionTitle: title } : {}),
+    ...(updatedAt === undefined ? {} : { sessionUpdatedAt: updatedAt }),
     method: c.req.method,
     path: c.req.path,
   }
@@ -789,7 +790,7 @@ async function sessionPromptAdmitted(opts: Opts, c: Ctx, sessionId: string) {
 async function registerCreatedSession(
   opts: Opts,
   c: Ctx,
-  sessionId: string,
+  created: { adapter: AgentHarnessAdapter; directory: RuntimeDirectory; sessionId: string },
   operationId: string | undefined,
   sessionTitle?: string,
 ) : Promise<
@@ -819,7 +820,19 @@ async function registerCreatedSession(
       response: sessionAccessDenied(unavailableRegistration("Managed session registration authority is unavailable")),
     }
   }
-  const input = registrationInput(c, sessionId, operationId, sessionTitle)
+  const { sessionId } = created
+  const persisted = await readRuntimeSession(opts, c, created.directory, sessionId, created.adapter)
+  const updatedAt = persisted?.time?.updated ?? persisted?.time?.created
+  if (updatedAt === undefined) {
+    return {
+      kind: "denied",
+      response: Response.json(errorBody(
+        "session_update_time_missing",
+        "The created session has no update time to register it at",
+      ), { status: 500 }),
+    }
+  }
+  const input = registrationInput(c, sessionId, operationId, sessionTitle, updatedAt)
   let decision: SessionAccessDecision
   try {
     decision = await opts.sessionAccessPolicy.registerSession(input)
@@ -1509,7 +1522,7 @@ export function createSessionRoutes(opts: Opts) {
             publishFailed(message)
             return response
           }
-          const registration = await registerCreatedSession(opts, c, session.id, operationId, body.title)
+          const registration = await registerCreatedSession(opts, c, { adapter, directory, sessionId: session.id }, operationId, body.title)
           if (registration.kind === "ambiguous") {
             return registration.response
           }
@@ -2078,7 +2091,7 @@ export function createSessionRoutes(opts: Opts) {
         if (refused) return refused
       }
       const child = await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
-      const registration = await registerCreatedSession(opts, c, child.id, operationId)
+      const registration = await registerCreatedSession(opts, c, { adapter, directory, sessionId: child.id }, operationId)
       if (registration.kind === "ambiguous") return registration.response
       if (registration.kind === "denied") {
         await compensateRegistration({

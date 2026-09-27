@@ -107,6 +107,7 @@ export async function pullControlSessionMessages(
       workspaceId: ws.id,
       sessionId: input.sessionId,
       messages: payload.messages,
+      updatedAt: payload.updatedAt,
       maxEventOrdinal: payload.maxEventOrdinal
         ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),
       ...(payload.fencingToken === undefined ? {} : { fencingToken: payload.fencingToken }),
@@ -277,7 +278,8 @@ function sessionVisibility(_ws: Workspace, input: unknown) {
 
 function messagesPayload(input: unknown) {
   const row = asRecord(input)
-  if (!row || !Array.isArray(row.messages) || !asRecord(row.session)) {
+  const session = asRecord(row?.session)
+  if (!row || !Array.isArray(row.messages) || !session) {
     throw new ControlPlaneProtocolError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -306,11 +308,20 @@ function messagesPayload(input: unknown) {
       "Workspace runtime returned an invalid message snapshot fence",
     )
   }
+  const { updatedAt } = sessionStamp(session)
+  if (updatedAt === undefined) {
+    throw new ControlPlaneProtocolError(
+      502,
+      "workspace_runtime_snapshot_invalid",
+      "Workspace runtime returned a message snapshot whose session has no update time",
+    )
+  }
   return {
     messages: row.messages,
     maxEventOrdinal,
     fencingToken,
-    session: row.session,
+    session,
+    updatedAt,
   }
 }
 

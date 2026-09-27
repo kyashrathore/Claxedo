@@ -94,7 +94,7 @@ describe("hosted session pull", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [], maxEventOrdinal: 0, session: { id: "session-1", title: "Settled title" } })
+        return Response.json({ messages: [], maxEventOrdinal: 0, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
         return Response.json({ id: "session-1", title: "Settled title" })
@@ -135,6 +135,7 @@ describe("hosted session pull", () => {
       workspaceId: "ws_1",
       sessionId: "session-1",
       messages: [],
+      updatedAt: 200,
       maxEventOrdinal: 0,
       intakeReady: true,
     })
@@ -179,7 +180,7 @@ describe("hosted session pull", () => {
           messages: [{ info: { id: "message-1", role: "user" }, parts: [] }],
           maxEventOrdinal: 7,
           fencingToken: 3,
-          session: { id: "session-1", title: "Settled title" },
+          session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } },
         })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
@@ -217,6 +218,7 @@ describe("hosted session pull", () => {
       workspaceId: "ws_1",
       sessionId: "session-1",
       messages: [{ info: { id: "message-1", role: "user" }, parts: [] }],
+      updatedAt: 200,
       maxEventOrdinal: 7,
       fencingToken: 3,
       intakeReady: true,
@@ -301,7 +303,7 @@ describe("hosted session pull", () => {
         return Response.json({
           messages: messages.slice(0, 1),
           maxEventOrdinal: 7,
-          session: { id: "session-1", title: "Settled title" },
+          session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } },
         })
       }
       if (url.endsWith("/session/session-1")) {

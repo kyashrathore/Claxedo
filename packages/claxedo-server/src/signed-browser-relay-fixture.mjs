@@ -952,7 +952,7 @@ if (hostMode === "embedded") {
     actorKind: browserActor.actor_kind,
   }
   await authority.reserveSession(browserAuth, { ...sessionRegistration, kind: "create" })
-  await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration })
+  await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration, updatedAt: Date.now() })
   const seedTurn = await authority.acquireSessionTurn({
     ...seedRuntimePrincipal,
     sessionId: sessionRegistration.sessionId,
@@ -960,6 +960,7 @@ if (hostMode === "embedded") {
     turnId: "msg_signed_browser_relay",
   })
   await authority.syncSessionMessages(browserAuth, {
+    updatedAt: Date.now(),
     sessionId: sessionRegistration.sessionId,
     workspaceId,
     messages: sessionMessages,

@@ -15,6 +15,7 @@ import {
   type PrivateSessionRuntimePrincipal,
   type ReservePrivateSessionInput,
   type TransitionPrivateSessionRegistrationInput,
+  requireRuntimeSessionStamp,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SessionTurnConflictError,
@@ -519,6 +520,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const sessionId = required(value.sessionId, "sessionId")
       const workspaceId = required(value.workspaceId, "workspaceId")
       const title = trimToUndefined(value.title)
+      const updatedAt = requireRuntimeSessionStamp(value.updatedAt, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
       return db.transaction(() => {
         const row = registration(db, operationId)
         if (!row) throw new SqlitePrivateSessionAuthorityError("registration_transition_denied", "A matching session reservation is required")
@@ -532,7 +534,7 @@ export function createSqlitePrivateSessionAuthority(input: {
           requireSessionAccess(db, actor, row.parent_session_id!, workspaceId, "agent_turn")
         }
         const at = now()
-        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title, updatedAt }, at)
         db.prepare(`
           UPDATE session_registration_operations
           SET state = 'registered', state_reason = NULL, updated_at = ?
@@ -548,6 +550,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const workspaceId = required(value.workspaceId, "workspaceId")
       const hostId = required(value.hostId, "hostId")
       const title = trimToUndefined(value.title)
+      const updatedAt = requireRuntimeSessionStamp(value.updatedAt, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
       const operationId = sessionAdoptionOperationId(sessionId)
       return db.transaction(() => {
         const assignment = db.prepare<unknown[], { owner_token_identifier: string }>(`
@@ -578,7 +581,7 @@ export function createSqlitePrivateSessionAuthority(input: {
             parent_session_id, requested_title, state, created_at, updated_at
           ) VALUES (?, ?, ?, ?, 'create', NULL, ?, 'registered', ?, ?)
         `).run(operationId, sessionId, workspaceId, actor.token_identifier, title ?? null, at, at)
-        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title, updatedAt }, at)
         return { adopted: true }
       })()
     },
@@ -753,6 +756,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const messages = value.messages.map(canonicalMessage)
       const hasUserMessages = messages.some((message) => message.role === "user")
       const fencingToken = value.fencingToken === undefined ? undefined : positiveFence(value.fencingToken)
+      const updatedAt = requireRuntimeSessionStamp(value.updatedAt, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
       if (hasUserMessages && fencingToken === undefined) {
         throw new SqlitePrivateSessionAuthorityError("invalid_input", "Session snapshots with user messages require a fencing token")
       }
@@ -809,9 +813,9 @@ export function createSqlitePrivateSessionAuthority(input: {
           )
         }
         db.prepare(`
-          UPDATE session_history SET max_event_ordinal = COALESCE(?, max_event_ordinal), snapshot_hash = ?, updated_at = ?
+          UPDATE session_history SET max_event_ordinal = COALESCE(?, max_event_ordinal), snapshot_hash = ?, updated_at = MAX(updated_at, ?)
           WHERE session_id = ? AND workspace_id = ?
-        `).run(value.maxEventOrdinal ?? null, snapshotHash, at, value.sessionId, value.workspaceId)
+        `).run(value.maxEventOrdinal ?? null, snapshotHash, updatedAt, value.sessionId, value.workspaceId)
         return value.maxEventOrdinal === undefined
           ? { ok: true }
           : { ok: true, applied: true, maxEventOrdinal: value.maxEventOrdinal }
@@ -857,9 +861,9 @@ export function createSqlitePrivateSessionAuthority(input: {
         }
         incoming.add(value.sessionId)
         db.prepare(`
-          UPDATE session_history SET title = COALESCE(?, title), updated_at = MAX(updated_at, COALESCE(?, ?))
+          UPDATE session_history SET title = COALESCE(?, title), updated_at = MAX(updated_at, COALESCE(?, updated_at))
           WHERE session_id = ? AND workspace_id = ? AND deleted_at IS NULL
-        `).run(value.title ?? null, value.updatedAt ?? null, now(), value.sessionId, workspaceId)
+        `).run(value.title ?? null, value.updatedAt ?? null, value.sessionId, workspaceId)
       }
       if (!replace) return
       const owned = db.prepare<unknown[], { session_id: string }>(`
@@ -1175,14 +1179,14 @@ function json(value: unknown) {
 function projectRegisteredSession(
   db: SqliteAuthorityDb,
   actor: AuthorityUser,
-  row: { operationId: string; sessionId: string; workspaceId: string; title?: string },
+  row: { operationId: string; sessionId: string; workspaceId: string; title?: string; updatedAt: number },
   at: number,
 ) {
   db.prepare(`
     INSERT INTO session_history (
       session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(row.sessionId, row.workspaceId, actor.token_identifier, row.operationId, row.title ?? null, at, at)
+  `).run(row.sessionId, row.workspaceId, actor.token_identifier, row.operationId, row.title ?? null, at, row.updatedAt)
   db.prepare(`
     INSERT INTO session_participants (
       session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at

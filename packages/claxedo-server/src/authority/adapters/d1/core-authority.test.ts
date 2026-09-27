@@ -118,6 +118,7 @@ describe("composed Better Auth + D1 authority", () => {
       title: "Bob's session",
     })
     await authority.registerRuntimeSession({
+      updatedAt: Date.now(),
       principalKind: "user",
       actorId: bob.principal!.actorId,
       actorKind: "human",
@@ -135,6 +136,7 @@ describe("composed Better Auth + D1 authority", () => {
       turnId: "msg_1",
     })
     await authority.syncSessionMessages(bob, {
+      updatedAt: Date.now(),
       sessionId: "ses_bob",
       workspaceId: "ws_acme",
       messages: [
@@ -224,6 +226,7 @@ describe("composed Better Auth + D1 authority", () => {
       title: "Private team session",
     })
     await authority.registerRuntimeSession({
+      updatedAt: Date.now(),
       principalKind: "user",
       actorId: alice.principal!.actorId,
       actorKind: "human",

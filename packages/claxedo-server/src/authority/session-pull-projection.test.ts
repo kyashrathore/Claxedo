@@ -267,7 +267,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
     if (!snapshot || typeof snapshot !== "object" || !Array.isArray((snapshot as { messages?: unknown }).messages)) {
       return snapshot
     }
-    return { ...snapshot, session: { id: "session-1", title: "Settled title" } }
+    return { ...snapshot, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } }
   }
 
   function httpRuntime(snapshot: unknown) {
@@ -420,7 +420,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
     const snapshot = {
       messages,
       maxEventOrdinal: 12,
-      session: { id: "session-other", title: "Wrong session" },
+      session: { id: "session-other", title: "Wrong session", time: { created: 100, updated: 200 } },
     }
     if (flow === "hosted") {
       stubHostedTransport(svc, (path) => {
@@ -491,6 +491,40 @@ describe("central projection: snapshot ordinal skip rules", () => {
     expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 
+  test.each(["http", "hosted"] as const)("%s rejects a checkpoint whose session carries no update time", async (flow) => {
+    const svc = services()
+    const authority = presentAuthority()
+    svc.authority = authority as never
+    const snapshot = { messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title" } }
+    const runtime = async (path: string) => {
+      if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+      if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
+      return new Response("not found", { status: 404 })
+    }
+    if (flow === "hosted") stubHostedTransport(svc, runtime)
+
+    const pull = flow === "http"
+      ? pullControlSessionMessages(
+          svc,
+          { runtimeFetch: ({ path }) => runtime(path) },
+          signedAuth,
+          { workspaceId: "ws_1", sessionId: "session-1" },
+        )
+      : pullHostedControlSessionMessages(
+          svc,
+          undefined,
+          signedAuth,
+          { workspaceId: "ws_1", sessionId: "session-1" },
+        )
+
+    await expect(pull).rejects.toMatchObject({
+      status: 502,
+      code: "workspace_runtime_snapshot_invalid",
+    })
+    expect(authority.syncSessionMessages).not.toHaveBeenCalled()
+    expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
+  })
+
   test.each(["http", "hosted"] as const)("%s persists an accepted transcript before visibility propagation", async (flow) => {
     const svc = services()
     const authority = presentAuthority()
@@ -542,7 +576,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
       messages,
       { maxEventOrdinal: 12 },
     )
-    expect(authority.syncSessionMessages).toHaveBeenCalled()
+    expect(authority.syncSessionMessages).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ updatedAt: 200 }))
   })
 
   test("RULE 3 http: equal ordinal with a not-longer payload is skipped", async () => {

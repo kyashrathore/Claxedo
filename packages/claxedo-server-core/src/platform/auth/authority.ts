@@ -4,6 +4,7 @@ import type { OrgId, ProjectId } from "./branded-id"
 import type {
   AuthorizeRuntimePrivateSessionInput,
   PrivateSessionRuntimePrincipal,
+  PrivateSessionAuthority,
   RegisterRuntimePrivateSessionInput,
   SessionPageQuery,
 } from "./private-session-authority"
@@ -589,17 +590,7 @@ export type WorkspaceAuthority = {
     args: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
   readSessionOutline: (auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) => Promise<unknown>
-  syncSessionMessages: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      sessionId: string
-      workspaceId: string
-      messages: unknown[]
-      intakeReady?: boolean
-      maxEventOrdinal?: number
-      fencingToken?: number
-    },
-  ) => Promise<unknown>
+  syncSessionMessages: PrivateSessionAuthority["syncSessionMessages"]
   upsertSessionVisibility: (
     auth: SignedControlPlaneAuth,
     args: {

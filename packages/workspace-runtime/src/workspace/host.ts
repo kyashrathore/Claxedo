@@ -118,6 +118,8 @@ export type WorkspaceHost = {
    */
   unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
   hasSession: (sessionId: string) => boolean
+  /** The session's update time in this runtime's store; undefined when the store holds no such session. */
+  sessionUpdatedAt: (sessionId: string) => number | undefined
   /**
    * The session exists and no turn relayed from another caller reached it or
    * any session it descends from: everything it was asked came from the

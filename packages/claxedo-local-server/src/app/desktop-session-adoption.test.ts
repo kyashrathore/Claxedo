@@ -107,7 +107,7 @@ function fakeAuthority() {
     let raw = ""
     request.on("data", (chunk) => { raw += chunk })
     request.on("end", () => {
-      const body = JSON.parse(raw || "{}") as { action?: string; sessionId?: string }
+      const body = JSON.parse(raw || "{}") as { action?: string; sessionId?: string; updatedAt?: unknown }
       const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? "")?.[1]
       const caller = bearer ? bearers.get(bearer) : undefined
       const sessionId = body.sessionId ?? ""
@@ -123,6 +123,7 @@ function fakeAuthority() {
       }
       if (!caller) return refuse(403, "workspace_authorization_denied")
       if (body.action === "adopt") {
+        if (typeof body.updatedAt !== "number") return refuse(400, "session_authority_request_invalid")
         if (adoptionFault) return refuse(adoptionFault.status, adoptionFault.code)
         // The plane resolves the machine's enrollment owner; a workspace role
         // of owner is not the same person and is refused there.

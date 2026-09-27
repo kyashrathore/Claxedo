@@ -355,11 +355,20 @@ export function embeddedManagedPrivateSessionPolicy(
             message: "Private session registration requires an immutable operation id",
           }
         }
+        if (input.sessionUpdatedAt === undefined) {
+          return {
+            allowed: false as const,
+            status: 409 as const,
+            code: "session_registration_update_time_required",
+            message: "Private session registration requires the runtime's session update time",
+          }
+        }
         await runtimeAuthority.registerRuntimeSession({
           ...principal,
           operationId: input.registrationOperationId,
           workspaceId: input.authority.workspaceId,
           sessionId: input.sessionId,
+          updatedAt: input.sessionUpdatedAt,
           ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
         })
       } else {

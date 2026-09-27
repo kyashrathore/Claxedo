@@ -51,7 +51,7 @@ export async function exerciseSessionPageConformance(
     const sessionId = `ses_page_${String(++sequence).padStart(2, "0")}`
     const operationId = `op_page_${sequence}`
     await authority.reserveSession(user.auth, { operationId, sessionId, workspaceId, kind: "create", title: sessionId })
-    await authority.registerRuntimeSession({ ...user.runtime, operationId, sessionId, workspaceId, title: sessionId })
+    await authority.registerRuntimeSession({ ...user.runtime, operationId, sessionId, workspaceId, title: sessionId, updatedAt: Date.now() })
     return sessionId
   }
   const prompt = async (user: SessionPageConformanceUser, sessionId: string, workspaceId: string) => {

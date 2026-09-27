@@ -99,6 +99,7 @@ describe("sqlite Org→Team + session share", () => {
       title: "Private",
     })
     await authority.registerRuntimeSession({
+      updatedAt: Date.now(),
       principalKind: "user",
       actorId: alice.user.tokenIdentifier,
       actorKind: "human",
@@ -320,6 +321,7 @@ describe("sqlite Org→Team + session share", () => {
       title: "Shared via org",
     })
     await authority.registerRuntimeSession({
+      updatedAt: Date.now(),
       principalKind: "user",
       actorId: alice.user.tokenIdentifier,
       actorKind: "human",
