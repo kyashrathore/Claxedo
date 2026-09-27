@@ -15,6 +15,7 @@ import { panelDictionary } from "../i18n"
 import { usePanel, type Panel } from "../store"
 
 const NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
+const NAVIGATOR_WIDTH = "min(280px, 45cqw)"
 
 function activeFilePath(panel: Panel): string | undefined {
   const tab = panel.activeTab()
@@ -64,7 +65,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
         data-open={selected() ? "true" : "false"}
         aria-hidden={selected() ? undefined : "true"}
         data-navigator-side={left() ? "left" : "right"}
-        class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden border-border-weak-base bg-background-base motion-reduce:transition-none"
+        class="claxedo-workspace-navigator-overlay box-content h-full shrink-0 overflow-hidden border-border-weak-base bg-background-base motion-reduce:transition-none"
         classList={{
           "order-first border-r": left(),
           "order-last border-l": !left(),
@@ -72,12 +73,12 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
           "border-transparent": !selected(),
         }}
         style={{
-          width: selected() ? "min(280px, 45%)" : "0px",
+          width: selected() ? NAVIGATOR_WIDTH : "0px",
           transition: NAVIGATOR_TRANSITION,
           "content-visibility": selected() ? "visible" : "hidden",
         }}
       >
-        <div class="relative h-full w-[min(280px,45cqw)] min-w-[220px]">
+        <div class="relative h-full" style={{ width: NAVIGATOR_WIDTH }}>
           <Show when={shown()}>
             <NavigatorViews placementId={props.placementId} />
           </Show>
@@ -234,7 +235,7 @@ export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
           <div class="flex h-full min-h-0 flex-col">
             <div class="min-h-0 flex-1 overflow-hidden">
               <div
-                class="relative flex size-full min-w-0 overflow-hidden"
+                class="relative flex size-full min-w-0 overflow-hidden [container-type:inline-size]"
                 data-workspace-panel-session-id={panel.sessionId()}
               >
                 <NavigatorColumn placementId={placementId} />
