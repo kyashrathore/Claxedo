@@ -9,10 +9,6 @@ export function estimateLongMarkdownHeight(text: string) {
   return Math.min(60_000, lineCount * 26)
 }
 
-export function filterVirtualIndexes(indexes: number[], count: number) {
-  return indexes.filter((index) => index >= 0 && index < count)
-}
-
 export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
   return requestAnimationFrame(() => {
     if (element.isConnected) measure(element)

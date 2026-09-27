@@ -20,7 +20,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { createVirtualizer, defaultRangeExtractor, elementScroll } from "@tanstack/solid-virtual"
+import { createVirtualizer, elementScroll, type Range } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
 import { assistantMessageSettled, isSubagentToolPart } from "@claxedo/agent-runtime-contract/turn-fold"
 import {
@@ -67,11 +67,11 @@ import {
   timelineVirtualEntry,
 } from "./timeline-view-state"
 import { createTimelinePrependAnchor } from "./timeline-prepend-anchor"
+import { timelineRenderIndexes } from "./timeline-render-range"
 import {
   createTimelineResizeAnchor,
   estimateTimelineRowSize,
   measureUnmeasuredRows,
-  filterVirtualIndexes,
   scheduleConnectedMeasure,
   timelineRowFrameStyle,
 } from "./timeline-virtualization"
@@ -572,16 +572,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const activeId = activeMessageId()
       const overscan = renderOverscan()
       const pinned = resizeAnchor.pinnedIndexes()
-      return (range: { startIndex: number; endIndex: number; overscan: number; count: number }) => {
-        const active = activeId
-          ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageId === activeId)
-          : -1
-        return filterVirtualIndexes(
-          [...new Set([...pinned, ...defaultRangeExtractor({ ...range, overscan }), ...(active < 0 ? [] : [active])])]
-            .sort((a, b) => a - b),
-          range.count,
-        )
-      }
+      return (range: Range) => timelineRenderIndexes({ rows, activeMessageId: activeId, pinned, range, overscan })
     },
   })
   createEffect(() => {
@@ -643,7 +634,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const id = messageNavCurrentId(
       virtualizer.getVirtualItems().flatMap((item) => {
         const row = timelineRows()[item.index]
-        return row && "userMessageID" in row ? [{ id: row.userMessageId, start: item.start }] : []
+        return row ? [{ id: row.userMessageId, start: item.start }] : []
       }),
       root.scrollTop + 100,
     )

@@ -4,7 +4,7 @@ test.skip(({ isMobile }) => isMobile, "flow 11 runs at desktop width")
 
 const TURNS = 30
 
-test("11 long transcript: older turns page in above the reader and the nav rail jumps back to the first turn", async ({ stack, api, app }) => {
+test("11 long transcript: older turns page in above the reader, the nav rail marks the turn scrolled to, and it jumps back to the first turn", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("long")
   const session = await api.createSession(workspace.directory, { title: "Long", harness: SCRIPTED_ACP_HARNESS })
   for (let turn = 1; turn <= TURNS; turn += 1) {
@@ -29,6 +29,15 @@ test("11 long transcript: older turns page in above the reader and the nav rail 
       { timeout: 30_000 },
     )
     .toBeGreaterThan(0)
+  await expect
+    .poll(
+      async () => {
+        await app.mouse.wheel(0, -3000)
+        return app.getByRole("button", { name: "1. New message", exact: true }).getAttribute("aria-current")
+      },
+      { timeout: 30_000 },
+    )
+    .toBe("step")
   await app.getByRole("button", { name: `${TURNS}. New message`, exact: true }).click()
   await expect(latest).toBeInViewport()
   await app.getByRole("button", { name: "1. New message", exact: true }).click()
