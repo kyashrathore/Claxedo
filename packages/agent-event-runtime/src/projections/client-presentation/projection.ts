@@ -642,12 +642,18 @@ function toolContentText(content: Extract<AgentRuntimeEvent, { type: "tool-conte
   return text(row?.text)
 }
 
-function seqId(ctx: CompatContext, id: string): string {
-  if (!ctx.partIdMap.has(id)) {
+/**
+ * The part id minted the first time `key` is seen. Part ids are unique across
+ * every session in the store, so a key the harness supplies (a tool-call id)
+ * mints with its message id as `scoped`, while the key stays the lookup that
+ * later events for the same call find the part by.
+ */
+function seqId(ctx: CompatContext, key: string, scoped = key): string {
+  if (!ctx.partIdMap.has(key)) {
     const seq = ctx.partIdMap.size
-    ctx.partIdMap.set(id, `${String(seq).padStart(6, "0")}_${id}`)
+    ctx.partIdMap.set(key, `${String(seq).padStart(6, "0")}_${scoped}`)
   }
-  return ctx.partIdMap.get(id) ?? id
+  return ctx.partIdMap.get(key) ?? key
 }
 
 function seen(ctx: CompatContext, id: string): boolean {
@@ -727,7 +733,7 @@ function attachmentPart(ctx: CompatContext, id: string, attachment: RuntimeToolA
 
 function toolAttachments(ctx: CompatContext, toolCallId: string) {
   return (ctx.toolAttachmentsByCallId.get(toolCallId) ?? []).map((attachment, index) =>
-    attachmentPart(ctx, seqId(ctx, `${toolCallId}-attachment-${index}`), attachment))
+    attachmentPart(ctx, seqId(ctx, `${toolCallId}-attachment-${index}`, `${ctx.assistantMsgId}-${toolCallId}-attachment-${index}`), attachment))
 }
 
 function toolState(input: {
@@ -787,7 +793,7 @@ function toolPart(input: {
   error?: string
 }): ToolPart {
   return {
-    id: seqId(input.ctx, input.toolCallId),
+    id: seqId(input.ctx, input.toolCallId, `${input.ctx.assistantMsgId}-${input.toolCallId}`),
     sessionID: input.ctx.sessionId,
     messageID: input.ctx.assistantMsgId,
     type: "tool",

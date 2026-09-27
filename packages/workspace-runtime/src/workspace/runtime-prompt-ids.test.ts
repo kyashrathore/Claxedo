@@ -31,7 +31,14 @@ const snapshot: RuntimeSnapshot = {
   },
 }
 
-async function fixture() {
+type TurnEvents = (sessionId: string) => Array<Record<string, unknown>>
+
+const answer: TurnEvents = (sessionId) => [
+  { type: "text-delta", delta: "answer" },
+  { type: "finish", sessionId },
+]
+
+async function fixture(turn = answer) {
   const directory = await mkdtemp(join(tmpdir(), "prompt-ids-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws_ids", directory }
@@ -55,8 +62,7 @@ async function fixture() {
       configOptions: false, subagents: false, goals: false, harness: "pi",
     }),
     async *executeTurn(binding: { sessionId: string }) {
-      yield { type: "text-delta", delta: "answer" }
-      yield { type: "finish", sessionId: binding.sessionId }
+      yield* turn(binding.sessionId)
     },
     dispose() {},
   } as unknown as AgentHarnessAdapter
@@ -137,4 +143,24 @@ test("resubmitting a message id in its own session reruns the turn", async () =>
   expect((await f.transcript("a")).find((message) => message.id === "msg_a")?.parts).toEqual([
     { id: "msg_a-part-0", messageID: "msg_a", sessionID: "a", text: "again" },
   ])
+})
+
+test("two sessions whose harness reuses a tool-call id each keep their own tool part", async () => {
+  const f = await fixture((sessionId) => [
+    { type: "text-delta", delta: "answer" },
+    { type: "tool-start", toolCallId: "call_1", toolName: "bash" },
+    { type: "tool-output", toolCallId: "call_1", output: `ran in ${sessionId}` },
+    { type: "tool-status", toolCallId: "call_1", status: "completed" },
+    { type: "finish", sessionId },
+  ])
+  const before = await f.transcript("a")
+  expect(before.flatMap((message) => message.parts)).toHaveLength(3)
+
+  expect((await f.request("/session/b/message", "POST", {
+    messageID: "msg_b",
+    parts: [{ type: "text", text: "go" }],
+  })).status).toBe(200)
+
+  expect(await f.transcript("a")).toEqual(before)
+  expect((await f.transcript("b")).flatMap((message) => message.parts)).toHaveLength(3)
 })

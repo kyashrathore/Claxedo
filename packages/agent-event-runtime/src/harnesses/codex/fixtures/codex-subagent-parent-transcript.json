@@ -2,12 +2,12 @@
   {
     "directory": "/workspace",
     "payload": {
-      "id": "message.part.updated:assistant-parent-1:000000_spawn-1",
+      "id": "message.part.updated:assistant-parent-1:000000_assistant-parent-1-spawn-1",
       "type": "message.part.updated",
       "properties": {
         "sessionID": "session-parent-1",
         "part": {
-          "id": "000000_spawn-1",
+          "id": "000000_assistant-parent-1-spawn-1",
           "sessionID": "session-parent-1",
           "messageID": "assistant-parent-1",
           "type": "tool",
@@ -41,12 +41,12 @@
   {
     "directory": "/workspace",
     "payload": {
-      "id": "message.part.updated:assistant-parent-1:000000_spawn-1",
+      "id": "message.part.updated:assistant-parent-1:000000_assistant-parent-1-spawn-1",
       "type": "message.part.updated",
       "properties": {
         "sessionID": "session-parent-1",
         "part": {
-          "id": "000000_spawn-1",
+          "id": "000000_assistant-parent-1-spawn-1",
           "sessionID": "session-parent-1",
           "messageID": "assistant-parent-1",
           "type": "tool",

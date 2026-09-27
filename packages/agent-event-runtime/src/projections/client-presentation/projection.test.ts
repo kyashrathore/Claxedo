@@ -538,7 +538,7 @@ describe("createClientPresentationProjection", () => {
       type: "message.part.updated",
       properties: {
         part: {
-          id: "000000_tool-1",
+          id: "000000_msg_turn_1_r-tool-1",
           type: "tool",
           callID: "tool-1",
           tool: "bash",
@@ -948,13 +948,13 @@ describe("createClientPresentationProjection", () => {
     expect(terminal).toEqual([{
       directory: "/repo",
       payload: {
-        id: "message.part.updated:msg_turn_1_r:000000_tool-1",
+        id: "message.part.updated:msg_turn_1_r:000000_msg_turn_1_r-tool-1",
         type: "message.part.updated",
         properties: {
           sessionID: "session-1",
           time: 100,
           part: {
-            id: "000000_tool-1",
+            id: "000000_msg_turn_1_r-tool-1",
             sessionID: "session-1",
             messageID: "msg_turn_1_r",
             type: "tool",
@@ -1094,7 +1094,7 @@ describe("createClientPresentationProjection", () => {
       type: "message.part.updated",
       properties: {
         part: {
-          id: "000000_tool-1",
+          id: "000000_msg_turn_1_r-tool-1",
           type: "tool",
           state: {
             status: "error",
