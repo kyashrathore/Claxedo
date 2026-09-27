@@ -174,8 +174,6 @@ function disposeMarkdownControls(root: Element) {
   disposeViewButtons(root)
 }
 
-const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
-
 let mermaidRenderer: ((source: string) => Promise<string>) | undefined
 let mermaidViewer: ((source: string) => void) | undefined
 const mermaidInFlight = new Map<string, Promise<string>>()
@@ -416,44 +414,12 @@ function largeMermaid(source: string) {
   return source.length > 4_000 || source.split("\n", 33).length > 32
 }
 
-function codeKind(language: string | undefined): "shell" | undefined {
-  const value = language?.toLowerCase()
-  if (!value) return undefined
-  if (shellLanguages.has(value)) return "shell"
-  return undefined
-}
-
-function codeLanguage(block: HTMLPreElement): string | undefined {
-  const code = block.querySelector("code")
-  if (!(code instanceof HTMLElement)) return undefined
-  return code.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
-}
-
-function applyCodeMetadata(wrapper: HTMLElement, language: string | undefined) {
-  if (!document.body.hasAttribute("data-new-layout")) {
-    delete wrapper.dataset.language
-    delete wrapper.dataset.codeKind
-    return
-  }
-
-  if (language) wrapper.dataset.language = language
-  else delete wrapper.dataset.language
-
-  const kind = codeKind(language)
-  if (kind) wrapper.dataset.codeKind = kind
-  else delete wrapper.dataset.codeKind
-}
-
 function ensureCodeWrapper(block: HTMLPreElement) {
   const parent = block.parentElement
   if (!parent) return
-  if (parent.getAttribute("data-component") === "markdown-code") {
-    applyCodeMetadata(parent, codeLanguage(block))
-    return
-  }
+  if (parent.getAttribute("data-component") === "markdown-code") return
   const wrapper = document.createElement("div")
   wrapper.setAttribute("data-component", "markdown-code")
-  applyCodeMetadata(wrapper, codeLanguage(block))
   parent.replaceChild(wrapper, block)
   wrapper.appendChild(block)
 }
@@ -851,8 +817,6 @@ function updateCodeBlock(
 
   const code = existing?.querySelector("code")
   if (code instanceof HTMLElement) {
-    const wrapper = code.closest('[data-component="markdown-code"]')
-    if (wrapper instanceof HTMLElement) applyCodeMetadata(wrapper, block.language)
     code.className = `language-${block.language}`
     const tokens = [...block.stable, ...block.unstable]
     if (tokens.length > highlightedCodeTokenLimit) {
@@ -883,7 +847,6 @@ function updateCodeBlock(
 
   const wrapper = document.createElement("div")
   wrapper.setAttribute("data-component", "markdown-code")
-  applyCodeMetadata(wrapper, block.language)
   const pre = document.createElement("pre")
   pre.className = `shiki ${codeTheme.name}`
   const codeElement = document.createElement("code")

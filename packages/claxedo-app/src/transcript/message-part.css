@@ -1512,55 +1512,6 @@
   }
 }
 
-body[data-new-layout] .ui-user-message {
-  font-weight: var(--font-weight-body);
-
-  .ui-user-message-text {
-    background: var(--v2-background-bg-layer-01);
-  }
-
-  [data-slot="user-message-comments"] {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    width: min(320px, 82%);
-    margin-left: auto;
-
-    &[data-bounded] {
-      width: 318px;
-      max-width: 100%;
-      margin-top: 8px;
-    }
-
-    .ui-tooltip-v2-trigger {
-      width: 100%;
-    }
-
-    .ui-button-v2 {
-      font-family: var(--v2-font-family-sans, "Inter", sans-serif);
-      font-weight: var(--font-weight-medium);
-      font-variation-settings:
-        "wght" 530,
-        "slnt" 0;
-    }
-  }
-
-  [data-slot="user-message-body"] + .ui-user-message-attachments,
-  [data-slot="user-message-comments"] + .ui-user-message-attachments {
-    margin-top: 8px;
-  }
-
-  .ui-user-message-text[data-comments] {
-    width: 342px;
-    padding-bottom: 12px;
-  }
-}
-
-[data-color-scheme="light"] body[data-new-layout] [data-component="user-message"] .ui-user-message-text {
-  background: var(--v2-background-bg-layer-02);
-}
-
 body:not([data-new-layout]) {
   .ui-user-message {
     color: var(--transcript-prose-color, var(--text-strong));

@@ -1,9 +1,5 @@
 .ui-markdown {
   --markdown-inline-code-bg-mix: 8%;
-  --markdown-shell-code-background: var(--v2-background-bg-layer-02);
-  --markdown-shell-code-border: var(--v2-border-border-muted);
-  --markdown-shell-code-color: var(--v2-text-text-base);
-  --markdown-shell-code-token-color: currentColor;
 
   min-width: 0;
   max-width: 100%;
@@ -185,20 +181,6 @@
 
   [data-component="markdown-code"] {
     position: relative;
-  }
-
-  [data-component="markdown-code"][data-code-kind="shell"] .shiki {
-    background: var(--markdown-shell-code-background);
-    border-color: var(--markdown-shell-code-border);
-    color: var(--markdown-shell-code-color);
-  }
-
-  [data-component="markdown-code"][data-code-kind="shell"] code {
-    color: var(--markdown-shell-code-color);
-  }
-
-  [data-component="markdown-code"][data-code-kind="shell"] code span {
-    color: var(--markdown-shell-code-token-color) !important;
   }
 
   [data-slot="markdown-copy-button"] {
@@ -460,29 +442,6 @@
     border: 1px solid var(--v2-border-border-base);
     border-radius: var(--radius-sm);
     background: var(--v2-background-bg-layer-02);
-  }
-}
-
-body[data-new-layout] .ui-markdown {
-  [data-slot="markdown-copy-button"]::after {
-    box-sizing: border-box;
-    display: inline-flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: var(--v2-background-bg-layer-01);
-    box-shadow: var(--v2-elevation-floating);
-    color: var(--v2-text-text-base);
-    user-select: none;
-    font-size: var(--font-size-x-small);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-12);
-    letter-spacing: var(--letter-spacing-micro-wide);
-    font-variant-numeric: tabular-nums;
-    font-variation-settings: "slnt" 0;
   }
 }
 

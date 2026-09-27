@@ -177,7 +177,6 @@ export interface MessageProps {
   actions?: UserActions
   showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
-  useV2Actions?: boolean
 }
 
 export type SessionAction = (input: { sessionId: string; messageId: string }) => Promise<void> | void
@@ -202,7 +201,6 @@ export interface MessagePartProps {
   showAssistantCopyPartId?: string | null
   turnDurationMs?: number
   turnInterrupted?: boolean
-  useV2Actions?: boolean
 }
 
 const virtualizedDiffViewport: JSX.CSSProperties = {
@@ -215,38 +213,20 @@ function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
     icon: "check" | "copy" | "reset"
     label: JSX.Element
-    useV2?: boolean
   },
 ) {
   return (
-    <Show
-      when={props.useV2}
-      fallback={
-        <Tooltip value={props.label} placement="top" gutter={4}>
-          <IconButton
-            icon={<Icon name={props.icon} size="small" />}
-            size="normal"
-            variant="ghost"
-            disabled={props.disabled}
-            onMouseDown={props.onMouseDown}
-            onClick={props.onClick}
-            aria-label={props["aria-label"]}
-          />
-        </Tooltip>
-      }
-    >
-      <Tooltip value={props.label} placement="top" gutter={4}>
-        <IconButton
-          icon={<Icon name={props.icon} size="small" />}
-          size="normal"
-          variant="ghost-muted"
-          disabled={props.disabled}
-          onMouseDown={props.onMouseDown}
-          onClick={props.onClick}
-          aria-label={props["aria-label"]}
-        />
-      </Tooltip>
-    </Show>
+    <Tooltip value={props.label} placement="top" gutter={4}>
+      <IconButton
+        icon={<Icon name={props.icon} size="small" />}
+        size="normal"
+        variant="ghost"
+        disabled={props.disabled}
+        onMouseDown={props.onMouseDown}
+        onClick={props.onClick}
+        aria-label={props["aria-label"]}
+      />
+    </Tooltip>
   )
 }
 
@@ -558,7 +538,6 @@ type GroupMember = { message: AgentAssistantMessage; part: AgentToolPart }
 type PartGroupSlots = {
   showAssistantCopyPartId?: string | null
   turnDurationMs?: number
-  useV2Actions?: boolean
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
 }
@@ -633,7 +612,6 @@ function PartGroups(
                           part={member.part}
                           message={member.message}
                           turnDurationMs={props.turnDurationMs}
-                          useV2Actions={props.useV2Actions}
                           defaultOpen={partDefaultOpen(
                             member.part,
                             props.shellToolDefaultOpen,
@@ -669,7 +647,6 @@ function PartGroups(
                             message={message()}
                             showAssistantCopyPartId={props.showAssistantCopyPartId}
                             turnDurationMs={props.turnDurationMs}
-                            useV2Actions={props.useV2Actions}
                             defaultOpen={partDefaultOpen(
                               item(),
                               props.shellToolDefaultOpen,
@@ -755,7 +732,6 @@ export function Message(props: MessageProps) {
             parts={props.parts}
             showAssistantCopyPartId={props.showAssistantCopyPartId}
             showReasoningSummaries={props.showReasoningSummaries}
-            useV2Actions={props.useV2Actions}
           />
         )}
       </Match>
@@ -768,7 +744,6 @@ export function AssistantMessageDisplay(props: {
   parts: AgentContentPart[]
   showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
-  useV2Actions?: boolean
 }) {
   const part = createMemo(() => index(props.parts))
   const grouped = createMemo(
@@ -791,7 +766,6 @@ export function AssistantMessageDisplay(props: {
       message={() => props.message}
       part={(ref) => part().get(ref.partId)}
       showAssistantCopyPartId={props.showAssistantCopyPartId}
-      useV2Actions={props.useV2Actions}
     />
   )
 }
@@ -1119,7 +1093,7 @@ export function UserMessageDisplay(props: {
       </Show>
       <Switch>
         <Match when={shape() === "markdown"}>
-          <div data-slot="user-message-body" class="ui-user-message-body" data-markdown="true">
+          <div class="ui-user-message-body" data-markdown="true">
             <div data-slot="user-message-text" class="ui-user-message-text" data-markdown="true">
               <Markdown text={text()} cacheKey={textPart()?.id} streaming={false} />
             </div>
@@ -1127,7 +1101,7 @@ export function UserMessageDisplay(props: {
           {footer()}
         </Match>
         <Match when={shape() === "text"}>
-          <div data-slot="user-message-body" class="ui-user-message-body">
+          <div class="ui-user-message-body">
             <div data-slot="user-message-text" class="ui-user-message-text">
               <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
             </div>
@@ -1198,7 +1172,6 @@ export function Part(props: MessagePartProps) {
         showAssistantCopyPartId={props.showAssistantCopyPartId}
         turnDurationMs={props.turnDurationMs}
         turnInterrupted={props.turnInterrupted}
-        useV2Actions={props.useV2Actions}
       />
     </Show>
   )
@@ -1569,7 +1542,6 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
               label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyResponse")}
-              useV2={props.useV2Actions}
               onMouseDown={(event) => event.preventDefault()}
               onClick={handleCopy}
               aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyResponse")}
