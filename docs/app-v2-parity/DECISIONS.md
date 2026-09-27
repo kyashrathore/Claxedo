@@ -326,3 +326,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **Workspace panel: 1,752.** `createExposed` (`src/panel/exposed.ts`) is the one open-signal-plus-close-grace hold, and both the panel frame and the navigator column use it. The budget is the measured 1,752, with no headroom.
 - **Only the navigator view on screen is mounted** (owner rule: hidden panes unmount). Files and Changes keep their view state per placement in `FilesProvider` and `ReviewProvider`, through the shell's `createPlacementState`: expanded folders, reveal batches, search, sections and scroll position. A remounted view puts its scroll position back once its rows render (`@/lib/scroll-restore`).
 - **The diff worker pool's main-thread highlighter uses shiki's JS regex engine** (`patches/@pierre%2Fdiffs@1.4.3.patch`), not the Oniguruma WASM engine. Only the path where the worker fails reaches it. The token differences are recorded in `src/transcript/README.md`.
+
+## Panel lane, 2026-09-27: the files root listing is read when the panel toggle is pressed
+- A primary-button pointerdown on the closed panel's toggle issues the files root listing through the files query (`useRootListingPrefetch`), when the panel will open on Files (`openingNavigator`). Hover and idle never read it.
+- The panel still opens on click. A press released off the toggle costs one bounded read, which the next open reuses from the query cache; it changes no panel state.
+- **Workspace panel: 1,760.** The press handler and the one opening-navigator rule add 8 lines to the 1,752 above. The budget is the measured 1,760, with no headroom.
