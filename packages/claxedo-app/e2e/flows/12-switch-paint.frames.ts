@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test"
+import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 
 export type PaneFrame = {
   readonly sessionId: string
@@ -18,7 +19,10 @@ export type SwitchFrame = { readonly at: number; readonly rail: string; readonly
 type RecorderWindow = Window & { __claxedoSwitchFrames?: Promise<SwitchFrame[]> }
 
 export async function recordSwitchFrames(app: Page, input: { readonly targetId: string; readonly quietFrames: number }): Promise<() => Promise<SwitchFrame[]>> {
+  await app.evaluate(installPaintedFrames)
   await app.evaluate(({ targetId, quietFrames }) => {
+    const paintedFrames = window.__claxedoPaintedFrames
+    if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
     const painted = (element: Element) => element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
     const shown = (root: Element) => [root, ...root.querySelectorAll("[data-session-timeline-root], [data-timeline-key]")].some(painted)
     const pane = (root: HTMLElement): PaneFrame => {
@@ -50,21 +54,22 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
     let quiet = 0
     let previous = ""
     ;(window as RecorderWindow).__claxedoSwitchFrames = new Promise<SwitchFrame[]>((resolve) => {
-      const sample = () => {
-        const panes = [...document.querySelectorAll<HTMLElement>('[data-testid="session-page-root"]')].filter(shown).map(pane)
-        const rail = document.querySelector<HTMLElement>('[data-testid="rail-sidebar-session-row"][data-active="true"]')?.dataset.sessionId ?? ""
-        frames.push({ at: Math.round(performance.now() - started), rail, panes })
-        const signature = JSON.stringify([rail, panes])
-        const onTarget = panes.length === 1 && panes[0].sessionId === targetId && panes[0].rows.length > 0
-        quiet = onTarget && signature === previous ? quiet + 1 : 0
-        previous = signature
-        if (quiet >= quietFrames || frames.length > 1200) return resolve(frames)
-        requestAnimationFrame(afterPaint)
-      }
-      const painted = new MessageChannel()
-      painted.port1.onmessage = sample
-      const afterPaint = () => painted.port2.postMessage(undefined)
-      requestAnimationFrame(afterPaint)
+      paintedFrames({
+        sample: () => ({
+          panes: [...document.querySelectorAll<HTMLElement>('[data-testid="session-page-root"]')].filter(shown).map(pane),
+          rail: document.querySelector<HTMLElement>('[data-testid="rail-sidebar-session-row"][data-active="true"]')?.dataset.sessionId ?? "",
+        }),
+        painted: ({ panes, rail }, paintedAt) => {
+          frames.push({ at: Math.round(paintedAt - started), rail, panes })
+          const signature = JSON.stringify([rail, panes])
+          const onTarget = panes.length === 1 && panes[0].sessionId === targetId && panes[0].rows.length > 0
+          quiet = onTarget && signature === previous ? quiet + 1 : 0
+          previous = signature
+          if (quiet < quietFrames && frames.length <= 1200) return
+          resolve(frames)
+          return true
+        },
+      })
     })
   }, input)
   return () => app.evaluate(() => (window as RecorderWindow).__claxedoSwitchFrames!)
