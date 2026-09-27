@@ -1,4 +1,4 @@
-import type { SessionLifecycleEvent } from "./routes/session-core"
+import type { SessionLifecycleEvent } from "./routes/session-route-options"
 import { rec } from "./json-value"
 
 type Subscriber<T> = (event: T) => unknown

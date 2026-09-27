@@ -5,7 +5,8 @@ import type { AgentRuntime, AgentRuntimeTurnStartInput, RuntimeDirectory } from 
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { sessionIdle } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
-import { createSessionRoutes, type SessionLifecycleEvent } from "./session-core"
+import { createSessionRoutes } from "./session-core"
+import type { SessionLifecycleEvent } from "./session-route-options"
 
 type Journal = string[]
 

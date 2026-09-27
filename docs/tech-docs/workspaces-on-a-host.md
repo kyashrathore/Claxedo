@@ -305,7 +305,7 @@ creates the session under the reserved id with the
 the stream owner (`holdSessionEventScope`, F.1) before the first prompt.
 
 On the runtime, `managedSessionLifecycle` in
-`packages/workspace-runtime/src/routes/session-core.ts` decides per request:
+`packages/workspace-runtime/src/routes/session-route-options.ts` decides per request:
 the private lifecycle (a reservation before the create, a registered
 creator, a durable turn lease through `acquireManagedPromptLease`) applies
 when the policy is `managed-private` AND `sessionRequestProvenance(c)` is

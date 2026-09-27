@@ -17,7 +17,8 @@ import type { SessionAccessPolicy } from "../session-access-policy"
 import { runRuntimePromptTurn } from "../session/service"
 import { JSON_BODY_LIMIT_BYTES } from "./http"
 import { acquireSessionTurnLease } from "./session-turn-lease"
-import { captureTurnTarget, containLostTurn, createSessionRoutes } from "./session-core"
+import { createSessionRoutes } from "./session-core"
+import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
 
 const SESSION = "session_1"
 

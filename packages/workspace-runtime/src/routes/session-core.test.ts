@@ -1,7 +1,8 @@
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { describe, expect, test } from "bun:test"
 import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes, type SessionLifecycleEvent, type SessionRouteContext } from "./session-core"
+import { createSessionRoutes } from "./session-core"
+import type { SessionLifecycleEvent, SessionRouteContext } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
 import type {
   AgentHarnessFactory,
