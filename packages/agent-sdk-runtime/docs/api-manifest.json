@@ -65,6 +65,10 @@
       "status": "integration",
       "purpose": "Bounded transcript-page contracts and projections."
     },
+    "@claxedo/agent-sdk-runtime/first-page": {
+      "status": "integration",
+      "purpose": "The turns a cold transcript draws first, each folded or whole by the contract's fold decision, chosen by an estimate of their lines."
+    },
     "@claxedo/agent-sdk-runtime/turn-outline": {
       "status": "integration",
       "purpose": "A transcript's outline of turns without their content, folded from the rows any store reads for it."
@@ -133,7 +137,8 @@
     "@claxedo/agent-sdk-runtime/stores/sqlite": "af4e0698e35144038d0315661d7cbb7bb9923248b346778f91594999e47bca16",
     "@claxedo/agent-sdk-runtime/launch": "c6ae1e0deb72710355058ba6fa6b45981db145171b09dae809a06759ce31e3d0",
     "@claxedo/agent-sdk-runtime/launch-gate-child": "afec65c73d13c49ba01624719bbcad89235bf3f6af78751d6a71b7554e0c6051",
-    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
+    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311",
+    "@claxedo/agent-sdk-runtime/first-page": "cd13a24b9980bce70bc3e838048672c58d77b09a327f57350f0edd6c4c9d0db3"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

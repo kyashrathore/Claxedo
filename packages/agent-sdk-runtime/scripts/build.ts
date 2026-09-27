@@ -20,6 +20,7 @@ const ENTRIES = [
   "src/adapters.ts",
   "src/message-page.ts",
   "src/turn-outline.ts",
+  "src/first-page.ts",
   "src/compat-events.ts",
   "src/status.ts",
   "src/capabilities.ts",
