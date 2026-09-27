@@ -1,4 +1,4 @@
-import type { FirstPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/first-page"
+import type { TurnPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { PrivateSessionAuthority, PrivateSessionInventoryRow } from "./private-session-authority"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 import type { SessionPageConformanceUser } from "./session-page.conformance"
@@ -34,8 +34,8 @@ export async function exerciseFirstReadConformance(harness: FirstReadConformance
   const { authority, workspaceId, creator } = harness
   await authority.reserveSession(creator.auth, { operationId: "op_first_read", sessionId, workspaceId, kind: "create" })
   await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_first_read", sessionId, workspaceId })
-  const viewport: FirstPageRequest = { rows: 40, cols: 100, reasoning: false }
-  const read = async (firstPage?: FirstPageRequest) =>
+  const viewport: TurnPageRequest = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
+  const read = async (firstPage?: TurnPageRequest) =>
     await authority.readSessionFirstRead(creator.auth, { sessionId, workspaceId, ...(firstPage ? { firstPage } : {}) })
   const listed = async () => (await authority.listSessions(creator.auth, { workspaceId })).find((row) => row.session_id === sessionId)
 

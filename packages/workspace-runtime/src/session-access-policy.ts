@@ -351,6 +351,7 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "GET /session/:id/queue": { kind: "authorize", operation: "queue_read" },
   "POST /session/:id/queue/:seq/:action": { kind: "authorize", operation: "prompt" },
   "GET /session/:id/outline": { kind: "authorize", operation: "message_read" },
+  "GET /session/:id/page": { kind: "authorize", operation: "message_read" },
   "GET /session/capabilities": { kind: "workspace" },
   "GET /session/status": { kind: "filter", operation: "session_status" },
   "PATCH /session/:id": { kind: "authorize", operation: "session_meta_write" },

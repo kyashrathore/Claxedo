@@ -139,12 +139,12 @@
       "import": "./dist/message-page.mjs",
       "default": "./dist/message-page.mjs"
     },
-    "./first-page": {
-      "development": "./src/first-page.ts",
-      "bun": "./src/first-page.ts",
-      "types": "./dist/first-page.d.ts",
-      "import": "./dist/first-page.mjs",
-      "default": "./dist/first-page.mjs"
+    "./turn-page": {
+      "development": "./src/turn-page.ts",
+      "bun": "./src/turn-page.ts",
+      "types": "./dist/turn-page.d.ts",
+      "import": "./dist/turn-page.mjs",
+      "default": "./dist/turn-page.mjs"
     },
     "./turn-outline": {
       "development": "./src/turn-outline.ts",

@@ -127,10 +127,12 @@ describe("resolveHostedOperation", () => {
       rows: 40,
       cols: 120,
       reasoning: "1",
+      shell: "0",
+      edit: "1",
       view: "must-not-reach-the-server",
     })).toEqual({
       method: "GET",
-      path: "/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=40&cols=120&reasoning=1",
+      path: "/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=40&cols=120&reasoning=1&shell=0&edit=1",
     })
     expect(resolveHostedOperation("session.outline", { sessionId: "ses_1", workspaceId: "ws_1" })).toEqual({
       method: "GET",

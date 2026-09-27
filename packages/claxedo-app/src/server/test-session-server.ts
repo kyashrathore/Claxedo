@@ -4,11 +4,12 @@ import { sessionEndpoint } from "./session-context"
 import { createStatusOwner } from "./status"
 import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import { workspaceStopped } from "./wire/connection"
+import { viewportQuery } from "./wire/first-read"
 import { createWorkspaces } from "./workspaces"
 
 export const ref = { projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") }
-export const shape = { rows: 40, cols: 100, reasoning: false }
-export const firstPath = withQuery(sessionEndpoint(ref, "/outline"), { rows: "40", cols: "100", reasoning: "0" })
+export const shape = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
+export const firstPath = withQuery(sessionEndpoint(ref, "/outline"), viewportQuery(shape))
 export const openPath = withQuery(sessionEndpoint(ref), { view: "open" })
 export const liveSession = { id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } }
 export const centralRow = { session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }

@@ -11,14 +11,17 @@ import {
   turnSegments,
   type PartRef,
 } from "@claxedo/agent-runtime-contract/turn-fold"
-import type { AgentAssistantMessage, AgentContentPart, AgentMessage } from "@claxedo/agent-runtime-contract"
+import { toolOpensByDefault, toolPartHeader, type AgentAssistantMessage, type AgentContentPart, type AgentMessage } from "@claxedo/agent-runtime-contract"
 import type { TurnOutline } from "./turn-outline"
 
-/** The most turns a first page carries, however short they are. */
-export const FIRST_PAGE_TURN_CAP = 24
+/** The most turns a page carries, however short they are. */
+export const TURN_PAGE_TURN_CAP = 24
 
-/** A first page stops taking turns once it holds this many bytes; the turn that crosses it is still sent whole. */
-export const FIRST_PAGE_BYTE_CAP = 256 * 1024
+/** A page stops taking turns once it holds this many bytes; the turn that crosses it is still sent whole. */
+export const TURN_PAGE_BYTE_CAP = 256 * 1024
+
+/** A page fills the viewport and this many screens more, counted in viewport heights. */
+export const TURN_PAGE_FILL_SCREENS = 1
 
 const TURN_CHROME_LINES = 3
 const FOLD_ROW_LINES = 2
@@ -26,61 +29,77 @@ const GROUP_ROW_LINES = 2
 const FENCE_FRAME_LINES = 2
 const USER_BUBBLE_SHARE = 0.8
 
-/** What the reader's transcript can show: its viewport in body lines and columns, and whether it draws reasoning. */
-export type FirstPageRequest = {
-  rows: number
-  cols: number
-  reasoning: boolean
+/** What the reader's transcript draws: reasoning, and whether shell and edit rows open by default. */
+export type ReaderSettings = { reasoning: boolean; shell: boolean; edit: boolean }
+
+/** The reader's viewport in body lines and columns, with its settings: every query parameter a page read names. */
+export type TurnPageQuery = ReaderSettings & { rows: number; cols: number }
+
+/** A page read: the reader's query, the cancelled message of the session's last turn, and the cursor it reads before. */
+export type TurnPageRequest = TurnPageQuery & {
   /** The assistant message the session's last turn was cancelled at, which that turn draws as an interruption. */
   cancelledAssistantMessageId?: string
+  /** Read the turns before this cursor; absent reads from the newest turn. */
+  before?: string
 }
 
 /**
- * One turn as a cold transcript draws it. A turn that folds is its user
- * message and every assistant envelope, each carrying only the parts the fold
- * leaves drawn, with `foldableCount` naming how many groups it hides; any
- * other turn is whole.
+ * One turn as a page sends it, with every tool part a header unless the
+ * reader's settings open its row. A turn the fold decision folds is sent
+ * as its user message and every assistant envelope, each
+ * carrying only the parts the fold leaves drawn, with `foldableCount` naming
+ * how many groups it hides; any other turn is sent with all its parts.
  */
-export type FirstPageTurn = {
+export type PageTurn = {
   messages: AgentMessage[]
   foldableCount?: number
   /** Pages back from this turn's user message; absent on a session's first turn. */
   cursor?: string
 }
 
-/** The newest turns of a session, oldest first; the first turn's cursor reads what comes before the page. */
-export type FirstPage = { turns: FirstPageTurn[] }
+/** Consecutive turns of a session, oldest first; the first turn's cursor reads what comes before the page. */
+export type TurnPage = { turns: PageTurn[] }
 
 /** A session's first read: its row as its producer lists it, its turn outline, and the first page when the read asked for one. */
-export type FirstRead<Session> = { session: Session; outline: TurnOutline; page?: FirstPage }
+export type FirstRead<Session> = { session: Session; outline: TurnOutline; page?: TurnPage }
 
-/** The viewport a read names with its `rows`, `cols` and `reasoning` query parameters. */
-export type FirstPageQuery = Pick<FirstPageRequest, "rows" | "cols" | "reasoning">
+export const TURN_PAGE_MAX_EXTENT = 2000
 
-export const FIRST_PAGE_MAX_EXTENT = 2000
-
-/** A read named some but not all of `rows`, `cols` and `reasoning`, or one of them out of range; every producer answers it with a 400. */
-export class FirstPageQueryError extends Error {
-  override readonly name = "FirstPageQueryError"
+/** A read named some but not all of its query parameters, or one of them out of range; every producer answers it with a 400. */
+export class TurnPageQueryError extends Error {
+  override readonly name = "TurnPageQueryError"
 }
 
 /** One whole turn ending before `before` (the newest turn without it), and the cursor at its user message when older turns exist. */
 export type TurnRead = (before?: string) => Promise<{ messages: AgentMessage[]; nextCursor?: string }> | { messages: AgentMessage[]; nextCursor?: string }
 
-function extent(query: (name: string) => string | undefined, name: "rows" | "cols"): number {
+type Query = (name: string) => string | undefined
+
+function extent(query: Query, name: "rows" | "cols"): number {
   const value = query(name)
-  if (value === undefined || !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > FIRST_PAGE_MAX_EXTENT) {
-    throw new FirstPageQueryError(`${name} must be an integer between 1 and ${FIRST_PAGE_MAX_EXTENT}`)
+  if (value === undefined || !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > TURN_PAGE_MAX_EXTENT) {
+    throw new TurnPageQueryError(`${name} must be an integer between 1 and ${TURN_PAGE_MAX_EXTENT}`)
   }
   return Number(value)
 }
 
-/** The first page a read asks for with `rows`, `cols` and `reasoning`; a read naming none of them asks for none. */
-export function parseFirstPageQuery(query: (name: string) => string | undefined): FirstPageQuery | undefined {
-  const reasoning = query("reasoning")
-  if (query("rows") === undefined && query("cols") === undefined && reasoning === undefined) return undefined
-  if (reasoning !== "0" && reasoning !== "1") throw new FirstPageQueryError("reasoning must be 0 or 1")
-  return { rows: extent(query, "rows"), cols: extent(query, "cols"), reasoning: reasoning === "1" }
+function settingOf(query: Query, name: keyof ReaderSettings): boolean {
+  const value = query(name)
+  if (value !== "0" && value !== "1") throw new TurnPageQueryError(`${name} must be 0 or 1`)
+  return value === "1"
+}
+
+/** The reader settings a read names with `reasoning`, `shell` and `edit`, each 0 or 1. */
+export function parseReaderSettings(query: Query): ReaderSettings {
+  return { reasoning: settingOf(query, "reasoning"), shell: settingOf(query, "shell"), edit: settingOf(query, "edit") }
+}
+
+const PAGE_QUERY_NAMES = ["rows", "cols", "reasoning", "shell", "edit"] as const
+
+/** The page a read asks for with `rows`, `cols`, `reasoning`, `shell` and `edit`; a read naming none of them asks for none. */
+export function parseTurnPageQuery(query: Query): TurnPageQuery | undefined {
+  if (PAGE_QUERY_NAMES.every((name) => query(name) === undefined)) return undefined
+  return { ...parseReaderSettings(query), rows: extent(query, "rows"), cols: extent(query, "cols") }
 }
 
 type AssistantEntry = AgentMessage & { info: AgentMessage["info"] & AgentAssistantMessage }
@@ -103,12 +122,20 @@ function turnGroups(assistants: readonly AssistantEntry[], reasoning: boolean, c
   return { shape, groups: turnSegments(shape.refs, shape).flat(), part: (ref: PartRef) => partById.get(ref.partId) }
 }
 
-/** The turn a cold transcript draws: folded to the parts the fold leaves drawn when the contract's fold decision folds it, whole otherwise. */
-export function firstPageTurn(messages: AgentMessage[], request: Pick<FirstPageRequest, "reasoning" | "cancelledAssistantMessageId">): FirstPageTurn {
+function headed(messages: readonly AgentMessage[], settings: ReaderSettings): AgentMessage[] {
+  const part = (item: AgentContentPart) => (item.type === "tool" && !toolOpensByDefault(item.tool, settings) ? toolPartHeader(item) : item)
+  return messages.map((message) => ({ ...message, parts: message.parts.map(part) }))
+}
+
+type ProjectRequest = ReaderSettings & Pick<TurnPageRequest, "cancelledAssistantMessageId">
+
+/** The turn a page sends: its tools as headers, folded to the parts the fold leaves drawn when the contract's fold decision folds it. */
+export function projectTurn(messages: AgentMessage[], request: ProjectRequest): PageTurn {
+  const whole = { messages: headed(messages, request) }
   const [user, ...rest] = messages
   const assistants = rest.filter(isAssistant)
   const last = assistants.at(-1)
-  if (!user || !last) return { messages }
+  if (!user || !last) return whole
   const compaction = user.parts.some((part) => part.type === "compaction")
   const { shape, groups, part } = turnGroups(assistants, request.reasoning, request.cancelledAssistantMessageId, compaction)
   const foldableCount = countFoldableGroups(groups, part)
@@ -119,11 +146,11 @@ export function firstPageTurn(messages: AgentMessage[], request: Pick<FirstPageR
     errored: !!shape.errorMessage,
     busy: !assistantMessageSettled(last.info),
   })
-  if (!decision.folded) return { messages }
+  if (!decision.folded) return whole
   const folded = foldedGroupKeys(decision, groups, part)
-  const drawn = new Set(groups.filter((group) => !folded.has(group.key)).flatMap((group) => groupMembers(group).map((ref) => ref.partId)))
+  const kept = new Set(groups.filter((group) => !folded.has(group.key)).flatMap((group) => groupMembers(group).map((ref) => ref.partId)))
   return {
-    messages: messages.map((message) => (isAssistant(message) ? { ...message, parts: message.parts.filter((item) => drawn.has(item.id)) } : message)),
+    messages: whole.messages.map((message) => (isAssistant(message) ? { ...message, parts: message.parts.filter((item) => kept.has(item.id)) } : message)),
     foldableCount,
   }
 }
@@ -164,13 +191,13 @@ function drawnGroupLines(assistants: readonly AgentMessage[], cols: number): num
 }
 
 /**
- * How many body lines a turn takes as the first page draws it at `cols`
+ * How many body lines a turn takes as it is drawn on arrival at `cols`
  * columns: a fixed frame per turn, the prompt wrapped at the user bubble's
  * width, the fold row when it folds, a row per tool or reasoning group, and
  * every drawn text wrapped. It is an estimate for choosing how many turns to
  * send, never a layout.
  */
-export function estimateTurnLines(turn: FirstPageTurn, cols: number): number {
+export function estimateTurnLines(turn: PageTurn, cols: number): number {
   const [user, ...rest] = turn.messages
   if (!user) return 0
   const prompt = textLines(visiblePromptText(user), Math.max(1, Math.floor(cols * USER_BUBBLE_SHARE)))
@@ -181,26 +208,27 @@ export function estimateTurnLines(turn: FirstPageTurn, cols: number): number {
 const encoder = new TextEncoder()
 
 /**
- * The turns a cold transcript draws first, read one whole turn at a time from
- * the newest until their estimated lines cover the viewport and one more
- * screen, or the page reaches its turn or byte cap. The caps only decide how
- * many turns are sent; a message or part is never trimmed.
+ * The turns before `request.before` (from the newest without it), read one
+ * whole turn at a time until their estimated lines cover the viewport and
+ * `TURN_PAGE_FILL_SCREENS` more, or the page reaches its turn or byte cap. The
+ * caps only decide how many turns are sent; a message or part is never
+ * trimmed.
  */
-export async function readFirstPage(read: TurnRead, request: FirstPageRequest): Promise<FirstPage> {
-  const turns: FirstPageTurn[] = []
-  const wanted = request.rows * 2
+export async function readTurnPage(read: TurnRead, request: TurnPageRequest): Promise<TurnPage> {
+  const turns: PageTurn[] = []
+  const wanted = request.rows * (1 + TURN_PAGE_FILL_SCREENS)
   let lines = 0
   let bytes = 0
-  let before: string | undefined
+  let before = request.before
   do {
     const page = await read(before)
     if (page.messages.length === 0) break
-    const turn = firstPageTurn(page.messages, request)
+    const turn = projectTurn(page.messages, request)
     turns.unshift(page.nextCursor === undefined ? turn : { ...turn, cursor: page.nextCursor })
     lines += estimateTurnLines(turn, request.cols)
     bytes += encoder.encode(JSON.stringify(turn.messages)).byteLength
     before = page.nextCursor
-  } while (before !== undefined && lines < wanted && turns.length < FIRST_PAGE_TURN_CAP && bytes < FIRST_PAGE_BYTE_CAP)
+  } while (before !== undefined && lines < wanted && turns.length < TURN_PAGE_TURN_CAP && bytes < TURN_PAGE_BYTE_CAP)
   return { turns }
 }
 
@@ -209,7 +237,7 @@ export async function readFirstRead<Session>(
   session: Session,
   outline: TurnOutline,
   read: TurnRead,
-  request: FirstPageRequest | undefined,
+  request: TurnPageRequest | undefined,
 ): Promise<FirstRead<Session>> {
-  return request ? { session, outline, page: await readFirstPage(read, request) } : { session, outline }
+  return request ? { session, outline, page: await readTurnPage(read, request) } : { session, outline }
 }

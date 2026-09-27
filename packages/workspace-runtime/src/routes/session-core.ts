@@ -30,7 +30,7 @@ import type {
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { FirstPageQueryError, parseFirstPageQuery, readFirstRead, type FirstPageQuery } from "@claxedo/agent-sdk-runtime/first-page"
+import { TurnPageQueryError, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -244,13 +244,21 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
   }
 }
 
-function firstPageQuery(c: Ctx): FirstPageQuery | undefined {
+function pageQuery(c: Ctx): TurnPageQuery | undefined {
   try {
-    return parseFirstPageQuery((name) => c.req.query(name))
+    return parseTurnPageQuery((name) => c.req.query(name))
   } catch (error) {
-    if (error instanceof FirstPageQueryError) throw new HTTPException(400, { message: error.message })
+    if (error instanceof TurnPageQueryError) throw new HTTPException(400, { message: error.message })
     throw error
   }
+}
+
+function olderPageQuery(c: Ctx): TurnPageQuery & { before: string } {
+  const query = pageQuery(c)
+  const before = c.req.query("before")
+  if (!query) throw new HTTPException(400, { message: "a page read names rows, cols, reasoning, shell and edit" })
+  if (!before) throw new HTTPException(400, { message: "before must be a non-empty cursor" })
+  return { ...query, before }
 }
 
 function messagePageResponse(c: Ctx, page: AgentMessagePage) {
@@ -1030,6 +1038,10 @@ async function readMessagePage(opts: Opts, c: Ctx, directory: RuntimeDirectory, 
   } catch (error) {
     return throwMessagePageError(error, 502)
   }
+}
+
+function turnReader(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): TurnRead {
+  return (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before })
 }
 
 async function readPresentedSession(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
@@ -1956,7 +1968,7 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       if (!opts.getTurnOutline) throw new HTTPException(501, { message: "turn outlines are not supported for this session" })
-      const query = firstPageQuery(c)
+      const query = pageQuery(c)
       const directory = await opts.resolveDirectory(c, { sessionId })
       const session = await readPresentedSession(opts, c, directory, sessionId)
       const outline = session ? await opts.getTurnOutline(c, directory, sessionId) : undefined
@@ -1964,9 +1976,17 @@ export function createSessionRoutes(opts: Opts) {
       return noStoreJson(c, await readFirstRead(
         normalizeSession(session, directory),
         outline,
-        (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }),
+        turnReader(opts, c, directory, sessionId),
         query && { ...query, cancelledAssistantMessageId: cancelledAssistantMessageId(session.lastTurn) },
       ))
+    })
+    .get("/session/:id/page", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
+      if (guarded) return guarded
+      const request = olderPageQuery(c)
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      return noStoreJson(c, await readTurnPage(turnReader(opts, c, directory, sessionId), request))
     })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.

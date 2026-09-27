@@ -60,7 +60,7 @@ function fakeServer(first: SessionFirstRead = firstRead(foldedLatest, [["msg_2",
   const deps = {
     list: { readRow: () => undefined, readStatus: () => undefined },
     requests: { read: () => undefined, readFailed: () => undefined },
-    firstPage: () => ({ rows: 40, cols: 100, reasoning: false }),
+    firstPage: () => ({ rows: 40, cols: 100, reasoning: false, shell: false, edit: false }),
   } as unknown as TranscriptDeps
   return { server, deps, olderReads, turnReads }
 }

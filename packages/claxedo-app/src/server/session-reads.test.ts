@@ -6,7 +6,7 @@ import { NO_GOAL } from "./session-goal"
 import { readOlder, readSession } from "./session-reads"
 import { centralRow, fakeServer, firstPath, firstRead, openPath, openView, ref, shape, stored } from "./test-session-server"
 
-const centralFirstPath = "/api/control/sessions/ses_1/outline?workspaceId=ws_cloud&rows=40&cols=100&reasoning=0"
+const centralFirstPath = "/api/control/sessions/ses_1/outline?workspaceId=ws_cloud&rows=40&cols=100&reasoning=0&shell=0&edit=0"
 
 test("session reads: a stopped cloud workspace's session opens from one control-plane first read and reads nothing from its runtime", async () => {
   const server = fakeServer({ reachable: () => false })
@@ -52,7 +52,7 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
   expect(first.outline).toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
   await readOlder(context, ref, "cursor_older")
   expect(calls).toEqual([
-    { operation: "session.outline", input: { sessionId: "ses_1", workspaceId: "ws_cloud", rows: "40", cols: "100", reasoning: "0" } },
+    { operation: "session.outline", input: { sessionId: "ses_1", workspaceId: "ws_cloud", rows: "40", cols: "100", reasoning: "0", shell: "0", edit: "0" } },
     { operation: "session.messages", input: { sessionId: "ses_1", workspaceId: "ws_cloud", limit: "50", before: "cursor_older" } },
   ])
   expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([])

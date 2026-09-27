@@ -24,7 +24,7 @@ import type {
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import type { FirstRead } from "@claxedo/agent-sdk-runtime/first-page"
+import type { FirstRead, TurnPage } from "@claxedo/agent-sdk-runtime/turn-page"
 import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
@@ -66,8 +66,12 @@ export type SessionMessagePageInput = SessionInput & { turn?: never; coverage?: 
   | { view?: "latest-turn" | "latest-surface"; limit?: number; before?: string }
 )
 export type SessionTurnCoverageInput = SessionInput & { turn: string; coverage: "1" }
+/** The reader's viewport and settings, which choose how many turns a page carries and which tool rows ride whole. */
+export type SessionViewport = { rows: number; cols: number; reasoning: "0" | "1"; shell: "0" | "1"; edit: "0" | "1" }
 /** An outline read; with the reader's viewport it also asks for the first page its transcript draws. */
-export type SessionOutlineInput = SessionInput & ({ rows?: never; cols?: never; reasoning?: never } | { rows: number; cols: number; reasoning: "0" | "1" })
+export type SessionOutlineInput = SessionInput & ({ [K in keyof SessionViewport]?: never } | SessionViewport)
+/** The page of turns before `before`, projected as the first page is. */
+export type SessionPageInput = SessionInput & SessionViewport & { before: string }
 export type SessionGoalStartInput = SessionInput & { objective: string }
 
 /** A prompt the runtime holds behind a running turn, as the queue route reports it. */
@@ -106,6 +110,7 @@ export type WorkspaceSessionClient = {
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   /** The session's row and its turns as the nav rail lists them, never their content; with a viewport, also the first page. */
   outline(input: SessionOutlineInput, options?: Options): Reply<FirstRead<AgentPresentationSession>>
+  page(input: SessionPageInput, options?: Options): Reply<TurnPage>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   /**
    * What the runtime owner knows about this session, and the operations a
@@ -249,6 +254,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     subagents: (input, options) => read("session.subagents", input, "/subagents", options),
     messages,
     outline: (input, options) => read("session.outline", input, "/outline", options, without(input, ["sessionID"])),
+    page: (input, options) => read("session.page", input, "/page", options, without(input, ["sessionID"])),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
     recovery: {
       inspect: (input, options) => caller.decoded({

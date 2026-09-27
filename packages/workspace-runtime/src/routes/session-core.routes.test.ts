@@ -37,6 +37,7 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "GET /session/:id/message",
   "GET /session/:id/message/:messageId/attachment/:attachmentId",
   "GET /session/:id/outline",
+  "GET /session/:id/page",
   "GET /session/:id/permission-mode",
   "GET /session/:id/queue",
   "GET /session/:id/recovery",

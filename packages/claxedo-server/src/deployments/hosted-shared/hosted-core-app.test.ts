@@ -275,20 +275,20 @@ describe("resource-closed hosted core app", () => {
     await expect(outlineOnly.json()).resolves.toEqual(firstRead)
     expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1" })
 
-    const withPage = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=1", { headers })
+    const withPage = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=1&shell=1&edit=0", { headers })
     expect(withPage.status).toBe(200)
     await expect(withPage.json()).resolves.toEqual({ ...firstRead, page })
     expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), {
       sessionId: "ses_1",
       workspaceId: "ws_1",
-      firstPage: { rows: 10, cols: 100, reasoning: true },
+      firstPage: { rows: 10, cols: 100, reasoning: true, shell: true, edit: false },
     })
 
     readSessionFirstRead.mockClear()
-    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=0&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes", "rows=10&cols=2001&reasoning=1"]) {
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
       const refused = await app.request(`/api/control/sessions/ses_1/outline?workspaceId=ws_1&${query}`, { headers })
       expect(refused.status, query).toBe(400)
-      await expect(refused.json()).resolves.toMatchObject({ error: { code: "first_page_query_error" } })
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
     }
     expect(readSessionFirstRead).not.toHaveBeenCalled()
 

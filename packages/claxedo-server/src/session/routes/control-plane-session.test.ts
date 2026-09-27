@@ -348,7 +348,7 @@ describe("control plane session routes", () => {
     const messages = await app.request("http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
-    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=0", {
+    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=0&shell=0&edit=0", {
       headers: { Authorization: "Bearer user_1" },
     })
     const missingOutline = await app.request("http://127.0.0.1/sessions/session-2/outline?workspaceId=ws_1", {
@@ -378,7 +378,7 @@ describe("control plane session routes", () => {
     expect(authority.readSessionFirstRead).toHaveBeenCalledWith(expect.anything(), {
       sessionId: "session-1",
       workspaceId: "ws_1",
-      firstPage: { rows: 10, cols: 100, reasoning: false },
+      firstPage: { rows: 10, cols: 100, reasoning: false, shell: false, edit: false },
     })
     expect(missingOutline.status).toBe(404)
     await expect(missingOutline.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
@@ -982,7 +982,7 @@ describe("a loopback caller without a bearer reads the local projection's first 
 
   test("with the reader's viewport, answers the first page: the latest turn folded with its cursor, the first turn whole", async () => {
     const { svc, app } = loopback()
-    const response = await app.request("http://127.0.0.1/sessions/session-1/outline?rows=10&cols=100&reasoning=0")
+    const response = await app.request("http://127.0.0.1/sessions/session-1/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       session: meta,
@@ -1000,13 +1000,13 @@ describe("a loopback caller without a bearer reads the local projection's first 
 
   test("refuses a partial or out-of-range viewport and names a session the projection does not hold", async () => {
     const { svc, app } = loopback()
-    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=0&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes", "rows=10&cols=2001&reasoning=1"]) {
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
       const refused = await app.request(`http://127.0.0.1/sessions/session-1/outline?${query}`)
       expect(refused.status, query).toBe(400)
-      expect(await refused.json()).toMatchObject({ error: { code: "first_page_query_error" } })
+      expect(await refused.json()).toMatchObject({ error: { code: "turn_page_query_error" } })
     }
     expect(svc.projectionStore.session_meta).not.toHaveBeenCalled()
-    const missing = await app.request("http://127.0.0.1/sessions/session-2/outline?rows=10&cols=100&reasoning=0")
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
     expect(missing.status).toBe(404)
     expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
   })

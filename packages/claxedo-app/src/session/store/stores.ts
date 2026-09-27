@@ -1,5 +1,5 @@
 import { createSignal, getOwner, onCleanup, untrack } from "solid-js"
-import type { Server, ServerEvent } from "@/server"
+import type { ReaderSettings, Server, ServerEvent } from "@/server"
 import type { SessionStores } from "@/session"
 import { createSessionList, type SessionListInternal } from "../list"
 import { createRequests, type RequestsInternal } from "../requests"
@@ -19,11 +19,11 @@ function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requ
   open.byId(event.ref.sessionId)?.apply(event)
 }
 
-export function createSessionStores(server: Server, reasoning: () => boolean): SessionStores {
+export function createSessionStores(server: Server, settings: () => ReaderSettings): SessionStores {
   const requests = createRequests(server)
   const list = createSessionList(server, requests)
   const [viewport, recordViewport] = createSignal(transcriptViewport({ width: window.innerWidth, height: window.innerHeight }))
-  const firstPage = () => untrack(() => ({ ...viewport(), reasoning: reasoning() }))
+  const firstPage = () => untrack(() => ({ ...viewport(), ...settings() }))
   const open = createOpenSessions({
     limit: OPEN_SESSION_LIMIT,
     cachedLimit: CACHED_TURN_LIMIT,

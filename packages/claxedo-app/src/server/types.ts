@@ -160,7 +160,9 @@ export type SessionOutline = { readonly turns: readonly OutlineTurn[]; readonly 
 
 export type HeldSessionReads = { readonly latestTurn: TranscriptPage; readonly outline: SessionOutline | undefined }
 
-export type FirstPageShape = { readonly rows: number; readonly cols: number; readonly reasoning: boolean }
+export type ReaderSettings = { readonly reasoning: boolean; readonly shell: boolean; readonly edit: boolean }
+
+export type FirstPageShape = ReaderSettings & { readonly rows: number; readonly cols: number }
 
 export type FoldedTurn = { readonly foldableCount: number; readonly wholeBefore?: string }
 

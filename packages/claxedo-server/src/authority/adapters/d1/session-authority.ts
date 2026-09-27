@@ -50,7 +50,7 @@ import { organizationRoleRankSql } from "./host-access-authority"
 import { readD1SessionPage } from "./session-page"
 import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
-import { readFirstRead, type FirstPageRequest } from "@claxedo/agent-sdk-runtime/first-page"
+import { readFirstRead, type TurnPageRequest } from "@claxedo/agent-sdk-runtime/turn-page"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -1562,7 +1562,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
   }
 
-  async readSessionFirstRead(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; firstPage?: FirstPageRequest }) {
+  async readSessionFirstRead(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; firstPage?: TurnPageRequest }) {
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")

@@ -654,25 +654,26 @@ describe("createSessionRoutes message paging", () => {
     expect(unsupported.status).toBe(501)
   })
 
-  test("a first read's page walks back one whole turn at a time and folds each turn the fold decision folds", async () => {
-    const turn = (index: number): AgentMessage[] => {
-      const user = `user-${index}`
-      const worked = `assistant-${index}-a`
-      const answered = `assistant-${index}-b`
-      const assistant = (id: string, parts: AgentMessage["parts"]) => ({
-        info: { id, sessionID: "session-1", role: "assistant", parentID: user, time: { created: 2, completed: 3 } },
-        parts,
-      }) as AgentMessage
-      return [
-        { info: { id: user, sessionID: "session-1", role: "user", time: { created: 1 } }, parts: [{ id: `${user}-p`, sessionID: "session-1", messageID: user, type: "text", text: `Prompt ${index}` }] } as AgentMessage,
-        assistant(worked, [
-          { id: `${worked}-t`, sessionID: "session-1", messageID: worked, type: "text", text: "Looking." },
-          { id: `${worked}-r`, sessionID: "session-1", messageID: worked, type: "tool", callID: "c", tool: "read", state: { status: "completed", input: {}, output: "x", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
-        ]),
-        assistant(answered, [{ id: `${answered}-t`, sessionID: "session-1", messageID: answered, type: "text", text: `Answer ${index}.` }]),
-      ]
-    }
-    const turns = Array.from({ length: 30 }, (_, index) => turn(index))
+  const pagedTurn = (index: number): AgentMessage[] => {
+    const user = `user-${index}`
+    const worked = `assistant-${index}-a`
+    const answered = `assistant-${index}-b`
+    const assistant = (id: string, parts: AgentMessage["parts"]) => ({
+      info: { id, sessionID: "session-1", role: "assistant", parentID: user, time: { created: 2, completed: 3 } },
+      parts,
+    }) as AgentMessage
+    return [
+      { info: { id: user, sessionID: "session-1", role: "user", time: { created: 1 } }, parts: [{ id: `${user}-p`, sessionID: "session-1", messageID: user, type: "text", text: `Prompt ${index}` }] } as AgentMessage,
+      assistant(worked, [
+        { id: `${worked}-t`, sessionID: "session-1", messageID: worked, type: "text", text: "Looking." },
+        { id: `${worked}-r`, sessionID: "session-1", messageID: worked, type: "tool", callID: "c", tool: "read", state: { status: "completed", input: {}, output: "x", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+      ]),
+      assistant(answered, [{ id: `${answered}-t`, sessionID: "session-1", messageID: answered, type: "text", text: `Answer ${index}.` }]),
+    ]
+  }
+
+  function pagedRoutes() {
+    const turns = Array.from({ length: 30 }, (_, index) => pagedTurn(index))
     const reads: AgentMessagePageInput[] = []
     const app = routes({
       adapter: adapter({
@@ -684,8 +685,15 @@ describe("createSessionRoutes message paging", () => {
       }),
       getTurnOutline: () => ({ turns: [], complete: true }),
     })
+    return { app, turns, reads }
+  }
 
-    const response = await app.request("http://localhost/session/session-1/outline?rows=10&cols=100&reasoning=0")
+  const viewport = "rows=10&cols=100&reasoning=0&shell=0&edit=0"
+
+  test("a first read's page walks back one whole turn at a time and folds each turn the fold decision folds", async () => {
+    const { app, turns, reads } = pagedRoutes()
+
+    const response = await app.request(`http://localhost/session/session-1/outline?${viewport}`)
 
     expect(response.status).toBe(200)
     const { page } = await response.json()
@@ -698,11 +706,26 @@ describe("createSessionRoutes message paging", () => {
     })
   })
 
-  test("a first read names every extent it needs and refuses one out of range", async () => {
-    const app = routes({ adapter: adapter(), getTurnOutline: () => ({ turns: [], complete: true }) })
-    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=0&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes", "rows=10&cols=2001&reasoning=1"]) {
+  test("a page read answers the turns before its cursor, projected as the first page is", async () => {
+    const { app, reads } = pagedRoutes()
+
+    const response = await app.request(`http://localhost/session/session-1/page?${viewport}&before=27`)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    const page = await response.json()
+    expect(reads).toEqual([{ view: "latest-turn", before: "27" }, { view: "latest-turn", before: "26" }, { view: "latest-turn", before: "25" }])
+    expect(page.turns.map((item: { cursor: string; foldableCount: number }) => [item.cursor, item.foldableCount])).toEqual([["24", 2], ["25", 2], ["26", 2]])
+  })
+
+  test("a first read or a page read names every extent it needs and refuses one out of range, and a page read names its cursor", async () => {
+    const { app } = pagedRoutes()
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
       expect((await app.request(`http://localhost/session/session-1/outline?${query}`)).status).toBe(400)
+      expect((await app.request(`http://localhost/session/session-1/page?${query}&before=3`)).status).toBe(400)
     }
+    expect((await app.request(`http://localhost/session/session-1/page?${viewport}`)).status).toBe(400)
+    expect((await app.request("http://localhost/session/session-1/page?before=3")).status).toBe(400)
   })
 
   test("returns unsupported instead of violating a bounded request with full history", async () => {

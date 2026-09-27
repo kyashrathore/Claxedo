@@ -414,7 +414,7 @@ Entry point status:
   `@claxedo/agent-sdk-runtime/subagent-admission`,
   `@claxedo/agent-sdk-runtime/message-page`,
   `@claxedo/agent-sdk-runtime/turn-outline`,
-  `@claxedo/agent-sdk-runtime/first-page`,
+  `@claxedo/agent-sdk-runtime/turn-page`,
   `@claxedo/agent-sdk-runtime/runtime-event-hub`,
   `@claxedo/agent-sdk-runtime/sse`,
   `@claxedo/agent-sdk-runtime/provider-projection`,

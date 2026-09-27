@@ -76,5 +76,6 @@ export function firstReadFromWire(body: unknown): FirstReadFromWire {
 }
 
 export function viewportQuery(shape: FirstPageShape): Record<string, string> {
-  return { rows: String(shape.rows), cols: String(shape.cols), reasoning: shape.reasoning ? "1" : "0" }
+  const flag = (value: boolean) => (value ? "1" : "0")
+  return { rows: String(shape.rows), cols: String(shape.cols), reasoning: flag(shape.reasoning), shell: flag(shape.shell), edit: flag(shape.edit) }
 }

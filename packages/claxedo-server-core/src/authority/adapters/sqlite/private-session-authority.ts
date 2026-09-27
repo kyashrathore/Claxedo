@@ -4,7 +4,7 @@ import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/j
 import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { readStoredTurnOutline } from "../../../session/turn-outline"
-import { readFirstRead } from "@claxedo/agent-sdk-runtime/first-page"
+import { readFirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {

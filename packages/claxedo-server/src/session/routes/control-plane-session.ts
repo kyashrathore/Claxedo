@@ -27,7 +27,7 @@ import {
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
 import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
-import { FirstPageQueryError, parseFirstPageQuery, readFirstRead, type FirstPageQuery } from "@claxedo/agent-sdk-runtime/first-page"
+import { TurnPageQueryError, parseTurnPageQuery, readFirstRead, type TurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -99,7 +99,7 @@ function projectedMessagePage(
 }
 
 /** A loopback first read: the session's projected meta as the loopback inventory lists it, its replay's outline, and the projection's latest turns. */
-async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: FirstPageQuery | undefined) {
+async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageQuery | undefined) {
   const meta = await services.projectionStore.session_meta(sessionId)
   if (!meta) return undefined
   return await readFirstRead(
@@ -279,7 +279,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/outline", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        const firstPage = parseFirstPageQuery((name) => c.req.query(name))
+        const firstPage = parseTurnPageQuery((name) => c.req.query(name))
         const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
           ? await projectedFirstRead(services, sessionId, firstPage)
           : await requireAuthority(services).readSessionFirstRead(await signedAuth(c.req.raw, options), {
@@ -291,7 +291,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         return c.json(read)
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        if (err instanceof FirstPageQueryError) return c.json({ error: { code: "first_page_query_error", message: err.message } }, 400)
+        if (err instanceof TurnPageQueryError) return c.json({ error: { code: "turn_page_query_error", message: err.message } }, 400)
         if (err instanceof AgentMessagePageError) {
           return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
         }

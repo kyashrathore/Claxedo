@@ -9,7 +9,7 @@ import type {
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
 import type { LatestView } from "../../session/latest-view-page"
-import type { FirstPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/first-page"
+import type { TurnPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 
 export {
@@ -592,7 +592,7 @@ export type WorkspaceAuthority = {
   /** The session's row as `listSessions` lists it, its outline and, with `firstPage`, its first page; nothing when the reader cannot read it. */
   readSessionFirstRead: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; firstPage?: FirstPageRequest },
+    args: { sessionId: string; workspaceId: string; firstPage?: TurnPageRequest },
   ) => Promise<FirstRead<AuthoritySessionInventoryRow> | undefined>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,

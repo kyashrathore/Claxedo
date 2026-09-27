@@ -53,7 +53,7 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import { FirstPageQueryError, parseFirstPageQuery } from "@claxedo/agent-sdk-runtime/first-page"
+import { TurnPageQueryError, parseTurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -674,9 +674,9 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     if (!workspaceId) return context.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
     let firstPage
     try {
-      firstPage = parseFirstPageQuery((name) => context.req.query(name))
+      firstPage = parseTurnPageQuery((name) => context.req.query(name))
     } catch (error) {
-      if (error instanceof FirstPageQueryError) return context.json({ error: { code: "first_page_query_error", message: error.message } }, 400)
+      if (error instanceof TurnPageQueryError) return context.json({ error: { code: "turn_page_query_error", message: error.message } }, 400)
       throw error
     }
     const authResult = await signedOrError(

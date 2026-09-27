@@ -59,5 +59,5 @@ test("first read wire: a whole latest turn is the latest turn a reader keeps, pa
 })
 
 test("first read wire: the viewport query names every extent", () => {
-  expect(viewportQuery({ rows: 40, cols: 100, reasoning: true })).toEqual({ rows: "40", cols: "100", reasoning: "1" })
+  expect(viewportQuery({ rows: 40, cols: 100, reasoning: true, shell: false, edit: true })).toEqual({ rows: "40", cols: "100", reasoning: "1", shell: "0", edit: "1" })
 })
