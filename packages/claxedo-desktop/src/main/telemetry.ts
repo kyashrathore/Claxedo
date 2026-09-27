@@ -1,8 +1,6 @@
 /**
- * Main-process fatal-error capture (W2e). This is the ONLY telemetry surface
- * in the main process — the renderer loads claxedo-app, which already owns
- * its own posthog-js init/capture path; duplicating that here would double
- * every renderer-side event.
+ * The main process's PostHog client, for fatal-error capture and the install
+ * report. The renderer (claxedo-app) sends no telemetry of its own.
  *
  * Sending requires two independent opt-ins — `CLAXEDO_TELEMETRY_MODE=on` AND
  * a PostHog key — so a self-built, key-less, or simply un-opted-in desktop
