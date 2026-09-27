@@ -60,6 +60,7 @@ import { SessionRoutes } from "../routes/session"
 import { isSessionRecoveryPath } from "../routes/session-core"
 import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import type { SessionDeliveryStore } from "../session/delivery-owner"
+import { runtimeSessionTime } from "../session/session-time"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import {
   mountWorkspaceAgentHooks,
@@ -2259,9 +2260,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)
     },
-    sessionUpdatedAt(sessionId: string) {
-      const time = store().getSession(sessionId)?.time
-      return time?.updated ?? time?.created
+    sessionTime(sessionId: string) {
+      const session = store().getSession(sessionId)
+      return session ? runtimeSessionTime(session) : undefined
     },
     drivenOnlyByMachineUser(sessionId: string, ownerActorId?: string) {
       const current = store()

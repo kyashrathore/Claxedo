@@ -12,6 +12,7 @@ import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
+import type { RuntimeSessionTime } from "../session/session-time"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -118,8 +119,8 @@ export type WorkspaceHost = {
    */
   unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
   hasSession: (sessionId: string) => boolean
-  /** The session's update time in this runtime's store; undefined when the store holds no such session. */
-  sessionUpdatedAt: (sessionId: string) => number | undefined
+  /** The session's times in this runtime's store; undefined when the store holds no such session or holds it without both times. */
+  sessionTime: (sessionId: string) => RuntimeSessionTime | undefined
   /**
    * The session exists and no turn relayed from another caller reached it or
    * any session it descends from: everything it was asked came from the

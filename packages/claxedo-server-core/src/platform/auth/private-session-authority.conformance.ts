@@ -6,14 +6,19 @@ import { storedSessionShareLevel } from "./session-share-level"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 
 /**
- * Session update times as a runtime reports them, far behind any authority
- * clock, so a listed row stamped by the authority instead can never match.
+ * Session times as a runtime reports them, far behind any authority clock, so
+ * a listed row stamped by the authority instead can never match.
  */
-const RUNTIME_STAMPS = { registered: 1_000, synced: 2_000, adopted: 3_000 } as const
+const RUNTIME_TIMES = {
+  registered: { createdAt: 500, updatedAt: 1_000 },
+  synced: 2_000,
+  adopted: { createdAt: 2_500, updatedAt: 3_000 },
+} as const
 
-async function listedUpdatedAt(authority: PrivateSessionAuthority, auth: SignedControlPlaneAuth, workspaceId: string, sessionId: string) {
+async function listedTimes(authority: PrivateSessionAuthority, auth: SignedControlPlaneAuth, workspaceId: string, sessionId: string) {
   const rows = asArray(await authority.listSessions(auth, { workspaceId })).map(asRecord)
-  return rows.find((row) => row?.session_id === sessionId)?.updated_at
+  const row = rows.find((candidate) => candidate?.session_id === sessionId)
+  return { createdAt: row?.created_at, updatedAt: row?.updated_at }
 }
 
 export const PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS = [
@@ -134,7 +139,7 @@ export async function exercisePrivateSessionAuthorityConformance(
     sessionId,
     workspaceId,
     title: "provider-neutral contract",
-    updatedAt: RUNTIME_STAMPS.registered,
+    ...RUNTIME_TIMES.registered,
   })
   invariant(
     asArray(await authority.listSessions(creator.auth, { workspaceId })).some(
@@ -142,9 +147,14 @@ export async function exercisePrivateSessionAuthorityConformance(
     ),
     "exact registration retry did not reconcile the session",
   )
+  const registered = await listedTimes(authority, creator.auth, workspaceId, sessionId)
   invariant(
-    await listedUpdatedAt(authority, creator.auth, workspaceId, sessionId) === RUNTIME_STAMPS.registered,
+    registered.updatedAt === RUNTIME_TIMES.registered.updatedAt,
     "registration listed the session at the authority's clock instead of the runtime's update time",
+  )
+  invariant(
+    registered.createdAt === RUNTIME_TIMES.registered.createdAt,
+    "registration listed the session at the authority's clock instead of the runtime's creation time",
   )
 
   await authority.authorizeRuntimeSessionStartStatus(startInput)
@@ -201,7 +211,7 @@ export async function exercisePrivateSessionAuthorityConformance(
     sessionId,
     workspaceId,
     maxEventOrdinal: 1,
-    updatedAt: RUNTIME_STAMPS.synced,
+    updatedAt: RUNTIME_TIMES.synced,
     ...(fencingToken === undefined ? {} : { fencingToken }),
     messages: [
       {
@@ -228,13 +238,18 @@ export async function exercisePrivateSessionAuthorityConformance(
       },
     ],
   })
+  const synced = await listedTimes(authority, creator.auth, workspaceId, sessionId)
   invariant(
-    await listedUpdatedAt(authority, creator.auth, workspaceId, sessionId) === RUNTIME_STAMPS.synced,
+    synced.updatedAt === RUNTIME_TIMES.synced,
     "a message sync listed the session at the authority's clock instead of the runtime's update time",
+  )
+  invariant(
+    synced.createdAt === RUNTIME_TIMES.registered.createdAt,
+    "a message sync moved the listed creation time",
   )
   await authority.upsertSessionVisibility(creator.auth, { workspaceId, sessions: [{ sessionId, title: "renamed" }] })
   invariant(
-    await listedUpdatedAt(authority, creator.auth, workspaceId, sessionId) === RUNTIME_STAMPS.synced,
+    (await listedTimes(authority, creator.auth, workspaceId, sessionId)).updatedAt === RUNTIME_TIMES.synced,
     "a visibility write with no runtime update time moved the listed update time",
   )
   const page = asRecord(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId }))
@@ -294,6 +309,7 @@ export async function exercisePrivateSessionAuthorityConformance(
   invariant(
     await rejects(() =>
       authority.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         ...creator.runtime,
         operationId: compensatedOperationId,
@@ -415,6 +431,7 @@ export async function exerciseRuntimeForkReservationConformance(
     kind: "create",
   })
   await authority.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     ...creator.runtime,
     operationId: "op_fork_reservation_parent",
@@ -435,6 +452,7 @@ export async function exerciseRuntimeForkReservationConformance(
     "a fork under a writable parent was not reserved",
   )
   await authority.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     ...creator.runtime,
     operationId: "op_fork_reservation_child",
@@ -483,7 +501,7 @@ export async function exerciseRuntimeForkReservationConformance(
   await harness.setParentShare(parentSessionId, null)
   invariant(await rejects(() => authority.authorizeRuntimeSessionStart(startup)),
     "a reserved child started after parent authority was revoked")
-  const register = { ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, operationId: sharedFork.operationId, updatedAt: Date.now() }
+  const register = { ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, operationId: sharedFork.operationId, createdAt: Date.now(), updatedAt: Date.now() }
   invariant(await rejects(() => authority.registerRuntimeSession(register)),
     "a reserved child registered after parent authority was revoked")
   invariant(await rejects(() => authority.authorizeRuntimeSession({ ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, action: "read" })),
@@ -568,7 +586,7 @@ export async function exercisePrivateSessionAdoptionConformance(
   const adopt = (
     who: PrivateSessionAdoptionConformanceHarness["owner"],
     id: string,
-  ) => authority.adoptRuntimeSession({ ...who.runtime, sessionId: id, workspaceId, hostId, updatedAt: RUNTIME_STAMPS.adopted })
+  ) => authority.adoptRuntimeSession({ ...who.runtime, sessionId: id, workspaceId, hostId, ...RUNTIME_TIMES.adopted })
 
   invariant(
     await rejects(() => adopt(owner, sessionId)),
@@ -592,9 +610,14 @@ export async function exercisePrivateSessionAdoptionConformance(
     ),
     "an adopted session did not become visible to its creator",
   )
+  const adoptedTimes = await listedTimes(authority, owner.auth, workspaceId, sessionId)
   invariant(
-    await listedUpdatedAt(authority, owner.auth, workspaceId, sessionId) === RUNTIME_STAMPS.adopted,
+    adoptedTimes.updatedAt === RUNTIME_TIMES.adopted.updatedAt,
     "adoption listed the session at the authority's clock instead of the runtime's update time",
+  )
+  invariant(
+    adoptedTimes.createdAt === RUNTIME_TIMES.adopted.createdAt,
+    "adoption listed the session at the authority's clock instead of the runtime's creation time",
   )
   invariant(
     await rejects(() =>
@@ -625,6 +648,7 @@ export async function exercisePrivateSessionAdoptionConformance(
     kind: "create",
   })
   await authority.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     ...member.runtime,
     operationId: "op_created_by_the_member",

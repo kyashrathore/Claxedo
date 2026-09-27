@@ -88,7 +88,7 @@ export async function seedWakeWorkspace(parentShare: "follow" | "send") {
   member(seeded, orgId, opened.workspace!.project_id!, bob.user.tokenIdentifier)
   const bobRuntime = runtimePrincipal(bob)
   await authority.reserveSession(alice, { operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, kind: "create" })
-  await authority.registerRuntimeSession({ ...runtimePrincipal(alice), operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...runtimePrincipal(alice), operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
   await setShare(authority, alice, bob, parentShare)
   return { root, authority, seeded, alice, bob, bobRuntime, orgId }
 }
@@ -102,7 +102,7 @@ export async function reserveChild(authority: WakeAuthority, creator: PrivateSes
 
 /** The registration the create route completes once the runtime holds the child. */
 export async function registerChild(authority: WakeAuthority, creator: PrivateSessionRuntimePrincipal) {
-  await authority.registerRuntimeSession({ ...creator, operationId: CHILD_OPERATION, sessionId: CHILD, workspaceId: WORKSPACE, updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...creator, operationId: CHILD_OPERATION, sessionId: CHILD, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
 }
 
 function member(seeded: () => Database.Database, orgId: string, projectId: string, tokenIdentifier: string) {

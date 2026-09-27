@@ -29,7 +29,7 @@ import {
 import { mintTasksCapability } from "../tasks/capability"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 
-const RUNTIME_UPDATED_AT = 1_234
+const RUNTIME_TIMES = { createdAt: 1_000, updatedAt: 1_234 }
 
 const relayInput = {
   principalKind: "user" as const,
@@ -134,12 +134,18 @@ describe("runtime private-session authority oracle", () => {
     expect((await request(target, token, {
       sessionId: "ses_private",
       action: "register",
-      updatedAt: RUNTIME_UPDATED_AT,
+      ...RUNTIME_TIMES,
     })).status).toBe(400)
     expect((await request(target, token, {
       operationId: "op_create_1",
       sessionId: "ses_private",
       action: "register",
+    })).status).toBe(400)
+    expect((await request(target, token, {
+      operationId: "op_create_1",
+      sessionId: "ses_private",
+      action: "register",
+      updatedAt: RUNTIME_TIMES.updatedAt,
     })).status).toBe(400)
     expect((await request(target, token, {
       operationId: "op_create_1",
@@ -148,7 +154,7 @@ describe("runtime private-session authority oracle", () => {
       actorId: "attacker_actor",
       action: "register",
       title: "Private",
-      updatedAt: RUNTIME_UPDATED_AT,
+      ...RUNTIME_TIMES,
     })).status).toBe(200)
     expect(registerRuntimeSession).toHaveBeenCalledWith({
       principalKind: "user",
@@ -158,7 +164,7 @@ describe("runtime private-session authority oracle", () => {
       sessionId: "ses_private",
       workspaceId: "ws_1",
       title: "Private",
-      updatedAt: RUNTIME_UPDATED_AT,
+      ...RUNTIME_TIMES,
     })
 
     const expired = await mintRelayHostToken({
@@ -544,11 +550,11 @@ describe("the owner grant as a session proof", () => {
     const token = (await grant()).token
     const registered = await request(target, token, {
       action: "register", operationId: "op_child_1", sessionId: "ses_child", title: "Reviewer",
-      workspaceId: "attacker_workspace", actorId: "attacker_actor", updatedAt: RUNTIME_UPDATED_AT,
+      workspaceId: "attacker_workspace", actorId: "attacker_actor", ...RUNTIME_TIMES,
     })
     expect(registered.status).toBe(200)
     expect(authority.registerRuntimeSession).toHaveBeenCalledWith({
-      ...principal, operationId: "op_child_1", sessionId: "ses_child", workspaceId: "ws_1", title: "Reviewer", updatedAt: RUNTIME_UPDATED_AT,
+      ...principal, operationId: "op_child_1", sessionId: "ses_child", workspaceId: "ws_1", title: "Reviewer", ...RUNTIME_TIMES,
     })
     expect((await request(target, token, { action: "read", sessionId: "ses_parent" })).status).toBe(200)
     expect((await request(target, token, { action: "write", sessionId: "ses_child" })).status).toBe(200)
@@ -568,7 +574,7 @@ describe("the owner grant as a session proof", () => {
       const { target, authority, grant } = await fixture({ owner: async () => owner })
       const token = (await grant()).token
       for (const body of [
-        { action: "register", operationId: "op_1", sessionId: "ses_child", updatedAt: RUNTIME_UPDATED_AT },
+        { action: "register", operationId: "op_1", sessionId: "ses_child", ...RUNTIME_TIMES },
         { action: "read", sessionId: "ses_parent" },
         { action: "reserve", sessionId: "ses_child", parentSessionId: "ses_parent" },
         { action: "turn_acquire", sessionId: "ses_child", turnId: "msg_1" },
@@ -758,7 +764,7 @@ describe("adopting a session the host already held", () => {
     const refused = await request(target, owner, { action: "read", sessionId: "ses_local" })
     expect(refused.status).toBe(403)
 
-    const adopted = await request(target, owner, { action: "adopt", sessionId: "ses_local", title: "Before sharing", updatedAt: RUNTIME_UPDATED_AT })
+    const adopted = await request(target, owner, { action: "adopt", sessionId: "ses_local", title: "Before sharing", ...RUNTIME_TIMES })
     expect(adopted.status).toBe(200)
     expect(await adopted.json()).toEqual({ allowed: true, adopted: true })
     expect(authority.adoptRuntimeSession).toHaveBeenCalledWith({
@@ -769,14 +775,14 @@ describe("adopting a session the host already held", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
       title: "Before sharing",
-      updatedAt: RUNTIME_UPDATED_AT,
+      ...RUNTIME_TIMES,
     })
     // The parent access token is rechecked before anything is written.
     expect(authority.runtimeAccessTokenActive).toHaveBeenCalledWith(expect.objectContaining({ jti: "rat_parent_1" }))
 
     expect((await request(target, owner, { action: "read", sessionId: "ses_local" })).status).toBe(200)
 
-    const again = await request(target, owner, { action: "adopt", sessionId: "ses_local", updatedAt: RUNTIME_UPDATED_AT })
+    const again = await request(target, owner, { action: "adopt", sessionId: "ses_local", ...RUNTIME_TIMES })
     expect(again.status).toBe(200)
     expect(await again.json()).toEqual({ allowed: true, adopted: false })
     expect(authority.adoptRuntimeSession).toHaveBeenCalledTimes(2)
@@ -785,7 +791,7 @@ describe("adopting a session the host already held", () => {
   test("a member of the workspace is refused before the authority is asked", async () => {
     const { target, authority, token } = await fixture()
 
-    const refused = await request(target, await token("editor"), { action: "adopt", sessionId: "ses_local", updatedAt: RUNTIME_UPDATED_AT })
+    const refused = await request(target, await token("editor"), { action: "adopt", sessionId: "ses_local", ...RUNTIME_TIMES })
 
     expect(refused.status).toBe(403)
     expect(await refused.json()).toMatchObject({ error: { code: "session_adoption_requires_host_owner" } })
@@ -796,7 +802,7 @@ describe("adopting a session the host already held", () => {
     const { target, creators, token } = await fixture()
     creators.set("ses_someone_elses", "actor_other")
 
-    const refused = await request(target, await token("owner"), { action: "adopt", sessionId: "ses_someone_elses", updatedAt: RUNTIME_UPDATED_AT })
+    const refused = await request(target, await token("owner"), { action: "adopt", sessionId: "ses_someone_elses", ...RUNTIME_TIMES })
 
     expect(refused.status).toBe(403)
     expect(await refused.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
@@ -827,7 +833,7 @@ describe("adopting a session the host already held", () => {
 
     // A lease is only ever accepted beside `stream`, and `stream` is only ever
     // a read or a write, so a lease has no way to reach adoption at all.
-    const withLease = await request(target, undefined, { action: "adopt", sessionId: "ses_local", lease: "anything", updatedAt: RUNTIME_UPDATED_AT })
+    const withLease = await request(target, undefined, { action: "adopt", sessionId: "ses_local", lease: "anything", ...RUNTIME_TIMES })
     expect(withLease.status).toBe(400)
     expect(await withLease.json()).toMatchObject({ error: { code: "session_authority_request_invalid" } })
 
@@ -836,7 +842,7 @@ describe("adopting a session the host already held", () => {
       env,
       { register: passes },
     )
-    const byGrant = await request(target, grant.token, { action: "adopt", sessionId: "ses_local", updatedAt: RUNTIME_UPDATED_AT })
+    const byGrant = await request(target, grant.token, { action: "adopt", sessionId: "ses_local", ...RUNTIME_TIMES })
     expect(byGrant.status).toBe(403)
     expect(await byGrant.json()).toMatchObject({ error: { code: "session_adoption_requires_host_owner" } })
     expect(authority.adoptRuntimeSession).not.toHaveBeenCalled()
@@ -855,7 +861,7 @@ describe("adopting a session the host already held", () => {
     })
     const owner = await mintRelayHostToken({ ...relayInput, role: "owner" }, key.privateKey, "EdDSA")
 
-    const answer = await request(target, owner, { action: "adopt", sessionId: "ses_local", updatedAt: RUNTIME_UPDATED_AT })
+    const answer = await request(target, owner, { action: "adopt", sessionId: "ses_local", ...RUNTIME_TIMES })
 
     expect(answer.status).toBe(503)
     expect(await answer.json()).toMatchObject({ error: { code: "session_registration_unavailable" } })
@@ -986,7 +992,7 @@ describe("reservation and adoption against a real private-session authority", ()
       workspaceId: "ws_real",
       kind: "create",
     })
-    await store.registerRuntimeSession({ ...runtime(owner), operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real", updatedAt: Date.now() })
+    await store.registerRuntimeSession({ ...runtime(owner), operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real", createdAt: Date.now(), updatedAt: Date.now() })
 
     const reserved = await request(target, await grant(owner), {
       action: "reserve",
@@ -1005,11 +1011,11 @@ describe("reservation and adoption against a real private-session authority", ()
       operationId: body.operationId,
       sessionId: "ses_child",
       title: "Reviewer",
-      updatedAt: RUNTIME_UPDATED_AT,
+      ...RUNTIME_TIMES,
     })
     expect(registered.status).toBe(200)
-    expect((await store.listSessions(owner, { workspaceId: "ws_real" })).find((row) => row.session_id === "ses_child")?.updated_at)
-      .toBe(RUNTIME_UPDATED_AT)
+    const listed = (await store.listSessions(owner, { workspaceId: "ws_real" })).find((row) => row.session_id === "ses_child")
+    expect({ createdAt: listed?.created_at, updatedAt: listed?.updated_at }).toEqual(RUNTIME_TIMES)
     await expect(store.authorizeRuntimeSession({ ...runtime(owner), sessionId: "ses_child", workspaceId: "ws_real", action: "write" }))
       .resolves.toBeUndefined()
     await expect(store.authorizeRuntimeSession({ ...runtime(member), sessionId: "ses_child", workspaceId: "ws_real", action: "read" }))
@@ -1027,7 +1033,7 @@ describe("reservation and adoption against a real private-session authority", ()
       action: "adopt",
       sessionId: "ses_held_locally",
       title: "Before sharing",
-      updatedAt: RUNTIME_UPDATED_AT,
+      ...RUNTIME_TIMES,
     })
     expect(adopted.status).toBe(200)
     expect(await adopted.json()).toEqual({ allowed: true, adopted: true })
@@ -1035,13 +1041,13 @@ describe("reservation and adoption against a real private-session authority", ()
     await expect(store.authorizeRuntimeSession({ ...runtime(member), sessionId: "ses_held_locally", workspaceId: "ws_real", action: "read" }))
       .rejects.toThrow()
 
-    const again = await request(target, await relayToken(owner, "owner"), { action: "adopt", sessionId: "ses_held_locally", updatedAt: RUNTIME_UPDATED_AT })
+    const again = await request(target, await relayToken(owner, "owner"), { action: "adopt", sessionId: "ses_held_locally", ...RUNTIME_TIMES })
     expect(await again.json()).toEqual({ allowed: true, adopted: false })
 
     // A second person who holds the workspace outright still does not own the
     // machine, and the authority is the one that says so.
     assignHost(owner)
-    const impostor = await request(target, await relayToken(member, "owner"), { action: "adopt", sessionId: "ses_also_held_locally", updatedAt: RUNTIME_UPDATED_AT })
+    const impostor = await request(target, await relayToken(member, "owner"), { action: "adopt", sessionId: "ses_also_held_locally", ...RUNTIME_TIMES })
     expect(impostor.status).toBe(403)
     expect(await impostor.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
   })
@@ -1068,10 +1074,10 @@ describe("reservation and adoption against a real private-session authority", ()
   test("a grant minted over an owner grant or a Relay Host Token redeems once against the real authority, renews and releases without a bearer, and never replays", async () => {
     const { target, store, owner, member, grant, runtime, relayToken, turnProducer } = await fixture()
     await store.reserveSession(owner, { operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real", kind: "create" })
-    await store.registerRuntimeSession({ ...runtime(owner), operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real", updatedAt: Date.now() })
+    await store.registerRuntimeSession({ ...runtime(owner), operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real", createdAt: Date.now(), updatedAt: Date.now() })
     const reserved = await request(target, await grant(owner), { action: "reserve", sessionId: "ses_child", parentSessionId: "ses_parent" })
     const { operationId } = await reserved.json() as { operationId: string }
-    expect((await request(target, await grant(owner), { action: "register", operationId, sessionId: "ses_child", updatedAt: RUNTIME_UPDATED_AT })).status).toBe(200)
+    expect((await request(target, await grant(owner), { action: "register", operationId, sessionId: "ses_child", ...RUNTIME_TIMES })).status).toBe(200)
 
     const minted = await request(target, await grant(owner), {
       action: "turn_grant", sessionId: "ses_parent", intent: "child_completion", subjectSessionId: "ses_child", registrationOperationId: operationId,

@@ -25,7 +25,7 @@ export async function exerciseTurnOutlineConformance(harness: TurnOutlineConform
   const { authority, workspaceId, creator } = harness
   const sessionId = "ses_turn_outline"
   await authority.reserveSession(creator.auth, { operationId: "op_turn_outline", sessionId, workspaceId, kind: "create" })
-  await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_turn_outline", sessionId, workspaceId, updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_turn_outline", sessionId, workspaceId, createdAt: Date.now(), updatedAt: Date.now() })
   const read = async () => (await authority.readSessionOutline(creator.auth, { sessionId, workspaceId })) as Outline
   const empty = await read()
   outlineHolds(empty.allowed && empty.turns.length === 0 && empty.complete, "an empty transcript did not outline as complete and empty")

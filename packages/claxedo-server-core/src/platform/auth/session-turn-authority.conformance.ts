@@ -149,6 +149,7 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
     parentSessionId: sessionId,
   })
   await harness.registrations.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     ...harness.grantee,
     operationId: childOperationId,

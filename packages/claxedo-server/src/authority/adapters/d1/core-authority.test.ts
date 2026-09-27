@@ -118,6 +118,7 @@ describe("composed Better Auth + D1 authority", () => {
       title: "Bob's session",
     })
     await authority.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: bob.principal!.actorId,
@@ -226,6 +227,7 @@ describe("composed Better Auth + D1 authority", () => {
       title: "Private team session",
     })
     await authority.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: alice.principal!.actorId,

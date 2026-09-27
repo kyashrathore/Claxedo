@@ -1,5 +1,6 @@
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
 import { errorBody } from "./routes/error-body"
+import type { RuntimeSessionTime } from "./session/session-time"
 
 export type SessionAccessActor = {
   actorId: string
@@ -107,8 +108,8 @@ export type SessionAccessPolicyInput = {
   operation: SessionAccessOperation
   sessionId?: string
   sessionTitle?: string
-  /** The session's update time on this runtime, which a registration or an adoption lists the session at. */
-  sessionUpdatedAt?: number
+  /** The session's times on this runtime, which a registration or an adoption lists the session at. */
+  sessionTime?: RuntimeSessionTime
   /** Immutable reserve/register operation created before runtime creation. */
   registrationOperationId?: string
   method?: string

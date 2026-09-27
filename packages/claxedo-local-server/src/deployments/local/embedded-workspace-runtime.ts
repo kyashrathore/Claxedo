@@ -224,13 +224,13 @@ export function onEmbeddedWorkspaceRuntime(listener: EmbeddedWorkspaceRuntimeLis
 }
 
 /**
- * The session's update time on a runtime mounted in THIS process, present
- * only when that runtime holds a transcript for it. Undefined for a workspace
- * with no runtime up, so a caller that needs one must be on a request the
- * dispatcher already mounted a runtime for.
+ * The session's times on a runtime mounted in THIS process, present only when
+ * that runtime holds a transcript for it. Undefined for a workspace with no
+ * runtime up, so a caller that needs them must be on a request the dispatcher
+ * already mounted a runtime for.
  */
-export function embeddedWorkspaceRuntimeSessionUpdatedAt(workspaceId: string, sessionId: string) {
-  return hosts.get(workspaceId)?.host.sessionUpdatedAt(sessionId)
+export function embeddedWorkspaceRuntimeSessionTime(workspaceId: string, sessionId: string) {
+  return hosts.get(workspaceId)?.host.sessionTime(sessionId)
 }
 
 /**

@@ -38,10 +38,8 @@ function relayRole(value: unknown): RelayRole | undefined {
 
 /**
  * Only the update stamp travels to the authority: a session's creation time is
- * owned by its registration (`registerRuntimeSession`), and both session
- * authorities reject a visibility upsert whose `createdAt` disagrees with it.
- * The runtime's own `time.created` is a different clock instant, so it never
- * agrees.
+ * written once, from the runtime's `time.created`, by its registration
+ * (`registerRuntimeSession`), and a visibility upsert could only repeat it.
  */
 function sessionStamp(input: Record<string, unknown>) {
   const time = asRecord(input.time)

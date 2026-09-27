@@ -12,7 +12,7 @@ import type {
   HarnessCapabilities,
   AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import type { AgentSession, AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import {
   parseRecoveryRequest,
   RecoveryContractError,
@@ -66,6 +66,7 @@ import {
 } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT } from "./session-children"
 import type { QueuedPromptAction } from "../session/delivery-owner"
+import { runtimeSessionTime, type RuntimeSessionTime } from "../session/session-time"
 import { narrowerPermissionLevel, PermissionModeRefusedError } from "@claxedo/agent-sdk-runtime"
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments } from "./document-hydration"
@@ -431,62 +432,42 @@ function harnessUnavailableResponse(c: Ctx, error: unknown) {
 
 const rootsOnly = (c: Ctx) => c.req.query("roots") === "true" || c.req.query("roots") === "1"
 
-function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unknown {
-  const r = rec(s)
-  if (!r) return s
-  if (r.time) return r
-  const ts = Date.now()
-  return {
-    id: r.id,
-    title: r.title ?? null,
-    slug: r.id,
-    version: "local",
-    directory: r.directory ?? fallbackDirectory ?? "",
-    ...(typeof r.parentID === "string" ? { parentID: r.parentID } : {}),
-    ...(typeof r.rootID === "string" ? { rootID: r.rootID } : {}),
-    ...(typeof r.projectID === "string" ? { projectID: r.projectID } : {}),
-    ...(Array.isArray(r.tags) ? { tags: r.tags } : {}),
-    ...(Array.isArray(r.attachments) ? { attachments: r.attachments } : {}),
-    ...(typeof r.status === "string" || r.status === null ? { status: r.status } : {}),
-    ...(r.lastTurn ? { lastTurn: r.lastTurn } : {}),
-    time: { created: ts, updated: ts },
-  }
+function requireSessionTime(session: AgentSession) {
+  const time = runtimeSessionTime(session)
+  if (!time) throw new HTTPException(500, { message: `Session ${session.id} has no creation or update time` })
+  return time
 }
 
-function summarizeSession(s: unknown): unknown {
-  const row = normalizeSession(s)
-  const item = rec(row)
-  if (!item) return row
+function timedSession(session: AgentSession) {
+  requireSessionTime(session)
+  return session
+}
+
+function summarizeSession(session: AgentSession) {
   return {
-    id: item.id,
-    title: item.title ?? null,
-    time: item.time ?? {
-      created: Date.now(),
-      updated: Date.now(),
-    },
-    directory: item.directory ?? "",
-    ...(typeof item.parentID === "string" ? { parentID: item.parentID } : {}),
-    ...(typeof item.rootID === "string" ? { rootID: item.rootID } : {}),
-    ...(typeof item.projectID === "string" ? { projectID: item.projectID } : {}),
-    ...(Array.isArray(item.tags) ? { tags: item.tags } : {}),
-    ...(Array.isArray(item.attachments) ? { attachments: item.attachments } : {}),
-    ...(typeof item.status === "string" || item.status === null ? { status: item.status } : {}),
-    ...(item.lastTurn ? { lastTurn: item.lastTurn } : {}),
+    id: session.id,
+    title: session.title ?? null,
+    time: timedSession(session).time,
+    directory: session.directory ?? "",
+    ...(typeof session.parentID === "string" ? { parentID: session.parentID } : {}),
+    ...(typeof session.rootID === "string" ? { rootID: session.rootID } : {}),
+    ...(typeof session.projectID === "string" ? { projectID: session.projectID } : {}),
+    ...(Array.isArray(session.tags) ? { tags: session.tags } : {}),
+    ...(Array.isArray(session.attachments) ? { attachments: session.attachments } : {}),
+    ...(typeof session.status === "string" || session.status === null ? { status: session.status } : {}),
+    ...(session.lastTurn ? { lastTurn: session.lastTurn } : {}),
   }
 }
 
 function sessionLifecycleInfo(input: {
-  session: { id: string }
+  session: AgentSession
   directory?: string
   title?: string
   workspaceId?: string
 }) {
   const row = input.session as Record<string, unknown>
-  const time = asRecord(row.time)
-  const created = typeof time?.created === "number"
-    ? time.created
-    : Date.now()
-  const archived = typeof time?.archived === "number" ? time.archived : undefined
+  const { created, updated } = requireSessionTime(input.session)
+  const archived = input.session.time?.archived
   return {
     id: input.session.id,
     slug: typeof row.slug === "string" ? row.slug : input.session.id,
@@ -498,9 +479,7 @@ function sessionLifecycleInfo(input: {
     ...(typeof row.parentID === "string" ? { parentID: row.parentID } : {}),
     time: {
       created,
-      updated: typeof time?.updated === "number"
-        ? time.updated
-        : created,
+      updated,
       ...(archived !== undefined ? { archived } : {}),
     },
   }
@@ -567,14 +546,14 @@ function registrationOperationId(c: Ctx) {
   return value || undefined
 }
 
-function registrationInput(c: Ctx, sessionId: string, operationId: string, title?: string, updatedAt?: number) {
+function registrationInput(c: Ctx, sessionId: string, operationId: string, title?: string, time?: RuntimeSessionTime) {
   return {
     ...sessionAccessContext(c),
     operation: "session_create" as const,
     sessionId,
     registrationOperationId: operationId,
     ...(title ? { sessionTitle: title } : {}),
-    ...(updatedAt === undefined ? {} : { sessionUpdatedAt: updatedAt }),
+    ...(time ? { sessionTime: time } : {}),
     method: c.req.method,
     path: c.req.path,
   }
@@ -790,7 +769,7 @@ async function sessionPromptAdmitted(opts: Opts, c: Ctx, sessionId: string) {
 async function registerCreatedSession(
   opts: Opts,
   c: Ctx,
-  created: { adapter: AgentHarnessAdapter; directory: RuntimeDirectory; sessionId: string },
+  created: { sessionId: string; time: RuntimeSessionTime | undefined },
   operationId: string | undefined,
   sessionTitle?: string,
 ) : Promise<
@@ -820,19 +799,17 @@ async function registerCreatedSession(
       response: sessionAccessDenied(unavailableRegistration("Managed session registration authority is unavailable")),
     }
   }
-  const { sessionId } = created
-  const persisted = await readRuntimeSession(opts, c, created.directory, sessionId, created.adapter)
-  const updatedAt = persisted?.time?.updated ?? persisted?.time?.created
-  if (updatedAt === undefined) {
+  const { sessionId, time } = created
+  if (!time) {
     return {
       kind: "denied",
       response: Response.json(errorBody(
-        "session_update_time_missing",
-        "The created session has no update time to register it at",
+        "session_time_missing",
+        "The created session has no creation or update time to register it at",
       ), { status: 500 }),
     }
   }
-  const input = registrationInput(c, sessionId, operationId, sessionTitle, updatedAt)
+  const input = registrationInput(c, sessionId, operationId, sessionTitle, time)
   let decision: SessionAccessDecision
   try {
     decision = await opts.sessionAccessPolicy.registerSession(input)
@@ -1026,7 +1003,7 @@ async function sessionFact<T>(read: () => Promise<T | Response>): Promise<Sessio
  * `sessionAccessWriteClass`, and a read has none. The rows are narrowed to
  * this session here rather than filtered through the policy.
  */
-async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, session: unknown) {
+async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, session: AgentSession) {
   const own = <T extends { sessionID: string }>(rows: T[] | Response) =>
     rows instanceof Response ? rows : rows.filter((row) => row.sessionID === sessionId)
   const [status, permissions, questions, todos, goal, subagents] = await Promise.all([
@@ -1037,7 +1014,7 @@ async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, 
     sessionFact(() => readSessionGoal(opts, c, directory, sessionId)),
     sessionFact(() => listSessionSubagents(opts, c, directory, sessionId)),
   ])
-  return { session: normalizeSession(session, directory), status, permissions, questions, todos, goal, subagents }
+  return { session: timedSession(session), status, permissions, questions, todos, goal, subagents }
 }
 
 /**
@@ -1218,9 +1195,9 @@ export function createSessionRoutes(opts: Opts) {
         : []
       await after(opts.afterListSessions?.(c, directory, sessions))
       const visible = await filterSessionRows(opts, c, "session_list", sessions)
-      const data = (visible as unknown[])
-        .map((session) => normalizeSession(session, directory))
-        .filter((session) => !roots || typeof rec(session)?.parentID !== "string")
+      const data = visible
+        .map(timedSession)
+        .filter((session) => !roots || typeof session.parentID !== "string")
       return c.json(data)
     })
     .get("/experimental/session", async (c) => {
@@ -1233,9 +1210,8 @@ export function createSessionRoutes(opts: Opts) {
         : []
       await after(opts.afterListSessions?.(c, directory, sessions))
       const visible = await filterSessionRows(opts, c, "session_list", sessions)
-      const data = (visible as unknown[])
+      const data = visible
           .map(summarizeSession)
-          .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
           .filter((item) => !roots || typeof item.parentID !== "string")
           .filter((item) => archived || typeof asRecord(item.time)?.archived !== "number")
           .slice(0, limit)
@@ -1375,7 +1351,7 @@ export function createSessionRoutes(opts: Opts) {
             }
             const row = await children.childOf(existing.id, directory)
             if (!row) return c.json(errorBody("subagent_row_missing", `Session ${existing.id} has no subagent row`), 409)
-            return c.json(createdSessionBody(normalizeSession(existing, directory), { parentID: body.parentID, subagentKey: row.subagentKey }), 200)
+            return c.json(createdSessionBody(timedSession(existing), { parentID: body.parentID, subagentKey: row.subagentKey }), 200)
           }
           if (body.parentID && children) {
             const active = await children.activeChildren(body.parentID, directory)
@@ -1440,7 +1416,7 @@ export function createSessionRoutes(opts: Opts) {
           if (hasAdapterCapability(adapter, "runtime-config")) {
             adapter.setModel(!config.model || config.model.modelID === "default" ? "" : config.model.modelID)
           }
-          let session = existing ?? (opts.createSession
+          let session: AgentSession = existing ?? (opts.createSession
             ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}), ...createOptions })
             : await adapter.createSession(directory, body.title, body.id, createOptions))
           if (Object.keys(config).length > 0) {
@@ -1498,11 +1474,8 @@ export function createSessionRoutes(opts: Opts) {
             if (!existing) await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
-          if (body.parentID && children) {
-            const persisted = await readRuntimeSession(opts, c, directory, session.id, adapter)
-            if (!persisted) throw new Error(`Created child ${session.id} has no persisted session row`)
-            session = persisted
-          }
+          const persisted = await readRuntimeSession(opts, c, directory, session.id, adapter)
+          if (persisted) session = persisted
           const created = {
             ...(body.parentID ? { parentID: body.parentID } : {}),
             ...(subagentKey ? { subagentKey } : {}),
@@ -1522,7 +1495,7 @@ export function createSessionRoutes(opts: Opts) {
             publishFailed(message)
             return response
           }
-          const registration = await registerCreatedSession(opts, c, { adapter, directory, sessionId: session.id }, operationId, body.title)
+          const registration = await registerCreatedSession(opts, c, { sessionId: session.id, time: persisted && runtimeSessionTime(persisted) }, operationId, body.title)
           if (registration.kind === "ambiguous") {
             return registration.response
           }
@@ -1578,7 +1551,7 @@ export function createSessionRoutes(opts: Opts) {
             info: sessionLifecycleInfo({ session, directory, title: body.title, workspaceId }),
             ts: Date.now(),
           })
-          return c.json(createdSessionBody(normalizeSession(session, directory), { ...created, ...firstAdmission.created }), 201)
+          return c.json(createdSessionBody(timedSession(session), { ...created, ...firstAdmission.created }), 201)
         } catch (error) {
           if (start && opts.sessionStarts?.get(start.sessionId)?.status === "starting") {
             opts.sessionStarts.finish(start, { status: "failed", error: errorMessage(error) })
@@ -1663,7 +1636,7 @@ export function createSessionRoutes(opts: Opts) {
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
       await after(opts.afterGetSession?.(c, directory, session))
       if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId, session))
-      return noStoreJson(c, normalizeSession(session, directory))
+      return noStoreJson(c, timedSession(session))
     })
     .get("/session/:id/config-options", async (c) => {
       const sessionId = c.req.param("id")
@@ -1704,7 +1677,7 @@ export function createSessionRoutes(opts: Opts) {
       await after(opts.afterUpdateSession?.(c, directory, session, body))
       opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
       if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
-      return c.json(normalizeSession(session, directory))
+      return c.json(timedSession(session))
     })
     .patch("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
@@ -1910,7 +1883,7 @@ export function createSessionRoutes(opts: Opts) {
           if (!snapshotRequested) return messagePageResponse(c, snapshot)
           const session = await readRuntimeSession(opts, c, directory, sessionId)
           if (!session) return noStoreJson(c, sessionNotFound(), 404)
-          return noStoreJson(c, { ...snapshot, session: normalizeSession(session, directory) })
+          return noStoreJson(c, { ...snapshot, session: timedSession(session) })
         }
       }
       if (pageInput) {
@@ -1938,7 +1911,7 @@ export function createSessionRoutes(opts: Opts) {
         if (!snapshotRequested) return noStoreJson(c, replay)
         const session = await readRuntimeSession(opts, c, directory, sessionId)
         if (!session) return noStoreJson(c, sessionNotFound(), 404)
-        return noStoreJson(c, { messages: replay, session: normalizeSession(session, directory) })
+        return noStoreJson(c, { messages: replay, session: timedSession(session) })
       }
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       if (snapshotRequested) {
@@ -1947,7 +1920,7 @@ export function createSessionRoutes(opts: Opts) {
           readRuntimeSession(opts, c, directory, sessionId, adapter),
         ])
         if (!session) return noStoreJson(c, sessionNotFound(), 404)
-        return noStoreJson(c, { messages, session: normalizeSession(session, directory) })
+        return noStoreJson(c, { messages, session: timedSession(session) })
       }
       return noStoreJson(c, await adapter.getMessages(await requireExecutionBinding(opts, c, directory, sessionId, adapter)))
     })
@@ -2045,7 +2018,7 @@ export function createSessionRoutes(opts: Opts) {
       // agent is the one the agent reported rather than an echo of the request.
       const updated = await readRuntimeSession(opts, c, directory, sessionId, adapter)
       if (!updated) return c.json(errorBody("session_not_found", "Session not found"), 404)
-      return c.json(normalizeSession(updated, directory))
+      return c.json(timedSession(updated))
     })
     .post("/session/:id/revert", async (c) => {
       const sessionId = c.req.param("id")
@@ -2091,7 +2064,8 @@ export function createSessionRoutes(opts: Opts) {
         if (refused) return refused
       }
       const child = await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
-      const registration = await registerCreatedSession(opts, c, { adapter, directory, sessionId: child.id }, operationId)
+      const forked = await readRuntimeSession(opts, c, directory, child.id, adapter)
+      const registration = await registerCreatedSession(opts, c, { sessionId: child.id, time: forked && runtimeSessionTime(forked) }, operationId)
       if (registration.kind === "ambiguous") return registration.response
       if (registration.kind === "denied") {
         await compensateRegistration({

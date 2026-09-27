@@ -12,6 +12,7 @@ import {
   sessionAccessWriteClass,
 } from "./session-access-policy"
 import { bool, num, rec, str } from "./json-value"
+import type { RuntimeSessionTime } from "./session/session-time"
 
 export const WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL"
 
@@ -47,7 +48,7 @@ export type AdoptRefusedSession = (
   input: SessionAuthorityInput,
   refusal: {
     denial: Exclude<SessionAccessDecision, { allowed: true }>
-    adopt: (updatedAt: number) => Promise<SessionAccessDecision>
+    adopt: (time: RuntimeSessionTime) => Promise<SessionAccessDecision>
     reauthorize: () => Promise<SessionAccessDecision>
   },
 ) => Promise<SessionAccessDecision>
@@ -129,7 +130,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     if (decision.allowed || !adoptRefused) return decision
     return adoptRefused(input, {
       denial: decision,
-      adopt: (updatedAt) => request({ ...input, sessionUpdatedAt: updatedAt }, "adopt", decodeAllowed),
+      adopt: (time) => request({ ...input, sessionTime: time }, "adopt", decodeAllowed),
       reauthorize: () => request(input, action, decodeAllowed, classified),
     })
   }
@@ -341,8 +342,8 @@ function authorityRequestBody(
     ...((action === "register" || action === "reserve" || action === "adopt") && input.sessionTitle
       ? { title: input.sessionTitle }
       : {}),
-    ...((action === "register" || action === "adopt") && input.sessionUpdatedAt !== undefined
-      ? { updatedAt: input.sessionUpdatedAt }
+    ...((action === "register" || action === "adopt") && input.sessionTime
+      ? { createdAt: input.sessionTime.created, updatedAt: input.sessionTime.updated }
       : {}),
     ...(action === "turn_grant"
       ? {

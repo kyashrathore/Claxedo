@@ -223,6 +223,7 @@ describe("SQLite private-session authority", () => {
       kind: "create",
     })
     await store.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: creator.user.tokenIdentifier,
@@ -282,6 +283,7 @@ describe("SQLite private-session authority", () => {
     ] as const) {
       await store.reserveSession(owner, { operationId, sessionId, workspaceId: "workspace_main", kind: "create" })
       await store.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: owner.user.tokenIdentifier,
@@ -344,6 +346,7 @@ describe("SQLite private-session authority", () => {
       kind: "create",
     })
     await first.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: creator.user.tokenIdentifier,
@@ -408,6 +411,7 @@ describe("SQLite private-session authority", () => {
       kind: "create",
     })
     await first.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: creator.user.tokenIdentifier,
@@ -518,7 +522,7 @@ describe("SQLite private-session authority", () => {
         workspaceId: "workspace_main",
         kind: "create",
       })
-      await store.registerRuntimeSession({ ...runtime, operationId: "operation_1", updatedAt: Date.now() })
+      await store.registerRuntimeSession({ ...runtime, operationId: "operation_1", createdAt: Date.now(), updatedAt: Date.now() })
 
       currentTime = 1_800_000_050_000
       const first = await store.acquireSessionTurn({ ...runtime, turnId: "message_1" })
@@ -563,6 +567,7 @@ describe("SQLite private-session authority", () => {
       kind: "create",
     })
     await store.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: creator.user.tokenIdentifier,
@@ -680,6 +685,7 @@ describe("SQLite private-session authority, write classes", () => {
       kind: "create",
     })
     await store.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: creator.user.tokenIdentifier,
@@ -760,6 +766,7 @@ describe("SQLite session list pages", () => {
     const register = async (who: SignedControlPlaneAuth, sessionId: string) => {
       await store.reserveSession(who, { operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_one", kind: "create" })
       await store.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: who.user.tokenIdentifier,

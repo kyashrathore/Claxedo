@@ -2096,6 +2096,7 @@ describe("machine session rows", () => {
     const { publish, sessions, alice } = await served()
     await sessions.reserveSession(alice, { operationId: "op_cloud", sessionId: "ses_taken", workspaceId: "ws_cloud", kind: "create" })
     await sessions.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: alice.principal!.actorId,

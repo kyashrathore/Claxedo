@@ -29,7 +29,7 @@ import {
 import { createRelayHostTokenVerifier } from "@claxedo/workspace-runtime/relay"
 import { hostServingIdentity } from "@claxedo/host-serving/serving"
 import type { RuntimeProxyOptions } from "../../workspace/runtime-dispatch/internals"
-import { embeddedWorkspaceRuntimeSessionUpdatedAt } from "./embedded-workspace-runtime"
+import { embeddedWorkspaceRuntimeSessionTime } from "./embedded-workspace-runtime"
 
 export type LocalHostEndpoints = {
   ownerActorId?: string
@@ -134,10 +134,10 @@ const adoptions = new Map<string, Promise<SessionAccessDecision>>()
 const adoptRefusedSession: AdoptRefusedSession = async (input, refusal) => {
   if (input.authority.role !== "owner") return refusal.denial
   const workspaceId = input.authority.workspaceId
-  const updatedAt = embeddedWorkspaceRuntimeSessionUpdatedAt(workspaceId, input.sessionId)
-  if (updatedAt === undefined) return refusal.denial
+  const time = embeddedWorkspaceRuntimeSessionTime(workspaceId, input.sessionId)
+  if (!time) return refusal.denial
   const key = `${workspaceId}/${input.sessionId}`
-  const attempt = adoptions.get(key) ?? refusal.adopt(updatedAt).then((outcome) => {
+  const attempt = adoptions.get(key) ?? refusal.adopt(time).then((outcome) => {
     if (!outcome.allowed && outcome.status === 503) adoptions.delete(key)
     return outcome
   }, (error: unknown) => {

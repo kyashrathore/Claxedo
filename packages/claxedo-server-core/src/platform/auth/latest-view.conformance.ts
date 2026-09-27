@@ -23,7 +23,7 @@ export async function exerciseLatestViewConformance(harness: LatestViewConforman
   const { authority, workspaceId, creator } = harness
   const sessionId = "ses_latest_view"
   await authority.reserveSession(creator.auth, { operationId: "op_latest_view", sessionId, workspaceId, kind: "create" })
-  await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_latest_view", sessionId, workspaceId, updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_latest_view", sessionId, workspaceId, createdAt: Date.now(), updatedAt: Date.now() })
   const read = async (input: { view?: "latest-turn" | "latest-surface"; limit?: number; before?: string }) =>
     await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, ...input }) as Page
   const empty = await read({ view: "latest-surface" })

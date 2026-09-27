@@ -56,7 +56,7 @@ describe("local documents backend composition", () => {
       .run(opened.workspace!.project_id, bob.user.tokenIdentifier, Date.now(), Date.now())
     for (const [sessionId, caller] of [["ses_alice", alice], ["ses_bob", bob]] as const) {
       await authority.reserveSession(caller, { operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_1", kind: "create" })
-      await authority.registerRuntimeSession({ updatedAt: Date.now(), principalKind: "user", actorKind: "human", actorId: caller.user.tokenIdentifier,
+      await authority.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorKind: "human", actorId: caller.user.tokenIdentifier,
         operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_1" })
     }
     const fixture = await moveFixture(undefined, {

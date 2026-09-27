@@ -145,6 +145,7 @@ describe("two-user signed app transport", () => {
       title: "Signed private session",
     })
     await authority.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       principalKind: "user",
       actorId: aliceIdentity.token_identifier,

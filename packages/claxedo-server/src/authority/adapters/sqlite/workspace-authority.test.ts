@@ -45,6 +45,7 @@ async function registerPrivateSession(input: {
     ...(input.title ? { title: input.title } : {}),
   })
   await input.authority.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     principalKind: "user",
     actorId: input.auth.user.tokenIdentifier,

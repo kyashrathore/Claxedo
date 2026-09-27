@@ -60,6 +60,7 @@ async function createSessionAs(
   const operationId = `op_create_${sessionId}`
   await authority.reserveSession(creator, { operationId, workspaceId: "ws_1", sessionId, kind: "create" })
   await authority.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     principalKind: "user",
     actorId: creator.user.tokenIdentifier,

@@ -11,6 +11,7 @@ import { WorktreeRoutes } from "./worktree"
 import { createSessionRoutes } from "./session-core"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 
 const tooLarge = errorBody("request_body_too_large", "Request body is too large")
 
@@ -323,7 +324,7 @@ describe("session routes reject oversized bodies before the provider runs", () =
     const adapter = {
       instructionChannel: "turn-system-prompt",
       createSession,
-      getSession: async () => ({ id: "session_1", title: "T", time: { created: 1, updated: 1 } }),
+      getSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId, title: "T", time: { created: 1, updated: 1 } }),
       readHarnessCapabilities: () => ({ harness: "codex", abort: true }),
     } as unknown as AgentHarnessAdapter
     const app = new Hono()

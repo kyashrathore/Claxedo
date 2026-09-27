@@ -952,7 +952,7 @@ if (hostMode === "embedded") {
     actorKind: browserActor.actor_kind,
   }
   await authority.reserveSession(browserAuth, { ...sessionRegistration, kind: "create" })
-  await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration, updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration, createdAt: Date.now(), updatedAt: Date.now() })
   const seedTurn = await authority.acquireSessionTurn({
     ...seedRuntimePrincipal,
     sessionId: sessionRegistration.sessionId,

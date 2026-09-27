@@ -15,7 +15,8 @@ import {
   type PrivateSessionRuntimePrincipal,
   type ReservePrivateSessionInput,
   type TransitionPrivateSessionRegistrationInput,
-  requireRuntimeSessionStamp,
+  requireRuntimeSessionTime,
+  requireRuntimeSessionTimes,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SessionTurnConflictError,
@@ -520,7 +521,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const sessionId = required(value.sessionId, "sessionId")
       const workspaceId = required(value.workspaceId, "workspaceId")
       const title = trimToUndefined(value.title)
-      const updatedAt = requireRuntimeSessionStamp(value.updatedAt, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
+      const times = requireRuntimeSessionTimes(value, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
       return db.transaction(() => {
         const row = registration(db, operationId)
         if (!row) throw new SqlitePrivateSessionAuthorityError("registration_transition_denied", "A matching session reservation is required")
@@ -534,7 +535,7 @@ export function createSqlitePrivateSessionAuthority(input: {
           requireSessionAccess(db, actor, row.parent_session_id!, workspaceId, "agent_turn")
         }
         const at = now()
-        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title, updatedAt }, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title, ...times }, at)
         db.prepare(`
           UPDATE session_registration_operations
           SET state = 'registered', state_reason = NULL, updated_at = ?
@@ -550,7 +551,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const workspaceId = required(value.workspaceId, "workspaceId")
       const hostId = required(value.hostId, "hostId")
       const title = trimToUndefined(value.title)
-      const updatedAt = requireRuntimeSessionStamp(value.updatedAt, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
+      const times = requireRuntimeSessionTimes(value, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
       const operationId = sessionAdoptionOperationId(sessionId)
       return db.transaction(() => {
         const assignment = db.prepare<unknown[], { owner_token_identifier: string }>(`
@@ -581,7 +582,7 @@ export function createSqlitePrivateSessionAuthority(input: {
             parent_session_id, requested_title, state, created_at, updated_at
           ) VALUES (?, ?, ?, ?, 'create', NULL, ?, 'registered', ?, ?)
         `).run(operationId, sessionId, workspaceId, actor.token_identifier, title ?? null, at, at)
-        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title, updatedAt }, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title, ...times }, at)
         return { adopted: true }
       })()
     },
@@ -756,7 +757,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const messages = value.messages.map(canonicalMessage)
       const hasUserMessages = messages.some((message) => message.role === "user")
       const fencingToken = value.fencingToken === undefined ? undefined : positiveFence(value.fencingToken)
-      const updatedAt = requireRuntimeSessionStamp(value.updatedAt, (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
+      const updatedAt = requireRuntimeSessionTime(value.updatedAt, "updatedAt", (message) => new SqlitePrivateSessionAuthorityError("invalid_input", message))
       if (hasUserMessages && fencingToken === undefined) {
         throw new SqlitePrivateSessionAuthorityError("invalid_input", "Session snapshots with user messages require a fencing token")
       }
@@ -1179,14 +1180,14 @@ function json(value: unknown) {
 function projectRegisteredSession(
   db: SqliteAuthorityDb,
   actor: AuthorityUser,
-  row: { operationId: string; sessionId: string; workspaceId: string; title?: string; updatedAt: number },
+  row: { operationId: string; sessionId: string; workspaceId: string; title?: string; createdAt: number; updatedAt: number },
   at: number,
 ) {
   db.prepare(`
     INSERT INTO session_history (
       session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(row.sessionId, row.workspaceId, actor.token_identifier, row.operationId, row.title ?? null, at, row.updatedAt)
+  `).run(row.sessionId, row.workspaceId, actor.token_identifier, row.operationId, row.title ?? null, row.createdAt, row.updatedAt)
   db.prepare(`
     INSERT INTO session_participants (
       session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at

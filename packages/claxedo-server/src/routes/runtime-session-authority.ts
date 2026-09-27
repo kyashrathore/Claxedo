@@ -770,13 +770,13 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         {
           error: {
             code: "session_authority_request_invalid",
-            message: "sessionId, action, and exact registration operation fields are required, and a registration or adoption names the runtime's session update time",
+            message: "sessionId, action, and exact registration operation fields are required, and a registration or adoption names the runtime's session creation and update times",
           },
         },
         400,
       )
     }
-    const { sessionId, action, operationId, reason, title, stream, parentSessionId, updatedAt } = request
+    const { sessionId, action, operationId, reason, title, stream, parentSessionId, createdAt, updatedAt } = request
     const verified = await verifySessionProof(context, request)
     if (verified instanceof Response) return verified
 
@@ -845,6 +845,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           sessionId,
           workspaceId: claims.workspaceId,
           hostId: claims.hostId,
+          createdAt,
           updatedAt,
           ...(title ? { title } : {}),
         })
@@ -868,6 +869,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           operationId,
           sessionId,
           workspaceId: claims.workspaceId,
+          createdAt,
           updatedAt,
           ...(title ? { title } : {}),
         })
@@ -962,6 +964,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
   const turnLeaseId = trimToUndefined(body?.leaseId)
   const fencingToken = positiveInteger(body?.fencingToken)
   const grant = trimToUndefined(body?.grant)
+  const createdAt = finiteTimestamp(body?.createdAt)
   const updatedAt = finiteTimestamp(body?.updatedAt)
   if (!sessionId || !isAuthorityAction(action)) return undefined
   if (
@@ -974,6 +977,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
     || (!!lease && !stream)
     || (stream && action !== "read" && action !== "write")
     || (body?.grant !== undefined && (!grant || action !== "turn_acquire"))
+    || (body?.createdAt !== undefined && (createdAt === undefined || (action !== "register" && action !== "adopt")))
     || (body?.updatedAt !== undefined && (updatedAt === undefined || (action !== "register" && action !== "adopt")))
   ) return undefined
   const fields = {
@@ -987,6 +991,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
     turnLeaseId,
     fencingToken,
     parentSessionId,
+    createdAt,
     updatedAt,
     ...(isSessionWriteClass(writeClass) ? { writeClass } : {}),
   }
@@ -999,11 +1004,11 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
       if (!operationId) return undefined
       return { ...fields, action, operationId }
     case "register":
-      if (!operationId || updatedAt === undefined) return undefined
-      return { ...fields, action, operationId, updatedAt }
+      if (!operationId || createdAt === undefined || updatedAt === undefined) return undefined
+      return { ...fields, action, operationId, createdAt, updatedAt }
     case "adopt":
-      if (updatedAt === undefined) return undefined
-      return { ...fields, action, updatedAt }
+      if (createdAt === undefined || updatedAt === undefined) return undefined
+      return { ...fields, action, createdAt, updatedAt }
     case "registration_ambiguous":
     case "compensation_begin":
     case "compensation_complete":

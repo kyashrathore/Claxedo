@@ -186,6 +186,7 @@ async function reserveAndRegister(
     title: input.title,
   })
   return await sessions.registerRuntimeSession({
+    createdAt: Date.now(),
     updatedAt: Date.now(),
     principalKind: "user",
     actorId: auth.principal!.actorId,
@@ -301,7 +302,7 @@ describe("D1 private multiplayer session authority", () => {
       }), { deploymentId: "deployment-a", now: input.now })
       const operation = phase === "reserve"
         ? raced.reserveRuntimeSession(principal, intent)
-        : raced.registerRuntimeSession({ updatedAt: Date.now(), ...principal, operationId: intent.operationId,
+        : raced.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), ...principal, operationId: intent.operationId,
             sessionId: intent.sessionId, workspaceId: intent.workspaceId })
       const outcome = await operation.then(() => "accepted", () => "refused")
       expect(batches).toBe(1)
@@ -636,6 +637,7 @@ describe("D1 private multiplayer session authority", () => {
     expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([])
     await expect(
       input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
@@ -648,6 +650,7 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toMatchObject({ code: "registration_transition_denied" })
     await expect(
       input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
@@ -711,6 +714,7 @@ describe("D1 private multiplayer session authority", () => {
     })
     await expect(
       input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
@@ -738,6 +742,7 @@ describe("D1 private multiplayer session authority", () => {
     })
     await expect(
       input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
@@ -781,6 +786,7 @@ describe("D1 private multiplayer session authority", () => {
 
     await expect(
       input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         principalKind: "user",
         actorId: alice.principal!.actorId,
@@ -1210,6 +1216,7 @@ describe("D1 private multiplayer session authority", () => {
       kind: "create",
     })
     await input.sessions.registerRuntimeSession({
+      createdAt: Date.now(),
       updatedAt: Date.now(),
       ...agent,
       operationId: "op_agent",

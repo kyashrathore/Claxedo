@@ -263,7 +263,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
       sessionId: "ses_1",
       registrationOperationId: "op_create_1",
       sessionTitle: "Private",
-      sessionUpdatedAt: 7,
+      sessionTime: { created: 1, updated: 7 },
       actor: { actorId: "actor_1", actorKind: "human" },
       authority: { orgId: "org_1", workspaceId: "ws_1", role: "editor" },
     })
@@ -333,11 +333,11 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(calls).toEqual(["begin", "delete", "complete"])
   })
 
-  test("a created session with no update time to list it at is never registered, and its creation is undone", async () => {
+  test("a created session with no creation or update time to list it at is never registered, and its creation is undone", async () => {
     const calls: string[] = []
     const fixture = {
       ...adapter(),
-      getSession: async () => null,
+      getSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId }),
       createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
       deleteSession: async () => { calls.push("delete") },
     }
@@ -355,7 +355,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
       body: JSON.stringify({ id: "ses_1" }),
     })
     expect(response.status).toBe(500)
-    expect(await response.json()).toMatchObject({ error: { code: "session_update_time_missing" } })
+    expect(await response.json()).toMatchObject({ error: { code: "session_time_missing" } })
     expect(calls).toEqual(["begin", "delete", "complete"])
   })
 
@@ -407,7 +407,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(calls[1]).toMatchObject({
       sessionId: "ses_child",
       registrationOperationId: "op_fork_1",
-      sessionUpdatedAt: 9,
+      sessionTime: { created: 1, updated: 9 },
       actor: { actorId: "actor_1", actorKind: "human" },
     })
     expect(await response.json()).toEqual({ id: "ses_child" })
@@ -532,9 +532,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const policy = managedPolicy({
       registerSession: async (value) => { registrations.push(value); return { allowed: true } },
     })
-    const fixture = { ...adapter(), getSession: async () => null }
-
-    const response = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session", {
+    const response = await managedRoutes({ policy, adapter: adapter(), stamped: false }).request("/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
@@ -1202,9 +1200,37 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(calls).toEqual(["delete:session_child"])
   })
 
-  test("keeps a missing backend title empty in the created lifecycle row", async () => {
+  test("a created session answers and announces its store's own times, never the route's clock", async () => {
     const lifecycle: SessionLifecycleEvent[] = []
     const res = await routes({ adapter: adapter(), lifecycle }).request("http://localhost/session", {
+      method: "POST",
+      body: "{}",
+    })
+
+    expect(res.status).toBe(201)
+    expect((await res.json() as { time?: unknown }).time).toEqual({ created: 1, updated: 1 })
+    expect((lifecycle.find((event) => event.phase === "created")?.info as { time?: unknown } | undefined)?.time).toEqual({ created: 1, updated: 1 })
+  })
+
+  test("a session read or listed with no creation or update time is refused, never given the route's clock", async () => {
+    const untimed = { id: "ses_untimed", title: "Untimed" }
+    const read = await routes({ adapter: adapter(), getSession: () => untimed }).request("http://localhost/session/ses_untimed")
+    expect(read.status).toBe(500)
+    const listed = await managedRoutes({
+      policy: managedPolicy({ filterSessions: async () => [untimed.id] }),
+      adapter: adapter(),
+      listSessions: async () => [untimed],
+    }).request("/session")
+    expect(listed.status).toBe(500)
+  })
+
+  test("keeps a missing backend title empty in the created lifecycle row", async () => {
+    const lifecycle: SessionLifecycleEvent[] = []
+    const untitled: AgentHarnessAdapter = {
+      ...adapter(),
+      getSession: async (binding) => ({ id: binding.sessionId, time: { created: 1, updated: 1 } }),
+    }
+    const res = await routes({ adapter: untitled, lifecycle }).request("http://localhost/session", {
       method: "POST",
       body: "{}",
     })
@@ -1234,9 +1260,9 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveAdapter: () => adapter(),
       resolveDirectory: () => undefined,
       listSessions: async () => [
-        { id: "session_allowed" },
-        { id: "session_hidden" },
-      ] as AgentSession[],
+        { id: "session_allowed", time: { created: 1, updated: 1 } },
+        { id: "session_hidden", time: { created: 1, updated: 1 } },
+      ],
       getStatus: () => ({ session_allowed: { type: "idle" }, session_hidden: { type: "busy" } }),
       listPermissions: async () => [
         { id: "perm_allowed", sessionID: "session_allowed" },
@@ -2425,14 +2451,16 @@ describe("createSessionRoutes session instructions", () => {
     const creates: Array<{ id?: string; options?: { instructions?: string } }> = []
     const turns: Array<string | undefined> = []
     let stored: string | undefined
+    const made = new Set<string>()
     const configRead = { fails: false }
     const fixture: AgentHarnessAdapter = {
       ...adapter(),
       instructionChannel: input.instructionChannel,
-      getSession: async () => null,
+      getSession: async (binding) => made.has(binding.sessionId) ? { id: binding.sessionId, time: { created: 1, updated: 1 } } : null,
       createSession: async (_directory, _title, id, options) => {
         creates.push({ id, options })
         stored = options?.instructions
+        made.add(id ?? "ses_instructions")
         return { id: id ?? "ses_instructions" }
       },
       getSessionConfig: async () => {
@@ -2655,13 +2683,15 @@ describe("createSessionRoutes session model group", () => {
   function groupRoutes() {
     const creates: Array<{ id?: string; options?: { group?: unknown } }> = []
     let stored: SessionConfig["group"]
+    const made = new Set<string>()
     const fixture: AgentHarnessAdapter = {
       ...adapter(),
       instructionChannel: "turn-system-prompt",
-      getSession: async () => null,
+      getSession: async (binding) => made.has(binding.sessionId) ? { id: binding.sessionId, time: { created: 1, updated: 1 } } : null,
       createSession: async (_directory, _title, id, options) => {
         creates.push({ id, options })
         stored = options?.group
+        made.add(id ?? "ses_group")
         return { id: id ?? "ses_group" }
       },
       getSessionConfig: async () => ({
