@@ -62,6 +62,7 @@ import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "..
 import type { SessionDeliveryStore } from "../session/delivery-owner"
 import { runtimeSessionTime } from "../session/session-time"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
+import type { CreatedSessionInput } from "../routes/session-route-options"
 import {
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
@@ -1080,6 +1081,82 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return executionBindingForHarness(sessionId, directory, config.harness)
   }
 
+  async function persistCreatedSession(
+    adapter: AgentHarnessAdapter,
+    session: { id: string; agentSessionId?: string },
+    directory: string,
+    harness: SessionHarness | undefined,
+    create: CreatedSessionInput & { title?: string },
+  ) {
+    const selectedHarness = harness
+      ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
+      ?? currentRunner()
+    const upstreamSessionId = session.agentSessionId ?? store().getAgentSessionId(session.id) ?? session.id
+    const binding = requireAgentExecutionBinding({
+      sessionId: session.id,
+      workspaceId: workspaceId(),
+      directory,
+      connectionId: connectionIdForHarness(selectedHarness),
+      upstreamSessionId,
+    })
+    try {
+      assertSessionDirectory(session.id, directory)
+      // The agent session id belongs to the HARNESS, never to this
+      // write-through. An adapter that persists into this store has
+      // already bound the id its process answers to: a codex
+      // `thread/start` id, an ACP `session/new` id, or the `claude-sdk:`
+      // sentinel that means "no SDK conversation exists yet". Re-binding
+      // `session.id` over it told the harness to resume a conversation
+      // that never existed, so the FIRST turn of every native-SDK session
+      // died with `thread not found` / `No conversation found with session
+      // ID` (ACP hid it by booting a replacement session). `session.id` is
+      // only the placeholder for adapters that keep their sessions
+      // elsewhere and left nothing here to preserve.
+      store().bindSession({
+        ...binding,
+        ...(create.title ? { title: create.title } : {}),
+        ...(create.parentID ? { parentSessionId: create.parentID } : {}),
+        agentSessionId: upstreamSessionId,
+      })
+      if (!store().getSessionConfig(session.id)) {
+        // An adapter that owns its config has already persisted the
+        // retained pair into this store; one whose config is
+        // runtime-owned wrote nothing, and a reopened session has no
+        // other place to read the instructions or the group back from.
+        const accepted = adapter.sessionConfigOwner === "runtime"
+          ? {
+              harness: selectedHarness,
+              model: null,
+              variant: null,
+              agent: null,
+              ...(create.instructions ? { instructions: create.instructions } : {}),
+              ...(create.group ? { group: create.group } : {}),
+            }
+          : await adapter.getSessionConfig(binding)
+        store().updateSessionConfig(session.id, {
+          ...accepted,
+          harness: selectedHarness,
+        }, { directory })
+      }
+      if (create.permissionCeiling) store().updateSessionConfig(session.id, { permissionCeiling: create.permissionCeiling }, { directory })
+      const persisted = store().getSession(session.id)
+      if (!persisted) throw new Error(`Session ${session.id} was not persisted`)
+      return persisted
+    } catch (cause) {
+      // The route-level rollback only begins after this hook returns. If
+      // binding or initial config persistence fails after the provider
+      // has created a remote session, this hook must compensate it using
+      // the known upstream id or the remote conversation is orphaned.
+      try {
+        await adapter.deleteSession(binding)
+        if (store().getSession(session.id)) store().deleteSession(session.id)
+      } catch (cleanupError) {
+        throw new SessionRollbackError("provider", cause, cleanupError)
+      }
+      throw cause
+    }
+  }
+
   async function adapterForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
     await options.beforeAdapterAcquire?.()
@@ -2057,73 +2134,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               ...(create?.group ? { group: create.group } : {}),
             },
           )
-          const selectedHarness = requested
-            ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
-            ?? currentRunner()
-          const upstreamSessionId = session.agentSessionId ?? store().getAgentSessionId(session.id) ?? session.id
-          const binding = requireAgentExecutionBinding({
-            sessionId: session.id,
-            workspaceId: workspaceId(),
-            directory,
-            connectionId: connectionIdForHarness(selectedHarness),
-            upstreamSessionId,
-          })
-          try {
-            assertSessionDirectory(session.id, directory)
-            // The agent session id belongs to the HARNESS, never to this
-            // write-through. An adapter that persists into this store has
-            // already bound the id its process answers to: a codex
-            // `thread/start` id, an ACP `session/new` id, or the `claude-sdk:`
-            // sentinel that means "no SDK conversation exists yet". Re-binding
-            // `session.id` over it told the harness to resume a conversation
-            // that never existed, so the FIRST turn of every native-SDK session
-            // died with `thread not found` / `No conversation found with session
-            // ID` (ACP hid it by booting a replacement session). `session.id` is
-            // only the placeholder for adapters that keep their sessions
-            // elsewhere and left nothing here to preserve.
-            store().bindSession({
-              ...binding,
-              ...(title ? { title } : {}),
-              ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
-              agentSessionId: upstreamSessionId,
-            })
-            if (!store().getSessionConfig(session.id)) {
-              // An adapter that owns its config has already persisted the
-              // retained pair into this store; one whose config is
-              // runtime-owned wrote nothing, and a reopened session has no
-              // other place to read the instructions or the group back from.
-              const accepted = adapter.sessionConfigOwner === "runtime"
-                ? {
-                    harness: selectedHarness,
-                    model: null,
-                    variant: null,
-                    agent: null,
-                    ...(create?.instructions ? { instructions: create.instructions } : {}),
-                    ...(create?.group ? { group: create.group } : {}),
-                  }
-                : await adapter.getSessionConfig(binding)
-              store().updateSessionConfig(session.id, {
-                ...accepted,
-                harness: selectedHarness,
-              }, { directory })
-            }
-            if (create?.permissionCeiling) store().updateSessionConfig(session.id, { permissionCeiling: create.permissionCeiling }, { directory })
-            const persisted = store().getSession(session.id)
-            if (!persisted) throw new Error(`Session ${session.id} was not persisted`)
-            return persisted
-          } catch (cause) {
-            // The route-level rollback only begins after this hook returns. If
-            // binding or initial config persistence fails after the provider
-            // has created a remote session, this hook must compensate it using
-            // the known upstream id or the remote conversation is orphaned.
-            try {
-              await adapter.deleteSession(binding)
-              if (store().getSession(session.id)) store().deleteSession(session.id)
-            } catch (cleanupError) {
-              throw new SessionRollbackError("provider", cause, cleanupError)
-            }
-            throw cause
-          }
+          return await persistCreatedSession(adapter, session, directory, requested, { ...create, ...(title ? { title } : {}) })
+        },
+        forkSession: async (_c, directory, parentSessionId, messageId, id) => {
+          if (id) assertSessionDirectory(id, directory)
+          const adapter = await adapterForSession({ sessionId: parentSessionId, directory })
+          const child = await adapter.forkSession!(canonicalExecutionBinding(parentSessionId, directory), messageId, id)
+          return await persistCreatedSession(adapter, child, directory, sessionConfigFor({ sessionId: parentSessionId, directory })?.harness, {})
         },
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: async (_c, directory) => listSessions(directory),

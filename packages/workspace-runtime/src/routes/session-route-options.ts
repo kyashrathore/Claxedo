@@ -78,6 +78,13 @@ export async function requireExecutionBinding(
   return binding
 }
 
+export type CreatedSessionInput = {
+  parentID?: string
+  permissionCeiling?: SessionConfig["permissionCeiling"]
+  instructions?: string
+  group?: SessionModelGroup
+}
+
 export type SessionRouteOptions = {
   sessionStarts?: AgentSessionStarts
   resolveSessionStartBinding?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, operationId: string) => AgentSessionStartBinding
@@ -122,7 +129,8 @@ export type SessionRouteOptions = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { start?: AgentSessionStartBinding; parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
+  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: CreatedSessionInput & { start?: AgentSessionStartBinding }) => Promise<{ id: string }>
+  forkSession?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string, messageId: string, id?: string) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   /** Where a prompt admitted behind a running turn is persisted while it waits. */

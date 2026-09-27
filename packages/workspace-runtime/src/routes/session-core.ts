@@ -2091,7 +2091,9 @@ export function createSessionRoutes(opts: Opts) {
         const refused = await creationReservationGuard(opts, c, body.id, operationId)
         if (refused) return refused
       }
-      const child = await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
+      const child = opts.forkSession
+        ? await opts.forkSession(c, directory, sessionId, body.messageId ?? "", body.id)
+        : await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
       let forked: { session: AgentSession; time: RuntimeSessionTime }
       try {
         forked = await readCreatedSession(opts, c, adapter, directory, child.id)

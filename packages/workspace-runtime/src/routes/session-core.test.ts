@@ -2,7 +2,7 @@ import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-
 import { describe, expect, test } from "bun:test"
 import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "./session-core"
-import type { SessionLifecycleEvent, SessionRouteContext } from "./session-route-options"
+import type { SessionLifecycleEvent, SessionRouteContext, SessionRouteOptions } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
 import type {
   AgentHarnessFactory,
@@ -136,6 +136,40 @@ function fixtureExecutionBinding(workspaceId = "workspace-test") {
   })
 }
 
+/**
+ * The workspace host's write-through. A session row, and the binding the host
+ * derives from it, exist only once its create or fork hook has persisted what
+ * the adapter made, and its delete removes both.
+ */
+function persistingHost(
+  adapter: AgentHarnessAdapter,
+  time: (sessionId: string) => AgentSession["time"],
+  read: (row: AgentSession) => AgentSession | null = (row) => row,
+) {
+  const rows = new Map<string, AgentSession>()
+  const bind = (c: SessionRouteContext, directory: RuntimeDirectory, sessionId: string) => {
+    if (!rows.has(sessionId)) throw new Error(`Session ${sessionId} has no complete execution binding`)
+    return fixtureExecutionBinding("ws_1")(c, directory, sessionId)
+  }
+  const persist = (id: string) => {
+    const at = time(id)
+    rows.set(id, { id, ...(at ? { time: at } : {}) })
+    return { id }
+  }
+  const options = {
+    getSession: (_c, _directory, sessionId) => {
+      const row = rows.get(sessionId)
+      return row ? read(row) : null
+    },
+    resolveExecutionBinding: bind,
+    createSession: async (_c, directory, title, id) => persist((await adapter.createSession(directory, title, id)).id),
+    forkSession: async (c, directory, parentSessionId, messageId, id) =>
+      persist((await adapter.forkSession!(bind(c, directory, parentSessionId), messageId, id)).id),
+    afterDeleteSession: (_c, _directory, sessionId) => { rows.delete(sessionId) },
+  } satisfies Partial<SessionRouteOptions>
+  return { rows, persist, options }
+}
+
 test("session config-options applies the session read policy before reading exact-session state", async () => {
   const calls: AgentExecutionBinding[] = []
   const checked: string[] = []
@@ -168,6 +202,7 @@ function managedRoutes(input: {
   afterMessageCheckpoint?: () => void
   /** False composes the same routes and policy for a caller the exposure stamped nothing for. */
   stamped?: boolean
+  host?: ReturnType<typeof persistingHost>
 }) {
   const routes = createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -176,6 +211,7 @@ function managedRoutes(input: {
     ...(input.listSessions ? { listSessions: input.listSessions } : {}),
     ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
     ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
+    ...input.host?.options,
     sessionAccessPolicy: input.policy,
     publishGlobal: input.publishGlobal ?? (() => {}),
   })
@@ -242,14 +278,19 @@ describe("createSessionRoutes private-session lifecycle", () => {
 
   test("registers the exact reserved operation at the created session's own update time before returning create success", async () => {
     const calls: unknown[] = []
-    const fixture = { ...adapter(), getSession: persistedAt(7), createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }) }
+    let creates = 0
+    const fixture = { ...adapter(), createSession: async (_directory: string, _title?: string, id?: string) => {
+      creates += 1
+      return { id: id! }
+    } }
+    const host = persistingHost(fixture, () => ({ created: 1, updated: 7 }))
     const policy = managedPolicy({
       registerSession: async (value) => {
         calls.push(value)
         return { allowed: true }
       },
     })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
+    const response = await managedRoutes({ policy, adapter: fixture, host }).request("/session", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -258,6 +299,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
       body: JSON.stringify({ id: "ses_1", title: "Private" }),
     })
     expect(response.status).toBe(201)
+    expect(creates).toBe(1)
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       sessionId: "ses_1",
@@ -312,16 +354,16 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const calls: string[] = []
     const fixture = {
       ...adapter(),
-      getSession: persistedAt(7),
       createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
       deleteSession: async () => { calls.push("delete") },
     }
+    const host = persistingHost(fixture, () => ({ created: 1, updated: 7 }))
     const policy = managedPolicy({
       registerSession: async () => ({ allowed: false, status: 403, code: "session_private", message: "denied" }),
       beginRegistrationCompensation: async () => { calls.push("begin"); return { allowed: true } },
       completeRegistrationCompensation: async () => { calls.push("complete"); return { allowed: true } },
     })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
+    const response = await managedRoutes({ policy, adapter: fixture, host }).request("/session", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -331,6 +373,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     })
     expect(response.status).toBe(403)
     expect(calls).toEqual(["begin", "delete", "complete"])
+    expect(host.rows.has("ses_1")).toBe(false)
   })
 
   test("requires an exact reservation before a managed fork mutates runtime state", async () => {
@@ -350,20 +393,21 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(forks).toBe(0)
   })
 
-  test("forks into the reserved child id and registers the exact operation before success", async () => {
+  test("forks into the reserved child id, which its host persists, and registers the exact operation before success", async () => {
     const calls: unknown[] = []
     const fixture = {
       ...adapter(),
-      getSession: async (binding: AgentExecutionBinding) => binding.sessionId === "ses_child" ? persistedAt(9)(binding) : null,
       forkSession: async (binding: AgentExecutionBinding, messageId: string, childId?: string) => {
         calls.push({ parentId: binding.sessionId, messageId, directory: binding.directory, childId })
         return { id: childId! }
       },
     }
+    const host = persistingHost(fixture, (id) => ({ created: 1, updated: id === "ses_child" ? 9 : 1 }))
+    host.persist("ses_parent")
     const policy = managedPolicy({
       registerSession: async (value) => { calls.push(value); return { allowed: true } },
     })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session/ses_parent/fork", {
+    const response = await managedRoutes({ policy, adapter: fixture, host }).request("/session/ses_parent/fork", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -385,6 +429,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
       actor: { actorId: "actor_1", actorKind: "human" },
     })
     expect(await response.json()).toEqual({ id: "ses_child", time: { created: 1, updated: 9 } })
+    expect(host.rows.has("ses_child")).toBe(true)
   })
 
   test("filters list rows through private-session authority", async () => {
@@ -909,6 +954,7 @@ function routes(input: {
   getTurnOutline?: (directory: RuntimeDirectory, sessionId: string) => TurnOutline | undefined
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
+  host?: ReturnType<typeof persistingHost>
 }) {
   const created = createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -928,6 +974,7 @@ function routes(input: {
     afterCreateSession: input.afterCreateSession
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
       : undefined,
+    ...input.host?.options,
   })
   // A managed-private policy decides the lifecycle of a RELAY-REPLAYED
   // request, and the runtime reads that off the verified stamp the exposure
@@ -949,10 +996,6 @@ function routes(input: {
     await next()
   })
   return app.route("/", created)
-}
-
-function persistedAt(updated: number) {
-  return async (binding: AgentExecutionBinding) => ({ id: binding.sessionId, time: { created: 1, updated } })
 }
 
 function registrationPolicy(
@@ -1236,26 +1279,24 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   const unreadBacks = [
-    ["cannot be read back", async () => null],
-    ["reads back with no times", async (binding: AgentExecutionBinding) => ({ id: binding.sessionId })],
+    ["cannot be read back", () => null],
+    ["reads back with no times", (row: AgentSession) => ({ id: row.id })],
   ] as const
-  for (const [readBack, getSession] of unreadBacks) {
+  for (const [readBack, read] of unreadBacks) {
     for (const managed of [true, false]) {
       test(`a created session that ${readBack} is deleted before it is registered, projected or announced (${managed ? "managed" : "unmanaged"})`, async () => {
         const calls: string[] = []
         const lifecycle: SessionLifecycleEvent[] = []
         const events: CompatEnvelope[] = []
-        const made = new Set<string>()
+        const fixture: AgentHarnessAdapter = {
+          ...adapter(),
+          createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id ?? "session_1" }),
+          deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
+        }
+        const host = persistingHost(fixture, () => ({ created: 1, updated: 1 }), read)
         const app = routes({
-          adapter: {
-            ...adapter(),
-            getSession: async (binding) => made.has(binding.sessionId) ? getSession(binding) : null,
-            createSession: async (_directory: string, _title?: string, id?: string) => {
-              made.add(id ?? "session_1")
-              return { id: id ?? "session_1" }
-            },
-            deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
-          },
+          adapter: fixture,
+          host,
           lifecycle,
           events,
           ...(managed ? {
@@ -1278,6 +1319,7 @@ describe("createSessionRoutes directory-less sessions", () => {
 
         expect(response.status).toBe(500)
         expect(calls).toEqual(["delete:session_1"])
+        expect(host.rows.has("session_1")).toBe(false)
         expect(events).toEqual([])
         expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "failed"])
       })
@@ -1285,14 +1327,17 @@ describe("createSessionRoutes directory-less sessions", () => {
       test(`a forked child that ${readBack} is deleted before it is registered, projected or announced (${managed ? "managed" : "unmanaged"})`, async () => {
         const calls: string[] = []
         const events: CompatEnvelope[] = []
+        const fixture: AgentHarnessAdapter = {
+          ...adapter(),
+          forkSession: async () => { calls.push("fork"); return { id: "session_child" } },
+          deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
+        }
+        const host = persistingHost(fixture, () => ({ created: 1, updated: 1 }), (row) => row.id === "session_child" ? read(row) : row)
+        host.persist("session_parent")
         const app = routes({
           events,
-          adapter: {
-            ...adapter(),
-            getSession: async (binding) => binding.sessionId === "session_child" ? getSession(binding) : persistedAt(1)(binding),
-            forkSession: async () => { calls.push("fork"); return { id: "session_child" } },
-            deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
-          },
+          adapter: fixture,
+          host,
           ...(managed ? {
             sessionAccessPolicy: {
               ...registrationPolicy(async (input) => {
@@ -1313,10 +1358,25 @@ describe("createSessionRoutes directory-less sessions", () => {
 
         expect(response.status).toBe(500)
         expect(calls).toEqual(["fork", "delete:session_child"])
+        expect(host.rows.has("session_child")).toBe(false)
         expect(events).toEqual([])
       })
     }
   }
+
+  test("a forked child is persisted by its host before it is read back, and answers its row's times", async () => {
+    const fixture: AgentHarnessAdapter = { ...adapter(), forkSession: async () => ({ id: "session_child" }) }
+    const host = persistingHost(fixture, (id) => ({ created: 3, updated: id === "session_child" ? 4 : 3 }))
+    host.persist("session_parent")
+
+    const response = await routes({ adapter: fixture, host }).request("http://localhost/session/session_parent/fork", {
+      method: "POST",
+      body: JSON.stringify({ messageId: "message_1" }),
+    })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toEqual({ id: "session_child", time: { created: 3, updated: 4 } })
+  })
 
   test("filters transcript-bearing collections through the verified relay actor", async () => {
     const calls: Array<{ operation: string; actorId?: string; sessionIds: string[] }> = []

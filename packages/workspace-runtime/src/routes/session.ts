@@ -2,7 +2,7 @@ import { HTTPException } from "hono/http-exception"
 import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { createSessionRoutes } from "./session-core"
-import type { SessionRouteContext } from "./session-route-options"
+import type { CreatedSessionInput, SessionRouteContext } from "./session-route-options"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import { publishTurnFailure } from "./session-prompt-admission"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
@@ -23,7 +23,6 @@ import {
   type PromptDelivery,
   type SessionConfig,
   type SessionConfigRequestUpdate,
-  type SessionModelGroup,
 } from "@claxedo/agent-sdk-runtime"
 import {
   type AgentMessagePage,
@@ -122,7 +121,8 @@ export function SessionRoutes(
      * the host's session store learns about a create directly rather than from
      * the list-time adapter fan-out.
      */
-    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { start?: AgentSessionStartBinding; parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
+    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: CreatedSessionInput & { start?: AgentSessionStartBinding }) => Promise<{ id: string }>
+    forkSession?: (c: SessionRouteContext, directory: string, parentSessionId: string, messageId: string, id?: string) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
     /**
      * Host-owned child sessions (`POST /session` with `parentID`). The host
@@ -531,6 +531,9 @@ export function SessionRoutes(
       : undefined,
     createSession: options?.createSession
       ? (c, directory, title, id, create) => options.createSession!(c, requiredDirectory(directory), title, id, create)
+      : undefined,
+    forkSession: options?.forkSession
+      ? (c, directory, parentSessionId, messageId, id) => options.forkSession!(c, requiredDirectory(directory), parentSessionId, messageId, id)
       : undefined,
     childSessions,
     queuedPrompts,
