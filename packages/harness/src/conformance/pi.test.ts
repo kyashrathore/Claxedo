@@ -241,10 +241,10 @@ runConformance({
   },
 })
 
-function piTransport(services: ReturnType<typeof createTestServices>, state: ConformanceBackend) {
+function piTransport(services: ReturnType<typeof createTestServices>, state: ConformanceBackend, env = process.env) {
   const pi = state as PiBackend
   return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
-    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env: process.env })
+    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env })
 }
 
 function alive(pid: number): boolean {
@@ -281,14 +281,17 @@ test("Pi reads back a clamped thinking level and refuses the turn", async () => 
   } finally { await context.close() }
 }, 30_000)
 
-test("Pi lists its models and thinking levels through the config group", async () => {
-  const context = await setupConformance({ name: "pi config group", backend, makeTransport: piTransport })
+test("Pi lists only its profile's runnable models and their thinking levels through the config group", async () => {
+  const context = await setupConformance({ name: "pi config group", backend,
+    makeTransport: (services, state) => piTransport(services, state, { PATH: process.env.PATH, HOME: process.env.HOME }) })
   try {
     const config = context.transport.config!
     const preview = await config.options({ session: context.session }, "probe")
     expect(preview.resolvedModel).toEqual({ id: "openai/gpt-4.1", name: "GPT-4.1" })
     const model = preview.options.find((option) => option.id === "model")
     expect(model?.selectOptions?.some((choice) => choice.id === "openai/o3")).toBe(true)
+    expect(new Set(model?.selectOptions?.map((choice) => choice.id.split("/")[0]))).toEqual(new Set(["openai"]))
+    expect(model?.selectOptions?.every((choice) => choice.connected !== false)).toBe(true)
     expect(preview.options.find((option) => option.category === "thought_level")).toBeUndefined()
     expect(await config.options({ session: context.session }, "peek")).toEqual(preview)
     const reasoning = await config.options({ session: context.session, model: { providerID: "pi", modelID: "openai/o3" } }, "probe")
