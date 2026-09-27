@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
+import type { HostedAccount } from "./account"
 import { placementId, projectId, sessionId } from "./ids"
 import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
@@ -38,7 +39,7 @@ function fakeServer(options: { reachable: () => boolean; machine?: boolean; runt
   const request = async (path: string) => {
     requests.push(path)
     if (path === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.reachable, options.machine ?? false))
-    if (path.startsWith("/api/control/sessions/ses_1/messages")) return Response.json({ messages: stored, maxEventOrdinal: 0 }, { headers: { "X-Next-Cursor": "cursor_older" } })
+    if (path.startsWith("/api/control/sessions/ses_1/messages")) return Response.json({ messages: stored, nextCursor: "cursor_older", maxEventOrdinal: 0 }, { headers: { "X-Next-Cursor": "cursor_older" } })
     if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [{ session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }] })
     return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
   }
@@ -85,6 +86,33 @@ test("session reads: a stopped cloud workspace's session renders from the contro
   await readOlder(server.context, ref, "cursor_older")
   expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50&before=cursor_older")
   expect(server.runtimeCalls).toEqual([])
+})
+
+test("session reads: a signed desktop reads a stopped cloud session through its account, never through its local server", async () => {
+  const server = fakeServer({ reachable: () => false })
+  const calls: { operation: string; input?: Readonly<Record<string, unknown>> }[] = []
+  const account = {
+    run: async (operation: string, input?: Readonly<Record<string, unknown>>) => {
+      calls.push({ operation, ...(input ? { input } : {}) })
+      if (operation === "session.messages") return { messages: stored, nextCursor: "cursor_older", maxEventOrdinal: 0 }
+      if (operation === "session.list") return { sessions: [{ session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }] }
+      throw new Error(`unexpected operation ${operation}`)
+    },
+  } as HostedAccount
+  const context = { ...server.context, account }
+  const reads = readSession(context, ref)
+
+  const surface = await reads.surface
+  expect(surface.row).toMatchObject({ ref, title: "Ship it", lastHumanTurnAt: 15 })
+  expect(surface.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
+  expect(surface.transcript.olderCursor).toBe("cursor_older")
+  await readOlder(context, ref, "cursor_older")
+  expect(calls).toEqual([
+    { operation: "session.messages", input: { sessionId: "ses_1", workspaceId: "ws_cloud", view: "latest-surface" } },
+    { operation: "session.list", input: { workspaceId: "ws_cloud" } },
+    { operation: "session.messages", input: { sessionId: "ses_1", workspaceId: "ws_cloud", limit: "50", before: "cursor_older" } },
+  ])
+  expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([])
 })
 
 test("session reads: a runtime that answers it has stopped re-homes the session to the control plane after re-reading the catalog", async () => {

@@ -41,7 +41,7 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
 const NO_TRANSCRIPT: TranscriptPage = { entries: [] }
 
 function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome, before?: string): Promise<TranscriptPage> {
-  if (home.central) return readCentralPage(context.transport, home.route.workspaceId, ref, before === undefined ? { view: "latest-surface" } : { before })
+  if (home.central) return readCentralPage(context, home.route.workspaceId, ref, before === undefined ? { view: "latest-surface" } : { before })
   if (!home.live) return Promise.resolve(NO_TRANSCRIPT)
   const page = before === undefined ? { view: "latest-surface" } : { limit: OLDER_PAGE_SIZE, before }
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
@@ -52,7 +52,7 @@ async function readSurface(context: SessionContext, ref: SessionRef, session: Pr
   const [transcript, details] = await Promise.all([
     home.then((home) => readHistory(context, ref, home)),
     Promise.all([home, session]).then(async ([home, row]) => ({
-      row: row ? sessionRowFromSession(row, ref) : await readCentralRow(context.transport, home.route.workspaceId, ref),
+      row: row ? sessionRowFromSession(row, ref) : await readCentralRow(context, home.route.workspaceId, ref),
       diff: row?.summary?.diffs ?? [],
     })),
   ])

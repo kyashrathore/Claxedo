@@ -1,25 +1,35 @@
-import { responseError, ServerError } from "./errors"
-import { withQuery, type Transport } from "./transport"
+import { readField, readString } from "@claxedo/helpers/readers"
+import { ServerError } from "./errors"
+import type { SessionContext } from "./session-context"
+import { withQuery } from "./transport"
 import type { SessionRef, SessionRow, TranscriptPage } from "./types"
 import { sessionRowFromCentral } from "./wire/session-row"
-import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
+import { transcriptPageFromWire } from "./wire/transcript"
 
-export const CENTRAL_PAGE_SIZE = 50
+const CENTRAL_PAGE_SIZE = 50
+const SESSIONS = "/api/control/sessions"
 
 export type CentralPage = { readonly view: "latest-surface" | "latest-turn" } | { readonly before: string }
 
-export async function readCentralPage(transport: Transport, workspaceId: string, ref: SessionRef, page: CentralPage): Promise<TranscriptPage> {
-  const window = "view" in page ? { view: page.view } : { limit: CENTRAL_PAGE_SIZE, before: page.before }
-  const path = withQuery(`/api/control/sessions/${encodeURIComponent(ref.sessionId)}/messages`, { workspaceId, ...window })
-  const response = await transport.request(path)
-  if (!response.ok) throw await responseError(response, "Stored transcript")
-  const body = (await response.json()) as { messages?: unknown }
-  return transcriptPageFromWire(body.messages, response.headers.get(OLDER_CURSOR_HEADER))
+async function storedMessages(context: SessionContext, ref: SessionRef, query: Readonly<Record<string, string>>): Promise<unknown> {
+  if (context.account) return context.account.run("session.messages", { sessionId: ref.sessionId, ...query })
+  return context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/messages`, query))
 }
 
-export async function readCentralRow(transport: Transport, workspaceId: string, ref: SessionRef): Promise<SessionRow> {
-  const body = await transport.json<{ sessions?: unknown }>(withQuery("/api/control/sessions", { workspaceId }))
-  const rows = Array.isArray(body.sessions) ? body.sessions : []
+async function storedInventory(context: SessionContext, workspaceId: string): Promise<unknown> {
+  if (context.account) return context.account.run("session.list", { workspaceId })
+  return context.transport.json(withQuery(SESSIONS, { workspaceId }))
+}
+
+export async function readCentralPage(context: SessionContext, workspaceId: string, ref: SessionRef, page: CentralPage): Promise<TranscriptPage> {
+  const window: Record<string, string> = "view" in page ? { view: page.view } : { limit: String(CENTRAL_PAGE_SIZE), before: page.before }
+  const body = await storedMessages(context, ref, { workspaceId, ...window })
+  return transcriptPageFromWire(readField(body, "messages"), readString(body, "nextCursor") ?? null)
+}
+
+export async function readCentralRow(context: SessionContext, workspaceId: string, ref: SessionRef): Promise<SessionRow> {
+  const sessions = readField(await storedInventory(context, workspaceId), "sessions")
+  const rows = Array.isArray(sessions) ? sessions : []
   const row = rows.map((item) => sessionRowFromCentral(item, ref)).find((candidate) => candidate !== undefined)
   if (!row) throw new ServerError({ class: "not_found", message: `Session ${ref.sessionId} is not stored for workspace ${workspaceId}` })
   return row
