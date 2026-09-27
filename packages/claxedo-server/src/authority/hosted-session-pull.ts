@@ -37,19 +37,6 @@ function relayRole(value: unknown): RelayRole | undefined {
   return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
-function sessionVisibility(input: unknown) {
-  const row = asRecord(input)
-  if (!row) return undefined
-  const sessionId = txt(row.id)
-  if (!sessionId) return undefined
-  const title = txt(row.title) ?? txt(row.slug)
-  return {
-    sessionId,
-    ...(title ? { title } : {}),
-    updatedAt: pulledSessionUpdatedAt(row, HostedSessionPullError),
-  }
-}
-
 function messagesPayload(input: unknown) {
   const row = asRecord(input)
   const session = asRecord(row?.session)
@@ -87,7 +74,6 @@ function messagesPayload(input: unknown) {
     maxEventOrdinal,
     fencingToken,
     session,
-    updatedAt: pulledSessionUpdatedAt(session, HostedSessionPullError),
   }
 }
 
@@ -96,13 +82,25 @@ function sessionPayloadId(input: unknown) {
   return txt(row?.id) ?? txt(row?.sessionId) ?? txt(row?.sessionID)
 }
 
-function assertPulledSession(input: unknown, sessionId: string) {
-  if (sessionPayloadId(input) === sessionId) return undefined
-  throw new HostedSessionPullError(
-    409,
-    "workspace_runtime_session_mismatch",
-    "Workspace runtime session identity does not match requested session",
-  )
+/**
+ * A pulled session is refused before anything is projected unless it is the
+ * requested session and carries its runtime's time.updated.
+ */
+function pulledSession(input: unknown, sessionId: string) {
+  const row = asRecord(input)
+  if (!row || sessionPayloadId(row) !== sessionId) {
+    throw new HostedSessionPullError(
+      409,
+      "workspace_runtime_session_mismatch",
+      "Workspace runtime session identity does not match requested session",
+    )
+  }
+  const title = txt(row.title) ?? txt(row.slug)
+  return {
+    sessionId,
+    ...(title ? { title } : {}),
+    updatedAt: pulledSessionUpdatedAt(row, HostedSessionPullError),
+  }
 }
 
 function sessionIsIdle(input: unknown, sessionId: string) {
@@ -293,7 +291,7 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
-  assertPulledSession(payload.session, input.sessionId)
+  const { updatedAt } = pulledSession(payload.session, input.sessionId)
   const syncAuthority = async (messages: unknown[], maxEventOrdinal: number, fencingToken?: number) => {
     const intakeReady = await runtimeJson(services, signed, {
       ...target,
@@ -306,7 +304,7 @@ export async function pullHostedControlSessionMessages(
       workspaceId: target.workspaceId,
       sessionId: input.sessionId,
       messages,
-      updatedAt: payload.updatedAt,
+      updatedAt,
       maxEventOrdinal,
       ...(fencingToken === undefined ? {} : { fencingToken }),
       intakeReady,
@@ -382,10 +380,8 @@ async function syncHostedSessionMetadata(
   sessionId: string,
   session: unknown,
 ) {
-  assertPulledSession(session, sessionId)
+  const visibility = pulledSession(session, sessionId)
   await services.projectionStore.sync_session_meta(target.ws, session)
-  const visibility = sessionVisibility(session)
-  if (!visibility) return
   await requireAuthority(services).upsertSessionVisibility(auth, {
     workspaceId: target.workspaceId,
     sessions: [visibility],

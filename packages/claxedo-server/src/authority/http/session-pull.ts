@@ -90,7 +90,7 @@ export async function pullControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
-  assertPulledSession(payload.session, input.sessionId)
+  const { updatedAt } = pulledSession(payload.session, input.sessionId)
   const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson(services, options, {
@@ -108,7 +108,7 @@ export async function pullControlSessionMessages(
       workspaceId: ws.id,
       sessionId: input.sessionId,
       messages: payload.messages,
-      updatedAt: payload.updatedAt,
+      updatedAt,
       maxEventOrdinal: payload.maxEventOrdinal
         ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),
       ...(payload.fencingToken === undefined ? {} : { fencingToken: payload.fencingToken }),
@@ -181,9 +181,10 @@ async function syncPulledSessionMetadata(
   sessionId: string,
   session: unknown,
 ) {
-  assertPulledSession(session, sessionId)
+  const visibility = pulledSession(session, sessionId)
   await services.projectionStore.sync_session_meta(ws, session)
-  await upsertSignedSessionVisibility(services, auth, ws, [session])
+  if (auth?.mode !== "signed") return
+  await requireAuthority(services).upsertSessionVisibility(auth, { workspaceId: ws.id, sessions: [visibility] })
 }
 
 async function workspaceForPull(
@@ -248,19 +249,6 @@ function relayRole(value: unknown): RelayRole | undefined {
   return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
-function sessionVisibility(_ws: Workspace, input: unknown) {
-  const row = asRecord(input)
-  if (!row) return undefined
-  const sessionId = txt(row.id)
-  if (!sessionId) return undefined
-  const title = txt(row.title) ?? txt(row.slug)
-  return {
-    sessionId,
-    ...(title ? { title } : {}),
-    updatedAt: pulledSessionUpdatedAt(row, ControlPlaneProtocolError),
-  }
-}
-
 function messagesPayload(input: unknown) {
   const row = asRecord(input)
   const session = asRecord(row?.session)
@@ -298,7 +286,6 @@ function messagesPayload(input: unknown) {
     maxEventOrdinal,
     fencingToken,
     session,
-    updatedAt: pulledSessionUpdatedAt(session, ControlPlaneProtocolError),
   }
 }
 
@@ -307,13 +294,25 @@ function sessionPayloadId(input: unknown) {
   return txt(row?.id) ?? txt(row?.sessionId) ?? txt(row?.sessionID)
 }
 
-function assertPulledSession(input: unknown, sessionId: string) {
-  if (sessionPayloadId(input) === sessionId) return undefined
-  throw new ControlPlaneProtocolError(
-    409,
-    "workspace_runtime_session_mismatch",
-    "Workspace runtime session identity does not match requested session",
-  )
+/**
+ * A pulled session is refused before anything is projected unless it is the
+ * requested session and carries its runtime's time.updated.
+ */
+function pulledSession(input: unknown, sessionId: string) {
+  const row = asRecord(input)
+  if (!row || sessionPayloadId(row) !== sessionId) {
+    throw new ControlPlaneProtocolError(
+      409,
+      "workspace_runtime_session_mismatch",
+      "Workspace runtime session identity does not match requested session",
+    )
+  }
+  const title = txt(row.title) ?? txt(row.slug)
+  return {
+    sessionId,
+    ...(title ? { title } : {}),
+    updatedAt: pulledSessionUpdatedAt(row, ControlPlaneProtocolError),
+  }
 }
 
 function sessionIsIdle(input: unknown, sessionId: string) {
@@ -321,20 +320,4 @@ function sessionIsIdle(input: unknown, sessionId: string) {
   if (!statuses) return false
   if (!(sessionId in statuses)) return true
   return asRecord(statuses[sessionId])?.type === "idle"
-}
-
-async function upsertSignedSessionVisibility(
-  services: ControlPlaneServices,
-  auth: ControlPlaneAuthContext | undefined,
-  ws: Workspace,
-  sessions: unknown[],
-) {
-  if (auth?.mode !== "signed") return
-  await requireAuthority(services).upsertSessionVisibility(auth, {
-    workspaceId: ws.id,
-    sessions: sessions.flatMap((session) => {
-      const visibility = sessionVisibility(ws, session)
-      return visibility ? [visibility] : []
-    }),
-  })
 }

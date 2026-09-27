@@ -140,7 +140,7 @@ describe("central projection: pulled session metadata", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled", time: { created: 100, updated: 200 } })
           return new Response("not found", { status: 404 })
         },
       },
@@ -151,9 +151,37 @@ describe("central projection: pulled session metadata", () => {
     expect(result).toMatchObject({ ok: true, sessionId: "session-1" })
     expect(svc.projectionStore.sync_session_meta).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ws_1" }),
-      { id: "session-1", title: "Pulled" },
+      { id: "session-1", title: "Pulled", time: { created: 100, updated: 200 } },
     )
   })
+
+  test.each(["unsigned http", "signed http", "hosted"] as const)(
+    "%s metadata pull refuses a session with no time.updated before it projects anything",
+    async (flow) => {
+      const svc = services()
+      const authority = presentAuthority()
+      svc.authority = authority as never
+      const runtime = async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Untimed", time: { created: 100 } })
+        return new Response("not found", { status: 404 })
+      }
+      if (flow === "hosted") stubHostedTransport(svc, runtime)
+
+      const pull = flow === "hosted"
+        ? pullHostedControlSession(svc, undefined, signedAuth, { workspaceId: "ws_1", sessionId: "session-1" })
+        : pullControlSession(
+            svc,
+            { runtimeFetch: ({ path }) => runtime(path) },
+            flow === "signed http" ? signedAuth : undefined,
+            { workspaceId: "ws_1", sessionId: "session-1" },
+          )
+
+      await expect(pull).rejects.toMatchObject({ status: 502, code: "workspace_runtime_snapshot_invalid" })
+      expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
+      expect(authority.upsertSessionVisibility).not.toHaveBeenCalled()
+    },
+  )
 
   test("hosted pull writes pulled session meta through ProjectionStore.sync_session_meta", async () => {
     const svc = services()
@@ -273,7 +301,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
   function httpRuntime(snapshot: unknown) {
     return async (input: { path: string }) => {
       if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-      if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+      if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       if (input.path === "/session/session-1/message?snapshot=1") return Response.json(snapshotWithSession(snapshot) as never)
       return new Response("not found", { status: 404 })
     }
@@ -282,7 +310,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
   function hostedRuntime(svc: ControlPlaneServices, snapshot: unknown) {
     return stubHostedTransport(svc, (path) => {
       if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-      if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+      if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshotWithSession(snapshot) as never)
       return new Response("not found", { status: 404 })
     })
@@ -830,7 +858,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
       let snapshotRequest = 0
       const runtime = async (path: string) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
         if (path === "/session/status") return Response.json({})
         if (path === "/session/session-1/message?snapshot=1") {
           snapshotRequest += 1
@@ -922,7 +950,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
       let snapshotRequest = 0
       const runtime = async (path: string) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
         if (path === "/session/session-1/message?snapshot=1") {
           snapshotRequest += 1
           return snapshotRequest === 1
@@ -1009,7 +1037,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
       })
       const runtime = async (path: string) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
         if (path === "/session/status") return Response.json({})
         if (path === "/session/session-1/message?snapshot=1") {
           return Response.json(snapshotWithSession({ messages: older, maxEventOrdinal: 11 }) as never)

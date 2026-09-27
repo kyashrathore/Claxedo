@@ -425,7 +425,7 @@ describe("control plane HTTP protocol", () => {
     const svc = services()
     const runtimeFetch = vi.fn(async (input: { path: string }) => {
       if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-      if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled" })
+      if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled", time: { created: 100, updated: 200 } })
       return new Response("not found", { status: 404 })
     })
     const app = ControlPlaneHttpRoutes(svc, { runtimeFetch })
@@ -442,6 +442,7 @@ describe("control plane HTTP protocol", () => {
     expect(svc.projectionStore.sync_session_meta).toHaveBeenCalledWith(expect.objectContaining({ id: "ws_1" }), {
       id: "session-1",
       title: "Pulled",
+      time: { created: 100, updated: 200 },
     })
   })
 
@@ -780,7 +781,7 @@ describe("control plane HTTP protocol", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
           if (input.path === "/session/session-1/message?snapshot=1") {
             return Response.json({ messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } })
           }
@@ -811,7 +812,7 @@ describe("control plane HTTP protocol", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
           if (input.path === "/session/session-1/message?snapshot=1") {
             return Response.json({ messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } })
           }
@@ -860,7 +861,7 @@ describe("control plane HTTP protocol", () => {
         return Response.json({ messages: [], session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } })
       }
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1") {
-        return Response.json({ id: "session-1", title: "Settled title" })
+        return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
       return new Response("not found", { status: 404 })
     })

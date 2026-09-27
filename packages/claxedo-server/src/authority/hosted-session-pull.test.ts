@@ -97,7 +97,7 @@ describe("hosted session pull", () => {
         return Response.json({ messages: [], maxEventOrdinal: 0, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
-        return Response.json({ id: "session-1", title: "Settled title" })
+        return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
         return Response.json({})
@@ -184,7 +184,7 @@ describe("hosted session pull", () => {
         })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
-        return Response.json({ id: "session-1", title: "Settled title" })
+        return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
         return Response.json({})
@@ -307,7 +307,7 @@ describe("hosted session pull", () => {
         })
       }
       if (url.endsWith("/session/session-1")) {
-        return Response.json({ id: "session-1", title: "Settled title" })
+        return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
       if (url.endsWith("/session/status")) return Response.json({})
       return new Response("not found", { status: 404 })
