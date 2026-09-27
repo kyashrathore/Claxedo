@@ -19,6 +19,8 @@ Each frame's requestAnimationFrame callback records `performance.now()` as the f
 
 The posted task is not always the next task: Chromium runs a queued input task first. In a page whose frames did 8 ms of requestAnimationFrame work, a click landed between the frame and its task in 20 of 20 tries. That input's DOM changes are not in the frame, so a frame that a trusted pointerdown, pointerup, click, keydown or keyup overtook calls `overtaken` instead of `sample` and `painted`, and a subscriber without `overtaken` skips it. A queued data task can still run in between; its DOM changes are then read one frame early.
 
+That data task also delays the stamp. In a streaming session an SSE read ran between a frame's Commit and its stamp in 3 of 4,915 stamps, landing more than 2 ms late and at most 9.2 ms late, against a median lag of 0.02 ms: a reported 33.8 ms interval was a 24.7 ms frame plus 9.2 ms of stamp lag. The lag inflates the worst interval and adds about two frames to the over-budget count, but it never creates a stall; traced frame-end intervals are the cross-check.
+
 The next frame is requested from the callback, not from the posted task: after a long frame Chromium can begin the next one before the task runs, and requesting from the task would skip that frame.
 
 A subscriber stops by returning `true` from `painted` or `overtaken`, or by calling the function the subscription returns.
