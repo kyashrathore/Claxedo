@@ -7,7 +7,7 @@ import {
   type LineAnnotation,
   type SelectedLineRange,
 } from "@pierre/diffs"
-import { createEffect, createMemo, createSignal, For, Show, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createSelector, createSignal, For, Show, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 
 import { createDefaultOptions, styleVariables } from "./diff"
@@ -86,7 +86,9 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
   const [focusedRow, setFocusedRow] = createSignal<string | undefined>()
   const rowOf = (node: EventTarget | null) =>
     node instanceof Element ? node.closest("[data-review-header-file]")?.getAttribute("data-review-header-file") ?? undefined : undefined
-  const headerActive = (file: string) => hoveredFile() === file || focusedRow() === file
+  const hovered = createSelector(hoveredFile)
+  const focused = createSelector(focusedRow)
+  const headerActive = (file: string) => hovered(file) || focused(file)
 
   const headerHosts = new Map<string, HTMLDivElement>()
   const [headerFiles, setHeaderFiles] = createSignal<string[]>([])
