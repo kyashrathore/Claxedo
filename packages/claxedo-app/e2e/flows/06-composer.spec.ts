@@ -141,22 +141,35 @@ test("06 a file dropped on the transcript is attached to the composer", async ({
   await expect(app.getByRole("button", { name: "Remove attachment" })).toBeVisible()
 })
 
-test("06 a Claude session created on an explicit model id keeps that model in the picker and sends it", async ({ stack, api, app }) => {
+test("06 a Claude session created on an explicit model id keeps that model across a switch away and back, and sends it", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the switch goes through the desktop rail")
   const availability = await installedCli("claude")
   test.skip(!availability.available, availability.available ? "" : availability.reason)
   const workspace = await stack.daemon.makeWorkspace("explicit-model")
   const model = { providerId: "claude", modelId: "claude-haiku-4-5-20251001" }
-  const session = await api.createSession(workspace.directory, { title: "Explicit model", harness: { id: "claude", access: "native" }, model })
-  const options = app.waitForResponse((response) => response.url().includes("/agent-config/harness/options") && response.url().includes(`sessionId=${session.id}`))
-  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
-  expect((await options).ok()).toBe(true)
-
+  const haiku = await api.createSession(workspace.directory, { title: "Explicit model", harness: { id: "claude", access: "native" }, model })
+  const other = await api.createSession(workspace.directory, { title: "Elsewhere", harness: SCRIPTED_ACP_HARNESS })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const pane = (id: string) => app.locator(`[data-testid="session-page-root"][data-session-id="${id}"]`)
   const trigger = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
+  const options = app.waitForResponse((response) => response.url().includes("/agent-config/harness/options") && response.url().includes(`sessionId=${haiku.id}`))
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, haiku.id)}`)
+  expect((await options).ok()).toBe(true)
   await expect(trigger).toHaveAttribute("data-ready-for-submit", "true")
   await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku")
+
+  await rail.getByRole("button", { name: "Elsewhere", exact: true }).click()
+  await expect(pane(other.id)).toBeVisible()
+  await rail.getByRole("button", { name: "Explicit model", exact: true }).click()
+  await expect(pane(haiku.id)).toBeVisible()
+  await expect(trigger).toHaveAttribute("data-ready-for-submit", "true")
+  await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku")
+
   await sendPrompt(app, "Reply with exactly this one token: HKU")
-  await expect.poll(() => stack.scripted.requests.filter((request) => request.prompt.includes("HKU")).map((request) => request.model), { timeout: 60_000 }).toContain(model.modelId)
-  expect(stack.scripted.requests.filter((request) => request.prompt.includes("HKU")).map((request) => request.model)).not.toContain("claude-opus-5-5")
+  const sent = () => stack.scripted.requests.filter((request) => request.prompt.includes("HKU")).map((request) => request.model)
+  await expect.poll(sent, { timeout: 60_000 }).toContain(model.modelId)
+  expect(sent()).not.toContain("claude-opus-5-5")
 })
 
 test("06 a closed tooltip holds no tooltip machinery until the pointer reaches it, and then opens on hover as before", async ({ stack, api, app, isMobile }) => {
