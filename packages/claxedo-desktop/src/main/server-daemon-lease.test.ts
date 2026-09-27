@@ -141,6 +141,24 @@ describe("Claxedo daemon client lease", () => {
     }
   })
 
+  test("a daemon that dies is one lost lease and no error, and nothing reacquires it", async () => {
+    const daemon = await fakeDaemon()
+    try {
+      const onLost = mock(() => {})
+      const onError = mock(() => {})
+      await holdClaxedoDaemonLease(daemon.discovery, { onLost, onError })
+      await daemon.settle()
+      daemon.close()
+      await daemon.settle()
+
+      expect(onLost).toHaveBeenCalledTimes(1)
+      expect(onError).not.toHaveBeenCalled()
+      expect(daemon.events.filter((event) => event === "POST /api/claxedo/daemon/leases")).toHaveLength(1)
+    } finally {
+      daemon.close()
+    }
+  })
+
   test("a lease the daemon refuses is an error, not a held lease", async () => {
     const daemon = await fakeDaemon({ acquire: 409 })
     try {
