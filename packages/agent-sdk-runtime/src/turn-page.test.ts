@@ -136,6 +136,13 @@ describe("estimateTurnLines", () => {
     expect(estimateTurnLines(cancelled, { ...request, cancelledAssistantMessageId: cancelled[2].info.id })).toBe(whole)
   })
 
+  test("reasoning takes a row only when the reader shows it", () => {
+    const id = nextId("user")
+    const turn = [user(id, "Think"), assistant(id, [reasoning("Weighing it."), reasoning("And this."), text("Answer.")])]
+    expect(estimateTurnLines(turn, request)).toBe(3 + 1 + 1)
+    expect(estimateTurnLines(turn, { ...request, reasoning: true })).toBe(3 + 1 + 2 + 1)
+  })
+
   test("a part the fold never hides stays drawn under the fold row", () => {
     const id = nextId("user")
     const turn = [user(id, "Draw it"), assistant(id, [text("Working."), tool("bash"), text("Here it is."), file()]), assistant(id, [tool("bash")])]
@@ -172,6 +179,13 @@ describe("readTurnPage", () => {
     const page = await readTurnPage(turnReader(turns).read, viewport(10_000))
     expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Big", "Newest"])
     expect(drawnTexts(page.turns[0]).at(-1)).toBe(huge)
+  })
+
+  test("a read before a cursor has no byte cap, so it pages past a large turn until the viewport fills", async () => {
+    const huge = "z".repeat(TURN_PAGE_BYTE_CAP)
+    const turns = [workedTurn("Oldest", "Oldest answer."), workedTurn("Big", huge), workedTurn("Newest", "Short.")]
+    const page = await readTurnPage(turnReader(turns).read, { ...viewport(10_000), before: "cursor-2" })
+    expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Oldest", "Big"])
   })
 
   test("an empty session has an empty page", async () => {

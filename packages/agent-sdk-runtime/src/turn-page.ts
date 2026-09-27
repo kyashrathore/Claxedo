@@ -17,7 +17,7 @@ import type { TurnOutline } from "./turn-outline"
 /** The most turns a page carries, however short they are. */
 export const TURN_PAGE_TURN_CAP = 24
 
-/** A page stops taking turns once it holds this many bytes; the turn that crosses it is still sent whole. */
+/** A cold page stops taking turns once it holds this many bytes; the turn that crosses it is still sent whole. */
 export const TURN_PAGE_BYTE_CAP = 256 * 1024
 
 /** A page fills the viewport and this many screens more, counted in viewport heights. */
@@ -203,7 +203,7 @@ export function estimateTurnLines(messages: readonly AgentMessage[], request: Li
   const prompt = textLines(visiblePromptText(user), Math.max(1, Math.floor(request.cols * USER_BUBBLE_SHARE)))
   const compaction = user.parts.some((part) => part.type === "compaction")
   const drawn = drawnAssistants(rest.filter(isAssistant), request, compaction)
-  return TURN_CHROME_LINES + prompt + (drawn.folded ? FOLD_ROW_LINES : 0) + drawnGroupLines(drawn.assistants, request.cols, true)
+  return TURN_CHROME_LINES + prompt + (drawn.folded ? FOLD_ROW_LINES : 0) + drawnGroupLines(drawn.assistants, request.cols, request.reasoning)
 }
 
 const encoder = new TextEncoder()
@@ -211,13 +211,15 @@ const encoder = new TextEncoder()
 /**
  * The turns before `request.before` (from the newest without it), read one
  * whole turn at a time until their estimated lines cover the viewport and
- * `TURN_PAGE_FILL_SCREENS` more, or the page reaches its turn or byte cap. The
- * caps only decide how many turns are sent; a message or part is never
- * trimmed.
+ * `TURN_PAGE_FILL_SCREENS` more, or the page reaches its turn cap. A cold
+ * read, one without `before`, also stops at its byte cap; a scroll page has
+ * none, because byte bounds belong to the cold fetch alone. The caps only
+ * decide how many turns are sent; a message or part is never trimmed.
  */
 export async function readTurnPage(read: TurnRead, request: TurnPageRequest): Promise<TurnPage> {
   const turns: PageTurn[] = []
   const wanted = request.rows * (1 + TURN_PAGE_FILL_SCREENS)
+  const byteCap = request.before === undefined ? TURN_PAGE_BYTE_CAP : Number.POSITIVE_INFINITY
   let lines = 0
   let bytes = 0
   let before = request.before
@@ -229,7 +231,7 @@ export async function readTurnPage(read: TurnRead, request: TurnPageRequest): Pr
     lines += estimateTurnLines(page.messages, request)
     bytes += encoder.encode(JSON.stringify(sent.messages)).byteLength
     before = page.nextCursor
-  } while (before !== undefined && lines < wanted && turns.length < TURN_PAGE_TURN_CAP && bytes < TURN_PAGE_BYTE_CAP)
+  } while (before !== undefined && lines < wanted && turns.length < TURN_PAGE_TURN_CAP && bytes < byteCap)
   return { turns }
 }
 
