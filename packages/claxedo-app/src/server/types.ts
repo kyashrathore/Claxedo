@@ -101,7 +101,13 @@ export type SessionStatus =
   | { readonly kind: "recovering"; readonly reason: "processRestart" | "uncertainExecution"; readonly message: string }
   | { readonly kind: "failed"; readonly error: AppError }
 
-export type SessionRow = {
+export type SessionSelections = {
+  readonly harness?: HarnessSelection
+  readonly model?: ModelChoice
+  readonly permissionMode?: string
+}
+
+export type SessionRow = SessionSelections & {
   readonly ref: SessionRef
   readonly title: string
   readonly createdAt: number
@@ -109,8 +115,6 @@ export type SessionRow = {
   readonly lastHumanTurnAt?: number
   readonly archivedAt?: number
   readonly parentSessionId?: SessionId
-  readonly harness?: HarnessSelection
-  readonly model?: ModelChoice
   readonly lastTurn?: AgentTurnOutcome
 }
 
@@ -258,7 +262,6 @@ export type HarnessInfo = {
   readonly unavailableReason?: string
   readonly models: readonly ModelChoice[]
   readonly efforts: readonly string[]
-  readonly permissionModes: readonly string[]
   readonly goalMode: "native" | "evaluated" | "none"
 }
 

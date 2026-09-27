@@ -99,6 +99,7 @@ export function Composer(props: ComposerProps) {
       permissionGroups={composer.permissionMode.groups}
       permissionCurrent={composer.permissionMode.current}
       onPermissionSelect={composer.permissionMode.select}
+      onPermissionOpen={composer.permissionMode.openModes}
       harnessController={() => composer.harnessController}
       harnessScope={composer.key}
       harnessScopeInput={composer.harnessScopeInput}

@@ -1,6 +1,12 @@
 import type { HarnessSelection } from "../lib/harness-selection"
 
-export type HarnessOptionChoice = { readonly id: string; readonly name: string; readonly description?: string; readonly connected?: boolean }
+export type HarnessOptionChoice = {
+  readonly id: string
+  readonly name: string
+  readonly description?: string
+  readonly connected?: boolean
+  readonly resolvedModel?: string
+}
 
 export type HarnessOptionSelect = { readonly choices: readonly HarnessOptionChoice[]; readonly current?: string }
 
@@ -28,6 +34,7 @@ export type SessionConfig = {
   readonly harness?: HarnessState
   readonly model: { readonly modelId: string | null; readonly providerId?: string | null } | null
   readonly variant?: string
+  readonly permissionMode?: string
 }
 
 

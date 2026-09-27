@@ -12,6 +12,7 @@ describe("modelConfigOption", () => {
     const option = modelConfigOption(models, "claude-haiku-4-5-20251001")
     expect(option.currentValue).toBe("haiku")
     expect(option.selectOptions?.map((item) => item.id)).toEqual(["default", "sonnet", "haiku"])
+    expect(option.selectOptions?.find((item) => item.id === "haiku")?.resolvedModel).toBe("claude-haiku-4-5-20251001")
   })
 
   test("a listed id is current as itself, and no model or an unknown one is current on the default row", () => {

@@ -1,10 +1,11 @@
 import { harnessHasConfigOptions, type HarnessType } from "./profile"
+import { sameHarnessSelection } from "@/lib/harness-selection"
 import type { HarnessStoreState } from "./store-state"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultApplication } from "./draft-default-policy"
-import type { HarnessState, ModelChoice, PlacementId, PlacementKind, SessionConfig, SessionRef } from "@/server"
+import type { HarnessState, PlacementId, PlacementKind } from "@/server"
 import {
-  harnessStateFromSessionConfig,
+  sessionHarnessState,
   shouldHydrateDraftFromHarnessStatus,
   type HarnessScopeInput,
 } from "./store-policy"
@@ -16,7 +17,6 @@ export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getPending(scope: string): Promise<void> | undefined
   setPending(scope: string, value: Promise<void>): void
   removePending(scope: string, value: Promise<void>): void
-  fetchSessionConfig(params: ScopeInput, run: () => Promise<SessionConfig | undefined>): Promise<SessionConfig | undefined>
 }
 
 type HydratorInput<ScopeInput extends HarnessScopeInput> = {
@@ -29,7 +29,6 @@ type HydratorInput<ScopeInput extends HarnessScopeInput> = {
   markServer?(scope: string): void
   applyStatus(scope: string, data: HarnessState, params?: ScopeInput): Promise<void>
   setPollingHydration(scope: string, type?: HarnessType): void
-  setKnownHydration(scope: string, type: HarnessType, model?: ModelChoice): void
   setReadyHydration(scope: string, type: HarnessType, hasConfigOptions?: boolean): void
   setCapabilityError?(scope: string, message: string): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): Promise<unknown> | void
@@ -37,7 +36,6 @@ type HydratorInput<ScopeInput extends HarnessScopeInput> = {
   runtime: {
     placementKind(placementId: PlacementId): PlacementKind | undefined
     folderHarness(placementId: PlacementId): Promise<HarnessState | undefined>
-    sessionConfig(ref: SessionRef): Promise<SessionConfig | undefined>
   }
   cache: HarnessHydratorCache<ScopeInput>
 }
@@ -120,12 +118,15 @@ async function hydrateDraft<ScopeInput extends HarnessScopeInput>(input: Hydrato
 }
 
 async function hydrateSessionHarness<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, run: Run<ScopeInput>) {
-  const known = run.params.sessionHarness
-  if (known && !input.state(run.scope)?.harness) input.setKnownHydration(run.scope, known, run.params.sessionModel?.())
-  const data = await readHarnessStatus(input, run.params)
-  if (!run.active()) return
-  if (data) return applyAndMarkSeen(input, run, data)
-  input.setPollingHydration(run.scope, run.params.sessionHarness)
+  const type = run.params.sessionHarness
+  if (!type) return input.setPollingHydration(run.scope)
+  const model = run.params.sessionModel?.()
+  const current = input.state(run.scope)
+  if (current?.harness && sameHarnessSelection(current.harness, type) && current.selectedModel === (model?.modelId ?? "") && input.cache.getSeen(run.scope) !== undefined) {
+    input.cache.setSeen(run.scope, run.key)
+    return
+  }
+  return applyAndMarkSeen(input, run, sessionHarnessState(type, model))
 }
 
 async function applyAndMarkSeen<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, run: Run<ScopeInput>, data: HarnessState) {
@@ -155,30 +156,15 @@ async function probeConfigOptions<ScopeInput extends HarnessScopeInput>(input: H
 function readHarnessStatus<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, params: ScopeInput): Promise<HarnessState | undefined> {
   const placementId = params.placementId
   if (!placementId) return Promise.resolve(undefined)
-  if (params.sessionId && params.sessionId !== "new") return readSessionHarness(input, params)
   return input.runtime.folderHarness(placementId).catch((error: unknown) => {
     console.warn(`The harness status of placement ${placementId} could not be read`, error)
     return undefined
   })
 }
 
-async function readSessionHarness<ScopeInput extends HarnessScopeInput>(input: HydratorInput<ScopeInput>, params: ScopeInput): Promise<HarnessState | undefined> {
-  const ref = params.sessionRef
-  if (!ref) return undefined
-  const config = await input.cache.fetchSessionConfig(params, () => input.runtime.sessionConfig(ref)).catch((error: unknown) => {
-    console.warn(`The harness config of session ${ref.sessionId} could not be read`, error)
-    return null
-  })
-  const hit = config ? harnessStateFromSessionConfig(config) : undefined
-  if (hit) return hit
-  const refType = params.sessionHarness
-  if (refType && config) return { type: refType, activeType: refType, ready: false, status: "error", error: "Session harness configuration is unavailable" }
-  return undefined
-}
-
 function scopeStamp(input?: HarnessScopeInput) {
   if (input?.sessionId && input.sessionId !== "new") {
-    return [`session:${input.sessionId}`, input.placementId ?? "", input.sessionHarness ? JSON.stringify(input.sessionHarness) : ""].join("\n")
+    return [`session:${input.sessionId}`, input.placementId ?? "", input.sessionHarness ? JSON.stringify(input.sessionHarness) : "", input.sessionModel?.()?.modelId ?? ""].join("\n")
   }
   return `${input?.placementId ?? ""}\nnew`
 }

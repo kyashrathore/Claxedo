@@ -66,6 +66,77 @@ test("08 the permission chip shows the mode the harness reports and delivers a p
   await expect(chip).toHaveText("Plan")
 })
 
+test("08 a cold switch to a session names its permission mode from the session row, with no mode or config read", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the switch goes through the desktop rail")
+  const availability = await installedCli("claude")
+  test.skip(!availability.available, availability.available ? "" : availability.reason)
+  const workspace = await stack.daemon.makeWorkspace("permission-row")
+  const planned = await api.createSession(workspace.directory, { title: "Planned", harness: { id: "claude", access: "native" }, permissionMode: "plan" })
+  const other = await api.createSession(workspace.directory, { title: "Elsewhere", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, other.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  const reads: string[] = []
+  app.on("request", (request) => {
+    const path = new URL(request.url()).pathname
+    if (request.method() === "GET" && (/\/permission-mode$|\/permission\/modes$/.test(path) || path.endsWith(`/session/${planned.id}/config`))) reads.push(path)
+  })
+
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Planned", exact: true }).click()
+  await expect(app.locator(`[data-testid="session-page-root"][data-session-id="${planned.id}"]`)).toBeVisible()
+  const chip = app.locator('[data-action="prompt-permission-mode"]').filter({ visible: true })
+  await expect(chip).toHaveText("Plan")
+  await expect(chip).toHaveAttribute("data-mode", "plan")
+  expect(reads).toEqual([])
+})
+
+test("08 a permission mode picked in one browser reaches the chip of another browser on the same session", async ({ stack, api, app, browser, isMobile }) => {
+  test.skip(isMobile, "the chip collapses to its shield on phone")
+  const availability = await installedCli("claude")
+  test.skip(!availability.available, availability.available ? "" : availability.reason)
+  const workspace = await stack.daemon.makeWorkspace("permission-two-clients")
+  const session = await api.createSession(workspace.directory, { title: "Shared mode", harness: { id: "claude", access: "native" } })
+  const other = await (await browser.newContext()).newPage()
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await other.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const chip = (page: typeof app) => page.locator('[data-action="prompt-permission-mode"]').filter({ visible: true })
+  await expect(chip(app)).toHaveText("Auto")
+  await expect(chip(other)).toHaveText("Auto")
+
+  await chip(app).click()
+  const saved = app.waitForResponse((response) => response.request().method() === "PUT" && response.url().includes("/permission-mode"))
+  await app.getByRole("menu").getByRole("menuitem", { name: /^Plan/ }).click()
+  expect((await saved).ok()).toBe(true)
+  await expect(chip(app)).toHaveText("Plan")
+  await expect(chip(other)).toHaveText("Plan")
+  await other.context().close()
+})
+
+test("08 a harness switch mid-session moves the chip to the new harness, whose modes are read when it opens", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the chip collapses to its shield on phone")
+  const availability = await installedCli("claude")
+  test.skip(!availability.available, availability.available ? "" : availability.reason)
+  const workspace = await stack.daemon.makeWorkspace("permission-harness-switch")
+  const session = await api.createSession(workspace.directory, { title: "Switching", harness: { id: "claude", access: "native" }, permissionMode: "plan" })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const chip = app.locator('[data-action="prompt-permission-mode"]').filter({ visible: true })
+  const picker = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
+  await expect(chip).toHaveText("Plan")
+
+  await picker.click()
+  await app.getByRole("button", { name: /^Harness/ }).click()
+  await app.getByRole("button", { name: "Scripted ACP" }).click()
+  await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
+  await app.keyboard.press("Escape")
+  await sendPrompt(app, "Continue on the scripted agent")
+  await expect.poll(async () => JSON.stringify(await api.session(workspace.directory, session.id))).toContain('"harness":{"id":"scripted-acp","access":"connection"}')
+  await expect(chip).not.toHaveText("Plan")
+
+  const listed = app.waitForResponse((response) => response.request().method() === "GET" && response.url().includes(`/session/${session.id}/permission-mode`))
+  await chip.click()
+  expect((await listed).ok()).toBe(true)
+  await expect(app.getByRole("menu").getByRole("menuitem", { name: /^Default/ })).toBeVisible()
+})
+
 test("08 Stop settles a pending question: the dock goes away and nothing is left to dismiss", async ({ stack, api, app, isMobile }) => {
   test.skip(isMobile, "flow 8's question cases run at desktop width")
   const availability = await installedCli("claude")

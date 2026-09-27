@@ -1,4 +1,4 @@
-import type { HarnessState, ModelChoice } from "@/server"
+import type { HarnessState } from "@/server"
 import {
   failedHarness,
   hardFailedHarness,
@@ -7,7 +7,6 @@ import {
 } from "./profile"
 import {
   harnessStatusPatch,
-  knownHarnessHydrationPatch,
   pollingHarnessHydrationPatch,
   readyHarnessHydrationPatch,
   type HarnessStorePatch,
@@ -30,7 +29,6 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   return {
     applyStatus: (scope: string, data: HarnessState, params?: ScopeInput) => applyStatus(input, scope, data, params),
     setPollingHydration: (scope: string, type?: HarnessType) => input.applyPatch(scope, pollingHarnessHydrationPatch(type)),
-    setKnownHydration: (scope: string, type: HarnessType, model?: ModelChoice) => input.applyPatch(scope, knownHarnessHydrationPatch(type, model)),
     setReadyHydration: (scope: string, type: HarnessType, hasConfigOptions?: boolean) =>
       input.applyPatch(scope, readyHarnessHydrationPatch(type, hasConfigOptions)),
   }

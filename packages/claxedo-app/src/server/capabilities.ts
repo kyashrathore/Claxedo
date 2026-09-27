@@ -24,7 +24,6 @@ function harnessInfo(id: string, availability: Availability): HarnessInfo {
     ...(availability.reason ? { unavailableReason: availability.reason } : {}),
     models: [],
     efforts: [...HARNESS_EFFORT_LEVELS],
-    permissionModes: [],
     goalMode: GOAL_MODES[id] ?? "none",
   }
 }

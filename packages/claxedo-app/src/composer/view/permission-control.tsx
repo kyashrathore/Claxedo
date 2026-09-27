@@ -5,7 +5,6 @@ import {
   type PermissionModeOption,
 } from "../permission/modes"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon, DropdownMenu, Tooltip } from "@/ui"
-import { holdPaneReveal } from "@/workbench"
 
 export function PromptPermissionControl(props: {
   enabled: Accessor<boolean>
@@ -15,14 +14,14 @@ export function PromptPermissionControl(props: {
   current: Accessor<PermissionModeOption | undefined>
   label: string
   onSelect: (option: PermissionModeOption) => void
+  onOpen: () => void
 }) {
   const triggerText = () => props.current()?.name ?? "Permissions"
-  holdPaneReveal(() => props.enabled() && props.groups()?.harness.loading === true)
   const shieldActive = () => props.current() !== undefined
 
   return (
     <Show when={props.enabled()}>
-      <DropdownMenu placement="top-start" gutter={8} fitViewport>
+      <DropdownMenu placement="top-start" gutter={8} fitViewport onOpenChange={(open) => open && props.onOpen()}>
         <Tooltip
           placement="top"
           value={props.current()?.description ?? props.groups()?.harness.unavailable ?? props.label}

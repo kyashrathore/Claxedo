@@ -46,3 +46,14 @@ test("options state: a live connection without a model option runs on the model 
   const silent = applyHarnessOptionsResponse({ type: gateway, payload: live({ offersOptions: false }) })
   expect(silent.patch.configError).toBe("No model options available")
 })
+
+test("options state: a session keeps its model when the catalog lists it only as an alias's resolved model", () => {
+  const catalog = { choices: [{ id: "default", name: "Default (recommended)" }, { id: "haiku", name: "Haiku", resolvedModel: "claude-haiku-4-5-20251001" }], current: "default" }
+  const { patch } = applyHarnessOptionsResponse({ type: nativeHarness("claude"), selectedModel: "claude-haiku-4-5-20251001", sessionModel: true, payload: live({ models: catalog }) })
+  expect(patch).toMatchObject({ selectedModel: "claude-haiku-4-5-20251001", configError: undefined })
+})
+
+test("options state: a session keeps a model its catalog no longer lists, and names it unavailable", () => {
+  const { patch } = applyHarnessOptionsResponse({ type: codex, selectedModel: "gone", sessionModel: true, payload: live({ models }) })
+  expect(patch).toMatchObject({ selectedModel: "gone", configError: "Selected model unavailable" })
+})

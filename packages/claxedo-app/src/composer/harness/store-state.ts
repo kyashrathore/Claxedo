@@ -112,16 +112,6 @@ export function readyHarnessHydrationPatch(type: HarnessType, hasConfigOptions =
   }
 }
 
-export function knownHarnessHydrationPatch(type: HarnessType, model?: ModelChoice): HarnessStorePatch {
-  return {
-    harness: type,
-    harnessMode: harnessMode(type),
-    selectedModel: model?.modelId ?? "",
-    selectedModelProvider: model?.providerId,
-    selectedThoughtLevel: model?.variant,
-  }
-}
-
 export function pollingHarnessHydrationPatch(type?: HarnessType): HarnessStorePatch {
   return {
     ...(type

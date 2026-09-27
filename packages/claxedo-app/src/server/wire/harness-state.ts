@@ -68,5 +68,6 @@ export function sessionConfigFromWire(value: unknown): SessionConfig | undefined
       ? { modelId: model.modelID, ...(typeof model.providerID === "string" || model.providerID === null ? { providerId: model.providerID } : {}) }
       : null,
     ...(typeof row.variant === "string" && row.variant ? { variant: row.variant } : {}),
+    ...(typeof row.permissionMode === "string" && row.permissionMode ? { permissionMode: row.permissionMode } : {}),
   }
 }

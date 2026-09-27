@@ -179,7 +179,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   commitDeltasWhileShown(view)
-  holdPaneReveal(() => view().state().kind === "loading")
+  holdPaneReveal(() => view().state().kind === "loading" || view().outline().kind === "loading")
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined

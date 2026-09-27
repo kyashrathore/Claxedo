@@ -10,6 +10,7 @@ function selectOption(value: unknown): HarnessOptionChoice | undefined {
     name: value.name,
     ...(typeof value.description === "string" ? { description: value.description } : {}),
     ...(typeof value.connected === "boolean" ? { connected: value.connected } : {}),
+    ...(typeof value.resolvedModel === "string" && value.resolvedModel ? { resolvedModel: value.resolvedModel } : {}),
   }
 }
 

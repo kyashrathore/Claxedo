@@ -1,4 +1,4 @@
-import type { ModelChoice } from "@/server"
+import { sameModelKey, type ModelChoice } from "@/server"
 
 export type ModelSelectionSource = "ui" | "agent"
 
@@ -22,11 +22,6 @@ export type ModelSelectionWriter = {
 export type ModelSelectionResult =
   | { readonly changed: true; readonly model: ModelChoice | undefined; readonly source: ModelSelectionSource }
   | { readonly changed: false; readonly model: ModelChoice | undefined; readonly source: ModelSelectionSource; readonly reason: "unchanged" | "pending" }
-
-export function sameModelKey(left: ModelChoice | undefined, right: ModelChoice | undefined) {
-  if (!left || !right) return left === right
-  return left.providerId === right.providerId && left.modelId === right.modelId && left.variant === right.variant
-}
 
 export function modelKeySignature(model: ModelChoice | undefined) {
   if (!model) return "none"

@@ -45,6 +45,9 @@ export function harnessModels(
   if (state.dynamicModels?.length) {
     if (!raw || state.dynamicModels.some((item) => item.id === raw)) return [...state.dynamicModels]
     if (isClientDefaultPlaceholder(raw)) return [...state.dynamicModels]
+    if (state.dynamicModels.some((item) => item.resolvedModel === raw)) {
+      return state.dynamicModels.map((item) => (item.resolvedModel === raw ? { ...item, id: raw } : item))
+    }
     return [
       { id: raw, name: raw, providerId: state.selectedModelProvider },
       ...state.dynamicModels,

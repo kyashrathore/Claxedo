@@ -30,6 +30,7 @@ export type PromptToolbarProps = {
   permissionGroups: Accessor<PermissionModeGroups | undefined>
   permissionCurrent: Accessor<PermissionModeOption | undefined>
   onPermissionSelect: (option: PermissionModeOption) => void
+  onPermissionOpen: () => void
   harnessController: Accessor<HarnessSelectionController | undefined>
   harnessScope: Accessor<string>
   harnessScopeInput: Accessor<HarnessScopeInput>
@@ -121,6 +122,7 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         permissionGroups={props.permissionGroups}
         permissionCurrent={props.permissionCurrent}
         onPermissionSelect={props.onPermissionSelect}
+        onPermissionOpen={props.onPermissionOpen}
         approveTitle={props.t("prompt.action.approveForMe")}
         mode={props.mode}
         harnessPending={props.harnessPending}

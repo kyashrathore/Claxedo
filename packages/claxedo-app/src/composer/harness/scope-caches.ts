@@ -37,7 +37,6 @@ function hydratorCache(): HarnessHydratorCache<HarnessScopeInput> {
     getPending: hydrations.get,
     setPending: hydrations.set,
     removePending: hydrations.remove,
-    fetchSessionConfig: (_params, run) => run(),
   }
 }
 

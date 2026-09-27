@@ -1,4 +1,4 @@
-import type { HarnessState, ModelChoice, PlacementId, PlacementKind, SessionConfig, SessionRef, SessionRow, TranscriptMessage } from "@/server"
+import type { HarnessState, ModelChoice, PlacementId, PlacementKind, SessionRef, SessionRow, TranscriptMessage } from "@/server"
 import { harnessHasConfigOptions, harnessSelectionId, isCatalogHarness, type HarnessType } from "./profile"
 
 export type HarnessScopeInput = {
@@ -31,19 +31,14 @@ export function shouldHydrateDraftFromHarnessStatus(input: { placementKind?: Pla
   return input.placementKind !== undefined && input.placementKind !== "cloud"
 }
 
-export function harnessStateFromSessionConfig(input: SessionConfig): HarnessState | undefined {
-  const harness = input.harness
-  const type = harness?.type
-  if (!harness || !type) return undefined
+export function sessionHarnessState(type: HarnessType, model: ModelChoice | undefined): HarnessState {
   return {
-    ...harness,
     type,
-    model: harness.model ?? input.model?.modelId ?? undefined,
-    modelProviderId: harness.modelProviderId ?? input.model?.providerId ?? undefined,
-    ...(input.variant ? { thoughtLevel: input.variant } : {}),
+    activeType: type,
+    ...(model ? { model: model.modelId, modelProviderId: model.providerId } : {}),
+    ...(model?.variant ? { thoughtLevel: model.variant } : {}),
     status: "ready",
     ready: true,
-    activeType: type,
   }
 }
 

@@ -1,7 +1,7 @@
 import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
-import type { ListedStatus, ModelChoice, SessionRef, SessionRow } from "../types"
+import type { ListedStatus, ModelChoice, SessionRef, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
 
 export type Address = {
@@ -38,12 +38,13 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
   }
 }
 
-function configuredSelection(info: AgentSession & { readonly config?: unknown }): Pick<SessionRow, "harness" | "model"> {
+function configuredSelection(info: AgentSession & { readonly config?: unknown }): SessionSelections {
   const config = sessionConfigFromWire(info.config)
   const harness = config?.harness?.type
   const { modelId, providerId } = config?.model ?? {}
   const model: ModelChoice | undefined = modelId && providerId ? { providerId, modelId, ...(config?.variant ? { variant: config.variant } : {}) } : undefined
-  return { ...(harness ? { harness } : {}), ...(model ? { model } : {}) }
+  const permissionMode = config?.permissionMode
+  return { ...(harness ? { harness } : {}), ...(model ? { model } : {}), ...(permissionMode ? { permissionMode } : {}) }
 }
 
 export function sessionRowFromSession(info: AgentSession, ref: SessionRef): SessionRow {

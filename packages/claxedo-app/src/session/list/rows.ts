@@ -1,4 +1,5 @@
-import type { ProjectId, SessionId, SessionRef, SessionRow } from "@/server"
+import { sameHarnessSelection } from "@/lib/harness-selection"
+import { sameModelKey, type ProjectId, type SessionId, type SessionRef, type SessionRow, type SessionSelections } from "@/server"
 import {
   WINDOW_ALL,
   compareOrder,
@@ -26,8 +27,29 @@ function setEntry<S extends ListData>(data: S, id: SessionId, entry: ListEntry):
   return withEntries(data, entries)
 }
 
-function keptSend(send: PendingSend | undefined, row: SessionRow): PendingSend | undefined {
-  return send && row.updatedAt <= send.updatedBefore ? send : undefined
+type SelectionKey = keyof SessionSelections
+
+const sameSelection: { readonly [K in SelectionKey]: (a: SessionSelections[K], b: SessionSelections[K]) => boolean } = {
+  harness: sameHarnessSelection,
+  model: sameModelKey,
+  permissionMode: (a, b) => a === b,
+}
+
+const sameSelectionField = <K extends SelectionKey>(key: K, a: SessionSelections, b: SessionSelections) => sameSelection[key](a[key], b[key])
+
+function sameSelections(a: SessionSelections, b: SessionSelections): boolean {
+  return (Object.keys(sameSelection) as SelectionKey[]).every((key) => sameSelectionField(key, a, b))
+}
+
+const sameTurn = (a: SessionRow["lastTurn"], b: SessionRow["lastTurn"]) => a?.status === b?.status && a?.completedAt === b?.completedAt
+
+function onlySelectionsMoved(held: SessionRow, row: SessionRow): boolean {
+  return row.lastHumanTurnAt === held.lastHumanTurnAt && sameTurn(row.lastTurn, held.lastTurn) && !sameSelections(held, row)
+}
+
+function keptSend(send: PendingSend | undefined, held: SessionRow, row: SessionRow): PendingSend | undefined {
+  if (!send || row.updatedAt <= send.updatedBefore) return send
+  return onlySelectionsMoved(held, row) ? send : undefined
 }
 
 export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
@@ -37,7 +59,7 @@ export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
   if (current?.kind !== "confirmed") return setEntry(data, id, { kind: "confirmed", row })
   const next = newerRow(current.row, row)
   if (!next) return data
-  return setEntry(data, id, { kind: "confirmed", row: next, pendingSend: keptSend(current.pendingSend, next) })
+  return setEntry(data, id, { kind: "confirmed", row: next, pendingSend: keptSend(current.pendingSend, current.row, next) })
 }
 
 export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {

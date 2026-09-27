@@ -1,5 +1,4 @@
 import { fetchQuery } from "./fetch-query"
-import { permissionModeQueries } from "./permission-modes"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
@@ -33,7 +32,6 @@ export async function readHarnessOptions(transport: Transport, workspaces: Works
 
 export function harnessQueries(transport: Transport, workspaces: Workspaces) {
   return {
-    ...permissionModeQueries(transport, workspaces),
     options: (placementId: PlacementId, harness: string): FetchQuery<HarnessOptions> =>
       fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, { placementId, harness })),
   }

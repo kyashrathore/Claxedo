@@ -50,8 +50,6 @@ export const freshness = {
   folderPaths: { kind: "once", reason: "the folder picker's starting paths are read once; nothing in this app refreshes them" },
   folderChildren: { kind: "once", reason: "the folder picker lists a directory once; a folder created outside the app is missed until restart" },
   harnessOptions: { kind: "once", reason: "a harness's agent and model options for a placement are read once; nothing in this app refreshes them" },
-  sessionPermissionModes: { kind: "once", reason: "a session's permission modes are written by this app's mode changes and re-read when its harness changes" },
-  draftPermissionModes: { kind: "once", reason: "a draft's permission modes depend on the placement and harness alone; nothing in this app refreshes them" },
   integrations: { kind: "once", reason: "the integration catalog changes through this app's connects and disconnects, which invalidate it" },
   agentConnections: { kind: "once", reason: "agent connections change through this app's removals, which invalidate the list" },
   sandboxProviders: { kind: "once", reason: "the sandbox provider catalog changes through this app's key saves, which write the result" },

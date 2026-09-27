@@ -353,6 +353,8 @@ export type AgentConfigOption = {
     description?: string
     value?: unknown
     connected?: boolean
+    /** The full model id an alias row runs (`haiku` runs `claude-haiku-4-5-20251001`). */
+    resolvedModel?: string
     harnessPayload?: unknown
   }>
   harnessPayload?: unknown

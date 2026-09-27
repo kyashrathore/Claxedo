@@ -151,6 +151,6 @@ export function modelConfigOption(models: readonly SdkModelEntry[], currentModel
     currentValue: current,
     selectOptions: models
       .filter((item) => !item.hidden || item.id === current)
-      .map(({ isDefault: _isDefault, hidden: _hidden, resolvedModel: _resolvedModel, ...item }) => ({ ...item })),
+      .map(({ isDefault: _isDefault, hidden: _hidden, ...item }) => ({ ...item })),
   }
 }

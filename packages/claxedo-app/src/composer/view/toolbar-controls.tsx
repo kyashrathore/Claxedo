@@ -33,6 +33,7 @@ export function PromptToolbarControls(props: {
   permissionGroups: Accessor<PermissionModeGroups | undefined>
   permissionCurrent: Accessor<PermissionModeOption | undefined>
   onPermissionSelect: (option: PermissionModeOption) => void
+  onPermissionOpen: () => void
   mode: Accessor<"normal" | "shell">
   harnessPending: Accessor<boolean>
   harnessController: Accessor<HarnessSelectionController | undefined>
@@ -89,6 +90,7 @@ export function PromptToolbarControls(props: {
         current={props.permissionCurrent}
         label={props.approveTitle}
         onSelect={props.onPermissionSelect}
+        onOpen={props.onPermissionOpen}
       />
       <Show when={props.goalArmed()}>
         <PromptGoalToggle

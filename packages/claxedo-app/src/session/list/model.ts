@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, ListedStatus, ProjectId, SessionId, SessionRef, SessionRow, SessionStatus } from "@/server"
+import type { AppError, ListedStatus, ProjectId, SessionId, SessionRef, SessionRow, SessionSelections, SessionStatus } from "@/server"
 
 export type PendingSend = {
   readonly clientRequestId: string
@@ -167,18 +167,29 @@ function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | und
   return Math.max(current.lastHumanTurnAt, incoming.lastHumanTurnAt)
 }
 
+function withSelections(row: SessionRow, from: SessionSelections): SessionRow {
+  const { harness: _harness, model: _model, permissionMode: _permissionMode, ...rest } = row
+  return {
+    ...rest,
+    ...(from.harness ? { harness: from.harness } : {}),
+    ...(from.model ? { model: from.model } : {}),
+    ...(from.permissionMode ? { permissionMode: from.permissionMode } : {}),
+  }
+}
+
 export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
   if (incoming.updatedAt < current.updatedAt) return undefined
   const lastHumanTurnAt = laterHumanTurn(current, incoming)
   const lastTurn = incoming.lastTurn ?? current.lastTurn
   const configured = incoming.harness || !current.harness ? incoming : current
   if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt && incoming.lastTurn === lastTurn && configured === incoming) return incoming
-  return {
-    ...incoming,
-    createdAt: current.createdAt,
-    ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }),
-    ...(lastTurn === undefined ? {} : { lastTurn }),
-    ...(configured.harness ? { harness: configured.harness } : {}),
-    ...(configured.model ? { model: configured.model } : {}),
-  }
+  return withSelections(
+    {
+      ...incoming,
+      createdAt: current.createdAt,
+      ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }),
+      ...(lastTurn === undefined ? {} : { lastTurn }),
+    },
+    configured,
+  )
 }

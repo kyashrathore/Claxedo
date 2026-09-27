@@ -37,6 +37,7 @@ export function wireOptionsLoader({ api, store, caches }: HarnessWiring) {
     selectedThoughtLevel: (scope) => store.state(scope)?.selectedThoughtLevel,
     modelOptional: store.canOmitModel,
     preserveSelectedModel: store.protectDraftModel,
+    sessionModel: store.holdsSessionModel,
     seed: store.seed,
     applyPatch: store.applyPatch,
     draftDefaultApplication: store.draftDefaultApplication,
@@ -63,7 +64,6 @@ export function wireHydrator(wiring: HarnessWiring, fetchConfigOptions: FetchCon
     markServer: store.markServer,
     applyStatus: statusActions.applyStatus,
     setPollingHydration: statusActions.setPollingHydration,
-    setKnownHydration: statusActions.setKnownHydration,
     setReadyHydration: statusActions.setReadyHydration,
     setCapabilityError: (scope, message) => store.applyPatch(scope, { configError: message, readiness: "error", optionsLoading: false }),
     fetchConfigOptions,
@@ -71,7 +71,6 @@ export function wireHydrator(wiring: HarnessWiring, fetchConfigOptions: FetchCon
     runtime: {
       placementKind: (placementId) => server.placements.byId(placementId)?.kind,
       folderHarness: (placementId) => api.folderHarness(placementId),
-      sessionConfig: api.sessionConfig,
     },
     cache: wiring.caches.hydrator,
   })

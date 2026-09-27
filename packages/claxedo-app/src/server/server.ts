@@ -117,7 +117,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     providerConnect: createProviderConnectApi(transport, queryClient),
     providerCatalogs: createProviderCatalogsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
-    harnessConfig: createHarnessConfigApi(transport, workspaces, queryClient),
+    harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,
     operation: createOperations(transport, account).run,
   }

@@ -62,6 +62,52 @@ test("a session's saved harness and model survive a newer row that does not carr
   expect(next?.kind === "confirmed" ? [next.row.harness, next.row.model] : undefined).toEqual([nativeHarness("codex"), undefined])
 })
 
+test("a session read older than the row it meets never rolls back the row's selections", () => {
+  const selected = { ...row(ALPHA, "a1", 30), updatedAt: 50, harness: nativeHarness("claude"), model: { providerId: "claude", modelId: "default" }, permissionMode: "plan" }
+  const listed = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [selected])]) })
+  const stale = run(listed, { type: "rowRead", row: { ...selected, updatedAt: 45, permissionMode: "default" } })
+  const entry = stale.kind === "live" ? stale.entries.get(sessionId("a1")) : undefined
+  expect(entry?.kind === "confirmed" ? [entry.row.updatedAt, entry.row.permissionMode] : undefined).toEqual([50, "plan"])
+})
+
+test("a session read older than the row it meets gives the row none of its selections", () => {
+  const listed = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [{ ...row(ALPHA, "a1", 30), updatedAt: 50 }])]) })
+  const stale = run(listed, { type: "rowRead", row: { ...row(ALPHA, "a1", 30), updatedAt: 45, harness: nativeHarness("claude"), permissionMode: "plan" } })
+  const entry = stale.kind === "live" ? stale.entries.get(sessionId("a1")) : undefined
+  expect(entry?.kind === "confirmed" ? [entry.row.updatedAt, entry.row.harness, entry.row.permissionMode] : undefined).toEqual([50, undefined, undefined])
+})
+
+test("an unsigned send that changes the session's mode keeps its place through the mode write and returns to the server's place when its turn starts", () => {
+  const listed = run(
+    initialListState,
+    { type: "fetchStarted" },
+    { type: "fetched", window: window([page(ALPHA, [row(ALPHA, "a2", 50, 50), { ...row(ALPHA, "a1", 30, 30), harness: nativeHarness("claude"), permissionMode: "default" }])]) },
+    { type: "sendStarted", sessionId: sessionId("a1"), clientRequestId: "send-1", at: 100 },
+  )
+  expect(shown(listed)).toEqual(["a1", "a2"])
+  const moded = run(listed, { type: "sessionUpserted", row: { ...row(ALPHA, "a1", 30, 30), updatedAt: 90, harness: nativeHarness("claude"), permissionMode: "plan" } })
+  expect(shown(moded)).toEqual(["a1", "a2"])
+  const started = run(moded, { type: "sessionUpserted", row: { ...row(ALPHA, "a1", 30, 30), updatedAt: 95, harness: nativeHarness("claude"), permissionMode: "plan" } })
+  const entry = started.kind === "live" ? started.entries.get(sessionId("a1")) : undefined
+  expect(entry?.kind === "confirmed" ? [entry.pendingSend, entry.row.permissionMode] : undefined).toEqual([undefined, "plan"])
+  expect(shown(started)).toEqual(["a2", "a1"])
+})
+
+test("a signed send that changes the session's mode stays on top through the mode write and its human turn", () => {
+  const listed = run(
+    initialListState,
+    { type: "fetchStarted" },
+    { type: "fetched", window: window([page(ALPHA, [row(ALPHA, "a2", 50, 50), { ...row(ALPHA, "a1", 30, 30), harness: nativeHarness("claude"), permissionMode: "default" }])]) },
+    { type: "sendStarted", sessionId: sessionId("a1"), clientRequestId: "send-1", at: 100 },
+  )
+  const moded = run(listed, { type: "sessionUpserted", row: { ...row(ALPHA, "a1", 30, 30), updatedAt: 90, harness: nativeHarness("claude"), permissionMode: "plan" } })
+  expect(shown(moded)).toEqual(["a1", "a2"])
+  const landed = run(moded, { type: "sessionUpserted", row: { ...row(ALPHA, "a1", 30, 95), updatedAt: 95, harness: nativeHarness("claude"), permissionMode: "plan" } })
+  const entry = landed.kind === "live" ? landed.entries.get(sessionId("a1")) : undefined
+  expect(entry?.kind === "confirmed" ? [entry.pendingSend, entry.row.lastHumanTurnAt] : undefined).toEqual([undefined, 95])
+  expect(shown(landed)).toEqual(["a1", "a2"])
+})
+
 test("show more extends only its own project, and a page that ends the project shows every row after it", () => {
   const first = run(
     initialListState,

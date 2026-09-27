@@ -15,6 +15,7 @@ type LoaderInput<ScopeInput> = {
   selectedModel(scope: string): string | undefined
   modelOptional?(scope: string): boolean
   preserveSelectedModel?(scope: string): boolean
+  sessionModel?(scope: string): boolean
   selectedThoughtLevel?(scope: string): string | undefined
   seed(scope: string): void
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
@@ -67,6 +68,7 @@ function applyOptions<ScopeInput>(input: LoaderInput<ScopeInput>, request: Reque
     selectedThoughtLevel: input.selectedThoughtLevel?.(scope),
     modelOptional: input.modelOptional?.(scope),
     preserveSelectedModel: input.preserveSelectedModel?.(scope),
+    sessionModel: input.sessionModel?.(scope),
     payload,
   })
   const current = input.readState?.(scope)

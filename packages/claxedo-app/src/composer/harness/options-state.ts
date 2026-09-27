@@ -28,6 +28,7 @@ type OptionsResponseInput = {
   selectedThoughtLevel?: string
   modelOptional?: boolean
   preserveSelectedModel?: boolean
+  sessionModel?: boolean
   payload: HarnessOptions
 }
 
@@ -68,8 +69,8 @@ function listedModelsDecision(input: OptionsResponseInput, base: HarnessOptionsS
     return settled({ ...base, dynamicModels: [], selectedModel: "", configError: modelOptionsUnavailableMessage({ stale: true }) })
   }
   const current = input.selectedModel ?? ""
-  const listed = models.choices.some((item) => item.id === current)
-  if (input.preserveSelectedModel && current && !listed) {
+  const listed = models.choices.some((item) => item.id === current || item.resolvedModel === current)
+  if ((input.preserveSelectedModel || input.sessionModel) && current && !listed) {
     return settled({ ...base, dynamicModels: models.choices, selectedModel: current, configError: "Selected model unavailable" })
   }
   const next = listed ? current : (models.current ?? models.choices[0]?.id ?? "")

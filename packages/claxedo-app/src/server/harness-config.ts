@@ -1,14 +1,14 @@
 import { responseError } from "./errors"
 import type { PlacementId } from "./ids"
-import type { QueryClient } from "@tanstack/solid-query"
-import { createPermissionModeWriter } from "./permission-modes"
+import { readPermissionModes, writePermissionMode, type PermissionModesRequest } from "./permission-modes"
 import { withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
 import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
-import type { HarnessOptions, HarnessState, SessionConfig } from "./harness-types"
-import { readSessionConfig, writeSessionConfig, type SessionConfigPatch } from "./session-config"
+import type { HarnessOptions, HarnessState } from "./harness-types"
+import { writeSessionConfig, type SessionConfigPatch } from "./session-config"
 import { harnessStateFromWire } from "./wire/harness-state"
+import type { PermissionModeState } from "./wire/permission-modes"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
 
@@ -17,13 +17,12 @@ export type HarnessConfigApi = {
   readonly workspaceKey: (placementId: PlacementId) => string | undefined
   readonly folderHarness: (placementId: PlacementId, sessionId?: string) => Promise<HarnessState | undefined>
   readonly options: (request: HarnessOptionsRequest) => Promise<HarnessOptions>
-  readonly sessionConfig: (ref: SessionRef) => Promise<SessionConfig | undefined>
   readonly updateSessionConfig: (ref: SessionRef, patch: SessionConfigPatch) => Promise<void>
-  readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<{ readonly currentModeId?: string }>
+  readonly permissionModes: (request: PermissionModesRequest) => Promise<PermissionModeState>
+  readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<void>
 }
 
-export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces, queryClient: QueryClient): HarnessConfigApi {
-  const modes = createPermissionModeWriter(transport, workspaces, queryClient)
+export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces): HarnessConfigApi {
   const workspaceId = async (placementId: PlacementId) => (await workspaces.route(placementId)).workspaceId
   return {
     serverUrl: transport.serverUrl,
@@ -38,11 +37,8 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
       return harnessStateFromWire(await response.json())
     },
     options: (request) => readHarnessOptions(transport, workspaces, request),
-    sessionConfig: (ref) => readSessionConfig(transport, workspaces, ref),
-    updateSessionConfig: async (ref, patch) => {
-      await writeSessionConfig(transport, workspaces, ref, patch)
-      if (patch.harness !== undefined) await modes.sessionHarnessChanged(ref)
-    },
-    setPermissionMode: modes.setPermissionMode,
+    updateSessionConfig: (ref, patch) => writeSessionConfig(transport, workspaces, ref, patch),
+    permissionModes: (request) => readPermissionModes(transport, workspaces, request),
+    setPermissionMode: (ref, modeId) => writePermissionMode(transport, workspaces, ref, modeId),
   }
 }

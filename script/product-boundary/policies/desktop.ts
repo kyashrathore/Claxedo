@@ -370,8 +370,10 @@ export const desktopRenderer: Policy = {
   // event streams' heartbeat and the stall timeout the app's stream reader
   // drops a silent stream after. The shell's `shell/daemon-status.ts` and
   // `shell/view/daemon-lost-banner.tsx` are the desktop's one alert that its
-  // local service stopped.
-  ceilings: { modules: 1209, packages: 38 },
+  // local service stopped. `server/model-choice.ts` is the one comparison of two
+  // model choices, read by the composer's model selection and by the session
+  // list's rule for a row that changes only its selections.
+  ceilings: { modules: 1210, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

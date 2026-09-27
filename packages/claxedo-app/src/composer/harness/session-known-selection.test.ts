@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { nativeHarness } from "@/lib/harness-selection"
-import { placementId as placement, projectId, sessionId, type SessionConfig, type SessionRow, type TranscriptMessage } from "@/server"
+import { placementId as placement, projectId, sessionId, type SessionRow, type TranscriptMessage } from "@/server"
 import { createHarnessHydrator } from "./harness-hydrator"
 import { createHarnessStatusActions } from "./harness-status-actions"
 import { createHarnessStore } from "./harness-store"
@@ -21,12 +21,13 @@ function message(id: string, info: Partial<TranscriptMessage>): TranscriptMessag
 
 const piTurn = message("m1", { providerID: "pi", modelID: "anthropic/claude-opus-4-8", variant: "high" })
 
-function sessionHydration(config: Promise<SessionConfig | undefined>) {
+function sessionHydration() {
   const store = createHarnessStore({ getItem: () => null, setItem: () => undefined })
+  const options: string[] = []
   const status = createHarnessStatusActions<HarnessScopeInput>({
     applyPatch: store.applyPatch,
     state: store.state,
-    fetchConfigOptions: () => undefined,
+    fetchConfigOptions: (scope) => void options.push(scope),
     hasConfigOptions: async () => true,
   })
   const hydrator = createHarnessHydrator<HarnessScopeInput>({
@@ -35,10 +36,10 @@ function sessionHydration(config: Promise<SessionConfig | undefined>) {
     markServer: store.markServer,
     ...status,
     fetchConfigOptions: () => undefined,
-    runtime: { placementKind: () => "folder", folderHarness: async () => undefined, sessionConfig: () => config },
+    runtime: { placementKind: () => "folder", folderHarness: async () => undefined },
     cache: createScopeCaches().hydrator,
   })
-  return { store, hydrator }
+  return { store, hydrator, options }
 }
 
 test("known model: the row's saved config comes first, else the last turn run on the session's harness", () => {
@@ -53,43 +54,42 @@ test("known model: the row's saved config comes first, else the last turn run on
   expect(knownSessionModel(pi, row, [message("m1", { role: "user", model: { providerID: "", modelID: "" } })]), "a streaming prompt's empty model").toBeUndefined()
 })
 
-test("session hydration: an existing session shows its harness and last turn's model before its config lands", async () => {
-  let answer: (config: SessionConfig) => void = () => undefined
-  const { store, hydrator } = sessionHydration(new Promise((resolve) => (answer = resolve)))
-  const pending = hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: pi, sessionModel: () => knownSessionModel(pi, row, [piTurn]) })
+test("session hydration: an existing session runs its row's harness and model, with no read of its own", async () => {
+  const { store, hydrator, options } = sessionHydration()
+  await hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: pi, sessionModel: () => knownSessionModel(pi, row, [piTurn]) })
   expect(store.harness("session:s1")).toEqual(pi)
   expect(store.selectedModel("session:s1")).toBe("anthropic/claude-opus-4-8")
   expect(store.selectedThoughtLevel("session:s1")).toBe("high")
-  expect(store.read("session:s1").readiness).toBe("unresolved")
-
-  answer({ harness: { type: pi }, model: { modelId: "anthropic/claude-opus-4-8", providerId: "pi" } })
-  await pending
   expect(store.read("session:s1").readiness).toBe("ready")
-  expect(store.selectedModel("session:s1")).toBe("anthropic/claude-opus-4-8")
-  expect(store.selectedThoughtLevel("session:s1")).toBe("high")
+  expect(options).toEqual(["session:s1"])
 })
 
-test("session hydration: the config's harness and model replace what the session was known to run", async () => {
-  const { store, hydrator } = sessionHydration(Promise.resolve({ harness: { type: codex }, model: null }))
-  await hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: pi, sessionModel: () => knownSessionModel(pi, row, [piTurn]) })
-  expect(store.harness("session:s1")).toEqual(codex)
-  expect(store.selectedModel("session:s1"), "a model of another harness").toBe("")
-  expect(store.selectedThoughtLevel("session:s1")).toBeUndefined()
+test("session hydration: a row that moves to another model is followed, and one this scope already holds is not re-read", async () => {
+  const { store, hydrator, options } = sessionHydration()
+  let model = { providerId: "pi", modelId: "anthropic/claude-opus-4-8" }
+  const params = () => ({ placementId, sessionId: "s1", sessionRef, sessionHarness: pi, sessionModel: () => model })
+  await hydrator.hydrate("session:s1", params())
+  model = { providerId: "pi", modelId: "openai/gpt-5" }
+  await hydrator.hydrate("session:s1", params())
+  expect(store.selectedModel("session:s1")).toBe("openai/gpt-5")
+  expect(options).toEqual(["session:s1", "session:s1"])
 
-  const differentModel = sessionHydration(Promise.resolve({ harness: { type: pi }, model: { modelId: "openai/gpt-5", providerId: "pi" } }))
-  await differentModel.hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: pi, sessionModel: () => knownSessionModel(pi, row, [piTurn]) })
-  expect(differentModel.store.selectedModel("session:s1")).toBe("openai/gpt-5")
+  store.setSelectedModel("session:s1", { providerId: "pi", modelId: "openai/gpt-5-mini" })
+  model = { providerId: "pi", modelId: "openai/gpt-5-mini" }
+  await hydrator.hydrate("session:s1", params())
+  expect(options, "this app's own write coming back").toHaveLength(2)
 })
 
-test("session hydration: an unreadable config keeps the known harness connecting", async () => {
-  const { store, hydrator } = sessionHydration(Promise.reject(new TypeError("fetch failed")))
-  await hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: pi, sessionModel: () => knownSessionModel(pi, row, [piTurn]) })
-  expect(store.harness("session:s1")).toEqual(pi)
+test("session hydration: a row that names no harness keeps the scope connecting", async () => {
+  const { store, hydrator, options } = sessionHydration()
+  await hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef })
+  expect(store.harness("session:s1")).toBeUndefined()
   expect(store.read("session:s1").readiness).toBe("polling")
+  expect(options).toEqual([])
 })
 
 test("draft hydration: a new draft with no saved default and no folder harness knows no harness", async () => {
-  const { store, hydrator } = sessionHydration(Promise.resolve(undefined))
+  const { store, hydrator } = sessionHydration()
   await hydrator.hydrate("draft:placement-1", { placementId })
   expect(store.harness("draft:placement-1")).toBeUndefined()
   expect(store.selectedModel("draft:placement-1")).toBe("")

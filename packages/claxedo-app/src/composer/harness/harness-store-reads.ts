@@ -45,6 +45,7 @@ export function harnessOptionsReads(read: Read) {
     draftDefaultLabels: (scope: string) => read(scope).draftDefault?.labels,
     draftDefaultModel: (scope: string) => read(scope).draftDefault?.model,
     draftDefaultAuthority: (scope: string) => read(scope).draftDefaultAuthority,
+    holdsSessionModel: (scope: string) => scope.startsWith("session:") && !read(scope).heldFrom,
   }
 }
 

@@ -1,4 +1,4 @@
-import type { ModelChoice } from "@/server"
+import { sameModelKey, type ModelChoice } from "@/server"
 import type { HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"
@@ -86,12 +86,6 @@ export function shouldApplyDraftDefault(
     current.revision === captured.revision
 }
 
-function sameModel(left: ModelChoice, right: ModelChoice) {
-  return left.providerId === right.providerId &&
-    left.modelId === right.modelId &&
-    left.variant === right.variant
-}
-
 function eligible(models: readonly ModelChoice[], candidate?: ModelChoice): candidate is ModelChoice {
-  return !!candidate && models.some((model) => sameModel(model, candidate))
+  return !!candidate && models.some((model) => sameModelKey(model, candidate))
 }
