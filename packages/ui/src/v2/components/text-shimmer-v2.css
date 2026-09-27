@@ -5,16 +5,11 @@
   --_index: 0;
   --_angle: 90deg;
   --_spread: 5.2ch;
-  --_size: 360%;
+  --_size: 3.6;
   --_base-color: var(--v2-text-text-muted);
   --_peak-color: var(--v2-text-text-base);
-  --_sweep: linear-gradient(
-    var(--_angle),
-    transparent calc(50% - var(--_spread)),
-    var(--_peak-color) 50%,
-    transparent calc(50% + var(--_spread))
-  );
   --_base: linear-gradient(var(--_base-color), var(--_base-color));
+  --_peak: linear-gradient(var(--_peak-color), var(--_peak-color));
 
   display: inline-flex;
   align-items: baseline;
@@ -48,7 +43,13 @@
 }
 
 [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
-  color: var(--_base-color);
+  position: relative;
+  overflow: clip;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image: var(--_base);
+  -webkit-background-clip: text;
+  background-clip: text;
   opacity: 0;
 }
 
@@ -56,47 +57,66 @@
   opacity: 1;
 }
 
-[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
-  animation-name: text-shimmer-v2-sweep;
+[data-component="text-shimmer-v2"][data-active="true"] .ui-text-shimmer-v2-base {
+  opacity: 0;
+}
+
+[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-sweep,
+[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-peak {
   animation-duration: var(--_duration);
   animation-iteration-count: infinite;
   animation-timing-function: linear;
   animation-fill-mode: both;
   animation-delay: calc(var(--_step) * var(--_index) * -1);
-  will-change: background-position;
+}
+
+/* The band moves by transform, never by background-position: a background-position
+   sweep repaints the text on the main thread every frame (240 paints/s for three rows),
+   while transform animations run on the compositor. The sweep carries the band as a mask
+   and the peak copy inside it moves back by the same distance, so the glyphs stay put
+   while the band crosses them. The swept copy clips to its own box because the sweep is
+   3.6 times as wide as the text, which would otherwise widen the scroll area and the
+   compositor's offscreen pass. Both copies paint through background-clip: text, because
+   plain text colour rasterizes glyph edges differently and would not match. */
+[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--_size) * 100%);
+  mask-image: linear-gradient(
+    var(--_angle),
+    transparent calc(50% - var(--_spread)),
+    #000 50%,
+    transparent calc(50% + var(--_spread))
+  );
+  animation-name: text-shimmer-v2-sweep;
+}
+
+[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-peak {
+  display: block;
+  white-space: pre;
+  background-image: var(--_peak);
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation-name: text-shimmer-v2-peak;
 }
 
 @keyframes text-shimmer-v2-sweep {
   0% {
-    background-position:
-      100% 0,
-      0 0;
+    transform: translateX(calc((1 / var(--_size) - 1) * 100%));
   }
   100% {
-    background-position:
-      0% 0,
-      0 0;
+    transform: translateX(0);
   }
 }
 
-@supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    background-image: var(--_sweep), var(--_base);
-    background-size:
-      var(--_size) 100%,
-      100% 100%;
-    background-position:
-      100% 0,
-      0 0;
-    background-repeat: no-repeat;
-    -webkit-background-clip: text;
-    background-clip: text;
+@keyframes text-shimmer-v2-peak {
+  0% {
+    transform: translateX(calc((1 - 1 / var(--_size)) * 100%));
   }
-
-  [data-component="text-shimmer-v2"][data-active="true"] .ui-text-shimmer-v2-base {
-    opacity: 0;
+  100% {
+    transform: translateX(0);
   }
 }
 
@@ -107,10 +127,13 @@
   }
 
   [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
-    animation: none !important;
     color: inherit;
     -webkit-text-fill-color: currentColor;
     background-image: none;
+  }
+
+  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-sweep {
+    display: none;
   }
 
   [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-base {

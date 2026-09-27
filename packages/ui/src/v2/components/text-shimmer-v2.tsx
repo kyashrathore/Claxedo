@@ -54,13 +54,18 @@ export const TextShimmerV2 = (props: {
         <span data-slot="text-shimmer-v2-base" class="ui-text-shimmer-v2-base" aria-hidden="true">
           {text()}
         </span>
-        {/* The swept copy carries a second full copy of the text and a gradient clipped to
-            those glyphs, and a transcript holds one of these per tool row (39 of 40 idle in
-            a measured lab session), so it exists only while it is sweeping. It outlives
+        {/* The swept copy carries two more copies of the text, the muted one and the peak one
+            its band reveals, and a transcript holds one of these per tool row (39 of 40 idle
+            in a measured lab session), so it exists only while it is sweeping. It outlives
             `active` by the swap so the fade-out has something to fade. */}
         <Show when={run()}>
           <span data-slot="text-shimmer-v2-shimmer" class="ui-text-shimmer-v2-shimmer" aria-hidden="true">
             {text()}
+            <span data-slot="text-shimmer-v2-sweep" class="ui-text-shimmer-v2-sweep">
+              <span data-slot="text-shimmer-v2-peak" class="ui-text-shimmer-v2-peak">
+                {text()}
+              </span>
+            </span>
           </span>
         </Show>
       </span>
