@@ -158,7 +158,11 @@ export type OutlineTurn = {
 
 export type SessionOutline = { readonly turns: readonly OutlineTurn[]; readonly complete: boolean }
 
-export type HeldSessionReads = { readonly latestTurn?: TranscriptPage; readonly outline?: SessionOutline }
+export type HeldSessionReads = { readonly latestTurn: TranscriptPage; readonly outline: SessionOutline | undefined }
+
+export type FirstPageShape = { readonly rows: number; readonly cols: number; readonly reasoning: boolean }
+
+export type FoldedTurn = { readonly foldableCount: number; readonly wholeBefore?: string }
 
 export type SessionGoal = RuntimeGoalSnapshot
 
@@ -170,16 +174,17 @@ export type SessionGoalState = {
   readonly available: boolean
 }
 
-export type SessionSurfaceRead = {
+export type SessionFirstRead = {
   readonly row: SessionRow
-  readonly transcript: TranscriptPage
-  readonly latestTurnComplete: boolean
   readonly diff: readonly FileDiff[]
+  readonly outline: SessionOutline | undefined
+  readonly transcript: TranscriptPage
+  readonly folded: ReadonlyMap<string, FoldedTurn>
+  readonly latestTurn: TranscriptPage | undefined
 }
 
 export type SessionReads = {
-  readonly surface: Promise<SessionSurfaceRead>
-  readonly outline: Promise<SessionOutline | undefined>
+  readonly first: Promise<SessionFirstRead>
   readonly status: Promise<SessionStatus>
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>

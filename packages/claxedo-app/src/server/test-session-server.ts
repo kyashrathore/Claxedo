@@ -7,13 +7,19 @@ import { workspaceStopped } from "./wire/connection"
 import { createWorkspaces } from "./workspaces"
 
 export const ref = { projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") }
-export const historyPath = withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })
+export const shape = { rows: 40, cols: 100, reasoning: false }
+export const firstPath = withQuery(sessionEndpoint(ref, "/outline"), { rows: "40", cols: "100", reasoning: "0" })
 export const openPath = withQuery(sessionEndpoint(ref), { view: "open" })
 export const liveSession = { id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } }
+export const centralRow = { session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }
+const outline = { turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true }
+
+export function firstRead(session: Readonly<Record<string, unknown>> = liveSession, page: unknown = { turns: [{ messages: stored }] }) {
+  return Response.json({ session, outline, page })
+}
 
 export function openView(facts: Readonly<Record<string, unknown>> = {}) {
   return Response.json({
-    session: liveSession,
     status: { value: null },
     permissions: { value: [] },
     questions: { value: [] },
@@ -53,8 +59,8 @@ type FakeServerOptions = {
 function controlPlaneAnswer(options: FakeServerOptions, path: string): Response {
   if (path === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.reachable, options.machine ?? false))
   if (path.startsWith("/api/control/sessions/ses_1/messages")) return Response.json({ messages: stored, nextCursor: "cursor_older", maxEventOrdinal: 0 }, { headers: { "X-Next-Cursor": "cursor_older" } })
-  if (path.startsWith("/api/control/sessions/ses_1/outline")) return Response.json({ allowed: true, role: "editor", turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true })
-  if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [{ session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }] })
+  if (path.startsWith("/api/control/sessions/ses_1/outline")) return firstRead(centralRow, { turns: [{ messages: stored, cursor: "cursor_older" }] })
+  if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [centralRow] })
   return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
 }
 

@@ -149,7 +149,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const typography = createMemo(() => resolveTranscriptTypography(host.transcriptTypography()))
   const transcriptStyle = createMemo(() => transcriptTypographyStyle(typography()))
   const ownerSessionKey = host.sessionKey()
-  const cached = readTimelineMountSnapshot(ownerSessionKey, host.seededTurnFoldableCounts)
+  const cached = readTimelineMountSnapshot(ownerSessionKey)
   const savedScroll = cached?.scroll
   if (savedScroll && !props.hasScrollTarget()) props.restoreFollowing(savedScroll.following)
   const initialMeasurements = cached?.measurements
@@ -386,7 +386,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const statusType = createMemo(() => sessionStatus().kind)
   const lastTurnOutcome = createMemo(() => info()?.lastTurn, undefined, { equals: sameTurnOutcome })
-  const shownFoldCounts = new Map<string, number>()
   const messageRowMemos = createMemo(
     mapArray(
       () => props.userMessages,
@@ -444,14 +443,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: sameArrayItems },
         )
-        const fragments = createMemo(
-          () => {
-            const conversation = sessionConversation()
-            return [userMessage.id, ...turnAssistants().map((message) => message.id)].filter((id) => conversation?.fragmentParts.has(id) === true)
-          },
-          undefined,
-          { equals: sameArrayItems },
-        )
+        const folded = createMemo(() => sessionConversation()?.folded.get(userMessage.id))
         const turnRows = createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
           const withText = new Set(textParts())
@@ -466,16 +458,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
             (userMessageId) => turnFold.isFolded(userMessageId),
             turnOutcome(),
             visibleAssistantMessageIds(),
-            (userMessageId) => Math.max(cached?.turnFoldableCounts?.[userMessageId] ?? 0, shownFoldCounts.get(userMessageId) ?? 0) || undefined,
+            folded(),
             (partId) => toolOpen[partId] === true || toolRevealed[partId] === true,
             settling(),
-            (messageId) => fragments().includes(messageId),
             thinkingHeading(),
           )
-          const fold = rows.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")
-          if (fold) shownFoldCounts.set(userMessage.id, fold.foldCount)
-          else shownFoldCounts.delete(userMessage.id)
-
           return TimelineRow.reuse(previous, rows)
         }))
         return { gap, rows: turnRows }
@@ -546,6 +533,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
   holdPaneReveal(() => !initialRevealReady() || timelineRows().some((row) => row._tag === "TurnLoading"))
+  createEffect(() => {
+    for (const row of timelineRows()) if (row._tag === "TurnLoading") host.loadTurn(row.userMessageId)
+  })
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {
@@ -577,7 +567,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
-    observeElementRect: observeElementRectDeduped,
+    observeElementRect: (instance, observed) =>
+      observeElementRectDeduped(instance, (rect) => {
+        observed(rect)
+        host.recordViewport(rect)
+      }),
     observeElementOffset: observeElementOffsetReconnectAware,
     initialRect: {
       width: typeof window === "undefined" ? 0 : window.innerWidth,
@@ -768,17 +762,17 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  let measuredSessionKey = host.sessionKey(), renderedRows: TimelineRow.TimelineRow[] = []
+  let measuredSessionKey = host.sessionKey()
   createEffect(() => {
     const key = host.sessionKey()
-    renderedRows = timelineRows()
+    timelineRows()
     if (measuredSessionKey !== key) (measuredSessionKey = key), virtualizer.measure()
     maybeAnchorBottom()
   })
 
   onCleanup(() => {
     scrollMemory.capture()
-    writeTimelineMountSnapshot(ownerSessionKey, { scroll: scrollMemory.snapshot(), measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen }, toolRevealed: { ...toolRevealed }, rows: renderedRows })
+    writeTimelineMountSnapshot(ownerSessionKey, { scroll: scrollMemory.snapshot(), measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen }, toolRevealed: { ...toolRevealed } })
     turnFold.persist()
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     cancelFirstFoldReveal?.()

@@ -1,12 +1,12 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, FileDiff, ServerEvent, SessionOutline, TranscriptPart } from "@/server"
+import type { AppError, FileDiff, FoldedTurn, ServerEvent, SessionOutline, TranscriptPart } from "@/server"
 import type { OlderState, OutlineState } from "@/session"
 import type { ConversationMessage } from "@/transcript"
 
 export type TranscriptData = {
   messages: ConversationMessage[]
   parts: Record<string, TranscriptPart[]>
-  fragmentParts: ReadonlySet<string>
+  folded: ReadonlyMap<string, FoldedTurn>
   partsWithText: Record<string, true>
   diff: FileDiff[]
 }
@@ -38,21 +38,17 @@ export type OlderEvent =
   | { readonly type: "olderLanded" }
   | { readonly type: "olderFailed"; readonly error: AppError }
 
-export type OutlineEvent =
-  | { readonly type: "outlineLanded"; readonly outline: SessionOutline | undefined; readonly sentAt: number }
-  | { readonly type: "outlineFailed"; readonly error: AppError; readonly sentAt: number }
+export const NO_FOLDS: ReadonlyMap<string, FoldedTurn> = new Map()
 
-export type OutlineRead = OutlineState & { readonly sentAt?: number }
-
-export const NO_FRAGMENTS: ReadonlySet<string> = new Set()
-
-export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, partsWithText: {}, diff: [] })
+export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, folded: NO_FOLDS, partsWithText: {}, diff: [] })
 
 export const initialPhase: SessionPhase = { kind: "loading", held: [] }
 
 export const OLDER_IDLE: OlderState = { kind: "idle" }
 
-export const OUTLINE_LOADING: OutlineRead = { kind: "loading" }
+export const OUTLINE_LOADING: OutlineState = { kind: "loading" }
+
+export const outlineOf = (outline: SessionOutline | undefined): OutlineState => (outline ? { kind: "ready", outline } : { kind: "unavailable" })
 
 export const isReading = (phase: SessionPhase): phase is Extract<SessionPhase, { kind: "loading" | "rereading" }> =>
   phase.kind === "loading" || phase.kind === "rereading"
@@ -91,18 +87,6 @@ export function olderTransition(state: OlderState, event: OlderEvent): OlderStat
       return state.kind === "loading" ? OLDER_IDLE : state
     case "olderFailed":
       return state.kind === "loading" ? { kind: "failed", error: event.error } : state
-    default:
-      return unreachable(event)
-  }
-}
-
-export function outlineTransition(state: OutlineRead, event: OutlineEvent): OutlineRead {
-  if (state.sentAt !== undefined && state.sentAt > event.sentAt) return state
-  switch (event.type) {
-    case "outlineLanded":
-      return event.outline ? { kind: "ready", outline: event.outline, sentAt: event.sentAt } : { kind: "unavailable", sentAt: event.sentAt }
-    case "outlineFailed":
-      return { kind: "failed", error: event.error, sentAt: event.sentAt }
     default:
       return unreachable(event)
   }

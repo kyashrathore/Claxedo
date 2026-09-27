@@ -16,7 +16,10 @@ type BackfillInput = {
 }
 
 function latestTurnWhole(view: SessionView): boolean {
-  return view.conversation()?.fragmentParts.size === 0
+  const conversation = view.conversation()
+  if (!conversation) return false
+  const latest = conversation.messages.findLast((message) => message.role === "user")
+  return latest === undefined || !conversation.folded.has(latest.id)
 }
 
 function createIdleSlot(idle: () => IdleWait) {

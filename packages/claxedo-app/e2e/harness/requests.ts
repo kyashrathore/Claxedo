@@ -58,3 +58,16 @@ export async function holdResponse(app: Page, pattern: RegExp, matches: (url: UR
     },
   }
 }
+
+export async function holdEveryRequest(app: Page, pattern: RegExp) {
+  const released = Promise.withResolvers<void>()
+  const held: string[] = []
+  await app.route(pattern, async (route: Route) => {
+    if (route.request().isNavigationRequest()) return await route.fallback()
+    const url = new URL(route.request().url())
+    held.push(`${url.pathname}${url.search}`)
+    await released.promise
+    await route.fallback()
+  })
+  return { held: () => [...held], release: () => released.resolve() }
+}

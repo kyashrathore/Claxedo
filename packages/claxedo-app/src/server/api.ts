@@ -54,6 +54,7 @@ import type {
   Capabilities,
   FeatureAvailability,
   FetchQuery,
+  FirstPageShape,
   GoalAction,
   HeldSessionReads,
   Machine,
@@ -81,7 +82,7 @@ import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly read: (ref: SessionRef, held?: HeldSessionReads) => SessionReads
+  readonly read: (ref: SessionRef, shape: FirstPageShape, held?: HeldSessionReads) => SessionReads
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly wholeTurn: (ref: SessionRef, before?: string) => Promise<TranscriptPage>
   readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>

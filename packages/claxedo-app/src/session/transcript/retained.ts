@@ -24,6 +24,6 @@ function retainedLatestTurn(context: TranscriptContext): TranscriptPage | undefi
 export function retainedSession(context: TranscriptContext): RetainedSession | undefined {
   const latestTurn = retainedLatestTurn(context)
   if (!latestTurn) return undefined
-  const outline = context.outline.state()
+  const outline = context.outline()
   return { latestTurn, outline: outline.kind === "ready" ? outline.outline : undefined }
 }

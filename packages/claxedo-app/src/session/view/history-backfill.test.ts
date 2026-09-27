@@ -35,7 +35,7 @@ function harness(turns: number, input: { readonly open?: boolean; readonly whole
   const log: string[] = []
   const { slots, idle, cancelled } = fakeIdle()
   const view = {
-    conversation: () => ({ fragmentParts: new Set(whole() ? [] : ["msg"]) }),
+    conversation: () => ({ messages: [{ id: "msg", role: "user" }], folded: new Map(whole() ? [] : [["msg", { foldableCount: 2 }]]) }),
     hasOlder: () => remaining() > 0,
     olderState: older,
     loadOlderTurn: async () => {

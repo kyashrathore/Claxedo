@@ -55,7 +55,7 @@ It is the old app's session renderers, **moved, not rebuilt**: only import paths
 
 ## Why grouping and the fold work this way
 
-- The rule is `@claxedo/agent-runtime-contract/turn-fold`; the contract's README says why it groups and folds as it does. A turn whose parts are still pending on first paint (`latest-surface`) folds on the count it will have, and the timeline keeps that count as a floor.
+- The rule is `@claxedo/agent-runtime-contract/turn-fold`; the contract's README says why it groups and folds as it does. A turn the first page folded holds only its drawn parts and folds on the count the page answered for it, until it is read whole.
 - A work group is collapsed by default; its body scrolls at 224 px with edge fades only when it overflows, and dims its members. An open member (a diff, a file, an output) grows the list to fit rather than scrolling through 224 px. Its header matches the tool rows' tone and 14 px icon.
 - The group summary is present-continuous while running and past tense when settled, the first segment sentence-case and the rest lowercase, joined with " · ". While a member runs, the header shows that member's live summary, so a long run stays one updating row. A group stays active between members until execution moves past it: `busy` belongs to the active turn's trailing group, and a completed member does not close it. Members no bucket claims are still named: a single call as its own row names it, a run of one tool counted by that tool ("ran 2 skills", or its opaque label verbatim), a mixed run by its count.
 - The collapsed "Thought for Ns" body is muted 13 px with no large top margin.

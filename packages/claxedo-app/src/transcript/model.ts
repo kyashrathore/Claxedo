@@ -19,6 +19,6 @@ export type ConversationMessage = AgentPresentationMessage | OptimisticUserMessa
 export type TranscriptConversation = {
   readonly messages: ConversationMessage[]
   readonly parts: Record<string, AgentContentPart[]>
-  readonly fragmentParts: ReadonlySet<string>
+  readonly folded: ReadonlyMap<string, { readonly foldableCount: number }>
   readonly partsWithText: Readonly<Record<string, true>>
 }

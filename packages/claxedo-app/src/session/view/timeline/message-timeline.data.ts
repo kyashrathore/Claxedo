@@ -17,12 +17,10 @@ import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import {
   FOLD_MINIMUM,
   assistantMessageSettled,
+  cancelledAssistantMessageId,
   countFoldableGroups,
   foldedGroupKeys,
-  groupParts,
-  isGroupablePart,
   isSubagentToolPart,
-  partHasText,
   turnFoldDecision,
   turnFoldShape,
   turnInterruption,
@@ -73,20 +71,6 @@ export namespace Timeline {
     return visible
   }
 
-  export function turnFoldableGroupCount(input: {
-    assistantMessages: AssistantMessage[]
-    getMessageParts: (messageId: string) => Part[]
-    showReasoning?: boolean
-  }) {
-    const refs = input.assistantMessages.flatMap((message, messageIndex) =>
-      input.getMessageParts(message.id)
-        .filter((part) => isGroupablePart(part, partHasText, input.showReasoning ?? false))
-        .map((part) => ({ messageId: message.id, messageIndex, part })),
-    )
-    const partById = new Map(refs.map((ref) => [ref.part.id, ref.part] as const))
-    return countFoldableGroups(groupParts(refs), (ref) => partById.get(ref.partId))
-  }
-
   export function constructMessageRows(
     userMessage: UserMessage,
     getMessageParts: (messageId: string) => Part[],
@@ -98,10 +82,9 @@ export namespace Timeline {
     isFoldedChoice: (userMessageId: string) => boolean | undefined = () => undefined,
     lastTurn?: TurnOutcome,
     visibleAssistantMessageIds?: ReadonlySet<string>,
-    priorFoldableCount: (userMessageId: string) => number | undefined = () => undefined,
+    folded?: { readonly foldableCount: number },
     isPartExpanded: (partId: string) => boolean = () => false,
     settlePending = false,
-    partsFragment: (messageId: string) => boolean = () => false,
     thinkingHeading?: string,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
@@ -167,8 +150,7 @@ export namespace Timeline {
       const found = partById.get(ref.partId)
       return found ? { type: untrack(() => found.type), userOpen: isPartExpanded(ref.partId) } : found
     }
-    const liveFoldableCount = countFoldableGroups(turnSegments(assistantPartRefs, shape).flat(), partOfRef)
-    const foldableCount = Math.max(liveFoldableCount, priorFoldableCount(userMessage.id) ?? 0)
+    const foldableCount = folded ? folded.foldableCount : countFoldableGroups(turnSegments(assistantPartRefs, shape).flat(), partOfRef)
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
@@ -185,7 +167,7 @@ export namespace Timeline {
       endTimes.length && typeof createdTime === "number"
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
-    const partsPending = assistantMessages.some((message) => partsFragment(message.id))
+    const partsPending = folded !== undefined
     const working = isActive && (status === "working" || status === "retrying" || settlePending)
     const fold = turnFoldDecision({
       foldableCount,
@@ -426,10 +408,6 @@ export namespace Timeline {
   ) {
     return turnInterruption(assistantMessages, cancelledAssistantMessageId(lastTurn)).index !== -1
   }
-}
-
-function cancelledAssistantMessageId(lastTurn: TurnOutcome | undefined) {
-  return lastTurn?.status === "cancelled" ? lastTurn.assistantMessageId : undefined
 }
 
 function handoffHarnessLabel(id?: string) {

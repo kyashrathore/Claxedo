@@ -89,7 +89,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
-    read: (ref, held) => readSession(context, ref, held),
+    read: (ref, shape, held) => readSession(context, ref, shape, held),
     older: (ref, cursor) => readOlder(context, ref, cursor),
     wholeTurn: (ref, before) => readWholeTurn(context, ref, before),
     turn: (ref, turnId) => readTurn(context, ref, turnId),

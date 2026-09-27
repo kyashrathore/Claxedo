@@ -1,6 +1,6 @@
 import { createMemo, onCleanup } from "solid-js"
 import { unreachable } from "@/lib/machine"
-import type { Server, ServerEvent, SessionOutline, SessionRef, TranscriptPage } from "@/server"
+import type { HeldSessionReads, Server, ServerEvent, SessionRef } from "@/server"
 import type { SessionLoadState, SessionView } from "@/session"
 import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
@@ -8,6 +8,7 @@ import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
 import { settleTurn } from "./settle"
 import { isReading, type SessionPhase } from "./model"
+import { readFoldedTurn } from "./latest-turn"
 import { loadOlder } from "./older"
 import { sendPrompt, showSent, stopTurn } from "./send"
 import { retainedSession, type RetainedSession } from "./retained"
@@ -23,7 +24,7 @@ export type SessionTranscript = SessionView & {
 
 export type { RetainedSession } from "./retained"
 
-export type TranscriptSeed = { readonly latestTurn: TranscriptPage; readonly outline: SessionOutline | undefined }
+export type TranscriptSeed = HeldSessionReads
 
 const LOADING: SessionLoadState = { kind: "loading" }
 const READY: SessionLoadState = { kind: "ready" }
@@ -75,9 +76,10 @@ function sessionView(context: TranscriptContext): SessionView {
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,
-    outline: context.outline.state,
+    outline: context.outline,
     loadOlder: () => loadOlder(context, "page"),
     loadOlderTurn: () => loadOlder(context, "turn"),
+    loadTurn: (userMessageId) => readFoldedTurn(context, userMessageId),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),
     showSent: (prompt) => showSent(context, prompt),
@@ -89,6 +91,7 @@ function sessionView(context: TranscriptContext): SessionView {
 export function createSessionTranscript(server: Server, ref: SessionRef, deps: TranscriptDeps, seed?: TranscriptSeed): SessionTranscript {
   const context = createTranscriptContext(server, ref, deps)
   onCleanup(server.attachPlacement(ref.placementId))
+  onCleanup(() => context.idleCompletion.current?.cancel())
   void readSnapshot(context, seed)
   void context.queue.reread()
   return {

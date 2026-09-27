@@ -20,7 +20,7 @@ test("nav turns: the outline's turns list ahead of the loaded ones, in id order,
 })
 
 test("nav turns: without an outline the rail lists the loaded turns alone", () => {
-  for (const state of [{ kind: "loading" }, { kind: "unavailable" }, { kind: "failed", error: { class: "network", message: "offline", retryable: true } }] as const) {
+  for (const state of [{ kind: "loading" }, { kind: "unavailable" }] as const) {
     expect(navTurns(state, [user("msg_3")]).map((item) => item.id)).toEqual(["msg_3"])
   }
 })

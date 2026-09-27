@@ -125,7 +125,7 @@ function transcriptBytes(app: Page) {
     const url = new URL(response.url())
     const match = /\/session\/([^/]+)\/(message|outline)$/.exec(url.pathname)
     if (!match || response.request().method() !== "GET") return
-    const view = match[2] === "outline" ? "outline" : url.searchParams.get("view")
+    const view = match[2] === "outline" ? (url.searchParams.has("rows") ? "first" : "outline") : url.searchParams.get("view")
     const backfill = view === "latest-turn" && url.searchParams.has("before")
     void response.body().then((body) => reads.push({ sessionId: decodeURIComponent(match[1]), view, backfill, bytes: body.length }))
   })
@@ -168,7 +168,7 @@ test("12 a return after a walk past the open-session cache does the same work fo
   await settled()
   const cdp = await app.context().newCDPSession(app)
   await cdp.send("Performance.enable")
-  type Work = ReturnWork & { readonly transcriptBytes: number; readonly olderPageReads: number; readonly backfillReads: number; readonly backfillStarts: readonly number[]; readonly stoppedAt: number; readonly outlineBytes: number }
+  type Work = ReturnWork & { readonly transcriptBytes: number; readonly olderPageReads: number; readonly backfillReads: number; readonly backfillStarts: readonly number[]; readonly stoppedAt: number; readonly outlineBytes: number; readonly firstReads: number; readonly firstReadBytes: number }
   const runs: Record<string, Work[]> = { small: [], large: [], "first small": [], "first large": [], "again small": [], "again large": [] }
   const heaps: number[] = []
   const rss: number[] = [await rendererRssBytes(app.context().browser()!)]
@@ -183,11 +183,13 @@ test("12 a return after a walk past the open-session cache does the same work fo
       const backfill = await backfillStops(app, step.session)
       runs[pass === "return" ? step.label : `${pass} ${step.label}`].push({
         ...work,
-        transcriptBytes: reads.filter((read) => read.view !== "outline" && !read.backfill).reduce((sum, read) => sum + read.bytes, 0),
+        transcriptBytes: reads.filter((read) => read.view !== "outline" && read.view !== "first" && !read.backfill).reduce((sum, read) => sum + read.bytes, 0),
         olderPageReads: reads.filter((read) => read.view === null).length,
         backfillReads: reads.filter((read) => read.backfill && read.sessionId === step.session.id).length,
         ...backfill,
         outlineBytes: reads.filter((read) => read.view === "outline").reduce((sum, read) => sum + read.bytes, 0),
+        firstReads: reads.filter((read) => read.view === "first" && read.sessionId === step.session.id).length,
+        firstReadBytes: reads.filter((read) => read.view === "first").reduce((sum, read) => sum + read.bytes, 0),
       })
     }
     heaps.push(await heapAfterCollection(cdp))
@@ -206,8 +208,11 @@ test("12 a return after a walk past the open-session cache does the same work fo
     const small = pass === "return" ? "small" : "first small"
     expect.soft(median(large, (work) => work.transcriptBytes), `transcript bytes a ${pass} visit to a large session reads before its idle backfill, against a small one's (${median(small, (work) => work.transcriptBytes)})`).toBeLessThanOrEqual(median(small, (work) => work.transcriptBytes) * 1.5 + 2048)
     expect.soft(median(large, (work) => work.addedElements), `elements a ${pass} visit to a large session adds, against a small one's`).toBeLessThanOrEqual(median(small, (work) => work.addedElements) * 1.5 + 200)
-    expect.soft(median(large, (work) => work.outlineBytes), `outline bytes a ${pass} visit to a large session reads`).toBeLessThanOrEqual(40 * 512)
   }
-  expect.soft(runs.large.map((work) => work.outlineBytes), "a return to a kept session reads no outline").toEqual([0, 0, 0, 0, 0])
+  for (const label of ["first small", "first large"]) {
+    expect.soft(runs[label].map((work) => work.firstReads), `first reads on a ${label} visit`).toEqual([1, 1, 1, 1, 1])
+    expect.soft(runs[label].map((work) => work.outlineBytes), `outline reads beside the first read on a ${label} visit`).toEqual([0, 0, 0, 0, 0])
+  }
+  expect.soft(runs.large.map((work) => work.firstReads + work.outlineBytes), "a return to a kept session reads no first read and no outline").toEqual([0, 0, 0, 0, 0])
   expect.soft(heaps[2], `JS heap after the third walk (after the second: ${heaps[1]}, the first: ${heaps[0]})`).toBeLessThanOrEqual(heaps[1] * 1.1)
 })

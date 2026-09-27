@@ -48,10 +48,12 @@ export function eventLog(server: ServerHandle) {
   return { seen, next, mark: () => seen.length }
 }
 
+export const PROBE_VIEWPORT = { rows: 40, cols: 100, reasoning: false }
+
 export async function surfaceOf(server: ServerHandle, ref: SessionRef) {
-  const reads = server.sessions.read(ref)
-  const [surface] = await Promise.all([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
-  return surface
+  const reads = server.sessions.read(ref, PROBE_VIEWPORT)
+  const [first] = await Promise.all([reads.first, reads.status, reads.requests, reads.todos, reads.goal])
+  return first
 }
 
 export async function waitFor<T>(name: string, read: () => T | undefined, timeoutMs = STEP_TIMEOUT_MS): Promise<T> {

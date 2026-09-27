@@ -1,8 +1,9 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
 import { createStore } from "solid-js/store"
 import { machine, type Machine } from "@/lib/machine"
-import type { Server, SessionRef, TranscriptPage } from "@/server"
-import type { OlderState } from "@/session"
+import type { FirstPageShape, Server, SessionRef, TranscriptPage } from "@/server"
+import type { IdleWait } from "@/lib/idle"
+import type { OlderState, OutlineState } from "@/session"
 import type { SessionListInternal } from "../list"
 import type { RequestsInternal } from "../requests"
 import { appendDelta, dropQueuedStubs, type SetTranscript } from "./conversation"
@@ -14,11 +15,8 @@ import {
   emptyTranscript,
   initialPhase,
   olderTransition,
-  outlineTransition,
   phaseTransition,
   type OlderEvent,
-  type OutlineEvent,
-  type OutlineRead,
   type SessionPhase,
   type SessionPhaseEvent,
   type TranscriptData,
@@ -30,6 +28,7 @@ import { createSessionTodos, type SessionTodosStore } from "./todos"
 export type TranscriptDeps = {
   readonly list: SessionListInternal
   readonly requests: RequestsInternal
+  readonly firstPage: () => FirstPageShape
 }
 
 export type TranscriptContext = {
@@ -41,7 +40,8 @@ export type TranscriptContext = {
   readonly deltas: DeltaBuffer
   readonly phase: Machine<SessionPhase, SessionPhaseEvent>
   readonly older: Machine<OlderState, OlderEvent>
-  readonly outline: Machine<OutlineRead, OutlineEvent>
+  readonly outline: Accessor<OutlineState>
+  readonly setOutline: Setter<OutlineState>
   readonly olderCursor: Accessor<string | undefined>
   readonly setOlderCursor: Setter<string | undefined>
   readonly queue: QueueInternal
@@ -51,6 +51,8 @@ export type TranscriptContext = {
   readonly snapshotRead: { current: Promise<void> | undefined }
   readonly latestTurnRead: { current: TranscriptPage | undefined }
   readonly olderRead: { current: Promise<void> | undefined }
+  readonly wholeTurnReads: Map<string, Promise<void>>
+  readonly idleCompletion: { current: IdleWait | undefined }
 }
 
 export function createTranscriptContext(server: Server, ref: SessionRef, deps: TranscriptDeps): TranscriptContext {
@@ -58,6 +60,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
   const deltas = createDeltaBuffer((delta) => appendDelta(setStoreData, data, delta.messageId, delta.partId, delta.field, delta.delta))
   const setData = committingFirst(setStoreData, deltas)
   const [olderCursor, setOlderCursor] = createSignal<string>()
+  const [outline, setOutline] = createSignal(OUTLINE_LOADING)
   return {
     server,
     ref,
@@ -67,7 +70,8 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     deltas,
     phase: machine(initialPhase, phaseTransition),
     older: machine(OLDER_IDLE, olderTransition),
-    outline: machine(OUTLINE_LOADING, outlineTransition),
+    outline,
+    setOutline,
     olderCursor,
     setOlderCursor,
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
@@ -77,5 +81,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     snapshotRead: { current: undefined },
     latestTurnRead: { current: undefined },
     olderRead: { current: undefined },
+    wholeTurnReads: new Map(),
+    idleCompletion: { current: undefined },
   }
 }

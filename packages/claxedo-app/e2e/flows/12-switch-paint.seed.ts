@@ -3,7 +3,7 @@ import { acpScriptToken, SCRIPTED_ACP_HARNESS, type AcpStep, type ClaxedoApi, ty
 export async function seedTurns(stack: Stack, api: ClaxedoApi, directory: string, title: string, turns: number, shape: { readonly lines?: number; readonly lastFails?: boolean } = {}) {
   const session = await api.createSession(directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const reply = Array.from({ length: 6 }, (_, line) => `${title} reply line ${line + 1}.`).join("\n\n")
-  const steps: AcpStep[] = [{ kind: "tool", tool: "read", title: "Read part-1.md", locations: [{ path: `${directory}/part-1.md` }], text: "part\n" }, { kind: "text", text: reply }]
+  const steps: AcpStep[] = [{ kind: "text", text: `Reading the ${title} part.` }, { kind: "tool", tool: "read", title: "Read part-1.md", locations: [{ path: `${directory}/part-1.md` }], text: "part\n" }, { kind: "text", text: reply }]
   await stack.acp.write(`paint-${title}`, { steps })
   await stack.acp.write(`paint-${title}-last`, { steps: [...steps, ...(shape.lastFails ? [{ kind: "error", message: `${title} failed` } as const] : [])] })
   const body = (turn: number) => Array.from({ length: shape.lines ?? 1 }, (_, line) => `${title} turn ${turn} line ${line + 1}: review the fixture and implement the next improvement.`).join("\n")
