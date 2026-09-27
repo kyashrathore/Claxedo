@@ -18,6 +18,7 @@ import {
   WORKSPACE_PANEL_ACTIONS,
   type WorkspacePanelCase,
 } from "../src/public-workspace-panel"
+import { installPaintedFrames } from "../src/browser/painted-frames"
 
 const receipt = {
   endpoint: "correct-content-painted-and-input-ready" as const,
@@ -523,7 +524,7 @@ describe("Claxedo public driver", () => {
     expect(paintedAt).toBe(37)
   })
 
-  test("requires the same panel-owner signature on consecutive readiness frames", async () => {
+  test("reports when the first of two identical panel-owner frames was painted", async () => {
     const original = new Map<string, PropertyDescriptor | undefined>()
     const replaceGlobal = (name: string, value: unknown) => {
       original.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
@@ -535,23 +536,25 @@ describe("Claxedo public driver", () => {
       querySelectorAll: () => [],
     }
     const shells = [closedShell, null, closedShell, null, null]
-    let frameCount = 0
+    const sampledAt: number[] = []
     replaceGlobal("window", globalThis)
     replaceGlobal("innerWidth", 1000)
     replaceGlobal("document", {
-      querySelector: () => shells[Math.min(frameCount - 1, shells.length - 1)],
+      querySelector: () => {
+        sampledAt.push(performance.now())
+        return shells[Math.min(sampledAt.length - 1, shells.length - 1)]
+      },
     })
     replaceGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frameCount += 1
-      queueMicrotask(() => callback(frameCount))
-      return frameCount
+      setTimeout(() => callback(performance.now()), 4)
+      return 0
     })
-    replaceGlobal("cancelAnimationFrame", () => undefined)
+    replaceGlobal("__claxedoPaintedFrames", undefined)
+    installPaintedFrames()
     try {
       const page = {
         evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
       }
-      const before = performance.now()
       const at = await waitForPanelOwner(
         page as never,
         "closed",
@@ -567,11 +570,9 @@ describe("Claxedo public driver", () => {
         { markEnd: false },
       )
 
-      // Two identical closed frames are required (frames 4 and 5); the endpoint is the
-      // observation time of the second one, not the frame's scheduled timestamp.
-      expect(frameCount).toBe(5)
-      expect(at).toBeGreaterThanOrEqual(before)
-      expect(at).toBeLessThanOrEqual(performance.now())
+      expect(sampledAt.length).toBeGreaterThanOrEqual(5)
+      expect(at).toBeGreaterThan(sampledAt[2]!)
+      expect(at).toBeLessThanOrEqual(sampledAt[3]!)
     } finally {
       for (const [name, descriptor] of original) {
         if (descriptor) Object.defineProperty(globalThis, name, descriptor)

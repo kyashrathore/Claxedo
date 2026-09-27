@@ -14,7 +14,7 @@ const FRAME_MS = 1000 / 60
 
 function frame(index: number, signature: string | undefined, mutated = false): PaintSettleFrame {
   return {
-    observedAtMs: 100 + index * FRAME_MS,
+    paintedAtMs: 100 + index * FRAME_MS,
     ready: signature !== undefined,
     signature: signature === undefined ? undefined : { rows: signature },
     mutated,
@@ -39,7 +39,7 @@ describe("paint settle", () => {
 
   test("reports the first frame of the final run, not the confirming frame", () => {
     const settled = paintSettle(frames("..aaaa"), confirm)
-    expect(settled).toEqual({ settledAtMs: frame(2, "a").observedAtMs, runStartIndex: 2 })
+    expect(settled).toEqual({ settledAtMs: frame(2, "a").paintedAtMs, runStartIndex: 2 })
   })
 
   test("does not settle while the run is shorter than the confirmation window", () => {
@@ -50,18 +50,18 @@ describe("paint settle", () => {
 
   test("a tail-only first view followed by a prepend settles at the prepended view", () => {
     const settled = paintSettle(frames(".aabbbb"), confirm)
-    expect(settled).toEqual({ settledAtMs: frame(3, "b").observedAtMs, runStartIndex: 3 })
+    expect(settled).toEqual({ settledAtMs: frame(3, "b").paintedAtMs, runStartIndex: 3 })
   })
 
   test("a placeholder flash back to the same content restarts the run", () => {
     const settled = paintSettle(frames("aaa.aaaa"), confirm)
-    expect(settled).toEqual({ settledAtMs: frame(4, "a").observedAtMs, runStartIndex: 4 })
+    expect(settled).toEqual({ settledAtMs: frame(4, "a").paintedAtMs, runStartIndex: 4 })
   })
 
   test("a mutation-only frame with an unchanged signature restarts the run", () => {
     const sequence = frames("aaa!aaaa")
     expect(sequence[3]).toMatchObject({ ready: true, mutated: true, signature: { rows: "a" } })
-    expect(paintSettle(sequence, confirm)).toEqual({ settledAtMs: frame(3, "a").observedAtMs, runStartIndex: 3 })
+    expect(paintSettle(sequence, confirm)).toEqual({ settledAtMs: frame(3, "a").paintedAtMs, runStartIndex: 3 })
     expect(paintSettle(frames("aaa!aa"), confirm)).toBeUndefined()
   })
 

@@ -440,6 +440,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     path.join(import.meta.dir, "with-claxedo-data-directory.ts"),
     path.join(import.meta.dir, "agent-claxedo-launcher.ts"),
     path.join(import.meta.dir, "agent-browser-observer.ts"),
+    path.join(import.meta.dir, "browser/painted-frames.ts"),
     path.join(import.meta.dir, "agent-cdp-page.ts"),
     path.join(import.meta.dir, "agent-display-contract.ts"),
     path.join(import.meta.dir, "agent-process-family.ts"),

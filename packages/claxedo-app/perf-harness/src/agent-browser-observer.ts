@@ -1,4 +1,5 @@
 import type { BenchmarkLocator } from "./agent-cdp-page";
+import { installPaintedFrames } from "./browser/painted-frames";
 
 /**
  * The page surface this observer drives.
@@ -62,8 +63,7 @@ type TimelineCoverage = {
 };
 
 export type PaintSettleFrame = {
-  /** `performance.now()` right after this frame's sample was taken. */
-  observedAtMs: number;
+  paintedAtMs: number;
   ready: boolean;
   signature?: Record<string, unknown>;
   /** A childList or characterData mutation inside the timeline root arrived since the previous frame. */
@@ -71,8 +71,6 @@ export type PaintSettleFrame = {
 };
 
 type PaintStabilityFrame = PaintSettleFrame & {
-  atMs: number;
-  /** Harness JS plus any synchronous style/layout forced by semantic reads. */
   observerSampleMs: number;
   diagnostic?: Record<string, unknown>;
 };
@@ -90,8 +88,8 @@ export const PAINT_SETTLE_CONFIRMATION_FRAMES = 30;
 /**
  * The visual settle of a switched session: the first frame of the final run of
  * `confirmationFrames + 1` consecutive ready frames with one signature and no
- * timeline mutation between them. The reported time is that first frame's
- * observation, so the confirmation window is never charged to the product.
+ * timeline mutation between them. The reported time is when that first frame
+ * was painted, so the confirmation window is never charged to the product.
  * The in-page observer is stringified into the renderer and cannot import
  * this, so it applies the same rule inline and its answer is checked here.
  */
@@ -111,7 +109,7 @@ export function paintSettle(
       run = { startIndex: index, signature };
     }
     if (index - run.startIndex >= confirmationFrames) {
-      return { settledAtMs: frames[run.startIndex]!.observedAtMs, runStartIndex: run.startIndex };
+      return { settledAtMs: frames[run.startIndex]!.paintedAtMs, runStartIndex: run.startIndex };
     }
   }
   return undefined;
@@ -273,7 +271,7 @@ function readPaintedMessage(value: unknown): PaintedMessage {
 function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
   const record = readRecord(value);
   return {
-    ...readNumberFields(record, ["atMs", "observedAtMs", "observerSampleMs"]),
+    ...readNumberFields(record, ["paintedAtMs", "observerSampleMs"]),
     ready: readBoolean(record.ready),
     mutated: readBoolean(record.mutated),
     signature: optionalRecord(record.signature),
@@ -422,6 +420,8 @@ export async function installAgentBrowserObserver(page: {
   addInitScript(fn: () => void): Promise<unknown>;
   evaluate(fn: () => void): Promise<unknown>;
 }) {
+  await page.addInitScript(installPaintedFrames);
+  await page.evaluate(installPaintedFrames);
   await page.addInitScript(installBrowserBenchmark);
   await page.evaluate(installBrowserBenchmark);
 }
@@ -633,7 +633,7 @@ export async function measureSessionActivation(
                 : undefined,
               frameCount: frames.length,
               lastFrames: frames.slice(-4).map((frame) => ({
-                atMs: frame.atMs,
+                paintedAtMs: frame.paintedAtMs,
                 ready: frame.ready,
                 mutated: frame.mutated,
               })),
@@ -879,55 +879,62 @@ export async function measureSessionActivation(
               virtualKeys: timeline?.dataset.sessionTimelineKeyCount,
             };
           };
-          const frame = (frameAtMs: number) => {
-            const observerStartedAtMs = performance.now();
-            const current = sample();
-            // Observation time, not the frame's scheduled timestamp: a late frame's
-            // rAF argument precedes the moment the sample is actually seen.
-            const observedAtMs = performance.now();
-            const mutated = takeTimelineMutations() > 0;
-            const diagnostic = current || !(window as Window & { __claxedoPerfTrace?: boolean }).__claxedoPerfTrace ? undefined : notReadyDiagnostic();
-            const index = frames.length;
-            frames.push({
-              atMs: frameAtMs,
-              observedAtMs,
-              ready: !!current,
-              mutated,
-              observerSampleMs: observedAtMs - observerStartedAtMs,
-              signature: current?.signatureValue,
-              diagnostic,
-            });
-            if (!current) {
-              run = undefined;
-            } else if (!run || mutated || current.signature !== run.signature) {
-              run = {
-                startIndex: index,
-                startedAtMs: observedAtMs,
-                signature: current.signature,
-                paintedMessage: current.paintedMessage,
+          const paintedFrames = window.__claxedoPaintedFrames;
+          if (!paintedFrames) {
+            reject(new Error("Claxedo painted-frame clock is not installed"));
+            return;
+          }
+          paintedFrames({
+            sample: () => {
+              const sampledAtMs = performance.now();
+              const current = sample();
+              return {
+                current,
+                observerSampleMs: performance.now() - sampledAtMs,
+                mutated: takeTimelineMutations() > 0,
+                diagnostic: current || !(window as Window & { __claxedoPerfTrace?: boolean }).__claxedoPerfTrace ? undefined : notReadyDiagnostic(),
               };
-            }
-            if (run && index - run.startIndex >= confirmationFrames) {
-              mutations.disconnect();
-              resolve({
-                paintedAtMs: run.startedAtMs,
-                paintedMessage: run.paintedMessage,
-                frames,
+            },
+            painted: ({ current, observerSampleMs, mutated, diagnostic }, paintedAtMs) => {
+              const index = frames.length;
+              frames.push({
+                paintedAtMs,
+                ready: !!current,
+                mutated,
+                observerSampleMs,
+                signature: current?.signatureValue,
+                diagnostic,
               });
-              return;
-            }
-            if (performance.now() >= deadline) {
-              mutations.disconnect();
-              reject(
-                new Error(
-                  `Claxedo timeline did not settle on a canonical latest-turn message: ${JSON.stringify(timeoutDiagnostic())}`,
-                ),
-              );
-              return;
-            }
-            requestAnimationFrame(frame);
-          };
-          requestAnimationFrame(frame);
+              if (!current) {
+                run = undefined;
+              } else if (!run || mutated || current.signature !== run.signature) {
+                run = {
+                  startIndex: index,
+                  startedAtMs: paintedAtMs,
+                  signature: current.signature,
+                  paintedMessage: current.paintedMessage,
+                };
+              }
+              if (run && index - run.startIndex >= confirmationFrames) {
+                mutations.disconnect();
+                resolve({
+                  paintedAtMs: run.startedAtMs,
+                  paintedMessage: run.paintedMessage,
+                  frames,
+                });
+                return true;
+              }
+              if (performance.now() >= deadline) {
+                mutations.disconnect();
+                reject(
+                  new Error(
+                    `Claxedo timeline did not settle on a canonical latest-turn message: ${JSON.stringify(timeoutDiagnostic())}`,
+                  ),
+                );
+                return true;
+              }
+            },
+          });
         },
       ),
     {
@@ -1368,10 +1375,17 @@ function installBrowserBenchmark() {
   }
 
   const afterPaint = () =>
-    new Promise<number>((resolve) => {
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => resolve(performance.now())),
-      );
+    new Promise<number>((resolve, reject) => {
+      const paintedFrames = window.__claxedoPaintedFrames;
+      if (!paintedFrames) {
+        reject(new Error("Claxedo painted-frame clock is not installed"));
+        return;
+      }
+      const painted = (_: unknown, paintedAtMs: number) => {
+        resolve(paintedAtMs);
+        return true;
+      };
+      paintedFrames({ sample: () => undefined, painted, overtaken: painted });
     });
   const hash = async (value: string) => {
     const bytes = new TextEncoder().encode(value);
