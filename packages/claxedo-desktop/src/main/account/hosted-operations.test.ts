@@ -120,6 +120,24 @@ describe("resolveHostedOperation", () => {
     )
   })
 
+  test("forwards a cloud session's first read with the reader's viewport, and only the declared keys", () => {
+    expect(resolveHostedOperation("session.outline", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      rows: 40,
+      cols: 120,
+      reasoning: "1",
+      view: "must-not-reach-the-server",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=40&cols=120&reasoning=1",
+    })
+    expect(resolveHostedOperation("session.outline", { sessionId: "ses_1", workspaceId: "ws_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/outline?workspaceId=ws_1",
+    })
+  })
+
   test("reads the account's cloud usage facts for a range, and has no hosted dashboard read to route to", () => {
     expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "total" })).toEqual({
       method: "GET",

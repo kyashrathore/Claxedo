@@ -456,7 +456,7 @@ export const HOSTED_OPERATIONS = {
   "session.outline": {
     method: "GET",
     path: "/api/control/sessions/:sessionId/outline",
-    optionalQuery: ["workspaceId"],
+    optionalQuery: ["workspaceId", "rows", "cols", "reasoning"],
   },
   "session.gateway": {
     method: "GET",
