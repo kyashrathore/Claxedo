@@ -8,7 +8,7 @@ import type { BrowserTab } from "../tab"
 function ConsoleRow(props: { readonly entry: BrowserConsoleEntry }): JSX.Element {
   const level = () => props.entry.level
   return (
-    <li class="flex items-start gap-2 px-2 py-1 text-12-mono">
+    <li class="flex items-start gap-2 px-2 py-1 text-12-mono not-last:border-t-0 not-last:border-b not-last:border-border-weak-base">
       <span
         class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
         classList={{
@@ -91,7 +91,7 @@ export function ConsoleDrawer(props: { readonly tab: BrowserTab }): JSX.Element 
           </div>
         }
       >
-        <ul class="flex-1 overflow-auto divide-y divide-border-weak-base">
+        <ul class="flex-1 overflow-auto">
           <For each={props.tab.log()}>{(entry) => <ConsoleRow entry={entry} />}</For>
         </ul>
       </Show>

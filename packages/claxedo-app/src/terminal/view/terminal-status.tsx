@@ -45,9 +45,9 @@ export function TerminalStatus(props: {
       }
     >
       <div data-testid="terminal-failed" class="flex h-full items-center justify-center px-4 text-center">
-        <div class="max-w-sm space-y-3">
-          <div class="text-sm font-medium text-text-strong">{t("terminal.startFailed.title")}</div>
-          <div class="text-xs text-text-weak break-words">{startFailure()}</div>
+        <div class="max-w-sm">
+          <div class="mb-3 text-sm font-medium text-text-strong">{t("terminal.startFailed.title")}</div>
+          <div class="mb-3 text-xs text-text-weak break-words">{startFailure()}</div>
           <button
             type="button"
             class="h-10 rounded-md border border-border-weak-base px-4 text-sm text-text-base hover:bg-surface-base-hover active:scale-[0.96]"

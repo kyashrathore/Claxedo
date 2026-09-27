@@ -389,7 +389,7 @@ html[data-theme="codex"] [data-testid="rail-sidebar"] {
   background-color: var(--shell-surface-sidebar);
 }
 
-html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
+html[data-theme="codex"] [data-testid="rail-sidebar"] > [data-sidebar-header] {
   background-color: var(--shell-surface-sidebar);
   border-bottom-color: var(--shell-border-sidebar);
 }

@@ -11,7 +11,6 @@ import { walk } from "./lib/tree"
 const baseline: readonly Baselined[] = [
   { file: "src/settings/view/settings.css", matcher: ".settings-toolbar > :first-child", owner: "settings", reason: "first toolbar child loses its margin; give the child a class" },
   { file: "src/shell/styles/index.css", matcher: '[data-action="prompt-harness-model"] > :not(:first-child)', owner: "composer", reason: "collapsed composer hides the model button's trailing children; give them a class" },
-  { file: "src/shell/styles/ui-overrides.css", matcher: '[data-testid="rail-sidebar"] > :first-child', owner: "shell", reason: "codex theme pads the rail's first child; give the child a class" },
   { file: "src/tasks/view/tasks.css", matcher: ".tiptap > :first-child", owner: "tasks", reason: "the editor's first block loses its top margin; style the block type" },
   { file: "src/onboarding/view/first-project-canvas.css", matcher: "> form > *:nth-child(", owner: "onboarding", reason: "the project step staggers its form rows by position; give each row its delay" },
   { file: "src/tasks/view/tasks.css", matcher: '.tsk-dot[data-liveness="live"] { animation:', owner: "tasks", reason: "pulse on a live task's dot for as long as it is live" },
@@ -28,8 +27,6 @@ const baseline: readonly Baselined[] = [
   { file: "src/session/view/timeline/markdown-viewer.css", matcher: "will-change: transform", owner: "session", reason: "always-on hint on the viewer's centered placeholder; nothing animates it" },
   { file: "../ui/src/components/icon-button.css", matcher: "animation: stop-pulse", owner: "ui", reason: "the stop button's pulse while a turn runs; the button is mounted only then" },
   { file: "../ui/src/v2/components/text-shimmer-v2.css", matcher: "animation-iteration-count: infinite", owner: "ui", reason: "the swept copy sweeps while mounted, and is mounted only while the shimmer is active" },
-  { file: "src/terminal/view/terminal-status.tsx", matcher: "space-y-3", owner: "terminal", reason: "failed-start message stack; use gap" },
-  { file: "src/browser/view/console.tsx", matcher: "divide-y", owner: "browser", reason: "console log rows; use gap or a row border" },
 ]
 
 const kitFolder = "packages/ui"
