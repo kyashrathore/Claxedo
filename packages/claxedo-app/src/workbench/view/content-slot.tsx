@@ -7,6 +7,7 @@ import type { createSurfaceKeyRouter, SurfaceKeySlot } from "../keyboard"
 import { PaneContextProvider, type PaneContext } from "../pane-context"
 import { useWorkbench } from "../provider"
 import type { PaneRect } from "../types"
+import { createDeferredUnmount } from "./deferred-unmount"
 import { rectStyle } from "./geometry"
 import type { Presence } from "../handover"
 import type { RevealHolds } from "../reveal-holds"
@@ -60,7 +61,7 @@ export function ContentSlot(props: {
     holdReveal: (pending) => props.holds.hold(props.contentId, pending),
   }
   const opened = createMemo(() => wb.content(props.contentId))
-  const mounted = () => visible() || opened()?.kind.keepMounted === true
+  const mounted = createDeferredUnmount(() => visible() || opened()?.kind.keepMounted === true)
 
   return (
     <div
