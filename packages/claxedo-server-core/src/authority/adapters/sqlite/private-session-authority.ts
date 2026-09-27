@@ -836,8 +836,8 @@ export function createSqlitePrivateSessionAuthority(input: {
       requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "agent_turn")
       const at = now()
       db.transaction(() => {
-        db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ? AND workspace_id = ?`)
-          .run(at, at, value.sessionId, value.workspaceId)
+        db.prepare(`UPDATE session_history SET deleted_at = ? WHERE session_id = ? AND workspace_id = ?`)
+          .run(at, value.sessionId, value.workspaceId)
         db.prepare(`DELETE FROM session_messages WHERE session_id = ? AND workspace_id = ?`)
           .run(value.sessionId, value.workspaceId)
       })()
@@ -874,8 +874,8 @@ export function createSqlitePrivateSessionAuthority(input: {
       const at = now()
       for (const row of owned) {
         if (incoming.has(row.session_id)) continue
-        db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ?`)
-          .run(at, at, row.session_id)
+        db.prepare(`UPDATE session_history SET deleted_at = ? WHERE session_id = ?`)
+          .run(at, row.session_id)
         db.prepare(`DELETE FROM session_messages WHERE session_id = ?`).run(row.session_id)
       }
     })()

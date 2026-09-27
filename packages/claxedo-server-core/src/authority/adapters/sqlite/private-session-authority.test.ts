@@ -548,6 +548,35 @@ describe("SQLite private-session authority", () => {
     }
   })
 
+  test("a deleted session keeps its runtime's update time; only its deletion takes the authority's clock", async () => {
+    const { store, seed } = authorityWithSeed()
+    const creator = auth("creator")
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    for (const sessionId of ["session_deleted", "session_replaced", "session_kept"]) {
+      await store.reserveSession(creator, { operationId: `operation_${sessionId}`, sessionId, workspaceId: "workspace_main", kind: "create" })
+      await store.registerRuntimeSession({
+        createdAt: 500,
+        updatedAt: 1_000,
+        principalKind: "user",
+        actorId: creator.user.tokenIdentifier,
+        actorKind: "human",
+        operationId: `operation_${sessionId}`,
+        sessionId,
+        workspaceId: "workspace_main",
+      })
+    }
+
+    await store.deleteSessionVisibility(creator, { workspaceId: "workspace_main", sessionId: "session_deleted" })
+    await store.replaceSessionVisibility(creator, { workspaceId: "workspace_main", sessions: [{ sessionId: "session_kept" }] })
+
+    const stored = seed().prepare(`SELECT session_id, updated_at, deleted_at FROM session_history ORDER BY session_id`).all()
+    expect(stored).toEqual([
+      { session_id: "session_deleted", updated_at: 1_000, deleted_at: expect.any(Number) },
+      { session_id: "session_kept", updated_at: 1_000, deleted_at: null },
+      { session_id: "session_replaced", updated_at: 1_000, deleted_at: expect.any(Number) },
+    ])
+  })
+
   test("leaves a session an agent drove unprompted", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-agent-turn-"))
     temporaryDirectories.push(directory)

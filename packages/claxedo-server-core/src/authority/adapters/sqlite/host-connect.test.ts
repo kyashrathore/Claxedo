@@ -1354,7 +1354,7 @@ describe("machine session rows", () => {
   })
 
   test("refuses rows the enrollment does not serve now, and a removal ends republishing", async () => {
-    const { publish, page, publisher } = await served()
+    const { publish, page, publisher, db } = await served()
 
     await expect(publish({ rows: [row("ses_x")] }, { ...publisher, generation: 1 }))
       .resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
@@ -1365,6 +1365,8 @@ describe("machine session rows", () => {
     await publish({ rows: [row("ses_gone")] })
     await expect(publish({ removed: [{ workspaceId: "ws_a", sessionId: "ses_gone" }] })).resolves.toEqual({ accepted: 1, refused: [] })
     expect(await page(owner)).toEqual([])
+    expect(db().prepare(`SELECT updated_at, deleted_at FROM session_history WHERE session_id = ?`).get("ses_gone"))
+      .toEqual({ updated_at: 200, deleted_at: expect.any(Number) })
     await expect(publish({ rows: [row("ses_gone")] }))
       .resolves.toMatchObject({ refused: [{ reason: "session_deleted" }] })
   })

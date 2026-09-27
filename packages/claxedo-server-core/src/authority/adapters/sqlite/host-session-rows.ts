@@ -32,9 +32,9 @@ export function publishSqliteHostSessionRows(
     for (const row of plan.update) writeListFields(db, row)
     for (const ref of plan.remove) {
       db.prepare(`
-        UPDATE session_history SET deleted_at = ?, updated_at = MAX(updated_at, ?)
+        UPDATE session_history SET deleted_at = ?
         WHERE session_id = ? AND workspace_id = ? AND deleted_at IS NULL
-      `).run(now, now, ref.sessionId, ref.workspaceId)
+      `).run(now, ref.sessionId, ref.workspaceId)
     }
     return plan.result
   })()

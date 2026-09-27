@@ -2111,13 +2111,15 @@ describe("machine session rows", () => {
   })
 
   test("a removal deletes the row, an archive hides it, and a deleted session is not republished", async () => {
-    const { publish, page, alice } = await served()
+    const { publish, page, alice, input } = await served()
     await publish({ rows: [row("ses_gone"), row("ses_archived", { archivedAt: 900 })] })
     expect((await page(alice)).map((item) => item.session_id)).toEqual(["ses_gone"])
     expect((await page(alice, "all")).map((item) => item.session_id).sort()).toEqual(["ses_archived", "ses_gone"])
 
     await expect(publish({ removed: [{ workspaceId: "ws_local", sessionId: "ses_gone" }] })).resolves.toEqual({ accepted: 1, refused: [] })
     expect(await page(alice)).toEqual([])
+    expect(await input.database.prepare("select updated_at, deleted_at from sessions where session_id = 'ses_gone'").first())
+      .toEqual({ updated_at: 200, deleted_at: expect.any(Number) })
     await expect(publish({ rows: [row("ses_gone")] }))
       .resolves.toMatchObject({ refused: [{ sessionId: "ses_gone", reason: "session_deleted" }] })
   })

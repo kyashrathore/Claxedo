@@ -1150,6 +1150,9 @@ describe("D1 private multiplayer session authority", () => {
       }),
     ).rejects.toMatchObject({ status: 403 })
     expect(await input.database.prepare("select 1 from sessions where session_id = 'ses_unknown'").first()).toBeNull()
+    const updatedAt = async (sessionId: string) =>
+      await input.database.prepare("select updated_at, deleted_at from sessions where session_id = ?").bind(sessionId).first()
+    const registered = { a: await updatedAt("ses_a"), b: await updatedAt("ses_b") }
 
     await input.sessions.replaceSessionVisibility(alice, {
       workspaceId: "ws_main",
@@ -1159,9 +1162,10 @@ describe("D1 private multiplayer session authority", () => {
       expect.objectContaining({ session_id: "ses_a", title: "kept" }),
     ])
     expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
-    expect(
-      await input.database.prepare("select deleted_at from sessions where session_id = 'ses_b'").first(),
-    ).toMatchObject({ deleted_at: expect.any(Number) })
+    expect(await updatedAt("ses_b")).toEqual({ ...registered.b, deleted_at: expect.any(Number) })
+
+    await input.sessions.deleteSessionVisibility(alice, { workspaceId: "ws_main", sessionId: "ses_a" })
+    expect(await updatedAt("ses_a")).toEqual({ ...registered.a, deleted_at: expect.any(Number) })
   })
 
   test("stamps the admitted human turn and refuses to move it backwards", async () => {

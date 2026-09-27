@@ -39,8 +39,8 @@ export async function publishD1HostSessionRows(
     ...plan.update.map((row) => listFieldsStatement(database, row)),
     ...plan.remove.map((ref) =>
       database
-        .prepare(`update sessions set deleted_at = ?, updated_at = max(updated_at, ?) where session_id = ? and workspace_id = ? and deleted_at is null`)
-        .bind(now, now, ref.sessionId, ref.workspaceId)),
+        .prepare(`update sessions set deleted_at = ? where session_id = ? and workspace_id = ? and deleted_at is null`)
+        .bind(now, ref.sessionId, ref.workspaceId)),
   ]
   if (statements.length) await database.batch(statements)
   return plan.result

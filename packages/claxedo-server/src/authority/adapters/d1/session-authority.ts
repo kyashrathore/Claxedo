@@ -1842,12 +1842,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         this.database
           .prepare(
             `
-        update sessions set deleted_at = ?, updated_at = ?
+        update sessions set deleted_at = ?
         where session_id = ? and workspace_id = ? and deleted_at is null
           and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
       `,
           )
-          .bind(now, now, sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+          .bind(now, sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
         this.database.prepare(`delete from session_messages where session_id = ?`).bind(sessionId),
         this.database
           .prepare(
@@ -2067,14 +2067,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         this.database
           .prepare(
             `
-        update sessions set deleted_at = ?, updated_at = ?
+        update sessions set deleted_at = ?
         where workspace_id = ? and creator_actor_id = ? and deleted_at is null
           and not exists (select 1 from json_each(?) incoming where incoming.value = sessions.session_id)
           and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
       `,
           )
           .bind(
-            now,
             now,
             workspaceId,
             who.actorId,
