@@ -256,8 +256,11 @@ process.stdin.on("data", (chunk) => {
   return { dir, binary, log }
 }
 
+/** Under the suite's 20 s test timeout, so a slow fake start fails here, naming the log, and the test's finally still runs. */
+const LOG_WAIT_MS = 15_000
+
 async function waitForLog(log: string, match: (row: Record<string, unknown>) => boolean) {
-  for (let attempt = 0; attempt < 200; attempt++) {
+  for (const deadline = performance.now() + LOG_WAIT_MS; performance.now() < deadline;) {
     const rows = await fs.promises.readFile(log, "utf8")
       .then((value) => value.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>), () => [])
     if (rows.some(match)) return
@@ -566,21 +569,26 @@ describe("CodexHarnessAdapter", () => {
     })
 
     const creation = adapter.createSession(fake.dir)
-    await waitForLog(fake.log, (row) => row.method === "initialize")
-    const pid = fs.readFileSync(fake.log, "utf8").trim().split("\n")
-      .map((line) => JSON.parse(line) as { event?: string; pid?: number })
-      .find((row) => row.event === "started")?.pid
-    if (!pid) throw new Error("Fake Codex process did not record its PID")
-    await adapter.dispose()
+    try {
+      await waitForLog(fake.log, (row) => row.method === "initialize")
+      const pid = fs.readFileSync(fake.log, "utf8").trim().split("\n")
+        .map((line) => JSON.parse(line) as { event?: string; pid?: number })
+        .find((row) => row.event === "started")?.pid
+      if (!pid) throw new Error("Fake Codex process did not record its PID")
+      await adapter.dispose()
 
-    await expect(creation).rejects.toThrow()
-    // The sigterm log row comes from the fake's POSIX signal handler. Windows
-    // dispose is TerminateProcess on the whole tree — no handler ever runs, so
-    // the observable contract there is only that the real process is gone.
-    if (process.platform !== "win32") {
-      await waitForLog(fake.log, (row) => row.event === "sigterm")
+      await expect(creation).rejects.toThrow()
+      // The sigterm log row comes from the fake's POSIX signal handler. Windows
+      // dispose is TerminateProcess on the whole tree — no handler ever runs, so
+      // the observable contract there is only that the real process is gone.
+      if (process.platform !== "win32") {
+        await waitForLog(fake.log, (row) => row.event === "sigterm")
+      }
+      await waitForProcessExit(pid)
+    } finally {
+      await adapter.dispose()
+      await creation.catch(() => undefined)
     }
-    await waitForProcessExit(pid)
   })
 
   test("omits Codex app-server default model from provider requests", async () => {
