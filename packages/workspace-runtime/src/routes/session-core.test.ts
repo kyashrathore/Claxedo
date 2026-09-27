@@ -1364,6 +1364,40 @@ describe("createSessionRoutes directory-less sessions", () => {
     }
   }
 
+  for (const managed of [false, true]) {
+    test(`a fork the harness makes under an id other than the requested one is deleted before it is read back or registered (${managed ? "managed" : "unmanaged"})`, async () => {
+      const calls: string[] = []
+      const fixture: AgentHarnessAdapter = {
+        ...adapter(),
+        forkSession: async () => { calls.push("fork"); return { id: "session_engine" } },
+        deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
+      }
+      const host = persistingHost(fixture, () => ({ created: 1, updated: 1 }))
+      host.persist("session_parent")
+      const app = routes({
+        adapter: fixture,
+        host,
+        ...(managed ? {
+          sessionAccessPolicy: registrationPolicy(async (input) => {
+            calls.push(`register:${input.sessionId}`)
+            return { allowed: true }
+          }),
+        } : {}),
+        afterCreateSession: async () => { calls.push("project") },
+      })
+
+      const response = await app.request("http://localhost/session/session_parent/fork", {
+        method: "POST",
+        ...(managed ? { headers: { "x-claxedo-session-registration-operation": "op_fork_reserved" } } : {}),
+        body: JSON.stringify({ id: "session_child", messageId: "message_1" }),
+      })
+
+      expect(response.status).toBe(500)
+      expect(calls).toEqual(["fork", "delete:session_engine"])
+      expect([...host.rows.keys()]).toEqual(["session_parent"])
+    })
+  }
+
   test("a forked child is persisted by its host before it is read back, and answers its row's times", async () => {
     const fixture: AgentHarnessAdapter = { ...adapter(), forkSession: async () => ({ id: "session_child" }) }
     const host = persistingHost(fixture, (id) => ({ created: 3, updated: id === "session_child" ? 4 : 3 }))

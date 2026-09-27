@@ -100,3 +100,14 @@ test("a fork by a harness that keeps its sessions elsewhere is persisted by the 
   expect(read.status).toBe(200)
   expect(await read.json()).toMatchObject({ id: "child", time: forked.time })
 })
+
+test("a fork the harness makes under an id other than the requested one is deleted and refused", async () => {
+  const f = await fixture(() => "engine_child")
+
+  const response = await f.request("/session/parent/fork", "POST", { id: "child", messageId: "msg_1" })
+
+  expect(response.status).toBe(500)
+  expect(f.deleted).toEqual(["engine_child"])
+  expect((await f.request("/session/engine_child")).status).toBe(404)
+  expect((await f.request("/session/child")).status).toBe(404)
+})

@@ -2099,6 +2099,11 @@ export function createSessionRoutes(opts: Opts) {
         : await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
       let forked: { session: AgentSession; time: RuntimeSessionTime }
       try {
+        // The requested id is the one a managed fork reserved, and the only
+        // one its registration and compensation can name.
+        if (body.id && child.id !== body.id) {
+          throw new Error(`Session ${sessionId} was forked into ${child.id}, not the requested ${body.id}`)
+        }
         forked = await readCreatedSession(opts, c, adapter, directory, child.id)
       } catch (error) {
         await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
