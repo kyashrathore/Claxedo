@@ -107,7 +107,7 @@ export const TRANSCRIPT_HEADING_SCALE_KEYS: readonly TranscriptHeadingScale[] = 
 /**
  * Every number the transcript is set with, as the `--transcript-<css>` variable
  * the stylesheets read (`markdown.css`, `message-part.css`, `basic-tool.css`,
- * `activity-row.css`, `work-group.css`, `session-turn.css`) and the value those
+ * `work-group.css`, `session-turn.css`) and the value those
  * stylesheets fall back to when the variable is absent. A `shipped` of
  * `undefined` marks a knob whose fallback differs per element (block margins,
  * the responsive column, a code block's inherited leading, a group's indent),

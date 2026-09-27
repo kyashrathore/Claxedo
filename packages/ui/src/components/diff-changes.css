@@ -32,9 +32,9 @@
 }
 
 /*
- * muted-hover variant (T0.2): +N -N sit at --text-weaker at rest and only light
- * green/red while their enclosing .activity-row is hovered (mouse-capable devices).
- * tabular-nums so digit changes never shift layout (F1/F9).
+ * muted-hover variant: +N -N sit at --text-weaker at rest and only light
+ * green/red while their enclosing collapsible trigger is hovered (mouse-capable
+ * devices). tabular-nums so digit changes never shift layout.
  */
 .ui-diff-changes[data-variant="muted-hover"] {
   .ui-diff-changes-additions,
@@ -46,18 +46,12 @@
 }
 
 @media (hover: hover) {
-  .activity-row:hover
-    [data-component="diff-changes"][data-variant="muted-hover"]
-    .ui-diff-changes-additions,
   [data-slot="collapsible-trigger"]:hover
     [data-component="diff-changes"][data-variant="muted-hover"]
     .ui-diff-changes-additions {
     color: var(--text-diff-add-base);
   }
 
-  .activity-row:hover
-    [data-component="diff-changes"][data-variant="muted-hover"]
-    .ui-diff-changes-deletions,
   [data-slot="collapsible-trigger"]:hover
     [data-component="diff-changes"][data-variant="muted-hover"]
     .ui-diff-changes-deletions {
