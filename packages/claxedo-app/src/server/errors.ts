@@ -180,7 +180,3 @@ export function isTurnAdmissionConflict(error: unknown): boolean {
     data?.code === "session_turn_in_progress" ||
     data?.message === "Session is already processing a message"
 }
-
-export function isCodexTurnAborted(data: unknown): boolean {
-  return asRecord(data)?.message === "Codex turn aborted"
-}

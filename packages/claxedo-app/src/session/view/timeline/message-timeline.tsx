@@ -22,10 +22,9 @@ import {
 import { createStore } from "solid-js/store"
 import { createVirtualizer, defaultRangeExtractor, elementScroll } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
+import { assistantMessageSettled, isSubagentToolPart } from "@claxedo/agent-runtime-contract/turn-fold"
 import {
-  assistantMessageSettled,
   ContextToolGroup,
-  isSubagentToolPart,
   MessageNav,
   MessageDivider,
   Part as MessagePart,

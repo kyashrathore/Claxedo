@@ -126,13 +126,5 @@
   {
     "file": "src/transcript/message-part.tsx",
     "name": "messageID"
-  },
-  {
-    "file": "src/transcript/part-groups.ts",
-    "name": "messageID"
-  },
-  {
-    "file": "src/transcript/part-groups.ts",
-    "name": "partID"
   }
 ]

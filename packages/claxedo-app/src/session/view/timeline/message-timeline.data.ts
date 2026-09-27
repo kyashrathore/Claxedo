@@ -20,13 +20,16 @@ import {
   countFoldableGroups,
   foldedGroupKeys,
   groupParts,
-  isHiddenTool,
-  isPendingQuestion,
+  isGroupablePart,
   isSubagentToolPart,
+  partHasText,
   turnFoldDecision,
+  turnFoldShape,
+  turnInterruption,
+  turnSegments,
   type PartRef,
-} from "@/transcript"
-import { isCodexTurnAborted, isTurnAdmissionConflict } from "@/server"
+} from "@claxedo/agent-runtime-contract/turn-fold"
+import { isTurnAdmissionConflict } from "@/server"
 import {
   sessionRecoveryClass,
   sessionRecoveryDescription,
@@ -34,7 +37,6 @@ import {
 import { stripRelayPrefix } from "./provider-error-detail"
 import type { TurnOutcome } from "./model"
 import { TimelineRow } from "./timeline-row-model"
-import { partHasText } from "../../transcript/text-presence"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -78,7 +80,7 @@ export namespace Timeline {
   }) {
     const refs = input.assistantMessages.flatMap((message, messageIndex) =>
       input.getMessageParts(message.id)
-        .filter((part) => renderablePart(part, partHasText, input.showReasoning ?? false))
+        .filter((part) => isGroupablePart(part, partHasText, input.showReasoning ?? false))
         .map((part) => ({ messageId: message.id, messageIndex, part })),
     )
     const partById = new Map(refs.map((ref) => [ref.part.id, ref.part] as const))
@@ -111,36 +113,22 @@ export namespace Timeline {
     const compaction = userParts.some((p) => p.type === "compaction")
     const handoff = userParts.flatMap(readHandoffPart)[0]
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
-    const nativeInterruptedIndex = assistantMessages.findIndex(assistantMessageInterrupted)
-    const sdkInterruptedIndex =
-      nativeInterruptedIndex === -1 && lastTurn?.status === "cancelled" && lastTurn.assistantMessageId
-        ? assistantMessages.findIndex((message) => message.id === lastTurn.assistantMessageId)
-        : -1
-    const interruptedMessageIndex =
-      nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterruptedIndex
-    const interrupted = interruptedMessageIndex !== -1
-    const errorMessage = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")
+    const shape = turnFoldShape({
+      assistantMessages,
+      partsOf: getMessageParts,
+      hasText,
+      showReasoning,
+      compaction,
+      cancelledAssistantMessageId: cancelledAssistantMessageId(lastTurn),
+    })
+    const interrupted = shape.interruptedMessageIndex !== -1
+    const errorMessage = shape.errorMessage
     const error = errorMessage?.error
-    const settled = assistantMessages.some(assistantMessageSettled)
-    const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
-      getMessageParts(message.id)
-        .filter((part) =>
-          renderablePart(part, hasText, showReasoning) &&
-          !(interrupted && part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
-        )
-        .map((part) => ({ messageId: message.id, messageIndex, part })),
-    )
+    const assistantPartRefs = shape.refs
     const visibleAssistantPartRefs = visibleAssistantMessageIds
       ? assistantPartRefs.filter((ref) => visibleAssistantMessageIds.has(ref.messageId))
       : assistantPartRefs
-    const groupSegments = (refs: typeof assistantPartRefs) =>
-      interrupted && !compaction
-        ? [
-            groupParts(refs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)),
-            groupParts(refs.filter((ref) => ref.messageIndex > interruptedMessageIndex)),
-          ]
-        : [groupParts(refs)]
-    const assistantItems = groupSegments(visibleAssistantPartRefs).flatMap((segment, index) => [
+    const assistantItems = turnSegments(visibleAssistantPartRefs, shape).flatMap((segment, index) => [
       ...(index > 0 ? [{ type: "interrupted" as const }] : []),
       ...segment.map((group) => ({ type: "part" as const, group })),
     ])
@@ -183,13 +171,13 @@ export namespace Timeline {
       const found = partById.get(ref.partId)
       return found ? { type: untrack(() => found.type), userOpen: isPartExpanded(ref.partId) } : found
     }
-    const liveFoldableCount = countFoldableGroups(groupSegments(assistantPartRefs).flat(), partOfRef)
+    const liveFoldableCount = countFoldableGroups(turnSegments(assistantPartRefs, shape).flat(), partOfRef)
     const foldableCount = Math.max(liveFoldableCount, priorFoldableCount(userMessage.id) ?? 0)
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
     const interruptedActivityTime =
-      sdkInterruptedIndex !== -1
+      interrupted && !shape.harnessInterrupted
         ? lastTurn?.completedAt
         : interrupted && lastAssistantMessage
           ? lastKnownPartActivity(getMessageParts(lastAssistantMessage.id))
@@ -205,7 +193,7 @@ export namespace Timeline {
     const working = isActive && (status === "working" || status === "retrying" || settlePending)
     const fold = turnFoldDecision({
       foldableCount,
-      settled,
+      settled: shape.settled,
       interrupted,
       errored: !!error,
       busy: working,
@@ -439,19 +427,13 @@ export namespace Timeline {
     assistantMessages: AssistantMessage[],
     lastTurn?: TurnOutcome,
   ) {
-    if (assistantMessages.some(assistantMessageInterrupted)) return true
-    if (lastTurn?.status !== "cancelled" || !lastTurn.assistantMessageId) return false
-    return assistantMessages.some((message) => message.id === lastTurn.assistantMessageId)
-  }
-
-  function assistantMessageInterrupted(message: AssistantMessage) {
-    if (message.error?.name === "MessageAbortedError") return true
-    if (message.error?.name !== "UnknownError") return false
-    return isCodexTurnAborted(message.error.data)
+    return turnInterruption(assistantMessages, cancelledAssistantMessageId(lastTurn)).index !== -1
   }
 }
 
-const renderableParts = new Set(["compaction", "handoff", "text", "reasoning", "tool", "file"])
+function cancelledAssistantMessageId(lastTurn: TurnOutcome | undefined) {
+  return lastTurn?.status === "cancelled" ? lastTurn.assistantMessageId : undefined
+}
 
 function handoffHarnessLabel(id?: string) {
   if (!id) return "another harness"
@@ -484,16 +466,6 @@ function lastKnownPartActivity(parts: Part[]): number | undefined {
     return []
   })
   return times.length ? Math.max(...times) : undefined
-}
-
-function renderablePart(part: Part, hasText: (part: Part) => boolean, showReasoning: boolean) {
-  if (part.type === "tool") {
-    if (isHiddenTool(part)) return false
-    return !isPendingQuestion(part)
-  }
-  if (part.type === "text") return hasText(part)
-  if (part.type === "reasoning") return showReasoning && hasText(part)
-  return renderableParts.has(part.type)
 }
 
 export namespace MessageComment {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { canonicalToolName, toolNameAliases } from "./tool-names"
+import { canonicalToolName, claxedoToolName, toolNameAliases } from "./tool-names"
 
 describe("canonicalToolName", () => {
   test("lowercases a harness's own casing", () => {
@@ -39,5 +39,20 @@ describe("canonicalToolName", () => {
     for (const [alias] of toolNameAliases()) {
       expect(canonicalToolName(canonicalToolName(alias))).toBe(canonicalToolName(alias))
     }
+  })
+})
+
+describe("claxedoToolName", () => {
+  test("reads the Claxedo tool from each spelling a harness sends it under", () => {
+    expect(claxedoToolName("mcp__claxedo__sessions_list")).toBe("sessions_list")
+    expect(claxedoToolName("mcp__claxedo-mcp__anything")).toBe("anything")
+    expect(claxedoToolName("claxedo-mcp_anything")).toBe("anything")
+    expect(claxedoToolName("claxedo_session_get")).toBe("session_get")
+    expect(claxedoToolName("mcp", { server: "claxedo", tool: "Task_List" })).toBe("task_list")
+  })
+
+  test("a bare claxedo_ prefix names a Claxedo tool only when the rest is one", () => {
+    expect(claxedoToolName("claxedo_unknown")).toBeUndefined()
+    expect(claxedoToolName("bash")).toBeUndefined()
   })
 })

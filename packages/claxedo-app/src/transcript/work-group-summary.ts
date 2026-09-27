@@ -4,7 +4,7 @@ import { getFilename } from "@/ui/utils"
 import type { TranscriptI18n } from "./i18n"
 import { genericToolIcon, toolActionPhrase } from "./basic-tool"
 import { clampLabel } from "./message-part-text"
-import { EDIT_TOOL_NAMES, WEB_TOOL_NAMES } from "./part-groups"
+import { EDIT_TOOL_NAMES, WEB_TOOL_NAMES } from "@claxedo/agent-runtime-contract/turn-fold"
 import { stripShellWrapper } from "./shell-wrapper"
 
 export type WorkGroupCounts = {

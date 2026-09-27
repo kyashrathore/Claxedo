@@ -9,7 +9,7 @@ It is the old app's session renderers, **moved, not rebuilt**: only import paths
 - The data context (`data.tsx`): `DataProvider` and `useData()` carry the store the renderers read, the placement folder, and the host's callbacks (session and task hrefs, subagent resolution, file URLs, tool images). `useOptionalData()` is for renderers that also mount outside a session.
 - Parts (`message-part.tsx`): the registry from `part.type` and tool name to a renderer, the harness tool-name aliases, and the user-message, text, reasoning, tool, image and file renderers.
 - Tool rows (`basic-tool.tsx`, `activity-row.tsx`, `claxedo-tool*.ts(x)`, `plan-tool.ts`, `question-*.ts(x)`, `tool-error-card.tsx`, `scrollable-output.tsx`, `shell-wrapper.ts`, `local-preview.ts`).
-- Grouping and the fold (`part-groups.ts`, `work-group-summary.ts`, `turn-fold.ts`, `turn-fold-row.tsx`).
+- Grouping and the fold: the rule is `@claxedo/agent-runtime-contract/turn-fold`, shared with the runtime's turn record; this folder draws it (`same-groups.ts`, `work-group-summary.ts`, `turn-fold-row.tsx`).
 - Markdown (`markdown*.ts(x)`, `mermaid.ts`, `transcript-link.ts`, `safe-link.ts`), and image availability per URL (`image-availability.ts`).
 - File and diff viewing (`file.tsx`, `file-media.tsx`, `diff/`, `session-diff.ts`, `review-code-view*.ts(x)`, `line-comment*.tsx`).
 - Subagents (`subagent-chip.tsx`, `agent-glyph.tsx`), the rail (`message-nav.tsx`), the retry card (`session-retry.tsx`), and `formatDuration`.
@@ -54,16 +54,9 @@ It is the old app's session renderers, **moved, not rebuilt**: only import paths
 
 ## Why grouping and the fold work this way
 
-- Group identity uses canonical tool spellings; harness variants (`command`, `read_file`, `ls`) fold in through the contract's `canonicalToolName`, so a new spelling is added once.
-- Consecutive context tools (read, list, glob, grep) fold into an "Explored" group at any length, consecutive subagent spawns into an agents group at any length (a lone spawn too: the chip row is the only shape that draws one), and a run of work tools only at two or more members. Any other part flushes all three runs. Work is named by exclusion (not context, subagent, hidden or addressed to the reader), because a list names only the tools it knows, and a missing tool breaks a run into its own row.
-- A read that returned an image stays its own row: a group summarizes reads as a count, and a count cannot stand in for a thumbnail.
-- A failed spawn stays renderable so it can show the tool error when no child was admitted; its outcome does not say whether a child exists. A subagent spawn is recognized by name (the contract owns the spellings), or by an MCP tool declaring task work on its input.
+- The rule is `@claxedo/agent-runtime-contract/turn-fold`; the contract's README says why it groups and folds as it does. A turn whose parts are still pending on first paint (`latest-surface`) folds on the count it will have, and the timeline keeps that count as a floor.
 - A work group is collapsed by default; its body scrolls at 224 px with edge fades only when it overflows, and dims its members. An open member (a diff, a file, an output) grows the list to fit rather than scrolling through 224 px. Its header matches the tool rows' tone and 14 px icon.
 - The group summary is present-continuous while running and past tense when settled, the first segment sentence-case and the rest lowercase, joined with " · ". While a member runs, the header shows that member's live summary, so a long run stays one updating row. A group stays active between members until execution moves past it: `busy` belongs to the active turn's trailing group, and a completed member does not close it. Members no bucket claims are still named: a single call as its own row names it, a run of one tool counted by that tool ("ran 2 skills", or its opaque label verbatim), a mixed run by its count.
-- A single tool is not folded: it is already one compact row, and folding hides the only actionable content behind a click. A grouped run counts as one row because it has its own disclosure.
-- The turn's answer is its last text group: no harness marks which text part answers (`finish` is never set natively, `AgentStepFinishPart` never emitted), so position stands in for it; narration before the last tool call folds with the work.
-- A finished turn folds its machinery (tool runs, answered questions, spawns, reasoning, narration between tools) behind "Worked for Xs", leaving the answer; an explicit toggle beats the auto-fold. A working turn gets no fold and no control: settled alone cannot tell a finished turn from one between steps. Settled is per message, so a multi-step turn reads settled from its first step. A settled turn whose parts are still pending (the `latest-surface` first paint) folds on the count it will have, and the timeline keeps that count as a floor. An interrupted or failed turn keeps the control but does not fold on its own: its rows explain what happened, and a turn opened by hand and then interrupted must still be collapsible.
-- A reader's own fold hides all of the turn, open rows included; an automatic fold never takes a row the reader opened.
 - The collapsed "Thought for Ns" body is muted 13 px with no large top margin.
 
 ## Why markdown renders this way

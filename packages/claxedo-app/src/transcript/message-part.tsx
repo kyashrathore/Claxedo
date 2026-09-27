@@ -1,4 +1,4 @@
-import { toolNameAliases } from "@claxedo/agent-runtime-contract"
+import { claxedoToolName, toolNameAliases } from "@claxedo/agent-runtime-contract"
 import {
   Component,
   createEffect,
@@ -37,15 +37,14 @@ import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
-import { groupParts, isHiddenTool, isPendingQuestion, isSubagentToolPart, sameGroups, type PartGroup, type PartRef } from "./part-groups"
-import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
-import { TurnFoldRow } from "./turn-fold-row"
+import { groupParts, isHiddenTool, isPendingQuestion, isSubagentToolPart, type PartGroup, type PartRef } from "@claxedo/agent-runtime-contract/turn-fold"
+import { sameGroups } from "./same-groups"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
 import { dispatchPlanOpen, readPlanToolInput } from "./plan-tool"
 import { ToolErrorCard } from "./tool-error-card"
 import { ClaxedoTool } from "./claxedo-tool"
-import { claxedoToolName, claxedoToolTitle, claxedoToolView } from "./claxedo-tool-view"
+import { claxedoToolTitle, claxedoToolView } from "./claxedo-tool-view"
 import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
 import { Markdown } from "./markdown"
@@ -522,11 +521,6 @@ function sessionLink(
   return `${path.slice(0, idx)}/session/${id}`
 }
 
-function list<T>(value: T[] | undefined | null, fallback: T[]) {
-  if (Array.isArray(value)) return value
-  return fallback
-}
-
 function same<T>(a: readonly T[] | undefined, b: readonly T[] | undefined) {
   if (a === b) return true
   if (!a || !b) return false
@@ -693,89 +687,6 @@ function PartGroups(
         )
       }}
     </Index>
-  )
-}
-
-export function AssistantParts(
-  props: PartGroupSlots & {
-    messages: AgentAssistantMessage[]
-    working?: boolean
-    showReasoningSummaries?: boolean
-    foldSettledTurn?: boolean
-    turnInterrupted?: boolean
-    turnErrored?: boolean
-  },
-) {
-  const data = useData()
-  const emptyParts: AgentContentPart[] = []
-  const msgs = createMemo(() => index(props.messages))
-  const part = createMemo(
-    () =>
-      new Map(
-        props.messages.map((message) => [message.id, index(list(data.store.part?.[message.id], emptyParts))] as const),
-      ),
-  )
-
-  const grouped = createMemo(
-    () =>
-      groupParts(
-        props.messages.flatMap((message) =>
-          list(data.store.part?.[message.id], emptyParts)
-            .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
-            .map((part) => ({
-              messageId: message.id,
-              part,
-            })),
-        ),
-      ),
-    [] as PartGroup[],
-    { equals: sameGroups },
-  )
-
-  const last = createMemo(() => grouped().at(-1)?.key)
-
-  const partOf = (ref: PartRef) => part().get(ref.messageId)?.get(ref.partId)
-  const [foldChoice, setFoldChoice] = createSignal<boolean | undefined>(undefined)
-  const settled = createMemo(() => props.messages.some(assistantMessageSettled))
-  const foldableCount = createMemo(() => countFoldableGroups(grouped(), partOf))
-  const fold = createMemo(() =>
-    turnFoldDecision({
-      foldableCount: foldableCount(),
-      settled: settled(),
-      interrupted: props.turnInterrupted,
-      errored: props.turnErrored,
-      busy: props.working,
-      foldWhenSettled: props.foldSettledTurn,
-      userChoice: foldChoice(),
-    }),
-  )
-  const folded = createMemo(() => foldedGroupKeys(fold(), grouped(), partOf))
-  const visibleGroups = createMemo(() => {
-    const keys = folded()
-    return keys.size === 0 ? grouped() : grouped().filter((group) => !keys.has(group.key))
-  })
-
-  return (
-    <>
-      <Show when={fold().canFold}>
-        <TurnFoldRow
-          durationMs={props.turnDurationMs}
-          folded={fold().folded}
-          onToggle={() => setFoldChoice(!fold().folded)}
-        />
-      </Show>
-      <PartGroups
-        groups={visibleGroups()}
-        message={(messageId) => msgs().get(messageId)}
-        part={partOf}
-        busyGroupKey={props.working ? last() : undefined}
-        showAssistantCopyPartId={props.showAssistantCopyPartId}
-        turnDurationMs={props.turnDurationMs}
-        useV2Actions={props.useV2Actions}
-        shellToolDefaultOpen={props.shellToolDefaultOpen}
-        editToolDefaultOpen={props.editToolDefaultOpen}
-      />
-    </>
   )
 }
 

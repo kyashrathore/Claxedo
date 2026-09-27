@@ -26,6 +26,13 @@
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     },
+    "./turn-fold": {
+      "development": "./src/turn-fold.ts",
+      "bun": "./src/turn-fold.ts",
+      "types": "./dist/turn-fold.d.ts",
+      "import": "./dist/turn-fold.mjs",
+      "default": "./dist/turn-fold.mjs"
+    },
     "./elicitation-pattern-worker": {
       "development": "./src/elicitation-pattern-worker.ts",
       "bun": "./src/elicitation-pattern-worker.ts",
@@ -43,7 +50,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && bun build src/elicitation-pattern-worker.ts --target=browser --format=esm --outfile=dist/elicitation-pattern-worker.mjs && tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && bun build src/elicitation-pattern-worker.ts --target=browser --format=esm --outfile=dist/elicitation-pattern-worker.mjs && bun build src/turn-fold.ts --target=browser --format=esm --outfile=dist/turn-fold.mjs && tsc -p tsconfig.build.json",
     "test:node": "node --test scripts/package.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test src",

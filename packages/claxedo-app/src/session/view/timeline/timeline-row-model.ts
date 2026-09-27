@@ -1,4 +1,4 @@
-import type { PartGroup } from "@/transcript"
+import type { PartGroup } from "@claxedo/agent-runtime-contract/turn-fold"
 import type { DispatchContext } from "./provider-error-detail"
 import type { SessionErrorClass } from "./turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"

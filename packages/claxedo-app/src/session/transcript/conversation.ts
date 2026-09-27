@@ -3,7 +3,7 @@ import type { QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
 import type { ConversationMessage } from "@/transcript"
 import { isOptimisticMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
 import type { TranscriptData } from "./model"
-import { partHasText, textIsPresent } from "./text-presence"
+import { partHasText, textIsPresent } from "@claxedo/agent-runtime-contract/turn-fold"
 
 export type SetTranscript = SetStoreFunction<TranscriptData>
 

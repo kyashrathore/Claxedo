@@ -1,10 +1,8 @@
 import type { TranscriptI18n, TranscriptTextKey } from "./i18n"
 import { asArray, asFiniteNumber, asRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { jsonRecord } from "@claxedo/helpers"
-import { readRecoveryPayloadLine, isRecoveryOutcome, parseRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
+import { readRecoveryPayloadLine, isRecoveryOutcome, isClaxedoToolName, parseRecoveryOutcome, turnStopped, type ClaxedoToolName } from "@claxedo/agent-runtime-contract"
 import { clampLabel } from "./message-part-text"
-
-export const CLAXEDO_MCP_SERVER = "claxedo"
 
 export const CLAXEDO_TOOL_TITLE_KEYS = {
   task_list: "transcript.claxedoTool.task_list",
@@ -47,30 +45,7 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   app_plugin_check: "transcript.claxedoTool.app_plugin_check",
   app_plugin_add: "transcript.claxedoTool.app_plugin_add",
   app_plugin_guide: "transcript.claxedoTool.app_plugin_guide",
-} as const satisfies Record<string, TranscriptTextKey>
-
-export type ClaxedoToolName = keyof typeof CLAXEDO_TOOL_TITLE_KEYS
-
-export function isClaxedoToolName(name: string): name is ClaxedoToolName {
-  return Object.prototype.hasOwnProperty.call(CLAXEDO_TOOL_TITLE_KEYS, name)
-}
-
-export function claxedoToolName(tool: string, input?: Record<string, unknown>): string | undefined {
-  const lowered = tool.toLowerCase()
-  for (const server of ["claxedo-mcp", CLAXEDO_MCP_SERVER]) {
-    const wrapped = `mcp__${server}__`
-    if (lowered.startsWith(wrapped)) return lowered.slice(wrapped.length) || undefined
-    const joined = `${server}_`
-    if (lowered.startsWith(joined)) {
-      const name = lowered.slice(joined.length)
-      if (isClaxedoToolName(name) || (server === "claxedo-mcp" && name)) return name
-    }
-    if (typeof input?.server === "string" && input.server.toLowerCase() === server) {
-      return nonEmptyString(input.tool)?.toLowerCase() ?? lowered
-    }
-  }
-  return undefined
-}
+} as const satisfies Record<ClaxedoToolName, TranscriptTextKey>
 
 export function claxedoToolArguments(input: Record<string, unknown> | undefined): Record<string, unknown> {
   const nested = input?.arguments
