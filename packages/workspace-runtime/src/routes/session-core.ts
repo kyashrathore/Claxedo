@@ -108,6 +108,7 @@ import {
   type SessionRouteContext as Ctx,
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
+import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 
 /** Publish a session's row after a config write, so every client's copy of the row moves with it. */
@@ -923,10 +924,8 @@ async function filterSessionRows<T>(opts: Opts, c: Ctx, operation: SessionAccess
   return rows.filter((row) => allowed.has(rowSessionId(row)))
 }
 
-async function filterSessionStatus(opts: Opts, c: Ctx, status: unknown) {
-  const row = rec(status)
-  if (!row) return status
-  const entries = Object.entries(row)
+async function filterSessionStatus(opts: Opts, c: Ctx, status: SessionStatusSnapshot) {
+  const entries = Object.entries(status)
   const allowed = await collectionSessionIds(opts, c, "session_status", entries.map(([sessionId]) => sessionId))
   return Object.fromEntries(entries.filter(([sessionId]) => allowed.has(sessionId)))
 }
@@ -957,9 +956,7 @@ function sessionStartSettled(opts: Opts, sessionId: string) {
 }
 
 async function sessionOwnStatus(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<unknown> {
-  const snapshot = await opts.getStatus?.(c, directory)
-  if (!(snapshot instanceof Response)) return rec(snapshot)?.[sessionId] ?? null
-  return snapshot.ok ? rec(await snapshot.json())?.[sessionId] ?? null : snapshot
+  return (await opts.getStatus?.(c, directory))?.[sessionId] ?? null
 }
 
 async function readSessionTodos(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<unknown[] | Response> {
@@ -1233,18 +1230,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/status", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const status = await opts.getStatus?.(c, directory)
-      if (status instanceof Response) {
-        if (!opts.sessionAccessPolicy) return status
-        const data = await status.clone().json().catch(() => undefined)
-        if (data === undefined) return status
-        return c.json(
-          await filterSessionStatus(opts, c, data),
-          contentfulStatus(status.status) ?? 200,
-          Object.fromEntries(status.headers.entries()),
-        )
-      }
-      return c.json(await filterSessionStatus(opts, c, status ?? {}))
+      return c.json(await filterSessionStatus(opts, c, await opts.getStatus?.(c, directory) ?? {}))
     })
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)

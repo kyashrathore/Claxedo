@@ -3,6 +3,7 @@ import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { createSessionRoutes } from "./session-core"
 import type { SessionRouteContext } from "./session-route-options"
+import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import { publishTurnFailure } from "./session-prompt-admission"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
 import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
@@ -115,7 +116,7 @@ export function SessionRoutes(
     listSessions?: (c: SessionRouteContext, directory: string) => Promise<AgentSession[]>
     /** Host-owned status transport. The session-core route remains the only
      * public handler so its private-session filter cannot be shadowed. */
-    getStatus?: (c: SessionRouteContext, directory: string) => unknown
+    getStatus?: (c: SessionRouteContext, directory: string) => SessionStatusSnapshot | Promise<SessionStatusSnapshot>
     /**
      * Own session creation instead of delegating straight to the adapter, so
      * the host's session store learns about a create directly rather than from

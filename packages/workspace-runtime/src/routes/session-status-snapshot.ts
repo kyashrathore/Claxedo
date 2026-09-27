@@ -3,8 +3,10 @@ import { ACP_RECOVER } from "@claxedo/agent-sdk-runtime/adapters"
 import { str } from "../json-value"
 import { asRecord } from "@claxedo/helpers/guards"
 
-export function sessionStatusSnapshot(input: unknown[]) {
-  const out: Record<string, StatusCompat> = {}
+export type SessionStatusSnapshot = Record<string, StatusCompat>
+
+export function sessionStatusSnapshot(input: unknown[]): SessionStatusSnapshot {
+  const out: SessionStatusSnapshot = {}
   for (const item of input) {
     const row = asRecord(item)
     if (!row) continue

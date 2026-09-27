@@ -21,6 +21,7 @@ import type { SessionDeliveryOwner } from "../session/delivery-owner"
 import type { TurnOutline } from "../session/turn-outline"
 import { sessionRequestProvenance, type SessionAccessPolicy } from "../session-access-policy"
 import type { ChildSessionHost } from "./session-children"
+import type { SessionStatusSnapshot } from "./session-status-snapshot"
 
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
@@ -129,11 +130,7 @@ export type SessionRouteOptions = {
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
-  /**
-   * A status payload, or a `Response` the route forwards verbatim. Awaited by
-   * the route, so an async implementation is fine.
-   */
-  getStatus?: (c: Ctx, directory: RuntimeDirectory) => unknown
+  getStatus?: (c: Ctx, directory: RuntimeDirectory) => SessionStatusSnapshot | Promise<SessionStatusSnapshot>
   afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
   getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
