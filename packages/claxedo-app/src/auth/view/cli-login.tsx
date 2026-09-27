@@ -2,6 +2,7 @@ import { useLocation } from "@solidjs/router"
 import { createEffect, createSignal, Show } from "solid-js"
 import { handOffCliCallback, localCallback } from "../cli-callback"
 import { cliCallbackFields, cliToken, userIdentity } from "../cli-login-token"
+import { appUrl } from "../origins"
 import { useAuth } from "../provider"
 import "./auth.css"
 
@@ -45,7 +46,7 @@ export function CliLoginPage() {
     if (kind !== "signedIn") {
       setStatus("redirecting")
       setMessage("Opening Claxedo sign-in…")
-      void auth.signIn({ redirectUrl: window.location.href })
+      void auth.signIn({ redirectUrl: appUrl(location) })
       return
     }
     setSubmitted(true)

@@ -1,16 +1,19 @@
+import { useLocation } from "@solidjs/router"
 import { createResource, createSignal, For, Show } from "solid-js"
 import { DEVICE_CODE_MISSING, readDeviceAuthorization, submitDeviceDecision, type DeviceAuthorizationRequest } from "../device-authorization"
+import { appUrl } from "../origins"
 import { useAuth } from "../provider"
 import "./auth.css"
 
 type Decision = "approved" | "denied"
 
 export function DeviceApprovalPage() {
+  const location = useLocation()
   const auth = useAuth()
   const [decided, setDecided] = createSignal<Decision>()
   const [submitting, setSubmitting] = createSignal<"approve" | "deny">()
   const [decisionFailure, setDecisionFailure] = createSignal<string>()
-  const userCode = () => new URLSearchParams(window.location.search).get("user_code")?.trim()
+  const userCode = () => new URLSearchParams(location.search).get("user_code")?.trim()
 
   const [grant] = createResource(
     () => {
@@ -21,7 +24,7 @@ export function DeviceApprovalPage() {
     },
     async (input): Promise<DeviceAuthorizationRequest | undefined> => {
       if (!input.signed) {
-        await auth.signIn({ redirectUrl: window.location.href })
+        await auth.signIn({ redirectUrl: appUrl(location) })
         return undefined
       }
       return readDeviceAuthorization(input.code)

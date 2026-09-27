@@ -1,5 +1,6 @@
+import { useLocation } from "@solidjs/router"
 import { createMemo, createSignal, Show, type JSX } from "solid-js"
-import { useAuth } from "@/auth"
+import { appUrl, useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer } from "@/server"
@@ -69,6 +70,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   const t = useTranslator(railDictionary)
   const auth = useAuth()
   const routing = useShellRoute()
+  const location = useLocation()
   const view = useAccountView()
   let trigger: HTMLButtonElement | undefined
   const [open, setOpen] = createSignal(false)
@@ -80,7 +82,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
     void work.catch((error: unknown) => {
       showToast({ title, description: failureMessage(error) })
     })
-  const signIn = () => settle(auth.signIn({ redirectUrl: window.location.href }), t("rail.account.signInFailed"))
+  const signIn = () => settle(auth.signIn({ redirectUrl: appUrl(location) }), t("rail.account.signInFailed"))
   const signOut = () => settle(auth.signOut(), t("rail.account.signOutFailed"))
   return (
     <DropdownMenu placement="top-start" gutter={6} sameWidth onOpenChange={setOpen} getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>

@@ -1,5 +1,6 @@
+import { useLocation } from "@solidjs/router"
 import { Match, Show, Switch } from "solid-js"
-import { useAuth } from "@/auth"
+import { appUrl, useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { Button, showToast, Tag } from "@/ui"
@@ -18,9 +19,10 @@ function SignedOut() {
   const t = useTranslator(accessDictionary)
   const auth = useAuth()
   const server = useServer()
+  const location = useLocation()
   const offered = () => auth.offered(server.capabilities()?.signedIn === true)
   const signIn = () =>
-    void auth.signIn({ redirectUrl: window.location.href }).catch((error: unknown) => {
+    void auth.signIn({ redirectUrl: appUrl(location) }).catch((error: unknown) => {
       showToast({ title: t("access.org.signInFailed"), description: error instanceof Error ? error.message : String(error) })
     })
   return (

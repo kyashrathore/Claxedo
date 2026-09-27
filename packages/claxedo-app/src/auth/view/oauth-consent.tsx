@@ -1,3 +1,4 @@
+import { useLocation } from "@solidjs/router"
 import { createResource, createSignal, For, Show } from "solid-js"
 import {
   MCP_CONSENT_DEFAULTS,
@@ -10,9 +11,10 @@ import {
 import "./auth.css"
 
 export function OAuthConsentPage() {
+  const location = useLocation()
   const [submitting, setSubmitting] = createSignal<"allow" | "deny">()
   const [failure, setFailure] = createSignal<string>()
-  const query = () => window.location.search
+  const query = () => location.search
   const scopes = () => requestedScopes(query())
   const clientId = () => new URLSearchParams(query()).get("client_id")?.trim() || undefined
   const [client] = createResource(clientId, readOAuthConsentClient)

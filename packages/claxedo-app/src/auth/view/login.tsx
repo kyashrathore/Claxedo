@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js"
-import { useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import type { BrowserAuthMethod } from "../browser-auth"
 import { loginOAuthContinuation } from "../login-continuation"
 import { apiOrigin, appOrigin } from "../origins"
@@ -9,6 +9,7 @@ import "./auth.css"
 const providerName = (method: "google" | "github") => (method === "google" ? "Google" : "GitHub")
 
 export function LoginPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const auth = useAuth()
   const [email, setEmail] = createSignal("")
@@ -16,7 +17,7 @@ export function LoginPage() {
   const [failure, setFailure] = createSignal<string>()
 
   const continuation = () =>
-    loginOAuthContinuation({ appOrigin: appOrigin(), apiOrigin: apiOrigin(), pathname: window.location.pathname, search: window.location.search })
+    loginOAuthContinuation({ appOrigin: appOrigin(), apiOrigin: apiOrigin(), pathname: location.pathname, search: location.search })
   const redirectUrl = () => continuation()?.signInRedirect ?? "/"
   const signedRedirectUrl = () => continuation()?.authorizationUrl ?? "/"
   const busy = () => auth.state().kind === "signingIn"
