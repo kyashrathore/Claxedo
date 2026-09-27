@@ -70,3 +70,27 @@ test("a JavaScript entry runs under Node, not under the Bun process that launche
     await fs.rm(root, { recursive: true, force: true })
   }
 })
+
+test("a version probe that fails names its exit code and stderr", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-probe-exit-"))
+  try {
+    const entry = path.join(root, "cli.mjs")
+    await fs.writeFile(entry, 'process.stderr.write("dyld: missing libfoo\\n"); process.exit(3)', { mode: 0o600 })
+    await expect(verifyPiExecutable(entry)).rejects.toThrow(
+      "Cannot check Pi version: exited with code 3; stderr: dyld: missing libfoo.",
+    )
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test("a version probe killed by a signal names the signal", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-probe-signal-"))
+  try {
+    const entry = path.join(root, "cli.mjs")
+    await fs.writeFile(entry, 'process.kill(process.pid, "SIGKILL")', { mode: 0o600 })
+    await expect(verifyPiExecutable(entry)).rejects.toThrow("Cannot check Pi version: killed by SIGKILL.")
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})

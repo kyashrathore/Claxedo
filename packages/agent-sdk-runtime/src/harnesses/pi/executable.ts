@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { execFile, type ExecFileException } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { isRecord } from "@claxedo/agent-runtime-contract"
@@ -131,9 +131,9 @@ export function verifyPiExecutable(binary: string): Promise<void> {
   if (cached) return cached
   const command = piCommand(binary, ["--version"])
   const result = new Promise<void>((resolve, reject) => {
-    execFile(command.file, command.args, { timeout: 10_000, maxBuffer: 4096 }, (error, stdout) => {
+    execFile(command.file, command.args, { timeout: 10_000, maxBuffer: 4096 }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`Cannot check Pi version. ${PI_INSTALL_HINT}`, { cause: error }))
+        reject(new Error(`Cannot check Pi version: ${probeFailure(error, stderr)}. ${PI_INSTALL_HINT}`, { cause: error }))
         return
       }
       if (stdout.trim() !== PI_VERSION) {
@@ -146,4 +146,15 @@ export function verifyPiExecutable(binary: string): Promise<void> {
   verified.set(key, result)
   void result.catch(() => verified.delete(key))
   return result
+}
+
+/** A timeout surfaces as `killed` with the SIGTERM `execFile` sent; a spawn failure carries a string code. */
+function probeFailure(error: ExecFileException, stderr: string) {
+  const exit = error.signal
+    ? `killed by ${error.signal}`
+    : typeof error.code === "number"
+      ? `exited with code ${error.code}`
+      : error.message
+  const output = stderr.trim()
+  return output ? `${exit}; stderr: ${output}` : exit
 }
