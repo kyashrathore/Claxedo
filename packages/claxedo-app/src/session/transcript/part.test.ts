@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { placementId, projectId, sessionId, type Server, type SessionRef, type TranscriptPart } from "@/server"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
-import { mergeTurn } from "./conversation"
+import { replaceLatest } from "./conversation"
 import { loadPart } from "./part"
 
 const ref: SessionRef = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
@@ -35,7 +35,7 @@ test("part: a row sent as its header reads its whole part once when it opens, an
   const { server, deps, reads } = setup()
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
-    mergeTurn(context.setData, turn(tool("", true)))
+    replaceLatest(context.setData, turn(tool("", true)))
     await Promise.all([loadPart(context, "msg_1_r", "p1"), loadPart(context, "msg_1_r", "p1")])
     expect(reads).toEqual(["msg_1_r/p1"])
     expect(context.data.parts["msg_1_r"]?.[0]).toEqual(tool("a\nb"))
@@ -45,13 +45,3 @@ test("part: a row sent as its header reads its whole part once when it opens, an
   })
 })
 
-test("part: a later read that sends the part as its header keeps the body the reader already loaded", async () => {
-  const { server, deps } = setup()
-  await createRoot(async (dispose) => {
-    const context = createTranscriptContext(server, ref, deps)
-    mergeTurn(context.setData, turn(tool("a\nb")))
-    mergeTurn(context.setData, turn(tool("", true)))
-    expect(context.data.parts["msg_1_r"]?.[0]).toEqual(tool("a\nb"))
-    dispose()
-  })
-})

@@ -1,10 +1,11 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
 import { createEffect, createRoot, on } from "solid-js"
-import { placementId, projectId, ServerError, sessionId, type Server, type SessionFirstRead, type SessionReads, type SessionRef, type TranscriptPage } from "@/server"
+import { placementId, projectId, ServerError, sessionId, type Server, type SessionFirstRead, type SessionReads, type SessionRef, type TranscriptPage, type TranscriptPart } from "@/server"
 import { createRequests } from "../requests"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
 import { loadOlder } from "./older"
+import { loadPart } from "./part"
 import { readSnapshot } from "./snapshot"
 
 const ref: SessionRef = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
@@ -20,6 +21,20 @@ const turn = (userId: string, partIds: readonly [string, string]) => [
   entry(userId, "user", [{ type: "text", id: partIds[0] }]),
   entry(`${userId}_r`, "assistant", [{ type: "text", id: partIds[1] }]),
 ]
+
+const shell = (output: string, headerOnly?: true): TranscriptPart => ({
+  id: "p2",
+  sessionID: "ses_1",
+  messageID: "msg_2_r",
+  type: "tool",
+  callID: "c2",
+  tool: "bash",
+  state: { status: "completed", input: { command: "ls" }, output, title: "ls", metadata: {}, time: { start: 1, end: 2 } },
+  ...(headerOnly ? { headerOnly } : {}),
+})
+
+const withShell = (turnPage: TranscriptPage, part: TranscriptPart) =>
+  ({ ...turnPage, entries: turnPage.entries.map((item) => (item.info.id === "msg_2_r" ? { ...item, parts: [part, ...item.parts] } : item)) }) as TranscriptPage
 
 const latest = page(turn("msg_2", ["p1", "p3"]), "before-the-turn")
 const olderPage = page(turn("msg_1", ["p0", "p9"]))
@@ -50,6 +65,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
         olderReads.push(cursor)
         return pages[olderReads.length - 1] ?? olderPage
       },
+      part: async () => shell("a\nb"),
     },
   } as unknown as Server
   const deps = {
@@ -106,6 +122,48 @@ test("older: a page that lands is out of flight before it is announced, so a wat
     expect(olderReads).toEqual(["before-the-turn", "before-msg-1"])
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_0", "msg_0_r", "msg_1", "msg_1_r", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
+    dispose()
+  })
+})
+
+test("snapshot: a reread that sends a tool as its header keeps the body the reader loaded", async () => {
+  const withHeader = withShell(latest, shell("", true))
+  const { server, deps } = fakeServer(firstRead(withHeader))
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await loadPart(context, "msg_2_r", "p2")
+    await readSnapshot(context)
+    expect(context.data.parts["msg_2_r"]).toEqual([shell("a\nb"), withHeader.entries[1]!.parts[1]!])
+    dispose()
+  })
+})
+
+test("snapshot: a reread's newer whole part replaces the body the reader loaded", async () => {
+  const reads = [withShell(latest, shell("", true)), withShell(latest, shell("a\nb\nc"))]
+  const { server: base, deps } = fakeServer()
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref, deps.pageShape()), first: Promise.resolve(firstRead(reads.shift()!)) }) } } as unknown as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await loadPart(context, "msg_2_r", "p2")
+    await readSnapshot(context)
+    expect(context.data.parts["msg_2_r"]?.[0]).toEqual(shell("a\nb\nc"))
+    dispose()
+  })
+})
+
+test("older: a page that overlaps a turn whose tool body the reader loaded keeps the body", async () => {
+  const withHeader = withShell(latest, shell("", true))
+  const overlapping = page([...(olderPage.entries as ReturnType<typeof entry>[]), ...(withHeader.entries as ReturnType<typeof entry>[])])
+  const { server, deps } = fakeServer(firstRead(withHeader), [overlapping])
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await loadPart(context, "msg_2_r", "p2")
+    await loadOlder(context)
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
+    expect(context.data.parts["msg_2_r"]?.[0]).toEqual(shell("a\nb"))
     dispose()
   })
 })
