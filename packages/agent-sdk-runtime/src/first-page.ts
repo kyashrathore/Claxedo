@@ -12,6 +12,7 @@ import {
   type PartRef,
 } from "@claxedo/agent-runtime-contract/turn-fold"
 import type { AgentAssistantMessage, AgentContentPart, AgentMessage } from "@claxedo/agent-runtime-contract"
+import type { TurnOutline } from "./turn-outline"
 
 /** The most turns a first page carries, however short they are. */
 export const FIRST_PAGE_TURN_CAP = 24
@@ -50,8 +51,37 @@ export type FirstPageTurn = {
 /** The newest turns of a session, oldest first; the first turn's cursor reads what comes before the page. */
 export type FirstPage = { turns: FirstPageTurn[] }
 
+/** A session's first read: its row as its producer lists it, its turn outline, and the first page when the read asked for one. */
+export type FirstRead<Session> = { session: Session; outline: TurnOutline; page?: FirstPage }
+
+/** The viewport a read names with its `rows`, `cols` and `reasoning` query parameters. */
+export type FirstPageQuery = Pick<FirstPageRequest, "rows" | "cols" | "reasoning">
+
+export const FIRST_PAGE_MAX_EXTENT = 2000
+
+/** A read named some but not all of `rows`, `cols` and `reasoning`, or one of them out of range; every producer answers it with a 400. */
+export class FirstPageQueryError extends Error {
+  override readonly name = "FirstPageQueryError"
+}
+
 /** One whole turn ending before `before` (the newest turn without it), and the cursor at its user message when older turns exist. */
 export type TurnRead = (before?: string) => Promise<{ messages: AgentMessage[]; nextCursor?: string }> | { messages: AgentMessage[]; nextCursor?: string }
+
+function extent(query: (name: string) => string | undefined, name: "rows" | "cols"): number {
+  const value = query(name)
+  if (value === undefined || !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > FIRST_PAGE_MAX_EXTENT) {
+    throw new FirstPageQueryError(`${name} must be an integer between 1 and ${FIRST_PAGE_MAX_EXTENT}`)
+  }
+  return Number(value)
+}
+
+/** The first page a read asks for with `rows`, `cols` and `reasoning`; a read naming none of them asks for none. */
+export function parseFirstPageQuery(query: (name: string) => string | undefined): FirstPageQuery | undefined {
+  const reasoning = query("reasoning")
+  if (query("rows") === undefined && query("cols") === undefined && reasoning === undefined) return undefined
+  if (reasoning !== "0" && reasoning !== "1") throw new FirstPageQueryError("reasoning must be 0 or 1")
+  return { rows: extent(query, "rows"), cols: extent(query, "cols"), reasoning: reasoning === "1" }
+}
 
 function isAssistant(message: AgentMessage): boolean {
   return message.info.role === "assistant"
@@ -174,4 +204,14 @@ export async function readFirstPage(read: TurnRead, request: FirstPageRequest): 
     before = page.nextCursor
   } while (before !== undefined && lines < wanted && turns.length < FIRST_PAGE_TURN_CAP && bytes < FIRST_PAGE_BYTE_CAP)
   return { turns }
+}
+
+/** A session's first read from its row and outline, with the first page read through `read` only when `request` asks for one. */
+export async function readFirstRead<Session>(
+  session: Session,
+  outline: TurnOutline,
+  read: TurnRead,
+  request: FirstPageRequest | undefined,
+): Promise<FirstRead<Session>> {
+  return request ? { session, outline, page: await readFirstPage(read, request) } : { session, outline }
 }

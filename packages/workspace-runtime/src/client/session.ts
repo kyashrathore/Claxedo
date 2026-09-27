@@ -24,8 +24,7 @@ import type {
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import type { TurnOutline } from "../session/turn-outline"
-import type { FirstPage } from "@claxedo/agent-sdk-runtime/first-page"
+import type { FirstRead } from "@claxedo/agent-sdk-runtime/first-page"
 import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
@@ -69,8 +68,6 @@ export type SessionMessagePageInput = SessionInput & { turn?: never; coverage?: 
 export type SessionTurnCoverageInput = SessionInput & { turn: string; coverage: "1" }
 /** An outline read; with the reader's viewport it also asks for the first page its transcript draws. */
 export type SessionOutlineInput = SessionInput & ({ rows?: never; cols?: never; reasoning?: never } | { rows: number; cols: number; reasoning: "0" | "1" })
-/** A session's first read: its row, its turn outline, and the first page when the read asked for one. */
-export type SessionFirstRead = { session: AgentPresentationSession; outline: TurnOutline; page?: FirstPage }
 export type SessionGoalStartInput = SessionInput & { objective: string }
 
 /** A prompt the runtime holds behind a running turn, as the queue route reports it. */
@@ -108,7 +105,7 @@ export type WorkspaceSessionClient = {
   /** The page's messages alone; its cursor rides the `X-Next-Cursor` response header. */
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   /** The session's row and its turns as the nav rail lists them, never their content; with a viewport, also the first page. */
-  outline(input: SessionOutlineInput, options?: Options): Reply<SessionFirstRead>
+  outline(input: SessionOutlineInput, options?: Options): Reply<FirstRead<AgentPresentationSession>>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   /**
    * What the runtime owner knows about this session, and the operations a

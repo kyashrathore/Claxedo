@@ -67,7 +67,7 @@
     },
     "@claxedo/agent-sdk-runtime/first-page": {
       "status": "integration",
-      "purpose": "The turns a cold transcript draws first, each folded or whole by the contract's fold decision, chosen by an estimate of their lines."
+      "purpose": "A session's first read: the turns a cold transcript draws first, each folded or whole by the contract's fold decision and chosen by an estimate of their lines, and the viewport query every producer parses."
     },
     "@claxedo/agent-sdk-runtime/turn-outline": {
       "status": "integration",
@@ -138,7 +138,7 @@
     "@claxedo/agent-sdk-runtime/launch": "c6ae1e0deb72710355058ba6fa6b45981db145171b09dae809a06759ce31e3d0",
     "@claxedo/agent-sdk-runtime/launch-gate-child": "afec65c73d13c49ba01624719bbcad89235bf3f6af78751d6a71b7554e0c6051",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311",
-    "@claxedo/agent-sdk-runtime/first-page": "cd13a24b9980bce70bc3e838048672c58d77b09a327f57350f0edd6c4c9d0db3"
+    "@claxedo/agent-sdk-runtime/first-page": "ff14e0a6a679ef8f9b428d9deefa6cfbfd119188a956143a17d0f43f592eaf5c"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

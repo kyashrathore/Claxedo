@@ -29,7 +29,7 @@ import type {
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { readFirstPage, type FirstPageRequest } from "@claxedo/agent-sdk-runtime/first-page"
+import { FirstPageQueryError, parseFirstPageQuery, readFirstRead, type FirstPageQuery } from "@claxedo/agent-sdk-runtime/first-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -243,22 +243,13 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
   }
 }
 
-const FIRST_PAGE_MAX_EXTENT = 2000
-
-function extentQuery(c: Ctx, name: "rows" | "cols"): number {
-  const value = c.req.query(name)
-  if (value === undefined || !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > FIRST_PAGE_MAX_EXTENT) {
-    throw new HTTPException(400, { message: `${name} must be an integer between 1 and ${FIRST_PAGE_MAX_EXTENT}` })
+function firstPageQuery(c: Ctx): FirstPageQuery | undefined {
+  try {
+    return parseFirstPageQuery((name) => c.req.query(name))
+  } catch (error) {
+    if (error instanceof FirstPageQueryError) throw new HTTPException(400, { message: error.message })
+    throw error
   }
-  return Number(value)
-}
-
-/** The first page an outline read asks for with `rows`, `cols` and `reasoning`; an outline read without them asks for none. */
-function firstPageRequest(c: Ctx): Omit<FirstPageRequest, "cancelledAssistantMessageId"> | undefined {
-  const reasoning = c.req.query("reasoning")
-  if (c.req.query("rows") === undefined && c.req.query("cols") === undefined && reasoning === undefined) return undefined
-  if (reasoning !== "0" && reasoning !== "1") throw new HTTPException(400, { message: "reasoning must be 0 or 1" })
-  return { rows: extentQuery(c, "rows"), cols: extentQuery(c, "cols"), reasoning: reasoning === "1" }
 }
 
 function cancelledAssistantMessageId(session: unknown): string | undefined {
@@ -1969,18 +1960,17 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       if (!opts.getTurnOutline) throw new HTTPException(501, { message: "turn outlines are not supported for this session" })
-      const request = firstPageRequest(c)
+      const query = firstPageQuery(c)
       const directory = await opts.resolveDirectory(c, { sessionId })
       const session = await readPresentedSession(opts, c, directory, sessionId)
       const outline = session ? await opts.getTurnOutline(c, directory, sessionId) : undefined
       if (!session || !outline) return noStoreJson(c, sessionNotFound(), 404)
-      const page = request
-        ? await readFirstPage(
-            (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }),
-            { ...request, cancelledAssistantMessageId: cancelledAssistantMessageId(session) },
-          )
-        : undefined
-      return noStoreJson(c, { session: normalizeSession(session, directory), outline, ...(page ? { page } : {}) })
+      return noStoreJson(c, await readFirstRead(
+        normalizeSession(session, directory),
+        outline,
+        (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }),
+        query && { ...query, cancelledAssistantMessageId: cancelledAssistantMessageId(session) },
+      ))
     })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.

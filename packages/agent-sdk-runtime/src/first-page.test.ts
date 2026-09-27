@@ -3,9 +3,12 @@ import type { AgentContentPart, AgentMessage } from "./index"
 import {
   FIRST_PAGE_BYTE_CAP,
   FIRST_PAGE_TURN_CAP,
+  FirstPageQueryError,
   estimateTurnLines,
   firstPageTurn,
+  parseFirstPageQuery,
   readFirstPage,
+  readFirstRead,
   type FirstPageTurn,
   type TurnRead,
 } from "./first-page"
@@ -185,5 +188,43 @@ describe("readFirstPage", () => {
   test("an empty session has an empty page", async () => {
     const page = await readFirstPage(turnReader([]).read, { rows: 40, cols: 100, reasoning: false })
     expect(page).toEqual({ turns: [] })
+  })
+})
+
+describe("parseFirstPageQuery", () => {
+  const query = (search: string) => {
+    const params = new URLSearchParams(search)
+    return (name: string) => params.get(name) ?? undefined
+  }
+
+  test("a read naming none of rows, cols and reasoning asks for no page", () => {
+    expect(parseFirstPageQuery(query("workspaceId=ws_1"))).toBeUndefined()
+  })
+
+  test("a read naming all three asks for the page its viewport draws", () => {
+    expect(parseFirstPageQuery(query("rows=40&cols=2000&reasoning=1"))).toEqual({ rows: 40, cols: 2000, reasoning: true })
+    expect(parseFirstPageQuery(query("rows=1&cols=1&reasoning=0"))).toEqual({ rows: 1, cols: 1, reasoning: false })
+  })
+
+  test("a read naming some of them, or one out of range, is refused", () => {
+    for (const search of ["rows=10&cols=100", "rows=10&reasoning=0", "cols=100", "rows=0&cols=100&reasoning=0", "rows=10&cols=2001&reasoning=1", "rows=1.5&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes"]) {
+      expect(() => parseFirstPageQuery(query(search)), search).toThrow(FirstPageQueryError)
+    }
+  })
+})
+
+describe("readFirstRead", () => {
+  const outline = { turns: [{ id: "u", createdAt: 1 }], complete: true }
+
+  test("answers the row and the outline, and reads no page unless one is asked for", async () => {
+    const reader = turnReader([workedTurn("Only", "One.")])
+    expect(await readFirstRead({ id: "s" }, outline, reader.read, undefined)).toEqual({ session: { id: "s" }, outline })
+    expect(reader.calls).toEqual([])
+  })
+
+  test("carries the first page its request asks for", async () => {
+    const turns = [workedTurn("Only", "One.")]
+    const read = await readFirstRead({ id: "s" }, outline, turnReader(turns).read, { rows: 40, cols: 100, reasoning: false })
+    expect(read).toEqual({ session: { id: "s" }, outline, page: await readFirstPage(turnReader(turns).read, { rows: 40, cols: 100, reasoning: false }) })
   })
 })
