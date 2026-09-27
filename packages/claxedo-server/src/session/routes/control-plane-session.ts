@@ -27,7 +27,7 @@ import {
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
 import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
-import { TurnPageQueryError, parseTurnPageQuery, readFirstRead, type TurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -98,6 +98,10 @@ function projectedMessagePage(
   return read(sessionId, page)
 }
 
+function projectedTurnRead(services: ControlPlaneServices, sessionId: string): TurnRead {
+  return (before) => storedTurn(projectedMessagePage(services, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }))
+}
+
 /** A loopback first read: the session's projected meta as the loopback inventory lists it, its replay's outline, and the projection's latest turns. */
 async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageQuery | undefined) {
   const meta = await services.projectionStore.session_meta(sessionId)
@@ -105,9 +109,27 @@ async function projectedFirstRead(services: ControlPlaneServices, sessionId: str
   return await readFirstRead(
     meta,
     turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)),
-    (before) => storedTurn(projectedMessagePage(services, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before })),
+    projectedTurnRead(services, sessionId),
     firstPage,
   )
+}
+
+/** A loopback page of the projection's turns before the reader's cursor, for a session the projection holds. */
+async function projectedPage(services: ControlPlaneServices, sessionId: string, page: TurnPageQuery & { before: string }) {
+  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
+  return await readTurnPage(projectedTurnRead(services, sessionId), page)
+}
+
+const sessionNotFound = { error: { code: "session_not_found", message: "Session not found" } } as const
+
+/** The refusals a transcript read throws, as the responses they answer; anything else propagates. */
+function transcriptReadError(c: Context, err: unknown) {
+  if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+  if (err instanceof TurnPageQueryError) return c.json({ error: { code: "turn_page_query_error", message: err.message } }, 400)
+  if (err instanceof AgentMessagePageError) {
+    return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
+  }
+  throw err
 }
 
 function workspaceTransportCapabilities(transport: string) {
@@ -287,15 +309,25 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
               workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
               ...(firstPage ? { firstPage } : {}),
             })
-        if (!read) return c.json({ error: { code: "session_not_found", message: "Session not found" } }, 404)
-        return c.json(read)
+        return read ? c.json(read) : c.json(sessionNotFound, 404)
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        if (err instanceof TurnPageQueryError) return c.json({ error: { code: "turn_page_query_error", message: err.message } }, 400)
-        if (err instanceof AgentMessagePageError) {
-          return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
-        }
-        throw err
+        return transcriptReadError(c, err)
+      }
+    })
+    .get("/sessions/:sessionId/page", async (c) => {
+      try {
+        const sessionId = c.req.param("sessionId")
+        const page = parseOlderTurnPageQuery((name) => c.req.query(name))
+        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
+          ? await projectedPage(services, sessionId, page)
+          : await requireAuthority(services).readSessionPage(await signedAuth(c.req.raw, options), {
+              sessionId,
+              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
+              page,
+            })
+        return read ? c.json(read) : c.json(sessionNotFound, 404)
+      } catch (err) {
+        return transcriptReadError(c, err)
       }
     })
     .get("/sessions/:sessionId/capabilities", async (c) => {

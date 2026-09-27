@@ -175,6 +175,12 @@ describe("the signed desktop's session sources", () => {
   test("a session page is a read a renderer may retry", () => {
     expect(isSafeOperation("session.page")).toBe(true)
   })
+
+  test("a transcript's page of turns is a turns envelope a renderer may retry", () => {
+    expect(decodeHostedResult("session.turnPage", { turns: [] })).toEqual({ turns: [] })
+    expect(() => decodeHostedResult("session.turnPage", { items: [] })).toThrow(/session\.turnPage.*turns/)
+    expect(isSafeOperation("session.turnPage")).toBe(true)
+  })
 })
 
 describe("isSafeOperation", () => {

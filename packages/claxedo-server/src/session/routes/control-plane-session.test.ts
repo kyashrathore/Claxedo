@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import type { ControlPlaneServices } from "../../authority/services"
 
 const mocks = vi.hoisted(() => ({
@@ -403,6 +404,50 @@ describe("control plane session routes", () => {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
+  })
+
+  test("a signed page read answers the authority's turns before the reader's cursor and names a session it cannot read", async () => {
+    const svc = services()
+    const page = { turns: [{ messages: [{ info: { id: "u1", role: "user" }, parts: [] }], cursor: "cursor-1" }] }
+    const authority = {
+      readSessionPage: vi.fn(async (_auth: unknown, input: { sessionId: string; page: { before: string } }) => {
+        if (input.page.before === "foreign") throw new AgentMessagePageError(400, "Invalid message page cursor")
+        return input.sessionId === "session-1" ? page : undefined
+      }),
+    }
+    svc.authority = authority as never
+    svc.projectionStore.read_session_message_page = vi.fn(() => {
+      throw new Error("a signed page read must not read the central projection")
+    })
+    const app = ControlPlaneSessionRoutes(svc, signedOptions)
+    const headers = { Authorization: "Bearer signed-token" }
+    const viewport = "rows=10&cols=100&reasoning=0&shell=1&edit=0"
+
+    const read = await app.request(`http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual(page)
+    expect(authority.readSessionPage).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+      page: { rows: 10, cols: 100, reasoning: false, shell: true, edit: false, before: "cursor-2" },
+    })
+
+    authority.readSessionPage.mockClear()
+    for (const query of [viewport, `${viewport}&before=`, "before=cursor-2", "rows=10&cols=100&before=cursor-2"]) {
+      const refused = await app.request(`http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    expect(authority.readSessionPage).not.toHaveBeenCalled()
+
+    const foreign = await app.request(`http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&${viewport}&before=foreign`, { headers })
+    expect(foreign.status).toBe(400)
+    await expect(foreign.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+
+    const missing = await app.request(`http://127.0.0.1/sessions/session-2/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
   })
 
   test("keeps a signed workspace page on the authority cursor chain", async () => {
@@ -946,7 +991,7 @@ const turnMessage = (id: string, role: "user" | "assistant", parts: Array<Record
   }
 }
 
-describe("a loopback caller without a bearer reads the local projection's first read", () => {
+describe("a loopback caller without a bearer reads the local projection's first read and its pages", () => {
   const first = [turnMessage("u1", "user", [{ type: "text", text: "  first prompt " }]), turnMessage("a1", "assistant", [{ type: "text", text: "done" }], "u1")]
   const work = turnMessage("a2", "assistant", [
     { type: "text", text: "Looking." },
@@ -996,6 +1041,28 @@ describe("a loopback caller without a bearer reads the local projection's first 
     })
     expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(1, "session-1", { view: "latest-turn" })
     expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(2, "session-1", { view: "latest-turn", before: "cursor-u2" })
+  })
+
+  test("a page read answers the projection's turns before the reader's cursor, projected as the first page is", async () => {
+    const { svc, app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/page?rows=10&cols=100&reasoning=0&shell=0&edit=0&before=cursor-u2")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ turns: [{ messages: first }] })
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenCalledTimes(1)
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenCalledWith("session-1", { view: "latest-turn", before: "cursor-u2" })
+  })
+
+  test("a page read names its cursor and its viewport, and a session the projection does not hold has no page", async () => {
+    const { svc, app } = loopback()
+    for (const query of ["rows=10&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=0&before=", "before=cursor-u2"]) {
+      const refused = await app.request(`http://127.0.0.1/sessions/session-1/page?${query}`)
+      expect(refused.status, query).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/page?rows=10&cols=100&reasoning=0&shell=0&edit=0&before=cursor-u2")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+    expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
   })
 
   test("refuses a partial or out-of-range viewport and names a session the projection does not hold", async () => {

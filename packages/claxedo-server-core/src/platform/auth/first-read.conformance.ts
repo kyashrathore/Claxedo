@@ -1,25 +1,11 @@
 import type { TurnPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
-import type { PrivateSessionAuthority, PrivateSessionInventoryRow } from "./private-session-authority"
-import type { SessionTurnAuthority } from "./session-turn-authority"
-import type { SessionPageConformanceUser } from "./session-page.conformance"
-
-export type FirstReadConformanceHarness = {
-  authority: PrivateSessionAuthority & SessionTurnAuthority
-  workspaceId: string
-  creator: SessionPageConformanceUser
-}
+import type { PrivateSessionInventoryRow } from "./private-session-authority"
+import { registerTranscriptSession, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
 type Page = { messages: Array<{ info: { id: string }; parts: Array<{ type: string }> }>; nextCursor?: string }
 
 const sessionId = "ses_first_read"
-
-const syncedMessage = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) => {
-  const at = Number(id.replace(/\D/g, "")) * 10
-  return {
-    info: { id, sessionID: sessionId, role, time: { created: at, ...(role === "assistant" ? { completed: at + 5 } : {}) }, ...extra },
-    parts: parts.map((part, index) => ({ id: `${id}-p${index}`, sessionID: sessionId, messageID: id, ...part })),
-  }
-}
+const message = syncedMessage.bind(undefined, sessionId)
 
 /**
  * A registry's first read of a session it stores: the row exactly as its
@@ -30,10 +16,9 @@ const syncedMessage = (id: string, role: "user" | "assistant", parts: Array<Reco
  * has older history. A session with no transcript reads as complete and empty
  * with an empty page; a session the registry does not hold has no first read.
  */
-export async function exerciseFirstReadConformance(harness: FirstReadConformanceHarness) {
+export async function exerciseFirstReadConformance(harness: TranscriptConformanceHarness) {
   const { authority, workspaceId, creator } = harness
-  await authority.reserveSession(creator.auth, { operationId: "op_first_read", sessionId, workspaceId, kind: "create" })
-  await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_first_read", sessionId, workspaceId })
+  await registerTranscriptSession(harness, sessionId)
   const viewport: TurnPageRequest = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
   const read = async (firstPage?: TurnPageRequest) =>
     await authority.readSessionFirstRead(creator.auth, { sessionId, workspaceId, ...(firstPage ? { firstPage } : {}) })
@@ -49,30 +34,16 @@ export async function exerciseFirstReadConformance(harness: FirstReadConformance
     "a session the registry does not hold answered a first read",
   )
 
-  const runtime = { ...creator.runtime, sessionId, workspaceId }
-  const admit = async (turnId: string) => {
-    const lease = await authority.acquireSessionTurn({ ...runtime, turnId })
-    await authority.releaseSessionTurn({ ...runtime, turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken })
-    return lease
-  }
-  await admit("u1")
-  const lease = await admit("u2")
-  await authority.syncSessionMessages(creator.auth, {
-    sessionId,
-    workspaceId,
-    maxEventOrdinal: 5,
-    fencingToken: lease.fencingToken,
-    messages: [
-      syncedMessage("u1", "user", [{ type: "text", text: "  first\n\nprompt " }], { summary: { title: "First" } }),
-      syncedMessage("a1", "assistant", [{ type: "text", text: "first answer, at length past the snippet" }], { parentID: "u1" }),
-      syncedMessage("u2", "user", [{ type: "text", text: "second" }]),
-      syncedMessage("a2-work", "assistant", [
-        { type: "text", text: "Looking." },
-        { type: "tool", tool: "read", callID: "call-read", state: { status: "completed", input: {}, output: "x".repeat(2048), title: "read", metadata: {}, time: { start: 21, end: 22 } } },
-      ], { parentID: "u2" }),
-      syncedMessage("a2", "assistant", [{ type: "reasoning", text: "thinking" }, { type: "text", text: "second answer" }], { parentID: "u2" }),
-    ],
-  })
+  await syncTranscript(harness, sessionId, [
+    message("u1", "user", [{ type: "text", text: "  first\n\nprompt " }], { summary: { title: "First" } }),
+    message("a1", "assistant", [{ type: "text", text: "first answer, at length past the snippet" }], { parentID: "u1" }),
+    message("u2", "user", [{ type: "text", text: "second" }]),
+    message("a2-work", "assistant", [
+      { type: "text", text: "Looking." },
+      { type: "tool", tool: "read", callID: "call-read", state: { status: "completed", input: {}, output: "x".repeat(2048), title: "read", metadata: {}, time: { start: 21, end: 22 } } },
+    ], { parentID: "u2" }),
+    message("a2", "assistant", [{ type: "reasoning", text: "thinking" }, { type: "text", text: "second answer" }], { parentID: "u2" }),
+  ])
 
   const outlineOnly = await read()
   firstReadHolds(outlineOnly !== undefined && !("page" in outlineOnly), "a read without a viewport answered a page")

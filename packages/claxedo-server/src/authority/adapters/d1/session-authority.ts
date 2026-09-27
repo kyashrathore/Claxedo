@@ -50,7 +50,7 @@ import { organizationRoleRankSql } from "./host-access-authority"
 import { readD1SessionPage } from "./session-page"
 import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
-import { readFirstRead, type TurnPageRequest } from "@claxedo/agent-sdk-runtime/turn-page"
+import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -64,6 +64,7 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "resolveCloudTurnUsageOwner",
   "readSessionMessages",
   "readSessionFirstRead",
+  "readSessionPage",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
@@ -1563,29 +1564,39 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   async readSessionFirstRead(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; firstPage?: TurnPageRequest }) {
-    const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    let access: SessionRow & { role_rank: number }
-    try {
-      access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
-    } catch (error) {
-      if (isDenied(error)) return undefined
-      throw error
-    }
+    const access = await this.readableSession(auth, sessionId, workspaceId)
+    if (!access) return undefined
     const outline = await readStoredTurnOutline(
       async (sql, params) => (await this.database.prepare(sql).bind(...params).all()).results,
       "data_json",
       sessionId,
       workspaceId,
     )
-    return await readFirstRead(
-      sessionJson(access),
-      outline,
-      async (before) =>
-        storedTurn(await this.latestView(sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before))),
-      args.firstPage,
-    )
+    return await readFirstRead(sessionJson(access), outline, this.turnRead(sessionId, workspaceId), args.firstPage)
+  }
+
+  async readSessionPage(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } }) {
+    const sessionId = requireText(args.sessionId, "sessionId")
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    if (!(await this.readableSession(auth, sessionId, workspaceId))) return undefined
+    return await readTurnPage(this.turnRead(sessionId, workspaceId), args.page)
+  }
+
+  private async readableSession(auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string) {
+    const who = await this.requirePrincipal(auth)
+    try {
+      return await this.requireSessionAccess(who, sessionId, workspaceId, "read")
+    } catch (error) {
+      if (isDenied(error)) return undefined
+      throw error
+    }
+  }
+
+  private turnRead(sessionId: string, workspaceId: string): TurnRead {
+    return async (before) =>
+      storedTurn(await this.latestView(sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
   }
 
   private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView, end?: number) {

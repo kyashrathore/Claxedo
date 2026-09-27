@@ -316,6 +316,7 @@ export const HOSTED_OPERATIONS = {
   "session.create": { safe: false, decode: object },
   "session.messages": { safe: true, decode: object },
   "session.outline": { safe: true, decode: object },
+  "session.turnPage": { safe: true, decode: withArrays("turns") },
   "session.gateway": { safe: true, decode: object },
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },

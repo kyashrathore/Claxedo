@@ -299,6 +299,7 @@ function services(): ControlPlaneServices {
       listSessionPage: vi.fn(async () => []),
       readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [] })),
       readSessionFirstRead: vi.fn(async () => undefined),
+      readSessionPage: vi.fn(async () => undefined),
       syncSessionMessages: vi.fn(async () => ({})),
       upsertSessionVisibility: vi.fn(async () => ({})),
       replaceSessionVisibility: vi.fn(async () => ({})),

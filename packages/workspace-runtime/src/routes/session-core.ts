@@ -30,7 +30,7 @@ import type {
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { TurnPageQueryError, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -244,21 +244,13 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
   }
 }
 
-function pageQuery(c: Ctx): TurnPageQuery | undefined {
+function pageQuery<T>(c: Ctx, parse: (query: (name: string) => string | undefined) => T): T {
   try {
-    return parseTurnPageQuery((name) => c.req.query(name))
+    return parse((name) => c.req.query(name))
   } catch (error) {
     if (error instanceof TurnPageQueryError) throw new HTTPException(400, { message: error.message })
     throw error
   }
-}
-
-function olderPageQuery(c: Ctx): TurnPageQuery & { before: string } {
-  const query = pageQuery(c)
-  const before = c.req.query("before")
-  if (!query) throw new HTTPException(400, { message: "a page read names rows, cols, reasoning, shell and edit" })
-  if (!before) throw new HTTPException(400, { message: "before must be a non-empty cursor" })
-  return { ...query, before }
 }
 
 function messagePageResponse(c: Ctx, page: AgentMessagePage) {
@@ -1968,7 +1960,7 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       if (!opts.getTurnOutline) throw new HTTPException(501, { message: "turn outlines are not supported for this session" })
-      const query = pageQuery(c)
+      const query = pageQuery(c, parseTurnPageQuery)
       const directory = await opts.resolveDirectory(c, { sessionId })
       const session = await readPresentedSession(opts, c, directory, sessionId)
       const outline = session ? await opts.getTurnOutline(c, directory, sessionId) : undefined
@@ -1984,7 +1976,7 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
-      const request = olderPageQuery(c)
+      const request = pageQuery(c, parseOlderTurnPageQuery)
       const directory = await opts.resolveDirectory(c, { sessionId })
       return noStoreJson(c, await readTurnPage(turnReader(opts, c, directory, sessionId), request))
     })

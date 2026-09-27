@@ -5,6 +5,7 @@ import {
   TURN_PAGE_TURN_CAP,
   TurnPageQueryError,
   estimateTurnLines,
+  parseOlderTurnPageQuery,
   parseTurnPageQuery,
   projectTurn,
   readFirstRead,
@@ -219,6 +220,24 @@ describe("parseTurnPageQuery", () => {
     const settled = "&shell=0&edit=0"
     for (const search of ["rows=10&cols=100", "rows=10&reasoning=0", "cols=100", "shell=1", "rows=10&cols=100&reasoning=0", `rows=0&cols=100&reasoning=0${settled}`, `rows=10&cols=2001&reasoning=1${settled}`, `rows=1.5&cols=100&reasoning=0${settled}`, `rows=10&cols=100&reasoning=yes${settled}`, "rows=10&cols=100&reasoning=0&shell=2&edit=0"]) {
       expect(() => parseTurnPageQuery(query(search)), search).toThrow(TurnPageQueryError)
+    }
+  })
+})
+
+describe("parseOlderTurnPageQuery", () => {
+  const query = (search: string) => {
+    const params = new URLSearchParams(search)
+    return (name: string) => params.get(name) ?? undefined
+  }
+  const viewport = "rows=40&cols=100&reasoning=0&shell=1&edit=0"
+
+  test("an older page's read names all five page parameters and the cursor it reads before", () => {
+    expect(parseOlderTurnPageQuery(query(`${viewport}&before=cursor-1`))).toEqual({ rows: 40, cols: 100, reasoning: false, shell: true, edit: false, before: "cursor-1" })
+  })
+
+  test("a read without its cursor, with an empty one, or without its page parameters is refused", () => {
+    for (const search of [viewport, `${viewport}&before=`, "before=cursor-1", "rows=40&cols=100&before=cursor-1"]) {
+      expect(() => parseOlderTurnPageQuery(query(search)), search).toThrow(TurnPageQueryError)
     }
   })
 })

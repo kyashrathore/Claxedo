@@ -102,6 +102,15 @@ export function parseTurnPageQuery(query: Query): TurnPageQuery | undefined {
   return { ...parseReaderSettings(query), rows: extent(query, "rows"), cols: extent(query, "cols") }
 }
 
+/** An older page's read: all five page parameters and the non-empty cursor `before` it reads before. */
+export function parseOlderTurnPageQuery(query: Query): TurnPageQuery & { before: string } {
+  const page = parseTurnPageQuery(query)
+  if (!page) throw new TurnPageQueryError("a page read names rows, cols, reasoning, shell and edit")
+  const before = query("before")
+  if (!before) throw new TurnPageQueryError("before must be a non-empty cursor")
+  return { ...page, before }
+}
+
 type AssistantEntry = AgentMessage & { info: AgentMessage["info"] & AgentAssistantMessage }
 
 function isAssistant(message: AgentMessage): message is AssistantEntry {

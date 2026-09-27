@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, SignJWT } from "jose"
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
@@ -293,6 +294,48 @@ describe("resource-closed hosted core app", () => {
     expect(readSessionFirstRead).not.toHaveBeenCalled()
 
     const missing = await app.request("/api/control/sessions/ses_missing/outline?workspaceId=ws_1", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
+  })
+
+  test("the session page route answers the authority's page before the reader's cursor, and refuses a read without its cursor or viewport, a cursor the store did not issue, or a missing session", async () => {
+    const hosted = plane()
+    const page = { turns: [{ messages: [{ info: { id: "u1", role: "user" }, parts: [] }], cursor: "cursor-1" }] }
+    const readSessionPage = vi.fn(async (_auth: unknown, input: { sessionId: string; page: { before: string } }) => {
+      if (input.page.before === "foreign") throw new AgentMessagePageError(400, "Invalid message page cursor")
+      return input.sessionId === "ses_1" ? page : undefined
+    })
+    Object.assign(hosted.services.authority!, { readSessionPage })
+    const app = createHostedCoreApp(hosted, options) as unknown as Hono
+    const headers = { authorization: "Bearer alice" }
+    const viewport = "rows=10&cols=100&reasoning=1&shell=0&edit=1"
+
+    const read = await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual(page)
+    expect(readSessionPage).toHaveBeenLastCalledWith(expect.anything(), {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      page: { rows: 10, cols: 100, reasoning: true, shell: false, edit: true, before: "cursor-2" },
+    })
+
+    const unscoped = await app.request(`/api/control/sessions/ses_1/page?${viewport}&before=cursor-2`, { headers })
+    expect(unscoped.status).toBe(400)
+    await expect(unscoped.json()).resolves.toMatchObject({ error: { code: "WORKSPACE_ID_REQUIRED" } })
+
+    readSessionPage.mockClear()
+    for (const query of [viewport, `${viewport}&before=`, "before=cursor-2", "rows=10&cols=100&reasoning=1&before=cursor-2", "rows=10&cols=2001&reasoning=1&shell=0&edit=1&before=cursor-2"]) {
+      const refused = await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    expect(readSessionPage).not.toHaveBeenCalled()
+
+    const foreign = await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${viewport}&before=foreign`, { headers })
+    expect(foreign.status).toBe(400)
+    await expect(foreign.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+
+    const missing = await app.request(`/api/control/sessions/ses_missing/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
     expect(missing.status).toBe(404)
     await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })

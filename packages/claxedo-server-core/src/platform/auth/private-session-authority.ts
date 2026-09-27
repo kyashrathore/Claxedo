@@ -1,7 +1,7 @@
 import type { SessionListKeysetPage } from "../../session/navigation-list"
 import type { SignedControlPlaneAuth } from "./auth"
 import type { LatestView } from "../../session/latest-view-page"
-import type { TurnPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
 
 /** Canonical application actor identity. Provider subjects never cross this port. */
 export type PrivateSessionActor = {
@@ -273,6 +273,11 @@ export type PrivateSessionAuthority = {
     auth: SignedControlPlaneAuth,
     input: { sessionId: string; workspaceId: string; firstPage?: TurnPageRequest },
   ) => Promise<FirstRead<PrivateSessionInventoryRow> | undefined>
+  /** The turns before `page.before`, read and projected as the first page is; nothing when the reader cannot read the session. */
+  readSessionPage: (
+    auth: SignedControlPlaneAuth,
+    input: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } },
+  ) => Promise<TurnPage | undefined>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
     input: {
@@ -318,6 +323,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "resolveSession",
   "readSessionMessages",
   "readSessionFirstRead",
+  "readSessionPage",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",

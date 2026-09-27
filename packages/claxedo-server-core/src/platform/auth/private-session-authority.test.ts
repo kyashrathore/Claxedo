@@ -38,6 +38,7 @@ describe("provider-neutral private-session authority contract", () => {
       "resolveSession",
       "readSessionMessages",
       "readSessionFirstRead",
+      "readSessionPage",
       "syncSessionMessages",
       "upsertSessionVisibility",
       "replaceSessionVisibility",
