@@ -160,7 +160,7 @@ describe("central projection: pulled session metadata", () => {
     svc.authority = presentAuthority() as never
     stubHostedTransport(svc, (path) => {
       if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-      if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Hosted" })
+      if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Hosted", time: { created: 100, updated: 200 } })
       return new Response("not found", { status: 404 })
     })
 
@@ -172,7 +172,7 @@ describe("central projection: pulled session metadata", () => {
     expect(result).toMatchObject({ ok: true, sessionId: "session-1" })
     expect(svc.projectionStore.sync_session_meta).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ws_1" }),
-      { id: "session-1", title: "Hosted" },
+      { id: "session-1", title: "Hosted", time: { created: 100, updated: 200 } },
     )
   })
 
@@ -491,39 +491,48 @@ describe("central projection: snapshot ordinal skip rules", () => {
     expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 
-  test.each(["http", "hosted"] as const)("%s rejects a checkpoint whose session carries no update time", async (flow) => {
-    const svc = services()
-    const authority = presentAuthority()
-    svc.authority = authority as never
-    const snapshot = { messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title" } }
-    const runtime = async (path: string) => {
-      if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-      if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
-      return new Response("not found", { status: 404 })
-    }
-    if (flow === "hosted") stubHostedTransport(svc, runtime)
+  const untimedSessions = [
+    ["no time", {}],
+    ["a snake_case updated_at", { updated_at: 200 }],
+    ["only a creation time", { time: { created: 100 } }],
+    ["only a snake_case created_at", { created_at: 100 }],
+  ] as const
+  test.each((["http", "hosted"] as const).flatMap((flow) => untimedSessions.map(([label, stamp]) => [flow, label, stamp] as const)))(
+    "%s rejects a checkpoint whose session carries %s instead of its time.updated",
+    async (flow, _label, stamp) => {
+      const svc = services()
+      const authority = presentAuthority()
+      svc.authority = authority as never
+      const snapshot = { messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title", ...stamp } }
+      const runtime = async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
+        return new Response("not found", { status: 404 })
+      }
+      if (flow === "hosted") stubHostedTransport(svc, runtime)
 
-    const pull = flow === "http"
-      ? pullControlSessionMessages(
-          svc,
-          { runtimeFetch: ({ path }) => runtime(path) },
-          signedAuth,
-          { workspaceId: "ws_1", sessionId: "session-1" },
-        )
-      : pullHostedControlSessionMessages(
-          svc,
-          undefined,
-          signedAuth,
-          { workspaceId: "ws_1", sessionId: "session-1" },
-        )
+      const pull = flow === "http"
+        ? pullControlSessionMessages(
+            svc,
+            { runtimeFetch: ({ path }) => runtime(path) },
+            signedAuth,
+            { workspaceId: "ws_1", sessionId: "session-1" },
+          )
+        : pullHostedControlSessionMessages(
+            svc,
+            undefined,
+            signedAuth,
+            { workspaceId: "ws_1", sessionId: "session-1" },
+          )
 
-    await expect(pull).rejects.toMatchObject({
-      status: 502,
-      code: "workspace_runtime_snapshot_invalid",
-    })
-    expect(authority.syncSessionMessages).not.toHaveBeenCalled()
-    expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
-  })
+      await expect(pull).rejects.toMatchObject({
+        status: 502,
+        code: "workspace_runtime_snapshot_invalid",
+      })
+      expect(authority.syncSessionMessages).not.toHaveBeenCalled()
+      expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
+    },
+  )
 
   test.each(["http", "hosted"] as const)("%s persists an accepted transcript before visibility propagation", async (flow) => {
     const svc = services()

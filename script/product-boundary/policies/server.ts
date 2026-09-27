@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 128 modules / 41 packages, with no headroom.
+   * Measured 129 modules / 41 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -130,8 +130,14 @@ export const serverSelfHosted: Policy = {
    * this box is a control plane machines enroll with, so it takes their rows
    * as the hosted plane does. No package edge: zod, hono and the server-core
    * authority port were already here.
+   *
+   * `src/authority/pulled-session-time.ts` is the reviewed owner of the update
+   * time a pulled session is listed at: the machine pull and the hosted pull
+   * both refuse a session without the runtime's `time.updated` through it,
+   * rather than each keeping its own copy. No package edge: `@claxedo/helpers`
+   * was already here.
    */
-  ceilings: { modules: 128, packages: 41 },
+  ceilings: { modules: 129, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

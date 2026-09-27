@@ -8,6 +8,7 @@ import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
+import { pulledSessionUpdatedAt } from "./pulled-session-time"
 
 function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
@@ -36,20 +37,6 @@ function relayRole(value: unknown): RelayRole | undefined {
   return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
-/**
- * Only the update stamp travels to the authority: a session's creation time is
- * written once, from the runtime's `time.created`, by its registration
- * (`registerRuntimeSession`), and a visibility upsert could only repeat it.
- */
-function sessionStamp(input: Record<string, unknown>) {
-  const time = asRecord(input.time)
-  const updatedAt = asFiniteNumber(time?.updated)
-    ?? asFiniteNumber(input.updated_at)
-    ?? asFiniteNumber(time?.created)
-    ?? asFiniteNumber(input.created_at)
-  return updatedAt === undefined ? {} : { updatedAt }
-}
-
 function sessionVisibility(input: unknown) {
   const row = asRecord(input)
   if (!row) return undefined
@@ -59,7 +46,7 @@ function sessionVisibility(input: unknown) {
   return {
     sessionId,
     ...(title ? { title } : {}),
-    ...sessionStamp(row),
+    updatedAt: pulledSessionUpdatedAt(row, HostedSessionPullError),
   }
 }
 
@@ -95,20 +82,12 @@ function messagesPayload(input: unknown) {
       "Workspace runtime returned an invalid message snapshot fence",
     )
   }
-  const { updatedAt } = sessionStamp(session)
-  if (updatedAt === undefined) {
-    throw new HostedSessionPullError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned a message snapshot whose session has no update time",
-    )
-  }
   return {
     messages: row.messages,
     maxEventOrdinal,
     fencingToken,
     session,
-    updatedAt,
+    updatedAt: pulledSessionUpdatedAt(session, HostedSessionPullError),
   }
 }
 

@@ -475,7 +475,7 @@ describe("control plane HTTP protocol", () => {
     stubFetch(vi.fn(async (input: string | URL | Request) => {
       const url = fetchUrl(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
-      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1" })
+      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1", time: { created: 100, updated: 200 } })
       return new Response("not found", { status: 404 })
     }))
 
@@ -565,7 +565,7 @@ describe("control plane HTTP protocol", () => {
     stubFetch(vi.fn(async (input: string | URL | Request) => {
       const url = fetchUrl(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
-      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1" })
+      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1", time: { created: 100, updated: 200 } })
       return new Response("not found", { status: 404 })
     }))
 
@@ -700,7 +700,7 @@ describe("control plane HTTP protocol", () => {
       verifier,
       runtimeFetch: async (input) => {
         if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-        if (input.path === "/session/session-1") return Response.json({ id: "session-1" })
+        if (input.path === "/session/session-1") return Response.json({ id: "session-1", time: { created: 100, updated: 200 } })
         return new Response("not found", { status: 404 })
       },
     })
