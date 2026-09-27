@@ -22,7 +22,8 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
 
   function placeholder(sessionId: string, directory: string, prompt: PromptInput): CompatEvent | null {
     const session = store.getSession(sessionId)
-    if (!session || session.parentID || session.titleSource || !isPlaceholderTitle(session.title)) return null
+    const created = session?.time?.created
+    if (!session || created === undefined || session.parentID || session.titleSource || !isPlaceholderTitle(session.title)) return null
     const text = extractPromptTitleText(prompt.parts)
     if (!text) return null
     return sessionUpdated(buildSession({
@@ -30,7 +31,7 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
       directory,
       title: deriveSessionTitle(text),
       titleSource: "prompt",
-      created: session.time?.created,
+      created,
       updated: Date.now(),
     }))
   }
@@ -55,7 +56,8 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
       const title = acceptGeneratedTitle(raw, session.title)
       if (!title) return
       const current = store.getSession(sessionId)
-      if (!current || current.titleSource === "user" || current.titleSource === "harness") return
+      const created = current?.time?.created
+      if (!current || created === undefined || current.titleSource === "user" || current.titleSource === "harness") return
       await adapter.updateSession(binding, { title })
       const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
       const committed = store.appendEvent({
@@ -66,7 +68,7 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
           directory,
           title,
           titleSource: "harness",
-          created: current.time?.created,
+          created,
           updated: Date.now(),
         })),
         source: { dir: "in", method: "generated-title" },

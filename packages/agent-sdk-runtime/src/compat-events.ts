@@ -253,13 +253,11 @@ export function buildSession(input: {
   directory: string
   title: string
   titleSource?: AgentSessionTitleSource
-  created?: number
-  updated?: number
+  created: number
+  updated: number
   projectID?: string
   workspaceID?: string
 }): AgentPresentationSession {
-  const created = input.created ?? Date.now()
-  const updated = input.updated ?? created
   return {
     id: input.id,
     slug: input.id,
@@ -269,7 +267,7 @@ export function buildSession(input: {
     title: input.title,
     ...(input.titleSource ? { titleSource: input.titleSource } : {}),
     version: "local",
-    time: { created, updated },
+    time: { created: input.created, updated: input.updated },
   }
 }
 

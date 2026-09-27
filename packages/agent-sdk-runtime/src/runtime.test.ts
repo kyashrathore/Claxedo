@@ -2796,6 +2796,8 @@ describe("createAgentRuntime", () => {
         directory: "/repo",
         title: "Generated title",
         titleSource: "harness",
+        created: 1,
+        updated: 2,
       })),
     })
 
@@ -2807,7 +2809,7 @@ describe("createAgentRuntime", () => {
     store.bindSession({ sessionId: "ses_1", directory: "/repo", title: "Chosen at create", agentSessionId: "ses_1" })
     store.appendEvent({
       sessionId: "ses_1",
-      payload: sessionUpdated(buildSession({ id: "ses_1", directory: "/repo", title: "Generated title", titleSource: "harness" })),
+      payload: sessionUpdated(buildSession({ id: "ses_1", directory: "/repo", title: "Generated title", titleSource: "harness", created: 1, updated: 2 })),
     })
     expect(store.getSession("ses_1")).toMatchObject({ title: "Chosen at create", titleSource: "user" })
   })
@@ -2897,6 +2899,8 @@ describe("createAgentRuntime", () => {
             id: "ses_1",
             directory: "/repo",
             title: `Streamed ${i}`,
+            created: 1,
+            updated: 2 + i,
           })),
         })
       }

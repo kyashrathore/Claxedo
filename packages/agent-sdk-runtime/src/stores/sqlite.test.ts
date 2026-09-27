@@ -90,7 +90,7 @@ describe("SqliteRuntimeStore", () => {
     store.bindSession({ sessionId: "titled", directory: "/repo", agentSessionId: "native-1", title: "New session - 2026-09-15T00:00:00.000Z" })
     const write = (title: string, titleSource?: "prompt" | "harness" | "user") => store.appendEvent({
       sessionId: "titled",
-      payload: sessionUpdated(buildSession({ id: "titled", directory: "/repo", title, ...(titleSource ? { titleSource } : {}) })),
+      payload: sessionUpdated(buildSession({ id: "titled", directory: "/repo", title, ...(titleSource ? { titleSource } : {}), created: 1, updated: 2 })),
     })
 
     write("first prompt", "prompt")

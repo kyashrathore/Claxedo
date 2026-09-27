@@ -86,11 +86,11 @@ function adapter(input: {
   const titles = new Map<string, string>()
   return {
     instructionChannel: "turn-system-prompt",
-    getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo" }),
+    getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo", created: 1, updated: 2 }),
     createSession: async () => ({ id: "s1" }),
     updateSession: async (binding, updates) => {
       if (updates.title !== undefined) titles.set(binding.sessionId, updates.title)
-      return buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo" })
+      return buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo", created: 1, updated: 2 })
     },
     getSessionConfig: async () => ({
       harness: { id: "codex", access: "native" },
@@ -488,7 +488,7 @@ describe("session prompt route", () => {
   it("excludes archived sessions by default and includes them with ?archived=true", async () => {
     const directory = process.cwd()
     const sessions = [
-        buildSession({ id: "active-1", directory, title: "Active", created: 10 }),
+        buildSession({ id: "active-1", directory, title: "Active", created: 10, updated: 10 }),
         {
           id: "archived-1",
           directory,
@@ -2226,7 +2226,7 @@ it("publishes a successful session deletion once, on the hub the workspace strea
   try {
     const app = SessionRoutes(() => adapter({}), {
       eventHub: hub,
-      getSession: async () => ({ ...buildSession({ id: "s1", directory, title: "child" }), parentID: "parent-1" }),
+      getSession: async () => ({ ...buildSession({ id: "s1", directory, title: "child", created: 1, updated: 2 }), parentID: "parent-1" }),
     })
     const response = await app.request(`http://localhost/session/s1?directory=${encodeURIComponent(directory)}`, { method: "DELETE" })
     expect(response.status).toBe(200)
