@@ -94,7 +94,7 @@ describe("firstPageTurn", () => {
     const turn = [user(id, "Draw it"), assistant(id, [text("Working."), tool("bash"), text("Here it is."), image]), assistant(id, [tool("bash")])]
     const page = firstPageTurn(turn, { reasoning: false })
     expect(page.foldableCount).toBe(3)
-    expect(page.messages[1]?.parts.map((part) => part.id)).toEqual([turn[1]!.parts[2]!.id, image.id])
+    expect(page.messages[1]?.parts.map((part) => part.id)).toEqual([turn[1].parts[2].id, image.id])
     expect(page.messages[2]?.parts).toEqual([])
   })
 
@@ -104,19 +104,19 @@ describe("firstPageTurn", () => {
     expect(firstPageTurn(short, { reasoning: false })).toEqual({ messages: short })
 
     const busy = workedTurn("Go", "Still going")
-    busy[2] = assistant(busy[0]!.info.id, busy[2]!.parts, {})
+    busy[2] = assistant(busy[0].info.id, busy[2].parts, {})
     expect(firstPageTurn(busy, { reasoning: false })).toEqual({ messages: busy })
 
     const aborted = workedTurn("Go", "Stopped")
-    aborted[2] = assistant(aborted[0]!.info.id, aborted[2]!.parts, { completed: 6_000, error: "MessageAbortedError" })
+    aborted[2] = assistant(aborted[0].info.id, aborted[2].parts, { completed: 6_000, error: "MessageAbortedError" })
     expect(firstPageTurn(aborted, { reasoning: false })).toEqual({ messages: aborted })
 
     const failed = workedTurn("Go", "Broke")
-    failed[2] = assistant(failed[0]!.info.id, failed[2]!.parts, { completed: 6_000, error: "APIError" })
+    failed[2] = assistant(failed[0].info.id, failed[2].parts, { completed: 6_000, error: "APIError" })
     expect(firstPageTurn(failed, { reasoning: false })).toEqual({ messages: failed })
 
     const cancelled = workedTurn("Go", "Cancelled")
-    expect(firstPageTurn(cancelled, { reasoning: false, cancelledAssistantMessageId: cancelled[2]!.info.id })).toEqual({ messages: cancelled })
+    expect(firstPageTurn(cancelled, { reasoning: false, cancelledAssistantMessageId: cancelled[2].info.id })).toEqual({ messages: cancelled })
   })
 
   test("reasoning counts toward the fold only when the reader shows it", () => {
@@ -182,7 +182,7 @@ describe("readFirstPage", () => {
     const turns = [workedTurn("Older", "Older answer."), workedTurn("Big", huge), workedTurn("Newest", "Short.")]
     const page = await readFirstPage(turnReader(turns).read, { rows: 10_000, cols: 100, reasoning: false })
     expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Big", "Newest"])
-    expect(drawnTexts(page.turns[0]!)[1]).toBe(huge)
+    expect(drawnTexts(page.turns[0])[1]).toBe(huge)
   })
 
   test("an empty session has an empty page", async () => {

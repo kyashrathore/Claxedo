@@ -83,14 +83,16 @@ export function parseFirstPageQuery(query: (name: string) => string | undefined)
   return { rows: extent(query, "rows"), cols: extent(query, "cols"), reasoning: reasoning === "1" }
 }
 
-function isAssistant(message: AgentMessage): boolean {
+type AssistantEntry = AgentMessage & { info: AgentMessage["info"] & AgentAssistantMessage }
+
+function isAssistant(message: AgentMessage): message is AssistantEntry {
   return message.info.role === "assistant"
 }
 
-function turnGroups(assistants: readonly AgentMessage[], reasoning: boolean, cancelledAssistantMessageId: string | undefined, compaction: boolean) {
+function turnGroups(assistants: readonly AssistantEntry[], reasoning: boolean, cancelledAssistantMessageId: string | undefined, compaction: boolean) {
   const partsById = new Map(assistants.map((message) => [message.info.id, message.parts] as const))
   const shape = turnFoldShape({
-    assistantMessages: assistants.map((message) => message.info as AgentAssistantMessage),
+    assistantMessages: assistants.map((message) => message.info),
     partsOf: (messageId) => partsById.get(messageId) ?? [],
     hasText: partHasText,
     showReasoning: reasoning,
@@ -115,7 +117,7 @@ export function firstPageTurn(messages: AgentMessage[], request: Pick<FirstPageR
     settled: shape.settled,
     interrupted: shape.interruptedMessageIndex !== -1,
     errored: !!shape.errorMessage,
-    busy: !assistantMessageSettled(last.info as AgentAssistantMessage),
+    busy: !assistantMessageSettled(last.info),
   })
   if (!decision.folded) return { messages }
   const folded = foldedGroupKeys(decision, groups, part)

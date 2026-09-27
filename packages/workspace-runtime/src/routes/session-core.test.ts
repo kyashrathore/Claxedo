@@ -692,7 +692,7 @@ describe("createSessionRoutes message paging", () => {
     expect(reads).toEqual([{ view: "latest-turn" }, { view: "latest-turn", before: "29" }, { view: "latest-turn", before: "28" }])
     expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["27", "28", "29"])
     expect(page.turns[2]).toEqual({
-      messages: [turns[29]![0], { ...turns[29]![1], parts: [] }, turns[29]![2]],
+      messages: [turns[29]?.[0], { ...turns[29]?.[1], parts: [] }, turns[29]?.[2]],
       foldableCount: 2,
       cursor: "29",
     })

@@ -1022,13 +1022,13 @@ async function readMessagePage(opts: Opts, c: Ctx, directory: RuntimeDirectory, 
     const page = await opts.getMessagePage?.(c, directory, sessionId, pageInput, adapter)
     if (page) return page
   } catch (error) {
-    throwMessagePageError(error, 500)
+    return throwMessagePageError(error, 500)
   }
   if (!adapter.getMessagePage) throw new HTTPException(501, { message: "message paging is not supported for this session" })
   try {
     return await adapter.getMessagePage(await requireExecutionBinding(opts, c, directory, sessionId, adapter), pageInput)
   } catch (error) {
-    throwMessagePageError(error, 502)
+    return throwMessagePageError(error, 502)
   }
 }
 
