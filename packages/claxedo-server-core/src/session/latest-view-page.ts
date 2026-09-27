@@ -1,4 +1,5 @@
 import { projectLatestSurfaceMessages, type LatestSurfaceMessage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { AgentMessage } from "@claxedo/agent-runtime-contract"
 
 export type LatestView = "latest-turn" | "latest-surface"
 
@@ -35,4 +36,9 @@ export function latestViewPage(
     messages: projectLatestSurfaceMessages(selected),
     ...(olderExists || turn.length > 2 ? { nextCursor: cursorAt(last.ordinal) } : {}),
   }
+}
+
+/** A stored `latest-turn` page as a first page reads it; the stored rows are the runtime's synced message snapshots. */
+export function storedTurn(page: { messages: readonly unknown[]; nextCursor?: string }): { messages: AgentMessage[]; nextCursor?: string } {
+  return page as { messages: AgentMessage[]; nextCursor?: string }
 }

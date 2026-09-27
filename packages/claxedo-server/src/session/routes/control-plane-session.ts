@@ -26,6 +26,8 @@ import {
   signedSessionList, sessionListErrorResponse } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
+import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
+import { FirstPageQueryError, parseFirstPageQuery, readFirstRead, type FirstPageQuery } from "@claxedo/agent-sdk-runtime/first-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -94,6 +96,18 @@ function projectedMessagePage(
   const read = services.projectionStore.read_session_message_page
   if (!read) throw new AgentMessagePageError(501, "message paging is unavailable for the session projection")
   return read(sessionId, page)
+}
+
+/** A loopback first read: the session's projected meta as the loopback inventory lists it, its replay's outline, and the projection's latest turns. */
+async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: FirstPageQuery | undefined) {
+  const meta = await services.projectionStore.session_meta(sessionId)
+  if (!meta) return undefined
+  return await readFirstRead(
+    meta,
+    turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)),
+    (before) => storedTurn(projectedMessagePage(services, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before })),
+    firstPage,
+  )
 }
 
 function workspaceTransportCapabilities(transport: string) {
@@ -265,15 +279,22 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/outline", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
-          return c.json({ allowed: true, ...turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)) })
-        }
-        const authority = requireAuthority(services)
-        const auth = await signedAuth(c.req.raw, options)
-        const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
-        return c.json(await authority.readSessionOutline(auth, { sessionId, workspaceId }))
+        const firstPage = parseFirstPageQuery((name) => c.req.query(name))
+        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
+          ? await projectedFirstRead(services, sessionId, firstPage)
+          : await requireAuthority(services).readSessionFirstRead(await signedAuth(c.req.raw, options), {
+              sessionId,
+              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
+              ...(firstPage ? { firstPage } : {}),
+            })
+        if (!read) return c.json({ error: { code: "session_not_found", message: "Session not found" } }, 404)
+        return c.json(read)
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        if (err instanceof FirstPageQueryError) return c.json({ error: { code: "first_page_query_error", message: err.message } }, 400)
+        if (err instanceof AgentMessagePageError) {
+          return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
+        }
         throw err
       }
     })

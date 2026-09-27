@@ -253,20 +253,48 @@ describe("resource-closed hosted core app", () => {
     )).toEqual([])
   })
 
-  test("the session outline route refuses a request without a workspaceId, and otherwise answers with the authority's outline", async () => {
+  test("the session outline route answers the authority's first read, forwards the reader's viewport, and refuses a partial viewport or a missing session", async () => {
     const hosted = plane()
-    const outline = { allowed: true, role: "owner", turns: [{ id: "msg_1", messages: 2 }], complete: true }
-    const readSessionOutline = vi.fn(async () => outline)
-    Object.assign(hosted.services.authority!, { readSessionOutline })
+    const firstRead = {
+      session: { session_id: "ses_1", project_id: "prj_1", created_at: 1, updated_at: 2 },
+      outline: { turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true },
+    }
+    const page = { turns: [{ messages: [], cursor: "cursor-1" }] }
+    const readSessionFirstRead = vi.fn(async (_auth: unknown, input: { sessionId: string; firstPage?: unknown }) =>
+      input.sessionId !== "ses_1" ? undefined : input.firstPage ? { ...firstRead, page } : firstRead)
+    Object.assign(hosted.services.authority!, { readSessionFirstRead })
     const app = createHostedCoreApp(hosted, options) as unknown as Hono
     const headers = { authorization: "Bearer alice" }
+
     const unscoped = await app.request("/api/control/sessions/ses_1/outline", { headers })
     expect(unscoped.status).toBe(400)
     await expect(unscoped.json()).resolves.toMatchObject({ error: { code: "WORKSPACE_ID_REQUIRED" } })
-    const read = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1", { headers })
-    expect(read.status).toBe(200)
-    await expect(read.json()).resolves.toEqual(outline)
-    expect(readSessionOutline).toHaveBeenCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1" })
+
+    const outlineOnly = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1", { headers })
+    expect(outlineOnly.status).toBe(200)
+    await expect(outlineOnly.json()).resolves.toEqual(firstRead)
+    expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1" })
+
+    const withPage = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=1", { headers })
+    expect(withPage.status).toBe(200)
+    await expect(withPage.json()).resolves.toEqual({ ...firstRead, page })
+    expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      firstPage: { rows: 10, cols: 100, reasoning: true },
+    })
+
+    readSessionFirstRead.mockClear()
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=0&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes", "rows=10&cols=2001&reasoning=1"]) {
+      const refused = await app.request(`/api/control/sessions/ses_1/outline?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "first_page_query_error" } })
+    }
+    expect(readSessionFirstRead).not.toHaveBeenCalled()
+
+    const missing = await app.request("/api/control/sessions/ses_missing/outline?workspaceId=ws_1", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 
   test("mounts build-composed route contributions and the integrations family under their own owners", async () => {

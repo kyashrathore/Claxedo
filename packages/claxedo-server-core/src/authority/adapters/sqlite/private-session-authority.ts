@@ -4,6 +4,7 @@ import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/j
 import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { readStoredTurnOutline } from "../../../session/turn-outline"
+import { readFirstRead } from "@claxedo/agent-sdk-runtime/first-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -39,7 +40,7 @@ import {
   type WorkspaceAction,
 } from "./workspace-authority-store"
 import { readSqliteSessionPage, type SessionPageRow } from "./session-page"
-import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
@@ -739,12 +740,22 @@ export function createSqlitePrivateSessionAuthority(input: {
           : {}),
       }
     },
-    async readSessionOutline(auth, value) {
-      const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
-      if (!read) return { allowed: false, turns: [], complete: true }
+    async readSessionFirstRead(auth, value) {
       const db = input.database()
-      const outline = await readStoredTurnOutline((sql, params) => db.prepare(sql).all(...params), "data", value.sessionId, value.workspaceId)
-      return { allowed: true, role: read.role, ...outline }
+      const actor = actorForAuth(auth)
+      let row: SessionRow
+      try {
+        row = requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "read").row
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return undefined
+        throw error
+      }
+      return await readFirstRead(
+        publicSession(db, row, actor.token_identifier),
+        await readStoredTurnOutline((sql, params) => db.prepare(sql).all(...params), "data", value.sessionId, value.workspaceId),
+        (before) => storedTurn(readLatestView(db, value.sessionId, value.workspaceId, "latest-turn", before === undefined ? undefined : decodeCursor(value.sessionId, before))),
+        value.firstPage,
+      )
     },
 
     async syncSessionMessages(auth, value) {

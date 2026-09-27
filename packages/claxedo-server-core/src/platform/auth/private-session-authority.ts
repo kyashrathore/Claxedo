@@ -1,6 +1,7 @@
 import type { SessionListKeysetPage } from "../../session/navigation-list"
 import type { SignedControlPlaneAuth } from "./auth"
 import type { LatestView } from "../../session/latest-view-page"
+import type { FirstPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/first-page"
 
 /** Canonical application actor identity. Provider subjects never cross this port. */
 export type PrivateSessionActor = {
@@ -267,7 +268,11 @@ export type PrivateSessionAuthority = {
     auth: SignedControlPlaneAuth,
     input: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
-  readSessionOutline: (auth: SignedControlPlaneAuth, input: { sessionId: string; workspaceId: string }) => Promise<unknown>
+  /** The session's row as `listSessions` lists it, its outline and, with `firstPage`, its first page; nothing when the reader cannot read it. */
+  readSessionFirstRead: (
+    auth: SignedControlPlaneAuth,
+    input: { sessionId: string; workspaceId: string; firstPage?: FirstPageRequest },
+  ) => Promise<FirstRead<PrivateSessionInventoryRow> | undefined>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
     input: {
@@ -312,7 +317,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "listSessionPage",
   "resolveSession",
   "readSessionMessages",
-  "readSessionOutline",
+  "readSessionFirstRead",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",

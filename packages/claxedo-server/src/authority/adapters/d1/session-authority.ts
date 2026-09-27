@@ -48,8 +48,9 @@ import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { organizationRoleRankSql } from "./host-access-authority"
 import { readD1SessionPage } from "./session-page"
-import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
+import { readFirstRead, type FirstPageRequest } from "@claxedo/agent-sdk-runtime/first-page"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -62,7 +63,7 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "resolveSession",
   "resolveCloudTurnUsageOwner",
   "readSessionMessages",
-  "readSessionOutline",
+  "readSessionFirstRead",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
@@ -1561,7 +1562,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
   }
 
-  async readSessionOutline(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) {
+  async readSessionFirstRead(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; firstPage?: FirstPageRequest }) {
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
@@ -1569,7 +1570,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     try {
       access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
     } catch (error) {
-      if (isDenied(error)) return { allowed: false, turns: [], complete: true }
+      if (isDenied(error)) return undefined
       throw error
     }
     const outline = await readStoredTurnOutline(
@@ -1578,7 +1579,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId,
       workspaceId,
     )
-    return { allowed: true, role: rankRole(access.role_rank), ...outline }
+    return await readFirstRead(
+      sessionJson(access),
+      outline,
+      async (before) =>
+        storedTurn(await this.latestView(sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before))),
+      args.firstPage,
+    )
   }
 
   private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
@@ -1589,13 +1596,16 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (isDenied(error)) return { allowed: false, messages: [] }
       throw error
     }
-    const answered = { allowed: true, role: rankRole(access.role_rank) }
+    return { allowed: true, role: rankRole(access.role_rank), ...(await this.latestView(sessionId, workspaceId, view, end)) }
+  }
+
+  private async latestView(sessionId: string, workspaceId: string, view: LatestView, end?: number) {
     const endBound = end === undefined ? [] : [end]
     const boundary = await this.database
       .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}`)
       .bind(sessionId, workspaceId, ...endBound)
       .first<{ ordinal: number | null }>()
-    if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { ...answered, messages: [] }
+    if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { messages: [] }
     const [turn, older] = await Promise.all([
       this.database.prepare(`
         select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
@@ -1609,13 +1619,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         .bind(sessionId, workspaceId, boundary.ordinal)
         .first<{ found: number }>(),
     ])
-    const page = latestViewPage(
+    return latestViewPage(
       view,
       turn.results.map((row) => ({ ordinal: row.ordinal, message: publicMessage(row) })),
       !!older,
       (ordinal) => encodeMessagePageCursor(sessionId, ordinal),
     )
-    return { ...answered, ...page }
   }
 
   async syncSessionMessages(

@@ -17,7 +17,7 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
 import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
-import { exerciseTurnOutlineConformance } from "@claxedo/server-core/platform/auth/turn-outline.conformance"
+import { exerciseFirstReadConformance } from "@claxedo/server-core/platform/auth/first-read.conformance"
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
@@ -1312,11 +1312,11 @@ describe("D1 latest views", () => {
       workspaceId: "ws_main",
       creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
     })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"], earlier: ["u1", "a1"] })
-    await expect(exerciseTurnOutlineConformance({
+    await expect(exerciseFirstReadConformance({
       authority: input.sessions,
       workspaceId: "ws_main",
       creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
-    })).resolves.toEqual(["u1", "u2"])
+    })).resolves.toEqual({ outline: ["u1", "u2"], foldableCounts: [0, 2] })
   })
 })
 

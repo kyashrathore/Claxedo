@@ -53,6 +53,7 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { FirstPageQueryError, parseFirstPageQuery } from "@claxedo/agent-sdk-runtime/first-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -671,6 +672,13 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
   app.get("/api/control/sessions/:sessionId/outline", async (context) => {
     const workspaceId = context.req.query("workspaceId")
     if (!workspaceId) return context.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
+    let firstPage
+    try {
+      firstPage = parseFirstPageQuery((name) => context.req.query(name))
+    } catch (error) {
+      if (error instanceof FirstPageQueryError) return context.json({ error: { code: "first_page_query_error", message: error.message } }, 400)
+      throw error
+    }
     const authResult = await signedOrError(
       context.req.raw,
       {
@@ -683,6 +691,12 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     if (!authResult.auth) {
       return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
     }
-    return context.json(await services.authority!.readSessionOutline(authResult.auth, { sessionId: context.req.param("sessionId"), workspaceId }))
+    const read = await services.authority!.readSessionFirstRead(authResult.auth, {
+      sessionId: context.req.param("sessionId"),
+      workspaceId,
+      ...(firstPage ? { firstPage } : {}),
+    })
+    if (!read) return context.json({ error: { code: "SESSION_NOT_FOUND", message: "Session not found" } }, 404)
+    return context.json(read)
   })
 }

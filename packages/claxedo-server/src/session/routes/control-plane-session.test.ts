@@ -315,7 +315,10 @@ describe("control plane session routes", () => {
           },
         ],
       })),
-      readSessionOutline: vi.fn(async () => ({ allowed: true, turns: [{ id: "u1" }], complete: true })),
+      readSessionFirstRead: vi.fn(async (_auth: unknown, input: { sessionId: string }) =>
+        input.sessionId === "session-1"
+          ? { session: { session_id: "session-1", title: "Signed session", created_at: 1, updated_at: 2 }, outline: { turns: [{ id: "u1", createdAt: 1 }], complete: true } }
+          : undefined),
       authorizeSessionRead: vi.fn(async () => {}),
     }
     svc.authority = authority as never
@@ -345,7 +348,10 @@ describe("control plane session routes", () => {
     const messages = await app.request("http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
-    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1", {
+    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=0", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+    const missingOutline = await app.request("http://127.0.0.1/sessions/session-2/outline?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
     const capabilities = await app.request(
@@ -365,8 +371,17 @@ describe("control plane session routes", () => {
       maxEventOrdinal: 7,
     })
     expect(outline.status).toBe(200)
-    await expect(outline.json()).resolves.toEqual({ allowed: true, turns: [{ id: "u1" }], complete: true })
-    expect(authority.readSessionOutline).toHaveBeenCalledWith(expect.anything(), { sessionId: "session-1", workspaceId: "ws_1" })
+    await expect(outline.json()).resolves.toEqual({
+      session: { session_id: "session-1", title: "Signed session", created_at: 1, updated_at: 2 },
+      outline: { turns: [{ id: "u1", createdAt: 1 }], complete: true },
+    })
+    expect(authority.readSessionFirstRead).toHaveBeenCalledWith(expect.anything(), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+      firstPage: { rows: 10, cols: 100, reasoning: false },
+    })
+    expect(missingOutline.status).toBe(404)
+    await expect(missingOutline.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
     expect(capabilities.status).toBe(409)
     await expect(capabilities.json()).resolves.toMatchObject({
       error: { code: "session_harness_missing" },
@@ -923,22 +938,76 @@ describe("machine session admission", () => {
   })
 })
 
-test("a loopback caller without a bearer outlines the local projection's replay, turn by turn", async () => {
-  const svc = services()
-  svc.projectionStore.read_session_messages = vi.fn(() => [
-    { info: { id: "u1", role: "user", time: { created: 10 } }, parts: [{ type: "text", text: "  first prompt " }] },
-    { info: { id: "a1", role: "assistant", parentID: "u1", time: { created: 11, completed: 12 } }, parts: [{ type: "tool", tool: "Agent", callID: "call-1" }, { type: "text", text: "done" }] },
-    { info: { id: "u2", role: "user", time: { created: 20 }, summary: { title: "Second" } }, parts: [{ type: "text", text: "second" }] },
-  ])
-  const app = ControlPlaneSessionRoutes(svc, {})
-  const outline = await app.request("http://127.0.0.1/sessions/session-1/outline")
-  expect(outline.status).toBe(200)
-  expect(await outline.json()).toEqual({
-    allowed: true,
+const turnMessage = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>, parentID?: string) => {
+  const at = Number(id.replace(/\D/g, "")) * 10
+  return {
+    info: { id, sessionID: "session-1", role, time: { created: at, ...(role === "assistant" ? { completed: at + 5 } : {}) }, ...(parentID ? { parentID } : {}), ...(id === "u2" ? { summary: { title: "Second" } } : {}) },
+    parts: parts.map((part, index) => ({ id: `${id}-p${index}`, sessionID: "session-1", messageID: id, ...part })),
+  }
+}
+
+describe("a loopback caller without a bearer reads the local projection's first read", () => {
+  const first = [turnMessage("u1", "user", [{ type: "text", text: "  first prompt " }]), turnMessage("a1", "assistant", [{ type: "text", text: "done" }], "u1")]
+  const work = turnMessage("a2", "assistant", [
+    { type: "text", text: "Looking." },
+    { type: "tool", tool: "read", callID: "call-1", state: { status: "completed", input: {}, output: "x", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+  ], "u2")
+  const answer = turnMessage("a3", "assistant", [{ type: "text", text: "Answer." }], "u2")
+  const second = [turnMessage("u2", "user", [{ type: "text", text: "second" }]), work, answer]
+  const meta = sessionMeta({ id: "session-1", updatedAt: 30 })
+
+  function loopback() {
+    const svc = services()
+    svc.projectionStore.session_meta = vi.fn(async (sessionId: string) => (sessionId === "session-1" ? meta : undefined))
+    svc.projectionStore.read_session_messages = vi.fn(() => [...first, ...second])
+    svc.projectionStore.read_session_message_page = vi.fn((_sessionId: string, page) =>
+      "before" in page && page.before === "cursor-u2" ? { messages: first } : { messages: second, nextCursor: "cursor-u2" })
+    return { svc, app: ControlPlaneSessionRoutes(svc, {}) }
+  }
+
+  const outline = {
     complete: true,
     turns: [
       { id: "u1", createdAt: 10, user: "first prompt" },
       { id: "u2", createdAt: 20, title: "Second", user: "second" },
     ],
+  }
+
+  test("answers the session's projected row and the outline of its replay, turn by turn", async () => {
+    const { app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/outline")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ session: meta, outline })
+  })
+
+  test("with the reader's viewport, answers the first page: the latest turn folded with its cursor, the first turn whole", async () => {
+    const { svc, app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/outline?rows=10&cols=100&reasoning=0")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      session: meta,
+      outline,
+      page: {
+        turns: [
+          { messages: first },
+          { messages: [second[0], { ...work, parts: [] }, answer], foldableCount: 2, cursor: "cursor-u2" },
+        ],
+      },
+    })
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(1, "session-1", { view: "latest-turn" })
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(2, "session-1", { view: "latest-turn", before: "cursor-u2" })
+  })
+
+  test("refuses a partial or out-of-range viewport and names a session the projection does not hold", async () => {
+    const { svc, app } = loopback()
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=0&cols=100&reasoning=0", "rows=10&cols=100&reasoning=yes", "rows=10&cols=2001&reasoning=1"]) {
+      const refused = await app.request(`http://127.0.0.1/sessions/session-1/outline?${query}`)
+      expect(refused.status, query).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "first_page_query_error" } })
+    }
+    expect(svc.projectionStore.session_meta).not.toHaveBeenCalled()
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/outline?rows=10&cols=100&reasoning=0")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
   })
 })
