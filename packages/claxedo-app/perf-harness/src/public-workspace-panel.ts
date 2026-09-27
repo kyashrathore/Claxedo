@@ -2,9 +2,7 @@ import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
 import { loadedDiffIdentity } from "../../src/review/loaded-diff-identity"
 
 import type { BenchmarkLocator, BenchmarkPage as Page } from "./agent-cdp-page"
-// The trace-event shape and its CDP reader have one owner; this module used to
-// keep a third, all-optional copy of the shape and its own inline reader.
-import { traceEventsFrom, type TraceEvent } from "./frame-sampler"
+import { traceEventsFrom, type TraceEvent } from "./trace-events"
 import {
   optionalText,
   readBooleanFields,

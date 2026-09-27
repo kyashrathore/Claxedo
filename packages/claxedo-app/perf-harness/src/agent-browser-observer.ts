@@ -72,7 +72,6 @@ export type PaintSettleFrame = {
 
 type PaintStabilityFrame = PaintSettleFrame & {
   observerSampleMs: number;
-  diagnostic?: Record<string, unknown>;
 };
 
 /**
@@ -275,7 +274,6 @@ function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
     ready: readBoolean(record.ready),
     mutated: readBoolean(record.mutated),
     signature: optionalRecord(record.signature),
-    diagnostic: optionalRecord(record.diagnostic),
   };
 }
 
@@ -841,44 +839,6 @@ export async function measureSessionActivation(
             };
             return { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage };
           };
-          const notReadyDiagnostic = () => {
-            const candidate = document.querySelector<HTMLElement>(
-              `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
-            );
-            const surface = candidate?.closest<HTMLElement>("[data-workbench-content]");
-            const composer = candidate?.querySelector<HTMLElement>('[data-component="prompt-input"]');
-            const timeline = candidate?.querySelector<HTMLElement>("[data-session-timeline-root]");
-            const viewport = timeline?.querySelector<HTMLElement>(
-              '[data-slot="session-timeline-scroll"] [data-scrollable]',
-            );
-            const expectedRows = candidate
-              ? [...candidate.querySelectorAll<HTMLElement>("[data-content-message-id]")]
-                .filter((row) => expected.has(row.dataset.contentMessageId ?? ""))
-              : [];
-            const visibleExpectedRows = viewport
-              ? expectedRows.filter((row) => {
-                  const bounds = row.getBoundingClientRect();
-                  const view = viewport.getBoundingClientRect();
-                  const style = getComputedStyle(row);
-                  return style.visibility !== "hidden" && bounds.height > 0 && bounds.bottom > view.top && bounds.top < view.bottom;
-                })
-              : [];
-            return {
-              root: !!candidate,
-              surfaceHidden: !surface || surface.getAttribute("aria-hidden") === "true" || surface.hasAttribute("inert"),
-              composer: !!composer,
-              composerEditable: composer?.getAttribute("contenteditable"),
-              timeline: !!timeline,
-              timelineVisibility: timeline ? getComputedStyle(timeline).visibility : undefined,
-              revealReady: timeline?.dataset.sessionTimelineRevealReady,
-              progressiveReady: timeline?.dataset.sessionTimelineProgressiveReady,
-              viewport: !!viewport,
-              expectedRows: expectedRows.length,
-              visibleExpectedRows: visibleExpectedRows.length,
-              expectedTextLengths: visibleExpectedRows.slice(0, 3).map((row) => row.innerText.trim().length),
-              virtualKeys: timeline?.dataset.sessionTimelineKeyCount,
-            };
-          };
           const paintedFrames = window.__claxedoPaintedFrames;
           if (!paintedFrames) {
             reject(new Error("Claxedo painted-frame clock is not installed"));
@@ -892,10 +852,9 @@ export async function measureSessionActivation(
                 current,
                 observerSampleMs: performance.now() - sampledAtMs,
                 mutated: takeTimelineMutations() > 0,
-                diagnostic: current || !(window as Window & { __claxedoPerfTrace?: boolean }).__claxedoPerfTrace ? undefined : notReadyDiagnostic(),
               };
             },
-            painted: ({ current, observerSampleMs, mutated, diagnostic }, paintedAtMs) => {
+            painted: ({ current, observerSampleMs, mutated }, paintedAtMs) => {
               const index = frames.length;
               frames.push({
                 paintedAtMs,
@@ -903,7 +862,6 @@ export async function measureSessionActivation(
                 mutated,
                 observerSampleMs,
                 signature: current?.signatureValue,
-                diagnostic,
               });
               if (!current) {
                 run = undefined;

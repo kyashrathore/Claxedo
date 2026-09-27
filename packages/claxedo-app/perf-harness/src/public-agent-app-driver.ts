@@ -434,6 +434,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     import.meta.path,
     path.join(import.meta.dir, "public-corpus-materializer.ts"),
     path.join(import.meta.dir, "public-workspace-panel.ts"),
+    path.join(import.meta.dir, "trace-events.ts"),
     path.join(import.meta.dir, "workspace-fixture.ts"),
     path.join(import.meta.dir, "fixture-registration.ts"),
     path.join(import.meta.dir, "opencode-corpus.ts"),
