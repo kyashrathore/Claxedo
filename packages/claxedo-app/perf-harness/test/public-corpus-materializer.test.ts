@@ -114,12 +114,18 @@ describe("public OpenCode corpus materialization", () => {
               { name: "part_session_message_ord_idx" },
               { name: "sqlite_autoindex_part_1" },
             ])
-            const rows = journal.query("SELECT payload_json FROM runtime_journal WHERE kind = 'event' ORDER BY seq").all() as Array<{ payload_json: string }>
+            const rows = journal.query("SELECT kind, payload_json FROM runtime_journal WHERE kind = 'event' OR type LIKE 'turn.%' ORDER BY seq").all() as Array<{ kind: string; payload_json: string }>
             const source = (await readFile(path.join(corpus.directory, "sessions/control.ndjson"), "utf8"))
               .trim().split("\n").map((line) => JSON.parse(line)).slice(1)
-            expect(rows.map((row) => JSON.parse(row.payload_json))).toEqual(source.map((event) => ({
-              id: event.id, type: event.type.replace(/\.1$/, ""), properties: event.data,
-            })))
+            const answer = source.filter((event) => (event.data.info?.id ?? event.data.part?.messageID) === "msg_assistant")
+            expect(answer).toHaveLength(2)
+            expect(rows.map((row) => JSON.parse(row.payload_json))).toEqual([
+              expect.objectContaining({ type: "turn.start", userMessageId: "msg_user", assistantMessageId: "msg_assistant", parts: [{ type: "text", text: "hello" }] }),
+              ...answer.map((event) => ({ id: event.id, type: event.type.replace(/\.1$/, ""), properties: event.data })),
+              { type: "message.completed", properties: { sessionID: target.sessionId, messageID: "msg_assistant" } },
+              { id: `session.idle:${target.sessionId}`, type: "session.idle", properties: { sessionID: target.sessionId } },
+              expect.objectContaining({ type: "turn.finish", assistantMessageId: "msg_assistant" }),
+            ])
           } finally {
             journal.close()
           }

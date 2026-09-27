@@ -66,6 +66,8 @@ type PlatformDatabase = {
   }
 }
 
+export type RuntimeStore = InstanceType<RuntimeStoreModule["RuntimeStore"]>
+
 type RuntimeStoreModule = {
   RuntimeStore: new (root: string) => {
     bindSession(input: {
@@ -82,6 +84,23 @@ type RuntimeStoreModule = {
       input: { directory: string },
     ): unknown
     appendEvent(input: { sessionId: string; agentSessionId: string; payload: ClientPresentationEvent }): unknown
+    acquireTurnLease(sessionId: string): string | undefined
+    releaseTurnLease(sessionId: string, leaseId: string): void
+    startTurn(input: {
+      sessionId: string
+      agentSessionId: string
+      userMessageId: string
+      assistantMessageId: string
+      agent: string
+      model: { providerID: string; modelID: string }
+      parts: { type: "text"; text: string }[]
+    }): unknown
+    finishTurn(input: {
+      sessionId: string
+      assistantMessageId: string
+      outcome: { status: "completed"; completedAt: number }
+      leaseId: string
+    }): unknown
     flush(): void
     close(): void
   }
@@ -105,8 +124,14 @@ function isSessionMetaStore(module: unknown): module is SessionMetaStore {
   return exportsCallables(module, ["putSessionMeta"])
 }
 
+const RUNTIME_STORE_METHODS = [
+  "bindSession", "updateSessionConfig", "appendEvent", "acquireTurnLease", "releaseTurnLease",
+  "startTurn", "finishTurn", "flush", "close",
+] as const
+
 function isRuntimeStoreModule(module: unknown): module is RuntimeStoreModule {
-  return exportsCallables(module, ["RuntimeStore"])
+  if (!isRecord(module) || typeof module.RuntimeStore !== "function") return false
+  return exportsCallables(module.RuntimeStore.prototype, RUNTIME_STORE_METHODS)
 }
 
 function isPlatformDatabase(module: unknown): module is PlatformDatabase {
@@ -130,7 +155,7 @@ export async function loadSessionMetaStore(): Promise<SessionMetaStore> {
 /** The journal writer that owns persisted transcript records. */
 export async function loadRuntimeStore(): Promise<RuntimeStoreModule> {
   const module: unknown = await import(RUNTIME_STORE)
-  if (!isRuntimeStoreModule(module)) throw missing(RUNTIME_STORE, ["RuntimeStore"])
+  if (!isRuntimeStoreModule(module)) throw missing(RUNTIME_STORE, ["RuntimeStore", ...RUNTIME_STORE_METHODS.map((name) => `RuntimeStore#${name}`)])
   return module
 }
 

@@ -1,8 +1,9 @@
 import path from "node:path"
 import { mkdir } from "node:fs/promises"
+import type { ClientPresentationEvent } from "@claxedo/agent-event-runtime/client-presentation"
 import type { OpenCodeCorpus } from "./opencode-corpus"
 import { loadRuntimeStore, loadSessionMetaStore, loadWorkspaceStore } from "./production-modules"
-import type { RegisteredWorkspace } from "./production-modules"
+import type { RegisteredWorkspace, RuntimeStore } from "./production-modules"
 import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
 
 export async function registerWorkspace(input: {
@@ -72,9 +73,7 @@ export async function registerCorpusSessions(input: { dataDirectory: string; cor
             { harness: { id: "opencode", access: "native" }, variant: null, agent: null },
             { directory: session.directory },
           )
-          for (const payload of input.corpus.events(session.id)) {
-            store.appendEvent({ sessionId: session.id, agentSessionId: session.id, payload })
-          }
+          replayTurns(store, session.id, input.corpus.events(session.id))
         }
         store.flush()
       } finally {
@@ -95,4 +94,109 @@ export async function registerCorpusSessions(input: { dataDirectory: string; cor
       })
     }
   })
+}
+
+type OpenTurn = {
+  userMessageId: string
+  startedAt: number
+  agent: string
+  model: { providerID: string; modelID: string }
+  prompt: { type: "text"; text: string }[]
+  assistantMessageId?: string
+  completedAt?: number
+}
+
+/**
+ * Writes each corpus turn the way a live turn is written: `startTurn` records the
+ * prompt and its user message, the assistant's records are appended, and
+ * `finishTurn` closes it under a turn lease. The corpus's own user message and
+ * prompt part records are therefore not appended; the turn start is their record.
+ */
+function replayTurns(store: RuntimeStore, sessionId: string, events: Iterable<ClientPresentationEvent>) {
+  let turn: OpenTurn | undefined
+  const finish = () => {
+    if (!turn) return
+    if (turn.assistantMessageId === undefined || turn.completedAt === undefined) {
+      throw new Error(`Corpus turn ${turn.userMessageId} has no settled assistant message`)
+    }
+    const leaseId = store.acquireTurnLease(sessionId)
+    if (!leaseId) throw new Error(`Corpus session ${sessionId} already holds a turn lease`)
+    const { assistantMessageId, completedAt } = turn
+    try {
+      atRecordedTime(completedAt, () =>
+        store.finishTurn({ sessionId, assistantMessageId, outcome: { status: "completed", completedAt }, leaseId }),
+      )
+    } finally {
+      store.releaseTurnLease(sessionId, leaseId)
+    }
+    turn = undefined
+  }
+  for (const event of events) {
+    if (event.type === "message.updated" && event.properties.info.role === "user") {
+      finish()
+      const info = event.properties.info
+      const created = info.time?.created
+      if (typeof created !== "number" || !info.agent || !info.model) {
+        throw new Error(`Corpus user message ${info.id} lacks the time, agent or model a turn starts with`)
+      }
+      turn = {
+        userMessageId: info.id,
+        startedAt: created,
+        agent: info.agent,
+        model: { providerID: info.model.providerID, modelID: info.model.modelID },
+        prompt: [],
+      }
+      continue
+    }
+    if (!turn) throw new Error(`Corpus session ${sessionId} has records before its first user message`)
+    if (event.type === "message.part.updated" && event.properties.part.messageID === turn.userMessageId) {
+      const part = event.properties.part
+      if (turn.assistantMessageId !== undefined || part.type !== "text") {
+        throw new Error(`Corpus prompt part ${part.id} is not a text part recorded before its answer`)
+      }
+      turn.prompt.push({ type: "text", text: part.text })
+      continue
+    }
+    if (event.type === "message.updated") {
+      const info = event.properties.info
+      if (info.parentID !== turn.userMessageId) throw new Error(`Corpus message ${info.id} does not answer ${turn.userMessageId}`)
+      if (info.error) throw new Error(`Corpus replays settled turns; ${info.id} failed`)
+      if (turn.assistantMessageId === undefined) {
+        const started = turn
+        turn.assistantMessageId = info.id
+        atRecordedTime(started.startedAt, () =>
+          store.startTurn({
+            sessionId,
+            agentSessionId: sessionId,
+            userMessageId: started.userMessageId,
+            assistantMessageId: info.id,
+            agent: started.agent,
+            model: started.model,
+            parts: started.prompt,
+          }),
+        )
+      }
+      turn.completedAt = info.time?.completed
+    } else if (turn.assistantMessageId === undefined) {
+      throw new Error(`Corpus session ${sessionId} records a part before the answer to ${turn.userMessageId}`)
+    }
+    store.appendEvent({ sessionId, agentSessionId: sessionId, payload: event })
+  }
+  finish()
+}
+
+/**
+ * The store stamps a turn's start, the user message it projects and the answer's
+ * completion with `Date.now()`. A replayed turn keeps the times it was recorded
+ * at, or every user message would postdate its answer and each turn would read
+ * as 0 s of work.
+ */
+function atRecordedTime<T>(time: number, write: () => T): T {
+  const now = Date.now
+  Date.now = () => time
+  try {
+    return write()
+  } finally {
+    Date.now = now
+  }
 }
