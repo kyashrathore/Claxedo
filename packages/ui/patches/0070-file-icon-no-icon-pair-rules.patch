@@ -1,0 +1,37 @@
+Subject: file-icon: no icon-pair rules and no hover-colour comment for the file tree
+
+What: the sheet drops the `[data-component="filetree"] .filetree-iconpair` rules
+(the 16px pair box and its absolutely stacked icons) and the comment saying the
+tree shows file-type colours on hover. The monochrome rule stays.
+Why: no file tree renders an icon pair any more; each file row mounts the one
+monochrome icon it paints. The hover colour never showed: its `group-hover/filetree`
+classes need an ancestor with `group/filetree`, which no tree declares, so the
+comment described behaviour the code never had.
+
+diff --git a/src/components/file-icon.css b/src/components/file-icon.css
+index 1004df41f1..a27d89ee0c 100644
+--- a/src/components/file-icon.css
++++ b/src/components/file-icon.css
+@@ -5,22 +5,6 @@
+   height: 16px;
+ }
+ 
+-/*
+-  File tree: show monochrome weak icons by default.
+-  On hover, show the original file-type colors.
+-*/
+ [data-component="filetree"] .filetree-icon--mono {
+   color: var(--icon-base);
+ }
+-
+-[data-component="filetree"] .filetree-iconpair {
+-  position: relative;
+-  display: inline-flex;
+-  width: 16px;
+-  height: 16px;
+-}
+-
+-[data-component="filetree"] .filetree-iconpair .ui-file-icon {
+-  position: absolute;
+-  inset: 0;
+-}
