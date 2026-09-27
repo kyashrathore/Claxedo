@@ -433,6 +433,12 @@ function reply(messages: unknown[], assistantId: string) {
   return [...rows].reverse().find((row) => row.info.role === "assistant") ?? null
 }
 
+/**
+ * A turn that fails before the runtime starts it is thrown and never published:
+ * the caller answers it, and only the caller knows whether anyone still wants
+ * to hear about it (a create undoes the session instead). A failure after the
+ * start is published here, because this is where the turn's stream ends.
+ */
 export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promise<SessionPromptTurnResult> {
   const subscribe = () => input.runtime.events.subscribe({ sessionId: input.sessionId })[Symbol.asyncIterator]()
   const iterator = subscribe()
@@ -525,7 +531,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
     }
   } catch (err) {
     settleAdmission(err)
-    if (isAgentRuntimeTurnConflictError(err)) throw err
+    if (!turn || isAgentRuntimeTurnConflictError(err)) throw err
     error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
     input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
   } finally {
@@ -538,7 +544,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
     }
   }
 
-  if (!turn) throw new Error(error ?? "Failed to start runtime turn")
+  if (!turn) throw new Error("Failed to start runtime turn")
 
   return {
     sessionId: input.sessionId,

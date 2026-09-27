@@ -3,6 +3,7 @@ import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { createSessionRoutes } from "./session-core"
 import type { SessionRouteContext } from "./session-route-options"
+import { publishTurnFailure } from "./session-prompt-admission"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
 import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
@@ -429,6 +430,9 @@ export function SessionRoutes(
               if (isAgentRuntimeTurnConflictError(error)) input.onDelivery?.("queue")
               resolve(isAgentRuntimeTurnConflictError(error) ? "busy" : "started")
             },
+          }).catch((error: unknown) => {
+            if (!isAgentRuntimeTurnConflictError(error)) publishTurnFailure(publishGlobal, input.directory, input.sessionId, error)
+            throw error
           })
         : (async () => {
             const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.sessionId })

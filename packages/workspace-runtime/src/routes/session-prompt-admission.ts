@@ -5,7 +5,7 @@ import { AGENT_RUNTIME_TURN_CONFLICT_CODE, isAgentRuntimeTurnConflictError } fro
 import type { AgentExecutionBinding, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { asRecord } from "@claxedo/helpers/guards"
-import { sessionError, withDir } from "../compat-events"
+import { sessionError, withDir, type CompatEnvelope } from "../compat-events"
 import { errorMessage } from "../error-message"
 import {
   admitSessionPromptTurn,
@@ -49,6 +49,15 @@ export function streamTurnErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === "string" && error) return error
   return "Stream error"
+}
+
+export function publishTurnFailure(
+  publishGlobal: (event: CompatEnvelope) => void,
+  directory: RuntimeDirectory,
+  sessionId: string,
+  error: unknown,
+) {
+  publishGlobal(withDir(compatScope(directory, sessionId), sessionError(streamTurnErrorMessage(error), sessionId)))
 }
 
 export async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {
@@ -242,11 +251,10 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     }
   }
   /**
-   * `failed` is a runtime that refused the turn within the bound. prompt_async
-   * still answers 204 for it because the refusal also reaches the event
-   * stream; a caller that must not keep what it made for the prompt reads it
-   * here, and waits out `turn` before undoing anything the turn's own cleanup
-   * still writes to.
+   * `failed` is a runtime that refused the turn within the bound, and nothing
+   * has published it: the caller answers it. prompt_async publishes it and
+   * still answers 204; a create undoes the session instead, and waits out
+   * `turn` before undoing anything the turn's own cleanup still writes to.
    */
   const admitPrompt = async (
     c: Ctx,
@@ -382,6 +390,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
       await opts.childSessions?.onTurnStarted(id, directory)
       // The turn runs detached: the response must not wait for the model.
       admittedForExecution = true
+      const admissionAck = admission && awaitAdmissionAck(admission)
       turn = (async () => {
         try {
           const turn = await runTurn()
@@ -391,10 +400,8 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         } catch (error) {
           settleAdmission?.(error)
           if (isAgentRuntimeTurnConflictError(error)) return
-          // The real message goes through sessionError (→ firstTurnErrorData)
-          // so it classifies (unmatched → "unknown") and the original text
-          // reaches the raw-detail disclosure.
-          opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
+          if (admissionAck && await admissionAck === error) return
+          publishTurnFailure(opts.publishGlobal, directory, id, error)
         } finally {
           const leaseLost = turnAdmission.lease?.lost() ?? false
           if (!leaseLost) {
@@ -410,7 +417,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
           await settleChildTurn(opts, id, directory)
         }
       })()
-      const admissionError = admission ? await awaitAdmissionAck(admission) : undefined
+      const admissionError = await admissionAck
       // Admission did not settle within the bound — honor prompt_async's
       // fire-and-forget contract rather than block on a wedged turn.
       if (admissionError === ADMISSION_ACK_TIMED_OUT) return c.body(null, 204)

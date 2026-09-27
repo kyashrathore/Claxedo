@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import { NO_HARNESS_EFFORT, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntime, AgentRuntimeTurnStartInput, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { sessionIdle } from "../compat-events"
+import { sessionIdle, type CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent } from "./session-route-options"
@@ -114,6 +114,7 @@ function routes(journal: Journal, input: {
   policy?: SessionAccessPolicy
   relayed?: boolean
   announced?: SessionLifecycleEvent[]
+  published?: CompatEnvelope[]
 } = {}) {
   const lifecycle = (event: SessionLifecycleEvent) => {
     journal.push(`lifecycle:${event.phase}`)
@@ -124,7 +125,7 @@ function routes(journal: Journal, input: {
     ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
     resolveDirectory: () => "/workspace",
     resolveExecutionBinding: binding,
-    publishGlobal: () => {},
+    publishGlobal: (event) => { input.published?.push(event) },
     publishSessionLifecycle: lifecycle,
     afterDeleteSession: (_c, _directory, sessionId) => { journal.push(`after-delete:${sessionId}`) },
     afterMessageCheckpoint: (_c, _directory, sessionId) => { journal.push(`checkpoint:${sessionId}`) },
@@ -257,9 +258,10 @@ describe("a create that carries the session's first prompt", () => {
     expect(journal).toEqual([])
   })
 
-  test("a runtime that fails to start the turn leaves no session, after the turn's own cleanup ran", async () => {
+  test("a runtime that fails to start the turn leaves no session, after the turn's own cleanup ran, and publishes no failure for it", async () => {
     const journal: Journal = []
-    const response = await create(routes(journal, { runtime: runtime(journal, { refuse: new Error("harness failed to boot") }) }), { prompt: FIRST })
+    const published: CompatEnvelope[] = []
+    const response = await create(routes(journal, { runtime: runtime(journal, { refuse: new Error("harness failed to boot") }), published }), { prompt: FIRST })
 
     expect(response.status).toBe(500)
     expect(await response.json()).toMatchObject({ error: { code: "session_create_failed", message: "harness failed to boot" } })
@@ -272,6 +274,7 @@ describe("a create that carries the session's first prompt", () => {
       "after-delete:session_1",
       "lifecycle:failed",
     ])
+    expect(published).toEqual([])
   })
 
   test("a harness that refuses the turn leaves no session and answers the coded refusal", async () => {

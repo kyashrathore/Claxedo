@@ -90,6 +90,7 @@ import {
   deferredTurnGrant,
   deferredTurnGrantRefused,
   flushDocumentsAfterTurn,
+  publishTurnFailure,
   queuedPromptRequester,
   settleChildTurn,
   streamTurnErrorMessage,
@@ -2109,7 +2110,9 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const body = parseSessionPromptBody(await boundedJsonBody(c))
-      return (await admitPrompt(c, { sessionId: id, directory, adapter, body })).answer
+      const admission = await admitPrompt(c, { sessionId: id, directory, adapter, body })
+      if (admission.failed) publishTurnFailure(opts.publishGlobal, directory, id, admission.failed.error)
+      return admission.answer
     })
     .get("/agent", async (c) => {
       const adapter = await opts.resolveAdapter(c)

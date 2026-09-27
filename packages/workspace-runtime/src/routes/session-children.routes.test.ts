@@ -4,7 +4,7 @@ import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, Agent
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { Hono } from "hono"
-import { buildSession } from "../compat-events"
+import { buildSession, type CompatEnvelope } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../runtime-event-hub"
 import {
   managedWorkspaceSessionAccessPolicy,
@@ -37,6 +37,7 @@ function fixture(input: {
    * policy admits a background turn on.
    */
   withRuntime?: boolean
+  refuseTurn?: (sessionId: string) => Error | undefined
 } = {}) {
   const store = new MemoryRuntimeStore()
   const origins = new Map<string, SessionTurnOrigin>()
@@ -125,6 +126,10 @@ function fixture(input: {
   eventHub.subscribeRuntime((event) => {
     runtimeEvents.push(event)
   })
+  const globalEvents: CompatEnvelope[] = []
+  eventHub.subscribeGlobal((event) => {
+    globalEvents.push(event)
+  })
   const admissions: Array<{ sessionId: string; fencingToken?: number }> = []
   const recoveryFacts: RecoveryFacts = {
     execution: { value: "terminal", source: "fixture", observedAt: 1, generation: "lease_1" },
@@ -166,6 +171,8 @@ function fixture(input: {
           messageID: turn.messageId,
           text: (turn.parts as Array<{ type: string; text?: string }>).map((part) => (part.type === "text" ? part.text ?? "" : "")).join(""),
         })
+        const refusal = input.refuseTurn?.(turn.sessionId)
+        if (refusal) throw refusal
         admissions.push({ sessionId: turn.sessionId, ...(turn.admission ? { fencingToken: turn.admission.fencingToken() } : {}) })
         turn.onAdmitted?.()
         return {
@@ -248,7 +255,7 @@ function fixture(input: {
     headers: { "content-type": "application/json", authorization: "Bearer owner-grant", ...headers },
     body: JSON.stringify(body),
   })
-  return { app, store, origins, calls, admissions, runtimeEvents, seedParent, create, messages, adapter }
+  return { app, store, origins, calls, admissions, runtimeEvents, globalEvents, seedParent, create, messages, adapter }
 }
 
 describe("POST /session with parentID", () => {
@@ -838,6 +845,37 @@ describe("a child created in-process under managed registration", () => {
     // own prompts do on this same runtime.
     expect(calls.producers).toEqual([])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "delivered" }])
+  })
+
+  test("a wake whose turn the runtime fails to start publishes that failure on the parent once", async () => {
+    const { policy } = managedPolicy({
+      turnAllowed: () => true,
+      requireActor: false,
+      grant: () => { throw new Error("a loopback create has no actor to mint for") },
+    })
+    const item = fixture({
+      policy,
+      withRuntime: true,
+      refuseTurn: (sessionId) => sessionId === "parent" ? new Error("parent harness failed to boot") : undefined,
+    })
+    item.seedParent("parent")
+    const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string }
+    item.messages.set(child.id, [{
+      info: { id: "child-reply", role: "assistant", sessionID: child.id },
+      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
+    }])
+
+    expect((await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
+    })).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(item.calls.prompts.map((prompt) => prompt.messageID)).toContain(`msg_wake_${child.id}_child-reply`)
+    expect(item.globalEvents.filter((event) => event.payload.type === "session.error")).toMatchObject([{
+      payload: { properties: { sessionID: "parent", error: { data: { message: "parent harness failed to boot" } } } },
+    }])
   })
 
   test("reserves itself as the stamped owner, registers under the operation the authority minted, and answers the reserved id", async () => {

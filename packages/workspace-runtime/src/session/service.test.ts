@@ -373,7 +373,7 @@ describe("session service", () => {
     expect(events).toEqual([])
   })
 
-  it("closes runtime event streams when starting a turn fails", async () => {
+  it("throws a turn that fails to start without publishing it, and closes its event stream", async () => {
     let returned = false
     const events: CompatEnvelope[] = []
 
@@ -404,9 +404,7 @@ describe("session service", () => {
     })).rejects.toThrow("missing session")
 
     expect(returned).toBe(true)
-    expect(events).toMatchObject([
-      { directory: "/work", payload: { type: "session.error" } },
-    ])
+    expect(events).toEqual([])
   })
 
 })

@@ -1511,7 +1511,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(events).toEqual([])
   })
 
-  test("preserves the cause instead of flattening a failed turn to 'Stream error'", async () => {
+  test("a prompt_async whose turn fails to start publishes the failure once, with its cause instead of 'Stream error'", async () => {
     const events: CompatEnvelope[] = []
     const runtime = {
       turns: {
@@ -1524,11 +1524,14 @@ describe("createSessionRoutes directory-less sessions", () => {
         list: async () => [],
       },
     } as unknown as AgentRuntime
+    let turnCleanedUp!: () => void
+    const cleanedUp = new Promise<void>((resolve) => { turnCleanedUp = resolve })
     const app = createSessionRoutes({
       resolveAdapter: () => adapter(),
       resolveRuntime: () => runtime,
       resolveDirectory: () => undefined,
       publishGlobal: (event) => events.push(event),
+      flushSessionDocuments: async () => turnCleanedUp(),
     })
 
     const res = await app.request("http://localhost/session/session_1/prompt_async", {
@@ -1541,11 +1544,10 @@ describe("createSessionRoutes directory-less sessions", () => {
     })
 
     expect(res.status).toBe(204)
-    // Let the detached turn run its catch/finally and publish its failure.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await cleanedUp
 
     const sessionErrors = events.filter((event) => event.payload.type === "session.error")
-    expect(sessionErrors.length).toBeGreaterThan(0)
+    expect(sessionErrors).toHaveLength(1)
     for (const event of sessionErrors) {
       const error = (event.payload as { properties: { error: { data?: { message?: string; firstTurnErrorClass?: string } } } })
         .properties.error
