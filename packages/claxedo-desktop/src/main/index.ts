@@ -186,10 +186,9 @@ const diagnosticsSource = createProcessMetricsSource({
   workerPath: join(import.meta.dirname, "process-metrics-worker.js"),
   ...(process.platform === "darwin"
     ? {
-        memoryHelperPath: join(
-          IS_PACKAGED ? process.resourcesPath : app.getAppPath(),
-          IS_PACKAGED ? "diagnostics/macos-memory-impact" : "resources/diagnostics/macos-memory-impact",
-        ),
+        memoryHelperPath: IS_PACKAGED
+          ? join(process.resourcesPath, "diagnostics/macos-memory-impact")
+          : join(import.meta.dirname, "../../resources/diagnostics/macos-memory-impact"),
       }
     : {}),
   wsl: createWslSource({
