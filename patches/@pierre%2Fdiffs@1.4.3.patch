@@ -521,6 +521,18 @@ index 2fd5213..a99fe18 100644
  
  //# sourceMappingURL=CodeView.js.map
 \ No newline at end of file
+diff --git a/dist/components/FileDiff.js b/dist/components/FileDiff.js
+index 6758a7b..5a10215 100644
+--- a/dist/components/FileDiff.js
++++ b/dist/components/FileDiff.js
+@@ -1402,6 +1402,7 @@ var FileDiff = class {
+ 		return element;
+ 	}
+ 	replaceHeaderSlotContent(element, content) {
++		if (content instanceof Element && element.childNodes.length === 1 && element.firstChild === content) return;
+ 		element.replaceChildren();
+ 		if (content instanceof Element) element.appendChild(content);
+ 		else element.innerText = `${content}`;
 diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
 index e59fbce..3bef9c5 100644
 --- a/dist/components/VirtualizedFileDiff.js
