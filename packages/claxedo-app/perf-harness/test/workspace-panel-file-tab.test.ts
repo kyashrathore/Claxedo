@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { chromium, type Browser } from "playwright-core"
-import { FILE_TAB_SELECTOR, fileTabActivator } from "../src/public-workspace-panel"
+import { FILE_TAB_SELECTOR, fileTabActivator } from "../src/workspace-panel-locators"
 
 let browser: Browser
 

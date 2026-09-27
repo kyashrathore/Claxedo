@@ -12,12 +12,9 @@ import {
   readPreparedCache,
   writePreparedCache,
 } from "../src/public-agent-app-driver"
-import {
-  runPrearmedStablePaint,
-  waitForPanelOwner,
-  WORKSPACE_PANEL_ACTIONS,
-  type WorkspacePanelCase,
-} from "../src/public-workspace-panel"
+import { runPrearmedStablePaint } from "../src/public-workspace-panel"
+import { waitForPanelOwner } from "../src/workspace-panel-owner-readiness"
+import { WORKSPACE_PANEL_ACTIONS, type WorkspacePanelCase } from "../src/workspace-panel-scenario"
 import { installPaintedFrames } from "../src/browser/painted-frames"
 
 const receipt = {

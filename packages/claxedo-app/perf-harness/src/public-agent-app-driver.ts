@@ -12,9 +12,8 @@ import { readFlag, readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
 import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
 import { materializeClaxedoPublicCorpus, type ClaxedoPublicMaterialization } from "./public-corpus-materializer"
+import { executeWorkspacePanelAction, executeSessionNavigation } from "./public-workspace-panel"
 import {
-  executeWorkspacePanelAction,
-  executeSessionNavigation,
   fixtureEvidence,
   publicPanelLoadPresets,
   WORKSPACE_PANEL_ACTIONS,
@@ -25,7 +24,7 @@ import {
   type PublicPanelLoadPresets,
   type SessionNavigationCase,
   type WorkspacePanelCase,
-} from "./public-workspace-panel"
+} from "./workspace-panel-scenario"
 
 /**
  * The resource workload's return to control is a validity check, not a scored
@@ -434,6 +433,14 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     import.meta.path,
     path.join(import.meta.dir, "public-corpus-materializer.ts"),
     path.join(import.meta.dir, "public-workspace-panel.ts"),
+    path.join(import.meta.dir, "workspace-panel-scenario.ts"),
+    path.join(import.meta.dir, "workspace-panel-locators.ts"),
+    path.join(import.meta.dir, "workspace-panel-trace-reading.ts"),
+    path.join(import.meta.dir, "workspace-panel-trace-recording.ts"),
+    path.join(import.meta.dir, "workspace-panel-readiness.ts"),
+    path.join(import.meta.dir, "workspace-panel-diff-readiness.ts"),
+    path.join(import.meta.dir, "workspace-panel-owner-readiness.ts"),
+    path.join(import.meta.dir, "workspace-panel-setup.ts"),
     path.join(import.meta.dir, "trace-events.ts"),
     path.join(import.meta.dir, "workspace-fixture.ts"),
     path.join(import.meta.dir, "fixture-registration.ts"),
