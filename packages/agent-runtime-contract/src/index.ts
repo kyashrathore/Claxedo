@@ -19,7 +19,98 @@ export * from "./permissions"
 export * from "./pi-providers"
 export * from "./provider-projection"
 export * from "./question-answers"
-export * from "./recovery"
+export {
+  type RecoveryGeneration,
+  EXECUTION_FACTS,
+  CLEANUP_FACTS,
+  PERSISTENCE_FACTS,
+  type ExecutionFact,
+  type CleanupFact,
+  type PersistenceFact,
+  type RecoveryFactEvidence,
+  type RecoveryFacts,
+  parseRecoveryFacts,
+} from "./recovery/facts"
+export {
+  DAEMON_OWNERSHIP_SNAPSHOT_FILE,
+  DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
+  daemonOwnershipSnapshotPath,
+  type DaemonOwnershipRow,
+  isDaemonOwnershipSnapshot,
+} from "./daemon-ownership-snapshot"
+export {
+  RECOVERY_TARGET_SCOPES,
+  type RecoveryTargetScope,
+  type RecoveryTurnTarget,
+  type RecoverySessionTarget,
+  type RecoveryHarnessTarget,
+  type RecoveryMachineTarget,
+  type RecoveryTarget,
+  normalizeRecoveryTarget,
+  recoveryTargetsMatch,
+  parseRecoveryTarget,
+} from "./recovery/targets"
+export {
+  RECOVERY_ACTIONS,
+  type RecoveryAction,
+  RECOVERY_MUTATING_ACTIONS,
+  type RecoveryMutatingAction,
+  RECOVERY_READ_ACTIONS,
+  type RecoveryReadAction,
+  isMutatingRecoveryAction,
+  RECOVERY_ACTION_SCOPES,
+} from "./recovery/actions"
+export {
+  releasedDrainOperationId,
+  type RecoveryRequest,
+  type RecoveryIntent,
+  normalizeRecoveryIntent,
+  recoveryIntentEquals,
+  parseRecoveryRequest,
+} from "./recovery/requests"
+export {
+  RECOVERY_OPERATION_STATES,
+  type RecoveryOperationState,
+  RECOVERY_PHASES,
+  type RecoveryPhase,
+  type RecoveryReceipt,
+  type RecoveryNextAction,
+  RECOVERY_ERROR_CODES,
+  type RecoveryErrorCode,
+  type RecoveryError,
+  type RecoveryOperation,
+  RECOVERY_OPERATION_RETENTION_MS,
+  finalizeRecoveryOperation,
+  parseRecoveryError,
+  parseRecoveryOperation,
+} from "./recovery/operations"
+export {
+  type RecoveryScopePreview,
+  type RecoveryRefusal,
+  type RecoveryOutcome,
+  parseRecoveryRefusal,
+  serializeRecoveryOutcome,
+  parseRecoveryOutcome,
+  isRecoveryOutcome,
+} from "./recovery/outcomes"
+export {
+  type RecoveryBudgets,
+  DEFAULT_RECOVERY_BUDGETS,
+  capChildBudget,
+} from "./recovery/budgets"
+export {
+  recoveryPostconditionHolds,
+  turnStopped,
+} from "./recovery/postconditions"
+export {
+  RECOVERY_PAYLOAD_PREFIX,
+  readRecoveryPayloadLine,
+} from "./recovery/payload-line"
+export {
+  RECOVERY_CONTRACT_ERROR_CODES,
+  type RecoveryContractErrorCode,
+  RecoveryContractError,
+} from "./recovery/validation"
 export * from "./session-group"
 export * from "./session-titles"
 export * from "./sessions"

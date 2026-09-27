@@ -493,7 +493,7 @@ Decision 15 confirms that timing.
   - the runtime host (`runtime.ts` and `runtime/*`, 3,604 lines) and the projection code (3,181 lines), moved in unchanged;
   - the `spawn` service over `process-ownership`;
   - in P3, the runtime host calling the contract for every harness.
-- **`agent-runtime-contract`:** keeps `recovery.ts` whole, because the daemon lifecycle, the desktop, the apps and the MCP tools use it. It gains the event contracts (`agent-event-runtime/src/contracts`, 458 lines) that the apps read.
+- **`agent-runtime-contract`:** keeps all of recovery (`src/recovery/`, split by responsibility, and the sibling `daemon-ownership-snapshot.ts`), because the daemon lifecycle, the desktop, the apps and the MCP tools use it. It gains the event contracts (`agent-event-runtime/src/contracts`, 458 lines) that the apps read.
 - **Both apps: import paths only.** 13 production files in `claxedo-app` import `@claxedo/agent-event-runtime`, and v2 mirrors them under `src/legacy/` plus `session/view/timeline/message-author.tsx`. They move to `agent-runtime-contract` in one change before P4, coordinated with the app plan.
 - **`claxedo-local-server`, `claxedo-server`, desktop, CLI:**
   - import paths;
@@ -858,7 +858,7 @@ Everything users see today on every harness:
 | Profiles | 0.6k | 0.6k |
 | **Transports and profiles** | **≤ 10.05k** | **≤ 7.95k** |
 | **`packages/harness`** | **≤ 15.7k** | **≤ 13.6k** |
-| `agent-runtime-contract` (today 3.2k; `recovery.ts` 866 kept; 458 event contracts moved in; duplicates removed), re-measured in P0.7 | ≤ 3.5k | ≤ 3.5k |
+| `agent-runtime-contract` (today 3.2k; recovery's 866 lines kept, split into `src/recovery/`; 458 event contracts moved in; duplicates removed), re-measured in P0.7 | ≤ 3.5k | ≤ 3.5k |
 | OpenCode transport: the embedded engine moved from `workspace-runtime` (2.97k today), not re-estimated | +3.0k | +3.0k |
 
 **How the numbers work:**
