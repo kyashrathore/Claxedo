@@ -1,7 +1,7 @@
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
 import { loadedDiffIdentity } from "../../src/review/loaded-diff-identity"
 
-import type { BenchmarkPage as Page } from "./agent-cdp-page"
+import type { BenchmarkLocator, BenchmarkPage as Page } from "./agent-cdp-page"
 // The trace-event shape and its CDP reader have one owner; this module used to
 // keep a third, all-optional copy of the shape and its own inline reader.
 import { traceEventsFrom, type TraceEvent } from "./frame-sampler"
@@ -1307,17 +1307,22 @@ async function scrollTreeToRow(page: Page, target: TreeRowTarget) {
   }, { ...target, seek: crypto.randomUUID() }, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
 }
 
+export const FILE_TAB_SELECTOR = "[data-slot='workspace-tab'][data-workspace-tab-kind='file']"
+
+export function fileTabActivator(tab: BenchmarkLocator) {
+  return tab.locator(":scope > button")
+}
+
 async function hasFileTab(page: Page, file: string) {
   const basename = file.slice(file.lastIndexOf("/") + 1)
-  return (await indexByText(page, "[data-slot='workspace-tab'][data-workspace-tab-kind='file']", basename)) !== -1
+  return (await indexByText(page, FILE_TAB_SELECTOR, basename)) !== -1
 }
 
 async function clickFileTab(page: Page, file: string) {
   const basename = file.slice(file.lastIndexOf("/") + 1)
-  const selector = "[data-slot='workspace-tab'][data-workspace-tab-kind='file']"
-  const index = await indexByText(page, selector, basename, true)
+  const index = await indexByText(page, FILE_TAB_SELECTOR, basename, true)
   if (index < 0) throw new Error(`Claxedo has no visible file tab for ${file}`)
-  await page.locator(selector).nth(index).locator("button").click()
+  await fileTabActivator(page.locator(FILE_TAB_SELECTOR).nth(index)).click()
 }
 
 async function ensureAllDiffs(page: Page, fixture: FixtureEvidence, expanded: boolean) {
