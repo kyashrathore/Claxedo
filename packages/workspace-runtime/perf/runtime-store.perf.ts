@@ -142,7 +142,7 @@ describe("RuntimeStore performance", () => {
     store.close()
   })
 
-  it("keeps a streaming part's writes flat as the workspace's other parts grow", () => {
+  it("keeps a message's new-part writes flat as the workspace's other parts grow", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -151,12 +151,12 @@ describe("RuntimeStore performance", () => {
       agentSessionId: "a1",
       createdAt: 1,
     })
-    // Every part write looks up its own message's parts to assign order and
-    // retire provisionals. Other sessions' parts share the table, and a lookup
-    // that misses the (session_id, message_id) index reads all of them.
-    const data = JSON.stringify({ type: "text", text: "x".repeat(1024) })
+    // A part's first write orders it after its message's other parts. Other
+    // sessions' parts share the table, and a lookup that misses the
+    // (session_id, message_id) index reads all of them.
+    const data = JSON.stringify({ type: "text", text: "x" })
     database(store).exec("BEGIN")
-    for (const index of Array.from({ length: 50_000 }, (_, value) => value)) {
+    for (const index of Array.from({ length: 200_000 }, (_, value) => value)) {
       database(store).prepare(`
         INSERT INTO part (id, session_id, message_id, ord, data_json, updated_at)
         VALUES (?, ?, ?, 0, ?, 0)
@@ -169,16 +169,16 @@ describe("RuntimeStore performance", () => {
       store.appendEvent({
         sessionId: "s1",
         payload: messagePartUpdated({
-          id: "streaming",
+          id: `live-${index}`,
           sessionID: "s1",
           messageID: "m-live",
           type: "text",
-          text: "y".repeat(index),
+          text: "y",
         }),
       })
     }
     const elapsed = performance.now() - started
-    assert(elapsed < 200, `200 part writes beside 50k other parts took ${elapsed.toFixed(1)}ms`)
+    assert(elapsed < 200, `200 new-part writes beside 200k other parts took ${elapsed.toFixed(1)}ms`)
     store.close()
   })
 

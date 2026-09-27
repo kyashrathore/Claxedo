@@ -3012,134 +3012,43 @@ void describe("canonical execution binding", () => {
   })
 })
 
-void describe("provisional user parts", () => {
-  /**
-   * Three layers each record the user's prompt, each minting its own id:
-   *   `${messageId}-part-N`       — this store's `inputParts` (via startTurn)
-   *   `NNNNNN_${messageId}-input` — the opencode adapter's `promptParts`
-   *   `prt_…`                     — the engine's own persisted part
-   * Captured live: ONE send produced all three, so the transcript rendered the
-   * prompt three times. The provider request always carried one part, so this
-   * was transcript fidelity, never model input.
-   */
-  const engineCanonical = (messageId: string, text: string) =>
-    messagePartUpdated({
-      id: "prt_fbf520445001MRpnaorKB7bmPL",
+void it("keeps the user's prompt when the handoff part lands on its message", () => {
+  const store = new RuntimeStore(tmp())
+  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.startTurn({
+    sessionId: "s1",
+    agentSessionId: "a1",
+    userMessageId: "u1",
+    assistantMessageId: "m1",
+    agent: "general",
+    model: { providerID: "test-provider", modelID: "test-model" },
+    parts: [{ type: "text", text: "PROMPT" }],
+  })
+  store.appendEvent({
+    sessionId: "s1",
+    agentSessionId: "a1",
+    payload: messagePartUpdated({
+      id: "u1-handoff",
       sessionID: "s1",
-      messageID: messageId,
-      type: "text",
-      text,
-    })
-
-  function seeded(root: string) {
-    const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    // startTurn writes this store's own provisional part: `u1-part-0`.
-    store.startTurn({
-      sessionId: "s1",
-      agentSessionId: "a1",
-      userMessageId: "u1",
-      assistantMessageId: "m1",
-      agent: "general",
-      model: { providerID: "test-provider", modelID: "test-model" },
-      parts: [{ type: "text", text: "UNIQUE-PROMPT-XYZ" }],
-    })
-    return store
-  }
-
-  const userParts = (store: RuntimeStore) =>
-    (
-      (store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string }> }>).find(
-        (message) => message.info.id === "u1",
-      )?.parts ?? []
-    ).map((part) => part.id)
-
-  void it("keeps provisional parts while NO canonical part exists — nothing is dropped without a replacement", () => {
-    // The durability case these writers exist for: the engine never responds.
-    const store = seeded(tmp())
-
-    const parts = userParts(store)
-    assert.ok(parts.length > 0, "a turn whose engine never answered must still show the user's prompt")
-    assert.deepEqual(parts, ["u1-part-0"])
-    store.close()
+      messageID: "u1",
+      type: "handoff",
+      from: { id: "claude", access: "native" },
+      to: { id: "codex", access: "native" },
+    }),
   })
 
-  void it("keeps a multi-part prompt whole while the engine has persisted only some of it", () => {
-    // The engine mints its own ids (`prt_…`), so there is NO id correspondence
-    // between a canonical part and the provisional it replaces. Retiring every
-    // provisional the moment ONE canonical part landed therefore erased the
-    // second half of a two-part prompt outright — the attachment case. A
-    // replacement must be in hand for each provisional before any is dropped,
-    // and with no id to match on, count is the only honest proxy.
-    const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    store.startTurn({
-      sessionId: "s1",
-      agentSessionId: "a1",
-      userMessageId: "u1",
-      assistantMessageId: "m1",
-      agent: "general",
-      model: { providerID: "test-provider", modelID: "test-model" },
-      parts: [
-        { type: "text", text: "PROMPT" },
-        { type: "text", text: "ATTACHED" },
-      ],
-    })
-    const canonical = (id: string, text: string) =>
-      messagePartUpdated({ id, sessionID: "s1", messageID: "u1", type: "text", text })
-
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: canonical("prt_first", "PROMPT") })
-    assert.deepEqual(
-      userParts(store).sort(),
-      ["prt_first", "u1-part-0", "u1-part-1"],
-      "one canonical part cannot replace two provisionals — the prompt must stay whole",
-    )
-
-    // Once the engine has persisted the whole prompt, the provisionals go.
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: canonical("prt_second", "ATTACHED") })
-    assert.deepEqual(userParts(store).sort(), ["prt_first", "prt_second"])
-    store.close()
-  })
-
-  void it("a canonical part on ONE user message leaves another's provisionals alone", () => {
-    // The mutation this exists to catch: a predicate matching id SHAPE alone
-    // (any `*-part-N`) rather than THIS message's id would retire
-    // a second turn's provisionals the moment the first turn's engine part
-    // landed. Needs two user messages, each holding provisionals, to discriminate.
-    const store = seeded(tmp())
-    store.startTurn({
-      sessionId: "s1",
-      agentSessionId: "a1",
-      userMessageId: "u2",
-      assistantMessageId: "m2",
-      agent: "general",
-      model: { providerID: "test-provider", modelID: "test-model" },
-      parts: [{ type: "text", text: "SECOND" }],
-    })
-    // u1's engine part lands; u2's turn is still in flight.
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("u1", "FIRST") })
-
-    const u2 = (
-      (store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string }> }>).find(
-        (message) => message.info.id === "u2",
-      )?.parts ?? []
-    ).map((part) => part.id)
-    assert.deepEqual(u2, ["u2-part-0"], "u2's provisional must survive u1's canonical part")
-    store.close()
-  })
-
-  void it("does not retire another message's provisional parts", () => {
-    const store = seeded(tmp())
-    // A canonical part on the ASSISTANT message must not touch the user's.
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("m1", "OK") })
-
-    // The user's provisional must survive: a predicate that matched on id shape
-    // alone rather than on this message's id would retire it.
-    assert.deepEqual(userParts(store), ["u1-part-0"])
-    store.close()
-  })
+  const user = (
+    store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string; text?: string }> }>
+  ).find((message) => message.info.id === "u1")
+  assert.deepEqual(
+    user?.parts.map((part) => [part.id, part.text]),
+    [
+      ["u1-part-0", "PROMPT"],
+      ["u1-handoff", undefined],
+    ],
+  )
+  store.close()
 })
-
 
 void it("persists Goal state across reopen and clears it with the session", () => {
   const root = tmp()
@@ -3308,6 +3217,34 @@ void describe("streamed delta settlement", () => {
     assert.equal(text(store, "s1"), "one two three")
     const settled = db(store).prepare("SELECT last_seq FROM journal_checkpoint WHERE session_id = ?").get("s1") as { last_seq: number }
     assert.equal(settled.last_seq, rows[rows.length - 1]?.seq)
+    store.close()
+  })
+
+  void it("settling a reply's deltas reads no part by its message", () => {
+    const store = new RuntimeStore(tmp())
+    bind(store)
+    store.appendEvent({
+      sessionId: "s1",
+      payload: {
+        type: "message.part.updated",
+        properties: { part: { id: "p1", sessionID: "s1", messageID: "m1", type: "text", text: "" } },
+      },
+    } as never)
+    const handle = db(store)
+    const prepare = handle.prepare.bind(handle)
+    const byMessage: string[] = []
+    handle.prepare = (sql: string) => {
+      if (/\bFROM part\b[\s\S]*\bmessage_id\b/.test(sql)) byMessage.push(sql)
+      return prepare(sql)
+    }
+
+    for (const chunk of ["one ", "two ", "three ", "four ", "five"]) {
+      delta(store, chunk)
+      store.flush()
+    }
+
+    assert.deepEqual(byMessage, [])
+    assert.equal(text(store, "s1"), "one two three four five")
     store.close()
   })
 

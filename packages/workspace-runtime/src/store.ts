@@ -3,7 +3,6 @@ import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
-import { escapeRegExp } from "@claxedo/helpers/string"
 import {
   ACP_RECOVER,
   AgentRuntimeStaleTurnError,
@@ -755,42 +754,6 @@ function sessionHarness(input: {
       : undefined,
   )
   return identity ?? undefined
-}
-
-/**
- * Is this part id one a provisional writer derived from the message id?
- *
- * Matches the canonical synthetic convention `${messageId}-part-N` from
- * `inputParts` below. It is recognisable from the message id alone.
- *
- * Deliberately anchored and message-bound. An id that merely CONTAINS the
- * message id, or that merely looks like the shape, is not matched: a false
- * positive here deletes a real part, so the predicate errs toward keeping.
- */
-export function isProvisionalPartId(messageId: string, partId: string) {
-  if (!messageId || !partId) return false
-  return new RegExp(`^${escapeRegExp(messageId)}-part-\\d+$`).test(partId)
-}
-
-/**
- * How many parts the user's prompt actually had, read off the provisionals.
- *
- * Each provisional writer records the WHOLE prompt under its own convention,
- * so the two conventions are copies of one another, not additive: a two-part
- * prompt seen by both writers leaves four rows describing two parts. The width
- * is therefore the larger convention's count, never the sum — summing would
- * demand twice as many canonical parts as the engine will ever write, and the
- * provisionals would never be retired at all.
- */
-function provisionalPromptWidth(messageId: string, provisionalIds: readonly string[]) {
-  let fromStore = 0
-  let fromAdapter = 0
-  const store = new RegExp(`^${escapeRegExp(messageId)}-part-\\d+$`)
-  for (const id of provisionalIds) {
-    if (store.test(id)) fromStore += 1
-    else fromAdapter += 1
-  }
-  return Math.max(fromStore, fromAdapter)
 }
 
 /**
@@ -2765,65 +2728,6 @@ export class RuntimeStore {
         "INSERT OR REPLACE INTO part (id, session_id, message_id, ord, data_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
       .run(id, sessionId, messageId, this.partOrd(sessionId, messageId, id), JSON.stringify(part), ts)
-    this.supersedeProvisionalParts(sessionId, messageId)
-  }
-
-  /**
-   * Drops a user message's PROVISIONAL parts once a canonical one has landed.
-   *
-   * Two layers can record a user prompt, and each mints its own id:
-   *   `${messageId}-part-N`       — this store (`inputParts`)
-   *   provider part id             — the connected runtime's persisted part
-   * Both describe the SAME text, so one send rendered the prompt twice in the
-   * transcript. The provider request always carried exactly one
-   * part, so this was transcript fidelity — never model input, never tokens.
-   *
-   * The first is provisional BY CONSTRUCTION: its id is derived from the
-   * message id, which makes it identifiable without comparing
-   * text (a user may legitimately send the same text twice; identical text is
-   * not evidence of duplication). They are written eagerly for durability —
-   * each survives if the layer below it never responds — so they are retired
-   * here rather than never written. Removing a writer instead would risk an
-   * empty user message on exactly the partial-failure paths they cover;
-   * consolidating ownership to one writer is the right long-term fix and is
-   * deliberately deferred.
-   *
-   * Same asymmetry as the app store's `reconcileStoredParts`: canonical parts
-   * SUPERSEDE provisionals, but their absence never deletes anything. Nothing
-   * is dropped without its replacement already in hand.
-   *
-   * That last clause is why this counts. The engine mints its own ids, so a
-   * canonical part carries NOTHING linking it to the provisional it replaces —
-   * there is no per-part correspondence to check. A two-part prompt (text plus
-   * an attachment) whose first part alone had been persisted would lose its
-   * second part outright if one canonical part retired every provisional. So
-   * provisionals are retired only once the canonical parts cover them all;
-   * until then the message renders a little long, which is the safe direction.
-   *
-   * Runs after EVERY part write, not only canonical ones: a provisional that
-   * arrives after the canonical parts are already complete must be retired on
-   * its own arrival, or the duplicate persists until the engine happens to
-   * rewrite a part — and if it never does, the prompt stays doubled.
-   *
-   * Scoped to this message twice over — the query binds `messageId`, and
-   * `isProvisionalPartId` only matches ids derived from it — so a canonical
-   * part on one message can never retire another's. The query also binds
-   * `sessionId` because `(session_id, message_id)` is the part index's prefix;
-   * by `message_id` alone SQLite scans every part in the workspace, on every
-   * settle of a streaming reply.
-   */
-  private supersedeProvisionalParts(sessionId: string, messageId: string) {
-    const rows = this.db
-      .prepare<{ id: string }>("SELECT id FROM part WHERE session_id = ? AND message_id = ?")
-      .all(sessionId, messageId)
-    const stale: string[] = []
-    let canonical = 0
-    for (const row of rows) {
-      if (isProvisionalPartId(messageId, row.id)) stale.push(row.id)
-      else canonical += 1
-    }
-    if (stale.length === 0 || canonical < provisionalPromptWidth(messageId, stale)) return
-    for (const id of stale) this.db.prepare("DELETE FROM part WHERE id = ?").run(id)
   }
 
   private delta(sessionId: string, messageId: string, partId: string, field: string, delta: string, ts: number) {
@@ -3116,6 +3020,8 @@ export class RuntimeStore {
           }),
           row.ts,
         )
+        // No harness writes the user's prompt parts back, so these rows are the
+        // prompt's only record, including when the harness never answers.
         for (const part of buildUserPromptParts(row.sessionId, control.userMessageId, control.parts)) {
           this.upsertPart(part, row.ts)
         }
