@@ -168,7 +168,7 @@ export async function executeSessionNavigation(input: {
   })
 }
 
-async function measurePanelOpen(page: Page, fixture: FixtureEvidence) {
+export async function measurePanelOpen(page: Page, fixture: FixtureEvidence) {
   const recording = await beginTrace(page, { openFilesExpectedCount: fixture.files.length })
   try {
     await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
@@ -179,6 +179,7 @@ async function measurePanelOpen(page: Page, fixture: FixtureEvidence) {
       { id: "data-ready", at: readiness.dataReady },
       { id: "above-fold-painted", at: readiness.aboveFoldPainted },
     ])
+    await markActionEnd(page, readiness.aboveFoldPainted)
     return await finishMeasuredTrace(page, recording)
   } catch (error) {
     await abortTrace(page, recording)

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { chromium, type Browser } from "playwright-core"
 import type { BenchmarkPage } from "../src/agent-cdp-page"
 import { installPaintedFrames } from "../src/browser/painted-frames"
-import { measurePrearmedSettledAction } from "../src/public-workspace-panel"
+import { measurePanelOpen, measurePrearmedSettledAction } from "../src/public-workspace-panel"
 import { waitForPaintedFile } from "../src/workspace-panel-readiness"
 import { beginTrace, finishMeasuredTrace, markActionEnd } from "../src/workspace-panel-trace-recording"
 
@@ -25,13 +25,23 @@ const FILE_ON_PRESS = `
   </script>
 `
 
-async function benchmarkPage() {
+const PANEL_ON_PRESS = `
+  <button type="button" data-testid="workspace-panel-toggle" aria-label="Open workspace panel" style="width:200px;height:100px">toggle</button>
+  <script>
+    document.querySelector("button").addEventListener("pointerdown", () => {
+      document.body.insertAdjacentHTML("beforeend", '<div data-testid="workspace-panel-shell" data-open="true" data-shell-settled="true" data-state-workspace-dir="/w" style="width:300px;height:200px"><div data-testid="workspace-files-navigator" data-mode="files" data-file-tree-data-ready="true" style="width:300px;height:200px"><button data-file-tree-path="a.ts">a.ts</button></div></div>')
+    })
+  </script>
+`
+
+async function benchmarkPage(content = FILE_ON_PRESS) {
   const page = await browser.newPage()
-  await page.setContent(FILE_ON_PRESS)
+  await page.setContent(content)
   await page.evaluate(installPaintedFrames)
   const cdp = await page.context().newCDPSession(page)
   const adapted = {
     evaluate: page.evaluate.bind(page),
+    locator: page.locator.bind(page),
     rawCommand: (method: string, params?: Record<string, unknown>) => cdp.send(method as "Tracing.start", params),
     onProtocolEvent: (method: string, listener: (params: unknown) => void) => {
       cdp.on(method as "Tracing.dataCollected", listener)
@@ -39,7 +49,7 @@ async function benchmarkPage() {
         cdp.off(method as "Tracing.dataCollected", listener)
       }
     },
-  } as Pick<BenchmarkPage, "evaluate" | "rawCommand" | "onProtocolEvent"> as never
+  } as Pick<BenchmarkPage, "evaluate" | "locator" | "rawCommand" | "onProtocolEvent"> as never
   return { page, adapted }
 }
 
@@ -104,5 +114,14 @@ test("an action end asked for inside its ready frame's own task waits for the se
   await page.mouse.up()
   expect(rendererTrace.frameTimestampsMs.length).toBe(2)
   expect(clock.end).toBe(rendererTrace.frameTimestampsMs[1]!)
+  await page.close()
+}, 30_000)
+
+test("a panel open ends at its above-fold paint or its second presented frame, not when the driver finishes the trace", async () => {
+  const { page, adapted } = await benchmarkPage(PANEL_ON_PRESS)
+  const { clock, rendererTrace } = await measurePanelOpen(adapted, { manifest: {} as never, files: ["a.ts"], changed: [], openFiles: [] })
+  const aboveFold = rendererTrace.milestones.find((milestone) => milestone.id === "above-fold-painted")!.at
+  expect(rendererTrace.frameTimestampsMs.length).toBeGreaterThanOrEqual(2)
+  expect(clock.end).toBe(Math.max(aboveFold, rendererTrace.frameTimestampsMs[1]!))
   await page.close()
 }, 30_000)

@@ -230,7 +230,8 @@ export async function finishMeasuredTrace(page: Page, recording: TraceRecording)
     if (!current?.active || startedAt === undefined || !Number.isFinite(startedAt)) {
       throw new Error("Claxedo measured action has no trusted input")
     }
-    const end = performance.getEntriesByName(endMark, "mark").at(-1)?.startTime ?? performance.mark(endMark).startTime
+    const end = performance.getEntriesByName(endMark, "mark").at(-1)?.startTime
+    if (end === undefined) throw new Error("Claxedo measured action has no end mark")
     current.milestones.push({ id: "interactive", at: end }, { id: "complete", at: end })
     current.active = false
     current.stopFrames()
