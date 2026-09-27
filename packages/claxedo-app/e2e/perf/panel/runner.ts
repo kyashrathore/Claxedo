@@ -3,7 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { installRecorder, type Predicate, type Recording } from "./recorder"
-import { createSourceMapper, summarizeProfile, summarizeTrace, type CpuProfile, type TraceEvent } from "./trace"
+import { traceEventsFrom, type TraceEvent } from "../../../perf-harness/src/trace-events"
+import { createSourceMapper, summarizeProfile, summarizeTrace, type CpuProfile } from "./trace"
 
 export const OUT = process.env.PANEL_OUT ?? path.join(os.tmpdir(), "panel-perf")
 const TRACE_CATEGORIES = process.env.PANEL_TRACE_ALL === "1"
@@ -72,7 +73,7 @@ export class Runner {
     const cdp = this.cdp
     if (!cdp) throw new Error("attach first")
     const chunks: TraceEvent[] = []
-    const collect = (event: { value: unknown[] }) => chunks.push(...(event.value as TraceEvent[]))
+    const collect = (event: unknown) => chunks.push(...traceEventsFrom(event))
     cdp.on("Tracing.dataCollected", collect)
     if (!UNTRACED) await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: [...TRACE_CATEGORIES, ...TRACE_EXTRA] } })
     if (PROFILED) {

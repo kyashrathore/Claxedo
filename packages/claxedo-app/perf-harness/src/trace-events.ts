@@ -1,10 +1,12 @@
 export type TraceEvent = {
   name: string
+  cat: string
   ph: string
   ts: number
   dur?: number
   pid: number
   tid: number
+  args?: { data?: Record<string, unknown> }
 }
 
 export function traceEventsFrom(payload: unknown): TraceEvent[] {
@@ -13,6 +15,7 @@ export function traceEventsFrom(payload: unknown): TraceEvent[] {
     !!event &&
     typeof event === "object" &&
     "name" in event && typeof event.name === "string" &&
+    "cat" in event && typeof event.cat === "string" &&
     "ph" in event && typeof event.ph === "string" &&
     "ts" in event && typeof event.ts === "number" &&
     "pid" in event && typeof event.pid === "number" &&

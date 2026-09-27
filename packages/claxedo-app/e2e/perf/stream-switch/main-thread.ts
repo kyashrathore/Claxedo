@@ -1,5 +1,6 @@
 import fs from "node:fs"
-import type { createSourceMapper, TraceEvent } from "../panel/trace"
+import type { TraceEvent } from "../../../perf-harness/src/trace-events"
+import type { createSourceMapper } from "../panel/trace"
 
 type Mapper = ReturnType<typeof createSourceMapper>
 type TraceFrame = { url: string; lineNumber: number; columnNumber: number; functionName?: string }

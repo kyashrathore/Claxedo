@@ -1,4 +1,5 @@
-import { createSourceMapper, type TraceEvent } from "../panel/trace"
+import type { TraceEvent } from "../../../perf-harness/src/trace-events"
+import { createSourceMapper } from "../panel/trace"
 import { forcingFrame, mapTraceFrame, readMainThread } from "./main-thread"
 
 const [file, distDir, spanArg = "200"] = process.argv.slice(2) as [string, string, string?]

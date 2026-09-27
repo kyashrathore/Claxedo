@@ -1,17 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { SourceMapConsumer } from "../../../../../node_modules/.bun/node_modules/source-map/source-map.js"
-
-export type TraceEvent = {
-  name: string
-  cat: string
-  ph: string
-  ts: number
-  dur?: number
-  pid: number
-  tid: number
-  args?: { data?: Record<string, unknown> }
-}
+import type { TraceEvent } from "../../../perf-harness/src/trace-events"
 
 export type TaskRow = {
   readonly startMs: number
