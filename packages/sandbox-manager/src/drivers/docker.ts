@@ -8,7 +8,8 @@ import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
   SandboxTarget,
-} from ".."
+  SandboxResource,
+} from "../contract"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -312,7 +313,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
     await dockerCommand(["stop", target.sandboxId], 30_000)
   }
 
-  async function destroy(target: SandboxTarget) {
+  async function destroy(target: SandboxResource) {
     await dockerCommand(["rm", "-f", target.sandboxId], 30_000)
   }
 

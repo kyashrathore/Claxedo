@@ -52,6 +52,16 @@ describe("CloudflareSandboxDriver", () => {
     expect(calls).toHaveLength(1)
     expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "manual" }))
   })
+  test.each(["{}", "null", '{"sandboxes":{}}', '{"sandboxes":[null]}', '{"sandboxes":[{}]}', "invalid-json"])("listing rejects malformed successful payload %s", async (payload) => {
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => new Response(payload)) as typeof fetch })
+    await expect(driver.list!()).rejects.toThrow()
+  })
+
+  test("listing accepts an explicitly empty inventory", async () => {
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => Response.json({ sandboxes: [] })) as typeof fetch })
+    expect(await driver.list!()).toEqual([])
+  })
+
   test("ensureHost boots the runtime, sends the credential env, and returns the worker-proxied url", async () => {
     // The worker now returns its own data-plane proxy URL (no exposePort preview
     // subdomain) — the driver passes it through as the host URL unchanged.

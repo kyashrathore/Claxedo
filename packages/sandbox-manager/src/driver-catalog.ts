@@ -1,4 +1,4 @@
-import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./index"
+import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./contract"
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
 import {

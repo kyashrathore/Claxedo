@@ -2,7 +2,7 @@ import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
   SandboxTarget,
-} from ".."
+} from "../contract"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -220,7 +220,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
     return readyTarget(input, sandbox, hostId)
   }
 
-  async function sandboxById(target: SandboxTarget) {
+  async function sandboxById(target: Pick<SandboxTarget, "sandboxId">) {
     return (await resolveClient()).sandboxes.fromId(target.sandboxId)
   }
 

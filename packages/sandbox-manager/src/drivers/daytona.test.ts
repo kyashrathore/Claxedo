@@ -114,6 +114,26 @@ const input = {
 }
 
 describe("DaytonaSandboxDriver", () => {
+  test.each(["stop", "suspend"] as const)("%s propagates lookup and stop failures", async (method) => {
+    const target = { workspaceId: "ws_1", sandboxId: "sb_1", url: "https://r/", hostId: "host" }
+    for (const status of [401, 409, 500]) {
+      const error = Object.assign(new Error(`provider ${status}`), { status })
+      const lookupDriver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ get: async () => { throw error } }) })
+      await expect(lookupDriver[method]!(target)).rejects.toBe(error)
+      const stopDriver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ get: async () => sandbox({ stop: async () => { throw error } }) }) })
+      await expect(stopDriver[method]!(target)).rejects.toBe(error)
+    }
+  })
+
+  test("failed Daytona suspension leaves the manager lease ready", async () => {
+    const error = new Error("stop failed")
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ get: async () => sandbox({ stop: async () => { throw error } }) }) })
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", sandboxId: "sb_1", hostId: "host", url: "https://r/" })])
+    const manager = createSandboxManager({ driver, leaseStore: store })
+    await expect(manager.stop("ws_1")).rejects.toBe(error)
+    expect((await store.get("ws_1"))?.status).toBe("ready")
+  })
+
   test("ensureHost creates a Daytona SDK sandbox with boot env and base snapshot", async () => {
     const created = sandbox()
     const daytona = client({ create: vi.fn(async () => created) })

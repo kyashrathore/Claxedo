@@ -1,3 +1,4 @@
+import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import { sameRuntime, secureOrLoopback, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
 import { brokerErrorBody } from "./errors.js"
@@ -96,21 +97,6 @@ function once(run: () => void): () => void {
 }
 
 /**
- * Settled work raced against a clock. The work keeps running after a timeout
- * — a hung authority cannot be un-hung from here — but the caller, and the
- * lane it holds, stop waiting on it.
- */
-function stopWaitingAfter<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  return Promise.race([
-    work,
-    new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("Timed out")), timeoutMs)
-    }),
-  ]).finally(() => clearTimeout(timer))
-}
-
-/**
  * A counted budget of simultaneous upstream exchanges. A lane is taken before
  * the authority is asked and handed back when the upstream body is spent,
  * refused, or the caller leaves — work under the broker's roof has a ceiling
@@ -156,21 +142,17 @@ function concurrencyGate(max: number) {
   return { enter }
 }
 
-function deadlineWithCallerAbort(timeoutMs: number, signal: AbortSignal) {
+function upstreamLifetime(signal: AbortSignal, timeoutMs: number) {
   const controller = new AbortController()
   const abortFromCaller = () => controller.abort(signal.reason)
-  const timer = setTimeout(
-    () => controller.abort(new DOMException("The operation timed out", "TimeoutError")),
-    timeoutMs,
-  )
-  if (signal.aborted) controller.abort(signal.reason)
+  const timer = setTimeout(() => controller.abort(new DOMException("The operation timed out", "TimeoutError")), timeoutMs)
+  if (signal.aborted) abortFromCaller()
   else signal.addEventListener("abort", abortFromCaller, { once: true })
   return {
     signal: controller.signal,
-    cleanup() {
-      clearTimeout(timer)
-      signal.removeEventListener("abort", abortFromCaller)
-    },
+    abort: () => controller.abort(new DOMException("The operation timed out", "TimeoutError")),
+    headersReceived: () => clearTimeout(timer),
+    cleanup: () => { clearTimeout(timer); signal.removeEventListener("abort", abortFromCaller) },
   }
 }
 
@@ -179,24 +161,41 @@ function deadlineWithCallerAbort(timeoutMs: number, signal: AbortSignal) {
  * until the harness finishes it or goes away, so a vendor that sends headers
  * and then drips forever cannot be multiplied past the budget.
  */
-function laneBody(body: ReadableStream<Uint8Array>, release: () => void): ReadableStream<Uint8Array> {
+function laneBody(body: ReadableStream<Uint8Array>, signal: AbortSignal, release: () => void): ReadableStream<Uint8Array> {
   const reader = body.getReader()
+  let aborted = false
+  let onAbort: () => void
+  const finish = once(() => {
+    signal.removeEventListener("abort", onAbort)
+    release()
+  })
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      onAbort = () => {
+        aborted = true
+        finish()
+        controller.error(signal.reason)
+        void reader.cancel(signal.reason).then(undefined, (error) => controller.error(error))
+      }
+      if (signal.aborted) onAbort()
+      else signal.addEventListener("abort", onAbort, { once: true })
+    },
     async pull(controller) {
       try {
         const { done, value } = await reader.read()
+        if (aborted) return
         if (done) {
-          release()
+          finish()
           controller.close()
         } else controller.enqueue(value)
       } catch (error) {
-        release()
-        controller.error(error)
+        finish()
+        if (!aborted) controller.error(error)
       }
     },
     async cancel(reason) {
-      release()
-      await reader.cancel(reason).catch(() => {})
+      finish()
+      await reader.cancel(reason)
     },
   })
 }
@@ -206,11 +205,16 @@ export function createEgressBroker(options: BrokerOptions) {
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const lane = concurrencyGate(options.maxConcurrentUpstream ?? DEFAULT_MAX_CONCURRENT_UPSTREAM)
   const exchangedTokens = new ExchangedTokens()
+  function authorityRequest<T>(what: string, request: Promise<T>): Promise<T> {
+    return settleAtRequestDeadline(what,
+      { signal: new AbortController().signal, deadlineAt: Date.now() + authorityTimeoutMs },
+      request, () => {}, (operation) => new Error(`${operation} timed out`))
+  }
   const authority: BindingAuthority = {
-    resolve: (bindingId) => stopWaitingAfter(options.authority.resolve(bindingId), authorityTimeoutMs),
-    currentRuntime: (identity: RuntimeIdentity) => stopWaitingAfter(options.authority.currentRuntime(identity), authorityTimeoutMs),
-    markUsed: (bindingId) => stopWaitingAfter(options.authority.markUsed(bindingId), authorityTimeoutMs),
-    reportFailure: (failure: BindingFailure) => stopWaitingAfter(options.authority.reportFailure(failure), authorityTimeoutMs),
+    resolve: (bindingId) => authorityRequest("resolve", options.authority.resolve(bindingId)),
+    currentRuntime: (identity: RuntimeIdentity) => authorityRequest("currentRuntime", options.authority.currentRuntime(identity)),
+    markUsed: (bindingId) => authorityRequest("markUsed", options.authority.markUsed(bindingId)),
+    reportFailure: (failure: BindingFailure) => authorityRequest("reportFailure", options.authority.reportFailure(failure)),
   }
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
@@ -240,6 +244,7 @@ export function createEgressBroker(options: BrokerOptions) {
       return brokerErrorResponse(503, "broker_authority_unavailable")
     }
     let forwarded = false
+    let lifetime: ReturnType<typeof upstreamLifetime> | undefined
     try {
       const resolved = await authority.resolve(bindingId)
       if (!resolved) return brokerErrorResponse(403, "binding_unavailable")
@@ -296,7 +301,8 @@ export function createEgressBroker(options: BrokerOptions) {
       }
       await authority.markUsed(bindingId)
       let upstream: Response
-      const deadline = deadlineWithCallerAbort(upstreamTimeoutMs, request.signal)
+      const deadline = upstreamLifetime(request.signal, upstreamTimeoutMs)
+      lifetime = deadline
       try {
         upstream = await (options.fetch ?? fetch)(target, {
           method: request.method,
@@ -306,10 +312,9 @@ export function createEgressBroker(options: BrokerOptions) {
           redirect: "manual",
           duplex: "half",
         } as RequestInit)
+        deadline.headersReceived()
       } catch {
         return brokerErrorResponse(502, "upstream_unavailable")
-      } finally {
-        deadline.cleanup()
       }
       if (upstream.status >= 300 && upstream.status < 400) {
         await upstream.body?.cancel()
@@ -326,7 +331,11 @@ export function createEgressBroker(options: BrokerOptions) {
       if (exchanging && upstream.ok) {
         let payload: unknown
         try {
-          payload = await upstream.json()
+          const body = upstream.body
+          const response = body ? new Response(laneBody(body, deadline.signal, () => {})) : upstream
+          payload = await settleAtRequestDeadline("exchange body",
+            { signal: deadline.signal, deadlineAt: Date.now() + upstreamTimeoutMs },
+            response.json(), deadline.abort, (what) => new Error(`${what} timed out`))
         } catch {
           return brokerErrorResponse(502, "upstream_unavailable")
         }
@@ -340,13 +349,16 @@ export function createEgressBroker(options: BrokerOptions) {
       const body = upstream.body
       if (body) {
         forwarded = true
-        return new Response(laneBody(body, release), { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
+        return new Response(laneBody(body, deadline.signal, () => { deadline.cleanup(); release() }), { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
       }
       return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
     } catch {
       return brokerErrorResponse(503, "broker_authority_unavailable")
     } finally {
-      if (!forwarded) release()
+      if (!forwarded) {
+        lifetime?.cleanup()
+        release()
+      }
     }
   }
 }

@@ -4,7 +4,8 @@ import type {
   SandboxDriverEnsureInput,
   SandboxLease,
   SandboxTarget,
-} from ".."
+  SandboxResource,
+} from "../contract"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -344,6 +345,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     })
     if (!created) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     const boxId = boxOf(created).id
+    await input.onResource?.({ sandboxId: boxId, hostId, driverResourceId: boxId, labels: input.labels })
     const ready = await waitUntilReady(boxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     return boot(boxId, input, hostId)
@@ -351,28 +353,20 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
 
   async function resumeHost(input: { lease: SandboxLease; ensure: SandboxDriverEnsureInput }) {
     const boxId = input.lease.sandboxId
-    if (!boxId) return ensureHost(input.ensure)
+    if (!boxId) throw new BoxApiError("Cannot resume Box without its resource id")
     assertNetwork(input.ensure)
     const hostId = input.ensure.hostId ?? input.lease.hostId ?? `box-${input.ensure.workspaceId}`
-    try {
-      await api(`/boxes/${boxId}/resume`, { method: "POST" })
-      const ready = await waitUntilReady(boxId)
-      if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
-      // Re-establish the runtime container + route: an archived box stops its
-      // processes, so the container and `host` route must be brought back.
-      return await boot(boxId, input.ensure, hostId)
-    } catch (err) {
-      if (transientDriverError(err)) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
-      // A resume against a deleted/errored box falls back to a fresh box.
-      return ensureHost(input.ensure)
-    }
+    if (input.lease.url !== undefined) await api(`/boxes/${boxId}/resume`, { method: "POST" })
+    const ready = await waitUntilReady(boxId)
+    if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    return boot(boxId, input.ensure, hostId)
   }
 
   async function stop(target: SandboxTarget) {
     await api(`/boxes/${target.sandboxId}/stop`, { method: "POST" })
   }
 
-  async function destroy(target: SandboxTarget) {
+  async function destroy(target: SandboxResource) {
     await api(`/boxes/${target.sandboxId}`, { method: "DELETE" })
   }
 

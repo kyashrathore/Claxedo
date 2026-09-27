@@ -27,13 +27,15 @@
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/helpers": "workspace:*",
     "@hono/node-server": "1.19.11",
     "jose": "6.2.4"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
-    "typescript": "catalog:",
     "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
     "vitest": "2.1.9"
   }
 }
