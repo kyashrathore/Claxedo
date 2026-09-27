@@ -35,10 +35,11 @@ import {
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
 import { holdPaneReveal } from "@/workbench"
-import { ClaxedoIcon as Icon, FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast } from "@/ui"
+import { FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast } from "@/ui"
 import { Binary, getFilename } from "@/ui/utils"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
+import { TimelineJumpButton } from "./timeline-jump-button"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
@@ -1369,32 +1370,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
           />
         </div>
       </Show>
-      <div
-        data-session-timeline-jump
-        class="pointer-events-none absolute inset-x-0 bottom-6 z-[60] flex justify-center"
-      >
-        <div
-          class="transition-all duration-200 ease-out"
-          classList={{
-            "opacity-100 translate-y-0 scale-100 pointer-events-auto": props.scroll.overflow && props.scroll.jump,
-            "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.scroll.overflow || !props.scroll.jump,
-          }}
-        >
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-full border border-border-weaker-base bg-surface-raised-stronger-non-alpha text-text-base cursor-pointer p-0 transition-colors hover:border-border-weak-base"
-            aria-label={host.t("session.timeline.scrollToBottom")}
-            onClick={props.onResumeScroll}
-          >
-            <Show when={sessionStatus().kind === "working"} fallback={<Icon name="scroll-to-latest" size="large" />}>
-              <span class="tl-dot-wave" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </Show>
-          </button>
-        </div>
-      </div>
+      <TimelineJumpButton
+        shown={props.scroll.overflow && props.scroll.jump}
+        working={sessionStatus().kind === "working"}
+        label={host.t("session.timeline.scrollToBottom")}
+        onClick={props.onResumeScroll}
+      />
       <ScrollView
         data-slot="session-timeline-scroll"
         viewportRef={bindListRoot}
