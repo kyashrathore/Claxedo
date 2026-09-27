@@ -315,6 +315,7 @@ describe("control plane session routes", () => {
           },
         ],
       })),
+      readSessionOutline: vi.fn(async () => ({ allowed: true, turns: [{ id: "u1" }], complete: true })),
       authorizeSessionRead: vi.fn(async () => {}),
     }
     svc.authority = authority as never
@@ -344,6 +345,9 @@ describe("control plane session routes", () => {
     const messages = await app.request("http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
+    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1", {
+      headers: { Authorization: "Bearer user_1" },
+    })
     const capabilities = await app.request(
       "https://control.example.test/sessions/session-1/capabilities?workspaceId=ws_1",
       {
@@ -360,6 +364,9 @@ describe("control plane session routes", () => {
       messages: [{ info: { id: "msg_1" } }],
       maxEventOrdinal: 7,
     })
+    expect(outline.status).toBe(200)
+    await expect(outline.json()).resolves.toEqual({ allowed: true, turns: [{ id: "u1" }], complete: true })
+    expect(authority.readSessionOutline).toHaveBeenCalledWith(expect.anything(), { sessionId: "session-1", workspaceId: "ws_1" })
     expect(capabilities.status).toBe(409)
     await expect(capabilities.json()).resolves.toMatchObject({
       error: { code: "session_harness_missing" },
@@ -913,5 +920,25 @@ describe("machine session admission", () => {
     const response = await ControlPlaneSessionRoutes(servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen), { ...signedOptions, createMachineSession }).request(request({ workspaceId: "ws_1", harness: "pi" }, true))
     expect(response.status).toBe(403)
     expect(createMachineSession).not.toHaveBeenCalled()
+  })
+})
+
+test("a loopback caller without a bearer outlines the local projection's replay, turn by turn", async () => {
+  const svc = services()
+  svc.projectionStore.read_session_messages = vi.fn(() => [
+    { info: { id: "u1", role: "user", time: { created: 10 } }, parts: [{ type: "text", text: "  first prompt " }] },
+    { info: { id: "a1", role: "assistant", parentID: "u1", time: { created: 11, completed: 12 } }, parts: [{ type: "tool", tool: "Agent", callID: "call-1" }, { type: "text", text: "done" }] },
+    { info: { id: "u2", role: "user", time: { created: 20 }, summary: { title: "Second" } }, parts: [{ type: "text", text: "second" }] },
+  ])
+  const app = ControlPlaneSessionRoutes(svc, {})
+  const outline = await app.request("http://127.0.0.1/sessions/session-1/outline")
+  expect(outline.status).toBe(200)
+  expect(await outline.json()).toEqual({
+    allowed: true,
+    complete: true,
+    turns: [
+      { id: "u1", createdAt: 10, user: "first prompt" },
+      { id: "u2", createdAt: 20, title: "Second", user: "second" },
+    ],
   })
 })

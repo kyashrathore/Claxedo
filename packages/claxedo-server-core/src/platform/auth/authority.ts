@@ -588,6 +588,7 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
+  readSessionOutline: (auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
     args: {

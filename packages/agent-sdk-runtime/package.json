@@ -139,6 +139,13 @@
       "import": "./dist/message-page.mjs",
       "default": "./dist/message-page.mjs"
     },
+    "./turn-outline": {
+      "development": "./src/turn-outline.ts",
+      "bun": "./src/turn-outline.ts",
+      "types": "./dist/turn-outline.d.ts",
+      "import": "./dist/turn-outline.mjs",
+      "default": "./dist/turn-outline.mjs"
+    },
     "./stores/memory": {
       "development": "./src/stores/memory.ts",
       "bun": "./src/stores/memory.ts",

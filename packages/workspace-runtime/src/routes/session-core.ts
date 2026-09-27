@@ -28,7 +28,7 @@ import type {
   AgentInteractionResult,
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import type { AgentMessageReadInput, AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -191,8 +191,6 @@ function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
   })
 }
 
-const MAX_MESSAGE_PAGE_LIMIT = 500
-
 function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
   const view = c.req.query("view")
   const limit = c.req.query("limit")
@@ -217,11 +215,11 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
     return { view }
   }
   if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
-    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${MAX_MESSAGE_PAGE_LIMIT}` })
+    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}` })
   }
   const parsedLimit = Number(limit)
-  if (!Number.isSafeInteger(parsedLimit) || parsedLimit > MAX_MESSAGE_PAGE_LIMIT) {
-    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${MAX_MESSAGE_PAGE_LIMIT}` })
+  if (!Number.isSafeInteger(parsedLimit) || parsedLimit > AGENT_MESSAGE_PAGE_LIMIT) {
+    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}` })
   }
   if (before !== undefined && before.length === 0) {
     throw new HTTPException(400, { message: "before must be a non-empty cursor" })
@@ -1849,6 +1847,16 @@ export function createSessionRoutes(opts: Opts) {
         return noStoreJson(c, { messages, session: normalizeSession(session, directory) })
       }
       return noStoreJson(c, await adapter.getMessages(await requireExecutionBinding(opts, c, directory, sessionId, adapter)))
+    })
+    .get("/session/:id/outline", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
+      if (guarded) return guarded
+      if (!opts.getTurnOutline) throw new HTTPException(501, { message: "turn outlines are not supported for this session" })
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const outline = await opts.getTurnOutline(c, directory, sessionId)
+      if (!outline) return noStoreJson(c, sessionNotFound(), 404)
+      return noStoreJson(c, outline)
     })
     .get("/session/:id/todo", async (c) => {
       const sessionId = c.req.param("id")

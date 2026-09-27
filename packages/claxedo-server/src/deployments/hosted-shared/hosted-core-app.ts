@@ -668,4 +668,21 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       maxEventOrdinal: 0,
     })
   })
+  app.get("/api/control/sessions/:sessionId/outline", async (context) => {
+    const workspaceId = context.req.query("workspaceId")
+    if (!workspaceId) return context.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
+    const authResult = await signedOrError(
+      context.req.raw,
+      {
+        authentication,
+        requireSigned: true,
+      },
+      services,
+    )
+    if ("error" in authResult) return context.json(authResult.error, authResult.status)
+    if (!authResult.auth) {
+      return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+    }
+    return context.json(await services.authority!.readSessionOutline(authResult.auth, { sessionId: context.req.param("sessionId"), workspaceId }))
+  })
 }

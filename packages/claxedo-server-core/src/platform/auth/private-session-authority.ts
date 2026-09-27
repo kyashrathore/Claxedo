@@ -267,6 +267,7 @@ export type PrivateSessionAuthority = {
     auth: SignedControlPlaneAuth,
     input: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
+  readSessionOutline: (auth: SignedControlPlaneAuth, input: { sessionId: string; workspaceId: string }) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
     input: {
@@ -311,6 +312,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "listSessionPage",
   "resolveSession",
   "readSessionMessages",
+  "readSessionOutline",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",

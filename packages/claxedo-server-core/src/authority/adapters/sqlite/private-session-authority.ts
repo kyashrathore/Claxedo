@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { readStoredTurnOutline } from "../../../session/turn-outline"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -308,6 +309,19 @@ export function createSqlitePrivateSessionAuthority(input: {
       )
       return result(registration(db, intent.operationId)!, true)
     })()
+  }
+
+  /** The reader's role on the session's workspace, or nothing when the session or workspace refuses the read. */
+  const sessionReadRole = (auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string): { role: string | undefined } | undefined => {
+    const db = input.database()
+    const actor = actorForAuth(auth)
+    try {
+      const current = requireSessionAccess(db, actor, sessionId, workspaceId, "read")
+      return { role: authorizeWorkspaceForUser(db, current.workspace, actor, "read") }
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) return undefined
+      throw error
+    }
   }
 
   return {
@@ -669,15 +683,9 @@ export function createSqlitePrivateSessionAuthority(input: {
     },
     async readSessionMessages(auth, value) {
       const db = input.database()
-      const actor = actorForAuth(auth)
-      let role: string | undefined
-      try {
-        const current = requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "read")
-        role = authorizeWorkspaceForUser(db, current.workspace, actor, "read")
-      } catch (error) {
-        if (error instanceof ControlPlaneAuthError) return { allowed: false, messages: [] }
-        throw error
-      }
+      const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
+      if (!read) return { allowed: false, messages: [] }
+      const { role } = read
       if (value.view !== undefined) return { allowed: true, role, ...readLatestView(db, value.sessionId, value.workspaceId, value.view) }
       validatePage(value.limit, value.before)
       const before = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
@@ -728,6 +736,14 @@ export function createSqlitePrivateSessionAuthority(input: {
           : {}),
       }
     },
+    async readSessionOutline(auth, value) {
+      const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
+      if (!read) return { allowed: false, turns: [], complete: true }
+      const db = input.database()
+      const outline = await readStoredTurnOutline((sql, params) => db.prepare(sql).all(...params), "data", value.sessionId, value.workspaceId)
+      return { allowed: true, role: read.role, ...outline }
+    },
+
     async syncSessionMessages(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)

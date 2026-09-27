@@ -25,6 +25,7 @@ import {
   requiredWorkspaceId,
   signedSessionList, sessionListErrorResponse } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
+import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -258,6 +259,21 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         if (err instanceof AgentMessagePageError) {
           return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
         }
+        throw err
+      }
+    })
+    .get("/sessions/:sessionId/outline", async (c) => {
+      try {
+        const sessionId = c.req.param("sessionId")
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
+          return c.json({ allowed: true, ...turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)) })
+        }
+        const authority = requireAuthority(services)
+        const auth = await signedAuth(c.req.raw, options)
+        const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
+        return c.json(await authority.readSessionOutline(auth, { sessionId, workspaceId }))
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err
       }
     })

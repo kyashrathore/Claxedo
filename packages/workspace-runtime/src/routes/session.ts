@@ -7,6 +7,7 @@ import { publishTurnFailure } from "./session-prompt-admission"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
 import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
+import type { TurnOutline } from "../session/turn-outline"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
 import { admitSessionPromptTurn, runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
@@ -170,6 +171,10 @@ export function SessionRoutes(
       directory: string
       sessionId: string
     }) => Promise<unknown[] | undefined> | unknown[] | undefined
+    getTurnOutline?: (input: {
+      directory: string
+      sessionId: string
+    }) => Promise<TurnOutline | undefined> | TurnOutline | undefined
     createActiveTurnScope?: (input: {
       adapter: AgentHarnessAdapter
       directory: string
@@ -569,6 +574,9 @@ export function SessionRoutes(
       : undefined,
     getTodos: options?.getTodos
       ? (_c, directory, sessionId) => options.getTodos!({ directory: requiredDirectory(directory), sessionId })
+      : undefined,
+    getTurnOutline: options?.getTurnOutline
+      ? (_c, directory, sessionId) => options.getTurnOutline!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
     getStatus: options?.getStatus
       ? (c, directory) => options.getStatus!(c, requiredDirectory(directory))

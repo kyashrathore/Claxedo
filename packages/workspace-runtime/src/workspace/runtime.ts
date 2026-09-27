@@ -32,6 +32,7 @@ import {
   type AgentRuntimeStoreWithRecovery,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { TurnOutline } from "../session/turn-outline"
 import { OpenCodeSdkHarnessAdapter, WorkspaceScope, type OpenCodeRuntime } from "../opencode/index"
 import { harnessHealthChanged, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
@@ -109,6 +110,7 @@ export type WorkspaceRuntimeStore =
     getMessages(id: string): AgentMessage[]
     listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
+    turnOutline?: (id: string) => TurnOutline | undefined
     /**
      * Whether a relayed turn reached this session or one above it. Optional: a
      * store with no turn journal cannot say, and a caller asking whether a
@@ -2189,6 +2191,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         getTodos: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined
           return store().getTodos(sessionId)
+        },
+        getTurnOutline: async ({ sessionId }) => {
+          const runtimeStore = store()
+          const turnOutline = runtimeStore.turnOutline
+          if (!turnOutline) throw new HTTPException(501, { message: "Turn outlines are unavailable" })
+          return turnOutline.call(runtimeStore, sessionId)
         },
         getSessionConfig: async ({ sessionId }) => {
           const config = readSessionConfig(sessionId)

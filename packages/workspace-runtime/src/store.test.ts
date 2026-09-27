@@ -22,6 +22,7 @@ import {
   todoUpdated,
 } from "./compat-events"
 import { RuntimeStore as RuntimeStoreImpl } from "./store"
+import { readTurnOutline, type TurnOutlineDatabase } from "./session/turn-outline"
 
 const roots: string[] = []
 const stores: RuntimeStoreImpl[] = []
@@ -1261,6 +1262,43 @@ void describe("RuntimeStore", () => {
       older.messages.map((message) => message.info.id),
       ["user-1", "assistant-1"],
     )
+    store.close()
+  })
+
+  void it("outlines the newest turns from their users alone: capped prompt snippets, parsing no assistant part and no part outside the window", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const append = (info: Record<string, unknown>) =>
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messageUpdated({ sessionID: "s1", ...info } as any) })
+    const part = (part: Record<string, unknown>) =>
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", ...part } as any) })
+    for (let turn = 1; turn <= 4; turn += 1) {
+      append({ id: `user-${turn}`, role: "user", time: { created: turn * 10 }, ...(turn === 3 ? { summary: { title: "Third", diffs: [] } } : {}) })
+      part({ id: `user-${turn}-text`, messageID: `user-${turn}`, type: "text", text: `  prompt ${turn}\n\nwith   lines and more` })
+      part({ id: `user-${turn}-synthetic`, messageID: `user-${turn}`, type: "text", synthetic: true, text: "SYNTHETIC" })
+      append({ id: `assistant-${turn}a`, role: "assistant", parentID: `user-${turn}`, time: { created: turn * 10 + 1, completed: turn * 10 + 2 } })
+      part({ id: `assistant-${turn}a-text`, messageID: `assistant-${turn}a`, type: "text", text: `reply ${turn}` })
+    }
+    // json_extract throws on either row, so the read succeeds only if it parses neither.
+    db(store).prepare("UPDATE part SET data_json = ? WHERE id IN (?, ?)").run("not-json", "user-1-text", "assistant-3a-text")
+
+    const outline = readTurnOutline(db(store) as unknown as TurnOutlineDatabase, "s1", { limit: 3, snippetLength: 24 })
+    assert.deepEqual(outline, {
+      complete: false,
+      turns: [
+        { id: "user-2", createdAt: 20, user: "prompt 2 with lines" },
+        { id: "user-3", createdAt: 30, title: "Third", user: "prompt 3 with lines" },
+        { id: "user-4", createdAt: 40, user: "prompt 4 with lines" },
+      ],
+    })
+
+    db(store).prepare("UPDATE part SET data_json = ? WHERE id = ?").run(JSON.stringify({ id: "user-1-text", sessionID: "s1", messageID: "user-1", type: "text", text: "p".repeat(300) }), "user-1-text")
+    const whole = store.turnOutline("s1")
+    assert.ok(whole)
+    assert.equal(whole.complete, true)
+    assert.deepEqual(whole.turns.map((turn) => turn.id), ["user-1", "user-2", "user-3", "user-4"])
+    assert.equal(whole.turns[0].user?.length, 120)
+    assert.equal(store.turnOutline("unknown"), undefined)
     store.close()
   })
 

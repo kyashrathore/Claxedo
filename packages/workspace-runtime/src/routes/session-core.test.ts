@@ -26,6 +26,7 @@ import {
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
+import type { TurnOutline } from "../session/turn-outline"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import {
@@ -616,6 +617,25 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{ view: "latest-turn" }])
   })
 
+  test("serves the session's turn outline from the runtime store, and names a missing session or an absent store", async () => {
+    const outline: TurnOutline = {
+      turns: [{ id: "user-1", createdAt: 1, user: "why?" }],
+      complete: true,
+    }
+    const app = routes({ adapter: adapter(), getTurnOutline: (_directory, sessionId) => (sessionId === "session-1" ? outline : undefined) })
+
+    const served = await app.request("http://localhost/session/session-1/message/../outline".replace("/message/..", ""))
+    expect(served.status).toBe(200)
+    expect(served.headers.get("cache-control")).toBe("no-store")
+    expect(await served.json()).toEqual(outline)
+
+    const missing = await app.request("http://localhost/session/session-2/outline")
+    expect(missing.status).toBe(404)
+
+    const unsupported = await routes({ adapter: adapter() }).request("http://localhost/session/session-1/outline")
+    expect(unsupported.status).toBe(501)
+  })
+
   test("returns unsupported instead of violating a bounded request with full history", async () => {
     let routeFullReads = 0
     let adapterFullReads = 0
@@ -867,6 +887,7 @@ function routes(input: {
   getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
   getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessage[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessage[]; maxEventOrdinal?: number } | undefined
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
+  getTurnOutline?: (directory: RuntimeDirectory, sessionId: string) => TurnOutline | undefined
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
@@ -883,6 +904,7 @@ function routes(input: {
     getSession: input.getSession
       ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
       : undefined,
+    getTurnOutline: input.getTurnOutline ? (_c, directory, sessionId) => input.getTurnOutline?.(directory, sessionId) : undefined,
     sessionAccessPolicy: input.sessionAccessPolicy,
     afterCreateSession: input.afterCreateSession
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)

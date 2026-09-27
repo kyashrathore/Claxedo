@@ -9,7 +9,7 @@
  */
 
 import { readRecordedPart } from "@claxedo/agent-sdk-runtime/compat-events"
-import { AgentMessagePageError, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
+import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
@@ -31,7 +31,6 @@ export type SessionMessagePage = {
 }
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "cspm1:"
-const MAX_MESSAGE_PAGE_LIMIT = 500
 
 function encodeMessagePageCursor(sessionId: string, ordinal: number) {
   return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
@@ -447,8 +446,8 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
     }
   }
   const limit = input.limit
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MESSAGE_PAGE_LIMIT) {
-    throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > AGENT_MESSAGE_PAGE_LIMIT) {
+    throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
   }
   const beforeOrdinal = input.before === undefined ? undefined : decodeMessagePageCursor(sessionId, input.before)
   const rows = ClaxedoDB.use((db) =>

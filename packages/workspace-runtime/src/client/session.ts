@@ -25,6 +25,7 @@ import type {
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { TurnOutline } from "../session/turn-outline"
 import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
@@ -102,6 +103,8 @@ export type WorkspaceSessionClient = {
   messages(input: SessionTurnCoverageInput, options?: Options): Reply<AgentTurnCoveragePage>
   /** The page's messages alone; its cursor rides the `X-Next-Cursor` response header. */
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
+  /** The session's turns as the nav rail lists them: ids, timestamps, titles, snippets and subagent calls, never the content. */
+  outline(input: SessionInput, options?: Options): Reply<TurnOutline>
   todo(input: SessionInput, options?: Options): Reply<AgentTodo[]>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   /**
@@ -246,6 +249,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     capabilities: (input, options) => read("session.capabilities", input, "/capabilities", options),
     subagents: (input, options) => read("session.subagents", input, "/subagents", options),
     messages,
+    outline: (input, options) => read("session.outline", input, "/outline", options),
     todo: (input, options) => read("session.todo", input, "/todo", options),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
     recovery: {

@@ -19,6 +19,7 @@ const ENTRIES = [
   "src/harness-factories/pi.ts",
   "src/adapters.ts",
   "src/message-page.ts",
+  "src/turn-outline.ts",
   "src/compat-events.ts",
   "src/status.ts",
   "src/capabilities.ts",

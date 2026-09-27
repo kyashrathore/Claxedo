@@ -1,5 +1,8 @@
 import type { AgentMessage, AgentTurnOutcome } from "./index"
 
+/** The most messages a numeric page may ask for; every producer rejects a larger `limit`. */
+export const AGENT_MESSAGE_PAGE_LIMIT = 500
+
 /**
  * An authoritative transcript-window request. Cursors are opaque to every
  * consumer.

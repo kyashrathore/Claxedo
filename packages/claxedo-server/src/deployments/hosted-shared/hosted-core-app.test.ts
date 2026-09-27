@@ -235,6 +235,8 @@ describe("resource-closed hosted core app", () => {
       "/api/control/orgs",
       "/api/control/orgs/:orgId/teams",
       "/api/control/teams/:teamId/members",
+      "/api/control/sessions/:sessionId/messages",
+      "/api/control/sessions/:sessionId/outline",
       "/api/control/sessions/:sessionId/participants",
       "/api/control/sessions/:sessionId/shares",
       "/api/control/user-deployed/identity-admissions",
@@ -249,6 +251,22 @@ describe("resource-closed hosted core app", () => {
       route.startsWith("/documents") ||
       route.startsWith("/api/billing")
     )).toEqual([])
+  })
+
+  test("the session outline route refuses a request without a workspaceId, and otherwise answers with the authority's outline", async () => {
+    const hosted = plane()
+    const outline = { allowed: true, role: "owner", turns: [{ id: "msg_1", messages: 2 }], complete: true }
+    const readSessionOutline = vi.fn(async () => outline)
+    Object.assign(hosted.services.authority!, { readSessionOutline })
+    const app = createHostedCoreApp(hosted, options) as unknown as Hono
+    const headers = { authorization: "Bearer alice" }
+    const unscoped = await app.request("/api/control/sessions/ses_1/outline", { headers })
+    expect(unscoped.status).toBe(400)
+    await expect(unscoped.json()).resolves.toMatchObject({ error: { code: "WORKSPACE_ID_REQUIRED" } })
+    const read = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1", { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual(outline)
+    expect(readSessionOutline).toHaveBeenCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1" })
   })
 
   test("mounts build-composed route contributions and the integrations family under their own owners", async () => {

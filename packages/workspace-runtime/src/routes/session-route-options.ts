@@ -18,6 +18,7 @@ import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-p
 import type { CompatEnvelope } from "../compat-events"
 import type { ActiveTurnScope, SessionPromptBody } from "../session/service"
 import type { SessionDeliveryOwner } from "../session/delivery-owner"
+import type { TurnOutline } from "../session/turn-outline"
 import { sessionRequestProvenance, type SessionAccessPolicy } from "../session-access-policy"
 import type { ChildSessionHost } from "./session-children"
 
@@ -140,6 +141,7 @@ export type SessionRouteOptions = {
   getSessionConfig?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<SessionConfig>
   requestedSessionHarness?: (c: Ctx) => SessionConfig["harness"] | undefined
   getTodos?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<unknown[] | undefined> | unknown[] | undefined
+  getTurnOutline?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<TurnOutline | undefined> | TurnOutline | undefined
   updateSessionConfig?: (
     c: Ctx,
     directory: RuntimeDirectory,

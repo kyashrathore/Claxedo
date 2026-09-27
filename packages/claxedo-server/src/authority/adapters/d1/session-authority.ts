@@ -1,5 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
@@ -49,6 +49,7 @@ import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/
 import { organizationRoleRankSql } from "./host-access-authority"
 import { readD1SessionPage } from "./session-page"
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -61,6 +62,7 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "resolveSession",
   "resolveCloudTurnUsageOwner",
   "readSessionMessages",
+  "readSessionOutline",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
@@ -211,7 +213,6 @@ type CanonicalMessage = {
 }
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "d1sm1:"
-const MAX_MESSAGE_PAGE_LIMIT = 500
 const MAX_SNAPSHOT_MESSAGES = 500
 const MAX_MESSAGE_BYTES = 256 * 1024
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
@@ -1520,9 +1521,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
     if (
       args.limit !== undefined &&
-      (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > MAX_MESSAGE_PAGE_LIMIT)
+      (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > AGENT_MESSAGE_PAGE_LIMIT)
     ) {
-      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
     }
     let access: SessionRow & { role_rank: number }
     try {
@@ -1555,6 +1556,26 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       messages: rows.map(publicMessage),
       ...(hasMore && rows[0] ? { nextCursor: encodeMessagePageCursor(sessionId, rows[0].ordinal) } : {}),
     }
+  }
+
+  async readSessionOutline(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const sessionId = requireText(args.sessionId, "sessionId")
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    let access: SessionRow & { role_rank: number }
+    try {
+      access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
+    } catch (error) {
+      if (isDenied(error)) return { allowed: false, turns: [], complete: true }
+      throw error
+    }
+    const outline = await readStoredTurnOutline(
+      async (sql, params) => (await this.database.prepare(sql).bind(...params).all()).results,
+      "data_json",
+      sessionId,
+      workspaceId,
+    )
+    return { allowed: true, role: rankRole(access.role_rank), ...outline }
   }
 
   private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView) {

@@ -1,4 +1,5 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
+import { readTurnOutline, type TurnOutline } from "./session/turn-outline"
 import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
@@ -13,6 +14,7 @@ import {
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import {
+  AGENT_MESSAGE_PAGE_LIMIT,
   projectLatestSurfaceMessages,
   type AgentTurnCoverage,
   type AgentTurnCoveragePage,
@@ -574,7 +576,6 @@ type SurfaceTurnRow = {
 }
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "wrmp1:"
-const MAX_MESSAGE_PAGE_LIMIT = 500
 const MESSAGE_HYDRATION_BATCH_SIZE = 500
 
 function encodeMessagePageCursor(sessionId: string, ord: number) {
@@ -4284,6 +4285,12 @@ export class RuntimeStore {
     return this.db.prepare<{ session_id: string }>("SELECT session_id FROM message WHERE id = ?").get(messageId)?.session_id
   }
 
+  turnOutline(sessionId: string): TurnOutline | undefined {
+    this.settleDeltas(sessionId)
+    if (!this.getSession(sessionId)) return undefined
+    return readTurnOutline(this.db, sessionId)
+  }
+
   getMessagePage(sessionId: string, page: AgentMessagePageInput): AgentMessagePage | undefined {
     this.settleDeltas(sessionId)
     if (!this.getSession(sessionId)) {
@@ -4403,8 +4410,8 @@ export class RuntimeStore {
         ...(older ? { nextCursor: encodeMessagePageCursor(sessionId, boundary.ord) } : {}),
       }
     }
-    if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > MAX_MESSAGE_PAGE_LIMIT) {
-      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+    if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > AGENT_MESSAGE_PAGE_LIMIT) {
+      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
     }
     const beforeOrd = page.before === undefined ? undefined : decodeMessagePageCursor(sessionId, page.before)
     const params: unknown[] = [sessionId]
