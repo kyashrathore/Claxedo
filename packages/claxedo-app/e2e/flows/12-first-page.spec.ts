@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises"
 import type { Page } from "@playwright/test"
-import { acpScriptToken, expect, expectNothingAnimating, recordStillness, SCRIPTED_ACP_HARNESS, sessionRoute, sinceFirstReady, stillnessAfter, test, UI, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
+import { acpScriptToken, expect, expectNothingAnimating, recordStillness, SCRIPTED_ACP_HARNESS, sessionRoute, sinceFirstReady, stillnessAfter, test, UI, UNSET_ACP_HARNESS, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
 import { seedTurns } from "./12-switch-paint.seed"
 
 test.skip(({ isMobile }) => isMobile, "flow 12 runs at desktop width; flow 33 covers the phone")
@@ -149,4 +149,19 @@ test("12 a warm return to a session read open, with every fold, group and row op
   expect(still.scrolls, "scroll events after the return's first frame").toBe(0)
   expect(still.scrollHeightDelta, "scrollHeight change after the return's first frame").toBe(0)
   expect(still.scrollTopDelta, "scrollTop change after the return's first frame").toBe(0)
+})
+
+test("12 a session on a connection that is not set up shows its setup notice once its options answer", async ({ stack, api, app }) => {
+  await stack.acp.installUnset()
+  const workspace = await stack.daemon.makeWorkspace("unset-harness", "Unset harness")
+  const session = await api.createSession(workspace.directory, { title: "Unset", harness: UNSET_ACP_HARNESS })
+  const answered = app.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname === "/api/claxedo/agent-config/harness/options" && url.searchParams.get("connectionId") === UNSET_ACP_HARNESS.id
+  })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  expect((await answered).ok(), "the options read answered").toBe(true)
+  const notice = app.locator('[data-notice="setup-required"]')
+  await expect(notice).toContainText("Unset ACP is not set up")
+  await expect(notice.getByRole("button", { name: "Open Settings Providers" })).toBeVisible()
 })

@@ -30,7 +30,7 @@ export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } f
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
 export { type Account, type SignedStack } from "./signed-stack"
 export { cloudTurn, makeCloudWorkspace, startCloudWorkspace, stopCloudWorkspace, storedMessages, type CloudWorkspace } from "./cloud"
-export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS } from "./acp/connection"
+export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, UNSET_ACP_HARNESS } from "./acp/connection"
 export { scriptedAgentPids } from "./acp/agent-process"
 export { acpScriptToken, type AcpScript, type AcpStep, type AcpToolStep } from "./acp/script"
 export { installedCli, type CliAvailability, type CliName } from "./installed-cli"

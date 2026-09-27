@@ -16,12 +16,13 @@ import {
   type PromptResponse,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
-import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
+import { ACP_NO_MODELS_ENV, ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
 import { playScript } from "./turn"
 
 const scriptDir = process.env[ACP_SCRIPT_DIR_ENV]
 if (!scriptDir) throw new Error(`${ACP_SCRIPT_DIR_ENV} is not set`)
 const red = process.env[ACP_RED_ENV] === "1"
+const noModels = process.env[ACP_NO_MODELS_ENV] === "1"
 
 function promptText(prompt: ContentBlock[]) {
   return prompt
@@ -48,6 +49,10 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
 
 const SCRIPTED_MODES = { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] }
 
+const NO_MODELS: Pick<NewSessionResponse, "configOptions"> = { configOptions: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "", options: [] }] }
+
+const sessionOptions = () => ({ modes: SCRIPTED_MODES, ...(noModels ? NO_MODELS : {}) })
+
 class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
 
@@ -63,11 +68,11 @@ class ScriptedAgent implements Agent {
   }
 
   newSession(): NewSessionResponse {
-    return { sessionId: `scripted-${randomUUID()}`, modes: SCRIPTED_MODES }
+    return { sessionId: `scripted-${randomUUID()}`, ...sessionOptions() }
   }
 
   loadSession(): LoadSessionResponse {
-    return { modes: SCRIPTED_MODES }
+    return sessionOptions()
   }
 
   authenticate() {

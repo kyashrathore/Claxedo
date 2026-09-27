@@ -28,7 +28,7 @@ function createProviderSetupNeed(input: SelectorNoticeInput) {
     if (input.harness() && isCatalogHarness(input.harness())) {
       return input.catalog.providers.resolved() && !input.catalog.providers.loading() && !input.catalog.providers.error() && input.catalog.rows().rows.length === 0
     }
-    return !input.availability.managedDefaultModel() && !input.availability.modelLoading() && !input.availability.hasModelOptions() && !input.polling() && !input.availability.isError()
+    return input.availability.modelsAnswered() && !input.availability.managedDefaultModel() && !input.availability.modelLoading() && !input.availability.hasModelOptions() && !input.polling() && !input.availability.isError()
   })
 }
 
