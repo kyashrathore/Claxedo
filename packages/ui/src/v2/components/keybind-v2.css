@@ -15,9 +15,12 @@
   flex-shrink: 0;
 }
 
-[data-component="keybind-v2"] *,
-[data-component="keybind-v2"] *::before,
-[data-component="keybind-v2"] *::after {
+[data-component="keybind-v2"] .ui-keybind-v2-key,
+[data-component="keybind-v2"] .ui-keybind-v2-key::before,
+[data-component="keybind-v2"] .ui-keybind-v2-key::after,
+[data-component="keybind-v2"] .ui-keybind-v2-label,
+[data-component="keybind-v2"] .ui-keybind-v2-label::before,
+[data-component="keybind-v2"] .ui-keybind-v2-label::after {
   box-sizing: border-box;
 }
 
