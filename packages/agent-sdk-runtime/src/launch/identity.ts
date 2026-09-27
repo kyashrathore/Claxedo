@@ -113,9 +113,16 @@ export function readBootTime(): Promise<string> {
   return memoizedBootTime({})
 }
 
-/** The first read in a process decides whether this probe has a kill timer; every later read shares its answer. */
+/**
+ * Reads share a probe while it runs and keep its value once it succeeds. A
+ * failed probe is dropped, so the next read probes again. The read that starts
+ * a probe decides whether it has a kill timer.
+ */
 function memoizedBootTime(options: IdentityReadOptions) {
-  bootTime ??= probeBootTime(identityProbeTimeout(options, PROBE_TIMEOUT_MS))
+  bootTime ??= probeBootTime(identityProbeTimeout(options, PROBE_TIMEOUT_MS)).catch((error: unknown) => {
+    bootTime = undefined
+    throw error
+  })
   return bootTime
 }
 

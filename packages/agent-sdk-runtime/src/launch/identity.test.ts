@@ -193,3 +193,41 @@ describe.skipIf(process.platform !== "darwin")("a read without the probe timeout
     }
   }, 15_000)
 })
+
+describe.skipIf(process.platform !== "darwin")("the boot time of a process", () => {
+  test("is read again after a probe that failed, instead of failing every later read", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "boot-time-home-"))
+    const noSysctl = await fs.mkdtemp(path.join(os.tmpdir(), "no-sysctl-"))
+    const script = `
+      const { readBootTime } = await import(${JSON.stringify(path.join(import.meta.dir, "identity.ts"))})
+      const realPath = process.env.PATH
+      process.env.PATH = ${JSON.stringify(noSysctl)}
+      const first = await readBootTime().then(() => "fulfilled", () => "rejected")
+      process.env.PATH = realPath
+      const second = await readBootTime().then(() => "fulfilled", () => "rejected")
+      console.log(JSON.stringify({ first, second }))
+    `
+    try {
+      // The memo lives for the process, and earlier tests in this file already fill it.
+      const child = spawn(process.execPath, ["-e", script], {
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          XDG_CONFIG_HOME: path.join(home, ".config"),
+          XDG_DATA_HOME: path.join(home, ".local/share"),
+          XDG_STATE_HOME: path.join(home, ".local/state"),
+          XDG_CACHE_HOME: path.join(home, ".cache"),
+        },
+        stdio: ["ignore", "pipe", "inherit"],
+      })
+      let stdout = ""
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk })
+      const code = await new Promise<number | null>((resolve) => child.once("exit", resolve))
+      expect(code).toBe(0)
+      expect(JSON.parse(stdout)).toEqual({ first: "rejected", second: "fulfilled" })
+    } finally {
+      await fs.rm(home, { recursive: true, force: true })
+      await fs.rm(noSysctl, { recursive: true, force: true })
+    }
+  }, 15_000)
+})
