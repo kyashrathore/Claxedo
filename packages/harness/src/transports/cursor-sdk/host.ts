@@ -2,9 +2,9 @@ import { createInterface } from "node:readline"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentOptions, Run, SDKAgent } from "@cursor/sdk"
 import { isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
+import { CursorRunState } from "./run-state"
 
 const TITLE_AGENT_NAME = "Claxedo session title"
-type ActiveRun = { state: "starting" } | { state: "running"; run: Run } | { state: "cancelled" }
 
 const protocolOut = process.stdout.write.bind(process.stdout)
 
@@ -26,7 +26,7 @@ function agentOptions(session: HostSession): AgentOptions {
 
 export class CursorHostRuntime {
   private readonly agents = new Map<string, SDKAgent>()
-  private readonly runs = new Map<string, { active: ActiveRun }>()
+  private readonly runs = new Map<string, CursorRunState>()
 
   constructor(private readonly post: (reply: HostReply) => void = (reply) => { protocolOut(`${JSON.stringify(reply)}\n`) },
     private readonly sdk: () => Promise<Pick<typeof import("@cursor/sdk"), "Agent" | "Cursor">> = () => import("@cursor/sdk")) {}
@@ -49,24 +49,26 @@ export class CursorHostRuntime {
   private async run(command: Extract<HostCommand, { kind: "run" }>): Promise<void> {
     const pending = this.begin(command.session.sessionId)
     try { await this.send(command, pending) }
-    finally { this.runs.delete(command.session.sessionId) }
+    finally {
+      pending.finish()
+      this.release(command.session.sessionId, pending)
+    }
   }
 
-  private begin(sessionId: string): { active: ActiveRun } {
+  private begin(sessionId: string): CursorRunState {
     if (this.runs.has(sessionId)) throw new Error("Cursor run already active")
-    const pending = { active: { state: "starting" as const } }
+    const pending = new CursorRunState()
     this.runs.set(sessionId, pending)
     return pending
   }
 
-  private async activate(pending: { active: ActiveRun }, run: Run): Promise<void> {
-    if (pending.active.state === "cancelled") await run.cancel()
-    else pending.active = { state: "running", run }
+  private release(sessionId: string, pending: CursorRunState): void {
+    if (pending.releasable) this.runs.delete(sessionId)
   }
 
-  private async send(command: Extract<HostCommand, { kind: "run" }>, pending: { active: ActiveRun }): Promise<void> {
+  private async send(command: Extract<HostCommand, { kind: "run" }>, pending: CursorRunState): Promise<void> {
     const agent = await this.open(command.session)
-    if (pending.active.state === "cancelled") throw new Error("Cursor run cancelled before send")
+    pending.beforeSend()
     let run: Run
     try {
       run = await agent.send(command.prompt, {
@@ -78,7 +80,7 @@ export class CursorHostRuntime {
       this.discard(command.session.sessionId)
       throw error
     }
-    await this.activate(pending, run)
+    pending.activate(run)
     for await (const message of run.stream()) this.post({ id: command.id, kind: "event", message })
     const result = await run.wait()
     this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id,
@@ -88,21 +90,24 @@ export class CursorHostRuntime {
   private async title(command: Extract<HostCommand, { kind: "title" }>): Promise<void> {
     const pending = this.begin(command.session.sessionId)
     try { await this.sendTitle(command, pending) }
-    finally { this.runs.delete(command.session.sessionId) }
+    finally {
+      pending.finish()
+      this.discard(command.session.sessionId)
+      this.release(command.session.sessionId, pending)
+    }
   }
 
-  private async sendTitle(command: Extract<HostCommand, { kind: "title" }>, pending: { active: ActiveRun }): Promise<void> {
+  private async sendTitle(command: Extract<HostCommand, { kind: "title" }>, pending: CursorRunState): Promise<void> {
     const { Agent } = await this.sdk()
     const agent = await Agent.create({ ...agentOptions(command.session), name: TITLE_AGENT_NAME })
-    try {
-      if (pending.active.state === "cancelled") throw new Error("Cursor title cancelled before send")
-      const run = await agent.send(command.prompt, { local: { force: false } })
-      await this.activate(pending, run)
-      for await (const _message of run.stream()) {}
-      const result = await run.wait()
-      this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id, status: result.status,
-        ...(result.result ? { result: result.result } : {}) } })
-    } finally { agent.close() }
+    this.agents.set(command.session.sessionId, agent)
+    pending.beforeSend()
+    const run = await agent.send(command.prompt, { local: { force: false } })
+    pending.activate(run)
+    for await (const _message of run.stream()) {}
+    const result = await run.wait()
+    this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id, status: result.status,
+      ...(result.result ? { result: result.result } : {}) } })
   }
 
   private async models(command: Extract<HostCommand, { kind: "models" }>): Promise<void> {
@@ -123,9 +128,8 @@ export class CursorHostRuntime {
       } else if (command.kind === "cancel") {
         const pending = this.runs.get(command.sessionId)
         if (pending) {
-          const active = pending.active
-          pending.active = { state: "cancelled" }
-          if (active.state === "running") await active.run.cancel()
+          try { await pending.cancel() }
+          finally { this.release(command.sessionId, pending) }
         }
         this.post({ id: command.id, kind: "result" })
       } else {
