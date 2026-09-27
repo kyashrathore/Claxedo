@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 const IMAGE = fileURLToPath(new URL("../../public/web-app-manifest-192x192.png", import.meta.url))
 const IMAGE_NAME = "web-app-manifest-192x192.png"
@@ -139,4 +139,22 @@ test("06 a file dropped on the transcript is attached to the composer", async ({
   await reply.dispatchEvent("dragover", { dataTransfer: transfer })
   await reply.dispatchEvent("drop", { dataTransfer: transfer })
   await expect(app.getByRole("button", { name: "Remove attachment" })).toBeVisible()
+})
+
+test("06 a Claude session created on an explicit model id keeps that model in the picker and sends it", async ({ stack, api, app }) => {
+  const availability = await installedCli("claude")
+  test.skip(!availability.available, availability.available ? "" : availability.reason)
+  const workspace = await stack.daemon.makeWorkspace("explicit-model")
+  const model = { providerId: "claude", modelId: "claude-haiku-4-5-20251001" }
+  const session = await api.createSession(workspace.directory, { title: "Explicit model", harness: { id: "claude", access: "native" }, model })
+  const options = app.waitForResponse((response) => response.url().includes("/agent-config/harness/options") && response.url().includes(`sessionId=${session.id}`))
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  expect((await options).ok()).toBe(true)
+
+  const trigger = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
+  await expect(trigger).toHaveAttribute("data-ready-for-submit", "true")
+  await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku")
+  await sendPrompt(app, "Reply with exactly this one token: HKU")
+  await expect.poll(() => stack.scripted.requests.filter((request) => request.prompt.includes("HKU")).map((request) => request.model), { timeout: 60_000 }).toContain(model.modelId)
+  expect(stack.scripted.requests.filter((request) => request.prompt.includes("HKU")).map((request) => request.model)).not.toContain("claude-opus-5-5")
 })

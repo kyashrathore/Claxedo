@@ -142,15 +142,15 @@ export function catalogModel(models: readonly SdkModelEntry[], modelId: string |
 }
 
 export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOption {
-  const defaultModel = models.find((item) => item.isDefault)?.id ?? models[0]?.id
+  const current = (catalogModel(models, currentModel) ?? catalogModel(models, undefined))?.id
   return {
     id: "model",
     name: "Model",
     category: "model",
     type: "select",
-    currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : defaultModel,
+    currentValue: current,
     selectOptions: models
-      .filter((item) => !item.hidden || item.id === currentModel)
+      .filter((item) => !item.hidden || item.id === current)
       .map(({ isDefault: _isDefault, hidden: _hidden, resolvedModel: _resolvedModel, ...item }) => ({ ...item })),
   }
 }
