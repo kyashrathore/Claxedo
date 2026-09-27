@@ -35,9 +35,8 @@ function fixture(stage: "open" | "send", cancel?: () => Promise<void>, terminal?
 }
 
 for (const kind of ["run", "title"] as const) test(`${kind} stream failure releases the session for the next run`, async () => {
-  const broken = Promise.reject(new Error("stream broke"))
-  broken.catch(() => {})
-  const f = fixture("send", undefined, broken)
+  const broken = { then: (_resolve: unknown, reject: (error: Error) => void) => reject(new Error("stream broke")) }
+  const f = fixture("send", undefined, broken as unknown as Promise<void>)
   f.resume.resolve()
   await f.runtime.receive({ id: 1, kind, session, prompt: "work" })
   await f.runtime.receive({ id: 2, kind, session, prompt: "next" })
