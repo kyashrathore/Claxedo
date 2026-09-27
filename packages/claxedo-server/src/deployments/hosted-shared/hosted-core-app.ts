@@ -53,7 +53,7 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
+import { FOLD_READ_ENV, TurnPageQueryError, foldReadFrom, parseOlderTurnPageQuery, parseOpenTurnQuery, parseTurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
 import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -547,6 +547,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
 
 function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentication: RequestAuthenticationAdapter) {
   const { services } = plane
+  const fold = foldReadFrom(plane.env[FOLD_READ_ENV])
   app.get("/api/control/sessions", async (context) => {
     const workspaceId = context.req.query("workspaceId")
     if (!workspaceId || !services.authority?.listSessions) return context.json(sessionInventoryResponse([]))
@@ -687,11 +688,11 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     }
   }
   app.get("/api/control/sessions/:sessionId/outline", (context) => transcriptRead(context, async (auth, workspaceId) => {
-    const firstPage = parseTurnPageQuery((name) => context.req.query(name))
+    const query = parseTurnPageQuery((name) => context.req.query(name))
     const read = await requireAuthority(services).readSessionFirstRead(auth, {
       sessionId: context.req.param("sessionId"),
       workspaceId,
-      ...(firstPage ? { firstPage } : {}),
+      ...(query ? { firstPage: { ...query, fold } } : {}),
     })
     return read ? context.json(read) : context.json(sessionNotFound, 404)
   }))
@@ -699,9 +700,17 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     const page = await requireAuthority(services).readSessionPage(auth, {
       sessionId: context.req.param("sessionId"),
       workspaceId,
-      page: parseOlderTurnPageQuery((name) => context.req.query(name)),
+      page: { ...parseOlderTurnPageQuery((name) => context.req.query(name)), fold },
     })
     return page ? context.json(page) : context.json(sessionNotFound, 404)
+  }))
+  app.get("/api/control/sessions/:sessionId/turn", (context) => transcriptRead(context, async (auth, workspaceId) => {
+    const turn = await requireAuthority(services).readSessionTurn(auth, {
+      sessionId: context.req.param("sessionId"),
+      workspaceId,
+      ...parseOpenTurnQuery((name) => context.req.query(name)),
+    })
+    return turn ? context.json(turn) : context.json(sessionNotFound, 404)
   }))
   app.get("/api/control/sessions/:sessionId/part", (context) => transcriptRead(context, async (auth, workspaceId) => {
     const at = parseSessionPartInput(context.req.query("messageId"), context.req.query("partId"))

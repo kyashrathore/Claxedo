@@ -1,6 +1,6 @@
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT, type AgentToolPart, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent, SessionRouteContext } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
@@ -672,7 +672,7 @@ describe("createSessionRoutes message paging", () => {
     ]
   }
 
-  function pagedRoutes() {
+  function pagedRoutes(foldRead?: "terminal" | "headers") {
     const turns = Array.from({ length: 30 }, (_, index) => pagedTurn(index))
     const reads: AgentMessagePageInput[] = []
     const app = routes({
@@ -684,6 +684,7 @@ describe("createSessionRoutes message paging", () => {
         },
       }),
       getTurnOutline: () => ({ turns: [], complete: true }),
+      foldRead,
     })
     return { app, turns, reads }
   }
@@ -716,6 +717,124 @@ describe("createSessionRoutes message paging", () => {
     const page = await response.json()
     expect(reads).toEqual([{ view: "latest-turn", before: "27" }, { view: "latest-turn", before: "26" }, { view: "latest-turn", before: "25" }])
     expect(page.turns.map((item: { cursor: string; foldableCount: number }) => [item.cursor, item.foldableCount])).toEqual([["24", 2], ["25", 2], ["26", 2]])
+  })
+
+  test("under the headers fold read a folded turn sends every part, its tools as headers", async () => {
+    const { app, turns } = pagedRoutes("headers")
+    const { page } = await (await app.request(`http://localhost/session/session-1/outline?${viewport}`)).json()
+    const latest = page.turns[2]
+    expect(latest.foldableCount).toBeUndefined()
+    expect(latest.messages.map((message: AgentMessage) => message.parts.map((part) => part.id))).toEqual(turns[29]!.map((message) => message.parts.map((part) => part.id)))
+    expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })
+  })
+
+  test("a turn read opens the newest turn, or the one before its cursor, with every part and its tools as headers", async () => {
+    const { app, turns, reads } = pagedRoutes()
+    const newest = await app.request("http://localhost/session/session-1/turn?reasoning=0&shell=0&edit=0")
+    expect(newest.status).toBe(200)
+    const opened = await newest.json()
+    expect(opened.cursor).toBe("29")
+    expect(opened.foldableCount).toBeUndefined()
+    expect(opened.messages[1].parts.map((part: { id: string }) => part.id)).toEqual(turns[29]![1]!.parts.map((part) => part.id))
+    expect(opened.messages[1].parts[1]).toMatchObject({ headerOnly: true })
+    const older = await (await app.request("http://localhost/session/session-1/turn?reasoning=0&shell=0&edit=0&before=29")).json()
+    expect(older.messages[0].info.id).toBe("user-28")
+    expect(reads).toEqual([{ view: "latest-turn" }, { view: "latest-turn", before: "29" }])
+    for (const query of ["reasoning=0&shell=0", "reasoning=0&shell=0&edit=0&before="]) {
+      expect((await app.request(`http://localhost/session/session-1/turn?${query}`)).status).toBe(400)
+    }
+  })
+
+  const toolBody = (name: string, bytes = 1024) => `${name}:${"x".repeat(bytes)}`
+  const toolBodies = ["read-output", "read-preview", "read-attachment", "bash-output", "bash-metadata", "edit-old", "edit-new", "edit-output", "edit-before", "edit-after"]
+
+  function bodiedTurns(): AgentMessage[][] {
+    const message = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>, parentID?: string) => ({
+      info: { id, sessionID: "session-1", role, time: { created: 1, ...(role === "assistant" ? { completed: 2 } : {}) }, ...(parentID ? { parentID } : {}) },
+      parts: parts.map((part, index) => ({ id: `${id}-p${index}`, sessionID: "session-1", messageID: id, ...part })),
+    }) as AgentMessage
+    const tool = (name: string, messageId: string, input: Record<string, unknown>, metadata: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+      type: "tool",
+      tool: name,
+      callID: `call-${name}-${messageId}`,
+      state: { status: "completed", input, output: toolBody(`${name}-output`, 64 * 1024), title: name, metadata, time: { start: 1, end: 2 }, ...extra },
+    })
+    const tools = (messageId: string) => ({
+      read: tool("read", messageId, { filePath: "shot.png" }, { loaded: ["shot.png"], preview: toolBody("read-preview") }, {
+        attachments: [{ id: `${messageId}-attachment`, sessionID: "session-1", messageID: messageId, type: "file", mime: "image/png", url: `data:image/png;base64,${toolBody("read-attachment")}` }],
+      }),
+      bash: tool("bash", messageId, { command: "ls" }, { command: "ls", exitCode: 0, output: toolBody("bash-metadata") }),
+      edit: tool("edit", messageId, { filePath: "a.ts", oldString: toolBody("edit-old"), newString: toolBody("edit-new") }, {
+        filediff: { file: "a.ts", additions: 1, deletions: 1, before: toolBody("edit-before"), after: toolBody("edit-after") },
+      }),
+    })
+    const unfolded = (index: number, name: "read" | "bash" | "edit") => [
+      message(`user-${index}`, "user", [{ type: "text", text: name }]),
+      message(`assistant-${index}`, "assistant", [tools(`assistant-${index}`)[name], { type: "text", text: "Done." }], `user-${index}`),
+    ]
+    return [
+      unfolded(1, "bash"),
+      unfolded(2, "edit"),
+      unfolded(3, "read"),
+      [
+        message("user-4", "user", [{ type: "text", text: "all" }]),
+        message("assistant-4-a", "assistant", [{ type: "text", text: "Looking." }, ...Object.values(tools("assistant-4-a"))], "user-4"),
+        message("assistant-4-b", "assistant", [{ type: "text", text: "Done." }], "user-4"),
+      ],
+    ]
+  }
+
+  test("every read sends a tool as its header, and whole only when the reader's shell or edit setting opens it", async () => {
+    const turns = bodiedTurns()
+    const stored = new Map(turns.flat().map((message) => [message.info.id, message.parts.map((part) => part.id)]))
+    const app = (foldRead: "terminal" | "headers") => routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
+          return { messages: turns[end - 1] ?? [], ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
+        },
+      }),
+      getTurnOutline: () => ({ turns: [], complete: true }),
+      foldRead,
+    })
+    const apps = { terminal: app("terminal"), headers: app("headers") }
+    type Turn = { messages: AgentMessage[]; foldableCount?: number; cursor?: string }
+    const sentAsHeaders = (label: string, sent: Turn[], reader: { shell: boolean; edit: boolean }) => {
+      const tools = sent.flatMap((turn) => {
+        if (turn.foldableCount === undefined) expect(turn.messages.map((message) => message.parts.map((part) => part.id)), label).toEqual(turn.messages.map((message) => stored.get(message.info.id)!))
+        return turn.messages.flatMap((message) => message.parts.filter((part): part is AgentToolPart => part.type === "tool"))
+      })
+      expect(new Set(tools.map((part) => part.tool)), label).toEqual(new Set(["read", "bash", "edit"]))
+      for (const part of tools) {
+        const json = JSON.stringify(part)
+        if ((part.tool === "bash" && reader.shell) || (part.tool === "edit" && reader.edit)) {
+          expect(part.headerOnly, `${label}: ${part.tool}`).toBeUndefined()
+          expect(toolBodies.filter((name) => name.startsWith(`${part.tool}-`)).filter((name) => !json.includes(`${name}:`)), `${label}: ${part.tool}`).toEqual([])
+        } else {
+          expect(part, `${label}: ${part.tool}`).toMatchObject({ headerOnly: true, state: { status: "completed", output: "" } })
+          expect(part.state, `${label}: ${part.tool}`).not.toHaveProperty("attachments")
+          expect(toolBodies.filter((name) => json.includes(`${name}:`)), `${label}: ${part.tool}`).toEqual([])
+        }
+      }
+    }
+
+    for (const reader of [{ reasoning: false, shell: false, edit: false }, { reasoning: false, shell: true, edit: true }]) {
+      const settings = `reasoning=0&shell=${Number(reader.shell)}&edit=${Number(reader.edit)}`
+      for (const fold of ["terminal", "headers"] as const) {
+        const label = `${fold}, ${settings}`
+        const { page: first } = await (await apps[fold].request(`http://localhost/session/session-1/outline?rows=40&cols=100&${settings}`)).json() as { page: { turns: Turn[] } }
+        const latest = first.turns.at(-1)!
+        expect(first.turns.length, label).toBe(4)
+        expect(latest.foldableCount === undefined, label).toBe(fold === "headers")
+        sentAsHeaders(`first read, ${label}`, first.turns, reader)
+        const page = await (await apps[fold].request(`http://localhost/session/session-1/page?rows=40&cols=100&${settings}&before=${latest.cursor}`)).json() as { turns: Turn[] }
+        expect(page.turns.length, label).toBe(3)
+        sentAsHeaders(`page read, ${label}`, page.turns, reader)
+      }
+      const newest = await (await apps.terminal.request(`http://localhost/session/session-1/turn?${settings}`)).json() as Turn
+      const before = await (await apps.terminal.request(`http://localhost/session/session-1/turn?${settings}&before=${newest.cursor}`)).json() as Turn
+      sentAsHeaders(`turn read, ${settings}`, [newest, before], reader)
+    }
   })
 
   test("a part read answers one part whole, and names a part the session lacks or a runtime that cannot read one", async () => {
@@ -998,6 +1117,7 @@ function routes(input: {
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   getTurnOutline?: (directory: RuntimeDirectory, sessionId: string) => TurnOutline | undefined
   getPart?: (sessionId: string, messageId: string, partId: string) => AgentMessage["parts"][number] | undefined
+  foldRead?: "terminal" | "headers"
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
@@ -1016,6 +1136,7 @@ function routes(input: {
       : undefined,
     getTurnOutline: input.getTurnOutline ? (_c, directory, sessionId) => input.getTurnOutline?.(directory, sessionId) : undefined,
     getPart: input.getPart ? (_c, _directory, sessionId, messageId, partId) => input.getPart?.(sessionId, messageId, partId) : undefined,
+    foldRead: input.foldRead,
     sessionAccessPolicy: input.sessionAccessPolicy,
     afterCreateSession: input.afterCreateSession
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)

@@ -151,6 +151,21 @@ describe("resolveHostedOperation", () => {
     }
   })
 
+  test("forwards a cloud session's open-turn read with the reader's settings and an optional cursor, only the declared keys, and requires the settings", () => {
+    const read = { sessionId: "ses_1", workspaceId: "ws_1", reasoning: "1", shell: "0", edit: "1" }
+    expect(resolveHostedOperation("session.openTurn", { ...read, rows: 40, view: "must-not-reach-the-server" })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/turn?workspaceId=ws_1&reasoning=1&shell=0&edit=1",
+    })
+    expect(resolveHostedOperation("session.openTurn", { ...read, before: "cursor 1" })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/turn?workspaceId=ws_1&reasoning=1&shell=0&edit=1&before=cursor+1",
+    })
+    for (const key of ["sessionId", "workspaceId", "reasoning", "shell", "edit"]) {
+      expect(() => resolveHostedOperation("session.openTurn", { ...read, [key]: undefined }), key).toThrow(MissingOperationParameter)
+    }
+  })
+
   test("forwards a cloud session's part read with the message and part it names, only the declared keys, and requires every one", () => {
     const read = { sessionId: "ses_1", workspaceId: "ws_1", messageId: "msg 1", partId: "prt_1" }
     expect(resolveHostedOperation("session.part", { ...read, rows: 40, before: "must-not-reach-the-server" })).toEqual({

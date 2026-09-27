@@ -138,7 +138,7 @@
     "@claxedo/agent-sdk-runtime/launch": "c6ae1e0deb72710355058ba6fa6b45981db145171b09dae809a06759ce31e3d0",
     "@claxedo/agent-sdk-runtime/launch-gate-child": "afec65c73d13c49ba01624719bbcad89235bf3f6af78751d6a71b7554e0c6051",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311",
-    "@claxedo/agent-sdk-runtime/turn-page": "926be77c0f74f51d3647598cdfa8c6e54629eee718e3bdc491bc60dd8c840a6d"
+    "@claxedo/agent-sdk-runtime/turn-page": "b2a19a24c68508767268cef576037132cd4805954b91dd14f7aaeabb002f6642"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

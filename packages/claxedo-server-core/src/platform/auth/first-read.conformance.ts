@@ -19,7 +19,7 @@ const message = syncedMessage.bind(undefined, sessionId)
 export async function exerciseFirstReadConformance(harness: TranscriptConformanceHarness) {
   const { authority, workspaceId, creator } = harness
   await registerTranscriptSession(harness, sessionId)
-  const viewport: TurnPageRequest = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
+  const viewport: TurnPageRequest = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false, fold: "terminal" }
   const read = async (firstPage?: TurnPageRequest) =>
     await authority.readSessionFirstRead(creator.auth, { sessionId, workspaceId, ...(firstPage ? { firstPage } : {}) })
   const listed = async () => (await authority.listSessions(creator.auth, { workspaceId })).find((row) => row.session_id === sessionId)

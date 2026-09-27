@@ -15,6 +15,7 @@ import type {
 import type { AgentContentPart, AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { FoldRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { CompatEnvelope } from "../compat-events"
 import type { ActiveTurnScope, SessionPromptBody } from "../session/service"
 import type { SessionDeliveryOwner } from "../session/delivery-owner"
@@ -139,6 +140,8 @@ export type SessionRouteOptions = {
   requestedSessionHarness?: (c: Ctx) => SessionConfig["harness"] | undefined
   getTodos?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<unknown[] | undefined> | unknown[] | undefined
   getTurnOutline?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<TurnOutline | undefined> | TurnOutline | undefined
+  /** What a folded turn on a page sends; the host reads it once at start. Unset sends `terminal`. */
+  foldRead?: FoldRead
   updateSessionConfig?: (
     c: Ctx,
     directory: RuntimeDirectory,

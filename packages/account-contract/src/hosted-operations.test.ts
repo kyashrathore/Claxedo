@@ -182,6 +182,12 @@ describe("the signed desktop's session sources", () => {
     expect(isSafeOperation("session.turnPage")).toBe(true)
   })
 
+  test("an opened turn is a messages envelope a renderer may retry", () => {
+    expect(decodeHostedResult("session.openTurn", { messages: [], cursor: "c" })).toEqual({ messages: [], cursor: "c" })
+    expect(() => decodeHostedResult("session.openTurn", { turns: [] })).toThrow(/session\.openTurn.*messages/)
+    expect(isSafeOperation("session.openTurn")).toBe(true)
+  })
+
   test("a part read is an object a renderer may retry", () => {
     expect(decodeHostedResult("session.part", { part: { id: "a1-p0", type: "text", text: "whole" } })).toEqual({ part: { id: "a1-p0", type: "text", text: "whole" } })
     expect(() => decodeHostedResult("session.part", [])).toThrow(/expected an object/)

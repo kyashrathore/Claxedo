@@ -6,7 +6,7 @@ import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { readStoredTurnOutline } from "../../../session/turn-outline"
 import { readStoredPart } from "../../../session/stored-part"
 import type { StoredMessageQuery } from "../../../session/stored-messages"
-import { readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { readFirstRead, readOpenTurn, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -767,6 +767,11 @@ export function createSqlitePrivateSessionAuthority(input: {
       const db = input.database()
       if (!readableSession(db, actorForAuth(auth), value.sessionId, value.workspaceId)) return undefined
       return await readTurnPage(sqliteTurnRead(db, value.sessionId, value.workspaceId), value.page)
+    },
+    async readSessionTurn(auth, value) {
+      const db = input.database()
+      if (!readableSession(db, actorForAuth(auth), value.sessionId, value.workspaceId)) return undefined
+      return await readOpenTurn(sqliteTurnRead(db, value.sessionId, value.workspaceId), value.settings, value.before)
     },
     async readSessionPart(auth, value) {
       const db = input.database()

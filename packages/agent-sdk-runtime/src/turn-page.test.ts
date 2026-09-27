@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentContentPart, AgentMessage } from "./index"
 import {
+  FOLD_READ_ENV,
   TURN_PAGE_BYTE_CAP,
   TURN_PAGE_TURN_CAP,
   TurnPageQueryError,
   estimateTurnLines,
+  foldReadFrom,
   parseOlderTurnPageQuery,
+  parseOpenTurnQuery,
   parseTurnPageQuery,
   projectTurn,
   readFirstRead,
+  readOpenTurn,
   readTurnPage,
   type PageTurn,
   type TurnRead,
@@ -76,7 +80,7 @@ function turnReader(turnsOldestFirst: AgentMessage[][]) {
   return { read, calls }
 }
 
-const settings = { reasoning: false, shell: false, edit: false }
+const settings = { reasoning: false, shell: false, edit: false, fold: "terminal" as const }
 const reasoned = { ...settings, reasoning: true }
 const viewport = (rows: number) => ({ ...settings, rows, cols: 100 })
 
@@ -242,6 +246,24 @@ describe("parseOlderTurnPageQuery", () => {
   })
 })
 
+describe("parseOpenTurnQuery", () => {
+  const query = (search: string) => {
+    const params = new URLSearchParams(search)
+    return (name: string) => params.get(name) ?? undefined
+  }
+
+  test("an open-turn read names the reader's settings, and a cursor only when it reads before one", () => {
+    expect(parseOpenTurnQuery(query("reasoning=1&shell=0&edit=1"))).toEqual({ settings: { reasoning: true, shell: false, edit: true } })
+    expect(parseOpenTurnQuery(query("reasoning=0&shell=1&edit=0&before=cursor-1"))).toEqual({ settings: { reasoning: false, shell: true, edit: false }, before: "cursor-1" })
+  })
+
+  test("a read missing a setting, with one out of range, or with an empty cursor is refused", () => {
+    for (const search of ["reasoning=0&shell=0", "reasoning=0&shell=0&edit=2", "reasoning=0&shell=0&edit=0&before="]) {
+      expect(() => parseOpenTurnQuery(query(search)), search).toThrow(TurnPageQueryError)
+    }
+  })
+})
+
 describe("readFirstRead", () => {
   const outline = { turns: [{ id: "u", createdAt: 1 }], complete: true }
 
@@ -259,7 +281,7 @@ describe("readFirstRead", () => {
 })
 
 describe("tool bodies stay off every page", () => {
-  const request = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
+  const request = viewport(40)
   const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
   const answeredWith = (output: string) => {
     const id = nextId("user")
@@ -290,5 +312,42 @@ describe("tool parts on a page", () => {
     expect(tools(projectTurn(turn, settings))).toEqual([["bash", true, ""], ["edit", true, ""]])
     expect(tools(projectTurn(turn, { ...settings, shell: true }))).toEqual([["bash", false, "listing"], ["edit", true, ""]])
     expect(tools(projectTurn(turn, { ...settings, edit: true }))).toEqual([["bash", true, ""], ["edit", false, "diff"]])
+  })
+})
+
+describe("fold reads", () => {
+  const headers = { ...settings, fold: "headers" as const }
+
+  test("under headers a folded turn sends every part, its tools as headers, and names no fold count", () => {
+    const turn = workedTurn("Fix the build", "Done.")
+    const page = projectTurn(turn, headers)
+    expect(page.foldableCount).toBeUndefined()
+    expect(shapeOf(page.messages)).toEqual(shapeOf(turn))
+    expect(page.messages.flatMap((message) => message.parts).filter((part) => part.type === "tool").every((part) => part.type === "tool" && part.headerOnly)).toBe(true)
+  })
+
+  test("both reads fill a page with the same turns, since the reader draws a folded turn closed either way", async () => {
+    const turns = Array.from({ length: 10 }, (_, index) => workedTurn(`Prompt ${index}`, `Answer ${index}.`))
+    const terminal = await readTurnPage(turnReader(turns).read, viewport(10))
+    const opened = await readTurnPage(turnReader(turns).read, { ...viewport(10), fold: "headers" })
+    expect(opened.turns.map((turn) => turn.cursor)).toEqual(terminal.turns.map((turn) => turn.cursor))
+  })
+
+  test("an opened turn is every part it has, its tools as headers, read before a cursor or from the newest", async () => {
+    const turns = [workedTurn("First", "One."), workedTurn("Second", "Two.")]
+    const newest = await readOpenTurn(turnReader(turns).read, settings)
+    expect(shapeOf(newest.messages)).toEqual(shapeOf(turns[1]!))
+    expect(newest.cursor).toBe("cursor-1")
+    expect(newest.foldableCount).toBeUndefined()
+    const older = await readOpenTurn(turnReader(turns).read, settings, "cursor-1")
+    expect(shapeOf(older.messages)).toEqual(shapeOf(turns[0]!))
+    expect(older.cursor).toBeUndefined()
+  })
+
+  test(`${FOLD_READ_ENV} names terminal or headers, and terminal when unset`, () => {
+    expect(foldReadFrom(undefined)).toBe("terminal")
+    expect(foldReadFrom("")).toBe("terminal")
+    expect(foldReadFrom("headers")).toBe("headers")
+    expect(() => foldReadFrom("both")).toThrow()
   })
 })

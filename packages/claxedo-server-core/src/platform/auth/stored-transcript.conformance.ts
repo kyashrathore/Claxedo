@@ -9,7 +9,7 @@ export type TranscriptConformanceHarness = {
   creator: SessionPageConformanceUser
 }
 
-type SyncedMessage = { info: { id: string; role: "user" | "assistant" } & Record<string, unknown>; parts: Array<Record<string, unknown>> }
+export type SyncedMessage = { info: { id: string; role: "user" | "assistant" } & Record<string, unknown>; parts: Array<Record<string, unknown>> }
 
 /** A runtime's snapshot of one message of `sessionId`, created at ten times the digits of its id, each part keyed `<id>-p<index>`. */
 export function syncedMessage(
