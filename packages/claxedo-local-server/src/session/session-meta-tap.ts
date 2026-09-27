@@ -13,6 +13,10 @@ import { record } from "../platform/json"
  * proxy answers `/session` itself, so a middleware registered after it never
  * sees the call.
  *
+ * The row takes the runtime's own created and updated times, never this
+ * process's clock: a listed row stamped after the runtime's would make the
+ * session's own read look older than its list row, and a reader drops the older.
+ *
  * Cloud workspaces are skipped — those are owned by the workspace authority.
  *
  * Best-effort by construction: recording never blocks the response and never
@@ -53,13 +57,15 @@ export function sessionMetaProjectionTap(
       }
       const body = record(await res.clone().json().catch(() => undefined))
       if (!body || typeof body.id !== "string") return
-      const archived = record(body.time)?.archived
+      const time = record(body.time)
       await projectionStore.put_session_meta(body.id, {
         ws: ws ?? undefined,
         directory: ws?.directory ?? directory ?? (typeof body.directory === "string" ? body.directory : null),
         title: typeof body.title === "string" ? body.title : null,
         parentID: typeof body.parentID === "string" ? body.parentID : null,
-        archived: typeof archived === "number" ? archived : null,
+        archived: typeof time?.archived === "number" ? time.archived : null,
+        ...(typeof time?.created === "number" ? { createdAt: time.created } : {}),
+        ...(typeof time?.updated === "number" ? { updatedAt: time.updated } : {}),
       })
     } catch {
       // best-effort: never break the proxied response

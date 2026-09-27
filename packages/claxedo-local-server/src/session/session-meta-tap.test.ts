@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { deleteSessionMeta, putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "./session-meta-tap"
 
 /**
@@ -61,6 +62,16 @@ describe("session meta projection tap", () => {
     const [id, meta] = projection.put_session_meta.mock.calls[0]
     expect(id).toBe("ses_1")
     expect(meta).toMatchObject({ title: "First", directory: "/work" })
+  })
+
+  test("lists a created session at the runtime's own stamp, so its first read is never older than its listed row", async () => {
+    const app = new Hono()
+    app.use(sessionMetaProjectionTap({ put_session_meta: putSessionMeta, delete_session_meta: deleteSessionMeta }))
+    app.post("/session", (c) => c.json({ id: "ses_1", title: "First", directory: "/work", time: { created: 1_000, updated: 1_000 } }))
+    await app.request("http://localhost/session?directory=%2Fwork", { method: "POST" })
+
+    const listed = await sessionMeta("ses_1")
+    expect([listed?.createdAt, listed?.updatedAt]).toEqual([1_000, 1_000])
   })
 
   test("records a rename", async () => {
