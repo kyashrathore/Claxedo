@@ -113,6 +113,16 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     return host
   }
 
+  let focusHandoff: string | undefined
+  const customFileHolding = (element: Element | null) => [...customHosts].find(([, host]) => host.contains(element))?.[0]
+  const handFocusToHeader = (host: HTMLElement) => {
+    const file = focusHandoff
+    const toggle = file ? headerHosts.get(file)?.querySelector("button") : undefined
+    if (!toggle?.isConnected) return
+    focusHandoff = undefined
+    if (document.activeElement === document.body || document.activeElement === host) toggle.focus({ preventScroll: true })
+  }
+
   const reconcileItems = createReviewCodeViewItems<LAnnotation>()
   const items = createMemo(() => reconcileItems({
     diffs: props.diffs,
@@ -137,6 +147,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
         element.style.minHeight = "1px"
       }
     }
+    handFocusToHeader(host)
     host.dataset.reviewRenderedFiles = String(rendered.length)
     host.dataset.reviewTotalFiles = String(props.diffs.length)
     if (props.onDiffContentRequired) {
@@ -292,7 +303,9 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     items,
     (next, previous) => {
       if (previous === undefined) return
+      const holder = customFileHolding(document.activeElement)
       view?.setItems(next)
+      if (holder && !customHosts.get(holder)?.isConnected) focusHandoff = holder
       if (props.revealTarget) view?.render(true)
       tryReveal()
       stampSoon()

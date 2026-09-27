@@ -71,6 +71,30 @@ test("14 review: diff, line comment, commit, push to a bare remote, the comment 
   expect(JSON.stringify(await api.messages(workspace.directory, session.id))).toContain("Why was this line added?")
 })
 
+test("14 a review file's toggle keeps focus when a click or Enter expands its diff for the first time", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("toggle-focus")
+  await fs.appendFile(path.join(workspace.directory, "README.md"), "a toggled line\n")
+  await fs.writeFile(path.join(workspace.directory, "notes.md"), "a keyed line\n")
+  const session = await api.createSession(workspace.directory, { title: "Toggle", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const review = app.getByRole("complementary", { name: "Workspace panel" }).getByTestId("review-pane-root")
+  const toggle = review.getByRole("button", { name: "Toggle diff for README.md" })
+  await toggle.click()
+  await expect(review.getByText("a toggled line").first()).toBeVisible()
+  await expect(toggle).toBeFocused()
+  await toggle.click()
+  await expect(review.getByText("a toggled line")).toHaveCount(0)
+  await expect(toggle).toBeFocused()
+  const keyed = review.getByRole("button", { name: "Toggle diff for notes.md" })
+  await keyed.focus()
+  await app.keyboard.press("Enter")
+  await expect(review.getByText("a keyed line").first()).toBeVisible()
+  await expect(keyed).toBeFocused()
+})
+
 test("14 a file three folders deep opens from the files tree without blocking the page", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("deep")
   await fs.mkdir(path.join(workspace.directory, "one/two/three"), { recursive: true })
