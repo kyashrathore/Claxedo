@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "النماذج",
   "settings.models.description": "الحسابات التي تعمل عليها وكلاؤك، والنماذج التي يوفرها كل منها.",
   "settings.models.tab.accounts": "الحسابات",
-  "provider.connect.context.harness": "سيعمل {{harness}} على هذا الحساب.",
-  "provider.connect.context.engine": "سيستخدمه {{engine}} لنماذج {{vendor}}.",
   "provider.connect.method.openKeyPage": "فتح صفحة المفاتيح",
   "provider.connect.method.anthropic.subscription.title": "اشتراك Claude (Pro أو Max)",
   "provider.connect.method.anthropic.subscription.for": "يستخدم خطة Claude.ai الخاصة بك وحدودها.",

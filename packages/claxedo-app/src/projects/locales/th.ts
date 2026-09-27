@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "ทำงานหลังจากสร้างพื้นที่ทำงานใหม่ (worktree)",
   "projects.edit.startup.placeholder": "เช่น bun install",
   "projects.edit.action": "แก้ไข",
-  "projects.close": "ปิด",
   "projects.chip.project": "โปรเจกต์",
   "projects.chip.self": "คอมพิวเตอร์เครื่องนี้",
   "projects.chip.workspace": "พื้นที่ทำงาน",

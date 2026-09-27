@@ -12,7 +12,6 @@ const en = {
   "cloud.empty": "No cloud workspaces yet.",
   "cloud.failed": "Cloud workspaces could not be loaded",
   "cloud.unavailable": "This deployment offers no cloud workspaces.",
-  "cloud.create": "Create",
   "cloud.creating": "Creating…",
   "cloud.create.name": "Name",
   "cloud.create.branch": "Branch",
@@ -20,14 +19,12 @@ const en = {
   "cloud.start": "Start",
   "cloud.stop": "Stop",
   "cloud.open": "Open",
-  "cloud.retry": "Try again",
   "cloud.status.provisioning": "Provisioning: {{step}}",
   "cloud.status.starting": "Starting",
   "cloud.status.ready": "Ready",
   "cloud.status.stopping": "Stopping",
   "cloud.status.stopped": "Stopped",
   "cloud.status.failed": "Failed",
-  "cloud.remove.failed": "The workspace could not be deleted",
 }
 
 export type CloudKey = keyof typeof en

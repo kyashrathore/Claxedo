@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "取消",
-  "composer.action.save": "儲存",
   "composer.attachment.refused.title": "{{harness}} 無法使用此附件",
   "composer.attachment.refused.description": "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的工作區資料夾。",
   "composer.attachment.unreadable.title": "無法讀取附件",
   "composer.attachment.unreadable.description": "無法從此裝置讀取 {{filename}}。",
-  "composer.marks.title": "標記圖片",
-  "composer.marks.hint": "拖曳框選區域或點擊放置圖釘，然後加入留言。",
-  "composer.marks.delete": "刪除標記",
-  "composer.marks.mark": "標記 {{number}}",
   "dialog.model.search.placeholder": "搜尋模型",
   "dialog.model.empty": "找不到模型",
   "command.provider.connect": "連接提供者",

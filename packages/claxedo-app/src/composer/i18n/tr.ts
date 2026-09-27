@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "İptal",
-  "composer.action.save": "Kaydet",
   "composer.attachment.refused.title": "{{harness}} bu eki kullanamıyor",
   "composer.attachment.refused.description": "{{harness}} için {{mime}} alan bir istem girişi yok ve bu oturumun dosyayı tutacak bir çalışma alanı klasörü de yok.",
   "composer.attachment.unreadable.title": "Ek okunamadı",
   "composer.attachment.unreadable.description": "{{filename}} bu cihazdan okunamadı.",
-  "composer.marks.title": "Görseli işaretle",
-  "composer.marks.hint": "Bir alanı çerçevelemek için sürükleyin veya iğne bırakmak için tıklayın, ardından yorum yazın.",
-  "composer.marks.delete": "İşareti sil",
-  "composer.marks.mark": "işaret {{number}}",
   "dialog.model.search.placeholder": "Model ara",
   "dialog.model.empty": "Model sonucu yok",
   "command.provider.connect": "Sağlayıcı bağla",

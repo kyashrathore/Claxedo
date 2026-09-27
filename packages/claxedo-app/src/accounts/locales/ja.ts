@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "モデル",
   "settings.models.description": "エージェントが使用するアカウントと、それぞれが提供するモデル。",
   "settings.models.tab.accounts": "アカウント",
-  "provider.connect.context.harness": "{{harness}} はこのアカウントで実行されます。",
-  "provider.connect.context.engine": "{{engine}} はこれを {{vendor}} のモデルに使用します。",
   "provider.connect.method.openKeyPage": "キーのページを開く",
   "provider.connect.method.anthropic.subscription.title": "Claude のサブスクリプション（Pro または Max）",
   "provider.connect.method.anthropic.subscription.for": "お使いの Claude.ai プランとその上限を利用します。",

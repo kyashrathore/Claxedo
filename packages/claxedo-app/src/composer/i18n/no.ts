@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Avbryt",
-  "composer.action.save": "Lagre",
   "composer.attachment.refused.title": "{{harness}} kan ikke bruke dette vedlegget",
   "composer.attachment.refused.description": "{{harness}} har ingen prompt-inndata for {{mime}}, og denne økten har ingen arbeidsområdemappe å lagre filen i.",
   "composer.attachment.unreadable.title": "Vedlegget kunne ikke leses",
   "composer.attachment.unreadable.description": "{{filename}} kunne ikke leses fra denne enheten.",
-  "composer.marks.title": "Merk bilde",
-  "composer.marks.hint": "Dra for å ramme inn et område eller klikk for å sette en nål, og kommenter deretter.",
-  "composer.marks.delete": "Slett merke",
-  "composer.marks.mark": "merke {{number}}",
   "dialog.model.search.placeholder": "Søk etter modeller",
   "dialog.model.empty": "Ingen modellresultater",
   "command.provider.connect": "Koble til leverandør",

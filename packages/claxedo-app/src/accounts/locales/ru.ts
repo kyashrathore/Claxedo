@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "Модели",
   "settings.models.description": "Аккаунты, на которых работают ваши агенты, и модели, доступные в каждом.",
   "settings.models.tab.accounts": "Аккаунты",
-  "provider.connect.context.harness": "{{harness}} будет работать с этой учётной записью.",
-  "provider.connect.context.engine": "{{engine}} будет использовать её для моделей {{vendor}}.",
   "provider.connect.method.openKeyPage": "Открыть страницу ключей",
   "provider.connect.method.anthropic.subscription.title": "Подписка Claude (Pro или Max)",
   "provider.connect.method.anthropic.subscription.for": "Использует ваш тариф Claude.ai и его лимиты.",

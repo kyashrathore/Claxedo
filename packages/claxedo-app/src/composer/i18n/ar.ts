@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "إلغاء",
-  "composer.action.save": "حفظ",
   "composer.attachment.refused.title": "{{harness}} لا يمكنه استخدام هذا المرفق",
   "composer.attachment.refused.description": "لا يوجد في {{harness}} مدخل مطالبة لـ {{mime}}، وهذه الجلسة لا تحتوي على مجلد مساحة عمل لحفظ الملف.",
   "composer.attachment.unreadable.title": "تعذّر قراءة المرفق",
   "composer.attachment.unreadable.description": "تعذّر قراءة {{filename}} من هذا الجهاز.",
-  "composer.marks.title": "تعليم الصورة",
-  "composer.marks.hint": "اسحب لتحديد منطقة أو انقر لوضع دبوس، ثم أضف تعليقًا.",
-  "composer.marks.delete": "حذف العلامة",
-  "composer.marks.mark": "العلامة {{number}}",
   "dialog.model.search.placeholder": "البحث عن نماذج",
   "dialog.model.empty": "لا توجد نتائج للنماذج",
   "command.provider.connect": "اتصال بموفر",

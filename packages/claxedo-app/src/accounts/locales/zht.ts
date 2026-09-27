@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "模型",
   "settings.models.description": "執行代理所用的帳戶，以及每個帳戶提供的模型。",
   "settings.models.tab.accounts": "帳戶",
-  "provider.connect.context.harness": "{{harness}} 將在此帳戶上執行。",
-  "provider.connect.context.engine": "{{engine}} 將用它來呼叫 {{vendor}} 模型。",
   "provider.connect.method.openKeyPage": "開啟金鑰頁面",
   "provider.connect.method.anthropic.subscription.title": "Claude 訂閱（Pro 或 Max）",
   "provider.connect.method.anthropic.subscription.for": "使用你的 Claude.ai 方案及其額度。",

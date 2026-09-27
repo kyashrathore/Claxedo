@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "系統",
   "shell.scheme.light": "淺色",
   "shell.scheme.dark": "深色",
-  "shell.failed": "出了點問題",
   "shell.navigation": "專案與工作階段",
   "shell.category.theme": "主題",
   "shell.category.view": "檢視",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "配色方案",
   "shell.settingsGroup.account": "帳戶",
   "shell.settingsGroup.app": "應用程式",
-  "shell.settingsSections": "設定區段",
   "shell.settingsEmpty": "選擇一個區段",
 }

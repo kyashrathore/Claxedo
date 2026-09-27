@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "يتم تشغيله بعد إنشاء مساحة عمل جديدة (شجرة عمل).",
   "projects.edit.startup.placeholder": "مثال: bun install",
   "projects.edit.action": "تحرير",
-  "projects.close": "إغلاق",
   "projects.chip.project": "مشروع",
   "projects.chip.self": "هذا الكمبيوتر",
   "projects.chip.workspace": "مساحة عمل",

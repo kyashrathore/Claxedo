@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Отмена",
-  "composer.action.save": "Сохранить",
   "composer.attachment.refused.title": "{{harness}} не может использовать это вложение",
   "composer.attachment.refused.description": "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет папки рабочего пространства, где мог бы остаться файл.",
   "composer.attachment.unreadable.title": "Не удалось прочитать вложение",
   "composer.attachment.unreadable.description": "Не удалось прочитать {{filename}} с этого устройства.",
-  "composer.marks.title": "Отметить на изображении",
-  "composer.marks.hint": "Потяните, чтобы выделить область, или щёлкните, чтобы поставить метку, затем добавьте комментарий.",
-  "composer.marks.delete": "Удалить метку",
-  "composer.marks.mark": "метка {{number}}",
   "dialog.model.search.placeholder": "Поиск моделей",
   "dialog.model.empty": "Модели не найдены",
   "command.provider.connect": "Подключить провайдера",

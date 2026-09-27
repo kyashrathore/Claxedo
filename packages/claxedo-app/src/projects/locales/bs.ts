@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "Pokreće se nakon kreiranja novog radnog prostora (worktree).",
   "projects.edit.startup.placeholder": "npr. bun install",
   "projects.edit.action": "Uredi",
-  "projects.close": "Zatvori",
   "projects.chip.project": "Projekat",
   "projects.chip.self": "Ovaj računar",
   "projects.chip.workspace": "Radni prostor",

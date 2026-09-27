@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "系统",
   "shell.scheme.light": "浅色",
   "shell.scheme.dark": "深色",
-  "shell.failed": "出了点问题",
   "shell.navigation": "项目和会话",
   "shell.category.theme": "主题",
   "shell.category.view": "视图",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "配色方案",
   "shell.settingsGroup.account": "账户",
   "shell.settingsGroup.app": "应用",
-  "shell.settingsSections": "设置分区",
   "shell.settingsEmpty": "选择一个分区",
 }
