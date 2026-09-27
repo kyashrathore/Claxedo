@@ -81,8 +81,10 @@ function closesFence(raw: string, suffix: string) {
   return `${raw.slice(-(mark.length - 1))}${suffix}`.includes(mark)
 }
 
+const loneTrailingMarker = /(^|\n)([ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)*)[-*+]$/
+
 function heal(text: string) {
-  return remend(text, { linkMode: "text-only" })
+  return remend(text.replace(loneTrailingMarker, "$1$2"), { linkMode: "text-only" })
 }
 
 function complete(text: string) {

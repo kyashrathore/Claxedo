@@ -42,3 +42,26 @@ test("while a fence streams it draws only lines its closed block will have, what
     expect(project(undefined, beforeClose, true).blocks.find((block) => block.mode === "code")!.src).toBe(closed.src)
   }
 })
+
+const settledShapes = [
+  "1. **Check 1**: read the path\n2. **Check 2**: confirm the result\n3. *done* at last",
+  "- **one** first\n- **two** second\n+ plus item",
+  "Intro line\n- item after a paragraph",
+]
+
+test("while a list streams its live tail draws no nested list or heading its settled text lacks, whatever the chunk size", () => {
+  const shape = (html: string) => ({ nested: /<li>\s*<(ul|ol)/.test(html), heading: /<h\d/.test(html) })
+  for (const text of settledShapes) {
+    const settled = shape(transcriptMarked.parse(text, { async: false }) as string)
+    for (let size = 1; size <= 8; size++) {
+      let streamed: ReturnType<typeof project> | undefined
+      for (let end = size; end < text.length + size; end += size) {
+        streamed = project(streamed, text.slice(0, end), true)
+        const live = streamed.blocks.at(-1)!
+        const drawn = shape(transcriptMarked.parse(live.src, { async: false }) as string)
+        if (!settled.nested) expect({ prefix: text.slice(0, end), nested: drawn.nested }).toEqual({ prefix: text.slice(0, end), nested: false })
+        if (!settled.heading) expect({ prefix: text.slice(0, end), heading: drawn.heading }).toEqual({ prefix: text.slice(0, end), heading: false })
+      }
+    }
+  }
+})
