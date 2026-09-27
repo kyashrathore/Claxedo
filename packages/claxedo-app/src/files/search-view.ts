@@ -39,7 +39,7 @@ export function createSearchView(placementId: Accessor<PlacementId>, active: Acc
     createMemo(() => files.search().trim()),
     placementId,
   )
-  const listing = createTreeSource(placementId, createMemo(() => active() && !query()))
+  const listing = createTreeSource(files, placementId, createMemo(() => active() && !query()))
   const { search, matches, tree } = createSearchResults(placementId, query)
   createComputed(
     on(tree, (current) => {

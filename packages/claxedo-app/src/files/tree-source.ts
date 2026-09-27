@@ -1,9 +1,9 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useQueries } from "@tanstack/solid-query"
+import { keyedQueries } from "@/lib/keyed-queries"
 import { useServer, type AppError, type FileNode, type PlacementId } from "@/server"
 import { useFilesApi } from "./api"
 import { sortNodes } from "./model"
-import { useFiles } from "./store"
+import type { Files } from "./store"
 
 export type TreeDirState = {
   readonly expanded: boolean
@@ -20,17 +20,12 @@ export type TreeSource = {
   readonly collapse: (dir: string) => void
 }
 
-export function createTreeSource(placementId: Accessor<PlacementId>, enabled: Accessor<boolean>): TreeSource {
+export type TreeExpansion = Pick<Files, "expanded" | "expandedDirs" | "setExpanded">
+
+export function createTreeSource(files: TreeExpansion, placementId: Accessor<PlacementId>, enabled: Accessor<boolean>): TreeSource {
   const api = useFilesApi()
-  const files = useFiles()
   const dirs = createMemo(() => ["", ...files.expandedDirs()])
-  const results = useQueries(() => ({
-    queries: dirs().map((dir) => ({ ...api.tree(placementId(), dir), enabled: enabled() })),
-  }))
-  const resultOf = (dir: string) => {
-    const index = dirs().indexOf(dir)
-    return index === -1 ? undefined : results[index]
-  }
+  const resultOf = keyedQueries(dirs, (dir) => ({ ...api.tree(placementId(), dir), enabled: enabled() }))
   return {
     children: (dir) => sortNodes(resultOf(dir)?.data ?? []),
     state: (dir) => {

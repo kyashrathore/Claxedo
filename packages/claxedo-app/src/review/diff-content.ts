@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useQueries } from "@tanstack/solid-query"
 import { isMediaPath } from "@/files"
+import { keyedQueries } from "@/lib/keyed-queries"
 import {
   useServer,
   type AppError,
@@ -40,13 +40,6 @@ export type DiffContentInput = {
   readonly forced: (file: string) => boolean
 }
 
-type QueryResult<T> = {
-  readonly status: "pending" | "error" | "success"
-  readonly data: T | undefined
-  readonly error: AppError | null
-  readonly refetch: () => unknown
-}
-
 const changedLines = (summary: DiffSummary) => summary.additions + summary.deletions
 
 function withContent(summary: DiffSummary, content: DiffFile | undefined): ReviewCodeViewDiff {
@@ -58,13 +51,6 @@ function withContent(summary: DiffSummary, content: DiffFile | undefined): Revie
     ...(content?.patch === undefined ? {} : { patch: content.patch }),
     ...(content?.before === undefined ? {} : { before: content.before }),
     ...(content?.after === undefined ? {} : { after: content.after }),
-  }
-}
-
-function indexedResult<T>(files: Accessor<readonly string[]>, results: readonly QueryResult<T>[]) {
-  return (file: string) => {
-    const index = files().indexOf(file)
-    return index === -1 ? undefined : results[index]
   }
 }
 
@@ -81,13 +67,10 @@ function createRowQueries(
   const media = createMemo(() =>
     known().flatMap((summary) => (isMediaPath(summary.file) && summary.status !== "deleted" ? [summary.file] : [])),
   )
-  const textResults = useQueries(() => ({
-    queries: texts().map((file) => api.diffFile(input.placementId, input.scope(), file)),
-  }))
-  const mediaResults = useQueries(() => ({
-    queries: media().map((file) => server.queries.files.content(input.placementId, file)),
-  }))
-  return { textOf: indexedResult(texts, textResults), mediaOf: indexedResult(media, mediaResults) }
+  return {
+    textOf: keyedQueries(texts, (file) => api.diffFile(input.placementId, input.scope(), file)),
+    mediaOf: keyedQueries(media, (file) => server.queries.files.content(input.placementId, file)),
+  }
 }
 
 export function createDiffContent(input: DiffContentInput): DiffContent {
