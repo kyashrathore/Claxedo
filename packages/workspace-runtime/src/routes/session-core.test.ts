@@ -698,9 +698,9 @@ describe("createSessionRoutes message paging", () => {
 
     expect(response.status).toBe(200)
     const { page } = await response.json()
-    expect(reads).toEqual([{ view: "latest-turn" }, { view: "latest-turn", before: "29" }, { view: "latest-turn", before: "28" }])
-    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["27", "28", "29"])
-    expect(page.turns[2]).toEqual({
+    expect(reads).toEqual([{ view: "latest-turn" }, ...["29", "28", "27", "26"].map((before) => ({ view: "latest-turn" as const, before }))])
+    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["25", "26", "27", "28", "29"])
+    expect(page.turns[4]).toEqual({
       messages: [turns[29]?.[0], { ...turns[29]?.[1], parts: [] }, turns[29]?.[2]],
       foldableCount: 2,
       cursor: "29",
@@ -715,14 +715,14 @@ describe("createSessionRoutes message paging", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("no-store")
     const page = await response.json()
-    expect(reads).toEqual([{ view: "latest-turn", before: "27" }, { view: "latest-turn", before: "26" }, { view: "latest-turn", before: "25" }])
-    expect(page.turns.map((item: { cursor: string; foldableCount: number }) => [item.cursor, item.foldableCount])).toEqual([["24", 2], ["25", 2], ["26", 2]])
+    expect(reads).toEqual(["27", "26", "25", "24", "23"].map((before) => ({ view: "latest-turn" as const, before })))
+    expect(page.turns.map((item: { cursor: string; foldableCount: number }) => [item.cursor, item.foldableCount])).toEqual([["22", 2], ["23", 2], ["24", 2], ["25", 2], ["26", 2]])
   })
 
   test("under the headers fold read a folded turn sends every part, its tools as headers", async () => {
     const { app, turns } = pagedRoutes("headers")
     const { page } = await (await app.request(`http://localhost/session/session-1/outline?${viewport}`)).json()
-    const latest = page.turns[2]
+    const latest = page.turns.at(-1)
     expect(latest.foldableCount).toBeUndefined()
     expect(latest.messages.map((message: AgentMessage) => message.parts.map((part) => part.id))).toEqual(turns[29]!.map((message) => message.parts.map((part) => part.id)))
     expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })

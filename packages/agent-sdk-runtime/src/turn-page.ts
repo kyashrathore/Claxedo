@@ -21,7 +21,7 @@ export const TURN_PAGE_TURN_CAP = 24
 export const TURN_PAGE_BYTE_CAP = 256 * 1024
 
 /** A page fills the viewport and this many screens more, counted in viewport heights. */
-export const TURN_PAGE_FILL_SCREENS = 1
+export const TURN_PAGE_FILL_SCREENS = 2
 
 const TURN_CHROME_LINES = 3
 const FOLD_ROW_LINES = 2

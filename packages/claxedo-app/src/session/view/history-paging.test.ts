@@ -101,6 +101,19 @@ test("history paging: a scroll near the top loads one page and joins a page in f
   expect(loads).toBe(1)
 })
 
+test("history paging: a reader's scroll pages once it is within one screen of the top, and not before", async () => {
+  const fake = fakeView(5)
+  const scroller = { scrollTop: 900, clientHeight: 800 } as HTMLElement
+  const { paging: pager } = paging(fake, scroller)
+  pager.onScroll()
+  await landed()
+  expect(fake.loads()).toBe(0)
+  scroller.scrollTop = 799
+  pager.onScroll()
+  await landed()
+  expect(fake.loads()).toBe(1)
+})
+
 const handles = { anchor: { capture: () => {}, restore: () => {}, settle: () => {} }, scrollToMessage: () => false }
 
 function pick(view: () => SessionView, pager: ReturnType<typeof paging>["paging"]) {

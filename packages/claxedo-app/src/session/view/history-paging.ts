@@ -1,7 +1,5 @@
 import type { SessionView } from "@/session"
 
-const TOP_THRESHOLD = 200
-
 export type HistoryAnchor = { readonly capture: () => void; readonly restore: () => void; readonly settle: () => void }
 
 type PagingInput = {
@@ -34,7 +32,7 @@ function gesturePaging(input: PagingInput, loader: ReturnType<typeof createOlder
   return {
     onScroll: () => {
       const el = input.scroller()
-      if (!input.userScrolled() || !el || el.scrollTop >= TOP_THRESHOLD) return
+      if (!input.userScrolled() || !el || el.scrollTop >= el.clientHeight) return
       onGesture()
     },
     onPull: () => {

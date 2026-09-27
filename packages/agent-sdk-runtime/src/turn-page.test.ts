@@ -169,13 +169,13 @@ describe("estimateTurnLines", () => {
 })
 
 describe("readTurnPage", () => {
-  test("walks back from the newest turn until the estimate covers the viewport and one more screen", async () => {
+  test("walks back from the newest turn until the estimate covers the viewport and two more screens", async () => {
     const turns = Array.from({ length: 10 }, (_, index) => workedTurn(`Prompt ${index}`, `Answer ${index}.`))
     const reader = turnReader(turns)
     const page = await readTurnPage(reader.read, viewport(10))
-    expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Prompt 7", "Prompt 8", "Prompt 9"])
-    expect(page.turns.map((turn) => turn.cursor)).toEqual(["cursor-7", "cursor-8", "cursor-9"])
-    expect(reader.calls).toEqual([undefined, "cursor-9", "cursor-8"])
+    expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Prompt 5", "Prompt 6", "Prompt 7", "Prompt 8", "Prompt 9"])
+    expect(page.turns.map((turn) => turn.cursor)).toEqual(["cursor-5", "cursor-6", "cursor-7", "cursor-8", "cursor-9"])
+    expect(reader.calls).toEqual([undefined, "cursor-9", "cursor-8", "cursor-7", "cursor-6"])
   })
 
   test("a session shorter than the fill is read whole, and its first turn carries no cursor", async () => {
