@@ -1,6 +1,6 @@
 import os from "node:os"
 import path from "node:path"
-import { envText } from "@claxedo/helpers"
+import { envText } from "@claxedo/helpers/env"
 
 export function runtimeEnvText(env: NodeJS.ProcessEnv, key: string) {
   return envText(env, key)

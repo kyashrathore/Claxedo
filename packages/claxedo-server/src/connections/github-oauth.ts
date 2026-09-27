@@ -14,7 +14,7 @@
  * without one.
  */
 import { githubIntegration, type GitHubIntegrationOptions } from "@claxedo/connections"
-import { envText } from "@claxedo/helpers"
+import { envText } from "@claxedo/helpers/env"
 
 type Env = Record<string, string | undefined>
 

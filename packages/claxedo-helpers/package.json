@@ -46,6 +46,13 @@
       "import": "./dist/crypto.mjs",
       "default": "./dist/crypto.mjs"
     },
+    "./env": {
+      "development": "./src/env.ts",
+      "bun": "./src/env.ts",
+      "types": "./dist/env.d.ts",
+      "import": "./dist/env.mjs",
+      "default": "./dist/env.mjs"
+    },
     "./string": {
       "development": "./src/string.ts",
       "bun": "./src/string.ts",
