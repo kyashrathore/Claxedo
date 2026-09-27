@@ -5,6 +5,7 @@ import type { Runner } from "./runner"
 import type { Workspace } from "./workspaces"
 
 const RUNS = Number(process.env.PANEL_RUNS ?? "5")
+const PRESS_MS = Number(process.env.PANEL_PRESS_MS ?? "0")
 const SECTIONS = (process.env.PANEL_SECTIONS ?? "open,navigator,tabs,tree,review,maximize,session").split(",")
 
 async function section(name: string, run: () => Promise<void>) {
@@ -49,7 +50,7 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
   if (!first || !second || !third) throw new Error("three tab files needed")
 
   await section("open", async () => {
-    await runner.measure(name, "open-panel-first", 0, { kind: "panel-open-files" }, () => toggle(page, true).click())
+    await runner.measure(name, "open-panel-first", 0, { kind: "panel-open-files" }, () => toggle(page, true).click({ delay: PRESS_MS }))
     await settle(page)
     await openFileTabs(page, tabFiles)
     await reviewTab(page).click()
@@ -57,7 +58,7 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
     for (let run = 1; run <= RUNS; run += 1) {
       await runner.measure(name, "close-panel", run, { kind: "panel-closed" }, () => toggle(page, false).click())
       await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 400)))
-      await runner.measure(name, "open-panel-warm", run, { kind: "panel-open-files" }, () => toggle(page, true).click())
+      await runner.measure(name, "open-panel-warm", run, { kind: "panel-open-files" }, () => toggle(page, true).click({ delay: PRESS_MS }))
       await settle(page)
     }
   })
