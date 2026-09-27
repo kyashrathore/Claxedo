@@ -4,6 +4,7 @@ import type { BenchmarkPage } from "../src/agent-cdp-page"
 import { installPaintedFrames } from "../src/browser/painted-frames"
 import { measurePrearmedSettledAction } from "../src/public-workspace-panel"
 import { waitForPaintedFile } from "../src/workspace-panel-readiness"
+import { beginTrace, finishMeasuredTrace, markActionEnd } from "../src/workspace-panel-trace-recording"
 
 let browser: Browser
 
@@ -61,4 +62,47 @@ test("an action painted in the first frame after its pointerdown still spans two
     expect(rendererTrace.counterInterval).toEqual({ start: clock.start, end: clock.end })
     await page.close()
   }
+}, 30_000)
+
+test("an action end asked for inside its ready frame's own task waits for the second presented frame", async () => {
+  const { page, adapted } = await benchmarkPage()
+  await page.evaluate(() => {
+    const paintedFrames = window.__claxedoPaintedFrames!
+    window.__claxedoPaintedFrames = (frame) => paintedFrames({
+      sample: frame.sample,
+      painted: (value, paintedAt) => {
+        const stop = frame.painted(value, paintedAt)
+        const trace = window.__claxedoPublicPanelTrace
+        const inputAt = trace?.trustedInputAt
+        const deferred = Reflect.get(window, "deferred") as (() => void) | undefined
+        if (inputAt !== undefined && deferred && trace!.frames.filter((presented) => presented.startedAt >= inputAt).length === 1) {
+          Reflect.deleteProperty(window, "deferred")
+          deferred()
+        }
+        return stop
+      },
+    })
+  })
+  const inReadyFrame = {
+    evaluate: <A>(fn: (arg: A) => unknown, arg: A) => page.evaluate(({ source, arg }) => new Promise((resolve, reject) => {
+      Reflect.set(window, "deferred", () => {
+        try {
+          resolve(new Function(`return (${source})`)()(arg))
+        } catch (error) {
+          reject(error)
+        }
+      })
+    }), { source: fn.toString(), arg }),
+  } as never
+  const recording = await beginTrace(adapted)
+  await page.mouse.move(100, 50)
+  const ended = markActionEnd(inReadyFrame, 0)
+  await page.waitForFunction(() => Reflect.has(window, "deferred"))
+  await page.mouse.down()
+  await ended
+  const { clock, rendererTrace } = await finishMeasuredTrace(adapted, recording)
+  await page.mouse.up()
+  expect(rendererTrace.frameTimestampsMs.length).toBe(2)
+  expect(clock.end).toBe(rendererTrace.frameTimestampsMs[1]!)
+  await page.close()
 }, 30_000)

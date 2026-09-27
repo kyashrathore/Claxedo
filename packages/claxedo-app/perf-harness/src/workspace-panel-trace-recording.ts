@@ -46,6 +46,7 @@ type PublicPanelTrace = {
   /** Page clock of the first trusted pointerdown; absent until one lands. */
   trustedInputAt?: number
   lastTrustedInputAt?: number
+  secondPresentedFrame: Promise<{ startedAt: number; paintedAt: number }>
   /** Present only when the caller asked for Files-open readiness. */
   openFiles?: PanelOpenReadiness
   pointer: (event: PointerEvent) => void
@@ -67,12 +68,10 @@ type TraceRecording = {
 }
 
 export async function markActionEnd(page: Page, readyAt: number) {
-  await page.evaluate(({ endMark, readyAt }) => {
+  await page.evaluate(async ({ endMark, readyAt }) => {
     const trace = window.__claxedoPublicPanelTrace
-    const inputAt = trace?.trustedInputAt
-    if (!trace?.active || inputAt === undefined) throw new Error("Claxedo measured action has no trusted input")
-    const second = trace.frames.filter((frame) => frame.startedAt >= inputAt)[1]
-    if (!second) throw new Error("Claxedo measured action has fewer than two presented frames after its input")
+    if (!trace?.active || trace.trustedInputAt === undefined) throw new Error("Claxedo measured action has no trusted input")
+    const second = await trace.secondPresentedFrame
     performance.clearMarks(endMark)
     performance.mark(endMark, { startTime: Math.max(readyAt, second.paintedAt) })
   }, { endMark: COUNTER_END_MARK, readyAt })
@@ -93,6 +92,8 @@ export async function beginTrace(
     performance.clearMarks(endMark)
     const paintedFrames = window.__claxedoPaintedFrames
     if (!paintedFrames) throw new Error("Claxedo painted-frame clock is not installed")
+    let presentedAfterInput = 0
+    let presentSecond = (_frame: { startedAt: number; paintedAt: number }) => {}
     // `pointer`, `sampleOpenFiles` and `painted` are function declarations so
     // the trace object can be complete at construction: they are hoisted, and
     // their bodies only read `trace` when the browser calls them, after it is
@@ -102,6 +103,7 @@ export async function beginTrace(
       frames: [],
       milestones: [],
       loafs: [],
+      secondPresentedFrame: new Promise((resolve) => { presentSecond = resolve }),
       openFiles: openFilesExpectedCount === undefined ? undefined : {
         expectedFiles: openFilesExpectedCount,
         lastSignature: "",
@@ -147,6 +149,9 @@ export async function beginTrace(
     function painted(frame: ReturnType<typeof sampleOpenFiles>, paintedAt: number) {
       if (!trace.active) return true
       if (trace.frames.length < 600) trace.frames.push({ startedAt: frame.startedAt, paintedAt })
+      if (trace.trustedInputAt !== undefined && frame.startedAt >= trace.trustedInputAt && ++presentedAfterInput === 2) {
+        presentSecond({ startedAt: frame.startedAt, paintedAt })
+      }
       const openFiles = trace.openFiles
       if (!frame.open || !openFiles) return
       if (frame.open.shellVisible && openFiles.shellVisible === undefined) openFiles.shellVisible = paintedAt
