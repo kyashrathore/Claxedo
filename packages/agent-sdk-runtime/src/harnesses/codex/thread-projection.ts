@@ -142,6 +142,6 @@ async function observeFirstLevelSubagents(
       source: { dir: "in", method, frame },
     })))
   }
-  const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, asRecord(params.item)) : undefined
+  const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, params) : undefined
   if (hostSpawn) await input.observeSubagent({ observation: hostSpawn, correlationKeys: [], source: { dir: "in", method, frame } })
 }
