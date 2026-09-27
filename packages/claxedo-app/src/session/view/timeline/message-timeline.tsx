@@ -100,6 +100,7 @@ import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import type { MessageTimelineProps } from "./message-timeline-props"
 import type { ConversationMessage } from "@/transcript"
 import { turnActive, type TimelineSessionRow } from "./model"
+import type { TimelineNavTurn } from "./model"
 import "./timeline-viewport.css"
 import "./markdown-surfaces.css"
 
@@ -360,12 +361,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const parentMessages = createMemo(() => parentConversation()?.messages ?? emptyMessages)
   const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? ownParts(messageById().get(msgId))
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
-  const turnPreview = (message: UserMessage) =>
+  const turnPreview = (turn: TimelineNavTurn) =>
+    turn.preview ??
     messageNavPreview({
-      userMessageId: message.id,
-      assistantMessageIds: (assistantMessagesByParent().get(message.id) ?? emptyAssistantMessages).map(
-        (item) => item.id,
-      ),
+      userMessageId: turn.id,
+      assistantMessageIds: (assistantMessagesByParent().get(turn.id) ?? emptyAssistantMessages).map((item) => item.id),
       getParts: getMsgParts,
     })
   const childTaskDescription = createMemo(() => {
@@ -386,6 +386,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const statusType = createMemo(() => sessionStatus().kind)
   const lastTurnOutcome = createMemo(() => info()?.lastTurn, undefined, { equals: sameTurnOutcome })
+  const shownFoldCounts = new Map<string, number>()
   const messageRowMemos = createMemo(
     mapArray(
       () => props.userMessages,
@@ -409,8 +410,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: samePartsRecord },
         )
+        const first = createMemo(() => indexAccessor() === 0)
+        const last = createMemo(() => indexAccessor() === props.userMessages.length - 1)
         const visibleAssistantMessageIds = createMemo(() => {
-          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return undefined
+          if (initialTurnExpanded() || !last()) return undefined
           const parts = turnParts()
           return Timeline.coldFinalVisibleAssistantMessageIds(
             turnAssistants(),
@@ -418,27 +421,56 @@ export function MessageTimeline(props: MessageTimelineProps) {
           )
         })
         const isActive = createMemo(() => activeMessageId() === userMessage.id)
+        const turnStatus = createMemo(() => (isActive() ? statusType() : "idle"))
+        const turnOutcome = createMemo(
+          () => {
+            const outcome = lastTurnOutcome()
+            return outcome && turnAssistants().some((message) => message.id === outcome.assistantMessageId) ? outcome : undefined
+          },
+          undefined,
+          { equals: sameTurnOutcome },
+        )
+        const settling = createMemo(() => turnSettleRefreshPending(userMessage.id))
+        const textParts = createMemo(
+          () => {
+            const conversation = sessionConversation()
+            return Object.values(turnParts()).flatMap((parts) => parts.flatMap((part) => (conversation?.partsWithText[part.id] === true ? [part.id] : [])))
+          },
+          undefined,
+          { equals: sameArrayItems },
+        )
+        const fragments = createMemo(
+          () => {
+            const conversation = sessionConversation()
+            return [userMessage.id, ...turnAssistants().map((message) => message.id)].filter((id) => conversation?.fragmentParts.has(id) === true)
+          },
+          undefined,
+          { equals: sameArrayItems },
+        )
         return createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
-          const shownFoldCount = previous?.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")?.foldCount
+          const withText = new Set(textParts())
           const rows = Timeline.constructMessageRows(
             userMessage,
             (messageId) => parts[messageId] ?? emptyParts,
-            (part) => sessionConversation()?.partsWithText[part.id] === true,
+            (part) => withText.has(part.id),
             turnAssistants(),
-            indexAccessor(),
+            first(),
             host.settings.showReasoningSummaries(),
-            statusType(),
+            turnStatus(),
             isActive(),
-            props.firstTurnRecovery !== false && indexAccessor() === 0,
+            props.firstTurnRecovery !== false && first(),
             (userMessageId) => turnFold.isFolded(userMessageId),
-            lastTurnOutcome(),
+            turnOutcome(),
             visibleAssistantMessageIds(),
-            (userMessageId) => Math.max(cached?.turnFoldableCounts?.[userMessageId] ?? 0, shownFoldCount ?? 0) || undefined,
+            (userMessageId) => Math.max(cached?.turnFoldableCounts?.[userMessageId] ?? 0, shownFoldCounts.get(userMessageId) ?? 0) || undefined,
             (partId) => toolOpen[partId] === true || toolRevealed[partId] === true,
-            turnSettleRefreshPending(userMessage.id),
-            (messageId) => sessionConversation()?.fragmentParts.has(messageId) === true,
+            settling(),
+            (messageId) => fragments().includes(messageId),
           )
+          const fold = rows.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")
+          if (fold) shownFoldCounts.set(userMessage.id, fold.foldCount)
+          else shownFoldCounts.delete(userMessage.id)
 
           return TimelineRow.reuse(previous, rows)
         }))
@@ -493,8 +525,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return TimelineRow.reuse(previous, props.progressBlocked?.() ? rows.filter((row) => row._tag !== "Thinking") : rows)
   }))
 
+  const [firstViewSettled, setFirstViewSettled] = createSignal(false)
+  const followsEnd = () => props.shouldAnchorBottom() && (working() || !firstViewSettled())
   const prepend = createTimelinePrependAnchor({
-    root: listRoot, displayed,
+    root: listRoot, displayed, following: followsEnd,
     resolveRowStart: (key) => {
       const index = timelineRows().findIndex((row) => TimelineRow.key(row) === key)
       return index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")?.[0]
@@ -524,8 +558,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
-  const [firstViewSettled, setFirstViewSettled] = createSignal(false)
-  const followsEnd = () => props.shouldAnchorBottom() && (working() || !firstViewSettled())
   const rowKeys = createMemo(() => {
     const keys = timelineRows().map(TimelineRow.key)
     resizeAnchor.noteRowKeys(keys)
@@ -579,8 +611,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   createEffect(() => {
     if (firstViewSettled()) return
     virtualRowKeys()
-    const root = listRoot()
-    if (root) measureUnmeasuredRows(virtualizer, root)
+    measureUnmeasuredRows(virtualizer)
     if (props.hasScrollGesture()) setFirstViewSettled(true)
   })
   resizeAnchor.install({
@@ -628,7 +659,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [viewportMessageId, setViewportMessageId] = createSignal<string>()
   const currentNavMessage = createMemo(() => {
     const id = viewportMessageId()
-    const messages = props.navMessages ?? props.userMessages
+    const messages: readonly TimelineNavTurn[] = props.navMessages ?? props.userMessages
     return messages.find((message) => message.id === id) ?? props.currentMessage ?? messages.at(-1)
   })
   const updateViewportMessage = (root: HTMLDivElement) => {
@@ -660,7 +691,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       virtualizer.scrollToOffset(Math.max(0, offset[0] - inset), { behavior })
       return true
     })
-    props.setHistoryAnchor?.({ capture: prepend.capture, restore: prepend.restore })
+    props.setHistoryAnchor?.({ capture: prepend.capture, restore: prepend.restore, settle: prepend.settle })
   })
 
   let firstFoldRevealKey: string | undefined
@@ -754,7 +785,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     resizeAnchor.dispose()
     props.setScrollToEnd?.(() => {})
     props.setScrollToMessage?.(undefined)
-    props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
+    props.setHistoryAnchor?.({ capture: () => {}, restore: () => {}, settle: () => {} })
   })
 
   const bindListRoot = (root: HTMLDivElement) => {
@@ -1150,7 +1181,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 data-slot="session-turn-assistant-content"
                 aria-hidden={workingTurn(assistantPartRow().userMessageId)}
               >
-                {renderAssistantPartGroup(assistantPartRow, onSizeChange)}
+                <AssistantPartGroupView row={assistantPartRow} onSizeChange={onSizeChange} />
               </div>
             </div>
           </TimelineRowFrame>
@@ -1258,6 +1289,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return undefined
   }
 
+  function AssistantPartGroupView(props: { row: Accessor<TimelineRowMap["AssistantPart"]>; onSizeChange?: () => void }) {
+    return renderAssistantPartGroup(props.row, props.onSizeChange)
+  }
   function TimelineRowView(props: { row: TimelineRow.TimelineRow; onSizeChange?: () => void }) {
     return renderTimelineRow(() => props.row, props.onSizeChange)
   }

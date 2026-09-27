@@ -144,6 +144,17 @@ export type SessionPage = {
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
 
+export type OutlineTurn = {
+  readonly id: string
+  readonly createdAt: number
+  readonly title?: string
+  readonly preview: { readonly user?: string }
+}
+
+export type SessionOutline = { readonly turns: readonly OutlineTurn[]; readonly complete: boolean }
+
+export type HeldSessionReads = { readonly latestTurn?: TranscriptPage; readonly outline?: SessionOutline }
+
 export type SessionGoal = RuntimeGoalSnapshot
 
 export type GoalAction = "pause" | "resume" | "remove" | "stop"
@@ -157,11 +168,13 @@ export type SessionGoalState = {
 export type SessionSurfaceRead = {
   readonly row: SessionRow
   readonly transcript: TranscriptPage
+  readonly latestTurnComplete: boolean
   readonly diff: readonly FileDiff[]
 }
 
 export type SessionReads = {
   readonly surface: Promise<SessionSurfaceRead>
+  readonly outline: Promise<SessionOutline | undefined>
   readonly status: Promise<SessionStatus>
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>

@@ -1,6 +1,6 @@
 import { createMemo, onCleanup } from "solid-js"
 import { unreachable } from "@/lib/machine"
-import type { Server, ServerEvent, SessionRef } from "@/server"
+import type { Server, ServerEvent, SessionOutline, SessionRef, TranscriptPage } from "@/server"
 import type { SessionLoadState, SessionView } from "@/session"
 import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
@@ -10,6 +10,7 @@ import { settleTurn } from "./settle"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
 import { sendPrompt, showSent, stopTurn } from "./send"
+import { retainedSession, type RetainedSession } from "./retained"
 import { readSnapshot } from "./snapshot"
 
 export type { TranscriptDeps } from "./context"
@@ -17,7 +18,12 @@ export type { TranscriptDeps } from "./context"
 export type SessionTranscript = SessionView & {
   readonly apply: (event: ServerEvent) => void
   readonly gap: () => void
+  readonly retained: () => RetainedSession | undefined
 }
+
+export type { RetainedSession } from "./retained"
+
+export type TranscriptSeed = { readonly latestTurn: TranscriptPage; readonly outline: SessionOutline | undefined }
 
 const LOADING: SessionLoadState = { kind: "loading" }
 const READY: SessionLoadState = { kind: "ready" }
@@ -69,7 +75,7 @@ function sessionView(context: TranscriptContext): SessionView {
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,
-    olderPagesLoaded: context.olderPages,
+    outline: context.outline.state,
     loadOlder: () => loadOlder(context),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),
@@ -79,13 +85,14 @@ function sessionView(context: TranscriptContext): SessionView {
   }
 }
 
-export function createSessionTranscript(server: Server, ref: SessionRef, deps: TranscriptDeps): SessionTranscript {
+export function createSessionTranscript(server: Server, ref: SessionRef, deps: TranscriptDeps, seed?: TranscriptSeed): SessionTranscript {
   const context = createTranscriptContext(server, ref, deps)
   onCleanup(server.attachPlacement(ref.placementId))
-  void readSnapshot(context)
+  void readSnapshot(context, seed)
   void context.queue.reread()
   return {
     ...sessionView(context),
+    retained: () => retainedSession(context),
     apply: (event) => {
       applyServerEvent(context, event)
       if (event.type === "statusChanged" && event.status.kind === "idle") void settleTurn(context)

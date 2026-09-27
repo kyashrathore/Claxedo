@@ -16,9 +16,8 @@ export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, meas
   })
 }
 
-export function measureUnmeasuredRows(virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement>, root: HTMLElement) {
-  const unmeasured = [...root.querySelectorAll<HTMLDivElement>("[data-index]")].filter((element) =>
-    !virtualizer.itemSizeCache.has(virtualizer.options.getItemKey(Number(element.dataset.index))))
+export function measureUnmeasuredRows(virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement>) {
+  const unmeasured = [...virtualizer.elementsCache].flatMap(([key, element]) => (element.isConnected && !virtualizer.itemSizeCache.has(key) ? [element] : []))
   if (unmeasured.length) batch(() => unmeasured.forEach((element) => virtualizer.measureElement(element)))
 }
 

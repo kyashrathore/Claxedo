@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { TranscriptUserMessage, UserActions } from "@/transcript"
 import type { SessionErrorClass } from "./turn-recovery"
-import type { QueuedMessages, TimelineHost } from "./model"
+import type { QueuedMessages, TimelineHost, TimelineNavTurn } from "./model"
 
 export type MessageTimelineProps = {
   host: TimelineHost
@@ -19,7 +19,6 @@ export type MessageTimelineProps = {
   onHistoryScroll: () => void
   onHistoryPull?: () => void
   shouldAnchorBottom: () => boolean
-  olderPending?: Accessor<boolean>
   hasScrollTarget: () => boolean
   restoreFollowing: (following: boolean) => void
   centered: boolean
@@ -28,14 +27,14 @@ export type MessageTimelineProps = {
   userMessages: TranscriptUserMessage[]
   hiddenTurnCount?: Accessor<number>
   onRevealPreviousMessages?: () => void
-  navMessages?: TranscriptUserMessage[]
-  currentMessage?: TranscriptUserMessage
-  onMessageSelect?: (message: TranscriptUserMessage) => void
+  navMessages?: TimelineNavTurn[]
+  currentMessage?: TimelineNavTurn
+  onMessageSelect?: (turn: TimelineNavTurn) => void
   progressBlocked?: Accessor<boolean>
   anchor: (id: string) => string
   setScrollToEnd?: (fn: () => void) => void
   setScrollToMessage?: (fn: ((id: string, behavior: ScrollBehavior) => boolean) | undefined) => void
-  setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
+  setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void; settle: () => void }) => void
   onFirstTurnRecovery?: (kind: SessionErrorClass, userMessageId: string) => unknown
   firstTurnRecovery?: boolean
   title: () => string | undefined

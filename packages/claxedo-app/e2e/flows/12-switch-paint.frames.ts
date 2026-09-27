@@ -15,7 +15,9 @@ export type PaneFrame = {
 
 export type SwitchFrame = { readonly at: number; readonly rail: string; readonly panes: readonly PaneFrame[] }
 
-type RecorderWindow = Window & { __claxedoSwitchFrames?: Promise<SwitchFrame[]> }
+type RecorderWindow = Window & { __claxedoSwitchFrames?: Promise<SwitchFrame[]>; __claxedoSwitchStarted?: number }
+
+export type ReadArrival = { readonly view: string; readonly arrivedMs: number; readonly bytes: number }
 
 export async function recordSwitchFrames(app: Page, input: { readonly targetId: string; readonly quietFrames: number }): Promise<() => Promise<SwitchFrame[]>> {
   await app.evaluate(({ targetId, quietFrames }) => {
@@ -48,7 +50,14 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
       }
     }
     const frames: SwitchFrame[] = []
-    const started = performance.now()
+    let started = performance.now()
+    window.addEventListener("pointerdown", (event) => {
+      if (!event.isTrusted) return
+      const shift = Math.round(event.timeStamp - started)
+      for (const [index, frame] of frames.entries()) frames[index] = { ...frame, at: frame.at - shift }
+      started = event.timeStamp
+      ;(window as RecorderWindow).__claxedoSwitchStarted = started
+    }, { capture: true, once: true })
     let quiet = 0
     let previous = ""
     ;(window as RecorderWindow).__claxedoSwitchFrames = new Promise<SwitchFrame[]>((resolve) => {
@@ -73,10 +82,26 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
   return () => app.evaluate(() => (window as RecorderWindow).__claxedoSwitchFrames!)
 }
 
+export function readArrivals(app: Page, sessionId: string): Promise<ReadArrival[]> {
+  return app.evaluate((sessionId) => {
+    const started = (window as RecorderWindow).__claxedoSwitchStarted ?? 0
+    const path = new RegExp(`/session/${encodeURIComponent(sessionId).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(message|outline)(\\?|$)`)
+    return performance
+      .getEntriesByType("resource")
+      .filter((entry): entry is PerformanceResourceTiming => entry.startTime >= started && path.test(entry.name))
+      .map((entry) => {
+        const url = new URL(entry.name)
+        const view = url.pathname.endsWith("/outline") ? "outline" : (url.searchParams.get("view") ?? "older")
+        return { view, arrivedMs: Math.round(entry.responseEnd - started), bytes: entry.encodedBodySize }
+      })
+  }, sessionId)
+}
+
 export type SwitchReport = {
   readonly states: readonly string[]
   readonly revealedAt: { readonly ms: number; readonly frame: number } | undefined
   readonly settledAt: { readonly ms: number; readonly frame: number } | undefined
+  readonly longestFrameMs: number
   readonly sessions: readonly string[]
   readonly empty: readonly string[]
   readonly overlaid: readonly string[]
@@ -132,10 +157,13 @@ export function switchReport(frames: readonly SwitchFrame[], targetId: string): 
     if (shown && sessions.at(-1) !== shown) sessions.push(shown)
   })
   const revealed = frames.findIndex(shows)
-  const at = (index: number) => (index < 0 ? undefined : { ms: frames[index].at, frame: index })
+  const clicked = frames.findIndex((frame) => frame.at > 0)
+  const at = (index: number) => (index < 0 ? undefined : { ms: frames[index].at, frame: index - clicked + 1 })
+  const transition = frames.slice(Math.max(0, clicked - 1), settled + 1)
   return {
     states,
     revealedAt: at(revealed),
+    longestFrameMs: transition.reduce((longest, frame, index) => (index === 0 ? longest : Math.max(longest, frame.at - transition[index - 1].at)), 0),
     settledAt: states.length > 1 ? at(settled) : undefined,
     sessions,
     empty: frames.filter(emptyBody).map(describe),

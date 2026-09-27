@@ -1,47 +1,36 @@
 import { createEffect, on, onCleanup, type Accessor } from "solid-js"
-import type { SessionView } from "@/session"
 import type { Commands } from "@/shell"
-import type { TranscriptUserMessage } from "@/transcript"
 import type { SessionScreenText } from "./text"
+import type { TimelineNavTurn } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
 
 const MESSAGE_HASH = /^#message-(.+)$/
 
 type MessageLinksInput = {
-  readonly view: Accessor<SessionView>
-  readonly users: Accessor<TranscriptUserMessage[]>
+  readonly turns: Accessor<TimelineNavTurn[]>
   readonly scroll: TimelineScroll
   readonly active: Accessor<boolean>
   readonly commands: Commands
   readonly t: SessionScreenText
 }
 
-type Seek = (message: TranscriptUserMessage | undefined) => void
+type Seek = (turn: TimelineNavTurn | undefined) => void
 
 function followMessageHash(input: MessageLinksInput, seek: Seek) {
-  const seekHash = async () => {
+  const followHash = () => {
     const raw = MESSAGE_HASH.exec(location.hash)?.[1]
-    if (!raw) return
-    const id = decodeURIComponent(raw)
-    for (;;) {
-      const message = input.users().find((candidate) => candidate.id === id)
-      if (message) return seek(message)
-      if (!input.view().hasOlder()) return
-      await input.view().loadOlder()
-      if (input.view().olderState().kind === "failed") return
-    }
+    if (raw) seek({ id: decodeURIComponent(raw) })
   }
-  const followHash = () => void seekHash().catch((error: unknown) => console.error("The linked message could not be opened", error))
-  createEffect(on(() => input.users().length > 0, (ready) => ready && followHash()))
+  createEffect(on(() => input.turns().length > 0, (ready) => ready && followHash()))
   window.addEventListener("hashchange", followHash)
   onCleanup(() => window.removeEventListener("hashchange", followHash))
 }
 
 function registerMessageSteps(input: MessageLinksInput, seek: Seek) {
   const byOffset = (offset: -1 | 1) => {
-    const list = input.users()
+    const list = input.turns()
     if (list.length === 0) return
-    const index = list.findIndex((message) => message.id === input.scroll.selected())
+    const index = list.findIndex((turn) => turn.id === input.scroll.selected())
     const from = index >= 0 ? index : list.length
     seek(list[Math.max(0, Math.min(list.length - 1, from + offset))])
   }
@@ -68,8 +57,8 @@ function registerMessageSteps(input: MessageLinksInput, seek: Seek) {
 }
 
 export function createMessageLinks(input: MessageLinksInput) {
-  const seek: Seek = (message) => {
-    if (message) input.scroll.props.onMessageSelect?.(message)
+  const seek: Seek = (turn) => {
+    if (turn) input.scroll.props.onMessageSelect?.(turn)
   }
   followMessageHash(input, seek)
   registerMessageSteps(input, seek)

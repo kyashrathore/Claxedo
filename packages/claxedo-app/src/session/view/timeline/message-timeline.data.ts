@@ -92,11 +92,11 @@ export namespace Timeline {
     getMessageParts: (messageId: string) => Part[],
     hasText: (part: Part) => boolean,
     assistantMessages: AssistantMessage[],
-    index: number,
+    first: boolean,
     showReasoning: boolean,
     status: SessionStatus["kind"],
     isActive: boolean,
-    firstTurnRecovery = index === 0,
+    firstTurnRecovery = first,
     isFoldedChoice: (userMessageId: string) => boolean | undefined = () => undefined,
     lastTurn?: TurnOutcome,
     visibleAssistantMessageIds?: ReadonlySet<string>,
@@ -107,7 +107,7 @@ export namespace Timeline {
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
-    const previousUserMessage = index > 0
+    const previousUserMessage = !first
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")

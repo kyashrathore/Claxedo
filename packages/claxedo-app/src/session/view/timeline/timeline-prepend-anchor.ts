@@ -49,6 +49,7 @@ function escapeTimelineKey(key: string) {
 export function createTimelinePrependAnchor(input: {
   root: () => HTMLElement | undefined
   displayed: () => boolean
+  following: () => boolean
   resolveRowStart: (key: string) => number | undefined
 }) {
   const frames = createDisplayedFrameLoop({ displayed: input.displayed })
@@ -57,7 +58,7 @@ export function createTimelinePrependAnchor(input: {
   const clear = () => { loading = false; anchor = undefined; frames.stop() }
   const update = () => {
     const root = input.root()
-    if (root) anchor = captureTimelinePrependAnchor(root) ?? anchor
+    if (root && !input.following()) anchor = captureTimelinePrependAnchor(root) ?? anchor
   }
   const apply = (next = anchor) => {
     anchor = next

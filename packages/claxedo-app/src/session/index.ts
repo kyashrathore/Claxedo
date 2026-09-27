@@ -11,6 +11,7 @@ import type {
   SessionCreateInput,
   SessionGoal,
   SessionId,
+  SessionOutline,
   SessionRef,
   SessionRow,
   SessionStatus,
@@ -69,6 +70,12 @@ export type OlderState =
   | { readonly kind: "loading" }
   | { readonly kind: "failed"; readonly error: AppError }
 
+export type OutlineState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "ready"; readonly outline: SessionOutline }
+  | { readonly kind: "unavailable" }
+  | { readonly kind: "failed"; readonly error: AppError }
+
 export type RequestState =
   | { readonly kind: "open" }
   | { readonly kind: "answering" }
@@ -101,7 +108,7 @@ export type SessionView = {
   readonly controlGoal: (action: GoalAction) => Promise<void>
   readonly hasOlder: Accessor<boolean>
   readonly olderState: Accessor<OlderState>
-  readonly olderPagesLoaded: Accessor<number>
+  readonly outline: Accessor<OutlineState>
   readonly loadOlder: () => Promise<void>
   readonly reload: () => Promise<void>
   readonly send: (input: PromptInput) => Promise<void>

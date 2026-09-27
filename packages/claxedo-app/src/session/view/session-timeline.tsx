@@ -1,10 +1,10 @@
-import { createMemo, Show, type Accessor } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { usePhone } from "@/lib/viewport"
 import { sessionId, useServer } from "@/server"
 import type { SessionView } from "@/session"
 import { sessionLinkPath } from "@/shell"
 import { DataProvider, TranscriptKitProviders, type TranscriptUserMessage } from "@/transcript"
-import { MessageTimeline, type SessionErrorClass, type TimelineHost } from "./timeline"
+import { MessageTimeline, type SessionErrorClass, type TimelineHost, type TimelineNavTurn } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
 import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
@@ -19,7 +19,7 @@ export function userMessages(view: SessionView): TranscriptUserMessage[] {
 
 export function SessionTimeline(props: {
   readonly view: SessionView
-  readonly olderPending: Accessor<boolean>
+  readonly navTurns: TimelineNavTurn[]
   readonly host: TimelineHost
   readonly active: boolean
   readonly onScreen: boolean
@@ -29,7 +29,7 @@ export function SessionTimeline(props: {
   const phone = usePhone()
   const server = useServer()
   const users = createMemo(() => userMessages(props.view))
-  const current = () => users().find((message) => message.id === props.scroll.selected())
+  const current = () => props.navTurns.find((turn) => turn.id === props.scroll.selected())
   const t = useSessionScreenText()
   const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) =>
@@ -50,14 +50,13 @@ export function SessionTimeline(props: {
         <Show when={props.view.conversation()}>
           <MessageTimeline
             {...props.scroll.props}
-            olderPending={props.olderPending}
             host={props.host}
             active={() => props.active}
             onScreen={() => props.onScreen}
             centered={!phone()}
             historyShift={false}
             userMessages={users()}
-            navMessages={users()}
+            navMessages={props.navTurns}
             currentMessage={current()}
             anchor={(id) => `message-${id}`}
             title={() => props.view.row()?.title}

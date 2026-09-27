@@ -2,7 +2,8 @@ import { readField, readString } from "@claxedo/helpers/readers"
 import { ServerError } from "./errors"
 import type { SessionContext } from "./session-context"
 import { withQuery } from "./transport"
-import type { SessionRef, SessionRow, TranscriptPage } from "./types"
+import type { SessionOutline, SessionRef, SessionRow, TranscriptPage } from "./types"
+import { outlineFromWire } from "./wire/outline"
 import { sessionRowFromCentral } from "./wire/session-row"
 import { transcriptPageFromWire } from "./wire/transcript"
 
@@ -25,6 +26,13 @@ export async function readCentralPage(context: SessionContext, workspaceId: stri
   const window: Record<string, string> = "view" in page ? { view: page.view } : { limit: String(CENTRAL_PAGE_SIZE), before: page.before }
   const body = await storedMessages(context, ref, { workspaceId, ...window })
   return transcriptPageFromWire(readField(body, "messages"), readString(body, "nextCursor") ?? null)
+}
+
+export async function readCentralOutline(context: SessionContext, workspaceId: string, ref: SessionRef): Promise<SessionOutline | undefined> {
+  const body = context.account
+    ? await context.account.run("session.outline", { sessionId: ref.sessionId, workspaceId })
+    : await context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/outline`, { workspaceId }))
+  return outlineFromWire(body)
 }
 
 export async function readCentralRow(context: SessionContext, workspaceId: string, ref: SessionRef): Promise<SessionRow> {

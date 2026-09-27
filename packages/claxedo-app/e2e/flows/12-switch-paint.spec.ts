@@ -1,25 +1,10 @@
-import { acpScriptToken, apiRequests, expect, expectNothingAnimating, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, UNTRACED, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
+import { apiRequests, expect, expectNothingAnimating, sessionRoute, test, UI, UNTRACED } from "../harness"
 import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { recordSwitchFrames, switchReport, type SwitchReport } from "./12-switch-paint.frames"
+import { seedTurns } from "./12-switch-paint.seed"
 
 test.skip(({ isMobile }) => isMobile, "flow 12 runs at desktop width; flow 33 covers the phone")
 test.use(UNTRACED)
-
-async function seedTurns(stack: Stack, api: ClaxedoApi, directory: string, title: string, turns: number, shape: { readonly lines?: number; readonly lastFails?: boolean } = {}) {
-  const session = await api.createSession(directory, { title, harness: SCRIPTED_ACP_HARNESS })
-  const reply = Array.from({ length: 6 }, (_, line) => `${title} reply line ${line + 1}.`).join("\n\n")
-  const steps: AcpStep[] = [{ kind: "tool", tool: "read", title: "Read README.md", locations: [{ path: `${directory}/README.md` }], text: "readme\n" }, { kind: "text", text: reply }]
-  await stack.acp.write(`paint-${title}`, { steps })
-  await stack.acp.write(`paint-${title}-last`, { steps: shape.lastFails ? [...steps, { kind: "error", message: `${title} failed` }] : steps })
-  const body = (turn: number) => Array.from({ length: shape.lines ?? 1 }, (_, line) => `${title} turn ${turn} line ${line + 1}: review the fixture and implement the next improvement.`).join("\n")
-  for (let turn = 1; turn <= turns; turn += 1) {
-    const script = turn === turns ? `paint-${title}-last` : `paint-${title}`
-    await api.prompt(directory, session.id, `${body(turn)} ${acpScriptToken(script)}`).catch((error: unknown) => {
-      if (!shape.lastFails || turn !== turns) throw error
-    })
-  }
-  return session
-}
 
 type RowHeightsWindow = Window & { __claxedoFixedRowHeights?: Record<string, string[]> }
 
@@ -70,6 +55,7 @@ test("12 a session switch shows the previous session until the next one is laid 
   const elsewhere = await seedTurns(stack, api, there.directory, "Elsewhere", 12)
   const long = await seedTurns(stack, api, here.directory, "Long", 30, { lines: 40 })
   const failed = await seedTurns(stack, api, here.directory, "Failed", 12, { lastFails: true })
+  const short = await seedTurns(stack, api, there.directory, "Short", 4)
   const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" } })
   await api.prompt(here.directory, pi.id, "Pi turn: review the fixture.")
   await app.addInitScript(installPaintedFrames)
@@ -83,6 +69,7 @@ test("12 a session switch shows the previous session until the next one is laid 
     { label: "unvisited", next: target, ...acp },
     { label: "unvisited Pi", next: pi, model: "anthropic/claude-opus-4-8", nameKnown: false },
     { label: "another workspace", next: elsewhere, ...acp },
+    { label: "short unvisited", next: short, ...acp },
     { label: "long rows", next: long, ...acp },
     { label: "failed last turn", next: failed, ...acp },
     { label: "visited", next: previous, ...acp },

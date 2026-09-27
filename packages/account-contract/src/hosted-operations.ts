@@ -315,6 +315,7 @@ export const HOSTED_OPERATIONS = {
   "documents.fromRepo": { safe: false, decode: object },
   "session.create": { safe: false, decode: object },
   "session.messages": { safe: true, decode: object },
+  "session.outline": { safe: true, decode: object },
   "session.gateway": { safe: true, decode: object },
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },

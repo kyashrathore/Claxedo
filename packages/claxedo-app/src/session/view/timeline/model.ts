@@ -2,9 +2,11 @@ import type { Accessor } from "solid-js"
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import { type PairedTranscriptTypography } from "@/ui/utils"
 import type { SessionStatus } from "@/server"
-import type { TranscriptConversation } from "@/transcript"
+import type { MessageNavMessage, MessageNavPreview, TranscriptConversation } from "@/transcript"
 
 export type TurnOutcome = AgentTurnOutcome
+
+export type TimelineNavTurn = MessageNavMessage & { readonly preview?: MessageNavPreview }
 
 export type TimelineSessionRow = {
   readonly id: string

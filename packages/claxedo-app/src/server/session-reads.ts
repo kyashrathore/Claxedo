@@ -1,36 +1,18 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { readCentralPage, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
-import { sessionEndpoint, type SessionContext } from "./session-context"
+import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL, readGoalState } from "./session-goal"
+import { readOutline } from "./session-outline"
 import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionReads, SessionRef, SessionStatus, SessionSurfaceRead, Todo, TranscriptPage } from "./types"
+import type { HeldSessionReads, SessionReads, SessionRef, SessionStatus, SessionSurfaceRead, Todo, TranscriptPage } from "./types"
 import type { SessionHome } from "./workspaces"
-import { isWorkspaceStopped } from "./wire/connection"
 import { sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 const OLDER_PAGE_SIZE = 50
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
-
-export async function onRuntime<T>(
-  context: SessionContext,
-  ref: SessionRef,
-  live: (route: RuntimeRoute) => Promise<T>,
-  stopped: (workspaceId: string) => Promise<T>,
-): Promise<T> {
-  const home = await context.workspaces.home(ref)
-  if (!home.live) return stopped(home.route.workspaceId)
-  try {
-    return await live(home.route)
-  } catch (error) {
-    if (!isWorkspaceStopped(error)) throw error
-    await context.workspaces.refresh()
-    if ((await context.workspaces.home(ref)).live) throw error
-    return stopped(home.route.workspaceId)
-  }
-}
 
 async function readPage(context: SessionContext, where: RuntimeRoute, path: string): Promise<TranscriptPage> {
   const response = await context.transport.runtime(where, path)
@@ -47,24 +29,25 @@ function readHistory(context: SessionContext, ref: SessionRef, home: SessionHome
   return readPage(context, home.route, withQuery(sessionEndpoint(ref, "/message"), page))
 }
 
-async function readSurface(context: SessionContext, ref: SessionRef, session: Promise<AgentPresentationSession | undefined>): Promise<SessionSurfaceRead> {
+async function readSurface(context: SessionContext, ref: SessionRef, session: Promise<AgentPresentationSession | undefined>, latestTurn?: TranscriptPage): Promise<SessionSurfaceRead> {
   const home = context.workspaces.home(ref)
   const [transcript, details] = await Promise.all([
-    home.then((home) => readHistory(context, ref, home)),
+    latestTurn ?? home.then((home) => readHistory(context, ref, home)),
     Promise.all([home, session]).then(async ([home, row]) => ({
       row: row ? sessionRowFromSession(row, ref) : await readCentralRow(context, home.route.workspaceId, ref),
       diff: row?.summary?.diffs ?? [],
     })),
   ])
-  return { ...details, transcript }
+  return { ...details, transcript, latestTurnComplete: latestTurn !== undefined }
 }
 
-export function readSession(context: SessionContext, ref: SessionRef): SessionReads {
+export function readSession(context: SessionContext, ref: SessionRef, held?: HeldSessionReads): SessionReads {
   const { transport } = context
   const live = <T>(read: (route: RuntimeRoute) => Promise<T>, stopped: T) => onRuntime(context, ref, read, async () => stopped)
   const session = live<AgentPresentationSession | undefined>((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), undefined)
   return {
-    surface: readSurface(context, ref, session),
+    surface: readSurface(context, ref, session, held?.latestTurn),
+    outline: held?.outline ? Promise.resolve(held.outline) : readOutline(context, ref),
     status: live(async (route) => {
       const row = await session
       return row ? context.status.read(route, ref, row) : STOPPED_STATUS

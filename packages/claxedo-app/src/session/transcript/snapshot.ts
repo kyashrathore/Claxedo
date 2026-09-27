@@ -1,26 +1,24 @@
-import { toAppError, type SessionReads, type SessionSurfaceRead, type TranscriptPage } from "@/server"
+import { batch } from "solid-js"
+import { toAppError, type HeldSessionReads, type SessionReads, type SessionSurfaceRead } from "@/server"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
-import { isOptimisticMessage } from "./merge"
-import { completeLatestTurn, surfaceFragments } from "./latest-turn"
-import { isReading } from "./model"
-
-function hasOlderLoaded(context: TranscriptContext, transcript: TranscriptPage): boolean {
-  const first = transcript.entries[0]?.info.id
-  return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && message.id < first)
-}
+import { adoptOlderCursor, completeLatestTurn, surfaceFragments } from "./latest-turn"
+import { isReading, NO_FRAGMENTS } from "./model"
 
 function landSurface(context: TranscriptContext, surface: SessionSurfaceRead): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
-  context.deps.list.readRow(surface.row)
-  replaceLatest(context.setData, surface.transcript)
-  context.setData("fragmentParts", surfaceFragments(surface.transcript))
-  if (!hasOlderLoaded(context, surface.transcript)) context.setOlderCursor(surface.transcript.olderCursor)
-  context.setData("diff", [...surface.diff])
-  for (const event of held) applyTranscriptEvent(context, event)
-  context.phase.send({ type: "readLanded" })
+  batch(() => {
+    context.deps.list.readRow(surface.row)
+    replaceLatest(context.setData, surface.transcript)
+    context.setData("fragmentParts", surface.latestTurnComplete ? NO_FRAGMENTS : surfaceFragments(surface.transcript))
+    context.latestTurnRead.current = surface.latestTurnComplete ? surface.transcript : undefined
+    adoptOlderCursor(context, surface.transcript)
+    context.setData("diff", [...surface.diff])
+    for (const event of held) applyTranscriptEvent(context, event)
+    context.phase.send({ type: "readLanded" })
+  })
 }
 
 function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>, land: (value: T) => void): void {
@@ -39,19 +37,23 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
   )
   landSide(context, "todos", reads.todos, (todos) => context.todos.read(todos, sentAt))
   landSide(context, "goal", reads.goal, context.goal.read)
+  reads.outline.then(
+    (outline) => context.outline.send({ type: "outlineLanded", outline, sentAt }),
+    (cause) => context.outline.send({ type: "outlineFailed", error: toAppError(cause), sentAt }),
+  )
 }
 
-export function readSnapshot(context: TranscriptContext): Promise<void> {
-  context.snapshotRead.current ??= readOnce(context).finally(() => {
+export function readSnapshot(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
+  context.snapshotRead.current ??= readOnce(context, held).finally(() => {
     context.snapshotRead.current = undefined
   })
   return context.snapshotRead.current
 }
 
-async function readOnce(context: TranscriptContext): Promise<void> {
+async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
   context.phase.send({ type: "readStarted" })
   const sentAt = Date.now()
-  const reads = context.server.sessions.read(context.ref)
+  const reads = context.server.sessions.read(context.ref, held)
   landSides(context, reads, sentAt)
   try {
     landSurface(context, await reads.surface)

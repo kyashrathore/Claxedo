@@ -14,21 +14,18 @@ test("11 long transcript: older turns page in above the reader, the nav rail mar
   const latest = app.getByText(`Turn ${TURNS}:`, { exact: false }).first()
   await expect(latest).toBeVisible()
   await expect(app.getByText("Turn 1:", { exact: false })).toHaveCount(0)
+  await expect(app.getByRole("button", { name: "1. New message", exact: true }), "the rail lists the first turn from the outline before any scroll").toBeVisible()
 
   await app.getByRole("region", { name: "scrollable content" }).hover()
   await app.mouse.wheel(0, -120)
   await expect(app.getByText(`Turn ${TURNS - 1}:`, { exact: false }).first()).toBeAttached()
   await expect(latest).toBeInViewport()
 
-  await expect
-    .poll(
-      async () => {
-        await app.mouse.wheel(0, -3000)
-        return app.getByText("Turn 1:", { exact: false }).count()
-      },
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(0)
+  await app.getByRole("button", { name: "1. New message", exact: true }).click()
+  await expect(app.getByText("Turn 1:", { exact: false }).first(), "picking an unloaded turn pages it in and lands on it").toBeInViewport()
+  await app.getByRole("button", { name: `${TURNS}. New message`, exact: true }).click()
+  await expect(latest).toBeInViewport()
+  await app.getByRole("region", { name: "scrollable content" }).hover()
   await expect
     .poll(
       async () => {

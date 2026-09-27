@@ -1,11 +1,10 @@
 import { createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { SessionView } from "@/session"
-import type { TranscriptUserMessage } from "@/transcript"
-import { createScrollGestureWindow, type MessageTimelineProps } from "./timeline"
+import { createScrollGestureWindow, type MessageTimelineProps, type TimelineNavTurn } from "./timeline"
 import { createAutoScroll, type AutoScroll } from "./auto-scroll"
 import { createHistoryPaging, type HistoryAnchor } from "./history-paging"
-import { createMessageSeek } from "./message-seek"
+import { createTurnPick } from "./turn-pick"
 import { computeScrollState, type ScrollState } from "./scroll-anchor"
 
 export type TimelineScrollProps = Pick<
@@ -64,7 +63,7 @@ type ScrollParts = {
   readonly selected: () => string | undefined
   readonly select: (messageId: string | undefined) => void
   readonly resume: () => void
-  readonly seek: (messageId: string) => void
+  readonly seekTurn: (messageId: string) => Promise<void>
   readonly scroller: () => HTMLDivElement | undefined
   readonly setScroller: (el: HTMLDivElement | undefined) => void
 }
@@ -97,19 +96,25 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
     setScrollToEnd: (fn) => (handles.scrollToEnd = fn),
     setScrollToMessage: (fn) => (handles.scrollToMessage = fn ?? (() => false)),
     setHistoryAnchor: (anchor) => (handles.anchor = anchor),
-    onMessageSelect: (message: TranscriptUserMessage) => {
+    onMessageSelect: (turn: TimelineNavTurn) => {
       auto.pause()
-      parts.select(message.id)
-      parts.seek(message.id)
+      parts.select(turn.id)
+      void parts.seekTurn(turn.id)
     },
   }
 }
 
 export type TimelineScroll = ReturnType<typeof createTimelineScroll>
 
-export function createTimelineScroll(input: { readonly view: () => SessionView; readonly active: () => boolean; readonly working: () => boolean }) {
+type TimelineScrollInput = {
+  readonly view: () => SessionView
+  readonly active: () => boolean
+  readonly working: () => boolean
+}
+
+export function createTimelineScroll(input: TimelineScrollInput) {
   let scroller: HTMLDivElement | undefined
-  const handles: ScrollHandles = { scrollToEnd: () => {}, scrollToMessage: () => false, anchor: { capture: () => {}, restore: () => {} } }
+  const handles: ScrollHandles = { scrollToEnd: () => {}, scrollToMessage: () => false, anchor: { capture: () => {}, restore: () => {}, settle: () => {} } }
   const [scroll, setScroll] = createStore<ScrollState>({ overflow: false, bottom: true, jump: false })
   const [selected, select] = createSignal<string>()
   const gesture = createScrollGestureWindow({ scroller: () => scroller })
@@ -120,9 +125,9 @@ export function createTimelineScroll(input: { readonly view: () => SessionView; 
     handles.scrollToEnd()
     if (scroller) schedule(scroller)
   }
-  const seeker = createMessageSeek({ scroller: () => scroller, scrollTo: (id) => handles.scrollToMessage(id, "auto") })
+  const pick = createTurnPick({ view: input.view, loadUntil: paging.loadUntil, handles, selected, scroller: () => scroller })
   const resume = () => {
-    seeker.cancel()
+    pick.cancel()
     select(undefined)
     auto.resume()
     settle()
@@ -131,7 +136,7 @@ export function createTimelineScroll(input: { readonly view: () => SessionView; 
     })
   }
   const setScroller = (el: HTMLDivElement | undefined) => (scroller = el)
-  const parts = { scroll, auto, gesture, paging, schedule, handles, selected, select, resume, seek: seeker.seek, scroller: () => scroller, setScroller }
+  const parts = { scroll, auto, gesture, paging, schedule, handles, selected, select, resume, seekTurn: pick.seek, scroller: () => scroller, setScroller }
   return {
     props: timelineScrollProps(parts),
     selected,

@@ -87,6 +87,7 @@ export type HostedOperationName =
   | "documents.fromRepo"
   | "session.create"
   | "session.messages"
+  | "session.outline"
   | "session.gateway"
   | "billing.checkout"
   | "billing.portal"

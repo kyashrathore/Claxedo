@@ -40,6 +40,7 @@ function fakeServer(options: { reachable: () => boolean; machine?: boolean; runt
     requests.push(path)
     if (path === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.reachable, options.machine ?? false))
     if (path.startsWith("/api/control/sessions/ses_1/messages")) return Response.json({ messages: stored, nextCursor: "cursor_older", maxEventOrdinal: 0 }, { headers: { "X-Next-Cursor": "cursor_older" } })
+    if (path.startsWith("/api/control/sessions/ses_1/outline")) return Response.json({ allowed: true, role: "editor", turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true })
     if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [{ session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }] })
     return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
   }
@@ -80,6 +81,8 @@ test("session reads: a stopped cloud workspace's session renders from the contro
   expect(await reads.requests).toEqual([])
   expect(await reads.todos).toEqual([])
   expect(await reads.goal).toEqual(NO_GOAL)
+  expect(await reads.outline, "the outline comes from the control plane, with the history").toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
+  expect(server.requests).toContain("/api/control/sessions/ses_1/outline?workspaceId=ws_cloud")
   expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&view=latest-surface")
   expect(server.runtimeCalls).toEqual([])
 
@@ -96,6 +99,7 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
       calls.push({ operation, ...(input ? { input } : {}) })
       if (operation === "session.messages") return { messages: stored, nextCursor: "cursor_older", maxEventOrdinal: 0 }
       if (operation === "session.list") return { sessions: [{ session_id: "ses_1", title: "Ship it", created_at: 10, updated_at: 20, last_human_turn_at: 15 }] }
+      if (operation === "session.outline") return { allowed: true, role: "editor", turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true }
       throw new Error(`unexpected operation ${operation}`)
     },
   } as HostedAccount
@@ -106,9 +110,11 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
   expect(surface.row).toMatchObject({ ref, title: "Ship it", lastHumanTurnAt: 15 })
   expect(surface.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(surface.transcript.olderCursor).toBe("cursor_older")
+  expect(await reads.outline).toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
   await readOlder(context, ref, "cursor_older")
   expect(calls).toEqual([
     { operation: "session.messages", input: { sessionId: "ses_1", workspaceId: "ws_cloud", view: "latest-surface" } },
+    { operation: "session.outline", input: { sessionId: "ses_1", workspaceId: "ws_cloud" } },
     { operation: "session.list", input: { workspaceId: "ws_cloud" } },
     { operation: "session.messages", input: { sessionId: "ses_1", workspaceId: "ws_cloud", limit: "50", before: "cursor_older" } },
   ])
@@ -129,6 +135,7 @@ test("session reads: a runtime that answers it has stopped re-homes the session 
   const surface = await reads.surface
   expect(surface.transcript.entries).toHaveLength(2)
   expect(await reads.requests).toEqual([])
+  expect(await reads.outline).toMatchObject({ turns: [{ id: "msg_1" }] })
   expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
 })
 
@@ -145,6 +152,9 @@ test("session reads: a running cloud workspace's session still reads its history
   const reads = readSession(server.context, ref)
 
   const surface = await reads.surface
+  expect(await reads.outline, "the outline comes from the control plane, whose history the transcript pages").toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
+  expect(server.requests).toContain("/api/control/sessions/ses_1/outline?workspaceId=ws_cloud")
+  expect(server.runtimeCalls).not.toContain("/session/ses_1/outline")
   expect(surface.row).toMatchObject({ title: "Live title", updatedAt: 30 })
   expect(surface.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(await reads.status).toEqual({ kind: "idle" })
@@ -176,6 +186,7 @@ for (const machine of [false, true]) {
       runtime: (path) => {
         if (path === "/session/ses_1") return metadata.promise
         if (path === historyPath) return Response.json(stored)
+        if (path === "/session/ses_1/outline") return Response.json({ turns: [], complete: true })
         return Response.json([])
       },
     })
@@ -208,6 +219,7 @@ for (const failedRead of ["metadata", "history"]) {
           ? Promise.reject(failure)
           : Response.json({ id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } })
         if (path === historyPath) return failedRead === "history" ? Promise.reject(failure) : Response.json(stored)
+        if (path === "/session/ses_1/outline") return Response.json({ turns: [], complete: true })
         return Response.json([])
       },
     })
@@ -221,6 +233,25 @@ test("session reads: a failed placement lookup rejects every read without an unh
   const failure = new Error("catalog unavailable")
   const server = fakeServer({ reachable: () => { throw failure } })
   const reads = readSession(server.context, ref)
-  const results = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
+  const results = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal, reads.outline])
   for (const result of results) expect(result).toEqual({ status: "rejected", reason: failure })
+})
+
+test("session reads: a held turn and outline answer the surface and outline reads without a runtime read of either", async () => {
+  const server = fakeServer({
+    reachable: () => true,
+    machine: true,
+    runtime: (path) => {
+      if (path === "/session/ses_1") return Response.json({ id: "ses_1", title: "Live title", time: { created: 10, updated: 30 } })
+      if (path === "/session/status") return Response.json({})
+      if (path.startsWith("/permission") || path.startsWith("/question") || path.endsWith("/todo")) return Response.json([])
+      return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
+    },
+  })
+  const outline = { turns: [], complete: true }
+  const latestTurn = { entries: [] }
+  const reads = readSession(server.context, ref, { latestTurn, outline })
+  expect((await reads.surface).transcript).toBe(latestTurn)
+  expect(await reads.outline).toBe(outline)
+  expect(server.runtimeCalls.filter((path) => path.includes("/message") || path.includes("/outline"))).toEqual([])
 })

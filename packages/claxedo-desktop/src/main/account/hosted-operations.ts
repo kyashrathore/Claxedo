@@ -453,6 +453,11 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/sessions/:sessionId/messages",
     optionalQuery: ["workspaceId", "view", "limit", "before", "after"],
   },
+  "session.outline": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/outline",
+    optionalQuery: ["workspaceId"],
+  },
   "session.gateway": {
     method: "GET",
     path: "/api/control/sessions/:sessionId/gateway",

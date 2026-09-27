@@ -2,13 +2,13 @@ import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import type { SessionsApi } from "./api"
 import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
-import { sessionEndpoint, type SessionContext } from "./session-context"
 import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
-import { onRuntime, readOlder, readSession } from "./session-reads"
+import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
+import { readOlder, readSession } from "./session-reads"
 import type { HostedAccount } from "./account"
 import { cancelRunningTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
@@ -90,7 +90,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
-    read: (ref) => readSession(context, ref),
+    read: (ref, held) => readSession(context, ref, held),
     older: (ref, cursor) => readOlder(context, ref, cursor),
     latestTurn: (ref) => readLatestTurn(context, ref),
     turn: (ref, turnId) => readTurn(context, ref, turnId),

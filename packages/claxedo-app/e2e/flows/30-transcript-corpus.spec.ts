@@ -5,7 +5,7 @@ import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
 import { expectDetachedGrowthAtMost, expectHeapGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
 import { switchSessions } from "../corpus/switch"
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { acpScriptToken, expect, holdResponse, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
 const LIVE_DURATIONS_STYLE = path.join(import.meta.dirname, "..", "corpus", "live-durations.css")
@@ -198,23 +198,6 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
   }
 }
 
-async function holdLatestTurnRead(app: Page) {
-  let open!: () => void
-  const opened = new Promise<void>((resolve) => (open = resolve))
-  await app.route(LATEST_TURN_READ, async (route) => {
-    await opened
-    await route.continue()
-  })
-  return {
-    release: async () => {
-      const landed = app.waitForResponse(LATEST_TURN_READ)
-      open()
-      await landed
-      await app.unroute(LATEST_TURN_READ)
-    },
-  }
-}
-
 function requireBaseline(corpusCase: CorpusCase) {
   if (fs.existsSync(path.join(test.info().snapshotDir, corpusCase.id))) return
   if (test.info().config.updateSnapshots !== "none") return
@@ -227,7 +210,7 @@ for (const corpusCase of loadCases()) {
     const baseline = corpusCase.id
     const { workspace, target, turns, live } = await arrange(stack, api, corpusCase)
     await app.setViewportSize({ width: app.viewportSize()?.width ?? 1280, height: TALL_VIEWPORT })
-    const fullRead = await holdLatestTurnRead(app)
+    const fullRead = await holdResponse(app, LATEST_TURN_READ)
     await app.goto(sessionUrl(stack, workspace.id, target.sessionId))
     await expect(turnRows(app).first()).toBeVisible()
     await fullRead.release()

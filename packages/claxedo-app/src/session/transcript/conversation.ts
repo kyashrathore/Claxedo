@@ -1,3 +1,4 @@
+import { batch } from "solid-js"
 import { produce, type SetStoreFunction } from "solid-js/store"
 import type { QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
 import type { ConversationMessage } from "@/transcript"
@@ -88,14 +89,16 @@ export function appendDelta(set: SetTranscript, data: TranscriptData, messageId:
 
 export function prependPage(set: SetTranscript, page: TranscriptPage): void {
   const older = pageMessages(page)
-  set("messages", (messages) => mergeSortedById(older, messages))
-  set(
-    "parts",
-    produce((parts) => {
-      for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
-    }),
-  )
-  markTextParts(set, pageParts(page))
+  batch(() => {
+    set("messages", (messages) => mergeSortedById(older, messages))
+    set(
+      "parts",
+      produce((parts) => {
+        for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
+      }),
+    )
+    markTextParts(set, pageParts(page))
+  })
 }
 
 export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
@@ -103,19 +106,21 @@ export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
   const fromId = fresh[0]?.id
   const freshIds = new Set(fresh.map((message) => message.id))
   const kept = new Set<string>()
-  set("messages", (messages) => {
-    const older = messages.filter((message) => isOptimisticMessage(message) || (fromId !== undefined && message.id < fromId))
-    for (const message of older) kept.add(message.id)
-    return mergeSortedById(older, fresh)
+  batch(() => {
+    set("messages", (messages) => {
+      const older = messages.filter((message) => isOptimisticMessage(message) || (fromId !== undefined && message.id < fromId))
+      for (const message of older) kept.add(message.id)
+      return mergeSortedById(older, fresh)
+    })
+    set(
+      "parts",
+      produce((parts) => {
+        for (const id of Object.keys(parts)) if (!kept.has(id) && !freshIds.has(id)) delete parts[id]
+        for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
+      }),
+    )
+    markTextParts(set, pageParts(page))
   })
-  set(
-    "parts",
-    produce((parts) => {
-      for (const id of Object.keys(parts)) if (!kept.has(id) && !freshIds.has(id)) delete parts[id]
-      for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
-    }),
-  )
-  markTextParts(set, pageParts(page))
 }
 
 function mergedParts(current: readonly TranscriptPart[] | undefined, canonical: readonly TranscriptPart[]): TranscriptPart[] {
@@ -136,9 +141,11 @@ function withLatestTurn(messages: readonly ConversationMessage[], fresh: readonl
 }
 
 export function mergeLatestTurn(set: SetTranscript, page: TranscriptPage): void {
-  set("messages", (messages) => withLatestTurn(messages, pageMessages(page)))
-  for (const entry of page.entries) set("parts", entry.info.id, (parts) => mergedParts(parts, entry.parts))
-  markTextParts(set, pageParts(page))
+  batch(() => {
+    set("messages", (messages) => withLatestTurn(messages, pageMessages(page)))
+    for (const entry of page.entries) set("parts", entry.info.id, (parts) => mergedParts(parts, entry.parts))
+    markTextParts(set, pageParts(page))
+  })
 }
 
 export function dropQueuedStubs(set: SetTranscript, data: TranscriptData, queued: readonly QueuedPrompt[]): void {

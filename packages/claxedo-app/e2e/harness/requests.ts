@@ -1,4 +1,4 @@
-import { expect, type Page, type Request } from "@playwright/test"
+import { expect, test, type Page, type Request, type Route } from "@playwright/test"
 
 const STATIC_ASSET = /\.(js|css|woff2?|svg|png|ico|map)(\?|$)|\/@vite\/|\/src\/|\/node_modules\//
 
@@ -30,5 +30,31 @@ export function apiRequests(app: Page, origin: string) {
     const taken = seen
     seen = []
     return taken
+  }
+}
+
+export async function holdResponse(app: Page, pattern: RegExp, matches: (url: URL) => boolean = () => true) {
+  const computed = Promise.withResolvers<void>()
+  const released = Promise.withResolvers<void>()
+  const delivered = Promise.withResolvers<PromiseSettledResult<void>>()
+  let captured = false
+  const handler = async (route: Route) => {
+    if (captured || !matches(new URL(route.request().url()))) return await route.fallback()
+    captured = true
+    const response = await route.fetch()
+    computed.resolve()
+    await released.promise
+    const [outcome] = await Promise.allSettled([route.fulfill({ response })])
+    delivered.resolve(outcome)
+  }
+  await app.route(pattern, handler)
+  return {
+    computed: computed.promise,
+    release: async () => {
+      released.resolve()
+      const outcome = await delivered.promise
+      if (outcome.status === "rejected") test.info().annotations.push({ type: "abandoned held read", description: String(outcome.reason) })
+      expect(outcome.status, "the app received the held read").toBe("fulfilled")
+    },
   }
 }

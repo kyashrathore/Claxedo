@@ -1,7 +1,8 @@
-import type { Page, Route } from "@playwright/test"
+import type { Page } from "@playwright/test"
 import {
   acpScriptToken,
   expect,
+  holdResponse,
   SCRIPTED_ACP_HARNESS,
   startStack,
   test as harnessTest,
@@ -50,33 +51,7 @@ function deferred<T>() {
 }
 
 export function holdListRead(app: Page, matches: (url: URL) => boolean = () => true) {
-  return holdRead(app, LIST_ROUTE, matches)
-}
-
-async function holdRead(app: Page, pattern: RegExp, matches: (url: URL) => boolean) {
-  const computed = deferred<void>()
-  const released = deferred<void>()
-  const delivered = deferred<PromiseSettledResult<void>>()
-  let captured = false
-  const handler = async (route: Route) => {
-    if (captured || !matches(new URL(route.request().url()))) return await route.fallback()
-    captured = true
-    const response = await route.fetch()
-    computed.resolve()
-    await released.promise
-    const [outcome] = await Promise.allSettled([route.fulfill({ response })])
-    delivered.resolve(outcome)
-  }
-  await app.route(pattern, handler)
-  return {
-    computed: computed.promise,
-    release: async () => {
-      released.resolve()
-      const outcome = await delivered.promise
-      if (outcome.status === "rejected") test.info().annotations.push({ type: "abandoned held read", description: String(outcome.reason) })
-      expect(outcome.status, "the app received the held read").toBe("fulfilled")
-    },
-  }
+  return holdResponse(app, LIST_ROUTE, matches)
 }
 
 export async function reopenHoldingListRead(app: Page, stack: Stack) {

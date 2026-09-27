@@ -7,7 +7,7 @@ import { selectorsIn, slotHooks, type SlotHooks } from "./lib/slot-hooks"
 import { textOf, walk } from "./lib/tree"
 
 const retiredIdentifier = /[a-z0-9]IDs?$/
-const contractFields = new Set(["sessionID", "messageID", "partID", "providerID", "modelID"])
+const contractFields = new Set(["sessionID", "messageID", "partID", "parentID", "providerID", "modelID"])
 const retiredWords = new Set(["globalSDK", "globalSync", "OpencodeTheme", "opencodeTheme"])
 const retiredStrings = [
   { pattern: /@opencode-ai\//, message: "names an @opencode-ai package" },

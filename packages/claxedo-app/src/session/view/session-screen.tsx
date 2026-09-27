@@ -16,7 +16,7 @@ import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
-import { createFirstViewFill } from "./first-view"
+import { navTurns } from "./nav-turns"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
@@ -78,11 +78,11 @@ function SessionBody(props: {
     const status = props.view.status()
     return status.kind !== "unknown" && turnActive(status)
   }
-  const olderPending = createFirstViewFill(() => props.view)
+  const users = createMemo(() => userMessages(props.view))
+  const turns = createMemo(() => navTurns(props.view.outline(), users()))
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
   const blocked = () => props.view.requests().length > 0
-  const users = createMemo(() => userMessages(props.view))
   const peek = createFloatingPeek({
     floating: () => props.floating,
     sessionId: () => props.view.ref.sessionId,
@@ -103,7 +103,7 @@ function SessionBody(props: {
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
   const commands = useCommands()
-  createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands, t })
+  createMessageLinks({ turns, scroll, active: driving, commands, t })
   registerSessionCommands({ commands, placementId: () => props.view.ref.placementId, active: driving, navigate: (path) => routing.navigate(path), t })
   const recovery = createScreenTurnRecovery(() => props.view, (path) => routing.navigate(path))
   const setDock = createDockFollow(scroll)
@@ -126,7 +126,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} olderPending={olderPending} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recovery.recover} />
+          <SessionTimeline view={props.view} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recovery.recover} />
         </div>
       </div>
       <div

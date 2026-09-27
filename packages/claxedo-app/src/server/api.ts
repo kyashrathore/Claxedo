@@ -57,6 +57,7 @@ import type {
   FeatureAvailability,
   FetchQuery,
   GoalAction,
+  HeldSessionReads,
   Machine,
   Placement,
   Project,
@@ -71,9 +72,9 @@ import type {
   SessionGoal,
   SessionListInput,
   SessionPage,
+  SessionReads,
   SessionRef,
   SessionRow,
-  SessionReads,
   Subagent,
   TranscriptPage,
 } from "./types"
@@ -82,7 +83,7 @@ import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly read: (ref: SessionRef) => SessionReads
+  readonly read: (ref: SessionRef, held?: HeldSessionReads) => SessionReads
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
   readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>

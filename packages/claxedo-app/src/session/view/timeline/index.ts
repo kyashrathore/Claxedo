@@ -5,6 +5,7 @@ export type {
   QueuedMessages,
   TimelineFocus,
   TimelineHost,
+  TimelineNavTurn,
   TimelineNavigation,
   TimelinePlatform,
   TimelineSessionRow,
