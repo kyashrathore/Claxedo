@@ -6,7 +6,7 @@ import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
 import { acpScriptToken } from "../../harness/acp/script"
 import { sessionRoute } from "../../harness/ui-names"
 import { longReplyScript, seedTurnScript, streamScript } from "../stream-script"
-import { desktopSurface, webSurface, type Surface } from "./surface"
+import { desktopSurface, dwell, mainThreadIdle, turnStarted, webSurface, type Surface } from "./surface"
 const SEED_TURNS = Number(process.env.SEED_TURNS ?? "8")
 const SWITCHES = Number(process.env.SWITCHES ?? "30")
 const SCENARIO = process.env.SCENARIO ?? "one"
@@ -61,7 +61,9 @@ async function seedSession(surface: Surface, title: string) {
 async function startStream(surface: Surface, sessionId: string, name: string) {
   const { api, workspace } = surface
   await surface.writeScript(name, process.env.STREAM === "report" ? streamScript(workspace.directory) : longReplyScript(workspace.directory))
+  const before = (await api.messages(workspace.directory, sessionId)).length
   await api.promptAsync(workspace.directory, sessionId, `Write the long report. ${acpScriptToken(name)}`)
+  await turnStarted(surface, sessionId, before)
 }
 
 function startVideo(bounds: { x: number; y: number; width: number; height: number } | undefined, file: string, seconds: number) {
@@ -130,7 +132,7 @@ async function main() {
     const video = VIDEO ? { startedAt: Date.now(), done: startVideo(bounds, path.join(OUT, "screen.mov"), Math.ceil((steps.clicks.length * 1.0 + 4) * (SCENARIO === "cold" ? ROUNDS : 1))) } : undefined
     await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
     for (const title of steps.streaming) await startStream(surface, ids[title]!, `stream-${title.replace(/ /g, "-")}`)
-    await page.waitForTimeout(1500)
+    await mainThreadIdle(page)
     if (PROFILE) {
       await cdp.send("Profiler.enable")
       await cdp.send("Profiler.setSamplingInterval", { interval: 250 })
@@ -144,7 +146,7 @@ async function main() {
         rounds.push(await page.evaluate(() => (window as unknown as { __switchProbe: { stop(): unknown } }).__switchProbe.stop()))
         await page.reload()
         await page.locator('[data-testid="session-page-root"] [data-timeline-key]').first().waitFor({ state: "visible", timeout: 60_000 })
-        await page.waitForTimeout(800)
+        await mainThreadIdle(page)
         await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
       }
       for (const [index, title] of steps.clicks.entries()) {
@@ -156,10 +158,10 @@ async function main() {
         const row = await railRow(page, ids[title]!)
         clicks.push({ title, wall: Date.now() })
         await page.mouse.click(row.x, row.y)
-        await page.waitForTimeout(jitter(index))
+        await dwell(jitter(index))
       }
     }
-    await page.waitForTimeout(500)
+    await mainThreadIdle(page)
     if (PROFILE) {
       const { profile } = (await cdp.send("Profiler.stop")) as { profile: unknown }
       await fs.writeFile(path.join(OUT, "switch.cpuprofile"), JSON.stringify(profile))

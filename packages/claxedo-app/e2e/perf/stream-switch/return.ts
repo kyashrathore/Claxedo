@@ -5,7 +5,7 @@ import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
 import { acpScriptToken } from "../../harness/acp/script"
 import { sessionRoute } from "../../harness/ui-names"
 import { seedTurnScript, streamScript } from "../stream-script"
-import { webSurface, type Surface } from "./surface"
+import { dwell, mainThreadIdle, webSurface, type Surface } from "./surface"
 
 const AWAY = (process.env.AWAY ?? "1000,3000,6000").split(",").map(Number)
 const FRAMES = Number(process.env.FRAMES ?? "40")
@@ -64,19 +64,16 @@ async function main() {
     const row = (id: string) => page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${id}"]`)
     const results = []
     for (const away of AWAY) {
-      const left = await page.evaluate(() => performance.now())
       await row(bravo).click()
       await page.getByText("Seed turn 1 done.").first().waitFor({ state: "visible" })
-      await page.waitForTimeout(away)
+      await dwell(away)
       const done = await recordReturn(page, alpha, FRAMES)
       await row(alpha).click()
       const frames = await done()
-      const commits = (await page.evaluate("globalThis.__dx ?? []")) as { at: number; chars: number; stack: string }[]
-      for (const commit of commits.filter((entry) => entry.at >= left).slice(0, 60)) console.log(`[return]   commit +${Math.round(commit.at - left)} ms ${commit.chars} chars ${commit.stack.slice(0, 400)}`)
       results.push({ away, frames })
       const steps = frames.map((frame, index) => `${frame.at}:${frame.length - (frames[index - 1]?.length ?? frame.length)}`)
       console.log(`[return] away ${away} ms: first ${frames[0]?.length} chars; growth per frame ${steps.slice(1, 24).join(" ")}`)
-      await page.waitForTimeout(800)
+      await mainThreadIdle(page)
     }
     await fs.writeFile(path.join(OUT, "return.json"), JSON.stringify({ alpha, bravo, results }, null, 1))
   } finally {

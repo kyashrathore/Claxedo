@@ -22,6 +22,16 @@ export type Surface = {
 
 const PROBE = path.join(import.meta.dirname, "probe.js")
 
+export const dwell = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+export async function mainThreadIdle(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => requestIdleCallback(() => resolve(), { timeout: 5_000 })))
+}
+
+export async function turnStarted(surface: Surface, sessionId: string, before: number) {
+  while ((await surface.api.messages(surface.workspace.directory, sessionId)).length < before + 2) await dwell(100)
+}
+
 async function withValues(workspace: Workspace) {
   await fs.mkdir(path.join(workspace.directory, "src"), { recursive: true })
   await fs.writeFile(path.join(workspace.directory, "src/values.ts"), "export const value0 = 0\n")

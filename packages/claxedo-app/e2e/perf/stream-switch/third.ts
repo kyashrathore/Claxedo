@@ -7,7 +7,7 @@ import { acpScriptToken } from "../../harness/acp/script"
 import { sendPrompt } from "../../harness/composer"
 import { sessionRoute, UI } from "../../harness/ui-names"
 import { seedTurnScript, streamScript } from "../stream-script"
-import { desktopSurface, webSurface, type Surface } from "./surface"
+import { desktopSurface, dwell, webSurface, type Surface } from "./surface"
 
 const SEED_TURNS = Number(process.env.SEED_TURNS ?? "4")
 const WATCH_MS = Number(process.env.WATCH_MS ?? "12000")
@@ -132,7 +132,7 @@ async function main() {
         await page.screenshot({ path: path.join(OUT, file) })
         shots.push(file)
       }
-      await page.waitForTimeout(250)
+      await dwell(250)
     }
     clearTimeout(released)
     const probe = await page.evaluate(() => (window as unknown as { __switchProbe: { stop(): unknown } }).__switchProbe.stop())
