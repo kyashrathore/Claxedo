@@ -3,20 +3,11 @@ import path from "node:path"
 
 import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
+import { CLAXEDO_DAEMON_DISCOVERY_FILE, CLAXEDO_DAEMON_PROTOCOL, CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { isMissingFile, writeFileAtomicSync } from "@claxedo/helpers/fs"
 import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
 import { readField } from "@claxedo/helpers/readers"
 import { createDaemonFetch } from "./daemon-request"
-
-/**
- * The management protocol both halves must agree on. At 3 a lease is held by
- * the connection that acquired it and has no renewal route, so a launcher
- * speaking 2 would wait on a lease response that never ends and renew one that
- * does not exist; the daemon refuses it on the version instead.
- */
-export const CLAXEDO_DAEMON_PROTOCOL = 3
-export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
-export const CLAXEDO_DAEMON_SERVICE = "claxedo-local-daemon" as const
 
 export type ClaxedoDaemonDiscovery = Readonly<{
   service: typeof CLAXEDO_DAEMON_SERVICE
@@ -35,7 +26,7 @@ export type ClaxedoDaemonDiscovery = Readonly<{
 }>
 
 export function claxedoDaemonDiscoveryPath(dataRoot: string) {
-  return path.join(dataRoot, "local-daemon.json")
+  return path.join(dataRoot, CLAXEDO_DAEMON_DISCOVERY_FILE)
 }
 
 export function readClaxedoDaemonDiscovery(file: string): ClaxedoDaemonDiscovery | undefined {

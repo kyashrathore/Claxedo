@@ -8,7 +8,7 @@ import * as path from "node:path"
 
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "../src/main/daemon-request"
-import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import {
   CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE,
   parseClaxedoServerReadyMessage,

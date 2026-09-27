@@ -110,7 +110,7 @@ export { createLocalControlPlaneServices, localSessionProjectionStore } from "./
 
 /** The reviewed git launch a documents backend commits through, whichever host composed it. */
 export { documentGit } from "./app/local-documents"
-export { DAEMON_PROTOCOL_HEADER, isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
+export { isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
 
 // Verified caller stamping for an embedded machine request.
 export { embeddedRelayHostAuthFromActor, EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./workspace/runtime-dispatch/embedded-relay-host-auth"

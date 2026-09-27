@@ -1,4 +1,4 @@
-import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 
 export function claxedoServerStartup(env: NodeJS.ProcessEnv) {
   const port = Number(env.CLAXEDO_CHILD_PORT)

@@ -25,6 +25,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "env", target: "browser" },
   { entry: "route-param", target: "browser" },
   { entry: "claxedo-credentials", target: "node" },
+  { entry: "claxedo-daemon", target: "browser" },
   { entry: "claxedo-document", target: "browser" },
   { entry: "fs", target: "node" },
   { entry: "path", target: "node" },
