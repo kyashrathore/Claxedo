@@ -117,9 +117,9 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
   const customFileHolding = (element: Element | null) => [...customHosts].find(([, host]) => host.contains(element))?.[0]
   const handFocusToHeader = (host: HTMLElement) => {
     const file = focusHandoff
+    focusHandoff = undefined
     const toggle = file ? headerHosts.get(file)?.querySelector("button") : undefined
     if (!toggle?.isConnected) return
-    focusHandoff = undefined
     if (document.activeElement === document.body || document.activeElement === host) toggle.focus({ preventScroll: true })
   }
 
