@@ -450,6 +450,44 @@ describe("control plane session routes", () => {
     expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
   })
 
+  test("a signed part read answers the authority's whole part and names a missing part or a session it cannot read", async () => {
+    const svc = services()
+    const part = { id: "a1-p0", type: "tool", tool: "read", callID: "call-1", state: { status: "completed", input: {}, output: "whole", title: "a.ts", metadata: {}, time: { start: 1, end: 2 } } }
+    const authority = {
+      readSessionPart: vi.fn(async (_auth: unknown, input: { sessionId: string; partId: string }) =>
+        input.sessionId !== "session-1" ? undefined : input.partId === "a1-p0" ? { part } : {}),
+    }
+    svc.authority = authority as never
+    svc.projectionStore.read_session_messages = vi.fn(() => {
+      throw new Error("a signed part read must not read the central projection")
+    })
+    const app = ControlPlaneSessionRoutes(svc, signedOptions)
+    const headers = { Authorization: "Bearer signed-token" }
+
+    const read = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual({ part })
+    expect(authority.readSessionPart).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+      messageId: "a1",
+      partId: "a1-p0",
+    })
+
+    const unnamed = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1", { headers })
+    expect(unnamed.status).toBe(400)
+    await expect(unnamed.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+
+    const noPart = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1&partId=a1-p9", { headers })
+    expect(noPart.status).toBe(404)
+    await expect(noPart.json()).resolves.toMatchObject({ error: { code: "part_not_found" } })
+
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
+  })
+
   test("keeps a signed workspace page on the authority cursor chain", async () => {
     const svc = services()
     const authority = {
@@ -991,7 +1029,7 @@ const turnMessage = (id: string, role: "user" | "assistant", parts: Array<Record
   }
 }
 
-describe("a loopback caller without a bearer reads the local projection's first read and its pages", () => {
+describe("a loopback caller without a bearer reads the local projection's first read, its pages and its parts", () => {
   const first = [turnMessage("u1", "user", [{ type: "text", text: "  first prompt " }]), turnMessage("a1", "assistant", [{ type: "text", text: "done" }], "u1")]
   const work = turnMessage("a2", "assistant", [
     { type: "text", text: "Looking." },
@@ -1063,6 +1101,23 @@ describe("a loopback caller without a bearer reads the local projection's first 
     expect(missing.status).toBe(404)
     expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
     expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
+  })
+
+  test("a part read answers the replay's part whole, and names a missing part, a read without its part, and a session the projection does not hold", async () => {
+    const { app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/part?messageId=a2&partId=a2-p1")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ part: work.parts[1] })
+
+    const wrongMessage = await app.request("http://127.0.0.1/sessions/session-1/part?messageId=a3&partId=a2-p1")
+    expect(wrongMessage.status).toBe(404)
+    expect(await wrongMessage.json()).toMatchObject({ error: { code: "part_not_found" } })
+    const unnamed = await app.request("http://127.0.0.1/sessions/session-1/part?messageId=a2")
+    expect(unnamed.status).toBe(400)
+    expect(await unnamed.json()).toMatchObject({ error: { code: "message_page_error" } })
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/part?messageId=a2&partId=a2-p1")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
   })
 
   test("refuses a partial or out-of-range viewport and names a session the projection does not hold", async () => {

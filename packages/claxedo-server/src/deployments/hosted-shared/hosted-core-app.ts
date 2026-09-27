@@ -54,7 +54,7 @@ import {
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
-import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
+import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
@@ -702,5 +702,12 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       page: parseOlderTurnPageQuery((name) => context.req.query(name)),
     })
     return page ? context.json(page) : context.json(sessionNotFound, 404)
+  }))
+  app.get("/api/control/sessions/:sessionId/part", (context) => transcriptRead(context, async (auth, workspaceId) => {
+    const at = parseSessionPartInput(context.req.query("messageId"), context.req.query("partId"))
+    const read = await requireAuthority(services).readSessionPart(auth, { sessionId: context.req.param("sessionId"), workspaceId, ...at })
+    if (!read) return context.json(sessionNotFound, 404)
+    if (!read.part) return context.json({ error: { code: "part_not_found", message: "The session has no such part" } }, 404)
+    return context.json({ part: read.part })
   }))
 }

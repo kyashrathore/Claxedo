@@ -8,6 +8,7 @@ import {
 } from "@claxedo/agent-sdk-runtime/turn-outline"
 
 import { asRecord, numberField, stringField } from "../platform/json/index"
+import type { StoredMessageColumn, StoredMessageQuery } from "./stored-messages"
 
 export type { TurnOutline, TurnOutlineEntry } from "@claxedo/agent-sdk-runtime/turn-outline"
 
@@ -45,19 +46,13 @@ export function turnOutlineOfMessages(messages: readonly unknown[], bounds: Turn
   )
 }
 
-/** The column of `session_messages` holding a message's JSON: `data` in the SQLite adapter, `data_json` in D1. */
-export type TurnOutlineColumn = "data" | "data_json"
-
-/** Runs one statement of the outline read against the adapter's driver, synchronously or not, and answers its rows. */
-export type TurnOutlineQuery = (sql: string, params: readonly (string | number)[]) => Promise<readonly unknown[]> | readonly unknown[]
-
 type UserRow = OutlineUserRow & { ordinal: number }
 
 export type TurnOutlineBounds = { limit: number; snippetLength: number }
 
 export const TURN_OUTLINE_BOUNDS: TurnOutlineBounds = { limit: TURN_OUTLINE_LIMIT, snippetLength: TURN_OUTLINE_SNIPPET_LENGTH }
 
-function newestUsersSql(column: TurnOutlineColumn): string {
+function newestUsersSql(column: StoredMessageColumn): string {
   return `
     SELECT message_id AS id, ordinal,
       json_extract(${column}, '$.info.time.created') AS created_at,
@@ -70,7 +65,7 @@ function newestUsersSql(column: TurnOutlineColumn): string {
 }
 
 /** The parts live inside the message's JSON, so `json_each` walks them, for user messages only; the text is cut in SQL so a part's payload never crosses into JavaScript whole. */
-function userTextsSql(column: TurnOutlineColumn): string {
+function userTextsSql(column: StoredMessageColumn): string {
   return `
     SELECT m.message_id,
       substr(json_extract(p.value, '$.text'), 1, ?) AS text,
@@ -84,8 +79,8 @@ function userTextsSql(column: TurnOutlineColumn): string {
 
 /** The outline of a stored session's newest `limit` turns, read from the control plane's `session_messages` rows whose `role` column is `user`. */
 export async function readStoredTurnOutline(
-  query: TurnOutlineQuery,
-  column: TurnOutlineColumn,
+  query: StoredMessageQuery,
+  column: StoredMessageColumn,
   sessionId: string,
   workspaceId: string,
   bounds: TurnOutlineBounds = TURN_OUTLINE_BOUNDS,

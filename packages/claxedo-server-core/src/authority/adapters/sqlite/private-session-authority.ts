@@ -4,6 +4,8 @@ import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/j
 import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { readStoredTurnOutline } from "../../../session/turn-outline"
+import { readStoredPart } from "../../../session/stored-part"
+import type { StoredMessageQuery } from "../../../session/stored-messages"
 import { readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -756,7 +758,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       if (!row) return undefined
       return await readFirstRead(
         publicSession(db, row, actor.token_identifier),
-        await readStoredTurnOutline((sql, params) => db.prepare(sql).all(...params), "data", value.sessionId, value.workspaceId),
+        await readStoredTurnOutline(storedQuery(db), "data", value.sessionId, value.workspaceId),
         sqliteTurnRead(db, value.sessionId, value.workspaceId),
         value.firstPage,
       )
@@ -765,6 +767,12 @@ export function createSqlitePrivateSessionAuthority(input: {
       const db = input.database()
       if (!readableSession(db, actorForAuth(auth), value.sessionId, value.workspaceId)) return undefined
       return await readTurnPage(sqliteTurnRead(db, value.sessionId, value.workspaceId), value.page)
+    },
+    async readSessionPart(auth, value) {
+      const db = input.database()
+      if (!readableSession(db, actorForAuth(auth), value.sessionId, value.workspaceId)) return undefined
+      const part = await readStoredPart(storedQuery(db), "data", value)
+      return part ? { part } : {}
     },
 
     async syncSessionMessages(auth, value) {
@@ -1157,6 +1165,10 @@ function readLatestView(db: SqliteAuthorityDb, sessionId: string, workspaceId: s
     older,
     (ordinal) => encodeCursor(sessionId, ordinal),
   )
+}
+
+function storedQuery(db: SqliteAuthorityDb): StoredMessageQuery {
+  return (sql, params) => db.prepare(sql).all(...params)
 }
 
 function sqliteTurnRead(db: SqliteAuthorityDb, sessionId: string, workspaceId: string): TurnRead {

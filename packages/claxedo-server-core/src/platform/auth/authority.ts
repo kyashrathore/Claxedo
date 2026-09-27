@@ -10,6 +10,7 @@ import type {
 import type { SessionShareLevel } from "./session-share-level"
 import type { LatestView } from "../../session/latest-view-page"
 import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 
 export {
@@ -599,6 +600,11 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } },
   ) => Promise<TurnPage | undefined>
+  /** One part of one of the session's messages whole, `{}` when there is no such part; nothing when the reader cannot read the session. */
+  readSessionPart: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string; messageId: string; partId: string },
+  ) => Promise<{ part?: AgentContentPart } | undefined>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
     args: {

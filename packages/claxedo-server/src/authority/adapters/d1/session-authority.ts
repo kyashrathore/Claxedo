@@ -50,6 +50,8 @@ import { organizationRoleRankSql } from "./host-access-authority"
 import { readD1SessionPage } from "./session-page"
 import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
+import { readStoredPart } from "@claxedo/server-core/session/stored-part"
+import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
 import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
@@ -65,6 +67,7 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "readSessionMessages",
   "readSessionFirstRead",
   "readSessionPage",
+  "readSessionPart",
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
@@ -1568,12 +1571,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const access = await this.readableSession(auth, sessionId, workspaceId)
     if (!access) return undefined
-    const outline = await readStoredTurnOutline(
-      async (sql, params) => (await this.database.prepare(sql).bind(...params).all()).results,
-      "data_json",
-      sessionId,
-      workspaceId,
-    )
+    const outline = await readStoredTurnOutline(this.storedQuery, "data_json", sessionId, workspaceId)
     return await readFirstRead(sessionJson(access), outline, this.turnRead(sessionId, workspaceId), args.firstPage)
   }
 
@@ -1582,6 +1580,18 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     if (!(await this.readableSession(auth, sessionId, workspaceId))) return undefined
     return await readTurnPage(this.turnRead(sessionId, workspaceId), args.page)
+  }
+
+  async readSessionPart(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; messageId: string; partId: string }) {
+    const at = {
+      sessionId: requireText(args.sessionId, "sessionId"),
+      workspaceId: requireText(args.workspaceId, "workspaceId"),
+      messageId: requireText(args.messageId, "messageId"),
+      partId: requireText(args.partId, "partId"),
+    }
+    if (!(await this.readableSession(auth, at.sessionId, at.workspaceId))) return undefined
+    const part = await readStoredPart(this.storedQuery, "data_json", at)
+    return part ? { part } : {}
   }
 
   private async readableSession(auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string) {
@@ -1593,6 +1603,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       throw error
     }
   }
+
+  private readonly storedQuery: StoredMessageQuery = async (sql, params) => (await this.database.prepare(sql).bind(...params).all()).results
 
   private turnRead(sessionId: string, workspaceId: string): TurnRead {
     return async (before) =>

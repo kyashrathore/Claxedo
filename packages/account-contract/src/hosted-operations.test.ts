@@ -181,6 +181,12 @@ describe("the signed desktop's session sources", () => {
     expect(() => decodeHostedResult("session.turnPage", { items: [] })).toThrow(/session\.turnPage.*turns/)
     expect(isSafeOperation("session.turnPage")).toBe(true)
   })
+
+  test("a part read is an object a renderer may retry", () => {
+    expect(decodeHostedResult("session.part", { part: { id: "a1-p0", type: "text", text: "whole" } })).toEqual({ part: { id: "a1-p0", type: "text", text: "whole" } })
+    expect(() => decodeHostedResult("session.part", [])).toThrow(/expected an object/)
+    expect(isSafeOperation("session.part")).toBe(true)
+  })
 })
 
 describe("isSafeOperation", () => {

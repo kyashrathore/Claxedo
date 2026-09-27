@@ -20,6 +20,7 @@ import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/au
 import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
 import { exerciseFirstReadConformance } from "@claxedo/server-core/platform/auth/first-read.conformance"
 import { exerciseTurnPageConformance } from "@claxedo/server-core/platform/auth/turn-page.conformance"
+import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/auth/session-part.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
@@ -800,5 +801,10 @@ describe("SQLite latest views", () => {
       workspaceId: "workspace_main",
       creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
     })).resolves.toEqual(["u1", "u2"])
+    await expect(exerciseSessionPartConformance({
+      authority: store,
+      workspaceId: "workspace_main",
+      creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
+    })).resolves.toBe("a1-p0")
   })
 })

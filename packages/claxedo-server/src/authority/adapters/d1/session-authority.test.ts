@@ -19,6 +19,7 @@ import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/au
 import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
 import { exerciseFirstReadConformance } from "@claxedo/server-core/platform/auth/first-read.conformance"
 import { exerciseTurnPageConformance } from "@claxedo/server-core/platform/auth/turn-page.conformance"
+import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/auth/session-part.conformance"
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
@@ -1323,6 +1324,11 @@ describe("D1 latest views", () => {
       workspaceId: "ws_main",
       creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
     })).resolves.toEqual(["u1", "u2"])
+    await expect(exerciseSessionPartConformance({
+      authority: input.sessions,
+      workspaceId: "ws_main",
+      creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
+    })).resolves.toBe("a1-p0")
   })
 })
 

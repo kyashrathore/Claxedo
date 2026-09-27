@@ -340,6 +340,37 @@ describe("resource-closed hosted core app", () => {
     await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 
+  test("the session part route answers the authority's whole part, and names a read without its message or part, a missing part and a missing session", async () => {
+    const hosted = plane()
+    const part = { id: "a1-p0", type: "tool", tool: "read", callID: "call-1", state: { status: "completed", input: {}, output: "whole", title: "a.ts", metadata: {}, time: { start: 1, end: 2 } } }
+    const readSessionPart = vi.fn(async (_auth: unknown, input: { sessionId: string; partId: string }) =>
+      input.sessionId !== "ses_1" ? undefined : input.partId === "a1-p0" ? { part } : {})
+    Object.assign(hosted.services.authority!, { readSessionPart })
+    const app = createHostedCoreApp(hosted, options) as unknown as Hono
+    const headers = { authorization: "Bearer alice" }
+
+    const read = await app.request("/api/control/sessions/ses_1/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual({ part })
+    expect(readSessionPart).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1", messageId: "a1", partId: "a1-p0" })
+
+    readSessionPart.mockClear()
+    for (const query of ["messageId=a1", "partId=a1-p0", "messageId=&partId=a1-p0"]) {
+      const refused = await app.request(`/api/control/sessions/ses_1/part?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+    }
+    expect(readSessionPart).not.toHaveBeenCalled()
+
+    const noPart = await app.request("/api/control/sessions/ses_1/part?workspaceId=ws_1&messageId=a1&partId=a1-p9", { headers })
+    expect(noPart.status).toBe(404)
+    await expect(noPart.json()).resolves.toMatchObject({ error: { code: "part_not_found" } })
+
+    const missing = await app.request("/api/control/sessions/ses_missing/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
+  })
+
   test("mounts build-composed route contributions and the integrations family under their own owners", async () => {
     const { Hono } = await import("hono")
     const contribution = new Hono().get("/", (c) => c.json({ plugins: true }))

@@ -24,7 +24,7 @@ import {
   sessionInventoryResponse,
   requiredWorkspaceId,
   signedSessionList, sessionListErrorResponse } from "../list"
-import { messagePageCursor, parseMessagePageInput } from "../message-page"
+import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
 import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
@@ -112,6 +112,14 @@ async function projectedFirstRead(services: ControlPlaneServices, sessionId: str
     projectedTurnRead(services, sessionId),
     firstPage,
   )
+}
+
+/** A loopback read of one part, from the projection's replay: it offers no read of one message by id. */
+async function projectedPart(services: ControlPlaneServices, sessionId: string, at: { messageId: string; partId: string }) {
+  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
+  const message = services.projectionStore.read_session_messages(sessionId).find((item) => item.info.id === at.messageId)
+  const part = message?.parts.find((item) => item.id === at.partId)
+  return part ? { part } : {}
 }
 
 /** A loopback page of the projection's turns before the reader's cursor, for a session the projection holds. */
@@ -326,6 +334,24 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
               page,
             })
         return read ? c.json(read) : c.json(sessionNotFound, 404)
+      } catch (err) {
+        return transcriptReadError(c, err)
+      }
+    })
+    .get("/sessions/:sessionId/part", async (c) => {
+      try {
+        const sessionId = c.req.param("sessionId")
+        const at = parseSessionPartInput(c.req.query("messageId"), c.req.query("partId"))
+        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
+          ? await projectedPart(services, sessionId, at)
+          : await requireAuthority(services).readSessionPart(await signedAuth(c.req.raw, options), {
+              sessionId,
+              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
+              ...at,
+            })
+        if (!read) return c.json(sessionNotFound, 404)
+        if (!read.part) return c.json({ error: { code: "part_not_found", message: "The session has no such part" } }, 404)
+        return c.json({ part: read.part })
       } catch (err) {
         return transcriptReadError(c, err)
       }

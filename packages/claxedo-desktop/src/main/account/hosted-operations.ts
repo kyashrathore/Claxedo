@@ -463,6 +463,11 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/sessions/:sessionId/page",
     query: ["workspaceId", "before", "rows", "cols", "reasoning", "shell", "edit"],
   },
+  "session.part": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/part",
+    query: ["workspaceId", "messageId", "partId"],
+  },
   "session.gateway": {
     method: "GET",
     path: "/api/control/sessions/:sessionId/gateway",

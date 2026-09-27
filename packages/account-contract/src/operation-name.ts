@@ -89,6 +89,7 @@ export type HostedOperationName =
   | "session.messages"
   | "session.outline"
   | "session.turnPage"
+  | "session.part"
   | "session.gateway"
   | "billing.checkout"
   | "billing.portal"
