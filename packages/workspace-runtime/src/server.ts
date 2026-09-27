@@ -98,6 +98,7 @@ export type WorkspaceRuntimeServerOptions = {
   /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
   configApplyReceiptDir?: string
   beforeAdapterAcquire?: WorkspaceHostOptions["beforeAdapterAcquire"]
+  onActivityChange?: WorkspaceHostOptions["onActivityChange"]
   serviceExposure?: WorkspaceRuntimeServiceExposure
   exposure?: WorkspaceRuntimeExposure
   /**
@@ -459,6 +460,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
     ...(options.beforeAdapterAcquire ? { beforeAdapterAcquire: options.beforeAdapterAcquire } : {}),
+    ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),

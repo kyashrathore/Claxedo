@@ -20,7 +20,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-async function fixture(options: { runtimeConfig?: boolean; configurable?: boolean; scoped?: boolean; native?: boolean; hold?: boolean; holdCreate?: boolean; releaseOnDispose?: boolean; cancelNeverSettles?: boolean } = {}) {
+async function fixture(options: { runtimeConfig?: boolean; configurable?: boolean; scoped?: boolean; native?: boolean; hold?: boolean; holdCreate?: boolean; releaseOnDispose?: boolean; cancelNeverSettles?: boolean; onActivityChange?: () => void } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "workspace-lifecycle-"))
   roots.push(directory)
   const target = { workspaceId: "workspace-lifecycle", directory }
@@ -153,7 +153,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
   let secretLease = "one"
   const rotateSecretLease = (next: string) => { secretLease = next }
   function open() {
-    const host = createWorkspaceHost({ target, storeRoot, connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
+    const host = createWorkspaceHost({ target, storeRoot, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
       const store = new RuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
@@ -693,6 +693,40 @@ describe("workspace runtime public lifecycle", () => {
     await f.host.dispose()
     expect(f.host.activeTurns()).toEqual([])
     await expect(f.host.unresolvedLaunches()).rejects.toThrow()
+  })
+  test("every change to the turns, writes and checkpoint state the host reports is announced with the new state readable", async () => {
+    const seen: unknown[] = []
+    let host: ReturnType<typeof createWorkspaceHost> | undefined
+    const reported = () => ({
+      turns: host!.activity().activeTurns,
+      writes: host!.activity().activeWrites,
+      checkpoint: host!.activity().checkpointState,
+      named: host!.activeTurns().map((turn) => turn.turnId),
+    })
+    const f = await fixture({ runtimeConfig: true, configurable: true, hold: true, onActivityChange: () => seen.push(reported()) })
+    host = f.host
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "local" })
+    const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
+    try {
+      await f.startedTurn
+      expect(reported().named).toHaveLength(1)
+      expect(seen.at(-1), "turn admitted").toEqual(reported())
+
+      const finish = f.host.checkpoint.beginWrite()!
+      expect(seen.at(-1), "write started").toEqual({ ...reported(), writes: 1 })
+      finish()
+      expect(seen.at(-1), "write finished").toEqual({ ...reported(), writes: 0 })
+    } finally {
+      f.release()
+      await prompt
+    }
+    expect(seen.at(-1), "turn released").toEqual({ turns: 0, writes: 0, checkpoint: "active", named: [] })
+
+    expect((await f.host.checkpoint.freeze("drain")).state).toBe("frozen")
+    expect(seen.at(-1), "frozen").toEqual({ turns: 0, writes: 0, checkpoint: "frozen", named: [] })
+    await f.host.checkpoint.resume()
+    expect(seen.at(-1), "resumed").toEqual({ turns: 0, writes: 0, checkpoint: "active", named: [] })
   })
   test("a launch a previous owner never settled keeps writes out until an operator resolves it", async () => {
     const f = await fixture({ runtimeConfig: true, configurable: true })

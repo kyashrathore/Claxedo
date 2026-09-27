@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, afterEach, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, afterEach, describe, expect, test, vi } from "vitest"
 import { installFakePiRpc } from "../../../../agent-sdk-runtime/src/test-utils/fake-pi-rpc.mjs"
 import fs from "fs/promises"
 import os from "os"
@@ -14,6 +14,7 @@ import {
   EmbeddedWorkspaceRuntimeRetirementUnresolvedError,
   ensureEmbeddedWorkspaceRuntime,
   onEmbeddedWorkspaceRuntime,
+  onEmbeddedWorkspaceRuntimeActivity,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
   type MountedEmbeddedWorkspaceRuntime,
@@ -21,6 +22,7 @@ import {
 import { workspaceRuntimeBus } from "@claxedo/workspace-runtime/host"
 import { Hono } from "hono"
 import { createHostAggregateEventsHandler } from "../../shell/host-events"
+import { createLocalDaemonLifecycle } from "../../app/local-daemon-lifecycle"
 import type { WorkspaceEventStreamFrame } from "@claxedo/workspace-runtime"
 import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
@@ -97,6 +99,79 @@ afterEach(async () => {
   else process.env.CURSOR_DATA_DIR = previous.CURSOR_DATA_DIR
 })
 
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+/** A connection whose turn starts, then holds until `stopped` and then `tail` resolve. */
+function heldProducer() {
+  const started = deferred()
+  const stopped = deferred()
+  const tail = deferred()
+  const producerDone = deferred()
+  const capabilities = {
+    abort: false, reconnect: false, replay: true, permissions: false, questions: false,
+    todos: false, commands: false, fork: false, revert: false, unrevert: false,
+    configOptions: false, subagents: false,
+  }
+  const provider: ConnectionProvider<Record<string, never>> = {
+    providerKey: "held-producer",
+    validateConfig: () => ({}),
+    project: () => ({ label: "Held producer", readiness: "ready", capabilities }),
+    resolve: () => ({ config: {} }),
+    createAdapter: () => {
+      let ownsProducer = false
+      return {
+        sessionConfigOwner: "runtime",
+        instructionChannel: "none" as const,
+        async createSession(_directory, _title, id) { return { id: id!, agentSessionId: "upstream-held" } },
+        async getSession() { return null },
+        async getMessages() { return [] },
+        async updateSession() { return null },
+        async deleteSession() {},
+        async getSessionConfig() { throw new Error("runtime-owned config") },
+        async updateSessionConfig() { throw new Error("runtime-owned config") },
+        readHarnessCapabilities: () => ({
+          ...capabilities,
+          goals: false,
+          harness: "held",
+          effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "none" as const,
+        }),
+        async *executeTurn(binding) {
+          ownsProducer = true
+          started.resolve()
+          try {
+            await stopped.promise
+            await tail.promise
+            yield { type: "text-delta", delta: "final producer text" }
+            yield { type: "finish", sessionId: binding.sessionId }
+          } finally { producerDone.resolve() }
+        },
+        dispose() {
+          if (!ownsProducer) return undefined
+          stopped.resolve()
+          return producerDone.promise
+        },
+      }
+    },
+  }
+  return { provider, started, stopped, tail }
+}
+
+async function terminal(cwd: string, sessionId: string) {
+  // These cases are about who may attach to a terminal or what it pins, not
+  // about which store owns its launch; a volatile owner records the launch and
+  // nothing here reads it back. node-pty resolves a bare name through PATH on
+  // Windows, where there is no `/bin/sh` to find.
+  const command = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
+  const info = await Pty.create({ command, cwd, sessionId }, volatileLaunchOwnership())
+  Pty.commit(info.id)
+  return info
+}
+
 describe("embedded workspace runtime", () => {
   test.each(["directory", "release", "shutdown", "shutdown-waiter"] as const)("%s retirement drains the old producer before the same store root is reopened", async (mode) => {
     const { root, project } = await makeWorkspaceRoot("embedded-runtime-drain-")
@@ -104,62 +179,7 @@ describe("embedded workspace runtime", () => {
     const ws = workspace("ws_drain", project)
     const moved = path.join(root, "moved")
     await fs.mkdir(moved)
-    const deferred = () => {
-      let resolve!: () => void
-      const promise = new Promise<void>((done) => { resolve = done })
-      return { promise, resolve }
-    }
-    const started = deferred()
-    const stopped = deferred()
-    const tail = deferred()
-    const producerDone = deferred()
-    const capabilities = {
-      abort: false, reconnect: false, replay: true, permissions: false, questions: false,
-      todos: false, commands: false, fork: false, revert: false, unrevert: false,
-      configOptions: false, subagents: false,
-    }
-    const provider: ConnectionProvider<Record<string, never>> = {
-      providerKey: "held-producer",
-      validateConfig: () => ({}),
-      project: () => ({ label: "Held producer", readiness: "ready", capabilities }),
-      resolve: () => ({ config: {} }),
-      createAdapter: () => {
-        let ownsProducer = false
-        return {
-          sessionConfigOwner: "runtime",
-          instructionChannel: "none" as const,
-          async createSession(_directory, _title, id) { return { id: id!, agentSessionId: "upstream-held" } },
-          async getSession() { return null },
-          async getMessages() { return [] },
-          async updateSession() { return null },
-          async deleteSession() {},
-          async getSessionConfig() { throw new Error("runtime-owned config") },
-          async updateSessionConfig() { throw new Error("runtime-owned config") },
-          readHarnessCapabilities: () => ({
-            ...capabilities,
-            goals: false,
-            harness: "held",
-            effortLevels: NO_HARNESS_EFFORT,
-            instructionChannel: "none" as const,
-          }),
-          async *executeTurn(binding) {
-            ownsProducer = true
-            started.resolve()
-            try {
-              await stopped.promise
-              await tail.promise
-              yield { type: "text-delta", delta: "final producer text" }
-              yield { type: "finish", sessionId: binding.sessionId }
-            } finally { producerDone.resolve() }
-          },
-          dispose() {
-            if (!ownsProducer) return undefined
-            stopped.resolve()
-            return producerDone.promise
-          },
-        }
-      },
-    }
+    const { provider, started, stopped, tail } = heldProducer()
     configureEmbeddedWorkspaceRuntime({ connectionProviders: [provider] })
     let prompt: Promise<Response> | undefined
     try {
@@ -843,9 +863,14 @@ describe("embedded workspace runtime", () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-retire-failed-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
 
+    const announced: string[][] = []
+    const stopWatching = onEmbeddedWorkspaceRuntimeActivity(() => {
+      announced.push(embeddedWorkspaceRuntimeActivity().owners.map((owner) => owner.state))
+    })
     try {
       const ws = workspace("ws_retire_failed", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      expect(announced.at(-1), "mounted").toEqual(["serving"])
       const teardown = first.host.dispose.bind(first.host)
       let refusals = 1
       let teardowns = 0
@@ -856,6 +881,7 @@ describe("embedded workspace runtime", () => {
 
       const failed = await releaseEmbeddedWorkspaceRuntime(ws.id)
       expect(failed).toMatchObject({ workspaceId: ws.id, state: "retire_failed", attempt: 1 })
+      expect(announced.at(-1), "retirement failed").toEqual(["retire_failed"])
       expect(failed.error).toMatch(/teardown refused/)
       expect(embeddedWorkspaceRuntimeActivity().owners).toContainEqual(
         expect.objectContaining({ workspaceId: ws.id, state: "retire_failed", attempt: 1 }),
@@ -872,8 +898,10 @@ describe("embedded workspace runtime", () => {
         .toMatchObject({ workspaceId: ws.id, state: "retired", attempt: 2 })
       expect(teardowns, "the retry reran the step that had not completed").toBe(2)
       expect(embeddedWorkspaceRuntimeActivity().owners).toEqual([])
+      expect(announced.at(-1), "retired").toEqual([])
       expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
     } finally {
+      stopWatching()
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -999,6 +1027,86 @@ describe("embedded workspace runtime", () => {
  * daemon's WebSocket proxy calls instead of the runtime's own route, so the
  * questions the route would have asked have to be asked here.
  */
+describe("the daemon lifecycle on its real work sources", () => {
+  // Grace outlasts the work, so a start the lifecycle never heard would leave
+  // grace counting from before the work and stop the daemon early after it.
+  const graceMs = 2_000
+  const heldMs = 1_000
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  test("a terminal opened during idle grace restarts grace when it is removed", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-lifecycle-terminal-")
+    const onStop = vi.fn()
+    const lifecycle = createLocalDaemonLifecycle({ onStop, machine: { machineId: "local", generation: "gen-terminal" }, idleGraceMs: graceMs })
+    let pty: Pty.Info | undefined
+    try {
+      lifecycle.start()
+      await lifecycle.recovery.launchesReconciled()
+      pty = await terminal(project, "ses_lifecycle")
+      await sleep(heldMs)
+
+      // A terminal stops pinning when its removal begins; retiring its process
+      // group takes longer than the grace this test waits out.
+      const removal = Pty.remove(pty.id)
+      const endedAt = Date.now()
+      await sleep(endedAt + graceMs - 500 - Date.now())
+      expect(onStop, "grace counts from the removal").not.toHaveBeenCalled()
+      await sleep(800)
+      expect(onStop).toHaveBeenCalledWith({ kind: "idle", idleMs: expect.any(Number) })
+      await removal
+      pty = undefined
+    } finally {
+      lifecycle.stop()
+      if (pty) await Pty.remove(pty.id)
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("a turn started during idle grace restarts grace when it ends", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-lifecycle-turn-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const held = heldProducer()
+    configureEmbeddedWorkspaceRuntime({ connectionProviders: [held.provider] })
+    const onStop = vi.fn()
+    const lifecycle = createLocalDaemonLifecycle({ onStop, machine: { machineId: "local", generation: "gen-turn" }, idleGraceMs: graceMs })
+    let prompt: Promise<Response> | undefined
+    try {
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_lifecycle_turn", project), { config: "skip" })
+      await runtime.host.apply({ version: 4, mcp: {}, auth: {}, connections: [{
+        connectionId: "held", providerKey: "held-producer", configRevision: 1, enabled: true, config: {},
+      }], defaultHarness: { kind: "connection", connectionId: "held" } })
+      const request = (pathname: string, body: unknown) => Promise.resolve(runtime.app.request(
+        `http://runtime.test${pathname}?directory=${encodeURIComponent(project)}&connectionId=held`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+      ))
+      expect((await request("/session", { id: "held-session", title: "Held" })).status).toBe(201)
+      lifecycle.start()
+      await lifecycle.recovery.launchesReconciled()
+
+      prompt = request("/session/held-session/message", { parts: [{ type: "text", text: "wait" }] })
+      await held.started.promise
+      await sleep(heldMs)
+
+      held.stopped.resolve()
+      held.tail.resolve()
+      expect((await prompt).status).toBe(200)
+      const endedAt = Date.now()
+      await sleep(endedAt + graceMs - 500 - Date.now())
+      expect(onStop, "grace counts from the turn's end").not.toHaveBeenCalled()
+      await sleep(800)
+      expect(onStop).toHaveBeenCalledWith({ kind: "idle", idleMs: expect.any(Number) })
+    } finally {
+      lifecycle.stop()
+      held.stopped.resolve()
+      held.tail.resolve()
+      await prompt
+      await shutdownEmbeddedWorkspaceRuntimes()
+      configureEmbeddedWorkspaceRuntime({ connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()] })
+      await removeWorkspaceRoot(root)
+    }
+  })
+})
+
 describe("attaching to an embedded workspace terminal", () => {
   const relayed = (role: "viewer" | "editor" = "editor"): EmbeddedRelayHostIdentity => ({
     principal_kind: "user",
@@ -1036,17 +1144,6 @@ describe("attaching to an embedded workspace terminal", () => {
       },
     })
     return { policy, asked }
-  }
-
-  async function terminal(cwd: string, sessionId: string) {
-    // These cases are about who may attach to a terminal, not about which
-    // store owns its launch; a volatile owner records the launch and nothing
-    // here reads it back. node-pty resolves a bare name through PATH on
-    // Windows, where there is no `/bin/sh` to find.
-    const command = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
-    const info = await Pty.create({ command, cwd, sessionId }, volatileLaunchOwnership())
-    Pty.commit(info.id)
-    return info
   }
 
   test("a terminal outside the workspace is not this workspace's to attach to", async () => {

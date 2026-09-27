@@ -234,6 +234,12 @@ export type WorkspaceHostOptions = {
   configApplyReceiptDir?: string
   /** Embedded owner applies its canonical snapshot before adapter-dependent reads. */
   beforeAdapterAcquire?: () => Promise<void>
+  /**
+   * Called synchronously after every change to what `activity()` and
+   * `activeTurns()` report, so an owner deciding residency never has to poll
+   * them. It must not start a turn, a checkpoint write, or a disposal.
+   */
+  onActivityChange?: () => void
   eventHub?: RuntimeEventHub
   /**
    * Host-supplied shared store factory. Defaults to the SQLite-backed
@@ -836,6 +842,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const unownedAdapterFailures = new Map<string, Array<{ at: number; message: string }>>()
   let checkpointState: "active" | "freezing" | "frozen" = "active"
   let activeCheckpointWrites = 0
+  const activityChanged = () => options.onActivityChange?.()
   let reconciledCheckpointEpoch: number | undefined
   const checkpointWriteWaiters = new Set<() => void>()
   const opencodeToolSessions = new Set<string>()
@@ -1123,6 +1130,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         create: () => nextAdapter,
       }],
       resolveHarness: (target) => ensureSessionAdapter(target, directory),
+      onActiveTurnChange: activityChanged,
     })
     sessionRuntimes.set(key, runtime)
     return runtime
@@ -1365,6 +1373,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     activeTurns.set(input.adapter, turns)
     const owner = { adapter: input.adapter, runtime: turnRuntime, directory: input.directory }
     if (!activeSessionOwners.has(input.sessionId)) activeSessionOwners.set(input.sessionId, owner)
+    activityChanged()
     healthFeed.turnStarted(input.sessionId, input.directory)
     return {
       signal: turn.controller.signal,
@@ -1377,6 +1386,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           activeTurns.delete(input.adapter)
           applyHeldAdapterConfig(input.adapter)
         }
+        activityChanged()
         notifyCheckpointWaiters()
       },
     }
@@ -1613,6 +1623,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (checkpointState === "frozen") return { state: "frozen", detail: checkpointDetail() }
     const deadlineAt = options.deadlineAt ?? Date.now() + DEFAULT_RECOVERY_BUDGETS.drainMs
     checkpointState = "freezing"
+    activityChanged()
     const blockers: WorkspaceCheckpointBlocker[] = []
     if (policy === "interrupt") {
       const drained = await Promise.all([...activeTurns.keys()].map((next) => drainActiveTurns(next, deadlineAt)))
@@ -1641,6 +1652,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     }
     if (blockers.length > 0) return { state: "blocked", blockers, detail: checkpointDetail() }
     checkpointState = "frozen"
+    activityChanged()
     return { state: "frozen", detail: checkpointDetail() }
   }
 
@@ -2360,11 +2372,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       beginWrite(): (() => void) | undefined {
         if (checkpointState !== "active") return undefined
         activeCheckpointWrites++
+        activityChanged()
         let finished = false
         return () => {
           if (finished) return
           finished = true
           activeCheckpointWrites--
+          activityChanged()
           notifyCheckpointWaiters()
         }
       },
@@ -2386,6 +2400,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       async resume() {
         if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
         checkpointState = "active"
+        activityChanged()
         return checkpointDetail()
       },
       async restoreReconcile(input) {
@@ -2395,6 +2410,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
         reconciledCheckpointEpoch = input.epoch
         checkpointState = "active"
+        activityChanged()
         return checkpointDetail()
       },
     },
@@ -2404,6 +2420,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       healthFeed.dispose()
       const deliveriesDone = disposeDeliveries?.()
       checkpointState = "freezing"
+      activityChanged()
       for (const turns of activeTurns.values()) for (const turn of turns) turn.controller.abort()
       disposal = (async () => {
         // Initiate teardown now: a pending create or permission may only
@@ -2425,6 +2442,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         sessionRuntimes.clear()
         activeTurns.clear()
         activeSessionOwners.clear()
+        activityChanged()
         adapter = undefined
         cleanupCompatObserver()
         cleanupRuntimeObserver()

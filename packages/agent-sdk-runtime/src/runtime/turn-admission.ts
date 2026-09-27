@@ -49,6 +49,7 @@ type Wake = { token: object } | { unavailable: true }
  */
 export function createTurnAdmissions(
   store: Pick<AgentRuntimeStore, "acquireTurnLease" | "releaseTurnLease">,
+  onActiveChange: () => void = () => {},
 ) {
   const active = new Map<string, ActiveTurn>()
   const waiting = new Map<string, Array<(wake: Wake) => void>>()
@@ -82,6 +83,7 @@ export function createTurnAdmissions(
     if (current?.generation !== generation) return false
     active.delete(sessionId)
     store.releaseTurnLease(sessionId, current.leaseId)
+    onActiveChange()
     handOff(sessionId)
     return true
   }
@@ -162,11 +164,14 @@ export function createTurnAdmissions(
       const claimed: ActiveTurn = { generation: {}, leaseId, ...turn }
       active.set(sessionId, claimed)
       handed.delete(sessionId)
+      onActiveChange()
       return { ...claimed, release: () => void release(sessionId, claimed.generation) }
     },
     release,
     clear() {
+      const hadActive = active.size > 0
       active.clear()
+      if (hadActive) onActiveChange()
       handed.clear()
       gates.clear()
       for (const waiters of waiting.values()) for (const resolve of waiters) resolve({ unavailable: true })

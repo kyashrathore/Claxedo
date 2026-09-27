@@ -138,6 +138,12 @@ export type CreateAgentRuntimeInput = {
   identity?: { workspaceId: string; machineId?: string }
   /** Deadlines and the clock recovery runs on; defaults are the contract's. */
   recovery?: { budgets?: Partial<RecoveryBudgets>; now?: () => number }
+  /**
+   * Called synchronously whenever a turn is admitted or released, so a host
+   * reporting the turns it owns can re-read `recovery.inspect` without polling.
+   * It runs inside the admission change and must not start or release a turn.
+   */
+  onActiveTurnChange?: () => void
 }
 
 export type AgentRuntimeEventEnvelope = {

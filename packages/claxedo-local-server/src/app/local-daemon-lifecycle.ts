@@ -27,6 +27,7 @@ import { Pty } from "@claxedo/workspace-runtime"
 import {
   embeddedWorkspaceRuntimeActivity,
   embeddedWorkspaceRuntimeOwnership,
+  onEmbeddedWorkspaceRuntimeActivity,
   type EmbeddedWorkspaceRuntimeOwnership,
 } from "../deployments/local/embedded-workspace-runtime"
 import type { DaemonOperationStore } from "./daemon-operation-store"
@@ -117,6 +118,16 @@ export function localDaemonWorkActivity() {
     // process generation. A future replacement protocol may reduce this set,
     // but it must do so by transferring ownership rather than guessing.
     replacementBlockers: residencyPins,
+  }
+}
+
+/** Calls `changed` after every change to what {@link localDaemonWorkActivity} reads. */
+export function watchLocalDaemonWork(changed: () => void): () => void {
+  const stopTerminals = Pty.onActivityChange(changed)
+  const stopRuntimes = onEmbeddedWorkspaceRuntimeActivity(changed)
+  return () => {
+    stopTerminals()
+    stopRuntimes()
   }
 }
 
@@ -251,6 +262,14 @@ export type LocalDaemonStopReason =
 export function createLocalDaemonLifecycle(options: {
   activity?: () => LocalDaemonWorkActivity
   /**
+   * Subscribes to every change of what `activity` reads. Residency is
+   * re-evaluated only when this, a lease or a machine operation reports a
+   * change. Each evaluation reads `activity` afresh, so a missed change never
+   * stops the daemon under live work; it leaves grace counting from the wrong
+   * moment instead.
+   */
+  watch?: (changed: () => void) => () => void
+  /**
    * Releases everything this process owns. Reached by idle grace and by
    * `stop_daemon`; it must resolve only once the owners are actually released,
    * because the receipt is written from what it reached.
@@ -264,8 +283,8 @@ export function createLocalDaemonLifecycle(options: {
   onStopped?: () => void
   /**
    * Called from the lifecycle's own evaluation when the owners, the gate or the
-   * residency pins changed since the last call, and never on a tick that found
-   * them unchanged.
+   * residency pins changed since the last call, and never on an evaluation that
+   * found them unchanged.
    */
   onScopeChanged?: () => void
   machine: {
@@ -287,12 +306,16 @@ export function createLocalDaemonLifecycle(options: {
     onLaunchesUnreadable?: (workspaceId: string | undefined, reason: string) => void
   }
   idleGraceMs?: number
-  pollIntervalMs?: number
+  /**
+   * The clock idle grace is measured on, so time the machine spent asleep
+   * counts toward it. The grace timer only decides when to look again, and
+   * re-reads this clock when it fires rather than trusting its own delay.
+   */
   now?: () => number
 }) {
   const activity = options.activity ?? localDaemonWorkActivity
+  const watch = options.watch ?? watchLocalDaemonWork
   const idleGraceMs = positive(options.idleGraceMs, 180_000)
-  const pollIntervalMs = positive(options.pollIntervalMs, 1_000)
   const now = options.now ?? Date.now
   const budgets: RecoveryBudgets = { ...DEFAULT_RECOVERY_BUDGETS, ...options.machine.budgets }
   const machineTarget: RecoveryMachineTarget = {
@@ -331,6 +354,9 @@ export function createLocalDaemonLifecycle(options: {
     return operationStore
   }
   let timer: ReturnType<typeof setTimeout> | undefined
+  let unwatch: (() => void) | undefined
+  let evaluationQueued = false
+  const changeWaiters = new Set<() => void>()
   let reportedScope: string | undefined
   let idleSince: number | undefined
   let state: "created" | "running" | "idle" | "stopping" | "stopped" = "created"
@@ -348,11 +374,32 @@ export function createLocalDaemonLifecycle(options: {
     timer = undefined
   }
 
-  function schedule(delayMs = pollIntervalMs) {
-    if (state !== "running" && state !== "idle") return
+  function stopWatching() {
+    unwatch?.()
+    unwatch = undefined
+  }
+
+  function scheduleGrace(delayMs: number) {
     clearTimer()
-    timer = setTimeout(tick, Math.max(1, Math.min(pollIntervalMs, delayMs)))
+    timer = setTimeout(tick, Math.max(1, delayMs))
     timer.unref?.()
+  }
+
+  function signalChange() {
+    for (const wake of [...changeWaiters]) wake()
+  }
+
+  /** Resolves on the next change to work, leases or the gate, or after `timeoutMs`. */
+  function nextChange(timeoutMs: number) {
+    return new Promise<void>((resolve) => {
+      const deadline = setTimeout(woken, Math.max(1, timeoutMs))
+      function woken() {
+        clearTimeout(deadline)
+        changeWaiters.delete(woken)
+        resolve()
+      }
+      changeWaiters.add(woken)
+    })
   }
 
   function evaluate() {
@@ -387,8 +434,10 @@ export function createLocalDaemonLifecycle(options: {
       reportedScope = scope
       options.onScopeChanged?.()
     }
-    if (current.residencyPins === 0 && current.idleRemainingMs === 0) {
+    if (current.idleRemainingMs === undefined) return
+    if (current.idleRemainingMs === 0) {
       state = "stopping"
+      stopWatching()
       const idleMs = current.at - (idleSince ?? current.at)
       void Promise.resolve(options.onStop({ kind: "idle", idleMs })).finally(() => {
         state = "stopped"
@@ -396,16 +445,30 @@ export function createLocalDaemonLifecycle(options: {
       })
       return
     }
-    schedule(current.idleRemainingMs ?? pollIntervalMs)
+    scheduleGrace(current.idleRemainingMs)
   }
 
   function changed() {
+    signalChange()
     if (state !== "running" && state !== "idle") return
-    // A lease can be acquired or released before the scheduled poll fires.
-    // Cancel that poll before evaluating immediately, otherwise `tick()` loses
-    // the only handle to it and every lease change leaves another timer behind.
+    // `tick()` overwrites the handle, so an armed grace timer left here would
+    // keep running with nothing able to cancel it.
     clearTimer()
     tick()
+  }
+
+  /**
+   * One evaluation for a burst of changes, after the change that caused it
+   * has finished: a producer notifies from inside its own mutation, and an
+   * evaluation run there could stop the daemon halfway through it.
+   */
+  function evaluateSoon() {
+    if (evaluationQueued) return
+    evaluationQueued = true
+    queueMicrotask(() => {
+      evaluationQueued = false
+      changed()
+    })
   }
 
   function facts(work: LocalDaemonWorkActivity, at: number): RecoveryFacts {
@@ -616,9 +679,23 @@ export function createLocalDaemonLifecycle(options: {
     }
   }
 
+  /**
+   * Waits on the work sources itself rather than on the lifecycle's own
+   * subscription: a stop ends that subscription before it retires the owners,
+   * and the drain's receipt is written from what the retirement reaches.
+   */
   async function runDrain(operationId: string, deadlineAt: number) {
     const run = runs.get(operationId)
     if (!run) return
+    const unwatchDrain = watch(signalChange)
+    try {
+      await drainUntilSettled(run, deadlineAt)
+    } finally {
+      unwatchDrain()
+    }
+  }
+
+  async function drainUntilSettled(run: MachineOperationRun, deadlineAt: number) {
     for (;;) {
       if (run.released) return
       const work = activity()
@@ -653,7 +730,7 @@ export function createLocalDaemonLifecycle(options: {
         })
         return
       }
-      await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(1, deadlineAt - at))))
+      await nextChange(deadlineAt - at)
     }
   }
 
@@ -951,6 +1028,7 @@ export function createLocalDaemonLifecycle(options: {
     run.settled = request.action === "drain_daemon"
       ? runDrain(operation.operationId, at + budgets.drainMs)
       : runStop(operation.operationId)
+    evaluateSoon()
     return { kind: "operation", operation: run.operation }
   }
 
@@ -1079,6 +1157,7 @@ export function createLocalDaemonLifecycle(options: {
     start() {
       if (state !== "created") return
       state = "running"
+      unwatch = watch(evaluateSoon)
       reconcileMachineOperations()
       // Nothing at the entrypoint holds this. Every failure inside is already
       // reported, and this is the backstop that keeps the one nobody predicted
@@ -1098,8 +1177,10 @@ export function createLocalDaemonLifecycle(options: {
     },
     stop() {
       clearTimer()
+      stopWatching()
       state = "stopped"
       leases.clear()
+      signalChange()
     },
     acquire(client = "desktop") {
       if (state === "stopping" || state === "stopped" || gate) return undefined
@@ -1147,7 +1228,6 @@ export function createLocalDaemonLifecycle(options: {
         return Promise.all([...runs.values()].map((run) => run.settled))
       },
     },
-    reconcile: changed,
     snapshot() {
       const current = evaluate()
       return {

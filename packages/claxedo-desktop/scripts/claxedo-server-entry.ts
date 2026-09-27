@@ -89,8 +89,7 @@ const lifecycle = createLocalDaemonLifecycle({
         : `workspace ${workspaceId} could not be read for unsettled launches: ${reason}`)
     },
   },
-  ...positiveDuration("CLAXEDO_DAEMON_IDLE_GRACE_MS", "idleGraceMs"),
-  ...positiveDuration("CLAXEDO_DAEMON_POLL_INTERVAL_MS", "pollIntervalMs"),
+  ...idleGraceFromEnv(),
 })
 const ownershipPath = claxedoDaemonOwnershipPath(path.dirname(startup.daemonDiscoveryPath))
 const ownership = createDaemonOwnershipPublisher({
@@ -262,15 +261,7 @@ function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): Diagnos
   return { pid: process.pid, launchId, generation }
 }
 
-function positiveDuration<Key extends "idleGraceMs" | "pollIntervalMs">(
-  envKey: string,
-  key: Key,
-): Partial<Record<Key, number>> {
-  const value = Number(process.env[envKey])
-  if (!Number.isFinite(value) || value <= 0) return {}
-  // Built as a typed record rather than asserting a computed-key literal into
-  // one: `{ [key]: n }` widens to `{ [x: string]: number }` on its own.
-  const duration: Partial<Record<Key, number>> = {}
-  duration[key] = Math.floor(value)
-  return duration
+function idleGraceFromEnv(): { idleGraceMs?: number } {
+  const value = Number(process.env.CLAXEDO_DAEMON_IDLE_GRACE_MS)
+  return Number.isFinite(value) && value > 0 ? { idleGraceMs: Math.floor(value) } : {}
 }

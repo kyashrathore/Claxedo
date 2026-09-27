@@ -390,7 +390,6 @@ describe("local composition — health and telemetry", () => {
       activity: () => ({ ...emptyActivity(), residencyPins: 1, replacementBlockers: 1 }),
       onStop() {},
       machine: { machineId: "local", generation: "generation-1", budgets: { drainMs: 10_000 } },
-      pollIntervalMs: 10_000,
     })
     lifecycle.start()
     const capture = vi.fn()
@@ -448,7 +447,6 @@ describe("local composition — health and telemetry", () => {
       }),
       onStop() {},
       machine: { machineId: "local", generation: "generation-1", budgets: { drainMs: 10_000 } },
-      pollIntervalMs: 10_000,
     })
     lifecycle.start()
     const local = app({ daemon: { identity, lifecycle } })
@@ -569,7 +567,6 @@ describe("local composition — health and telemetry", () => {
       }),
       onStop,
       machine: { machineId: "local", generation: "generation-1" },
-      pollIntervalMs: 5,
     })
     lifecycle.start()
     const local = app({ daemon: { identity, lifecycle } })

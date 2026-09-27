@@ -26,7 +26,6 @@ export const RUNTIME_RECOVERY_SMOKE_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
  * daemon still alive well past that is alive because the terminal pins it.
  */
 const IDLE_GRACE_MS = 2_000
-const POLL_INTERVAL_MS = 50
 
 /** Long enough for a 30s drain budget to expire and the operation to settle. */
 const DRAIN_SETTLE_MS = 60_000
@@ -70,7 +69,6 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
       CLAXEDO_DAEMON_GENERATION: generation,
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
       CLAXEDO_DAEMON_IDLE_GRACE_MS: String(IDLE_GRACE_MS),
-      CLAXEDO_DAEMON_POLL_INTERVAL_MS: String(POLL_INTERVAL_MS),
       CLAXEDO_DATA_DIR: path.join(root, "data"),
       CLAXEDO_DIAGNOSTICS_LAUNCH_ID: generation,
       CLAXEDO_DIAGNOSTICS_GENERATION: generation,

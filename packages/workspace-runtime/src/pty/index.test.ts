@@ -266,6 +266,48 @@ describe("Pty lifecycle cleanup", () => {
   })
 })
 
+describe("Pty activity changes", () => {
+  test("create, native exit and removal each notify with the new activity already readable", async () => {
+    const { Pty } = await import("./index")
+    const running: number[] = []
+    const stop = Pty.onActivityChange(() => running.push(Pty.activity().running))
+    try {
+      const first = await Pty.create({ cwd: tmpDir, title: "first" }, ownership)
+      const second = await Pty.create({ cwd: tmpDir, title: "second" }, ownership)
+      expect(running).toEqual([1, 2])
+
+      await Promise.all(fakeProcesses.get(first.pid)!.exitHandlers.map((handler) => handler({ exitCode: 0 })))
+      expect(running).toEqual([1, 2, 1])
+
+      await Pty.remove(second.id)
+      expect(running.at(-1)).toBe(0)
+      expect(Pty.activity().running).toBe(0)
+    } finally {
+      stop()
+    }
+  })
+
+  test("a retirement left unresolved notifies that the terminal pins again, and abandoning it notifies the release", async () => {
+    const { Pty } = await import("./index")
+    nextSpawnPid = 0
+    const info = await Pty.create({ cwd: tmpDir, title: "unverifiable" }, ownership)
+    const seen: Array<{ running: number; unresolved: number }> = []
+    const stop = Pty.onActivityChange(() => {
+      const { running, unresolved } = Pty.activity()
+      seen.push({ running, unresolved })
+    })
+    try {
+      await Pty.remove(info.id)
+      expect(seen.at(-1)).toEqual({ running: 1, unresolved: 1 })
+
+      await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
+      expect(seen.at(-1)).toEqual({ running: 0, unresolved: 0 })
+    } finally {
+      stop()
+    }
+  })
+})
+
 describe("Pty agent hook access", () => {
   const hookAccess = (token: string) => ({
     token,

@@ -160,6 +160,24 @@ type EmbeddedWorkspaceRuntimeListener = (
 ) => void
 
 const observers = new Set<EmbeddedWorkspaceRuntimeListener>()
+const activityListeners = new Set<() => void>()
+
+function activityChanged() {
+  for (const listener of activityListeners) listener()
+}
+
+/**
+ * Called synchronously after every change to what
+ * {@link embeddedWorkspaceRuntimeActivity} reports: a runtime mounted, retired
+ * or failing retirement, or a turn, write or checkpoint transition inside one.
+ * A listener must not mount or retire a runtime.
+ */
+export function onEmbeddedWorkspaceRuntimeActivity(listener: () => void): () => void {
+  activityListeners.add(listener)
+  return () => {
+    activityListeners.delete(listener)
+  }
+}
 
 function notify(listener: EmbeddedWorkspaceRuntimeListener, runtime: EmbeddedRuntime, phase: EmbeddedWorkspaceRuntimePhase) {
   try {
@@ -401,6 +419,7 @@ function options(
     ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
+    onActivityChange: activityChanged,
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
@@ -504,10 +523,12 @@ async function runEmbeddedRetirement(record: EmbeddedRetirement): Promise<Embedd
     // process owner, and the diagnostics registry should say so.
     runtime.diagnosticsOwner?.exit({ reason: "disposed" })
     retiring.delete(workspaceId)
+    activityChanged()
     return { workspaceId, state: "retired", attempt: record.attempt }
   } catch (error) {
     record.state = "retire_failed"
     record.error = String(error)
+    activityChanged()
     log.warn("an embedded workspace runtime retirement failed", {
       workspace_id: workspaceId,
       attempt: record.attempt,
@@ -537,6 +558,7 @@ function disposeRuntime(runtime: EmbeddedRuntime): Promise<EmbeddedRetirementRes
   }
   record.done = runEmbeddedRetirement(record)
   retiring.set(runtime.workspace.id, record)
+  activityChanged()
   return record.done
 }
 
@@ -644,6 +666,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
+  activityChanged()
   announce(runtime, "mounted")
   if (config === "sync") await configure(runtime)
   assertCurrent()
@@ -911,6 +934,7 @@ export function releaseEmbeddedWorkspaceRuntime(
   record.attempt += 1
   record.state = "retiring"
   delete record.error
+  activityChanged()
   record.done = runEmbeddedRetirement(record)
   return record.done
 }

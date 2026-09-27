@@ -302,6 +302,30 @@ describe("prompts for a session that is already running a turn", () => {
   })
 })
 
+test("the host hears each admission and release with the turn's target already readable", async () => {
+  const control = openTurn("ses_busy")
+  const targets: Array<string | undefined> = []
+  const runtime: ReturnType<typeof createAgentRuntime> = createAgentRuntime({
+    store: createMemoryRuntimeStore(),
+    harnesses: [harness({ turns: [], open: () => control })],
+    onActiveTurnChange: () => targets.push(runtime.recovery.inspect("ses_busy").target?.turnId),
+  })
+  const { id: sessionId } = await runtime.sessions.create({
+    id: "ses_busy",
+    workspaceId: "ws",
+    directory: "/repo",
+    harness: { id: "pi", access: "native" },
+  })
+
+  await runtime.turns.start({ sessionId, messageId: "msg_first", text: "work" })
+  expect(targets).toEqual(["msg_first"])
+
+  control.finish()
+  await until(() => targets.length === 2)
+  expect(targets).toEqual(["msg_first", undefined])
+  await runtime.dispose()
+})
+
 describe("handing an idle session to the prompts waiting for it", () => {
   function running(woken: string[]) {
     const turns = createTurnAdmissions({ acquireTurnLease: () => "lease", releaseTurnLease: () => {} })

@@ -349,7 +349,6 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_GENERATION: "idle-daemon-generation",
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
       CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
-      CLAXEDO_DAEMON_POLL_INTERVAL_MS: "5",
       CLAXEDO_DATA_DIR: path.join(root, "data"),
     }, serverLog),
     execPath: electronExecutable(),

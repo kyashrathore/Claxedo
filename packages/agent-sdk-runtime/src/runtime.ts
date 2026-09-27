@@ -104,7 +104,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   // The session is claimed before the user/assistant rows are persisted, so a
   // refused concurrent prompt cannot manufacture a failed turn or overwrite the
   // status of the turn that is actually running.
-  const admissions = createTurnAdmissions(store)
+  const admissions = createTurnAdmissions(store, input.onActiveTurnChange)
 
   const adapterFor = async (harness: SessionHarness) => {
     const harnessKey = key(harness)

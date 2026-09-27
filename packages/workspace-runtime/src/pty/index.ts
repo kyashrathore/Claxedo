@@ -498,7 +498,10 @@ export namespace Pty {
     // Claim explicit removal before the asynchronous process-tree sweep. This
     // makes cleanup single-owner when a provisional timer, dispose(), and the
     // native exit callback race each other.
-    if (reason === "remove") session.removed = true
+    if (reason === "remove") {
+      session.removed = true
+      activityChanged()
+    }
 
     clearInterrupt(session)
     // Release the headless emulator on BOTH paths — it holds a parser and a
@@ -535,6 +538,7 @@ export namespace Pty {
           session.subscribers.clear()
           sessions.delete(id)
           session.removed = true
+          activityChanged()
         }
       }, 1000 * 60).unref?.()
       return session.cleanupResult
@@ -562,15 +566,34 @@ export namespace Pty {
       if (!retirementSettled(result)) session.cleanup = "unresolved"
       session.removed = false
       session.cleanupOperation = undefined
+      activityChanged()
       log.error("PTY retirement unresolved", { id, pid: session.info.pid, result })
       return result
     }
     session.cleanup = undefined
     sessions.delete(id)
+    activityChanged()
     return result
   }
 
   const sessions = new Map<string, ActiveSession>()
+  const activityListeners = new Set<() => void>()
+
+  function activityChanged() {
+    for (const listener of activityListeners) listener()
+  }
+
+  /**
+   * Called synchronously after every change to what `activity()` and
+   * `listDetailed()` report: a terminal created, exited, removed, retained
+   * unresolved, or let go. A listener must not create or remove a terminal.
+   */
+  export function onActivityChange(listener: () => void): () => void {
+    activityListeners.add(listener)
+    return () => {
+      activityListeners.delete(listener)
+    }
+  }
 
   /**
    * Sweep transcripts nothing can restore from any more.
@@ -1031,6 +1054,7 @@ export namespace Pty {
     }
     if (restoredBuffer) session.modeTracker.feed(restoredBuffer)
     sessions.set(id, session)
+    activityChanged()
     armOrphanTimer(id, session)
     ptyProcess.onData((data) => {
       if (session.firstByteAt === undefined) {
@@ -1135,6 +1159,7 @@ export namespace Pty {
       clearInterrupt(session)
       log.info("session exited", { id, exitCode })
       session.info.status = "exited"
+      activityChanged()
       const tail = snapshot(id, 16_384)
       workspaceRuntimeBus.publish({
         type: "pty.exited",
@@ -1191,6 +1216,7 @@ export namespace Pty {
       if (sessions.get(id) === session) {
         session.removed = true
         sessions.delete(id)
+        activityChanged()
       }
       if (!alreadyExited) session.owner?.exit({ reason: "disposed" })
       workspaceRuntimeBus.publish({
@@ -1222,6 +1248,7 @@ export namespace Pty {
     if (session.cleanupResult) await persistRetirement(id, session, session.cleanupResult)
     session.removed = true
     sessions.delete(id)
+    activityChanged()
     session.owner?.exit({ reason: "detached" })
     log.error("PTY ownership abandoned with cleanup unresolved", {
       id,
@@ -1255,6 +1282,7 @@ export namespace Pty {
       })
       session.removed = true
       sessions.delete(id)
+      activityChanged()
       session.owner?.exit({ reason: "detached" })
     }
     return results

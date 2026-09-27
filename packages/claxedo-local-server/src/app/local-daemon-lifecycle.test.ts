@@ -26,6 +26,23 @@ const machine = { machineId: "local", generation: "gen-1" }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** A work source the test drives: `changed()` is what a terminal or turn producer calls. */
+function producer() {
+  const listeners = new Set<() => void>()
+  return {
+    watch: (changed: () => void) => {
+      const listener = () => changed()
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    changed: () => {
+      for (const listener of [...listeners]) listener()
+    },
+  }
+}
+
 function drain(scopeRevision: string, overrides: Partial<RecoveryRequest> = {}): RecoveryRequest {
   return {
     requestId: `req-${Math.random().toString(16).slice(2)}`,
@@ -98,7 +115,8 @@ describe("local daemon lifecycle", () => {
       const onIdle = vi.fn()
       let pins = 1
       const activity = () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins })
-      const lifecycle = createLocalDaemonLifecycle({ activity, onStop: onIdle, machine })
+      const work = producer()
+      const lifecycle = createLocalDaemonLifecycle({ activity, watch: work.watch, onStop: onIdle, machine })
       lifecycle.start()
       const lease = lifecycle.acquire()!
       lifecycle.release(lease.id)
@@ -112,8 +130,8 @@ describe("local daemon lifecycle", () => {
       expect(onIdle).not.toHaveBeenCalled()
 
       pins = 0
-      lifecycle.reconcile()
-      await vi.advanceTimersByTimeAsync(1)
+      work.changed()
+      await vi.advanceTimersByTimeAsync(0)
       expect(onIdle).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
@@ -129,7 +147,7 @@ describe("local daemon lifecycle", () => {
 
       lifecycle.start()
       // The startup reconciliation holds a deadline timer of its own until it
-      // answers; the count below is about the poll timer this file owns.
+      // answers; the count below is the idle grace timer.
       await lifecycle.recovery.launchesReconciled()
       expect(lifecycle.snapshot().state).toBe("idle")
       expect(vi.getTimerCount()).toBe(1)
@@ -139,18 +157,36 @@ describe("local daemon lifecycle", () => {
     }
   })
 
-  test("lease changes retain exactly one lifecycle timer", async () => {
+  test("a held daemon keeps no timer, and an idle one exactly the grace timer", async () => {
     vi.useFakeTimers()
     try {
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
+      let pins = 0
+      const work = producer()
+      const lifecycle = createLocalDaemonLifecycle({
+        activity: () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins }),
+        watch: work.watch,
+        onStop() {},
+        machine,
+      })
       lifecycle.start()
       await lifecycle.recovery.launchesReconciled()
-      expect(vi.getTimerCount()).toBe(1)
+      expect(vi.getTimerCount(), "idle").toBe(1)
 
       const lease = lifecycle.acquire()!
-      expect(vi.getTimerCount()).toBe(1)
+      expect(vi.getTimerCount(), "held by a lease").toBe(0)
+      await vi.advanceTimersByTimeAsync(3_600_000)
+      expect(vi.getTimerCount(), "an hour under a lease").toBe(0)
+
+      pins = 1
+      work.changed()
       expect(lifecycle.release(lease.id)).toBe(true)
-      expect(vi.getTimerCount()).toBe(1)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(vi.getTimerCount(), "held by a terminal").toBe(0)
+
+      pins = 0
+      work.changed()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(vi.getTimerCount(), "idle again").toBe(1)
 
       lifecycle.stop()
       expect(vi.getTimerCount()).toBe(0)
@@ -163,23 +199,27 @@ describe("local daemon lifecycle", () => {
     vi.useFakeTimers()
     try {
       let work = empty()
+      const producerOfWork = producer()
       const onScopeChanged = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: () => work, onStop() {}, onScopeChanged, machine, pollIntervalMs: 1_000 })
+      const lifecycle = createLocalDaemonLifecycle({ activity: () => work, watch: producerOfWork.watch, onStop() {}, onScopeChanged, machine })
       lifecycle.start()
       await lifecycle.recovery.launchesReconciled()
       expect(onScopeChanged).toHaveBeenCalledTimes(1)
 
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(onScopeChanged, "idle polls").toHaveBeenCalledTimes(1)
+      expect(onScopeChanged, "idle").toHaveBeenCalledTimes(1)
 
       lifecycle.acquire()
       expect(onScopeChanged, "a lease pins the daemon").toHaveBeenCalledTimes(2)
+      producerOfWork.changed()
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(onScopeChanged, "polls under a lease").toHaveBeenCalledTimes(2)
+      expect(onScopeChanged, "a change that moved nothing").toHaveBeenCalledTimes(2)
 
       const terminal: LocalDaemonOwner = { id: "terminal:t1", kind: "terminal", generation: "7", state: "running", pins: true }
       work = { ...empty(), owners: [terminal], residencyPins: 1, replacementBlockers: 1 }
-      await vi.advanceTimersByTimeAsync(1_000)
+      producerOfWork.changed()
+      producerOfWork.changed()
+      await vi.advanceTimersByTimeAsync(0)
       expect(onScopeChanged, "a terminal started").toHaveBeenCalledTimes(3)
 
       await vi.advanceTimersByTimeAsync(10_000)
@@ -190,11 +230,72 @@ describe("local daemon lifecycle", () => {
     }
   })
 
+  test("grace is wall-clock time: an hour asleep inside it counts, and the grace timer stops the daemon when it next fires", async () => {
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine })
+      lifecycle.start()
+      lifecycle.release(lifecycle.acquire()!.id)
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      // Asleep: the wall clock moves and no timer fires.
+      vi.setSystemTime(Date.now() + 3_600_000)
+      expect(onIdle).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(119_999)
+      expect(onIdle).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(onIdle).toHaveBeenCalledWith({ kind: "idle", idleMs: 3_780_000 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("after a sleep that outlasted grace, the first change that leaves the daemon idle stops it", async () => {
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      const work = producer()
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, watch: work.watch, onStop: onIdle, machine })
+      lifecycle.start()
+      lifecycle.release(lifecycle.acquire()!.id)
+      await vi.advanceTimersByTimeAsync(60_000)
+      vi.setSystemTime(Date.now() + 3_600_000)
+
+      work.changed()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(onIdle).toHaveBeenCalledWith({ kind: "idle", idleMs: 3_660_000 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a wall clock set back during grace never stops the daemon early: the timer re-arms for what remains", async () => {
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine })
+      lifecycle.start()
+      lifecycle.release(lifecycle.acquire()!.id)
+      await vi.advanceTimersByTimeAsync(100_000)
+      vi.setSystemTime(Date.now() - 60_000)
+
+      await vi.advanceTimersByTimeAsync(80_000)
+      expect(onIdle, "only 120 s of wall-clock grace have passed").not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(1)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(onIdle).toHaveBeenCalledWith({ kind: "idle", idleMs: 180_000 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test("a lease is held until released, however long that is, and its release starts a fresh grace", async () => {
     vi.useFakeTimers()
     try {
       const onIdle = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, idleGraceMs: 15, pollIntervalMs: 2 })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, idleGraceMs: 15 })
       lifecycle.start()
       const lease = lifecycle.acquire()!
       await vi.advanceTimersByTimeAsync(3_600_000)
@@ -213,13 +314,14 @@ describe("local daemon lifecycle", () => {
     const onIdle = vi.fn()
     let pins = 1
     const activity = () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins })
-    const lifecycle = createLocalDaemonLifecycle({ activity, onStop: onIdle, machine, idleGraceMs: 15, pollIntervalMs: 2 })
+    const work = producer()
+    const lifecycle = createLocalDaemonLifecycle({ activity, watch: work.watch, onStop: onIdle, machine, idleGraceMs: 15 })
     lifecycle.start()
 
     await wait(50)
     expect(onIdle).not.toHaveBeenCalled()
     pins = 0
-    lifecycle.reconcile()
+    work.changed()
     await wait(20)
     expect(onIdle).toHaveBeenCalledTimes(1)
   })
@@ -247,6 +349,51 @@ describe("machine recovery operations", () => {
   function operations() {
     return new DaemonOperationStore(new Database(":memory:"))
   }
+
+  test("a drain over a machine with nothing left stops the daemon at once, with no other change to prompt it", async () => {
+    const onStop = vi.fn()
+    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop, machine })
+    lifecycle.start()
+    await lifecycle.recovery.launchesReconciled()
+
+    const submitted = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (submitted.kind !== "operation") throw new Error("the drain was refused")
+    await wait(0)
+    expect(onStop).toHaveBeenCalledWith({ kind: "idle", idleMs: expect.any(Number) })
+  })
+
+  test("a drain settles on its own work subscription, after the lifecycle that started it has stopped", async () => {
+    const store = operations()
+    let pins = 1
+    const work = producer()
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins }),
+      watch: work.watch,
+      onStop() {},
+      machine: { ...machine, operations: () => store, budgets: { drainMs: 5_000 } },
+    })
+    lifecycle.start()
+    const submitted = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (submitted.kind !== "operation") throw new Error("the drain was refused")
+    lifecycle.stop()
+    await wait(0)
+
+    pins = 0
+    work.changed()
+    const outcome = await Promise.race([
+      lifecycle.recovery.settled().then(() => "settled" as const),
+      wait(1_000).then(() => "still waiting for its deadline" as const),
+    ])
+    expect(outcome).toBe("settled")
+    const read = lifecycle.recovery.read(submitted.operation.operationId)
+    expect(read.kind === "operation" && read.operation.state).toBe("succeeded")
+  })
 
   test("a caller without machine authority is refused, whatever it names itself", () => {
     const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
@@ -283,7 +430,6 @@ describe("machine recovery operations", () => {
       activity: machineWork(held, 3),
       onStop() {},
       machine: { ...machine, budgets: { drainMs: 30 } },
-      pollIntervalMs: 5,
     })
     lifecycle.start()
 
@@ -344,7 +490,6 @@ describe("machine recovery operations", () => {
       activity: machineWork(five, 5),
       onStop() {},
       machine: { ...machine, operations: () => store, budgets: { drainMs: 10 } },
-      pollIntervalMs: 5,
     })
     before.start()
     const submitted = before.recovery.submit(
@@ -395,7 +540,6 @@ describe("machine recovery operations", () => {
       activity: machineWork([owner("workspace:ws_a", "serving#0", "retiring")], 1),
       onStop() {},
       machine: { ...machine, operations: () => store, budgets: { drainMs: 5 } },
-      pollIntervalMs: 5,
     })
     first.start()
     first.recovery.submit(drain(first.recovery.inspect().scopeRevision), { callerId: "desktop", authority: "machine" })
@@ -506,7 +650,6 @@ describe("machine recovery operations", () => {
       activity: machineWork([owner("workspace:ws_a", "retiring#1", "retiring")], 1),
       onStop() {},
       machine: { ...machine, operations: () => store, budgets: { drainMs: 10_000 } },
-      pollIntervalMs: 10_000,
     })
     previous.start()
     const submitted = previous.recovery.submit(
@@ -545,7 +688,6 @@ describe("machine recovery operations", () => {
       activity: machineWork([owner("workspace:ws_a", "retiring#1", "retiring")], 1),
       onStop() {},
       machine: { ...machine, budgets: { drainMs: 10_000 } },
-      pollIntervalMs: 5,
     })
     lifecycle.start()
     const revision = lifecycle.recovery.inspect().scopeRevision
@@ -562,7 +704,6 @@ describe("machine recovery operations", () => {
       activity: machineWork([owner("workspace:ws_a", "retiring#1", "retiring")], 1),
       onStop() {},
       machine: { ...machine, operations: () => store, budgets: { drainMs: 10_000 } },
-      pollIntervalMs: 5,
     })
     lifecycle.start()
     const revision = lifecycle.recovery.inspect().scopeRevision
@@ -588,7 +729,6 @@ describe("machine recovery operations", () => {
         },
         budgets: { drainMs: 10_000 },
       },
-      pollIntervalMs: 5,
     })
     lifecycle.start()
 
@@ -640,7 +780,6 @@ describe("releasing a drain", () => {
       }),
       onStop() {},
       machine: { ...machine, ...(store ? { operations: () => store } : {}), budgets: { drainMs: 10_000 } },
-      pollIntervalMs: 5,
     })
     lifecycle.start()
     const submitted = lifecycle.recovery.submit(
@@ -715,8 +854,6 @@ describe("releasing a drain", () => {
       }),
       onStop() {},
       machine: { ...machine, budgets: { drainMs: 10_000 } },
-      // Long enough that the drain's own poll never fires during this test.
-      pollIntervalMs: 10_000,
     })
     lifecycle.start()
     const drained = lifecycle.recovery.submit(
