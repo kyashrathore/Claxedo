@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { sleep } from "@claxedo/helpers"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
@@ -175,13 +176,11 @@ async function readAttempt(transport: Transport, attemptId: string): Promise<Att
   return { state: status === "expired" ? "expired" : "denied" }
 }
 
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
 async function awaitGrant(transport: Transport, grant: IntegrationGrant, alive: () => boolean): Promise<IntegrationGrantOutcome> {
   const deadline = Date.now() + GRANT_LIFETIME_MS
   let interval = grant.intervalMs
   while (Date.now() < deadline) {
-    await wait(interval)
+    await sleep(interval)
     if (!alive()) return { kind: "abandoned" }
     const answer = await readAttempt(transport, grant.attemptId)
     if (!alive()) return { kind: "abandoned" }

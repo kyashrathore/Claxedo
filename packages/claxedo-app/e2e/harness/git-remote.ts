@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import { createServer, type Server } from "node:http"
 import path from "node:path"
 import { git, gitFolder } from "./git"
+import { listenOnLoopback } from "./ports"
 
 export type GitRemote = { url: string; source: string; close(): Promise<void> }
 
@@ -17,13 +18,6 @@ function serveFiles(served: string): Server {
   })
 }
 
-function listen(server: Server, port: number) {
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", resolve)
-  })
-}
-
 export async function serveGitRemote(input: { root: string; name: string; port: number }): Promise<GitRemote> {
   const source = await gitFolder(input.root, `${input.name}-source`)
   const served = path.join(input.root, "served")
@@ -31,7 +25,7 @@ export async function serveGitRemote(input: { root: string; name: string; port: 
   await git(input.root, "clone", "-q", "--bare", source, bare)
   await git(bare, "update-server-info")
   const server = serveFiles(served)
-  await listen(server, input.port)
+  await listenOnLoopback(server, input.port)
   return {
     url: `http://127.0.0.1:${input.port}/${input.name}.git`,
     source,

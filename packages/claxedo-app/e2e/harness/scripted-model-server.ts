@@ -1,6 +1,8 @@
 import { createServer, type Server, type ServerResponse } from "node:http"
 import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type StreamPacing } from "./scripted-model-replies"
+import { sleep } from "@claxedo/helpers"
 import { asRecord } from "@claxedo/helpers/guards"
+import { listenOnLoopback } from "./ports"
 import {
   dialectFor,
   hasToolResult,
@@ -114,17 +116,10 @@ async function writeReply(outgoing: ServerResponse, state: ServerState, sequence
   if (reply.kind === "error") return writeErrorReply(outgoing, reply)
   const gate = state.textGate
   if (reply.kind === "text" && gate && prompt.includes(gate.marker) && !isTitlePrompt(JSON.stringify(request.body))) await gate.promise
-  if (state.replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.replyDelayMs))
+  if (state.replyDelayMs > 0) await sleep(state.replyDelayMs)
   if (request.dialect === "chat") return respondChat(outgoing, sequence, reply, state.pacing)
   if (request.dialect === "responses") return respondResponses(outgoing, sequence, request.body, reply, state.pacing)
   return respondMessages(outgoing, sequence, request.body, reply, state.pacing)
-}
-
-function listen(server: Server, port: number) {
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", resolve)
-  })
 }
 
 function closeAll(server: Server) {
@@ -158,7 +153,7 @@ export async function startScriptedModelServer(input: { port: number }): Promise
     requests.push({ dialect: request.dialect, path: requestPath, body: request.body, model: request.body.model ?? "scripted", prompt, reply, tools: modelTools(request.body) })
     await writeReply(outgoing, state, sequence, request, prompt, reply)
   })
-  await listen(server, input.port)
+  await listenOnLoopback(server, input.port)
   const url = `http://127.0.0.1:${input.port}`
   return {
     url,

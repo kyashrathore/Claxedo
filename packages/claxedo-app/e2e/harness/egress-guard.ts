@@ -1,5 +1,6 @@
-import { createServer, type Server } from "node:http"
+import { createServer } from "node:http"
 import type { Duplex } from "node:stream"
+import { listenOnLoopback } from "./ports"
 
 export type EgressAttempt = { method: string; target: string }
 
@@ -29,13 +30,6 @@ function refuseTunnel(socket: Duplex) {
   socket.end(REFUSAL)
 }
 
-function listen(server: Server, port: number) {
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", resolve)
-  })
-}
-
 export async function startEgressGuard(port: number): Promise<EgressGuard> {
   const attempts: EgressAttempt[] = []
   const server = createServer((request, response) => {
@@ -50,7 +44,7 @@ export async function startEgressGuard(port: number): Promise<EgressGuard> {
     attempts.push({ method: "UPGRADE", target: request.url ?? "" })
     refuseTunnel(socket)
   })
-  await listen(server, port)
+  await listenOnLoopback(server, port)
   return {
     url: `http://127.0.0.1:${port}`,
     attempts,
