@@ -336,6 +336,7 @@
       "name": "@claxedo/local-server",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",

@@ -204,8 +204,14 @@ export const localServer: Policy = {
   //    session's workspace, checks it with `@claxedo/plugin-build` and
   //    registers it through the live-plugin service. It reaches the plugin
   //    packages and the service, all already here.
-  //    82/30, no headroom.
-  ceilings: { modules: 82, packages: 30 },
+  //  - @claxedo/agent-event-runtime/contracts via `shell/events.ts` (owner:
+  //    the event-stream liveness contract): the local `cp/events` beats on the
+  //    same `EVENT_STREAM_HEARTBEAT_MS` as every `wr/events`, so the app's one
+  //    reader budget is sized against one constant. The package already ships
+  //    in this bundle under @claxedo/agent-sdk-runtime and
+  //    @claxedo/workspace-runtime; this makes it a direct edge.
+  //    82/31, no headroom.
+  ceilings: { modules: 82, packages: 31 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

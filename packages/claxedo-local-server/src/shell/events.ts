@@ -1,4 +1,5 @@
 import type { Context } from "hono"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
 import { eventStreamResponse, type UpgradeWebSocket } from "./event-stream-response"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { controlBus, createBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
@@ -338,7 +339,7 @@ export function createControlPlaneEventsHandler(
           })
         },
         heartbeat,
-        heartbeatMs: 5_000,
+        heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
         lastEventId: cursor,
         replay,
         replayLive: false,
