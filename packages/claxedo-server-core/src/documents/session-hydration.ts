@@ -8,6 +8,7 @@ import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
 import { contentHash } from "@claxedo/server-core/documents/version"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { errorCode } from "@claxedo/server-core/platform/errors/index"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 type ManifestEntry = {
   documentId: string
@@ -423,8 +424,8 @@ async function withManifestMutation<T>(manifestPath: string, mutate: () => Promi
 }
 
 async function readManifest(manifestPath: string): Promise<Manifest> {
-  const value = await fs.readFile(manifestPath, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
+  const value = await fs.readFile(manifestPath, "utf8").catch((error: unknown) => {
+    if (isMissingFile(error)) return undefined
     throw error
   })
   if (value === undefined) return { version: 1, documents: [] }

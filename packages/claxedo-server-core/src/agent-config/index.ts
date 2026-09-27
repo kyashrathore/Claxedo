@@ -69,6 +69,7 @@ export type {
   ConnectionSecretLease,
   ConnectionSecretResolver,
 } from "@claxedo/agent-sdk-runtime"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const log = Log.create({ service: "agent-config" })
 
@@ -248,7 +249,7 @@ export async function legacyPlaintextAuth(): Promise<Record<string, string>> {
 
 export async function loadUserConfig(): Promise<UserAgentConfig> {
   const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch((error: unknown) => {
-    if (isNodeError(error, "ENOENT")) return undefined
+    if (isMissingFile(error)) return undefined
     throw new UserAgentConfigLoadError(
       "user_agent_config_read_failed",
       "Failed to read user agent config",

@@ -5,6 +5,7 @@ import type { AppPluginsGrant } from "@claxedo/mcp/client"
 import { checkPluginApp } from "@claxedo/plugin-build"
 import { AppPluginAuthoringError, appPluginScaffold } from "./scaffold"
 import { livePluginService, type LivePluginService } from "./service"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 export const APP_PLUGIN_FOLDER = path.join(".claxedo", "plugins")
 
@@ -42,8 +43,8 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
 
   const existingFolder = async (directory: string): Promise<string> => {
     const real = resolveInside(directory)
-    const stat = await fs.stat(real).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined
+    const stat = await fs.stat(real).catch((error: unknown) => {
+      if (isMissingFile(error)) return undefined
       throw error
     })
     if (!stat) throw new AppPluginAuthoringError(`${directory} does not exist`)
@@ -57,8 +58,8 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
       const { manifest, files } = appPluginScaffold(input.name)
       const [root = ""] = options.roots
       const target = resolveInside(input.directory ?? path.join(root, APP_PLUGIN_FOLDER, manifest.id))
-      if ((await fs.readdir(target).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return []
+      if ((await fs.readdir(target).catch((error: unknown) => {
+        if (isMissingFile(error)) return []
         throw error
       })).length > 0) {
         throw new AppPluginAuthoringError(`${target} already exists and is not empty; choose another name or folder`)

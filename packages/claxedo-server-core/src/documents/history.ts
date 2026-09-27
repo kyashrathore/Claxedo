@@ -7,7 +7,6 @@ import {
   DocumentSnapshotCorruptError,
   DocumentSnapshotNotFoundError,
   documentErrorFromCause,
-  nodeErrorCode,
 } from "@claxedo/server-core/documents/errors"
 import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
 import { mapBounded } from "@claxedo/server-core/documents/map-bounded"
@@ -15,6 +14,7 @@ import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetada
 import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef } from "@claxedo/server-core/documents/port"
 import { contentHash } from "@claxedo/server-core/documents/version"
 import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -114,7 +114,7 @@ export function createDocumentHistory(options: HistoryOptions) {
       const metadata = await readMetadata(directory, snapshotId)
       const target = path.join(directory, `${snapshotId}.md`)
       const handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
+        if (isMissingFile(error)) throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
         throw documentErrorFromCause(error, `reading snapshot ${snapshotId}`)
       })
       const current = await readBoundedFile(handle, maxDocumentBytes)
@@ -162,7 +162,7 @@ export function createDocumentHistory(options: HistoryOptions) {
   async function list(documentId: string): Promise<SnapshotRef[]> {
     const directory = historyDirectory(options.root, documentId)
     const names = await fs.readdir(directory).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return []
+      if (isMissingFile(error)) return []
       throw documentErrorFromCause(error, `listing document ${documentId} snapshots`)
     })
     return (
@@ -216,7 +216,7 @@ export function createDocumentHistory(options: HistoryOptions) {
           }, Promise.resolve())
 
         const names = await fs.readdir(directory).catch((error: unknown) => {
-          if (nodeErrorCode(error) === "ENOENT") return []
+          if (isMissingFile(error)) return []
           throw error
         })
         const metadata = new Set(names.filter((name) => name.endsWith(".json")).map((name) => name.slice(0, -5)))
@@ -240,7 +240,7 @@ function metadataPath(directory: string, snapshotId: SnapshotID) {
 
 async function readMetadata(directory: string, snapshotId: SnapshotID): Promise<SnapshotRef> {
   const raw = await fs.readFile(metadataPath(directory, snapshotId), "utf8").catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
+    if (isMissingFile(error)) throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
     throw documentErrorFromCause(error, `reading snapshot ${snapshotId} metadata`)
   })
   try {
@@ -297,7 +297,7 @@ async function atomicWrite(file: string, content: string, mode: number) {
 
 async function removeIfPresent(file: string) {
   await fs.unlink(file).catch((error: unknown) => {
-    if (nodeErrorCode(error) !== "ENOENT") throw error
+    if (!isMissingFile(error)) throw error
   })
 }
 

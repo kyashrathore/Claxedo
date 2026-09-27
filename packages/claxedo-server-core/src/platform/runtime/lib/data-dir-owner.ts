@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { parseJsonRecord } from "./json"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const OWNER_DIRECTORY = "control-plane.owners"
 const LEGACY_OWNER_FILE = "control-plane.owner.json"
@@ -129,7 +130,7 @@ function removeClaimIfMatches(ownerPath: string, inspected: InspectedOwner) {
   try {
     fs.renameSync(ownerPath, reclaimed)
   } catch (error) {
-    if (isNodeError(error, "ENOENT")) return
+    if (isMissingFile(error)) return
     throw error
   }
   const claimed = inspectOwner(reclaimed)
@@ -145,7 +146,7 @@ function releaseOwned(ownerPath: string, handle: number, token: string) {
   try {
     fs.renameSync(ownerPath, release)
   } catch (error) {
-    if (isNodeError(error, "ENOENT")) return
+    if (isMissingFile(error)) return
     throw error
   }
   const claimed = inspectOwner(release)
@@ -175,7 +176,7 @@ function inspectOwner(ownerPath: string): InspectedOwner | undefined {
       fs.closeSync(handle)
     }
   } catch (error) {
-    if (isNodeError(error, "ENOENT")) return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   }
 }
@@ -214,7 +215,7 @@ function sameFile(left: string, right: string) {
     const rightStat = fs.statSync(right)
     return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino
   } catch (error) {
-    if (isNodeError(error, "ENOENT")) return false
+    if (isMissingFile(error)) return false
     throw error
   }
 }

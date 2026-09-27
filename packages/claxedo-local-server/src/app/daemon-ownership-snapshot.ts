@@ -15,13 +15,12 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { writeFileAtomicSync } from "@claxedo/helpers/fs"
+import { isMissingFile, writeFileAtomicSync } from "@claxedo/helpers/fs"
 import {
   DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
   daemonOwnershipSnapshotPath,
   isDaemonOwnershipSnapshot,
 } from "@claxedo/agent-runtime-contract"
-import { errorCode } from "@claxedo/server-core/platform/errors/index"
 import type { LocalDaemonOwner, MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
 
 const PUBLISH_INTERVAL_MS = 5_000
@@ -74,7 +73,7 @@ export function clearDaemonOwnershipSnapshot(file: string, owner: { pid: number;
   try {
     fs.unlinkSync(file)
   } catch (error) {
-    if (errorCode(error) !== "ENOENT") throw error
+    if (!isMissingFile(error)) throw error
   }
 }
 
@@ -83,7 +82,7 @@ export function readDaemonOwnershipSnapshot(file: string): DaemonOwnershipSnapsh
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if (errorCode(error) === "ENOENT" || error instanceof SyntaxError) return undefined
+    if (isMissingFile(error) || error instanceof SyntaxError) return undefined
     throw error
   }
   return isLocalDaemonOwnershipSnapshot(parsed) ? parsed : undefined

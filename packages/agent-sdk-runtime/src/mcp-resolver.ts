@@ -7,6 +7,7 @@ import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { dataDir } from "./paths"
 import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
 import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 // Resolve storage paths at operation time because the data directory is a runtime setting.
 const claxedoDir = () => dataDir()
@@ -174,7 +175,7 @@ const readState = async (defaultPort = 7860) => {
       overrides: normalizeOverrides(json.overrides),
     }
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+    if (!isMissingFile(error)) throw error
   }
 
   return {

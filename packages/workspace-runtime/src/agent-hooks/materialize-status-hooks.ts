@@ -5,12 +5,13 @@ import { writeIfChanged as writeFileAtomically } from "./core/utils"
 import { arr, rec, str } from "../json-value"
 import { generateAmpPlugin, generateAntigravityHook } from "./core/hooks"
 import { ANTIGRAVITY_HOOK, CURSOR_HOOK, GEMINI_HOOK, NOTIFY_MARKER, NOTIFY_SCRIPT } from "./core/constants"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
   try {
     return await fs.readFile(filePath, "utf8")
   } catch (error) {
-    if (str(rec(error)?.code) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   }
 }

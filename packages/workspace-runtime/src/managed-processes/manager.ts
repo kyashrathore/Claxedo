@@ -35,6 +35,7 @@ import { rec, str } from "../json-value"
 import { findFreePort, findPidOnPort, tryPort } from "./port-picker"
 import type { ProcessObserver } from "./process-observer"
 import { resolveWorkspaceCommandPaths, resolveWorkspacePath } from "../target"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 // -- Global port registry (cross-workspace, outside per-directory state) ------
 // Maps assigned port → workspace info so port conflict detection can tell the
@@ -538,7 +539,7 @@ export async function loadConfig(directory: string): Promise<Process.ProcessConf
     void writeSchema(directory)
     return parsed.processes
   } catch (err) {
-    if (code(err) === "ENOENT") {
+    if (isMissingFile(err)) {
       log.info("no process config file found", { path: filePath })
       const s = getState(directory)
       s.configs.clear()
@@ -637,7 +638,7 @@ export function watchConfig(directory: string): void {
     s.watcher = watcher
     log.info("watching config file", { path: cfgPath(directory) })
   } catch (err) {
-    if (code(err) === "ENOENT") {
+    if (isMissingFile(err)) {
       log.info("config directory does not exist, skipping watcher", { dir: dirPath })
       return
     }
@@ -671,7 +672,7 @@ export async function reconcileFromDisk(directory: string): Promise<void> {
 
     newConfigs = parsed.data.processes
   } catch (err) {
-    if (code(err) === "ENOENT") {
+    if (isMissingFile(err)) {
       log.info("config file deleted, stopping all processes")
       await stopAll(directory)
       s.configs.clear()

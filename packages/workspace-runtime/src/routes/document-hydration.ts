@@ -12,6 +12,7 @@ import { num, rec, str } from "../json-value"
 import { authorizeHostCapability } from "./host-capability-access"
 import { sessionAccessContext, type SessionAccessPolicy } from "../session-access-policy"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const Job = z
   .object({
@@ -505,7 +506,7 @@ async function persist(sessionId: string, documentId: string, document: RuntimeD
     const existing = await fs.readFile(manifestPath, "utf8").then(
       (value) => Manifest.parse(JSON.parse(value)),
       (error: unknown) => {
-        if (str(rec(error)?.code) === "ENOENT") return { version: 1 as const, documents: [] }
+        if (isMissingFile(error)) return { version: 1 as const, documents: [] }
         throw error
       },
     )
@@ -787,7 +788,7 @@ async function secureDirectory(root: string, start: string, segments: readonly s
 
 async function recoverPersisted(manifestPath: string, documentId: string) {
   const raw = await fs.readFile(manifestPath, "utf8").catch((error: unknown) => {
-    if (str(rec(error)?.code) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   })
   if (!raw) return undefined

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { isOwnerOnlyFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { isMissingFile, isOwnerOnlyFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 
@@ -15,7 +15,6 @@ import {
 import { betterAuthIssuer } from "../../src/platform/auth/better-auth-d1-foundation"
 import { greenfieldUserDeployedPreflight } from "./greenfield-user-deployed"
 import { d1Row } from "./d1-json"
-import { errorCode } from "@claxedo/server-core/platform/errors/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const SHA256 = /^sha256:[0-9a-f]{64}$/
@@ -252,7 +251,7 @@ export async function resolveOwnerClaim(
     const claim = raw.endsWith("\n") ? raw.slice(0, -1) : raw
     return Object.freeze({ claim: canonicalOwnerClaim(claim), file: target, generated: false as const })
   } catch (error) {
-    if (errorCode(error) !== "ENOENT") throw error
+    if (!isMissingFile(error)) throw error
   }
   const claim = generateCanonicalOwnerClaim()
   await writePrivateFileAtomic(target, `${claim}\n`)

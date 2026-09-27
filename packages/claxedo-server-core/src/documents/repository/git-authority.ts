@@ -8,7 +8,6 @@ import {
   DocumentSnapshotCorruptError,
   DocumentSnapshotNotFoundError,
   DocumentVersionConflictError,
-  nodeErrorCode,
 } from "@claxedo/server-core/documents/errors"
 import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef, type SnapshotRequest } from "@claxedo/server-core/documents/port"
 import {
@@ -29,6 +28,7 @@ import { contentHash } from "@claxedo/server-core/documents/version"
 import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
 import { errorCode } from "@claxedo/server-core/platform/errors/index"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50
@@ -321,7 +321,7 @@ export function createLocalRepositoryGitAuthority(
   async function listSnapshots(root: string, documentId: string) {
     const directory = await snapshotDirectory(root, documentId)
     const names = await fs.readdir(directory).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return []
+      if (isMissingFile(error)) return []
       throw error
     })
     return (
@@ -376,7 +376,7 @@ export function createLocalRepositoryGitAuthority(
     }, Promise.resolve())
 
     const names = await fs.readdir(directory).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return []
+      if (isMissingFile(error)) return []
       throw error
     })
     const metadata = new Set(names.filter((name) => name.endsWith(".json")).map((name) => name.slice(0, -5)))
@@ -444,7 +444,7 @@ async function readSnapshotMetadata(directory: string, snapshotId: SnapshotID) {
 async function readSnapshotContent(directory: string, snapshotId: SnapshotID) {
   const target = path.join(directory, `${snapshotId}.md`)
   const handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
+    if (isMissingFile(error)) throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
     throw new DocumentSnapshotCorruptError(snapshotId, { cause: error })
   })
   const current = await readBoundedFile(handle, DEFAULT_MAX_DOCUMENT_BYTES)
@@ -477,7 +477,7 @@ async function readSnapshotContent(directory: string, snapshotId: SnapshotID) {
 
 async function readBoundedSnapshotMetadata(file: string, snapshotId: SnapshotID) {
   const handle = await fs.open(file, "r").catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
+    if (isMissingFile(error)) throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
     throw error
   })
   try {

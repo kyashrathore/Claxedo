@@ -5,6 +5,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { txt } from "./route-support"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { isMissingFile } from "@claxedo/helpers/fs"
 const log = Log.create({ service: "workspace-local-host" })
 
 export type LocalHostIdentity = {
@@ -32,7 +33,7 @@ async function loadLocalHostIdentity(): Promise<LocalHostIdentity> {
       }
     }
   } catch (err) {
-    if (!asRecord(err) || asRecord(err)?.code !== "ENOENT") {
+    if (!isMissingFile(err)) {
       log.warn("local host identity is invalid; replacing", { file })
     }
   }

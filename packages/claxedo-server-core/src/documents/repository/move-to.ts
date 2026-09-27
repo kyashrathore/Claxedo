@@ -3,6 +3,7 @@ import path from "node:path"
 import { z } from "zod"
 import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
 import { contentHash } from "@claxedo/server-core/documents/version"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const MoveRequestSchema = z
   .object({
@@ -148,8 +149,8 @@ export function createMoveToRepository(
     })
 
     async function loadOrCreate(file: string, input: MoveToRepositoryRequest) {
-      const existing = await fs.readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return undefined
+      const existing = await fs.readFile(file, "utf8").catch((error: unknown) => {
+        if (isMissingFile(error)) return undefined
         throw error
       })
       if (existing !== undefined) {
@@ -270,8 +271,8 @@ async function createInitialJournal(file: string, journal: Journal) {
 }
 
 async function removeJournal(file: string) {
-  await fs.unlink(file).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "ENOENT") throw error
+  await fs.unlink(file).catch((error: unknown) => {
+    if (!isMissingFile(error)) throw error
   })
   await syncDirectory(path.dirname(file))
 }

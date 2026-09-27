@@ -2,7 +2,7 @@ import fs from "fs"
 import path from "path"
 import { accountIdFromClaims } from "@claxedo/agent-runtime-contract"
 import type { FetchLike } from "../../adapter-contract"
-import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { isMissingFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 
@@ -46,7 +46,7 @@ export function readCodexAuthFile(home: string): JsonRecord | undefined {
   try {
     return asRecord(JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")))
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   }
 }

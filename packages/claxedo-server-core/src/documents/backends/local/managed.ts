@@ -33,6 +33,7 @@ import type {
   WriteResult,
 } from "@claxedo/server-core/documents/port"
 import { documentVersionsMatch, localDocumentVersion } from "@claxedo/server-core/documents/version"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50
@@ -327,7 +328,7 @@ async function archiveExact(
     await verifyPinnedParent(pinned)
     if (!(await exists(claimedPath))) {
       await fs.rename(pinned.target, claimedPath).catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") throw new DocumentVersionConflictError(null)
+        if (isMissingFile(error)) throw new DocumentVersionConflictError(null)
         throw error
       })
     }
@@ -654,7 +655,7 @@ async function atomicReplace(
     let claimedIdentity: Readonly<{ dev: number; ino: number }> | undefined
     if (expectedVersion !== null) {
       await fs.rename(pinned.target, claimedPath).catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") throw new DocumentVersionConflictError(null)
+        if (isMissingFile(error)) throw new DocumentVersionConflictError(null)
         throw error
       })
       claimed = true
@@ -759,10 +760,10 @@ async function rollbackInstalledAuthority(
   const [target, source] = await Promise.all([
     fs
       .stat(pinned.target)
-      .catch((error: unknown) => (nodeErrorCode(error) === "ENOENT" ? undefined : Promise.reject(error))),
+      .catch((error: unknown) => (isMissingFile(error) ? undefined : Promise.reject(error))),
     fs
       .stat(temporary)
-      .catch((error: unknown) => (nodeErrorCode(error) === "ENOENT" ? undefined : Promise.reject(error))),
+      .catch((error: unknown) => (isMissingFile(error) ? undefined : Promise.reject(error))),
   ])
   if (target && source && target.dev === source.dev && target.ino === source.ino) await fs.unlink(pinned.target)
   if (claimedPath && !(await exists(pinned.target))) {
@@ -842,7 +843,7 @@ async function resolvePinnedPath(root: string, relativePath: string) {
     throw documentErrorFromCause(error, "resolving a managed document path")
   })
   const realExisting = await fs.realpath(existing).catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT")
+    if (isMissingFile(error))
       throw new DocumentPathError("Managed document path contains a broken symlink", { cause: error })
     throw documentErrorFromCause(error, "resolving a managed document symlink")
   })
@@ -856,7 +857,7 @@ async function nearestExistingPath(input: string): Promise<string> {
   const found = await fs.lstat(input).then(
     () => true,
     (error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return false
+      if (isMissingFile(error)) return false
       throw error
     },
   )
@@ -948,7 +949,7 @@ async function reclaimCrashedLock(lock: string, staleMs: number, documentId: str
 
   const reclaimed = `${lock}.${process.pid}.${crypto.randomUUID()}.reclaim`
   await fs.rename(lock, reclaimed).catch((error: unknown) => {
-    if (nodeErrorCode(error) !== "ENOENT") throw documentErrorFromCause(error, `claiming stale lock for ${documentId}`)
+    if (!isMissingFile(error)) throw documentErrorFromCause(error, `claiming stale lock for ${documentId}`)
   })
   if (!(await exists(reclaimed))) return
   const claimed = await inspectLock(reclaimed, documentId)
@@ -973,12 +974,12 @@ async function reclaimCrashedLock(lock: string, staleMs: number, documentId: str
 
 async function inspectLock(lock: string, documentId: string) {
   const stat = await fs.stat(lock).catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw documentErrorFromCause(error, `inspecting lock for ${documentId}`)
   })
   if (!stat) return undefined
   const raw = await fs.readFile(lock, "utf8").catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw documentErrorFromCause(error, `reading lock for ${documentId}`)
   })
   if (raw === undefined) return undefined
@@ -1019,7 +1020,7 @@ function processIsAlive(pid: number) {
 async function releaseOwnedLock(lock: string, handle: FileHandle, token: string, documentId: string) {
   const release = `${lock}.${process.pid}.${crypto.randomUUID()}.release`
   await fs.rename(lock, release).catch((error: unknown) => {
-    if (nodeErrorCode(error) !== "ENOENT")
+    if (!isMissingFile(error))
       throw documentErrorFromCause(error, `claiming lock release for ${documentId}`)
   })
   if (!(await exists(release))) return
@@ -1046,7 +1047,7 @@ async function exists(file: string) {
   return await fs.lstat(file).then(
     () => true,
     (error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return false
+      if (isMissingFile(error)) return false
       throw error
     },
   )
@@ -1054,6 +1055,6 @@ async function exists(file: string) {
 
 async function removeIfPresent(file: string) {
   await fs.unlink(file).catch((error: unknown) => {
-    if (nodeErrorCode(error) !== "ENOENT") throw error
+    if (!isMissingFile(error)) throw error
   })
 }

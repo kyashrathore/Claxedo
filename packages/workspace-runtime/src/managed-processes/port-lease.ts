@@ -3,7 +3,7 @@ import path from "path"
 import z from "zod/v3"
 import { stateDir } from "../paths"
 import { Log } from "../log"
-import { rec, str } from "../json-value"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const log = Log.create({ service: "process-lease" })
 const LEASE_DIR = "managed-processes/port-leases"
@@ -54,7 +54,7 @@ export async function read(key: Key): Promise<File | undefined> {
     const raw = JSON.parse(await fs.readFile(file(key), "utf-8"))
     return File.parse(raw)
   } catch (err) {
-    if (str(rec(err)?.code) === "ENOENT") return undefined
+    if (isMissingFile(err)) return undefined
     log.warn("failed to read lease", { key, err })
     return undefined
   }

@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { writePrivateFileAtomic } from "./fs"
+import { isMissingFile, writePrivateFileAtomic } from "./fs"
 import { asFiniteNumber, asRecordOrEmpty } from "./guards"
 import { trimToUndefined } from "./string"
 
@@ -59,7 +59,7 @@ export async function loadClaxedoCredentials(
   try {
     return readClaxedoCredentials(JSON.parse(await fs.readFile(pathname, "utf8")))
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     if (error instanceof SyntaxError) return undefined
     throw error
   }

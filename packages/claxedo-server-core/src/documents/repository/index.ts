@@ -4,7 +4,6 @@ import {
   DocumentNotFoundError,
   DocumentVersionConflictError,
   documentErrorFromCause,
-  nodeErrorCode,
 } from "@claxedo/server-core/documents/errors"
 import type { DocumentEntry, DocumentHandle, DocumentVersion, DocumentWorkspace, SnapshotRef } from "@claxedo/server-core/documents/port"
 import { createLocalRepositoryFileAuthority, normalizeRepositoryRelativePath } from "@claxedo/server-core/documents/repository/file-authority"
@@ -26,6 +25,7 @@ import type {
   RepositoryGitSnapshot,
 } from "@claxedo/server-core/documents/repository/git-authority"
 import { documentVersionsMatch, localDocumentVersion } from "@claxedo/server-core/documents/version"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 export { createLocalRepositoryFileAuthority, createLocalRepositoryGitAuthority, RepositoryGitConflictError }
 export type {
@@ -183,7 +183,7 @@ export function createRepositoryDocumentWorkspace(
       const workspace = await resolveWorkspace(value)
       if (!workspace) return { state: "workspace-unavailable" }
       const canonicalPath = await options.files.resolve(workspace.root, value.relativePath).catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") return undefined
+        if (isMissingFile(error)) return undefined
         throw error
       })
       if (!canonicalPath) return { state: "workspace-unavailable" }
@@ -253,7 +253,7 @@ export function createRepositoryDocumentWorkspace(
     const workspace = await options.workspace.resolve(entry.workspaceId)
     if (!workspace) return undefined
     const root = await fs.realpath(workspace.directory).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return undefined
+      if (isMissingFile(error)) return undefined
       throw documentErrorFromCause(error, `resolving workspace ${entry.workspaceId}`)
     })
     return root ? { root } : undefined

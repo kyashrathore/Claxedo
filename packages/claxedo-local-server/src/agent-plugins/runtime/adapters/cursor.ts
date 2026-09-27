@@ -5,14 +5,11 @@ import path from "node:path"
 import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
 import { writeProjectedMcpFile } from "./mcp-projection"
 import { isRecord } from "../../../platform/json"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const OWNER = "claxedo-agent-plugins"
 const PREFIX = "claxedo--"
 const MARKER = ".claxedo-agent-plugin.json"
-
-function errorCode(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.code === "string" ? value.code : undefined
-}
 
 function managedName(plugin: GenerationPluginRoot) {
   const readable = plugin.plugin.manifest.name
@@ -78,7 +75,7 @@ export function cursorAgentPluginAdapter(input: { userHomeDirectory?: string } =
               await fs.lstat(destination)
               throw new Error(`Cursor plugin destination ${destination} is not owned by Claxedo`)
             } catch (error) {
-              if (errorCode(error) !== "ENOENT") throw error
+              if (!isMissingFile(error)) throw error
             }
           }
           const staging = path.join(localRoot, `.claxedo-staging-${transaction}-${name.slice(PREFIX.length)}`)

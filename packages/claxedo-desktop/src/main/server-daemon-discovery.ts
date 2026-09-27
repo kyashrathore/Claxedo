@@ -3,11 +3,10 @@ import path from "node:path"
 
 import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
-import { writeFileAtomicSync } from "@claxedo/helpers/fs"
+import { isMissingFile, writeFileAtomicSync } from "@claxedo/helpers/fs"
 import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
 import { readField } from "@claxedo/helpers/readers"
 import { createDaemonFetch } from "./daemon-request"
-import { nodeErrorCode } from "../shared/node-error"
 
 /**
  * The management protocol both halves must agree on. It is 2 because a daemon
@@ -44,7 +43,7 @@ export function readClaxedoDaemonDiscovery(file: string): ClaxedoDaemonDiscovery
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if (nodeErrorCode(error) === "ENOENT" || error instanceof SyntaxError) return undefined
+    if (isMissingFile(error) || error instanceof SyntaxError) return undefined
     throw error
   }
   return isClaxedoDaemonDiscovery(parsed) ? parsed : undefined
@@ -63,7 +62,7 @@ export function clearClaxedoDaemonDiscovery(file: string, owner: ClaxedoDaemonDi
   try {
     fs.unlinkSync(file)
   } catch (error) {
-    if (nodeErrorCode(error) !== "ENOENT") throw error
+    if (!isMissingFile(error)) throw error
   }
 }
 

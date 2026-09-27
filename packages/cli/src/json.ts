@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 
 export { asRecordOrEmpty as object } from "@claxedo/helpers/guards"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 export function boolean(input: unknown) {
   return typeof input === "boolean" ? input : undefined
@@ -11,7 +12,7 @@ export async function readOptionalJsonFile(pathname: string) {
   try {
     return JSON.parse(await fs.readFile(pathname, "utf8")) as unknown
   } catch (err) {
-    if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") return undefined
+    if (isMissingFile(err)) return undefined
     throw err
   }
 }

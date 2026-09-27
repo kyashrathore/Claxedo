@@ -40,6 +40,7 @@ import {
 import { readRepositoryFile } from "@claxedo/server-core/documents/repository/file-authority"
 import { sessionMatchesDocumentProject } from "@claxedo/server-core/documents/session-grants"
 import { hydrateSessionDocument, reachableLocalSessionWorkspace } from "@claxedo/server-core/documents/session-hydration"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 type Handle = LocalManagedDocumentHandle | RepositoryDocumentHandle
 
@@ -562,8 +563,8 @@ async function secureRepositoryMoveParent(root: string, target: string, notFound
       throw new DocumentNotFoundError(notFoundId)
     }
     const candidate = path.join(state.current, segment)
-    const existing = await fs.promises.lstat(candidate).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined
+    const existing = await fs.promises.lstat(candidate).catch((error: unknown) => {
+      if (isMissingFile(error)) return undefined
       throw error
     })
     if (existing?.isSymbolicLink() || (existing && !existing.isDirectory())) {

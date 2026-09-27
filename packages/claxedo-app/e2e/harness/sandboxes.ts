@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const STATE = ".docker-stand-in"
 
@@ -7,8 +8,8 @@ type Container = { id: string; pid: number }
 
 async function containers(dataDir: string): Promise<Container[]> {
   const dir = path.join(dataDir, STATE)
-  const names = await fs.readdir(dir).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return []
+  const names = await fs.readdir(dir).catch((error: unknown) => {
+    if (isMissingFile(error)) return []
     throw error
   })
   const files = names.filter((name) => name.endsWith(".json"))

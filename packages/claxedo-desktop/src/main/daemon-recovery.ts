@@ -45,9 +45,9 @@ import {
 } from "@claxedo/agent-sdk-runtime/launch"
 
 import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
-import { nodeErrorCode } from "../shared/node-error"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 import type { DaemonFetch } from "./daemon-request"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 /** The redacted inventory the daemon republished. It is a view, never proof of exit. */
 export type DaemonOwnershipView = {
@@ -89,7 +89,7 @@ export function readDaemonOwnershipView(file: string): DaemonOwnershipView | und
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if (nodeErrorCode(error) === "ENOENT" || error instanceof SyntaxError) return undefined
+    if (isMissingFile(error) || error instanceof SyntaxError) return undefined
     throw error
   }
   return isDaemonOwnershipSnapshot(parsed) ? parsed as DaemonOwnershipView : undefined

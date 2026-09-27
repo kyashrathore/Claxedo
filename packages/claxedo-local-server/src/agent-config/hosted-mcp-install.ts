@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { isOwnerOnlyFile, writeFileAtomic, writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { isMissingFile, isOwnerOnlyFile, writeFileAtomic, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import { parse as parseToml } from "smol-toml"
 
@@ -72,8 +72,8 @@ function harnessConfigFiles(paths: HostedMcpInstallPaths, env: NodeJS.ProcessEnv
 }
 
 async function readIfPresent(file: string) {
-  return await fs.readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
+  return await fs.readFile(file, "utf8").catch((error: unknown) => {
+    if (isMissingFile(error)) return undefined
     throw error
   })
 }
@@ -89,8 +89,8 @@ async function readIfPresent(file: string) {
  */
 async function replaceFileAtomically(file: string, contents: string) {
   await fs.mkdir(path.dirname(file), { recursive: true })
-  const current = await fs.stat(file).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
+  const current = await fs.stat(file).catch((error: unknown) => {
+    if (isMissingFile(error)) return undefined
     throw error
   })
   if (!current || await isOwnerOnlyFile(file)) await writePrivateFileAtomic(file, contents)

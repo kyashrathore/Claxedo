@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { PlanEntry, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
 export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
@@ -61,7 +62,7 @@ export async function readAcpScript(dir: string, name: string): Promise<AcpScrip
   try {
     return JSON.parse(await fs.readFile(scriptFile(dir, name), "utf8")) as AcpScript
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   }
 }

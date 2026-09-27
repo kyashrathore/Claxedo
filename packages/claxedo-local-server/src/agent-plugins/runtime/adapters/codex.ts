@@ -2,7 +2,7 @@ import crypto from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { writeFileAtomic } from "@claxedo/helpers/fs"
+import { isMissingFile, writeFileAtomic } from "@claxedo/helpers/fs"
 import type { AgentPluginMcpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import { pluginInstanceStorageKey } from "../plugin-data"
 import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
@@ -49,8 +49,8 @@ async function updateCodexPluginConfig(
   selected = false,
 ) {
   const configFile = path.join(codexHome, "config.toml")
-  const current = await fs.readFile(configFile, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return ""
+  const current = await fs.readFile(configFile, "utf8").catch((error: unknown) => {
+    if (isMissingFile(error)) return ""
     throw error
   })
   const start = current.indexOf(CONFIG_START)
@@ -182,8 +182,8 @@ export function codexAgentPluginAdapter(input: { codexHome?: string } = {}): Age
       }, null, 2)}\n`)
 
       await fs.mkdir(codexHome, { recursive: true })
-      const cacheExists = await fs.lstat(cacheRoot).then(() => true, (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return false
+      const cacheExists = await fs.lstat(cacheRoot).then(() => true, (error: unknown) => {
+        if (isMissingFile(error)) return false
         throw error
       })
       if (cacheExists && !(await ownedCache(cacheRoot))) {

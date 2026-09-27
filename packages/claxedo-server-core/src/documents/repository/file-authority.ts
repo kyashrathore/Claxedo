@@ -17,6 +17,7 @@ import type { DocumentRead, DocumentVersion } from "@claxedo/server-core/documen
 import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
 import { contentHash, documentVersionsMatch, localDocumentVersion } from "@claxedo/server-core/documents/version"
 import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 const DEFAULT_SCAN_CONCURRENCY = 8
 const MAX_RECOVERY_SCAN_CANDIDATES = 10_000
@@ -111,7 +112,7 @@ export function createLocalRepositoryFileAuthority(
       throw new DocumentPathError("Repository document path escapes its workspace root")
     const existing = await nearestExistingPath(candidate)
     const realExisting = await fs.realpath(existing).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") {
+      if (isMissingFile(error)) {
         throw new DocumentPathError("Repository document path contains a broken symlink", { cause: error })
       }
       throw error
@@ -162,7 +163,7 @@ export async function atomicRepositoryReplace(
     let claimedIdentity: Readonly<{ dev: number; ino: number }> | undefined
     if (expectedVersion !== null) {
       await fs.rename(target, claimedPath).catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") throw new DocumentVersionConflictError(null)
+        if (isMissingFile(error)) throw new DocumentVersionConflictError(null)
         throw error
       })
       claimed = true
@@ -283,7 +284,7 @@ async function readPinnedRepositoryFile(
   for (const _attempt of [0, 1, 2]) {
     if (pinned) await verifyRepositoryParent(pinned)
     const file = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") throw new DocumentNotFoundError(documentId, { cause: error })
+      if (isMissingFile(error)) throw new DocumentNotFoundError(documentId, { cause: error })
       if (nodeErrorCode(error) === "ELOOP")
         throw new DocumentPathError("Repository document target became a symlink", { cause: error })
       throw documentErrorFromCause(error, `reading repository document ${documentId}`, documentId)
@@ -297,7 +298,7 @@ async function readPinnedRepositoryFile(
       if (!before.isFile()) throw new DocumentPathError("Repository document target is not a regular file")
       if (pinned) await verifyRepositoryParent(pinned)
       const current = await fs.stat(target).catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") return undefined
+        if (isMissingFile(error)) return undefined
         throw error
       })
       if (
@@ -399,7 +400,7 @@ async function sameInode(left: string, right: string) {
 
 async function statIfPresent(target: string) {
   return await fs.stat(target).catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   })
 }
@@ -453,7 +454,7 @@ async function nearestExistingPath(input: string): Promise<string> {
   const found = await fs.lstat(input).then(
     () => true,
     (error: unknown) => {
-      if (nodeErrorCode(error) === "ENOENT") return false
+      if (isMissingFile(error)) return false
       throw error
     },
   )

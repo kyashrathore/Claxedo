@@ -1,14 +1,10 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
-import { writeFileAtomic } from "@claxedo/helpers/fs"
+import { isMissingFile, writeFileAtomic } from "@claxedo/helpers/fs"
 import { isRecord } from "../../platform/json"
 
 const GENERATION_ID = /^generation-[0-9]+-[a-f0-9-]+$/
-
-function errorCode(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.code === "string" ? value.code : undefined
-}
 
 function generationRevision(generationId: string) {
   if (!GENERATION_ID.test(generationId)) {
@@ -55,7 +51,7 @@ export async function readActiveGeneration(runtimeRoot: string): Promise<ActiveA
   try {
     raw = JSON.parse(await fs.readFile(file, "utf8"))
   } catch (error) {
-    if (errorCode(error) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw new AgentPluginGenerationError("invalid-generation", `Agent Plugins active pointer is invalid: ${String(error)}`)
   }
   if (!isRecord(raw)) {

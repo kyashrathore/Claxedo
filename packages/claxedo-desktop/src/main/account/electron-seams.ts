@@ -19,7 +19,7 @@ import { fetchWithDeadline } from "./hosted-transport"
 
 import { isRecord } from "@claxedo/helpers/guards"
 import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
-import { nodeErrorCode } from "../../shared/node-error"
+import { isMissingFile } from "@claxedo/helpers/fs"
 
 /**
  * A loopback listener on an OS-assigned port.
@@ -75,7 +75,7 @@ export function readCredentialFile(path: string, read: (path: string, encoding: 
   try {
     return read(path, "utf8")
   } catch (error) {
-    if (nodeErrorCode(error) === "ENOENT") return undefined
+    if (isMissingFile(error)) return undefined
     throw error
   }
 }
@@ -118,7 +118,7 @@ export function credentialFile(userDataDir: string): CredentialFile {
         renameSync(path, join(userDataDir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-${randomUUID()}`))
         syncDirectory()
       } catch (error) {
-        if (nodeErrorCode(error) !== "ENOENT") throw error
+        if (!isMissingFile(error)) throw error
       }
     },
     clear: () => {
