@@ -2,13 +2,13 @@ import {
   assistantMessageSettled,
   countFoldableGroups,
   foldedGroupKeys,
+  groupMembers,
   groupParts,
   isGroupablePart,
   partHasText,
   turnFoldDecision,
   turnFoldShape,
   turnSegments,
-  type PartGroup,
   type PartRef,
 } from "@claxedo/agent-runtime-contract/turn-fold"
 import type { AgentAssistantMessage, AgentContentPart, AgentMessage } from "@claxedo/agent-runtime-contract"
@@ -101,10 +101,6 @@ function turnGroups(assistants: readonly AgentMessage[], reasoning: boolean, can
   return { shape, groups: turnSegments(shape.refs, shape).flat(), part: (ref: PartRef) => partById.get(ref.partId) }
 }
 
-function groupMembers(group: PartGroup): PartRef[] {
-  return group.type === "part" ? [group.ref] : group.refs
-}
-
 /** The turn a cold transcript draws: folded to the parts the fold leaves drawn when the contract's fold decision folds it, whole otherwise. */
 export function firstPageTurn(messages: AgentMessage[], request: Pick<FirstPageRequest, "reasoning" | "cancelledAssistantMessageId">): FirstPageTurn {
   const [user, ...rest] = messages
@@ -150,7 +146,7 @@ function textLines(text: string, cols: number): number {
   return lines
 }
 
-function promptText(user: AgentMessage): string {
+function visiblePromptText(user: AgentMessage): string {
   return user.parts.flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : [])).join("\n")
 }
 
@@ -175,7 +171,7 @@ function drawnGroupLines(assistants: readonly AgentMessage[], cols: number): num
 export function estimateTurnLines(turn: FirstPageTurn, cols: number): number {
   const [user, ...rest] = turn.messages
   if (!user) return 0
-  const prompt = textLines(promptText(user), Math.max(1, Math.floor(cols * USER_BUBBLE_SHARE)))
+  const prompt = textLines(visiblePromptText(user), Math.max(1, Math.floor(cols * USER_BUBBLE_SHARE)))
   const fold = turn.foldableCount === undefined ? 0 : FOLD_ROW_LINES
   return TURN_CHROME_LINES + prompt + fold + drawnGroupLines(rest.filter(isAssistant), cols)
 }

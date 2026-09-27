@@ -277,7 +277,7 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
   }
 }
 
-function groupMembers(group: PartGroup): PartRef[] {
+export function groupMembers(group: PartGroup): PartRef[] {
   return group.type === "part" ? [group.ref] : group.refs
 }
 
