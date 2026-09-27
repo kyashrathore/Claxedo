@@ -1,4 +1,5 @@
 import type {
+  AgentContentPart,
   AgentSessionStart,
   AgentMessage,
   AgentPermission,
@@ -71,7 +72,8 @@ export type SessionViewport = { rows: number; cols: number; reasoning: "0" | "1"
 /** An outline read; with the reader's viewport it also asks for the first page its transcript draws. */
 export type SessionOutlineInput = SessionInput & ({ [K in keyof SessionViewport]?: never } | SessionViewport)
 /** The page of turns before `before`, projected as the first page is. */
-export type SessionPageInput = SessionInput & SessionViewport & { before: string }
+export type SessionTurnPageInput = SessionInput & SessionViewport & { before: string }
+export type SessionPartInput = SessionInput & { messageID: string; partID: string }
 export type SessionGoalStartInput = SessionInput & { objective: string }
 
 /** A prompt the runtime holds behind a running turn, as the queue route reports it. */
@@ -110,7 +112,9 @@ export type WorkspaceSessionClient = {
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   /** The session's row and its turns as the nav rail lists them, never their content; with a viewport, also the first page. */
   outline(input: SessionOutlineInput, options?: Options): Reply<FirstRead<AgentPresentationSession>>
-  page(input: SessionPageInput, options?: Options): Reply<TurnPage>
+  turnPage(input: SessionTurnPageInput, options?: Options): Reply<TurnPage>
+  /** One part whole, as a row that a page sent as its header reads it when it opens. */
+  part(input: SessionPartInput, options?: Options): Reply<AgentContentPart>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   /**
    * What the runtime owner knows about this session, and the operations a
@@ -254,7 +258,8 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     subagents: (input, options) => read("session.subagents", input, "/subagents", options),
     messages,
     outline: (input, options) => read("session.outline", input, "/outline", options, without(input, ["sessionID"])),
-    page: (input, options) => read("session.page", input, "/page", options, without(input, ["sessionID"])),
+    turnPage: (input, options) => read("session.turnPage", input, "/page", options, without(input, ["sessionID"])),
+    part: (input, options) => read("session.part", input, `/message/${encodeURIComponent(input.messageID)}/part/${encodeURIComponent(input.partID)}`, options),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
     recovery: {
       inspect: (input, options) => caller.decoded({

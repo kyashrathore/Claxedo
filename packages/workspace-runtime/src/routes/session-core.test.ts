@@ -718,6 +718,22 @@ describe("createSessionRoutes message paging", () => {
     expect(page.turns.map((item: { cursor: string; foldableCount: number }) => [item.cursor, item.foldableCount])).toEqual([["24", 2], ["25", 2], ["26", 2]])
   })
 
+  test("a part read answers one part whole, and names a part the session lacks or a runtime that cannot read one", async () => {
+    const part = pagedTurn(3)[1]!.parts[1]!
+    const app = routes({ adapter: adapter(), getPart: (sessionId, messageId, partId) => (sessionId === "session-1" && messageId === part.messageID && partId === part.id ? part : undefined) })
+
+    const served = await app.request(`http://localhost/session/session-1/message/${part.messageID}/part/${part.id}`)
+    expect(served.status).toBe(200)
+    expect(served.headers.get("cache-control")).toBe("no-store")
+    expect(await served.json()).toEqual(part)
+
+    const missing = await app.request(`http://localhost/session/session-1/message/${part.messageID}/part/nope`)
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "part_not_found" } })
+
+    expect((await routes({ adapter: adapter() }).request(`http://localhost/session/session-1/message/${part.messageID}/part/${part.id}`)).status).toBe(501)
+  })
+
   test("a first read or a page read names every extent it needs and refuses one out of range, and a page read names its cursor", async () => {
     const { app } = pagedRoutes()
     for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
@@ -981,6 +997,7 @@ function routes(input: {
   getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessage[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessage[]; maxEventOrdinal?: number } | undefined
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   getTurnOutline?: (directory: RuntimeDirectory, sessionId: string) => TurnOutline | undefined
+  getPart?: (sessionId: string, messageId: string, partId: string) => AgentMessage["parts"][number] | undefined
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
@@ -998,6 +1015,7 @@ function routes(input: {
       ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
       : undefined,
     getTurnOutline: input.getTurnOutline ? (_c, directory, sessionId) => input.getTurnOutline?.(directory, sessionId) : undefined,
+    getPart: input.getPart ? (_c, _directory, sessionId, messageId, partId) => input.getPart?.(sessionId, messageId, partId) : undefined,
     sessionAccessPolicy: input.sessionAccessPolicy,
     afterCreateSession: input.afterCreateSession
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)

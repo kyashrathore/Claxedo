@@ -46,7 +46,7 @@ import type {
   SessionModelGroup,
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import {
   effectivePermissionModeId,
   effectiveSessionModel,
@@ -4331,6 +4331,16 @@ export class RuntimeStore {
 
   messageSessionId(messageId: string) {
     return this.db.prepare<{ session_id: string }>("SELECT session_id FROM message WHERE id = ?").get(messageId)?.session_id
+  }
+
+  /** One stored part whole, as the message it belongs to hydrates it; nothing when the session has no such message or the message no such part. */
+  getPart(sessionId: string, messageId: string, partId: string): AgentContentPart | undefined {
+    this.settleDeltas(sessionId)
+    const message = this.db
+      .prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? AND id = ?")
+      .get(sessionId, messageId)
+    if (!message) return undefined
+    return this.hydrateMessages(sessionId, [message])[0]?.parts.find((part) => part.id === partId)
   }
 
   turnOutline(sessionId: string): TurnOutline | undefined {

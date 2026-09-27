@@ -1904,6 +1904,16 @@ export function createSessionRoutes(opts: Opts) {
       if (!messages) return noStoreJson(c, sessionNotFound(), 404)
       return toolImageResponse({ messages, sessionId, messageId: c.req.param("messageId"), attachmentId: c.req.param("attachmentId") })
     })
+    .get("/session/:id/message/:messageId/part/:partId", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
+      if (guarded) return guarded
+      if (!opts.getPart) throw new HTTPException(501, { message: "part reads are not supported for this session" })
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const part = await opts.getPart(c, directory, sessionId, c.req.param("messageId"), c.req.param("partId"))
+      if (!part) return noStoreJson(c, { error: { code: "part_not_found", message: "The session has no such part" } }, 404)
+      return noStoreJson(c, part)
+    })
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")

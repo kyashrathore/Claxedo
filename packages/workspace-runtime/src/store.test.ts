@@ -1273,6 +1273,28 @@ void describe("RuntimeStore", () => {
     store.close()
   })
 
+  void it("reads one part whole by its message and id, and nothing for another session's message or a part the message lacks", () => {
+    const store = new RuntimeStore(tmp())
+    for (const sessionId of ["s1", "s2"]) store.bindSession({ sessionId, directory: "/work", agentSessionId: `a-${sessionId}`, createdAt: 1 })
+    store.appendEvent({ sessionId: "s1", agentSessionId: "a-s1", payload: messageUpdated({ sessionID: "s1", id: "user-1", role: "user", time: { created: 1 } } as any) })
+    store.appendEvent({ sessionId: "s1", agentSessionId: "a-s1", payload: messageUpdated({ sessionID: "s1", id: "assistant-1", role: "assistant", parentID: "user-1", time: { created: 2, completed: 3 } } as any) })
+    const tool = {
+      id: "assistant-1-tool",
+      messageID: "assistant-1",
+      type: "tool",
+      callID: "call-1",
+      tool: "bash",
+      state: { status: "completed", input: { command: "ls" }, output: "a\nb", title: "ls", metadata: { exitCode: 0 }, time: { start: 2, end: 3 } },
+    }
+    store.appendEvent({ sessionId: "s1", agentSessionId: "a-s1", payload: messagePartUpdated({ sessionID: "s1", ...tool } as any) })
+
+    assert.deepEqual(store.getPart("s1", "assistant-1", "assistant-1-tool"), { sessionID: "s1", ...tool })
+    assert.equal(store.getPart("s2", "assistant-1", "assistant-1-tool"), undefined)
+    assert.equal(store.getPart("s1", "assistant-1", "missing"), undefined)
+    assert.equal(store.getPart("s1", "user-1", "assistant-1-tool"), undefined)
+    store.close()
+  })
+
   void it("outlines the newest turns from their users alone: capped prompt snippets, parsing no assistant part and no part outside the window", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })

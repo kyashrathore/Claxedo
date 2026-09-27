@@ -346,6 +346,7 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /session/:id/goal/stop": { kind: "authorize", operation: "goal_stop" },
   "DELETE /session/:id/goal": { kind: "authorize", operation: "goal_delete" },
   "GET /session/:id/message": { kind: "authorize", operation: "message_read" },
+  "GET /session/:id/message/:messageId/part/:partId": { kind: "authorize", operation: "message_read" },
   "GET /session/:id/message/:messageId/attachment/:attachmentId": { kind: "authorize", operation: "message_read" },
   "GET /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_read" },
   "GET /session/:id/queue": { kind: "authorize", operation: "queue_read" },
