@@ -8,15 +8,11 @@ export function acceptedSessionUpdate(
 ): AgentSession | null {
   const current = store.getSession(sessionId)
   if (!current) return null
+  const archived = updates.time?.archived
   return {
     ...current,
     ...(updates.title !== undefined ? { title: updates.title } : {}),
-    time: {
-      created: current.time?.created ?? Date.now(),
-      ...current.time,
-      updated: Date.now(),
-      ...(updates.time?.archived !== undefined ? { archived: updates.time.archived } : {}),
-    },
+    ...(archived !== undefined && current.time ? { time: { ...current.time, archived } } : {}),
   }
 }
 

@@ -333,32 +333,6 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(calls).toEqual(["begin", "delete", "complete"])
   })
 
-  test("a created session with no creation or update time to list it at is never registered, and its creation is undone", async () => {
-    const calls: string[] = []
-    const fixture = {
-      ...adapter(),
-      getSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId }),
-      createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
-      deleteSession: async () => { calls.push("delete") },
-    }
-    const policy = managedPolicy({
-      registerSession: async () => { calls.push("register"); return { allowed: true } },
-      beginRegistrationCompensation: async () => { calls.push("begin"); return { allowed: true } },
-      completeRegistrationCompensation: async () => { calls.push("complete"); return { allowed: true } },
-    })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-session-registration-operation": "op_create_1",
-      },
-      body: JSON.stringify({ id: "ses_1" }),
-    })
-    expect(response.status).toBe(500)
-    expect(await response.json()).toMatchObject({ error: { code: "session_time_missing" } })
-    expect(calls).toEqual(["begin", "delete", "complete"])
-  })
-
   test("requires an exact reservation before a managed fork mutates runtime state", async () => {
     let forks = 0
     const fixture = {
@@ -410,7 +384,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
       sessionTime: { created: 1, updated: 9 },
       actor: { actorId: "actor_1", actorKind: "human" },
     })
-    expect(await response.json()).toEqual({ id: "ses_child" })
+    expect(await response.json()).toEqual({ id: "ses_child", time: { created: 1, updated: 9 } })
   })
 
   test("filters list rows through private-session authority", async () => {
@@ -1168,7 +1142,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     })
 
     expect(response.status).toBe(201)
-    expect(await response.json()).toEqual({ id: "session_child" })
+    expect(await response.json()).toEqual({ id: "session_child", title: "Hybrid", time: { created: 1, updated: 1 } })
     expect(calls).toEqual(["fork", "register:session_child", "project:session_child"])
   })
 
@@ -1238,6 +1212,111 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(res.status).toBe(201)
     expect((lifecycle.find((event) => event.phase === "created")?.info as { title?: string } | undefined)?.title).toBe("")
   })
+
+  test("a renamed session answers and announces its store's times after the write, never the adapter's accepted copy", async () => {
+    const events: CompatEnvelope[] = []
+    const app = routes({
+      adapter: {
+        ...adapter(),
+        updateSession: async (binding) => ({ id: binding.sessionId, title: "Renamed", time: { created: 1, updated: 999 } }),
+        getSession: async (binding) => ({ id: binding.sessionId, title: "Renamed", time: { created: 1, updated: 7 } }),
+      },
+      events,
+    })
+
+    const response = await app.request("http://localhost/session/session_1", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "Renamed" }),
+    })
+
+    expect(response.status).toBe(200)
+    expect((await response.json() as { time?: unknown }).time).toEqual({ created: 1, updated: 7 })
+    expect(JSON.stringify(events)).toContain('"time":{"created":1,"updated":7}')
+    expect(JSON.stringify(events)).not.toContain("999")
+  })
+
+  const unreadBacks = [
+    ["cannot be read back", async () => null],
+    ["reads back with no times", async (binding: AgentExecutionBinding) => ({ id: binding.sessionId })],
+  ] as const
+  for (const [readBack, getSession] of unreadBacks) {
+    for (const managed of [true, false]) {
+      test(`a created session that ${readBack} is deleted before it is registered, projected or announced (${managed ? "managed" : "unmanaged"})`, async () => {
+        const calls: string[] = []
+        const lifecycle: SessionLifecycleEvent[] = []
+        const events: CompatEnvelope[] = []
+        const made = new Set<string>()
+        const app = routes({
+          adapter: {
+            ...adapter(),
+            getSession: async (binding) => made.has(binding.sessionId) ? getSession(binding) : null,
+            createSession: async (_directory: string, _title?: string, id?: string) => {
+              made.add(id ?? "session_1")
+              return { id: id ?? "session_1" }
+            },
+            deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
+          },
+          lifecycle,
+          events,
+          ...(managed ? {
+            sessionAccessPolicy: {
+              ...registrationPolicy(async (input) => {
+                calls.push(`register:${input.sessionId}`)
+                return { allowed: true }
+              }),
+              beginRegistrationCompensation: async () => { calls.push("compensate"); return { allowed: true } },
+            },
+          } : {}),
+          afterCreateSession: async () => { calls.push("project") },
+        })
+
+        const response = await app.request("http://localhost/session", {
+          method: "POST",
+          ...(managed ? { headers: { "x-claxedo-session-registration-operation": "op_create_unread" } } : {}),
+          body: JSON.stringify(managed ? { id: "session_1" } : {}),
+        })
+
+        expect(response.status).toBe(500)
+        expect(calls).toEqual(["delete:session_1"])
+        expect(events).toEqual([])
+        expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "failed"])
+      })
+
+      test(`a forked child that ${readBack} is deleted before it is registered, projected or announced (${managed ? "managed" : "unmanaged"})`, async () => {
+        const calls: string[] = []
+        const events: CompatEnvelope[] = []
+        const app = routes({
+          events,
+          adapter: {
+            ...adapter(),
+            getSession: async (binding) => binding.sessionId === "session_child" ? getSession(binding) : persistedAt(1)(binding),
+            forkSession: async () => { calls.push("fork"); return { id: "session_child" } },
+            deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
+          },
+          ...(managed ? {
+            sessionAccessPolicy: {
+              ...registrationPolicy(async (input) => {
+                calls.push(`register:${input.sessionId}`)
+                return { allowed: true }
+              }),
+              beginRegistrationCompensation: async () => { calls.push("compensate"); return { allowed: true } },
+            },
+          } : {}),
+          afterCreateSession: async () => { calls.push("project") },
+        })
+
+        const response = await app.request("http://localhost/session/session_parent/fork", {
+          method: "POST",
+          ...(managed ? { headers: { "x-claxedo-session-registration-operation": "op_fork_unread" } } : {}),
+          body: JSON.stringify({ id: "session_child", messageId: "message_1" }),
+        })
+
+        expect(response.status).toBe(500)
+        expect(calls).toEqual(["fork", "delete:session_child"])
+        expect(events).toEqual([])
+      })
+    }
+  }
 
   test("filters transcript-bearing collections through the verified relay actor", async () => {
     const calls: Array<{ operation: string; actorId?: string; sessionIds: string[] }> = []

@@ -83,11 +83,15 @@ function adapter(input: {
     directory: RuntimeDirectory,
   ) => Promise<AgentMessagePage>
 }): AgentHarnessAdapter {
+  const titles = new Map<string, string>()
   return {
     instructionChannel: "turn-system-prompt",
-    getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: "Demo" }),
+    getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo" }),
     createSession: async () => ({ id: "s1" }),
-    updateSession: async (binding, updates) => buildSession({ id: binding.sessionId, directory: binding.directory, title: updates.title ?? "Demo" }),
+    updateSession: async (binding, updates) => {
+      if (updates.title !== undefined) titles.set(binding.sessionId, updates.title)
+      return buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo" })
+    },
     getSessionConfig: async () => ({
       harness: { id: "codex", access: "native" },
       model: { providerID: "openai", modelID: "gpt-5.4" },

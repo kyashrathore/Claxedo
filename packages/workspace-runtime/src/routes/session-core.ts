@@ -163,9 +163,10 @@ async function cascadeToChildren(
       await cancelAdmittedTurn(childOwner, childSessionId, recoveryCaller(c), `archive-child:${childSessionId}:${randomUUID()}`)
     }
     const body = { time: { archived: updates.archived ?? Date.now() } }
-    const session = await childAdapter.updateSession(binding, body)
-    if (!session) continue
-    await after(opts.afterUpdateSession?.(c, directory, session, body))
+    const accepted = await childAdapter.updateSession(binding, body)
+    if (!accepted) continue
+    await after(opts.afterUpdateSession?.(c, directory, accepted, body))
+    const session = await readUpdatedSession(opts, c, childAdapter, directory, childSessionId)
     opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionUpdated(session)))
   }
 }
@@ -769,7 +770,7 @@ async function sessionPromptAdmitted(opts: Opts, c: Ctx, sessionId: string) {
 async function registerCreatedSession(
   opts: Opts,
   c: Ctx,
-  created: { sessionId: string; time: RuntimeSessionTime | undefined },
+  created: { sessionId: string; time: RuntimeSessionTime },
   operationId: string | undefined,
   sessionTitle?: string,
 ) : Promise<
@@ -800,15 +801,6 @@ async function registerCreatedSession(
     }
   }
   const { sessionId, time } = created
-  if (!time) {
-    return {
-      kind: "denied",
-      response: Response.json(errorBody(
-        "session_time_missing",
-        "The created session has no creation or update time to register it at",
-      ), { status: 500 }),
-    }
-  }
   const input = registrationInput(c, sessionId, operationId, sessionTitle, time)
   let decision: SessionAccessDecision
   try {
@@ -837,6 +829,41 @@ async function registerCreatedSession(
     return { kind: "ambiguous", response: sessionAccessDenied(decision) }
   }
   return { kind: "denied", response: sessionAccessDenied(decision) }
+}
+
+/**
+ * No adapter's create or fork returns the session's times, so a created
+ * session is read back before anything registers, projects or announces it.
+ * One that is missing or has no times is a store fault the caller rolls back.
+ */
+async function readCreatedSession(
+  opts: Opts,
+  c: Ctx,
+  adapter: AgentHarnessAdapter,
+  directory: RuntimeDirectory,
+  sessionId: string,
+) {
+  const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
+  if (!session) throw new Error(`Created session ${sessionId} has no persisted session row`)
+  const time = runtimeSessionTime(session)
+  if (!time) throw new Error(`Created session ${sessionId} has no creation or update time`)
+  return { session, time }
+}
+
+/**
+ * An adapter's update returns the session it accepted, not the store's row:
+ * the host's `afterUpdateSession` writes the store after it, at its own time.
+ */
+async function readUpdatedSession(
+  opts: Opts,
+  c: Ctx,
+  adapter: AgentHarnessAdapter,
+  directory: RuntimeDirectory,
+  sessionId: string,
+) {
+  const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
+  if (!session) throw new Error(`Updated session ${sessionId} has no persisted session row`)
+  return timedSession(session)
 }
 
 async function rollbackCreatedSession(
@@ -1435,6 +1462,7 @@ export function createSessionRoutes(opts: Opts) {
             }
           }
           let subagentKey: string | undefined
+          let time: RuntimeSessionTime
           try {
             if (childMode.mode) {
               await adapter.setPermissionMode!(await requireExecutionBinding(opts, c, directory, session.id, adapter), childMode.mode.id)
@@ -1470,12 +1498,11 @@ export function createSessionRoutes(opts: Opts) {
                 ...(wakeOrigin ? { origin: wakeOrigin } : {}),
               })).subagentKey
             }
+            ;({ session, time } = await readCreatedSession(opts, c, adapter, directory, session.id))
           } catch (error) {
             if (!existing) await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
-          const persisted = await readRuntimeSession(opts, c, directory, session.id, adapter)
-          if (persisted) session = persisted
           const created = {
             ...(body.parentID ? { parentID: body.parentID } : {}),
             ...(subagentKey ? { subagentKey } : {}),
@@ -1495,7 +1522,7 @@ export function createSessionRoutes(opts: Opts) {
             publishFailed(message)
             return response
           }
-          const registration = await registerCreatedSession(opts, c, { sessionId: session.id, time: persisted && runtimeSessionTime(persisted) }, operationId, body.title)
+          const registration = await registerCreatedSession(opts, c, { sessionId: session.id, time }, operationId, body.title)
           if (registration.kind === "ambiguous") {
             return registration.response
           }
@@ -1672,12 +1699,13 @@ export function createSessionRoutes(opts: Opts) {
         ...(title !== undefined ? { title } : {}),
         ...(archived !== undefined ? { time: { archived } } : {}),
       }
-      const session = await adapter.updateSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body)
-      if (!session) return c.json(sessionNotFound(), 404)
-      await after(opts.afterUpdateSession?.(c, directory, session, body))
+      const accepted = await adapter.updateSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body)
+      if (!accepted) return c.json(sessionNotFound(), 404)
+      await after(opts.afterUpdateSession?.(c, directory, accepted, body))
+      const session = await readUpdatedSession(opts, c, adapter, directory, sessionId)
       opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
       if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
-      return c.json(timedSession(session))
+      return c.json(session)
     })
     .patch("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
@@ -2064,8 +2092,14 @@ export function createSessionRoutes(opts: Opts) {
         if (refused) return refused
       }
       const child = await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
-      const forked = await readRuntimeSession(opts, c, directory, child.id, adapter)
-      const registration = await registerCreatedSession(opts, c, { sessionId: child.id, time: forked && runtimeSessionTime(forked) }, operationId)
+      let forked: { session: AgentSession; time: RuntimeSessionTime }
+      try {
+        forked = await readCreatedSession(opts, c, adapter, directory, child.id)
+      } catch (error) {
+        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        throw error
+      }
+      const registration = await registerCreatedSession(opts, c, { sessionId: child.id, time: forked.time }, operationId)
       if (registration.kind === "ambiguous") return registration.response
       if (registration.kind === "denied") {
         await compensateRegistration({
@@ -2080,7 +2114,7 @@ export function createSessionRoutes(opts: Opts) {
         return registration.response
       }
       try {
-        await after(opts.afterCreateSession?.(c, directory, child))
+        await after(opts.afterCreateSession?.(c, directory, forked.session))
       } catch (error) {
         if (managedSessionLifecycle(opts, c)) {
           await compensateRegistration({
@@ -2097,7 +2131,7 @@ export function createSessionRoutes(opts: Opts) {
         }
         throw error
       }
-      return c.json(child, 201)
+      return c.json(forked.session, 201)
     })
     .post("/session/:id/command", async (c) => {
       const sessionId = c.req.param("id")
