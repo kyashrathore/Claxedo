@@ -10,6 +10,7 @@ import { ensureFrontWindow } from "./front-window";
 import { optionalRecord, readBoolean, readFlag, readNumber, readRecord, readRecords, readSize, readText } from "./page-value";
 import { AGENT_APP_WINDOW } from "./agent-display-contract";
 import { writeJson } from "./storage";
+import { isolatedHomeEnv } from "./isolated-home";
 
 export type OwnedProcess = {
   pid: number;
@@ -261,34 +262,6 @@ async function captureColdReadyDiagnostics(input: {
 }
 
 /**
- * The embedded OpenCode engine reads a GLOBAL config from the operator's home
- * directory, and that config can install third-party plugins. Measured: one such
- * plugin (`opencode-antigravity-auth`) awaits an uncached network fetch with a
- * 5,000 ms timeout inside `plugin.init()`, which `InstanceContextMiddleware`
- * awaits before the `/provider` handler runs — 366-395 ms on the binding
- * constraint of `app.cold_ready_ms`, from a package this product does not own.
- *
- * The harness already isolates the desktop profile, the data directory and the
- * corpus. It did not isolate this. Runs therefore measured whichever plugins the
- * operator happened to have installed, and could reach the network.
- *
- * OFF BY DEFAULT so every number recorded before this existed keeps its meaning.
- * Set `CLAXEDO_BENCH_ISOLATE_AMBIENT=1` to pin the ambient environment to an
- * empty directory under the run's own isolated profile. `provenance.json` records
- * which mode produced a number, because the difference between the two arms is
- * itself a finding rather than a detail.
- */
-export function ambientIsolationEnv(isolatedProfilePath: string): Record<string, string> {
-  if (process.env.CLAXEDO_BENCH_ISOLATE_AMBIENT !== "1") return {}
-  const root = path.join(isolatedProfilePath, "ambient")
-  return { XDG_CONFIG_HOME: path.join(root, "config"), XDG_CACHE_HOME: path.join(root, "cache"), HOME: root }
-}
-
-export function ambientIsolationMode(): "isolated" | "operator-ambient" {
-  return process.env.CLAXEDO_BENCH_ISOLATE_AMBIENT === "1" ? "isolated" : "operator-ambient"
-}
-
-/**
  * The startup-clock request, expressed the only way a launcher can express one:
  * as an environment the packaged app inherits. Empty unless asked for, so the
  * default run hands the app exactly the environment it always did.
@@ -304,16 +277,15 @@ export async function launchPackagedClaxedo(input: {
   executable: string;
   isolatedProfilePath: string;
   dataDirectory: string;
+  homeDirectory: string;
   readinessTargets: readonly SessionReadinessTarget[];
   timeoutMs?: number;
-  /** Composition overrides for special arms (e.g. OPENCODE_URL for the
-   * fake-engine stream profile). Applied last, so they win. */
-  extraEnv?: Record<string, string>;
 }): Promise<ClaxedoLaunch> {
   const timeoutMs = input.timeoutMs ?? 60_000;
   await Promise.all([
     mkdir(input.isolatedProfilePath, { recursive: true, mode: 0o700 }),
     mkdir(input.dataDirectory, { recursive: true, mode: 0o700 }),
+    mkdir(input.homeDirectory, { recursive: true, mode: 0o700 }),
   ]);
   const [debugPort, serverPort] = await Promise.all([
     availablePort(),
@@ -332,13 +304,12 @@ export async function launchPackagedClaxedo(input: {
     ],
     env: {
       ...process.env,
-      ...ambientIsolationEnv(input.isolatedProfilePath),
+      ...isolatedHomeEnv(input.homeDirectory),
       ...startupClockEnv(runDirectory),
       CLAXEDO_DESKTOP_USER_DATA_DIR: input.isolatedProfilePath,
       CLAXEDO_DATA_DIR: input.dataDirectory,
       CLAXEDO_SERVER_PORT: String(serverPort),
       CLAXEDO_DEVTOOLS: "0",
-      ...input.extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",

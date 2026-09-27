@@ -485,17 +485,12 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     const targets = [...readinessTargets.values()]
     const control = readinessTargets.get("control")
     if (!control || targets.length === 0) throw new Error("Claxedo control readiness target is missing")
-    const ambient = path.join(stateRoot, "ambient")
     const launch = await launchPackagedClaxedo({
       executable,
       isolatedProfilePath: path.join(stateRoot, "profile"),
       dataDirectory: path.join(stateRoot, "data"),
+      homeDirectory: path.join(stateRoot, "ambient"),
       readinessTargets: [control, ...targets.filter((target) => target.logicalSessionId !== "control")],
-      extraEnv: {
-        HOME: ambient,
-        XDG_CONFIG_HOME: path.join(ambient, "config"),
-        XDG_CACHE_HOME: path.join(ambient, "cache"),
-      },
     })
     current = launch
     activeStateRoot = stateRoot

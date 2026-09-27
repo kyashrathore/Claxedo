@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { isolatedHomeEnv } from "../../perf-harness/src/isolated-home"
 import { egressProxyEnv } from "./egress-guard"
 import { PINNED_PI } from "./pinned-pi"
 import { writePricingSnapshot } from "./usage-pricing"
@@ -17,19 +18,14 @@ function inherited(): NodeJS.ProcessEnv {
 }
 
 export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJS.ProcessEnv> {
-  const xdg = {
-    XDG_CONFIG_HOME: path.join(home, ".config"),
-    XDG_DATA_HOME: path.join(home, ".local", "share"),
-    XDG_CACHE_HOME: path.join(home, ".cache"),
-    XDG_STATE_HOME: path.join(home, ".local", "state"),
-  }
+  const { HOME, ...xdg } = isolatedHomeEnv(home)
   await Promise.all(Object.values(xdg).map((dir) => fs.mkdir(dir, { recursive: true })))
   await fs.writeFile(path.join(home, ".gitconfig"), GIT_IDENTITY)
   await writePricingSnapshot(home)
   return {
     ...inherited(),
     PATH: [STAND_INS, process.env.PATH].filter(Boolean).join(path.delimiter),
-    HOME: home,
+    HOME,
     ...xdg,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
