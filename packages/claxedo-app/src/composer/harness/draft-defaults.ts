@@ -1,11 +1,10 @@
-import { checksum } from "@/ui/utils"
-import type { ModelChoice } from "@/server"
+import type { ModelChoice, PlacementId } from "@/server"
+import { preferenceKey } from "@/lib/persisted"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"
 import { asRecord } from "@claxedo/helpers/guards"
 
 const VERSION = 3
-const KEY = "session.draft-default.v1"
 const MAX_ID_LENGTH = 512
 const MAX_LABEL_LENGTH = 120
 
@@ -31,32 +30,16 @@ type DraftDefaultRecord = {
 
 export type DraftDefaultScope = {
   serverUrl: string
-  workspaceKey: string
-  fallbackWorkspaceKey?: string
+  placementId: PlacementId
 }
 
 export type DraftDefaultStorage = {
   getItem: (key: string) => string | null
   setItem: (key: string, value: string) => void
-  removeItem?: (key: string) => void
 }
 
-export function draftDefaultStorageKey(input: Omit<DraftDefaultScope, "fallbackWorkspaceKey">) {
-  return `${serverWorkspaceStorage(input.serverUrl, input.workspaceKey)}:workspace:${KEY}`
-}
-
-function serverWorkspaceStorage(serverUrl: string, dir: string) {
-  const scoped = scopeUrl(serverUrl)
-  const serverHead =
-    scoped
-      .replace(/^https?:\/\//, "")
-      .replace(/\/+$/, "")
-      .replace(/[^a-z0-9.-]/gi, "-")
-      .slice(0, 24) || "server"
-  const serverSum = checksum(scoped) ?? "0"
-  const dirHead = (dir.slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
-  const dirSum = checksum(dir) ?? "0"
-  return `claxedo.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`
+export function draftDefaultStorageKey(input: DraftDefaultScope) {
+  return preferenceKey("draft-default", scopeUrl(input.serverUrl), input.placementId)
 }
 
 function scopeUrl(url: string) {
@@ -87,22 +70,7 @@ export function decodeDraftDefaultRecord(input: string | null) {
 }
 
 export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
-  const key = (serverUrl: string, workspaceKey: string) => draftDefaultStorageKey({ serverUrl, workspaceKey })
-
-  const load = (input: DraftDefaultScope) => {
-    const canonicalKey = key(input.serverUrl, input.workspaceKey)
-    const canonical = safeRead(storage, canonicalKey)
-    if (canonical) return canonical
-
-    const fallbackKey = input.fallbackWorkspaceKey
-    if (!fallbackKey || fallbackKey === input.workspaceKey) return undefined
-    const fallbackStorageKey = key(input.serverUrl, fallbackKey)
-    const fallback = safeRead(storage, fallbackStorageKey)
-    if (!fallback) return undefined
-    if (!safeWrite(storage, canonicalKey, fallback)) return fallback
-    safeRemove(storage, fallbackStorageKey)
-    return fallback
-  }
+  const load = (input: DraftDefaultScope) => safeRead(storage, draftDefaultStorageKey(input))
 
   return {
     read(input: DraftDefaultScope): DraftDefault | undefined {
@@ -113,13 +81,13 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
     readHarness(input: DraftDefaultScope, harness: HarnessSelection): DraftDefaultHarnessChoice | undefined {
       return load(input)?.byHarness[harnessSelectionKey(harness)]
     },
-    save(input: Omit<DraftDefaultScope, "fallbackWorkspaceKey">, value: DraftDefault) {
+    save(input: DraftDefaultScope, value: DraftDefault) {
       if (!isHarnessSelection(value.harness)) return false
       const slot = harnessSelectionKey(value.harness)
       const choice: DraftDefaultHarnessChoice = { ...(value.model ? { model: value.model } : {}), ...(value.labels ? { labels: value.labels } : {}) }
       const record = decodeRecord(storedRecord({ version: VERSION, byHarness: { ...load(input)?.byHarness, [slot]: choice }, lastHarness: value.harness }))
       if (!record?.byHarness[slot]) return false
-      return safeWrite(storage, key(input.serverUrl, input.workspaceKey), record)
+      return safeWrite(storage, draftDefaultStorageKey(input), record)
     },
   }
 }
@@ -210,14 +178,6 @@ function safeWrite(storage: DraftDefaultStorage, key: string, record: DraftDefau
   } catch (error) {
     console.warn(`The draft default ${key} could not be saved`, error)
     return false
-  }
-}
-
-function safeRemove(storage: DraftDefaultStorage, key: string) {
-  try {
-    storage.removeItem?.(key)
-  } catch (error) {
-    console.warn(`The moved draft default ${key} could not be removed`, error)
   }
 }
 

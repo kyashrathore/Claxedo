@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { nativeHarness } from "@/lib/harness-selection"
+import { placementId } from "@/server"
 import { createDraftDefaultPreferences, draftDefaultStorageKey } from "./draft-defaults"
 
 function memoryStorage() {
@@ -8,7 +9,7 @@ function memoryStorage() {
   return { items, getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) }
 }
 
-const scope = { serverUrl: "http://127.0.0.1:4096", workspaceKey: "/work/app" }
+const scope = { serverUrl: "http://127.0.0.1:4096", placementId: placementId("placement-app") }
 const claude = nativeHarness("claude")
 
 test("draft defaults: a record today's app stored reads as a model choice", () => {
@@ -32,4 +33,12 @@ test("draft defaults: a model from another harness's namespace is refused", () =
   const storage = memoryStorage()
   expect(createDraftDefaultPreferences(storage).save(scope, { harness: claude, model: { providerId: "codex", modelId: "gpt" } })).toBe(false)
   expect(storage.items.size).toBe(0)
+})
+
+test("draft defaults: a choice belongs to its placement, not to another placement on the same server", () => {
+  const storage = memoryStorage()
+  const preferences = createDraftDefaultPreferences(storage)
+  expect(preferences.save(scope, { harness: claude, model: { providerId: "claude", modelId: "opus" } })).toBe(true)
+  expect(preferences.read({ ...scope, placementId: placementId("placement-other") })).toBeUndefined()
+  expect(preferences.read({ ...scope, serverUrl: "http://localhost:4096" })?.model).toEqual({ providerId: "claude", modelId: "opus" })
 })

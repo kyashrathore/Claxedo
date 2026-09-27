@@ -1,4 +1,4 @@
-import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState, ModelChoice } from "@/server"
+import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState, ModelChoice, PlacementId } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
   hardFailedHarness,
@@ -30,8 +30,7 @@ export type HarnessStoreState = {
   workspaceId?: string
   draftDefaultAuthority?: DraftDefaultAuthority
   draftDefaultRevision?: number
-  draftDefaultServerUrl?: string
-  draftDefaultWorkspaceKey?: string
+  draftDefaultPlacementId?: PlacementId
   draftDefault?: DraftDefault
   draftDefaultState?: DraftDefaultResult["state"]
   heldFrom?: Omit<HarnessStoreState, "heldFrom">
