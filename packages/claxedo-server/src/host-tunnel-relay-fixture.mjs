@@ -163,8 +163,8 @@ function fixtureRoute(request) {
 
 const relay = Bun.serve({
   port: 0,
-  // Workspace runtime SSE heartbeats are intentionally 30s apart. The shared
-  // bounded timeout exceeds that interval without disabling idle protection.
+  // A workspace runtime's `wr/events` heartbeat is shorter than the shared
+  // idle timeout, so a live stream never idles out.
   idleTimeout: WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
   fetch: (request, server) => fixtureRoute(request) ?? relayHandler.fetch(request, server),
   websocket: relayHandler.websocket,

@@ -15,8 +15,7 @@
  *
  * The public client remains SSE:
  * The hosted client connects with `fetch()` + a manually-read `ReadableStream`
- * and `Accept: text/event-stream` (see claxedo-app
- * `integrations/claxedo-events.tsx` `connect()` — it is SSE, not `EventSource`
+ * and `Accept: text/event-stream` (claxedo-app's `openStream`: it is SSE, not `EventSource`
  * and not a WebSocket, because it must attach a signed `Authorization: Bearer`
  * header). The task requires preserving that client contract with zero client
  * changes, so `connectLiveSyncRoom` opens a private WebSocket to the room and
@@ -44,6 +43,7 @@
  * else, and a cursor-less connection served nothing from the ring.
  */
 
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
@@ -52,7 +52,6 @@ import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/sess
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
-const DEFAULT_HEARTBEAT_MS = 30_000
 /**
  * Held connections one room admits, across both hold mechanisms.
  *
@@ -428,7 +427,7 @@ export class LiveSyncRoom {
   private readonly connections = new Map<string, HeldConnection>()
   private readonly encoder = new TextEncoder()
   private heartbeat: ReturnType<typeof setInterval> | undefined
-  private heartbeatMs = DEFAULT_HEARTBEAT_MS
+  private heartbeatMs = EVENT_STREAM_HEARTBEAT_MS
 
   /**
    * The room's SSE retention ring — an INSTANCE field, which is the whole
@@ -449,8 +448,8 @@ export class LiveSyncRoom {
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
    * admits only `session.share.changed`, `document.changed`, and `provision`, so
    * this ring holds coalesced doorbells and provision progress and nothing
-   * chatty — 256 is far more than the worst client gap (claxedo-app's 45 s
-   * heartbeat watchdog plus a reconnect backoff that starts at 250 ms and caps
+   * chatty — 256 is far more than the worst client gap (the app's 40 s
+   * stall timeout plus a reconnect backoff that starts at 250 ms and caps
    * at 15 s) can span. The terminal ring
    * still earns its keep: `isRetainedControlPlaneEvent` protects the doorbells and
    * the `ready`/`error` provision settlements, whose loss is not self-healing.
@@ -800,20 +799,24 @@ export class LiveSyncRoom {
   }
 }
 
-/** Worker-safe structural type of the `LIVE_SYNC_ROOM` DO namespace binding. */
+export type LiveSyncReauthorization = {
+  intervalMs: number
+  current: () => Promise<LiveSyncSubscriber>
+}
 
 /**
  * Route a resolved subscriber's client connection to their room. Production
  * rooms return a hibernatable WebSocket; this function bridges it back to the
- * browser's existing SSE response and owns heartbeat reauthorization
- * (comparing fresh the identity provider claims against `subscriber.auth` — a claims change
- * closes the stream so the client reconnects and re-resolves its org).
+ * browser's existing SSE response, writes its heartbeats and runs its
+ * reauthorization (comparing fresh the identity provider claims against
+ * `subscriber.auth` — a claims change closes the stream so the client
+ * reconnects and re-resolves its org). The two run on separate timers.
  */
 export function connectLiveSyncRoom(
   namespace: LiveSyncRoomNamespace,
   subscriber: LiveSyncSubscriber,
   heartbeatMs?: number,
-  reauthorize?: () => Promise<LiveSyncSubscriber>,
+  reauthorization?: LiveSyncReauthorization,
   lastEventId?: string,
 ): Promise<Response> {
   return namespace
@@ -842,15 +845,22 @@ export function connectLiveSyncRoom(
       const cursor = response.headers.get(HEADER_CURSOR) ?? lastEventId ?? "0"
       const intervalMs = heartbeatMs && Number.isFinite(heartbeatMs) && heartbeatMs > 0
         ? Math.floor(heartbeatMs)
-        : DEFAULT_HEARTBEAT_MS
+        : EVENT_STREAM_HEARTBEAT_MS
       let stopped = false
-      let timer: ReturnType<typeof setTimeout> | undefined
+      let beatTimer: ReturnType<typeof setTimeout> | undefined
+      let reauthorizeTimer: ReturnType<typeof setTimeout> | undefined
       let controller: ReadableStreamDefaultController<Uint8Array> | undefined
 
+      const later = (run: () => void, ms: number) => {
+        const timer = setTimeout(run, ms)
+        ;(timer as { unref?: () => void }).unref?.()
+        return timer
+      }
       const stop = (error?: unknown, settleStream = true) => {
         if (stopped) return
         stopped = true
-        if (timer !== undefined) clearTimeout(timer)
+        if (beatTimer !== undefined) clearTimeout(beatTimer)
+        if (reauthorizeTimer !== undefined) clearTimeout(reauthorizeTimer)
         socket.close(error ? 1011 : 1000, error ? "live-sync stream failed" : "live-sync stream closed")
         if (!controller || !settleStream) return
         if (error) controller.error(error)
@@ -886,39 +896,40 @@ export function connectLiveSyncRoom(
         }
         return write(raw)
       }
-      const heartbeat = async () => {
+      const beat = () => {
         if (stopped) return
-        if (reauthorize) {
-          let current: LiveSyncSubscriber | undefined
-          try {
-            current = await reauthorize()
-          } catch {
-            // Bearer tokens outlive nothing: a five-minute access token will
-            // expire under a long-lived stream, and the re-check then throws
-            // an AuthenticationError with the response already streaming — no
-            // 401 can exist anymore. That is the client's cue to reconnect
-            // with a fresh token, not a server failure: erroring the stream
-            // here would end every wr/events invocation as an uncaught
-            // exception on a five-minute cycle. Close cleanly instead; the
-            // client's reconnect performs a full, fresh authorization.
-            stop()
-            return
-          }
-          if (!sameSubscriber(subscriber, current)) {
-            // Same shape for a subscriber whose authorization changed (org
-            // moved, actor revoked): the reconnect re-authorizes from scratch
-            // and lands in the right room — or is refused with a real 401.
-            stop()
-            return
-          }
-        }
         try {
           if (!write(HEARTBEAT)) return
-          timer = setTimeout(() => void heartbeat(), intervalMs)
-          ;(timer as { unref?: () => void }).unref?.()
+          beatTimer = later(beat, intervalMs)
         } catch (error) {
           stop(error)
         }
+      }
+      const reauthorize = async (check: LiveSyncReauthorization) => {
+        if (stopped) return
+        let current: LiveSyncSubscriber
+        try {
+          current = await check.current()
+        } catch {
+          // Bearer tokens outlive nothing: a five-minute access token will
+          // expire under a long-lived stream, and the re-check then throws
+          // an AuthenticationError with the response already streaming — no
+          // 401 can exist anymore. That is the client's cue to reconnect
+          // with a fresh token, not a server failure: erroring the stream
+          // here would end every wr/events invocation as an uncaught
+          // exception on a five-minute cycle. Close cleanly instead; the
+          // client's reconnect performs a full, fresh authorization.
+          stop()
+          return
+        }
+        if (!sameSubscriber(subscriber, current)) {
+          // Same shape for a subscriber whose authorization changed (org
+          // moved, actor revoked): the reconnect re-authorizes from scratch
+          // and lands in the right room — or is refused with a real 401.
+          stop()
+          return
+        }
+        if (!stopped) reauthorizeTimer = later(() => void reauthorize(check), check.intervalMs)
       }
 
       const body = new ReadableStream<Uint8Array>({
@@ -939,8 +950,10 @@ export function connectLiveSyncRoom(
           // past frames it has not received.
           write(HEARTBEAT, cursor)
           socket.accept?.()
-          timer = setTimeout(() => void heartbeat(), intervalMs)
-          ;(timer as { unref?: () => void }).unref?.()
+          beatTimer = later(beat, intervalMs)
+          if (reauthorization) {
+            reauthorizeTimer = later(() => void reauthorize(reauthorization), reauthorization.intervalMs)
+          }
         },
         cancel() {
           stop(undefined, false)

@@ -1,6 +1,7 @@
 /**
- * How often a workspace runtime's `wr/events` and the local daemon's
- * `cp/events` write a heartbeat frame.
+ * How often every event stream writes a heartbeat frame: a workspace
+ * runtime's `wr/events`, the local daemon's `cp/events`, and the hosted
+ * `cp/events` whether it bridges a live-sync room or stands alone.
  */
 export const EVENT_STREAM_HEARTBEAT_MS = 10_000
 

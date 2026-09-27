@@ -218,7 +218,7 @@ async function openRoom(room: LiveSyncRoom, init: { subject?: string; org?: stri
   // Each frame is its own `enqueue`, and everything the room writes at open
   // time is already queued by the time `fetch` resolves. Read until a read
   // stops resolving immediately — the next thing on this stream is a heartbeat
-  // 30 seconds out, so "nothing more right now" means "the open is complete".
+  // a full beat out, so "nothing more right now" means "the open is complete".
   for (let reads = 0; reads < 64; reads += 1) {
     const next = await Promise.race([
       reader.read(),
@@ -284,9 +284,12 @@ describe("LiveSyncRoom — fan-out core", () => {
     const response = await connectLiveSyncRoom(
       namespace,
       subscriber("alice", "org_internal_acme"),
-      1,
-      async () => {
-        throw new Error("bearer expired")
+      60_000,
+      {
+        intervalMs: 1,
+        current: async () => {
+          throw new Error("bearer expired")
+        },
       },
     )
     const reader = response.body!.getReader()
@@ -304,8 +307,8 @@ describe("LiveSyncRoom — fan-out core", () => {
     const response = await connectLiveSyncRoom(
       namespace,
       subscriber("alice", "org_internal_acme"),
-      1,
-      async () => subscriber("alice", "org_personal_alice"),
+      60_000,
+      { intervalMs: 1, current: async () => subscriber("alice", "org_personal_alice") },
     )
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })

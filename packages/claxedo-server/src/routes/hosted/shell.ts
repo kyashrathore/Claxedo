@@ -58,6 +58,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { asRecord, asString } from "@claxedo/helpers/guards"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -510,13 +511,10 @@ function authErrorResponse(c: Context, err: unknown) {
   throw err
 }
 
-const HEARTBEAT_MS = 30_000
-
-// The app's stream reader (`app/integrations/claxedo-events.tsx`) reads this
-// stream with fetch+ReadableStream and arms a 45s watchdog that is only reset
-// by `data:` lines — SSE comments do NOT reset it. So keepalives must be data heartbeats
-// (`{"type":"heartbeat"}`), the frame the local daemon's `cp/events` writes
-// too. This fallback carries heartbeats only; hosted Worker composition
+// The app's stream reader drops a stream after `EVENT_STREAM_STALL_TIMEOUT_MS`
+// with no `data:` line; SSE comments do not count. So keepalives must be data
+// heartbeats (`{"type":"heartbeat"}`), the frame the local daemon's `cp/events`
+// writes too. This fallback carries heartbeats only; hosted Worker composition
 // supplies `LiveSyncRoom` for mutation nudges.
 //
 // Replay is deliberately not implemented here because there is nothing to
@@ -568,8 +566,14 @@ function eventsStream(c: Context, heartbeatMs: number, lastEventId?: string) {
   })
 }
 
+// Each reauthorization verifies the bearer and re-reads the caller's org
+// through `resolveOrgId`, so it keeps its own 2-per-minute cadence instead of
+// running on every heartbeat. A revoked subscriber's stream ends within one
+// interval.
+const REAUTHORIZE_MS = 30_000
+
 export function HostedShellRoutes(options: HostedShellRouteOptions) {
-  const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
+  const heartbeatMs = options.heartbeatMs ?? EVENT_STREAM_HEARTBEAT_MS
   const events = async (c: Context) => {
     try {
       // Every live-sync subscriber passes control-plane auth. There is no
@@ -598,7 +602,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
           options.liveSyncRoom,
           subscriber,
           heartbeatMs,
-          authorize,
+          { intervalMs: REAUTHORIZE_MS, current: authorize },
           lastEventId,
         )
       }
