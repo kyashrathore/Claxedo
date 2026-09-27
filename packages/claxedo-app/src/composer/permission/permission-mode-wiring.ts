@@ -53,8 +53,15 @@ function createAgentModes(input: WiringInput) {
       }
       return modes()
     },
+    requested: () => request() !== undefined,
     open: () => setOpened(pickScope(input)),
   }
+}
+
+function rowModeReport(input: WiringInput): HarnessModeReport | undefined {
+  const modeId = rowMode(input)
+  const name = input.sessionRow()?.permissionModeLabel
+  return modeId && name ? { modes: [{ id: modeId, name }], currentModeId: modeId, appliesFrom: "next-turn" } : undefined
 }
 
 function modeReport(input: WiringInput, agent: ReturnType<typeof createAgentModes>): HarnessModeReport | undefined {
@@ -64,7 +71,7 @@ function modeReport(input: WiringInput, agent: ReturnType<typeof createAgentMode
   if (!selection) return undefined
   const declared = declaredPermissionModes(harnessIdentityOf(selection))
   if (declared) return { modes: declared.modes, appliesFrom: declared.appliesFrom }
-  return agent.read()
+  return agent.requested() ? agent.read() : rowModeReport(input)
 }
 
 function inForce(input: WiringInput, current: HarnessModeReport | undefined): string | undefined {

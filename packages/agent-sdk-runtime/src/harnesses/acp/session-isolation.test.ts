@@ -441,7 +441,7 @@ test("cold permission reads and writes restore the owned session without creatin
   } finally { f.adapter.dispose() }
 })
 
-test("an agent's mode writes reach the store and publish the row: a change, a resume the stored mode no longer fits, and a turn's own mode", async () => {
+test("an agent's mode writes reach the store with the agent's name for the mode and publish the row: a change, a resume the stored mode no longer fits, and a turn's own mode", async () => {
   const f = fixture()
   try {
     f.store.bindSession({ sessionId: "a", directory: WORK, agentSessionId: "agent-saved" })
@@ -449,9 +449,11 @@ test("an agent's mode writes reach the store and publish the row: a change, a re
     const binding = executionBinding("a", WORK)
     expect(await f.adapter.listPermissionModes(binding)).toMatchObject({ currentModeId: "ask" })
     expect(f.store.getSessionConfig("a")?.permissionMode, "the agent no longer offers plan").toBe("ask")
+    expect(f.store.getSessionConfig("a")?.permissionModeLabel).toBe("Ask")
     expect(f.updates).toEqual(["a"])
     await f.adapter.setPermissionMode(binding, "auto")
     expect(f.store.getSessionConfig("a")?.permissionMode).toBe("auto")
+    expect(f.store.getSessionConfig("a")?.permissionModeLabel).toBe("Auto")
     expect(f.updates).toEqual(["a", "a"])
     const turn = (async () => {
       for await (const _event of executeTestTurn(f.adapter, "a", {
@@ -463,6 +465,7 @@ test("an agent's mode writes reach the store and publish the row: a change, a re
     f.prompts.get("agent-saved")!()
     await turn
     expect(f.store.getSessionConfig("a")?.permissionMode).toBe("ask")
+    expect(f.store.getSessionConfig("a")?.permissionModeLabel).toBe("Ask")
     expect(f.updates).toEqual(["a", "a", "a"])
   } finally {
     await f.adapter.dispose()

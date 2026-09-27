@@ -33,6 +33,7 @@ const sameSelection: { readonly [K in SelectionKey]: (a: SessionSelections[K], b
   harness: sameHarnessSelection,
   model: sameModelKey,
   permissionMode: (a, b) => a === b,
+  permissionModeLabel: (a, b) => a === b,
 }
 
 const sameSelectionField = <K extends SelectionKey>(key: K, a: SessionSelections, b: SessionSelections) => sameSelection[key](a[key], b[key])

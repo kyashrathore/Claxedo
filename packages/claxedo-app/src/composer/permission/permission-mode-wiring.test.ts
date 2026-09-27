@@ -68,3 +68,18 @@ test("permission surface: an ACP agent's modes are read only once its chip opens
   expect(permissionMode.current()?.name).toBe("Default")
   dispose()
 })
+
+test("permission surface: an ACP chip names the row's mode by the agent's own name until it opens", async () => {
+  const { permissionMode, reads, dispose } = createRoot((dispose) => ({
+    ...surface(connectionHarness("scripted-acp"), { permissionMode: "default", permissionModeLabel: "Ask before edits" }),
+    dispose,
+  }))
+  expect([permissionMode.current()?.id, permissionMode.current()?.name]).toEqual(["default", "Ask before edits"])
+  expect(reads).toEqual([])
+  permissionMode.openModes()
+  await Promise.resolve()
+  expect(reads).toEqual([{ placementId, ref }])
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(permissionMode.current()?.name).toBe("Default")
+  dispose()
+})

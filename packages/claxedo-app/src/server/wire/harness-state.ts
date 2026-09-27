@@ -69,5 +69,6 @@ export function sessionConfigFromWire(value: unknown): SessionConfig | undefined
       : null,
     ...(typeof row.variant === "string" && row.variant ? { variant: row.variant } : {}),
     ...(typeof row.permissionMode === "string" && row.permissionMode ? { permissionMode: row.permissionMode } : {}),
+    ...(typeof row.permissionModeLabel === "string" && row.permissionModeLabel ? { permissionModeLabel: row.permissionModeLabel } : {}),
   }
 }

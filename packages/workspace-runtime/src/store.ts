@@ -773,6 +773,7 @@ function sessionRowConfig(harness: SessionHarness, row: {
   variant?: string | null
   agent?: string | null
   permission_mode?: string | null
+  permission_mode_label?: string | null
 }) {
   const model = effectiveSessionModel(
     harness,
@@ -784,6 +785,7 @@ function sessionRowConfig(harness: SessionHarness, row: {
     variant: row.variant ?? null,
     agent: row.agent ?? null,
     permissionMode: effectivePermissionModeId(harness, row.permission_mode),
+    ...(row.permission_mode && row.permission_mode_label ? { permissionModeLabel: row.permission_mode_label } : {}),
   }
 }
 
@@ -1048,6 +1050,7 @@ export class RuntimeStore {
         goal_json TEXT,
         commands_json TEXT,
         permission_mode TEXT,
+        permission_mode_label TEXT,
         permission_ceiling TEXT,
         permission_state_json TEXT,
         created_at INTEGER NOT NULL,
@@ -1367,6 +1370,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN goal_json TEXT",
       "ALTER TABLE session ADD COLUMN commands_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
+      "ALTER TABLE session ADD COLUMN permission_mode_label TEXT",
       "ALTER TABLE session ADD COLUMN permission_ceiling TEXT",
       "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
       // Existing rows stay null: a session whose last human turn predates this column
@@ -2900,6 +2904,7 @@ export class RuntimeStore {
         agent_session_id = excluded.agent_session_id,
         process_key = excluded.process_key,
         permission_mode = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_mode ELSE NULL END,
+        permission_mode_label = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_mode_label ELSE NULL END,
         permission_state_json = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_state_json ELSE NULL END,
         commands_json = CASE WHEN session.harness_id IS excluded.harness_id AND session.harness_access IS excluded.harness_access THEN session.commands_json ELSE NULL END,
         harness_id = excluded.harness_id,
@@ -3807,6 +3812,7 @@ export class RuntimeStore {
     variant?: string | null
     agent?: string | null
     permission_mode?: string | null
+    permission_mode_label?: string | null
     process_key?: string | null
     created_at: number
     updated_at: number
@@ -3928,6 +3934,7 @@ export class RuntimeStore {
         variant: string | null
         agent: string | null
         permission_mode: string | null
+        permission_mode_label: string | null
         created_at: number
         updated_at: number
         status: string | null
@@ -3956,6 +3963,7 @@ export class RuntimeStore {
           variant,
           agent,
           permission_mode,
+          permission_mode_label,
           created_at,
           updated_at,
           last_human_turn_at,
@@ -4054,6 +4062,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
       permission_mode: string | null
+      permission_mode_label: string | null
       created_at: number
       updated_at: number
       status: string | null
@@ -4083,6 +4092,7 @@ export class RuntimeStore {
           variant,
           agent,
           permission_mode,
+          permission_mode_label,
           created_at,
           updated_at,
           last_human_turn_at,
@@ -4922,6 +4932,7 @@ export class RuntimeStore {
       permission_state_json: string | null
       permission_ceiling: SessionConfig["permissionCeiling"] | null
       permission_mode: string | null
+      permission_mode_label: string | null
     }>(
         `
 	        SELECT
@@ -4940,6 +4951,7 @@ export class RuntimeStore {
           handoff_json,
           permission_ceiling,
           permission_mode,
+          permission_mode_label,
           permission_state_json
         FROM session
         WHERE id = ?
@@ -4963,6 +4975,7 @@ export class RuntimeStore {
       ...(handoff ? { handoff } : {}),
       ...(row.permission_ceiling ? { permissionCeiling: row.permission_ceiling } : {}),
       ...(row.permission_mode ? { permissionMode: row.permission_mode } : {}),
+      ...(row.permission_mode && row.permission_mode_label ? { permissionModeLabel: row.permission_mode_label } : {}),
       ...(row.permission_state_json ? { permissionState: JSON.parse(row.permission_state_json) } : {}),
     }
   }
@@ -4987,6 +5000,7 @@ export class RuntimeStore {
       permission_state_json: string | null
       permission_ceiling: SessionConfig["permissionCeiling"] | null
       permission_mode: string | null
+      permission_mode_label: string | null
       updated_at: number
     }>(
         `
@@ -5007,6 +5021,7 @@ export class RuntimeStore {
           handoff_json,
           permission_ceiling,
           permission_mode,
+          permission_mode_label,
           permission_state_json,
           updated_at
         FROM session
@@ -5044,6 +5059,9 @@ export class RuntimeStore {
     const nextModelId = patch.model === undefined ? prev.model_id : (patch.model?.modelID ?? null)
     const nextVariant = patch.variant === undefined ? prev.variant : patch.variant
     const nextPermissionMode = patch.permissionMode === undefined ? (sameHarness ? prev.permission_mode : null) : patch.permissionMode
+    const nextPermissionModeLabel = patch.permissionMode === undefined
+      ? patch.permissionModeLabel === undefined ? (sameHarness ? prev.permission_mode_label : null) : patch.permissionModeLabel
+      : patch.permissionModeLabel ?? null
     const selectionChanged = !nextHarness || !sameRunningSelections(
       prevHarness && sessionRowConfig(prevHarness, prev),
       sessionRowConfig(nextHarness, { model_provider_id: nextProviderId, model_id: nextModelId, variant: nextVariant, permission_mode: nextPermissionMode }),
@@ -5053,7 +5071,7 @@ export class RuntimeStore {
       .prepare(
         `
 	      UPDATE session
-	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, instructions = ?, group_json = ?, handoff_json = ?, permission_mode = ?, permission_state_json = ?, permission_ceiling = ?, updated_at = ?
+	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, instructions = ?, group_json = ?, handoff_json = ?, permission_mode = ?, permission_mode_label = ?, permission_state_json = ?, permission_ceiling = ?, updated_at = ?
 	      WHERE id = ?
 	    `,
       )
@@ -5072,6 +5090,7 @@ export class RuntimeStore {
         patch.group === undefined ? (prev?.group_json ?? null) : sessionModelGroupJson(patch.group),
         patch.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(patch.handoff),
         nextPermissionMode,
+        nextPermissionMode === null ? null : nextPermissionModeLabel,
         patch.permissionState === undefined
           ? sameHarness ? prev.permission_state_json : null
           : patch.permissionState ? JSON.stringify(patch.permissionState) : null,

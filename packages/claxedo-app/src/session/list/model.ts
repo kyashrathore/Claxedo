@@ -168,12 +168,13 @@ function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | und
 }
 
 function withSelections(row: SessionRow, from: SessionSelections): SessionRow {
-  const { harness: _harness, model: _model, permissionMode: _permissionMode, ...rest } = row
+  const { harness: _harness, model: _model, permissionMode: _permissionMode, permissionModeLabel: _permissionModeLabel, ...rest } = row
   return {
     ...rest,
     ...(from.harness ? { harness: from.harness } : {}),
     ...(from.model ? { model: from.model } : {}),
     ...(from.permissionMode ? { permissionMode: from.permissionMode } : {}),
+    ...(from.permissionModeLabel ? { permissionModeLabel: from.permissionModeLabel } : {}),
   }
 }
 

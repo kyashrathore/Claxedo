@@ -21,6 +21,7 @@ import type { RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import { acceptsSessionTitle, boundSessionTitleSource } from "../session-title"
 import { sameSessionStartBinding, SessionStartStore } from "./session-start"
 import { chunk } from "../status"
+import { keepsSessionHarness, nextSessionConfig } from "./session-config"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
@@ -192,26 +193,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!prev && !update.harness) return null
     const sameHarness = keepsSessionHarness(prev?.harness, update.harness)
     if (prev && !sameHarness) this.setSessionCommands(id, undefined)
-    const permissionCeiling = update.permissionCeiling ?? prev?.permissionCeiling
-    const permissionMode = harnessScopedField(update.permissionMode, prev?.permissionMode, sameHarness)
-    const permissionState = harnessScopedField(update.permissionState, prev?.permissionState, sameHarness)
-    const model = update.model === undefined ? prev?.model : update.model ?? undefined
-    const instructions = update.instructions === undefined ? prev?.instructions : update.instructions
-    const group = update.group === undefined ? prev?.group : update.group
-    const next: SessionConfig = {
-      harness: update.harness ?? prev!.harness,
-      ...(permissionCeiling ? { permissionCeiling } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-      ...(permissionState ? { permissionState } : {}),
-      ...(model ? { model } : {}),
-      variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
-      agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
-      ...(instructions ? { instructions } : {}),
-      ...(group ? { group } : {}),
-      ...(update.handoff === undefined
-        ? prev?.handoff !== undefined ? { handoff: prev.handoff } : {}
-        : { handoff: update.handoff }),
-    }
+    const next = nextSessionConfig(prev, update, sameHarness)
     this.configs.set(id, next)
     this.touch(id)
     this.afterChange()
@@ -947,19 +929,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       if (rows.size === 0) this.questions.delete(directory)
     }
   }
-}
-
-/**
- * A config field the harness itself accepted. A harness change invalidates it,
- * so the previous value only survives while the harness is unchanged.
- */
-function keepsSessionHarness(previous: SessionConfig["harness"] | undefined, next: SessionConfigUpdate["harness"]) {
-  return !next || (next.id === previous?.id && next.access === previous?.access)
-}
-
-function harnessScopedField<T>(update: T | null | undefined, prev: T | undefined, sameHarness: boolean) {
-  if (update !== undefined) return update ?? undefined
-  return sameHarness ? prev : undefined
 }
 
 function terminalSubagentStatus(status: string | undefined) {

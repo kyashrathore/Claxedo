@@ -285,6 +285,12 @@ export type SessionConfig = {
   permissionCeiling?: AutoLevel
   /** Accepted harness mode, persisted by the permission-mode operation. */
   permissionMode?: string
+  /**
+   * The accepted mode's name as the agent listed it when the mode was stored.
+   * Only a harness whose modes the runtime contract does not declare has one,
+   * so a client can name the mode without asking the agent for its list.
+   */
+  permissionModeLabel?: string
   /** Native permission state accepted by the driver; opaque to shared consumers. */
   permissionState?: Record<string, unknown>
   harness: SessionHarness
@@ -320,6 +326,7 @@ export type SessionConfig = {
 export type SessionConfigUpdate = {
   permissionCeiling?: SessionConfig["permissionCeiling"]
   permissionMode?: string | null
+  permissionModeLabel?: string | null
   permissionState?: Record<string, unknown> | null
   harness?: SessionHarness
   model?: PromptModel | null
@@ -343,7 +350,7 @@ export type ImmutableSessionConfigField = (typeof IMMUTABLE_SESSION_CONFIG_FIELD
  * must go through the adapter permission-mode or permission-reply operation. */
 export type SessionConfigRequestUpdate = Omit<
   SessionConfigUpdate,
-  "handoff" | "permissionMode" | "permissionState" | "permissionCeiling" | ImmutableSessionConfigField
+  "handoff" | "permissionMode" | "permissionModeLabel" | "permissionState" | "permissionCeiling" | ImmutableSessionConfigField
 >
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent

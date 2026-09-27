@@ -35,6 +35,7 @@ export type SessionConfig = {
   readonly model: { readonly modelId: string | null; readonly providerId?: string | null } | null
   readonly variant?: string
   readonly permissionMode?: string
+  readonly permissionModeLabel?: string
 }
 
 

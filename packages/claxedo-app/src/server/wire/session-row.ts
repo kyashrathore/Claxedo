@@ -44,7 +44,8 @@ function configuredSelection(info: AgentSession & { readonly config?: unknown })
   const { modelId, providerId } = config?.model ?? {}
   const model: ModelChoice | undefined = modelId && providerId ? { providerId, modelId, ...(config?.variant ? { variant: config.variant } : {}) } : undefined
   const permissionMode = config?.permissionMode
-  return { ...(harness ? { harness } : {}), ...(model ? { model } : {}), ...(permissionMode ? { permissionMode } : {}) }
+  const permissionModeLabel = permissionMode ? config?.permissionModeLabel : undefined
+  return { ...(harness ? { harness } : {}), ...(model ? { model } : {}), ...(permissionMode ? { permissionMode } : {}), ...(permissionModeLabel ? { permissionModeLabel } : {}) }
 }
 
 export function sessionRowFromSession(info: AgentSession, ref: SessionRef): SessionRow {

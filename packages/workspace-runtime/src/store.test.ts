@@ -2807,6 +2807,25 @@ void describe("RuntimeStore", () => {
     assert.ok((updatedAfter({ harness: { id: "codex", access: "native" }, model: null, variant: null }) ?? 0) > 111)
   })
 
+  void it("an agent's name for its mode is stored with the mode and survives a reopen, and a mode written without one or a harness change clears it", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    const label = (from: RuntimeStore) => (from.getSession("acp") as { config?: { permissionModeLabel?: string } } | null)?.config?.permissionModeLabel
+    store.bindSession({ sessionId: "acp", directory: "/work", agentSessionId: "a1" })
+    store.updateSessionConfig("acp", { harness: { id: "scripted-acp", access: "connection" } })
+    store.updateSessionConfig("acp", { permissionMode: "architect", permissionModeLabel: "Architect" })
+    store.updateSessionConfig("acp", { agent: "build" })
+    assert.equal(label(store), "Architect")
+    assert.equal(label(new RuntimeStore(root)), "Architect")
+    assert.equal(store.getSessionConfig("acp")?.permissionModeLabel, "Architect")
+
+    store.updateSessionConfig("acp", { permissionMode: "code" })
+    assert.equal(label(store), undefined)
+    store.updateSessionConfig("acp", { permissionMode: "architect", permissionModeLabel: "Architect" })
+    store.updateSessionConfig("acp", { harness: { id: "other-acp", access: "connection" } })
+    assert.equal(label(store), undefined)
+  })
+
   void it("the session row carries each selection's effective value: the stored one, else the harness default", () => {
     const store = new RuntimeStore(tmp())
     const config = (id: string) => (store.getSession(id) as { config?: Record<string, unknown> } | null)?.config

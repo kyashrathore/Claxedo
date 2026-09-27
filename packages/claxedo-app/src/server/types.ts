@@ -105,6 +105,7 @@ export type SessionSelections = {
   readonly harness?: HarnessSelection
   readonly model?: ModelChoice
   readonly permissionMode?: string
+  readonly permissionModeLabel?: string
 }
 
 export type SessionRow = SessionSelections & {
