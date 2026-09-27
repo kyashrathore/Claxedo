@@ -29,7 +29,6 @@ function paintedWidths(app: Page) {
 }
 
 async function openAndRecord(app: Page) {
-  await app.evaluate(installPaintedFrames)
   const frames = paintedWidths(app)
   await app.getByRole("button", { name: UI.openPanel }).click()
   const painted = await frames
@@ -42,6 +41,7 @@ test("14 the opened panel paints its resting width in its first frame, also afte
   await app.setViewportSize({ width: 1400, height: 800 })
   const workspace = await stack.daemon.makeWorkspace("open-width")
   const session = await api.createSession(workspace.directory, { title: "Width", harness: SCRIPTED_ACP_HARNESS })
+  await app.addInitScript(installPaintedFrames)
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
   const panel = app.getByRole("complementary", { name: "Workspace panel" })

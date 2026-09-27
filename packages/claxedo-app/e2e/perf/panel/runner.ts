@@ -2,7 +2,6 @@ import type { CDPSession, Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { installPaintedFrames } from "../../../perf-harness/src/browser/painted-frames"
 import { installRecorder, type Predicate, type Recording } from "./recorder"
 import { createSourceMapper, summarizeProfile, summarizeTrace, type CpuProfile, type TraceEvent } from "./trace"
 
@@ -58,7 +57,6 @@ export class Runner {
 
   async attach() {
     this.cdp ??= await this.page.context().newCDPSession(this.page)
-    await this.page.evaluate(installPaintedFrames)
     await this.page.evaluate(installRecorder)
     if (this.listening) return
     this.listening = true

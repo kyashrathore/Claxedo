@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { installPaintedFrames } from "../../../perf-harness/src/browser/painted-frames"
 import { ClaxedoApi } from "../../harness/api"
 import { appDistDir, ensureAppBuilt } from "../../harness/app"
 import { prepareHarness } from "../../harness/global-setup"
@@ -87,6 +88,7 @@ async function main() {
     const browser = await chromium.launch({ channel: "chromium", headless: process.env.PANEL_HEADED !== "1" })
     try {
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: "light", locale: "en-US", timezoneId: "UTC" })
+      await context.addInitScript(installPaintedFrames)
       const page = await context.newPage()
       page.on("pageerror", (error) => console.log(`[page error] ${error.message}\n${error.stack ?? ""}`))
       page.on("console", (message) => {

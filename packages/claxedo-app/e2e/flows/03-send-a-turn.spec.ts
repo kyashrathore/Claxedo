@@ -5,7 +5,6 @@ import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt
 type FirstPaintWindow = Window & { __firstTranscriptPaint?: Promise<string> }
 
 async function firstPaintedTranscript(app: Page, sessionId: string): Promise<() => Promise<string>> {
-  await app.evaluate(installPaintedFrames)
   await app.evaluate((id) => {
     const paintedFrames = window.__claxedoPaintedFrames
     if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
@@ -228,6 +227,7 @@ test("03 two sessions stream at once: the second's reply shows while the first s
   const rail = app.getByRole("navigation", { name: UI.rail })
   const alphaText = async () => assistantText(await api.messages(workspace.directory, alpha.id))
 
+  await app.addInitScript(installPaintedFrames)
   await app.goto(`${stack.url}${sessionRoute(workspace.id, alpha.id)}`)
   await sendPrompt(app, `Start Alpha. ${acpScriptToken("alpha")}`)
   await expect(app.getByText("Alpha has started.")).toBeVisible()

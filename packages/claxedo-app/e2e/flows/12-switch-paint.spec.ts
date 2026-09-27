@@ -1,4 +1,5 @@
 import { acpScriptToken, apiRequests, expect, expectNothingAnimating, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, UNTRACED, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
+import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { recordSwitchFrames, switchReport, type SwitchReport } from "./12-switch-paint.frames"
 
 test.skip(({ isMobile }) => isMobile, "flow 12 runs at desktop width; flow 33 covers the phone")
@@ -30,6 +31,7 @@ test("12 a session switch shows the previous session until the next one is laid 
   const failed = await seedTurns(stack, api, here.directory, "Failed", 12, { lastFails: true })
   const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" } })
   await api.prompt(here.directory, pi.id, "Pi turn: review the fixture.")
+  await app.addInitScript(installPaintedFrames)
   await app.goto(`${stack.url}${sessionRoute(here.id, previous.id)}`)
   await expect(app.getByText("Previous reply line 6.").first()).toBeVisible()
   const settled = apiRequests(app, stack.url)

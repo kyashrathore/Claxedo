@@ -1,5 +1,4 @@
 import type { Page } from "@playwright/test"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 
 export type PaneFrame = {
   readonly sessionId: string
@@ -19,7 +18,6 @@ export type SwitchFrame = { readonly at: number; readonly rail: string; readonly
 type RecorderWindow = Window & { __claxedoSwitchFrames?: Promise<SwitchFrame[]> }
 
 export async function recordSwitchFrames(app: Page, input: { readonly targetId: string; readonly quietFrames: number }): Promise<() => Promise<SwitchFrame[]>> {
-  await app.evaluate(installPaintedFrames)
   await app.evaluate(({ targetId, quietFrames }) => {
     const paintedFrames = window.__claxedoPaintedFrames
     if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
