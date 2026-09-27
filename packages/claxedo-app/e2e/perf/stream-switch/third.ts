@@ -1,13 +1,13 @@
 import type { Page } from "@playwright/test"
-import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
 import { acpScriptToken } from "../../harness/acp/script"
 import { sendPrompt } from "../../harness/composer"
 import { sessionRoute, UI } from "../../harness/ui-names"
-import { seedTurnScript, streamScript } from "../stream-script"
-import { desktopSurface, dwell, webSurface, type Surface } from "./surface"
+import { streamScript } from "../stream-script"
+import { recordScreen } from "./screen"
+import { desktopSurface, dwell, seedSession, webSurface } from "./surface"
 
 const SEED_TURNS = Number(process.env.SEED_TURNS ?? "4")
 const WATCH_MS = Number(process.env.WATCH_MS ?? "12000")
@@ -17,24 +17,6 @@ const EXTRA = Number(process.env.EXTRA ?? "0")
 const VIDEO = process.env.VIDEO === "1"
 const THROTTLE = Number(process.env.THROTTLE ?? "1")
 const C_HOLD_MS = Number(process.env.C_HOLD_MS ?? "0")
-
-async function seedSession(surface: Surface, title: string) {
-  const { api, workspace } = surface
-  const session = await api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-  for (let turn = 1; turn <= SEED_TURNS; turn += 1) {
-    const script = `${title}-seed-${turn}`
-    await surface.writeScript(script, seedTurnScript(workspace.directory, turn))
-    await api.prompt(workspace.directory, session.id, `Earlier question ${turn}. ${acpScriptToken(script)}`)
-  }
-  return session.id
-}
-
-function recordScreen(bounds: { x: number; y: number; width: number; height: number } | undefined, file: string, seconds: number) {
-  const region = bounds ? [`-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`] : []
-  const child = spawn("screencapture", ["-v", "-x", "-k", `-V${seconds}`, ...region, file], { stdio: ["ignore", "inherit", "inherit"] })
-  console.log(`[third] screencapture pid ${child.pid} for ${seconds}s`)
-  return { startedAt: Date.now(), done: new Promise<void>((resolve) => child.on("exit", () => resolve())) }
-}
 
 function snapshot(page: Page) {
   return page.evaluate(() => {
@@ -67,8 +49,8 @@ async function main() {
   const errors: string[] = []
   try {
     const { api, workspace } = surface
-    const alpha = await seedSession(surface, "Alpha")
-    const bravo = await seedSession(surface, "Bravo")
+    const alpha = await seedSession(surface, "Alpha", SEED_TURNS)
+    const bravo = await seedSession(surface, "Bravo", SEED_TURNS)
     const extras: string[] = []
     for (let index = 1; index <= EXTRA; index += 1) extras.push((await api.createSession(workspace.directory, { title: `Extra ${index}`, harness: SCRIPTED_ACP_HARNESS })).id)
     for (const name of ["stream-a", "stream-b"]) await surface.writeScript(name, streamScript(workspace.directory))

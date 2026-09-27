@@ -1,24 +1,14 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import sharp from "sharp"
-
-type Pane = { id: string; shown: boolean; cv: string; vis: string; presence: string; opacity: string; rows: number; chars: number; top: number; fromEnd: number; height: number; loading: number }
-type Frame = { raf: number; at: number; rail: string; url: string; panes: Pane[] }
-type Probe = { timeOrigin: number; frames: Frame[]; inputs: { at: number; target: string }[]; loafs: { start: number; duration: number }[] }
-type Recording = {
-  alpha: string
-  beta: string
-  screencast: { n: number; wall: number; file: string }[]
-  rounds: Probe[]
-}
+import { CONTENT_CROP, readRecording, type Frame } from "./recording"
 
 const dir = process.argv[2]!
 const WINDOW_MS = 1000
-const CROP = { left: 470, top: 40, width: 760, height: 740 }
 const BLANK_STDEV = 4
 
-const recording = JSON.parse(await fs.readFile(path.join(dir, "recording.json"), "utf8")) as Recording
-const titles = new Map(Object.entries((recording as unknown as { ids?: Record<string, string> }).ids ?? {}).map(([title, id]) => [id, title]))
+const recording = await readRecording(dir)
+const titles = new Map(Object.entries(recording.ids ?? {}).map(([title, id]) => [id, title]))
 const name = (id: string) => titles.get(id) ?? (id === recording.alpha ? "A" : id === recording.beta ? "B" : id ? "?" : "-")
 
 const content = (frame: Frame, id?: string) => frame.panes.find((pane) => pane.shown && pane.rows > 0 && pane.chars > 40 && (!id || pane.id === id))
@@ -26,7 +16,7 @@ const describe = (frame: Frame) =>
   frame.panes.map((pane) => `${name(pane.id)}:${pane.presence}${pane.shown ? "" : "/hidden"} rows=${pane.rows} chars=${pane.chars} top=${pane.top} end=${pane.fromEnd} load=${pane.loading}`).join(" | ") || "no pane"
 
 async function stdev(file: string) {
-  const stats = await sharp(path.join(dir, "frames", file)).extract(CROP).stats()
+  const stats = await sharp(path.join(dir, "frames", file)).extract(CONTENT_CROP).stats()
   return Math.max(...stats.channels.map((channel) => channel.stdev))
 }
 

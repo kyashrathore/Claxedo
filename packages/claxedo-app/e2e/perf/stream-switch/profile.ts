@@ -1,45 +1,19 @@
-import fs from "node:fs"
-import { createSourceMapper, type CpuProfile } from "../panel/trace"
+import { readBusyProfile } from "./busy-profile"
 
 const [file, distDir, minMs = "60"] = process.argv.slice(2) as [string, string, string?]
-const profile = JSON.parse(fs.readFileSync(file, "utf8")) as CpuProfile & { startTime: number }
-const mapper = createSourceMapper(distDir)
-const byId = new Map(profile.nodes.map((node) => [node.id, node]))
-const parent = new Map<number, number>()
-for (const node of profile.nodes) for (const child of node.children ?? []) parent.set(child, node.id)
+const { parent, busy: long, label: frameLabel, sourceFile } = readBusyProfile(file, distDir, Number(minMs))
 const names = new Map<number, string>()
 const name = (id: number) => {
   const cached = names.get(id)
   if (cached) return cached
-  const frame = byId.get(id)!.callFrame
-  const url = frame.url.split("/").pop() ?? ""
-  const label = url ? `${frame.functionName || "(anon)"} ${mapper.map(url, frame.lineNumber + 1, frame.columnNumber)}` : frame.functionName || "(anon)"
-  names.set(id, label)
-  return label
+  const text = frameLabel(id)
+  names.set(id, text)
+  return text
 }
-const idle = new Set(["(idle)", "(program)"])
-let time = profile.startTime
-const samples = profile.samples.map((id, index) => {
-  time += profile.timeDeltas[index] ?? 0
-  return { id, at: time, dt: profile.timeDeltas[index + 1] ?? 0 }
-})
-const segments: (typeof samples)[] = []
-let current: typeof samples = []
-for (const sample of samples) {
-  if (idle.has(byId.get(sample.id)!.callFrame.functionName)) {
-    if (current.length) segments.push(current)
-    current = []
-  } else current.push(sample)
-}
-const long = segments.filter((segment) => (segment.at(-1)!.at - segment[0]!.at) / 1000 >= Number(minMs))
 const inclusive = new Map<string, number>()
 const self = new Map<string, number>()
 const byFile = new Map<string, number>()
-const fileOf = (id: number) => {
-  const frame = byId.get(id)!.callFrame
-  const url = frame.url.split("/").pop() ?? ""
-  return url ? mapper.map(url, frame.lineNumber + 1, frame.columnNumber).split(":")[0]! : "(native)"
-}
+const fileOf = (id: number) => sourceFile(id) || "(native)"
 let total = 0
 for (const segment of long)
   for (const sample of segment) {

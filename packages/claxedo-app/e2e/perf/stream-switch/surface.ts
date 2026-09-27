@@ -9,6 +9,8 @@ import { git } from "../../harness/git"
 import { prepareHarness } from "../../harness/global-setup"
 import { startStack } from "../../harness/stack"
 import type { Workspace } from "../../harness/workspaces"
+import { seedScriptedSession } from "../seed"
+import type { ScreenBounds } from "./screen"
 
 export type Surface = {
   api: ClaxedoApi
@@ -16,7 +18,7 @@ export type Surface = {
   url: string
   writeScript(name: string, script: AcpScript): Promise<void>
   release(name: string): Promise<void>
-  open(): Promise<{ page: Page; cdp: CDPSession; bounds?: { x: number; y: number; width: number; height: number } }>
+  open(): Promise<{ page: Page; cdp: CDPSession; bounds?: ScreenBounds }>
   close(): Promise<void>
 }
 
@@ -26,6 +28,10 @@ export const dwell = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 
 export async function mainThreadIdle(page: Page) {
   await page.evaluate(() => new Promise<void>((resolve) => requestIdleCallback(() => resolve(), { timeout: 5_000 })))
+}
+
+export function seedSession(surface: Surface, title: string, turns: number) {
+  return seedScriptedSession({ api: surface.api, directory: surface.workspace.directory, writeScript: surface.writeScript, title, turns })
 }
 
 export async function turnStarted(surface: Surface, sessionId: string, before: number) {

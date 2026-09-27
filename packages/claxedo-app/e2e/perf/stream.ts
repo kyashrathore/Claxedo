@@ -1,31 +1,18 @@
 import { chromium } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
-import { acpScriptToken } from "../harness/acp/script"
 import { ClaxedoApi } from "../harness/api"
 import { ensureAppBuilt } from "../harness/app"
 import { git } from "../harness/git"
 import { prepareHarness } from "../harness/global-setup"
 import { startStack, type Stack } from "../harness/stack"
-import type { Workspace } from "../harness/workspaces"
 import { startAppOrigin, type AppOrigin } from "./origin"
 import { measure } from "./measure"
 import { readOptions, runOrder, type Variant } from "./options"
-import { seedTurnScript } from "./stream-script"
+import { seedScriptedSession } from "./seed"
 
 const SEED_TURNS = 22
 const LAST_SEED_TEXT = `Seed turn ${SEED_TURNS} done.`
-
-async function seedSession(api: ClaxedoApi, stack: Stack, workspace: Workspace, name: string) {
-  const session = await api.createSession(workspace.directory, { title: name, harness: SCRIPTED_ACP_HARNESS })
-  for (let turn = 1; turn <= SEED_TURNS; turn += 1) {
-    const script = `${name}-seed-${turn}`
-    await stack.acp.write(script, seedTurnScript(workspace.directory, turn))
-    await api.prompt(workspace.directory, session.id, `Earlier question ${turn}. ${acpScriptToken(script)}`)
-  }
-  return session.id
-}
 
 async function startOrigin(variant: Variant, daemonUrl: string, closers: (() => Promise<void>)[]): Promise<AppOrigin> {
   const serverUrl = `http://127.0.0.1:${variant.port}`
@@ -58,7 +45,7 @@ async function main() {
     for (const variant of options.variants) origins.set(variant.name, await startOrigin(variant, stack.url, closers))
     const order = runOrder(options)
     const sessions: string[] = []
-    for (let index = 0; index < order.length; index += 1) sessions.push(await seedSession(api, stack, workspace, `perf-${index}`))
+    for (let index = 0; index < order.length; index += 1) sessions.push(await seedScriptedSession({ api, directory: workspace.directory, writeScript: (name, script) => stack.acp.write(name, script), title: `perf-${index}`, turns: SEED_TURNS }))
     console.log(`[perf] seeded ${sessions.length} sessions × ${SEED_TURNS} turns`)
     const browser = await chromium.launch({ channel: "chromium" })
     try {

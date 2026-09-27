@@ -112,20 +112,31 @@ export type CpuProfile = {
   timeDeltas: number[]
 }
 
-export function summarizeProfile(profile: CpuProfile, mapper: Mapper): string[] {
+type ProfileFrame = CpuProfile["nodes"][number]["callFrame"]
+
+export function profileTree(profile: CpuProfile) {
   const byId = new Map(profile.nodes.map((node) => [node.id, node]))
   const parent = new Map<number, number>()
   for (const node of profile.nodes) for (const child of node.children ?? []) parent.set(child, node.id)
+  return { byId, parent }
+}
+
+export function profileFrameSource(mapper: Mapper, frame: ProfileFrame) {
+  const file = frame.url.split("/").pop() ?? ""
+  return file ? mapper.map(file, frame.lineNumber + 1, frame.columnNumber) : ""
+}
+
+export function profileFrameLabel(mapper: Mapper, frame: ProfileFrame) {
+  const source = profileFrameSource(mapper, frame)
+  return source ? `${frame.functionName || "(anon)"} ${source}` : frame.functionName || "(anon)"
+}
+
+export function summarizeProfile(profile: CpuProfile, mapper: Mapper): string[] {
+  const { byId, parent } = profileTree(profile)
   const self = new Map<number, number>()
   for (const [index, sample] of profile.samples.entries()) self.set(sample, (self.get(sample) ?? 0) + (profile.timeDeltas[index] ?? 0))
   const skip = new Set(["(idle)", "(program)", "(garbage collector)", "(root)"])
-  const name = (node: CpuProfile["nodes"][number]) => {
-    const frame = node.callFrame
-    const file = frame.url.split("/").pop() ?? ""
-    if (!file) return frame.functionName || "(anon)"
-    const mapped = mapper.map(file, frame.lineNumber + 1, frame.columnNumber)
-    return `${frame.functionName || "(anon)"} ${mapped}`
-  }
+  const name = (node: CpuProfile["nodes"][number]) => profileFrameLabel(mapper, node.callFrame)
   const rows = [...self.entries()].filter(([id]) => !skip.has(byId.get(id)?.callFrame.functionName ?? "")).map(([id, us]) => [byId.get(id)!, us] as const).sort((a, b) => b[1] - a[1]).slice(0, 14)
   const total = [...self.entries()].filter(([id]) => !skip.has(byId.get(id)?.callFrame.functionName ?? "")).reduce((sum, [, us]) => sum + us, 0)
   const stacks = new Map<string, number>()

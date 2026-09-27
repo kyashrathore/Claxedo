@@ -1,20 +1,16 @@
-import fs from "node:fs/promises"
 import path from "node:path"
 import sharp from "sharp"
+import { CONTENT_CROP, readRecording } from "./recording"
 
 const dir = process.argv[2]!
-const CROP = { left: 470, top: 40, width: 760, height: 740 }
-const recording = JSON.parse(await fs.readFile(path.join(dir, "recording.json"), "utf8")) as {
-  screencast: { n: number; wall: number; file: string }[]
-  rounds: { timeOrigin: number; inputs: { at: number; target: string }[] }[]
-}
+const recording = await readRecording(dir)
 const inputs = recording.rounds.flatMap((round) => round.inputs.map((input) => round.timeOrigin + input.at))
 const ink = async (file: string) => {
   const image = sharp(path.join(dir, "frames", file))
   const { width = 1440 } = await image.metadata()
   const scale = width / 1440
   const raw = await image
-    .extract({ left: Math.round(CROP.left * scale), top: Math.round(CROP.top * scale), width: Math.round(CROP.width * scale), height: Math.round(CROP.height * scale) })
+    .extract({ left: Math.round(CONTENT_CROP.left * scale), top: Math.round(CONTENT_CROP.top * scale), width: Math.round(CONTENT_CROP.width * scale), height: Math.round(CONTENT_CROP.height * scale) })
     .greyscale()
     .raw()
     .toBuffer()

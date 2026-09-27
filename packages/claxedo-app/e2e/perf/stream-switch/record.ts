@@ -1,12 +1,11 @@
 import type { CDPSession, Page } from "@playwright/test"
-import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
 import { acpScriptToken } from "../../harness/acp/script"
 import { sessionRoute } from "../../harness/ui-names"
-import { longReplyScript, seedTurnScript, streamScript } from "../stream-script"
-import { desktopSurface, dwell, mainThreadIdle, turnStarted, webSurface, type Surface } from "./surface"
+import { longReplyScript, streamScript } from "../stream-script"
+import { recordScreen } from "./screen"
+import { desktopSurface, dwell, mainThreadIdle, seedSession, turnStarted, webSurface, type Surface } from "./surface"
 const SEED_TURNS = Number(process.env.SEED_TURNS ?? "8")
 const SWITCHES = Number(process.env.SWITCHES ?? "30")
 const SCENARIO = process.env.SCENARIO ?? "one"
@@ -47,30 +46,12 @@ const VIDEO = process.env.VIDEO === "1"
 
 type ScreencastFrame = { wall: number; data: Buffer }
 
-async function seedSession(surface: Surface, title: string) {
-  const { api, workspace } = surface
-  const session = await api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-  for (let turn = 1; turn <= SEED_TURNS; turn += 1) {
-    const script = `${title}-seed-${turn}`
-    await surface.writeScript(script, seedTurnScript(workspace.directory, turn))
-    await api.prompt(workspace.directory, session.id, `Earlier question ${turn}. ${acpScriptToken(script)}`)
-  }
-  return session.id
-}
-
 async function startStream(surface: Surface, sessionId: string, name: string) {
   const { api, workspace } = surface
   await surface.writeScript(name, process.env.STREAM === "report" ? streamScript(workspace.directory) : longReplyScript(workspace.directory))
   const before = (await api.messages(workspace.directory, sessionId)).length
   await api.promptAsync(workspace.directory, sessionId, `Write the long report. ${acpScriptToken(name)}`)
   await turnStarted(surface, sessionId, before)
-}
-
-function startVideo(bounds: { x: number; y: number; width: number; height: number } | undefined, file: string, seconds: number) {
-  const region = bounds ? [`-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`] : []
-  const child = spawn("screencapture", ["-v", "-x", "-k", `-V${seconds}`, ...region, file], { stdio: ["ignore", "inherit", "inherit"] })
-  console.log(`[switch] screencapture pid ${child.pid} for ${seconds}s`)
-  return new Promise<void>((resolve) => child.on("exit", () => resolve()))
 }
 
 async function startScreencast(cdp: CDPSession, frames: ScreencastFrame[]) {
@@ -109,7 +90,7 @@ async function main() {
     const { workspace } = surface
     const steps = plan(SCENARIO, COLD)
     const ids: Record<string, string> = {}
-    for (const title of steps.seeded) ids[title] = await seedSession(surface, title)
+    for (const title of steps.seeded) ids[title] = await seedSession(surface, title, SEED_TURNS)
     console.log(`[switch] seeded ${steps.seeded.length} sessions, ${SEED_TURNS} turns each`)
     const { page, cdp, bounds } = await surface.open()
     const seeded = page.getByText(`Seed turn ${SEED_TURNS} done.`).first()
@@ -129,7 +110,7 @@ async function main() {
     if (THROTTLE > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE })
     const screencast: ScreencastFrame[] = []
     await startScreencast(cdp, screencast)
-    const video = VIDEO ? { startedAt: Date.now(), done: startVideo(bounds, path.join(OUT, "screen.mov"), Math.ceil((steps.clicks.length * 1.0 + 4) * (SCENARIO === "cold" ? ROUNDS : 1))) } : undefined
+    const video = VIDEO ? recordScreen(bounds, path.join(OUT, "screen.mov"), Math.ceil((steps.clicks.length * 1.0 + 4) * (SCENARIO === "cold" ? ROUNDS : 1))) : undefined
     await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
     for (const title of steps.streaming) await startStream(surface, ids[title]!, `stream-${title.replace(/ /g, "-")}`)
     await mainThreadIdle(page)

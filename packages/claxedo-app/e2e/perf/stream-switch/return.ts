@@ -1,11 +1,10 @@
 import type { Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
 import { acpScriptToken } from "../../harness/acp/script"
 import { sessionRoute } from "../../harness/ui-names"
-import { seedTurnScript, streamScript } from "../stream-script"
-import { dwell, mainThreadIdle, webSurface, type Surface } from "./surface"
+import { streamScript } from "../stream-script"
+import { dwell, mainThreadIdle, seedSession, webSurface } from "./surface"
 
 const AWAY = (process.env.AWAY ?? "1000,3000,6000").split(",").map(Number)
 const FRAMES = Number(process.env.FRAMES ?? "40")
@@ -13,15 +12,6 @@ const OUT = process.env.OUT ?? path.join(process.env.HOME ?? "", "test/claxedo-p
 
 type ReturnFrame = { at: number; shown: boolean; length: number; tail: string; rows: number }
 type ReturnWindow = Window & { __returnFrames?: Promise<ReturnFrame[]> }
-
-async function seedSession(surface: Surface, title: string) {
-  const { api, workspace } = surface
-  const session = await api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-  const script = `${title}-seed`
-  await surface.writeScript(script, seedTurnScript(workspace.directory, 1))
-  await api.prompt(workspace.directory, session.id, `Earlier question. ${acpScriptToken(script)}`)
-  return session.id
-}
 
 async function recordReturn(page: Page, sessionId: string, frames: number) {
   await page.evaluate("globalThis.__name = (target) => target")
@@ -53,8 +43,8 @@ async function main() {
   const surface = await webSurface(1)
   try {
     const { api, workspace } = surface
-    const alpha = await seedSession(surface, "Alpha")
-    const bravo = await seedSession(surface, "Bravo")
+    const alpha = await seedSession(surface, "Alpha", 1)
+    const bravo = await seedSession(surface, "Bravo", 1)
     await surface.writeScript("stream-a", streamScript(workspace.directory))
     const { page } = await surface.open()
     await page.goto(`${surface.url}${sessionRoute(workspace.id, alpha)}`)

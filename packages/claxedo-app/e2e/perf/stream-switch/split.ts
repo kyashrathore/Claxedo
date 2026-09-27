@@ -1,20 +1,15 @@
-import fs from "node:fs"
 import { createSourceMapper, type TraceEvent } from "../panel/trace"
+import { forcingFrame, mapTraceFrame, readMainThread } from "./main-thread"
 
 const [file, distDir] = process.argv.slice(2) as [string, string]
-const events = (JSON.parse(fs.readFileSync(file, "utf8")) as { traceEvents: TraceEvent[] }).traceEvents
 const mapper = createSourceMapper(distDir)
-const main = events.find((event) => event.name === "thread_name" && (event.args as { name?: string } | undefined)?.name === "CrRendererMain")
-if (!main) throw new Error("no renderer main thread")
-const onMain = events.filter((event) => event.pid === main.pid && event.tid === main.tid && event.ph === "X" && typeof event.dur === "number").sort((a, b) => a.ts - b.ts)
-const inputs = onMain.filter((event) => event.name === "EventDispatch" && event.args?.data?.type === "pointerdown")
+const { onMain, pointerdowns: inputs } = readMainThread(file)
 const ms = (us: number) => Math.round(us / 100) / 10
 
 function forcedSource(event: TraceEvent) {
-  const top = (event.args as { beginData?: { stackTrace?: { url: string; lineNumber: number; columnNumber: number }[] } }).beginData?.stackTrace?.[0]
+  const top = forcingFrame(event)
   if (!top) return undefined
-  const url = top.url.split("/").pop() ?? ""
-  return url ? mapper.map(url, top.lineNumber, top.columnNumber - 1) : "(no url)"
+  return mapTraceFrame(mapper, top) || "(no url)"
 }
 
 const rows = inputs.map((input, index) => {
