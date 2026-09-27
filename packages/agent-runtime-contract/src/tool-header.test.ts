@@ -7,10 +7,10 @@ function part(tool: string, state: AgentToolState): AgentToolPart {
   return { id: "p", sessionID: "s", messageID: "m", type: "tool", callID: "c", tool, state }
 }
 
-const completed = (input: Record<string, unknown>, metadata: Record<string, unknown> = {}): AgentToolState => ({
+const completed = (input: Record<string, unknown>, metadata: Record<string, unknown> = {}, output = "o".repeat(10_000)): AgentToolState => ({
   status: "completed",
   input,
-  output: "o".repeat(10_000),
+  output,
   title: "title",
   metadata,
   time: { start: 1, end: 2 },
@@ -49,6 +49,14 @@ describe("toolPartHeader", () => {
     const header = toolPartHeader(part("mcp__browser__screenshot", { ...completed({ url: "u" }), attachments } as AgentToolState))
     expect(header.headerOnly).toBe(true)
     expect(header.state).not.toHaveProperty("attachments")
+  })
+
+  test("a first-party Claxedo tool whose row reads its result is sent whole, and one whose row reads only its input is its header", () => {
+    const created = part("mcp__claxedo-mcp__task_create", completed({ title: "Ship" }, {}, JSON.stringify({ task: { id: "t1", key: "T-1", title: "Ship", status: "doing" } })))
+    expect(toolPartHeader(created)).toBe(created)
+    const logs = toolPartHeader(part("mcp__claxedo-mcp__process_logs", completed({ process: "web" })))
+    expect(logs.headerOnly).toBe(true)
+    expect(logs.state).toMatchObject({ input: { process: "web" }, output: "" })
   })
 
   test("a row with nothing to collapse is sent whole", () => {

@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentToolPart, AgentToolState } from "./content"
-import { canonicalToolName } from "./tool-names"
+import { canonicalToolName, claxedoToolName } from "./tool-names"
 
 /** The reader's transcript settings that open shell and edit rows by default. */
 export type ToolOpenSettings = { readonly shell: boolean; readonly edit: boolean }
@@ -67,6 +67,31 @@ const HEADERS: Readonly<Record<string, HeaderShape>> = {
 /** Tools whose row has nothing to collapse, so the whole part is its header. */
 const WHOLE = new Set(["question", "exitplanmode", "task"])
 
+/**
+ * First-party Claxedo tools whose collapsed row reads their result (a task or
+ * session link, a status, a count or a note), so the whole part is its header.
+ * Their results are small records; the others, whose rows read only their
+ * input, can answer a transcript, a log or a diff. `claxedoToolView` in the
+ * app's transcript is the reader this list must match.
+ */
+const CLAXEDO_RESULT_ROWS = new Set([
+  "task_create",
+  "task_edit",
+  "task_start",
+  "task_get",
+  "task_list",
+  "session_create",
+  "session_send",
+  "session_cancel_turn",
+  "sessions_list",
+  "documents_list",
+  "documents_open",
+  "process_stop",
+  "create_subagent",
+  "subagent_status",
+  "subagent_cancel",
+])
+
 const ALWAYS_KEPT_INPUT = ["intent"]
 
 function headerState(state: AgentToolState, shape: HeaderShape | undefined): AgentToolState {
@@ -99,6 +124,6 @@ function headerState(state: AgentToolState, shape: HeaderShape | undefined): Age
  */
 export function toolPartHeader(part: AgentToolPart): AgentToolPart {
   const name = canonicalToolName(part.tool)
-  if (WHOLE.has(name)) return part
+  if (WHOLE.has(name) || CLAXEDO_RESULT_ROWS.has(claxedoToolName(part.tool, part.state.input) ?? "")) return part
   return { ...part, state: headerState(part.state, HEADERS[name]), headerOnly: true }
 }

@@ -102,6 +102,7 @@ export function ClaxedoTool(props: ToolProps) {
         defaultOpen={props.defaultOpen}
         open={props.open}
         onOpenChange={props.onOpenChange}
+        bodyPending={props.bodyPending}
         trigger={trigger()}
       >
         <Show when={hasBody()}>
