@@ -274,7 +274,7 @@ function commitMermaidDiagram(wrapper: HTMLElement, source: string, svg: string)
     diagram.setAttribute("data-slot", "mermaid-diagram")
     wrapper.appendChild(diagram)
   }
-  replaceSanitizedMarkup(diagram, svg)
+  diagram.innerHTML = svg
   wrapper.setAttribute("data-mermaid-source", source)
   wrapper.setAttribute("data-mermaid-state", "rendered")
   wrapper.querySelector('[data-slot="mermaid-render-button"]')?.remove()
@@ -816,7 +816,7 @@ function updateBlock(
   next.dataset.markdownKey = block.key
   next.dataset.markdownHash = block.hash
   next.style.display = "contents"
-  replaceSanitizedMarkup(next, block.html)
+  next.innerHTML = block.html
   const decorateStarted = rendererClock()
   decorate(next, images, data)
   traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
@@ -841,11 +841,6 @@ function updateBlock(
   })
   attachControls(current, labels)
   traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
-}
-
-function replaceSanitizedMarkup(element: Element, html: string) {
-  const parsed = new DOMParser().parseFromString(html, "text/html")
-  element.replaceChildren(...Array.from(parsed.body.childNodes, (node) => document.importNode(node, true)))
 }
 
 function updateCodeBlock(
