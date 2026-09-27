@@ -68,7 +68,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "live-plugins",
     owner: "local-server",
-    serves: "The machine owner's live plugin folders: register, build, serve bundles, show source; self-hosted signed access requires a deployment operator.",
+    serves: "The machine owner's live plugin folders: list, register, unregister, and serve each build's bundle; self-hosted signed access requires a deployment operator.",
     paths: ["/api/claxedo/live-plugins", "/api/claxedo/live-plugins/"],
   },
   {
