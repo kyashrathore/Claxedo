@@ -344,17 +344,19 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // 1,204 modules and 38 packages, no headroom. The Review tab's
+  // 1,205 modules and 38 packages, no headroom. The Review tab's
   // `review/loaded-diff-identity.ts` is its own module because the benchmark
   // driver imports it to compute the identity it waits for. The workbench
   // store's pane handover (`workbench/handover.ts`, `workbench/reveal-holds.ts`)
   // and the session screen's first view (`session/view/first-view.ts`) are
   // the app's session-switch paint: one pane swap per switch, after the view
-  // it reveals is complete. The kit (`@opencode-ai/ui`) is one of the
+  // it reveals is complete. The timeline's render range
+  // (`session/view/timeline/timeline-render-range.ts`) is its own module so
+  // its unit tests reach it without mounting the timeline. The kit (`@opencode-ai/ui`) is one of the
   // packages; its source is not walked. `@claxedo/agent-event-runtime/contracts`
   // is one too: it owns the event streams' heartbeat and the stall timeout the
   // app's stream reader drops a silent stream after.
-  ceilings: { modules: 1204, packages: 38 },
+  ceilings: { modules: 1205, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
