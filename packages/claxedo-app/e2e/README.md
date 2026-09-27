@@ -12,6 +12,8 @@ bun run e2e -- e2e/flows/00-harness-smoke.spec.ts
 CLAXEDO_E2E_RED=1 bun run e2e                # red run: the ACP agent fails every turn, model keys stay on the vendors' hosts
 ```
 
+The launcher runs Playwright under `node --conditions=development`, and Playwright forks its workers with the same flag, so the flows and the harness load workspace packages such as `@claxedo/helpers` from source, as the app build and the daemon do, and a fresh install needs no build before Playwright loads them.
+
 Global setup builds the workspace dists it and the daemon import when they are missing (`@claxedo/helpers`, `@claxedo/agent-runtime-contract`, whose dist the pinned-Pi step imports, and `packages/agent-sdk-runtime`'s launch gate child), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the app into `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes. Every argument goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
 
 The runner pins `--workers=1` (the machine is shared). Run one suite at a time per worktree: every run builds the app into the same `dist-e2e/` for its own daemon port. Give every concurrent run on the machine its own `CLAXEDO_E2E_PORT_RANGE`: the app is built for the daemon port, so a run whose daemon port is held by another process fails at start instead of talking to someone else's server. Each spec gets its own daemon on the run's daemon port, its own data directory, scripted model server and ACP script directory, and every process is stopped when the spec ends; a second stack in the same spec takes the next free port. `CLAXEDO_E2E_KEEP_DATA=1` keeps the data directory for diagnosis. When a spec fails, the daemon log is attached to the Playwright report (`e2e/report/`).
@@ -217,7 +219,7 @@ The embedded server admits only its application: Electron main stamps a capabili
 
 ```
 e2e/
-  run.ts                 the launcher: playwright test with the suite's config
+  run.ts                 the launcher: playwright test with the suite's config, under the development condition
   flows/NN-name.spec.ts  one spec per flow
   harness/
     index.ts             the public surface (import from "../harness")
