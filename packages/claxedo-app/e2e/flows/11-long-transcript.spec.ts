@@ -1,15 +1,31 @@
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test } from "../harness"
+import type { Page } from "@playwright/test"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
 
 test.skip(({ isMobile }) => isMobile, "flow 11 runs at desktop width")
 
 const TURNS = 30
 
-test("11 long transcript: older turns page in above the reader, the nav rail marks the turn scrolled to, and it jumps back to the first turn", async ({ stack, api, app }) => {
+async function markedTurn(app: Page) {
+  const label = await app.locator('[data-component="message-nav"] button[aria-current="step"]').getAttribute("aria-label")
+  return Number(label?.split(".")[0])
+}
+
+async function wheelMovesMark(app: Page, delta: number) {
+  const before = await markedTurn(app)
+  await app.getByRole("region", { name: "scrollable content" }).hover()
+  await app.mouse.wheel(0, delta)
+  if (delta > 0) await expect.poll(() => markedTurn(app), `a ${delta} px wheel moves the rail's mark down from turn ${before}`).toBeGreaterThan(before)
+  else await expect.poll(() => markedTurn(app), `a ${delta} px wheel moves the rail's mark up from turn ${before}`).toBeLessThan(before)
+}
+
+test("11 long transcript: older turns page in above the reader, the nav rail marks the turn scrolled to both ways and after a return, and it jumps back to the first turn", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("long")
   const session = await api.createSession(workspace.directory, { title: "Long", harness: SCRIPTED_ACP_HARNESS })
   for (let turn = 1; turn <= TURNS; turn += 1) {
     await api.prompt(workspace.directory, session.id, `Turn ${turn}: Reply with exactly this one token: T${String(turn).padStart(2, "0")}X`)
   }
+  const other = await api.createSession(workspace.directory, { title: "Other", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, other.id, "Other turn: Reply with exactly this one token: O01X")
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   const latest = app.getByText(`Turn ${TURNS}:`, { exact: false }).first()
   await expect(latest).toBeVisible()
@@ -35,6 +51,18 @@ test("11 long transcript: older turns page in above the reader, the nav rail mar
       { timeout: 30_000 },
     )
     .toBe("step")
+  for (let step = 0; step < 3; step += 1) await wheelMovesMark(app, 400)
+
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const left = await markedTurn(app)
+  await rail.getByRole("button", { name: "Other", exact: true }).click()
+  await expect(app.getByText("Other turn:", { exact: false }).first()).toBeVisible()
+  await rail.getByRole("button", { name: "Long", exact: true }).click()
+  await expect.poll(() => markedTurn(app), "the rail marks the turn the reader left").toBe(left)
+  await wheelMovesMark(app, 400)
+  await wheelMovesMark(app, -400)
+  await wheelMovesMark(app, -400)
+
   await app.getByRole("button", { name: `${TURNS}. New message`, exact: true }).click()
   await expect(latest).toBeInViewport()
   await app.getByRole("button", { name: "1. New message", exact: true }).click()
