@@ -64,6 +64,7 @@ export type CreationIdentity = {
  * Whether any launch could own this pid. Pid 1 is init: a signal to its group
  * is `kill(-1)`, which reaches every process this user owns, and every process
  * descends from it. Pid 0 addresses the caller's own group.
+ * @internal
  */
 export function ownablePid(pid: number) {
   return Number.isSafeInteger(pid) && pid > 1
@@ -141,7 +142,10 @@ export async function readCreationIdentity(pid: number): Promise<CreationIdentit
 
 const DARWIN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-/** `lstart` as `ps` prints it under `TZ=UTC0 LC_ALL=C`, for example `Fri Sep 25 05:29:17 2026`. */
+/**
+ * `lstart` as `ps` prints it under `TZ=UTC0 LC_ALL=C`, for example `Fri Sep 25 05:29:17 2026`.
+ * @internal
+ */
 export function darwinStartMs(lstart: string) {
   const match = /^[A-Z][a-z]{2} ([A-Z][a-z]{2}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(lstart)
   const month = match ? DARWIN_MONTHS.indexOf(match[1]!) : -1
