@@ -81,6 +81,10 @@ On a server that issues sessions (`capabilities.signedIn`, from the bootstrap's 
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
+## Local service lost (`daemon-status.ts`, `view/daemon-lost-banner.tsx`)
+
+Desktop only. Electron main publishes the daemon's status on `api.daemonStatus`: `lost` when its lease on the daemon closes or the daemon it started exits, with that exit's code or signal when it has one. A window opened after the loss reads it; a push overtakes an older read. The shell then shows one alert with the cause and one button, which sends `api.relaunch()` once. Main's `runRestart` decides what that does: a packaged app relaunches, which starts a new daemon, and a development run reloads the window, so the label says "Restart Claxedo" or "Reload window" from the `restart` main sends. Nothing detects a daemon coming back and nothing retries. The web has no daemon status and keeps the session's reconnect line.
+
 ## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
 One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off. `view/registered-appearance.tsx` is the reader for `themes` and `iconSkins`: each theme entry is registered with the kit's `ThemeProvider` as OC-2 with the entry's tokens as v2 overrides (so Appearance lists it) and unregistered when its entry goes, which falls back to the default theme if it was selected; the skin whose id is the selected theme's is provided to `ClaxedoIcon` through `IconSkinContext`.
@@ -95,4 +99,4 @@ Below 768 px the rail itself becomes a drawer that fills the viewport (an owner 
 
 ## Flows
 
-Flow 12 (workbench and shell), flow 26 (language switch and the accessibility sweep) and flow 33 (phone).
+Flow 12 (workbench and shell), flow 26 (language switch and the accessibility sweep), flow 33 (phone) and flow 41 (the desktop's local service lost).

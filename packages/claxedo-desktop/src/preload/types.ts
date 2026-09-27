@@ -194,6 +194,10 @@ export type ElectronAPI = {
   getDroppedFilePaths: (files: File[]) => string[]
   processDiagnostics: ProcessDiagnosticsBridge
   daemonRecovery: DaemonRecoveryBridge
+  daemonStatus: {
+    read: () => Promise<unknown>
+    onChange: (listener: (status: unknown) => void) => () => void
+  }
   browser: BrowserBridge
   /**
    * Machine remote access, by named operation only.

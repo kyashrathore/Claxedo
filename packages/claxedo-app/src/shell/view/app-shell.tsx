@@ -19,6 +19,7 @@ import { useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
 import { sidebarModeOf, type ShellRoute } from "../routes"
 import "../shell.css"
+import { DaemonLostBanner } from "./daemon-lost-banner"
 import { ShellFrame, type CenterContent } from "./frame"
 import { RegisteredAppearance } from "./registered-appearance"
 import { Overlays } from "./overlays"
@@ -113,6 +114,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
         {(route) => <Dynamic component={route().screen.view} params={route().params} />}
       </Show>
       <Toast.Region />
+      <DaemonLostBanner />
     </>
   )
 }

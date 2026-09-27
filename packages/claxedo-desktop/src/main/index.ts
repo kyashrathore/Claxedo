@@ -54,7 +54,7 @@ import { CHANNEL, IS_PACKAGED, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constan
 import { desktopProduct } from "../shared/desktop-product"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
-import { runRestart } from "../shared/restart-policy"
+import { restartBehavior, runRestart } from "../shared/restart-policy"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "../shared/compile-cache"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { readString } from "@claxedo/helpers/readers"
@@ -78,6 +78,7 @@ import {
 } from "./daemon-recovery"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
+import { createDaemonStatus, DAEMON_STATUS_CHANNELS, type DaemonExit } from "./daemon-status"
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
 import { createProfiler } from "./diagnostics/profiler"
@@ -132,7 +133,7 @@ type ServerConnection =
    * all, rather than reaching them on the strength of being on loopback.
    */
   | { variant: "existing"; url: string; capability: string | undefined }
-  | { variant: "daemon"; url: string; discovery: ClaxedoDaemonDiscovery }
+  | { variant: "daemon"; url: string; discovery: ClaxedoDaemonDiscovery; childExit?: Promise<DaemonExit> }
 
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
@@ -341,7 +342,9 @@ function desktopServerDataDir() {
   })
 }
 
-async function startClaxedoServer(serverDataDir: string): Promise<{ url: string; discovery: ClaxedoDaemonDiscovery }> {
+async function startClaxedoServer(
+  serverDataDir: string,
+): Promise<{ url: string; discovery: ClaxedoDaemonDiscovery; childExit: Promise<DaemonExit> }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   serverOrigin.resolve(`http://127.0.0.1:${claxedoPort}`)
   const serverPath = getClaxedoServerPath()
@@ -459,7 +462,7 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
       role: "server",
       label: "Claxedo server",
     })
-    const exited = defer<number | null>()
+    const exited = defer<DaemonExit>()
     const handle = {
       close: async () => {
         if (!child.pid) return
@@ -479,7 +482,7 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
     })
     child.once("exit", (code, signal) => {
       ownerBridge?.dispose()
-      exited.resolve(code)
+      exited.resolve({ code, signal })
       listening.reject(new Error(claxedoServerExitedBeforeListening(code, serverLog.path)))
       const detail = { pid: child.pid, code, signal }
       if (quitting || code === 0) logger.log("claxedo-server child process exited", detail)
@@ -518,7 +521,7 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
       ownerBridge = undefined
       if (child.connected) child.disconnect()
       child.unref()
-      return { url: claxedoUrl, discovery: published }
+      return { url: claxedoUrl, discovery: published, childExit: exited.promise }
     } catch (error) {
       logger.warn("embedded server readiness check failed", { error: String(error) })
       await handle.close()
@@ -637,8 +640,14 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
       })
       if (serverConnection.variant === "daemon") {
         daemonLease = await holdClaxedoDaemonLease(serverConnection.discovery, {
-          onLost: () => logger.warn("the daemon closed this app's lease"),
+          onLost: () => {
+            logger.warn("the daemon closed this app's lease")
+            if (!quitting) daemonStatus.leaseLost()
+          },
           onError: (error) => logger.warn("daemon lease failed", { error: String(error) }),
+        })
+        void serverConnection.childExit?.then((exit) => {
+          if (!quitting) daemonStatus.exited(exit)
         })
       }
 
@@ -870,6 +879,9 @@ const recovery = daemonRecoveryBridge({
 ipcMain.handle(DAEMON_RECOVERY_CHANNELS.inspect, () => recovery.inspect())
 ipcMain.handle(DAEMON_RECOVERY_CHANNELS.submit, (_event, request: unknown) => recovery.submit(request))
 ipcMain.handle(DAEMON_RECOVERY_CHANNELS.read, (_event, operationId: unknown) => recovery.read(operationId))
+
+const daemonStatus = createDaemonStatus({ restart: restartBehavior(IS_PACKAGED), target: () => mainWindow ?? undefined })
+ipcMain.handle(DAEMON_STATUS_CHANNELS.read, () => daemonStatus.current())
 
 const providerConfigPush = setupHostProviderConfigPush({
   daemon,

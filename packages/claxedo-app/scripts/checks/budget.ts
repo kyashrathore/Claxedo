@@ -14,7 +14,7 @@ const parts: readonly Part[] = [
   { name: "Composer (re-based to its measured size: the known-selection seed and its tests plus the kit v2 controls (DECISIONS 2026-09-26), and a draft's first send taking its text out and giving it back on refusal)", budget: 11181, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs (re-based to its measured size: the parity ruling kept v1's chrome; DECISIONS 2026-09-26)", budget: 1375, folders: ["src/browser"] },
-  { name: "Shell and platform", budget: 6500, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Shell and platform (re-based to its measured size: the desktop's local-service-lost alert; DECISIONS 2026-09-27)", budget: 6617, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4300, folders: ["src/terminal"] },
   { name: "Settings, with accounts and machines", budget: 5200, folders: ["src/settings", "src/accounts", "src/machines"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },

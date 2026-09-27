@@ -216,6 +216,14 @@ const api: ElectronAPI = {
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
   processDiagnostics: processDiagnosticsBridge,
   daemonRecovery: daemonRecoveryBridge,
+  daemonStatus: {
+    read: () => invoke("claxedo.daemon.status"),
+    onChange: (listener) => {
+      const handler = (_event: unknown, status: unknown) => listener(status)
+      ipcRenderer.on("claxedo.daemon.statusChanged", handler)
+      return () => ipcRenderer.removeListener("claxedo.daemon.statusChanged", handler)
+    },
+  },
   browser: browserBridge,
   /**
    * Machine remote access, entirely by name.

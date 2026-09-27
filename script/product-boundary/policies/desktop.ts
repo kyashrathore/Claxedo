@@ -190,7 +190,12 @@ export const desktopMainComposition: Policy = {
   // 101/27, no headroom.
   // -1 module (2026-09-27): `main/native-markdown.ts` is gone with the native
   // Markdown renderer nothing called. 100/27, no headroom.
-  ceilings: { modules: 100, packages: 27 },
+  // +1 module (2026-09-27): `main/daemon-status.ts`, the one owner of the
+  // daemon status main publishes to the renderer when its lease closes or the
+  // daemon it started exits. Reviewed owner: Electron main, the only process
+  // holding the lease and the child. Type-only import of the restart policy,
+  // no package edge. 101/27, no headroom.
+  ceilings: { modules: 101, packages: 27 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -363,8 +368,10 @@ export const desktopRenderer: Policy = {
   // The kit (`@opencode-ai/ui`) is one of the packages; its source is not
   // walked. `@claxedo/agent-event-runtime/contracts` is one too: it owns the
   // event streams' heartbeat and the stall timeout the app's stream reader
-  // drops a silent stream after.
-  ceilings: { modules: 1207, packages: 38 },
+  // drops a silent stream after. The shell's `shell/daemon-status.ts` and
+  // `shell/view/daemon-lost-banner.tsx` are the desktop's one alert that its
+  // local service stopped.
+  ceilings: { modules: 1209, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
