@@ -194,7 +194,7 @@ function ReviewDiffList(props: {
             diffs={props.summaries}
             file={file}
             onViewFile={props.onOpenFile}
-            showControls={active}
+            showControls={active()}
           />
         )}
         onToggleOpen={review.toggleOpen}

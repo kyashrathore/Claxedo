@@ -7,7 +7,7 @@ import {
   type LineAnnotation,
   type SelectedLineRange,
 } from "@pierre/diffs"
-import { createEffect, createMemo, createSignal, For, Show, on, onCleanup, onMount, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 
 import { createDefaultOptions, styleVariables } from "./diff"
@@ -44,7 +44,7 @@ export type ReviewCodeViewProps<LAnnotation = undefined> = {
   diffStyle: "unified" | "split"
   open: readonly string[]
   onToggleOpen?: (file: string) => void
-  renderHeader?: (file: string, active: boolean) => JSX.Element
+  renderHeader?: (file: string, active: Accessor<boolean>) => JSX.Element
   headerTestId?: (file: string) => string | undefined
   focusedFile?: string
   scrollRef?: (element: HTMLDivElement) => void
@@ -339,7 +339,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
             aria-label={`Toggle diff for ${header.file}`}
             onClick={() => props.onToggleOpen?.(header.file)}
           >
-            {props.renderHeader?.(header.file, headerActive(header.file)) ?? header.file}
+            {props.renderHeader?.(header.file, () => headerActive(header.file)) ?? header.file}
           </button>
         </div>
       </div>
