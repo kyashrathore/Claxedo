@@ -88,7 +88,7 @@ export async function walk(page: Page, runner: Runner, workspace: Workspace, ori
       if (!file) break
       const row = await treeRow(page, file)
       await settle(page)
-      await runner.measure(name, "open-file-from-tree", run, { kind: "file-tab", path: file }, () => row.click())
+      await runner.measure(name, "open-file-from-tree", run, { kind: "file-tab", path: file }, () => row.click({ delay: PRESS_MS }))
       await reviewTab(page).click()
       await settle(page)
     }
