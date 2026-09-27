@@ -6,7 +6,6 @@ export type PaneFrame = {
   readonly composer: boolean
   readonly footer: string
   readonly placeholders: number
-  readonly turnLoading: number
   readonly rows: readonly string[]
   readonly scrollTop: number
   readonly fromEnd: number
@@ -42,7 +41,6 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
         composer: !!root.querySelector('[data-component="prompt-input"]'),
         footer: root.querySelector<HTMLElement>('[data-slot="composer-toolbar"]')?.innerText.replace(/\s+/g, " ").trim() ?? "",
         placeholders: root.querySelectorAll('[data-session-timeline-loading], [data-slot="skeleton"]').length,
-        turnLoading: root.querySelectorAll('[data-timeline-row="TurnLoading"]').length,
         rows,
         scrollTop: Math.round(scroller?.scrollTop ?? -1),
         fromEnd: scroller ? Math.round(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop) : -1,
@@ -116,7 +114,7 @@ function describe(frame: SwitchFrame): string {
 }
 
 function emptyBody(frame: SwitchFrame): boolean {
-  return frame.panes.length === 0 || frame.panes.some((pane) => !pane.body || !pane.composer || pane.placeholders > 0 || pane.turnLoading > 0 || pane.rows.length === 0)
+  return frame.panes.length === 0 || frame.panes.some((pane) => !pane.body || !pane.composer || pane.placeholders > 0 || pane.rows.length === 0)
 }
 
 function rowTops(pane: PaneFrame): ReadonlyMap<string, string> {

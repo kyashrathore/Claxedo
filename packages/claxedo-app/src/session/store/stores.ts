@@ -23,12 +23,12 @@ export function createSessionStores(server: Server, settings: () => ReaderSettin
   const requests = createRequests(server)
   const list = createSessionList(server, requests)
   const [viewport, recordViewport] = createSignal(transcriptViewport({ width: window.innerWidth, height: window.innerHeight }))
-  const firstPage = () => untrack(() => ({ ...viewport(), ...settings() }))
+  const pageShape = () => untrack(() => ({ ...viewport(), ...settings() }))
   const open = createOpenSessions({
     limit: OPEN_SESSION_LIMIT,
     cachedLimit: CACHED_TURN_LIMIT,
     owner: getOwner(),
-    make: (ref, seed) => createSessionTranscript(server, ref, { list, requests, firstPage }, seed),
+    make: (ref, seed) => createSessionTranscript(server, ref, { list, requests, pageShape }, seed),
     onEvicted: (sessionId) => list.closed(sessionId),
     stamp: (sessionId) => list.rowOf(sessionId)?.updatedAt,
   })

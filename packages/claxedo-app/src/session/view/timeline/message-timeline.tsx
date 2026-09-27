@@ -56,7 +56,7 @@ import { whileOnScreen } from "./timeline-on-screen"
 import { MessageComment, Timeline } from "./message-timeline.data"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
-import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineLoadingRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
+import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
 import { isOptimisticMessage, isRuntimeMessage } from "../../transcript/merge"
@@ -159,6 +159,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const turnFold = createTurnFoldStore(ownerSessionKey)
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
+  const toggleTool = (partId: string, open: boolean) => {
+    props.onReaderToggle()
+    setToolOpen(partId, open)
+  }
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
   const revealToolOutput = (partId: string, revealed: boolean) => {
     props.onMarkScrollGesture()
@@ -532,9 +536,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
-  holdPaneReveal(() => !initialRevealReady() || timelineRows().some((row) => row._tag === "TurnLoading"))
+  holdPaneReveal(() => !initialRevealReady())
   createEffect(() => {
-    for (const row of timelineRows()) if (row._tag === "TurnLoading") host.loadTurn(row.userMessageId)
+    for (const row of timelineRows()) if (row._tag === "TurnFold" && row.opening) host.loadTurn(row.userMessageId)
   })
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
@@ -879,7 +883,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
         <ContextToolGroup
           parts={members().map((member) => member.part)}
           open={groupOpen[row().group.key] ?? false}
-          onOpenChange={(open) => setGroupOpen(row().group.key, open)}
+          onOpenChange={(open) => {
+            props.onReaderToggle()
+            setGroupOpen(row().group.key, open)
+          }}
           busy={
             !props.progressBlocked?.() && workingTurn(row().userMessageId) && lastAssistantGroupKey().get(row().userMessageId) === row().group.key
           }
@@ -893,7 +900,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 turnDurationMs={turnDurationMs(row().userMessageId)}
                 turnInterrupted={turnInterrupted(row().userMessageId)}
                 toolOpen={toolOpen[member.part.id] ?? false}
-                onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
+                onToolOpenChange={(open) => toggleTool(member.part.id, open)}
                 toolRevealed={toolRevealed[member.part.id] ?? false}
                 onToolRevealedChange={(revealed) => revealToolOutput(member.part.id, revealed)}
                 deferToolContent={false}
@@ -944,7 +951,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
         <WorkGroup
           parts={members().map((member) => member.part)}
           open={groupOpen[row().group.key] ?? false}
-          onOpenChange={(open) => setGroupOpen(row().group.key, open)}
+          onOpenChange={(open) => {
+            props.onReaderToggle()
+            setGroupOpen(row().group.key, open)
+          }}
           busy={
             !props.progressBlocked?.() && workingTurn(row().userMessageId) && lastAssistantGroupKey().get(row().userMessageId) === row().group.key
           }
@@ -962,7 +972,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                   turnInterrupted={turnInterrupted(row().userMessageId)}
                   defaultOpen={defaultOpen()}
                   toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
-                  onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
+                  onToolOpenChange={(open) => toggleTool(member.part.id, open)}
                   toolRevealed={toolRevealed[member.part.id] ?? false}
                   onToolRevealedChange={(revealed) => revealToolOutput(member.part.id, revealed)}
                   deferToolContent={false}
@@ -1006,7 +1016,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 turnInterrupted={turnInterrupted(row().userMessageId)}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
-                onToolOpenChange={(open) => setToolOpen(part().id, open)}
+                onToolOpenChange={(open) => toggleTool(part().id, open)}
                 toolRevealed={toolRevealed[part().id] ?? false}
                 onToolRevealedChange={(revealed) => revealToolOutput(part().id, revealed)}
                 deferToolContent={false}
@@ -1195,16 +1205,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
           </TimelineRowFrame>
         )
       }
-      case "TurnLoading": {
-        const loadingRow = rowOfTag(row, "TurnLoading", current)
-        return (
-          <TimelineRowFrame row={loadingRow}>
-            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <TimelineLoadingRow />
-            </div>
-          </TimelineRowFrame>
-        )
-      }
       case "Retry": {
         const retryRow = rowOfTag(row, "Retry", current)
         return (
@@ -1227,6 +1227,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 cost={turnFoldRow().cost}
                 showTokens={host.settings.timelineShowTurnTokens()}
                 onToggle={() => {
+                  props.onReaderToggle()
                   turnFold.setFolded(turnFoldRow().userMessageId, !turnFoldRow().folded)
                   onSizeChange?.()
                 }}

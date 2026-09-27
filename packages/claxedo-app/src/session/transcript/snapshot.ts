@@ -3,7 +3,7 @@ import { toAppError, type HeldSessionReads, type SessionFirstRead, type SessionR
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
-import { adoptOlderCursor, completeLatestTurnWhenIdle } from "./latest-turn"
+import { adoptOlderCursor } from "./folded-turn"
 import { isReading, outlineOf } from "./model"
 
 function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
@@ -51,14 +51,12 @@ export function readSnapshot(context: TranscriptContext, held?: HeldSessionReads
 async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
   context.phase.send({ type: "readStarted" })
   const sentAt = Date.now()
-  const reads = context.server.sessions.read(context.ref, context.deps.firstPage(), held)
+  const reads = context.server.sessions.read(context.ref, context.deps.pageShape(), held)
   landSides(context, reads, sentAt)
   try {
     landFirst(context, await reads.first)
   } catch (cause) {
     const error = toAppError(cause)
     context.phase.send(error.class === "not_found" ? { type: "readMissing" } : { type: "readFailed", error })
-    return
   }
-  completeLatestTurnWhenIdle(context)
 }

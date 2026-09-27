@@ -169,7 +169,7 @@ export namespace Timeline {
         : undefined
     const partsPending = folded !== undefined
     const working = isActive && (status === "working" || status === "retrying" || settlePending)
-    const fold = turnFoldDecision({
+    const decided = turnFoldDecision({
       foldableCount,
       settled: shape.settled,
       interrupted,
@@ -178,10 +178,8 @@ export namespace Timeline {
       partsPending,
       userChoice: isFoldedChoice(userMessage.id),
     })
-    if (partsPending && !fold.folded && !working) {
-      rows.push(TimelineRow.TurnLoading({ userMessageId: userMessage.id }))
-      return rows
-    }
+    const opening = partsPending && !decided.folded && !working
+    const fold = opening ? { ...decided, folded: true } : decided
     const turnTokens = assistantMessages.reduce((sum, message) => {
       const t = message.tokens
       if (!t) return sum
@@ -205,6 +203,7 @@ export namespace Timeline {
           durationMs,
           foldCount: Math.max(foldableCount, FOLD_MINIMUM),
           folded: fold.folded,
+          opening,
           tokens: turnTokens,
           cost: turnCost,
         }),

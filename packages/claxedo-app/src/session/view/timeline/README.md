@@ -16,7 +16,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `props.directorySessions` (`ClaxedoSession[]`) | `sessions: Accessor<readonly TimelineSessionRow[]>` (`id`, `title`, `parentId`, `archived`, `lastTurn`) |
 | `props.status()` (`AgentRuntimeStatus`) | `status: Accessor<SessionStatus>` from `@/server` (see the status table) |
 | `turnCoverageInFlight(userMessageId)` | `turnSettlePending(userMessageId)`: true while the post-acceptance transcript read for that turn is still in flight |
-| the first-fold prefetch page read inside the mount cache | `loadTurn(userMessageId)`: reads whole a turn the first page folded, asked for by its loading row; `recordViewport(size)`: the scroller's measured size, which sizes the next first read's page |
+| the first-fold prefetch page read inside the mount cache | `loadTurn(userMessageId)`: reads the parts of a turn a page sent folded, tools as headers, asked for by its opening fold row; `recordViewport(size)`: the scroller's measured size, which sizes the next first read's page |
 | `useSessionSyncOptional().syncSession` | `syncSession?`: fetch a session's conversation (used for the parent of a subagent when its transcript is not loaded) |
 | `useSettings().general.*` | `settings`: the five accessors the timeline reads |
 | `useTranscriptTypography().typography` | `transcriptTypography` |
@@ -52,13 +52,13 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 ## Invariants
 
 - A `session.idle` can land before the turn's final transcript read. While `turnSettlePending(userMessageId)` is true the turn is still working: its Thinking row stays and its rows are not folded.
-- A turn the first page folded (`folded`) and its reader unfolds holds a loading row instead of painting its drawn parts and then the tools under them, and the row asks for the whole turn; a folded or working turn paints now.
+- A turn a page sent folded (`folded`) that its reader opens stays drawn folded, its fold row `opening`, until its parts land, so nothing it drew disappears while they load; the row asks for them. A reader's toggle of a fold, a group or a tool row stops following the end (`onReaderToggle`), so what opens grows downward and no row above it moves.
 - The fold count only rises across reads: a count shown, or seeded from a prefetched page, stands until the full read arrives, so a turn never loses rows the reader was given.
 - The Thinking row is held for a short hide delay when status blips off `working` mid-stream, so the virtualizer does not collapse.
 - A row's key is stable across rebuilds (`TimelineRow.reuse`), and a tag-narrowed row accessor latches the last matching row for the tick before Solid disposes the branch.
 - `followsEnd` holds only while a turn streams; on a settled transcript a size change (a fold or a tool row opening) never re-pins the viewport to the end.
 - Mount snapshots (scroll, measurements, open and revealed tools, fold counts) are kept for 64 sessions; fold choices for 16. Both are module-level caches kept from today, listed as named exceptions in `scripts/checks/data/module-state-exceptions.ts`; they move to provider-owned stores after the swap.
-- The message-navigation rail mounts after the first reveal, in the frame its gutter first shows, so it appears with the rows that brought the turn count above ten. Its gutter (`data-session-timeline-nav-gutter` on the root) pads both sides of the viewport: the rail only shows when the pane fits the column plus both gutters, so the column keeps its width and centre and the transcript does not shift. The timeline holds its pane's reveal until its first-fold reveal and until no row is a turn's loading row.
+- The message-navigation rail mounts after the first reveal, in the frame its gutter first shows, so it appears with the rows that brought the turn count above ten. Its gutter (`data-session-timeline-nav-gutter` on the root) pads both sides of the viewport: the rail only shows when the pane fits the column plus both gutters, so the column keeps its width and centre and the transcript does not shift. The timeline holds its pane's reveal until its first-fold reveal.
 - A transcript shorter than the viewport sits at its bottom (`data-timeline-bottom-anchor`, a flex spacer above the rows), so the latest turn first paints where it stays when older rows arrive above it.
 - The column is 768 px wide and 880 px from 1536 px (`WIDE_VIEWPORT_MIN_WIDTH`, the `2xl:` classes on the same column); the rail needs 60 px on each side of it.
 - File paths in the transcript and terminal links resolve through `@/lib/workspace-file-focus`: `~`, traversal, out-of-placement paths and the placement folder itself never open; `:line[:col]` suffixes are parsed off, so `src/foo.ts:42` opens `src/foo.ts`. `~` cannot be expanded in the app, and a wrong path would open a blank tab, because the server answers empty content for a file that does not exist instead of an error.

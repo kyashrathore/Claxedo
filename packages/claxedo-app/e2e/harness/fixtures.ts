@@ -10,6 +10,7 @@ import { startSignedStack, type SignedStack } from "./signed-stack"
 import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {
+  daemonEnv: Readonly<Record<string, string>>
   stack: Stack
   api: ClaxedoApi
   app: Page
@@ -41,8 +42,9 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     await use(context)
     await reportDestinations(testInfo, destinations)
   },
-  stack: async ({}, use, testInfo) => {
-    const stack = await startStack({ label: testInfo.titlePath.join(" ") })
+  daemonEnv: [{}, { option: true }],
+  stack: async ({ daemonEnv }, use, testInfo) => {
+    const stack = await startStack({ label: testInfo.titlePath.join(" "), daemonEnv })
     try {
       await use(stack)
     } finally {

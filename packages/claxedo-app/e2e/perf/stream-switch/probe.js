@@ -32,7 +32,7 @@
       top: Math.round(scroller?.scrollTop ?? -1),
       fromEnd: scroller ? Math.round(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop) : -1,
       height: scroller ? Math.round(scroller.scrollHeight) : -1,
-      loading: root.querySelectorAll('[data-session-timeline-loading], [data-slot="skeleton"], [data-timeline-row="TurnLoading"]').length,
+      loading: root.querySelectorAll('[data-session-timeline-loading], [data-slot="skeleton"]').length,
     }
   }
 

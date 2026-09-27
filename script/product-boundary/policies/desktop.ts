@@ -349,7 +349,7 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // 1,209 modules and 38 packages, no headroom. The Review tab's
+  // 1,210 modules and 38 packages, no headroom. The Review tab's
   // `review/loaded-diff-identity.ts` is its own module because the benchmark
   // driver imports it to compute the identity it waits for. The workbench
   // store's pane handover (`workbench/handover.ts`, `workbench/reveal-holds.ts`)
@@ -358,7 +358,9 @@ export const desktopRenderer: Policy = {
   // (`server/wire/first-read.ts`) carrying its row, its turn outline and the
   // page its transcript draws first, sized by `session/transcript-viewport.ts`
   // from the transcript's measured size; the open view
-  // (`server/wire/session-open.ts`) carries the facts beside the row. The
+  // (`server/wire/session-open.ts`) carries the facts beside the row. Every
+  // later page, an opened fold and a tool row's whole part are read by
+  // `server/transcript-reads.ts` and parsed by `server/wire/turn-page.ts`. The
   // rail's turn list (`session/view/nav-turns.ts`) lists every turn before the
   // transcript loads it, and `session/transcript/retained.ts` holds the latest
   // turn a return repaints from. The timeline's render range
@@ -374,7 +376,7 @@ export const desktopRenderer: Policy = {
   // local service stopped. `server/model-choice.ts` is the one comparison of two
   // model choices, read by the composer's model selection and by the session
   // list's rule for a row that changes only its selections.
-  ceilings: { modules: 1209, packages: 38 },
+  ceilings: { modules: 1210, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -1,6 +1,6 @@
-export type IdleWait = { readonly done: Promise<boolean>; readonly cancel: () => void }
+type IdleWait = { readonly done: Promise<boolean>; readonly cancel: () => void }
 
-export function waitForIdle(timeoutMs: number): IdleWait {
+function waitForIdle(timeoutMs: number): IdleWait {
   let finish!: (ready: boolean) => void
   const done = new Promise<boolean>((resolve) => (finish = resolve))
   const idle = typeof requestIdleCallback === "function" ? requestIdleCallback(() => finish(true), { timeout: timeoutMs }) : undefined

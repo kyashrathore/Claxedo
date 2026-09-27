@@ -7,7 +7,7 @@ const turn = (userMessageId: string) => [
   TimelineRow.UserMessage({ userMessageId, anchor: true }),
   TimelineRow.Thinking({ userMessageId }),
   TimelineRow.Retry({ userMessageId }),
-  TimelineRow.TurnLoading({ userMessageId }),
+  TimelineRow.TurnFold({ userMessageId, foldCount: 2, folded: true, opening: false }),
 ]
 const rows = [...turn("u1"), ...turn("u2"), ...turn("u3")]
 const range = { startIndex: 0, endIndex: 1, overscan: 0, count: rows.length }

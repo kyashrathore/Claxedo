@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { firstReadFromWire, viewportQuery } from "./first-read"
+import { firstReadFromWire } from "./first-read"
+import { viewportQuery } from "./turn-page"
 
 const session = { id: "ses_1" }
 const message = (id: string, role: "user" | "assistant") => ({ info: { id, role, sessionID: "ses_1" }, parts: [] })
@@ -28,7 +29,7 @@ test("first read wire: outline turns keep their ids, times, title and prompt sni
 test("first read wire: a body without its session or a list of outline turns is a server error", () => {
   expect(() => firstReadFromWire({ outline: { turns: [], complete: true } })).toThrow("The first read answered without its session")
   expect(() => firstReadFromWire({ session, outline: { complete: true } })).toThrow("The turn outline is not a list of turns")
-  expect(() => firstReadFromWire({ session, outline: { turns: [], complete: true }, page: {} })).toThrow("The first page is not a list of turns")
+  expect(() => firstReadFromWire({ session, outline: { turns: [], complete: true }, page: {} })).toThrow("The page is not a list of turns")
 })
 
 test("first read wire: a page lands oldest first, pages back from its first turn, and names each folded turn with the cursor that reads it whole", () => {
@@ -46,7 +47,7 @@ test("first read wire: a page lands oldest first, pages back from its first turn
   expect(read.page?.transcript.entries.map((entry) => entry.info.id)).toEqual(["u1", "a1", "u2", "a2", "u3", "a3"])
   expect(read.page?.transcript.olderCursor).toBe("at-u1")
   expect([...(read.page?.folded ?? [])]).toEqual([
-    ["u1", { foldableCount: 3, wholeBefore: "at-u2" }],
+    ["u1", { foldableCount: 3, openBefore: "at-u2" }],
     ["u3", { foldableCount: 2 }],
   ])
   expect(read.page?.latestTurn).toBeUndefined()

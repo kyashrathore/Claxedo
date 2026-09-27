@@ -5,16 +5,14 @@ row 0:
 - text: Say hello first. acp-script:stream-markdown-edges-0 Build · <time>
 - button "Copy message"
 row 1:
-- button "Worked for <duration>"
-row 2:
 - heading "Heading first" [level=1]
 - paragraph: Hello, ready to stream.
 - button "Copy response"
 - text: Build · <duration>
-row 3:
+row 2:
 - text: Stream a mixed reply. acp-script:stream-markdown-edges-1 Build · <time>
 - button "Copy message"
-row 4:
+row 3:
 - paragraph: Intro paragraph for the edges.
 - list:
   - listitem: item one

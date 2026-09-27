@@ -48,8 +48,13 @@ function settledPart(part: TranscriptPart): boolean {
   return readField(readField(part, "time"), "end") !== undefined
 }
 
+function keepsLoadedBody(current: TranscriptPart, next: TranscriptPart): boolean {
+  return current.type === "tool" && next.type === "tool" && next.headerOnly === true && current.headerOnly !== true && current.state.status === next.state.status
+}
+
 export function mergedPart(current: TranscriptPart | undefined, next: TranscriptPart): TranscriptPart {
-  return current && settledPart(current) && !settledPart(next) ? current : next
+  if (!current) return next
+  return (settledPart(current) && !settledPart(next)) || keepsLoadedBody(current, next) ? current : next
 }
 
 export function mergedMessage(current: ConversationMessage | undefined, next: ConversationMessage): ConversationMessage {

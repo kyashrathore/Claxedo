@@ -82,15 +82,22 @@ async function warmReturn(app: Page, cdp: CDPSession, settled: () => Promise<str
 
 test.skip(({ isMobile }) => isMobile, "the warm return is measured at desktop width")
 
+const LATER_READS = new Set(["page", "turn", "part"])
+
+function readKind(route: string, url: URL): string | null {
+  if (route === "outline") return url.searchParams.has("rows") ? "first" : "outline"
+  if (route === "message") return url.searchParams.get("view")
+  return route.startsWith("message/") ? "part" : route
+}
+
 function transcriptBytes(app: Page) {
-  const reads: { readonly sessionId: string; readonly view: string | null; readonly older: boolean; readonly bytes: number }[] = []
+  const reads: { readonly sessionId: string; readonly view: string | null; readonly bytes: number }[] = []
   app.on("response", (response) => {
     const url = new URL(response.url())
-    const match = /\/session\/([^/]+)\/(message|outline)$/.exec(url.pathname)
+    const match = /\/session\/([^/]+)\/(message|outline|page|turn|message\/[^/]+\/part\/[^/]+)$/.exec(url.pathname)
     if (!match || response.request().method() !== "GET") return
-    const view = match[2] === "outline" ? (url.searchParams.has("rows") ? "first" : "outline") : url.searchParams.get("view")
-    const older = view === null || url.searchParams.has("before")
-    void response.body().then((body) => reads.push({ sessionId: decodeURIComponent(match[1]), view, older, bytes: body.length }))
+    const view = readKind(match[2], url)
+    void response.body().then((body) => reads.push({ sessionId: decodeURIComponent(match[1]), view, bytes: body.length }))
   })
   return reads
 }
@@ -130,7 +137,7 @@ test("12 a return after a walk past the open-session cache does the same work fo
   await settled()
   const cdp = await app.context().newCDPSession(app)
   await cdp.send("Performance.enable")
-  type Work = ReturnWork & { readonly transcriptBytes: number; readonly olderReads: number; readonly outlineBytes: number; readonly firstReads: number; readonly firstReadBytes: number }
+  type Work = ReturnWork & { readonly transcriptBytes: number; readonly laterReads: number; readonly outlineBytes: number; readonly firstReads: number; readonly firstReadBytes: number }
   const runs: Record<string, Work[]> = { small: [], large: [], "first small": [], "first large": [], "again small": [], "again large": [] }
   const heaps: number[] = []
   const rss: number[] = [await rendererRssBytes(app.context().browser()!)]
@@ -145,7 +152,7 @@ test("12 a return after a walk past the open-session cache does the same work fo
       runs[pass === "return" ? step.label : `${pass} ${step.label}`].push({
         ...work,
         transcriptBytes: reads.filter((read) => read.view !== "outline" && read.view !== "first").reduce((sum, read) => sum + read.bytes, 0),
-        olderReads: reads.filter((read) => read.older).length,
+        laterReads: reads.filter((read) => read.view !== null && LATER_READS.has(read.view)).length,
         outlineBytes: reads.filter((read) => read.view === "outline").reduce((sum, read) => sum + read.bytes, 0),
         firstReads: reads.filter((read) => read.view === "first" && read.sessionId === step.session.id).length,
         firstReadBytes: reads.filter((read) => read.view === "first").reduce((sum, read) => sum + read.bytes, 0),
@@ -157,7 +164,7 @@ test("12 a return after a walk past the open-session cache does the same work fo
   await info.attach("returns", { body: JSON.stringify({ runs, heaps, rss }, null, 1), contentType: "application/json" })
   const median = (label: string, pick: (work: Work) => number) => runs[label].map(pick).sort((a, b) => a - b)[2]
   for (const label of Object.keys(runs)) {
-    expect.soft(runs[label].map((work) => work.olderReads), `older-turn reads on ${label} visits, which no visit makes without a scroll, pull or pick`).toEqual([0, 0, 0, 0, 0])
+    expect.soft(runs[label].map((work) => work.laterReads), `page, turn or part reads on ${label} visits, which no visit makes before the reader scrolls, opens a fold or opens a row`).toEqual([0, 0, 0, 0, 0])
     expect.soft(runs[label].map((work) => work.fromEnd <= 2), `${label} visits stay bottom-anchored`).toEqual([true, true, true, true, true])
   }
   for (const pass of ["first", "return"] as const) {

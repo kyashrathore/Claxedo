@@ -1,20 +1,18 @@
-import { readField, readString } from "@claxedo/helpers/readers"
+import { readField } from "@claxedo/helpers/readers"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 import type { SessionContext } from "./session-context"
 import { withQuery } from "./transport"
-import type { FirstPageShape, SessionFirstRead, SessionRef, SessionRow, TranscriptPage } from "./types"
-import { firstReadFromWire, NO_FIRST_PAGE, viewportQuery } from "./wire/first-read"
+import type { PageShape, ReaderSettings, SessionFirstRead, SessionRef, SessionRow, TranscriptPage, TranscriptPart, TurnPageRead } from "./types"
+import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { sessionRowFromCentral } from "./wire/session-row"
-import { transcriptPageFromWire } from "./wire/transcript"
+import { openTurnFromWire, partFromWire, settingsQuery, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 
-const CENTRAL_PAGE_SIZE = 50
 const SESSIONS = "/api/control/sessions"
 
-export type CentralPage = { readonly view: "latest-turn"; readonly before?: string } | { readonly before: string }
-
-async function storedMessages(context: SessionContext, ref: SessionRef, query: Readonly<Record<string, string>>): Promise<unknown> {
-  if (context.account) return context.account.run("session.messages", { sessionId: ref.sessionId, ...query })
-  return context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/messages`, query))
+async function storedRead(context: SessionContext, ref: SessionRef, operation: HostedOperationName, path: string, query: Readonly<Record<string, string>>): Promise<unknown> {
+  if (context.account) return context.account.run(operation, { sessionId: ref.sessionId, ...query })
+  return context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/${path}`, query))
 }
 
 async function storedInventory(context: SessionContext, workspaceId: string): Promise<unknown> {
@@ -28,22 +26,20 @@ function storedRow(item: unknown, ref: SessionRef, workspaceId: string): Session
   return row
 }
 
-export async function readCentralPage(context: SessionContext, workspaceId: string, ref: SessionRef, page: CentralPage): Promise<TranscriptPage> {
-  const window: Record<string, string> = !("view" in page)
-    ? { limit: String(CENTRAL_PAGE_SIZE), before: page.before }
-    : page.before !== undefined
-      ? { view: page.view, before: page.before }
-      : { view: page.view }
-  const body = await storedMessages(context, ref, { workspaceId, ...window })
-  return transcriptPageFromWire(readField(body, "messages"), readString(body, "nextCursor") ?? null)
+export async function readCentralTurnPage(context: SessionContext, workspaceId: string, ref: SessionRef, shape: PageShape, before: string): Promise<TurnPageRead> {
+  return turnPageFromWire(await storedRead(context, ref, "session.turnPage", "page", { workspaceId, before, ...viewportQuery(shape) }), before)
 }
 
-export async function readCentralFirst(context: SessionContext, workspaceId: string, ref: SessionRef, shape: FirstPageShape): Promise<SessionFirstRead> {
-  const query = { workspaceId, ...viewportQuery(shape) }
-  const body = context.account
-    ? await context.account.run("session.outline", { sessionId: ref.sessionId, ...query })
-    : await context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/outline`, query))
-  const read = firstReadFromWire(body)
+export async function readCentralOpenTurn(context: SessionContext, workspaceId: string, ref: SessionRef, settings: ReaderSettings, before: string | undefined): Promise<TranscriptPage> {
+  return openTurnFromWire(await storedRead(context, ref, "session.openTurn", "turn", { workspaceId, ...settingsQuery(settings), ...(before ? { before } : {}) }))
+}
+
+export async function readCentralPart(context: SessionContext, workspaceId: string, ref: SessionRef, messageId: string, partId: string): Promise<TranscriptPart> {
+  return partFromWire(readField(await storedRead(context, ref, "session.part", "part", { workspaceId, messageId, partId }), "part"))
+}
+
+export async function readCentralFirst(context: SessionContext, workspaceId: string, ref: SessionRef, shape: PageShape): Promise<SessionFirstRead> {
+  const read = firstReadFromWire(await storedRead(context, ref, "session.outline", "outline", { workspaceId, ...viewportQuery(shape) }))
   return { row: storedRow(read.session, ref, workspaceId), diff: [], outline: read.outline, ...(read.page ?? NO_FIRST_PAGE) }
 }
 

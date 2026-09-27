@@ -2,7 +2,7 @@ import { createMemo, For, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer, Spinner, useFileComponent } from "@/ui"
+import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer, useFileComponent } from "@/ui"
 import { getDirectory, getFilename } from "@/ui/utils"
 import { normalize } from "@/transcript"
 import type { SummaryDiff } from "./message-timeline.data"
@@ -16,14 +16,6 @@ export function TimelineThinkingRow(props: { reasoningHeading?: string; showReas
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
-    </div>
-  )
-}
-
-export function TimelineLoadingRow() {
-  return (
-    <div data-slot="session-turn-loading" aria-busy="true">
-      <Spinner />
     </div>
   )
 }

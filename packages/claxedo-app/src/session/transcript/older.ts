@@ -1,9 +1,9 @@
 import { batch } from "solid-js"
-import { toAppError, type AppError, type TranscriptPage } from "@/server"
+import { toAppError, type AppError, type TurnPageRead } from "@/server"
 import type { TranscriptContext } from "./context"
 import { prependPage } from "./conversation"
 
-type OlderOutcome = { readonly page: TranscriptPage } | { readonly error: AppError } | undefined
+type OlderOutcome = { readonly page: TurnPageRead } | { readonly error: AppError } | undefined
 
 export function loadOlder(context: TranscriptContext): Promise<void> {
   context.olderRead.current ??= readOlderPage(context).then((outcome) => {
@@ -18,7 +18,7 @@ async function readOlderPage(context: TranscriptContext): Promise<OlderOutcome> 
   if (cursor === undefined) return undefined
   context.older.send({ type: "olderStarted" })
   try {
-    return { page: await context.server.sessions.older(context.ref, cursor) }
+    return { page: await context.server.sessions.page(context.ref, context.deps.pageShape(), cursor) }
   } catch (cause) {
     return { error: toAppError(cause) }
   }
@@ -30,9 +30,11 @@ function landOlderPage(context: TranscriptContext, outcome: OlderOutcome): void 
     context.older.send({ type: "olderFailed", error: outcome.error })
     return
   }
+  const { transcript, folded } = outcome.page
   batch(() => {
-    prependPage(context.setData, outcome.page)
-    context.setOlderCursor(outcome.page.olderCursor)
+    prependPage(context.setData, transcript)
+    if (folded.size > 0) context.setData("folded", new Map([...context.data.folded, ...folded]))
+    context.setOlderCursor(transcript.olderCursor)
     context.older.send({ type: "olderLanded" })
   })
 }

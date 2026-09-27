@@ -8,8 +8,9 @@ import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
 import { settleTurn } from "./settle"
 import { isReading, type SessionPhase } from "./model"
-import { readFoldedTurn } from "./latest-turn"
+import { openFoldedTurn } from "./folded-turn"
 import { loadOlder } from "./older"
+import { loadPart } from "./part"
 import { sendPrompt, showSent, stopTurn } from "./send"
 import { retainedSession, type RetainedSession } from "./retained"
 import { readSnapshot } from "./snapshot"
@@ -78,7 +79,8 @@ function sessionView(context: TranscriptContext): SessionView {
     olderState: older.state,
     outline: context.outline,
     loadOlder: () => loadOlder(context),
-    loadTurn: (userMessageId) => readFoldedTurn(context, userMessageId),
+    loadTurn: (userMessageId) => openFoldedTurn(context, userMessageId),
+    loadPart: (messageId, partId) => loadPart(context, messageId, partId),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),
     showSent: (prompt) => showSent(context, prompt),
@@ -90,7 +92,6 @@ function sessionView(context: TranscriptContext): SessionView {
 export function createSessionTranscript(server: Server, ref: SessionRef, deps: TranscriptDeps, seed?: TranscriptSeed): SessionTranscript {
   const context = createTranscriptContext(server, ref, deps)
   onCleanup(server.attachPlacement(ref.placementId))
-  onCleanup(() => context.idleCompletion.current?.cancel())
   void readSnapshot(context, seed)
   void context.queue.reread()
   return {

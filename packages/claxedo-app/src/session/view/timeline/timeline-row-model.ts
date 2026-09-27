@@ -27,12 +27,12 @@ export type TimelineRowMap = {
   }
   Thinking: { userMessageId: string; reasoningHeading?: string }
   Retry: { userMessageId: string }
-  TurnLoading: { userMessageId: string }
   TurnFold: {
     userMessageId: string
     durationMs?: number
     foldCount: number
     folded: boolean
+    opening: boolean
     tokens?: number
     cost?: number
   }
@@ -108,8 +108,6 @@ export namespace TimelineRow {
   export type Error = ReturnType<typeof Error>
   export const Retry = taggedRow<"Retry", TimelineRowMap["Retry"]>("Retry")
   export type Retry = ReturnType<typeof Retry>
-  export const TurnLoading = taggedRow<"TurnLoading", TimelineRowMap["TurnLoading"]>("TurnLoading")
-  export type TurnLoading = ReturnType<typeof TurnLoading>
   export const TurnFold = taggedRow<"TurnFold", TimelineRowMap["TurnFold"]>("TurnFold")
   export type TurnFold = ReturnType<typeof TurnFold>
 
@@ -124,7 +122,6 @@ export namespace TimelineRow {
     | DiffSummary
     | Error
     | Retry
-    | TurnLoading
     | TurnFold
 
   export const keyIsThinking = (key: string) => key.startsWith("thinking:")
@@ -151,8 +148,6 @@ export namespace TimelineRow {
         return `error:${row.userMessageId}`
       case "Retry":
         return `retry:${row.userMessageId}`
-      case "TurnLoading":
-        return `turn-loading:${row.userMessageId}`
       case "TurnFold":
         return `turn-fold:${row.userMessageId}`
       default: {
@@ -175,7 +170,6 @@ export namespace TimelineRow {
       case "DiffSummary":
       case "Error":
       case "Retry":
-      case "TurnLoading":
       case "TurnFold":
         return true
     }
@@ -191,7 +185,6 @@ export namespace TimelineRow {
       case "TurnGap":
       case "CommentStrip":
       case "Retry":
-      case "TurnLoading":
         return true
       case "UserMessage":
         return b._tag === "UserMessage" && a.anchor === b.anchor
@@ -210,7 +203,7 @@ export namespace TimelineRow {
           a.modelID === b.modelID && a.presentation === b.presentation
       case "TurnFold":
         return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
-          a.folded === b.folded && a.tokens === b.tokens && a.cost === b.cost
+          a.folded === b.folded && a.opening === b.opening && a.tokens === b.tokens && a.cost === b.cost
       default: {
         const exhaustive: never = a
         return exhaustive

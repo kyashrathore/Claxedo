@@ -1,8 +1,7 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
 import { createStore } from "solid-js/store"
 import { machine, type Machine } from "@/lib/machine"
-import type { FirstPageShape, Server, SessionRef, TranscriptPage } from "@/server"
-import type { IdleWait } from "@/lib/idle"
+import type { PageShape, Server, SessionRef, TranscriptPage } from "@/server"
 import type { OlderState, OutlineState } from "@/session"
 import type { SessionListInternal } from "../list"
 import type { RequestsInternal } from "../requests"
@@ -28,7 +27,7 @@ import { createSessionTodos, type SessionTodosStore } from "./todos"
 export type TranscriptDeps = {
   readonly list: SessionListInternal
   readonly requests: RequestsInternal
-  readonly firstPage: () => FirstPageShape
+  readonly pageShape: () => PageShape
 }
 
 export type TranscriptContext = {
@@ -51,8 +50,8 @@ export type TranscriptContext = {
   readonly snapshotRead: { current: Promise<void> | undefined }
   readonly latestTurnRead: { current: TranscriptPage | undefined }
   readonly olderRead: { current: Promise<void> | undefined }
-  readonly wholeTurnReads: Map<string, Promise<void>>
-  readonly idleCompletion: { current: IdleWait | undefined }
+  readonly turnReads: Map<string, Promise<void>>
+  readonly partReads: Map<string, Promise<void>>
 }
 
 export function createTranscriptContext(server: Server, ref: SessionRef, deps: TranscriptDeps): TranscriptContext {
@@ -81,7 +80,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     snapshotRead: { current: undefined },
     latestTurnRead: { current: undefined },
     olderRead: { current: undefined },
-    wholeTurnReads: new Map(),
-    idleCompletion: { current: undefined },
+    turnReads: new Map(),
+    partReads: new Map(),
   }
 }

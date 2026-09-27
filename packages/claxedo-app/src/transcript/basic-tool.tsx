@@ -59,6 +59,7 @@ export interface BasicToolProps {
   triggerAsLink?: boolean
   clickable?: boolean
   startedAt?: number
+  bodyPending?: boolean
 }
 
 const SPRING = { type: "spring" as const, visualDuration: 0.35, bounce: 0 }
@@ -128,8 +129,8 @@ export function BasicTool(props: BasicToolProps) {
   const open = () => props.open ?? state.open
   const ready = () => state.ready
   const pending = () => props.status === "pending" || props.status === "running"
-  const content = children(() => (props.defer && !ready() ? undefined : props.children))
-  const hasChildren = () => (props.defer && !ready() ? "children" in props : hasRenderedContent(content()))
+  const content = children(() => (props.bodyPending || (props.defer && !ready()) ? undefined : props.children))
+  const hasChildren = () => (props.bodyPending || (props.defer && !ready()) ? "children" in props : hasRenderedContent(content()))
 
   const now = useSecondClock(() => pending() && typeof props.startedAt === "number")
   const elapsed = () =>
@@ -537,6 +538,7 @@ export function GenericTool(props: {
   startedAt?: number
   revealed?: boolean
   onRevealedChange?: (revealed: boolean) => void
+  bodyPending?: boolean
 }) {
   const i18n = useTranscriptI18n()
   const title = createMemo(() => humanizeTool(props.tool, props.input, i18n))
@@ -554,6 +556,7 @@ export function GenericTool(props: {
           args: [...(title().context ? [title().context!] : []), ...args(props.input, title().subtitle)],
         }}
         hideDetails={props.hideDetails}
+        bodyPending={props.bodyPending}
       >
         {output() ? (
           <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>

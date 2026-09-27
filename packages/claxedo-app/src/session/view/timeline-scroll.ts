@@ -27,6 +27,7 @@ export type TimelineScrollProps = Pick<
   | "setScrollToMessage"
   | "setHistoryAnchor"
   | "onMessageSelect"
+  | "onReaderToggle"
 >
 
 type ScrollHandles = {
@@ -96,6 +97,7 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
     setScrollToEnd: (fn) => (handles.scrollToEnd = fn),
     setScrollToMessage: (fn) => (handles.scrollToMessage = fn ?? (() => false)),
     setHistoryAnchor: (anchor) => (handles.anchor = anchor),
+    onReaderToggle: () => auto.restoreFollowing(false),
     onMessageSelect: (turn: TimelineNavTurn) => {
       auto.pause()
       parts.select(turn.id)

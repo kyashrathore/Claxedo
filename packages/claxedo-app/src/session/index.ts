@@ -111,6 +111,7 @@ export type SessionView = {
   readonly outline: Accessor<OutlineState>
   readonly loadOlder: () => Promise<void>
   readonly loadTurn: (userMessageId: string) => Promise<void>
+  readonly loadPart: (messageId: string, partId: string) => Promise<void>
   readonly reload: () => Promise<void>
   readonly send: (input: PromptInput) => Promise<void>
   readonly showSent: (prompt: SentPrompt) => void

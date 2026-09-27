@@ -6,7 +6,7 @@ It is the old app's session renderers, **moved, not rebuilt**: only import paths
 
 ## Owned concepts
 
-- The data context (`data.tsx`): `DataProvider` and `useData()` carry the store the renderers read, the placement folder, and the host's callbacks (session and task hrefs, subagent resolution, file URLs, tool images). `useOptionalData()` is for renderers that also mount outside a session.
+- The data context (`data.tsx`): `DataProvider` and `useData()` carry the store the renderers read, the placement folder, and the host's callbacks (session and task hrefs, subagent resolution, file URLs, tool images, and `loadToolBody` for a tool part a page sent as its header). A header-only tool row (`part.headerOnly`) draws its collapsed header from the input and metadata the header reads, can open although it holds no body (`bodyPending` on `BasicTool`), and asks for its whole part when it opens; a patch's header keeps each file's path and counts (`patchFiles(files, headerOnly)`). `useOptionalData()` is for renderers that also mount outside a session.
 - Parts (`message-part.tsx`): the registry from `part.type` and tool name to a renderer, the harness tool-name aliases, and the user-message, text, reasoning, tool, image and file renderers.
 - Tool rows (`basic-tool.tsx`, `activity-row.tsx`, `claxedo-tool*.ts(x)`, `plan-tool.ts`, `question-*.ts(x)`, `tool-error-card.tsx`, `scrollable-output.tsx`, `shell-wrapper.ts`, `local-preview.ts`).
 - Grouping and the fold: the rule is `@claxedo/agent-runtime-contract/turn-fold`, shared with the runtime's turn record; this folder draws it (`same-groups.ts`, `work-group-summary.ts`, `turn-fold-row.tsx`).

@@ -130,7 +130,7 @@ function mergedParts(current: readonly TranscriptPart[] | undefined, canonical: 
   return [...canonical.map((part) => mergedPart(byId.get(part.id), part)), ...current.filter((part) => !known.has(part.id))]
 }
 
-function withWholeTurn(messages: readonly ConversationMessage[], fresh: readonly ConversationMessage[]): ConversationMessage[] {
+function withTurn(messages: readonly ConversationMessage[], fresh: readonly ConversationMessage[]): ConversationMessage[] {
   const freshIds = new Set(fresh.map((message) => message.id))
   const at = messages.findIndex((message) => freshIds.has(message.id))
   const current = new Map(messages.map((message) => [message.id, message]))
@@ -140,9 +140,9 @@ function withWholeTurn(messages: readonly ConversationMessage[], fresh: readonly
   return [...rest.slice(0, at), ...merged, ...rest.slice(at)]
 }
 
-export function mergeWholeTurn(set: SetTranscript, page: TranscriptPage): void {
+export function mergeTurn(set: SetTranscript, page: TranscriptPage): void {
   batch(() => {
-    set("messages", (messages) => withWholeTurn(messages, pageMessages(page)))
+    set("messages", (messages) => withTurn(messages, pageMessages(page)))
     for (const entry of page.entries) set("parts", entry.info.id, (parts) => mergedParts(parts, entry.parts))
     markTextParts(set, pageParts(page))
   })

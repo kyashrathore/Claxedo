@@ -125,7 +125,7 @@ export function installRecorder() {
     const rows = root?.querySelectorAll("[data-timeline-key]").length ?? 0
     const rail = document.querySelector<HTMLElement>("[data-testid='rail-sidebar-session-row'][data-active='true']")?.dataset.sessionId
     const body = shell()?.querySelector<HTMLElement>("[data-workspace-panel-session-id]")
-    const ready = roots.length === 1 && !!root && rows > 0 && rail === sessionId && !!root.querySelector("[data-component='prompt-input']") && !root.querySelector("[data-session-timeline-loading], [data-slot='skeleton'], [data-timeline-row='TurnLoading']")
+    const ready = roots.length === 1 && !!root && rows > 0 && rail === sessionId && !!root.querySelector("[data-component='prompt-input']") && !root.querySelector("[data-session-timeline-loading], [data-slot='skeleton']")
     return { ready, signature: ready ? `session:${sessionId}:${rows}:${body?.dataset.workspacePanelSessionId}` : "" }
   }
   const evaluate = (predicate: Predicate): { ready: boolean; signature: string; debug?: string } => {

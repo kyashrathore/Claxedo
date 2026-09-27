@@ -3,7 +3,8 @@ import { expect, test } from "bun:test"
 import type { HostedAccount } from "./account"
 import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
-import { readOlder, readSession } from "./session-reads"
+import { readSession } from "./session-reads"
+import { readTurnPageBefore } from "./transcript-reads"
 import { centralRow, fakeServer, firstPath, firstRead, openPath, openView, ref, shape, stored } from "./test-session-server"
 
 const centralFirstPath = "/api/control/sessions/ses_1/outline?workspaceId=ws_cloud&rows=40&cols=100&reasoning=0&shell=0&edit=0"
@@ -24,8 +25,8 @@ test("session reads: a stopped cloud workspace's session opens from one control-
   expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([centralFirstPath])
   expect(server.runtimeCalls).toEqual([])
 
-  await readOlder(server.context, ref, "cursor_older")
-  expect(server.requests).toContain("/api/control/sessions/ses_1/messages?workspaceId=ws_cloud&limit=50&before=cursor_older")
+  await readTurnPageBefore(server.context, ref, shape, "cursor_older")
+  expect(server.requests).toContain("/api/control/sessions/ses_1/page?workspaceId=ws_cloud&before=cursor_older&rows=40&cols=100&reasoning=0&shell=0&edit=0")
   expect(server.runtimeCalls).toEqual([])
 })
 
@@ -35,7 +36,7 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
   const account = {
     run: async (operation: string, input?: Readonly<Record<string, unknown>>) => {
       calls.push({ operation, ...(input ? { input } : {}) })
-      if (operation === "session.messages") return { messages: stored, nextCursor: "cursor_older", maxEventOrdinal: 0 }
+      if (operation === "session.turnPage") return { turns: [{ messages: stored }] }
       if (operation === "session.outline") {
         return { session: centralRow, outline: { turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true }, page: { turns: [{ messages: stored, cursor: "cursor_older" }] } }
       }
@@ -50,10 +51,10 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
   expect(first.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(first.transcript.olderCursor).toBe("cursor_older")
   expect(first.outline).toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
-  await readOlder(context, ref, "cursor_older")
+  await readTurnPageBefore(context, ref, shape, "cursor_older")
   expect(calls).toEqual([
     { operation: "session.outline", input: { sessionId: "ses_1", workspaceId: "ws_cloud", rows: "40", cols: "100", reasoning: "0", shell: "0", edit: "0" } },
-    { operation: "session.messages", input: { sessionId: "ses_1", workspaceId: "ws_cloud", limit: "50", before: "cursor_older" } },
+    { operation: "session.turnPage", input: { sessionId: "ses_1", workspaceId: "ws_cloud", before: "cursor_older", rows: "40", cols: "100", reasoning: "0", shell: "0", edit: "0" } },
   ])
   expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([])
 })
@@ -109,7 +110,7 @@ test("session reads: an offline machine's session renders its published row, rea
   expect(await reads.requests).toEqual([])
   expect(server.requests.filter((path) => path.includes("/messages") || path.includes("/outline"))).toEqual([])
   expect(server.runtimeCalls).toEqual([])
-  expect((await readOlder(server.context, ref, "cursor_older")).entries).toEqual([])
+  expect((await readTurnPageBefore(server.context, ref, shape, "cursor_older")).transcript.entries).toEqual([])
   expect(server.runtimeCalls).toEqual([])
 })
 
