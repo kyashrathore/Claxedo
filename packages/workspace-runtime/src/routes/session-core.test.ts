@@ -617,6 +617,24 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{ view: "latest-turn" }])
   })
 
+  test("forwards a whole-turn read before a cursor as the latest-turn view with that cursor", async () => {
+    const calls: AgentMessagePageInput[] = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          calls.push(page)
+          return { messages: [first, second] }
+        },
+      }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?view=latest-turn&before=before-user")
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    expect(calls).toEqual([{ view: "latest-turn", before: "before-user" }])
+  })
+
   test("serves the session's turn outline from the runtime store, and names a missing session or an absent store", async () => {
     const outline: TurnOutline = {
       turns: [{ id: "user-1", createdAt: 1, user: "why?" }],
@@ -728,7 +746,8 @@ describe("createSessionRoutes message paging", () => {
       "limit=1&before=",
       "view=unknown",
       "view=latest-turn&limit=1",
-      "view=latest-turn&before=cursor",
+      "view=latest-turn&before=",
+      "view=latest-surface&before=cursor",
     ]) {
       const response = await app.request(`http://localhost/session/session-1/message?${query}`)
       expect(response.status).toBe(400)

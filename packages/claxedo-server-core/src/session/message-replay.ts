@@ -267,6 +267,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       AND json_extract(${ClaxedoCloudMessageTable.data}, '$.info.id') = ${ClaxedoCloudMessageTable.message_id}
       AND json_extract(${ClaxedoCloudMessageTable.data}, '$.info.role') = ${ClaxedoCloudMessageTable.role}
     `
+    const beforeEnd = input.before === undefined ? undefined : lt(ClaxedoCloudMessageTable.ordinal, decodeMessagePageCursor(sessionId, input.before))
     const boundary = ClaxedoDB.use((db) =>
       db
         .select({
@@ -279,6 +280,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
             eq(ClaxedoCloudMessageTable.session_id, sessionId),
             completeSemanticMessage,
             eq(ClaxedoCloudMessageTable.role, "user"),
+            beforeEnd,
           ),
         )
         .orderBy(desc(ClaxedoCloudMessageTable.ordinal))
@@ -291,7 +293,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
           ordinal: ClaxedoCloudMessageTable.ordinal,
         })
         .from(ClaxedoCloudMessageTable)
-        .where(and(eq(ClaxedoCloudMessageTable.session_id, sessionId), completeSemanticMessage))
+        .where(and(eq(ClaxedoCloudMessageTable.session_id, sessionId), completeSemanticMessage, beforeEnd))
         .orderBy(desc(ClaxedoCloudMessageTable.ordinal))
         .get(),
     )
@@ -308,6 +310,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
                   eq(ClaxedoCloudMessageTable.session_id, sessionId),
                   completeSemanticMessage,
                   gt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+                  beforeEnd,
                   sql`(
                     ${ClaxedoCloudMessageTable.role} <> 'assistant'
                     OR json_extract(${ClaxedoCloudMessageTable.data}, '$.info.parentID') IS NOT ${boundary.messageId}
@@ -422,6 +425,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
               eq(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
               gt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
             ),
+            beforeEnd,
           ),
         )
         .orderBy(ClaxedoCloudMessageTable.ordinal)

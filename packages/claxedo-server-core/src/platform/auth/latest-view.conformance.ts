@@ -16,7 +16,8 @@ const transcriptEntry = (id: string, role: "user" | "assistant", parts: Array<Re
  * A registry's answer to the semantic views over the transcript it stores:
  * the surface is the latest turn's prompt and answer, text only, and its
  * cursor pages back to everything the surface left out; the latest turn is
- * that turn whole. A session with no transcript answers none.
+ * that turn whole, and its cursor reads the turn before it whole. A session
+ * with no transcript answers none.
  */
 export async function exerciseLatestViewConformance(harness: LatestViewConformanceHarness) {
   const { authority, workspaceId, creator } = harness
@@ -59,7 +60,15 @@ export async function exerciseLatestViewConformance(harness: LatestViewConforman
 
   const turn = await read({ view: "latest-turn" })
   latestViewHolds(JSON.stringify(turn.messages.map((item) => item.info.id)) === '["u2","a2-tool","a2"]', "the latest turn is not whole")
-  return { surface: surface.messages.map((item) => item.info.id), turn: turn.messages.map((item) => item.info.id) }
+  latestViewHolds(!!turn.nextCursor, "the latest turn named no cursor to the turn before it")
+  const earlier = await read({ view: "latest-turn", before: turn.nextCursor })
+  latestViewHolds(JSON.stringify(earlier.messages.map((item) => item.info.id)) === '["u1","a1"]', "the turn before the latest is not whole")
+  latestViewHolds(!earlier.nextCursor, "the first turn named a cursor to history that does not exist")
+  return {
+    surface: surface.messages.map((item) => item.info.id),
+    turn: turn.messages.map((item) => item.info.id),
+    earlier: earlier.messages.map((item) => item.info.id),
+  }
 }
 
 function latestViewHolds(condition: unknown, text: string): asserts condition {

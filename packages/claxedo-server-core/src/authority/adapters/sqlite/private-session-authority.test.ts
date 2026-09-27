@@ -788,7 +788,7 @@ describe("SQLite latest views", () => {
       authority: store,
       workspaceId: "workspace_main",
       creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
-    })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"] })
+    })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"], earlier: ["u1", "a1"] })
     await expect(exerciseTurnOutlineConformance({
       authority: store,
       workspaceId: "workspace_main",

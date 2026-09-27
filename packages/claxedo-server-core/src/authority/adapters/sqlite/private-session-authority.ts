@@ -686,7 +686,10 @@ export function createSqlitePrivateSessionAuthority(input: {
       const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
       if (!read) return { allowed: false, messages: [] }
       const { role } = read
-      if (value.view !== undefined) return { allowed: true, role, ...readLatestView(db, value.sessionId, value.workspaceId, value.view) }
+      if (value.view !== undefined) {
+        const end = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
+        return { allowed: true, role, ...readLatestView(db, value.sessionId, value.workspaceId, value.view, end) }
+      }
       validatePage(value.limit, value.before)
       const before = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
       const query = value.limit === undefined
@@ -1115,16 +1118,17 @@ function validatePage(limit: number | undefined, before: string | undefined) {
   }
 }
 
-function readLatestView(db: SqliteAuthorityDb, sessionId: string, workspaceId: string, view: LatestView) {
+function readLatestView(db: SqliteAuthorityDb, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
+  const endBound = end === undefined ? "" : " AND ordinal < ?"
   const boundary = db.prepare<unknown[], { ordinal: number | null }>(`
-    SELECT MAX(ordinal) AS ordinal FROM session_messages WHERE session_id = ? AND workspace_id = ? AND role = 'user'
-  `).get(sessionId, workspaceId)?.ordinal
+    SELECT MAX(ordinal) AS ordinal FROM session_messages WHERE session_id = ? AND workspace_id = ? AND role = 'user'${endBound}
+  `).get(...[sessionId, workspaceId, ...(end === undefined ? [] : [end])])?.ordinal
   if (boundary === null || boundary === undefined) return { messages: [] }
   const turn = db.prepare<unknown[], MessageRow>(`
     SELECT m.ordinal, m.data, m.author_actor_id, u.kind AS author_kind
     FROM session_messages m LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-    WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal >= ? ORDER BY m.ordinal ASC
-  `).all(sessionId, workspaceId, boundary)
+    WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal >= ?${end === undefined ? "" : " AND m.ordinal < ?"} ORDER BY m.ordinal ASC
+  `).all(...[sessionId, workspaceId, boundary, ...(end === undefined ? [] : [end])])
   const older = !!db.prepare(`SELECT 1 FROM session_messages WHERE session_id = ? AND workspace_id = ? AND ordinal < ? LIMIT 1`)
     .get(sessionId, workspaceId, boundary)
   return latestViewPage(

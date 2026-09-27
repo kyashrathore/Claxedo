@@ -1311,7 +1311,7 @@ describe("D1 latest views", () => {
       authority: input.sessions,
       workspaceId: "ws_main",
       creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
-    })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"] })
+    })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"], earlier: ["u1", "a1"] })
     await expect(exerciseTurnOutlineConformance({
       authority: input.sessions,
       workspaceId: "ws_main",

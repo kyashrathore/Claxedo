@@ -1515,7 +1515,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (args.view !== undefined) return await this.readLatestView(who, sessionId, workspaceId, args.view)
+    if (args.view !== undefined) {
+      const end = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
+      return await this.readLatestView(who, sessionId, workspaceId, args.view, end)
+    }
     if (args.before !== undefined && args.limit === undefined) {
       throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
     }
@@ -1578,7 +1581,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return { allowed: true, role: rankRole(access.role_rank), ...outline }
   }
 
-  private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView) {
+  private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
     let access: SessionRow & { role_rank: number }
     try {
       access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
@@ -1587,9 +1590,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       throw error
     }
     const answered = { allowed: true, role: rankRole(access.role_rank) }
+    const endBound = end === undefined ? [] : [end]
     const boundary = await this.database
-      .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'`)
-      .bind(sessionId, workspaceId)
+      .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}`)
+      .bind(sessionId, workspaceId, ...endBound)
       .first<{ ordinal: number | null }>()
     if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { ...answered, messages: [] }
     const [turn, older] = await Promise.all([
@@ -1597,9 +1601,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
         from session_messages m
         left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-        where m.session_id = ? and m.workspace_id = ? and m.ordinal >= ?
+        where m.session_id = ? and m.workspace_id = ? and m.ordinal >= ?${end === undefined ? "" : " and m.ordinal < ?"}
         order by m.ordinal asc
-      `).bind(sessionId, workspaceId, boundary.ordinal).all<MessageRow>(),
+      `).bind(sessionId, workspaceId, boundary.ordinal, ...endBound).all<MessageRow>(),
       this.database
         .prepare(`select 1 as found from session_messages where session_id = ? and workspace_id = ? and ordinal < ? limit 1`)
         .bind(sessionId, workspaceId, boundary.ordinal)

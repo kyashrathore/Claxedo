@@ -1233,7 +1233,7 @@ void describe("RuntimeStore", () => {
     store.close()
   })
 
-  void it("returns the chronological latest turn and continues before its user boundary", () => {
+  void it("returns the chronological latest turn and continues before its user boundary, a page or a whole turn at a time", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const append = (info: Record<string, unknown>) =>
@@ -1262,6 +1262,14 @@ void describe("RuntimeStore", () => {
       older.messages.map((message) => message.info.id),
       ["user-1", "assistant-1"],
     )
+
+    const earlier = store.getMessagePage("s1", { view: "latest-turn", before: latest.nextCursor })
+    assert.ok(earlier)
+    assert.deepEqual(
+      earlier.messages.map((message) => message.info.id),
+      ["user-1", "assistant-1"],
+    )
+    assert.equal(earlier.nextCursor, undefined)
     store.close()
   })
 

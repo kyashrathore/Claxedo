@@ -4304,17 +4304,19 @@ export class RuntimeStore {
     // whether this means engine-owned history or an authoritative empty store.
     if (!projection) return undefined
     if ("view" in page && page.view !== undefined) {
+      const endOrd = page.before === undefined ? undefined : decodeMessagePageCursor(sessionId, page.before)
       const boundary = this.db
         .prepare<Pick<MessageProjectionRow, "id" | "ord">>(
           `
           SELECT id, ord
           FROM message
-          WHERE session_id = ? AND role = 'user'
+          WHERE session_id = ? AND role = 'user'${endOrd === undefined ? "" : " AND ord < ?"}
           ORDER BY ord DESC
           LIMIT 1
         `,
         )
-        .get(sessionId)
+        .get(...(endOrd === undefined ? [sessionId] : [sessionId, endOrd]))
+      if (!boundary && endOrd !== undefined) return { messages: [] }
       if (!boundary) {
         throw new AgentMessagePageError(409, `Latest turn boundary is unavailable for session: ${sessionId}`)
       }
@@ -4394,11 +4396,11 @@ export class RuntimeStore {
           `
           SELECT id, ord, info_json
           FROM message
-          WHERE session_id = ? AND ord >= ?
+          WHERE session_id = ? AND ord >= ?${endOrd === undefined ? "" : " AND ord < ?"}
           ORDER BY ord ASC
         `,
         )
-        .all(sessionId, boundary.ord)
+        .all(...(endOrd === undefined ? [sessionId, boundary.ord] : [sessionId, boundary.ord, endOrd]))
       if (!this.isContiguousTurn(turn)) {
         throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
       }

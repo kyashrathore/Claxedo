@@ -8,16 +8,24 @@ export const AGENT_MESSAGE_PAGE_LIMIT = 500
  * consumer.
  *
  * Semantic views are intentionally distinct from numeric pages. `latest-turn`
- * returns the complete latest turn. `latest-surface` returns at most its owning
- * user and final message; its cursor points at the final message so ordinary
- * paging restores every omitted intermediate without a second cursor protocol.
- * The surface is a first-paint projection: the two envelopes whole, and their
- * text parts only, whole. It is what a folded turn draws — the prompt, the fold
- * row and the answer — so the answer is never the thing a budget trims.
+ * returns the complete latest turn, or with `before` the complete turn that
+ * ends at that cursor; its cursor points at the turn's user message, so a
+ * reader walks back one whole turn per read. `latest-surface` returns at most
+ * its owning user and final message; its cursor points at the final message so
+ * ordinary paging restores every omitted intermediate without a second cursor
+ * protocol. The surface is a first-paint projection: the two envelopes whole,
+ * and their text parts only, whole. It is what a folded turn draws — the
+ * prompt, the fold row and the answer — so the answer is never the thing a
+ * budget trims.
  */
 export type AgentMessagePageInput =
   | {
-      view: "latest-turn" | "latest-surface"
+      view: "latest-turn"
+      limit?: never
+      before?: string
+    }
+  | {
+      view: "latest-surface"
       limit?: never
       before?: never
     }

@@ -208,9 +208,14 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
     return { turnId: turn }
   }
   if (view === undefined && limit === undefined && before === undefined) return undefined
+  if (view === "latest-turn" && limit === undefined) {
+    if (before === undefined) return { view }
+    if (before.length === 0) throw new HTTPException(400, { message: "before must be a non-empty cursor" })
+    return { view, before }
+  }
   if (view !== undefined) {
-    if ((view !== "latest-turn" && view !== "latest-surface") || limit !== undefined || before !== undefined) {
-      throw new HTTPException(400, { message: "view must be latest-turn or latest-surface and cannot be combined with limit or before" })
+    if (view !== "latest-surface" || limit !== undefined || before !== undefined) {
+      throw new HTTPException(400, { message: "view must be latest-turn or latest-surface, cannot be combined with limit, and only latest-turn takes before" })
     }
     return { view }
   }

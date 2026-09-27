@@ -135,6 +135,10 @@ describe("message replay", () => {
     const older = readSessionMessagePage("sess_latest_turn", { limit: 20, before: latest.nextCursor })
     expect(older.messages.map((message) => message.info.id)).toEqual(["latest_1", "latest_2", "latest_3"])
     expect(older.nextCursor).toBeUndefined()
+
+    const earlier = readSessionMessagePage("sess_latest_turn", { view: "latest-turn", before: latest.nextCursor })
+    expect(earlier.messages.map((message) => message.info.id)).toEqual(["latest_1", "latest_2", "latest_3"])
+    expect(earlier.nextCursor).toBeUndefined()
   })
 
   test("reads a bounded latest surface and keeps omitted turn messages reachable", () => {

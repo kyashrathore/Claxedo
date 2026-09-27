@@ -10,9 +10,14 @@ export function parseMessagePageInput(
   before: string | undefined,
   view?: string,
 ): AgentMessagePageInput | undefined {
+  if (view === "latest-turn" && limit === undefined) {
+    if (before === undefined) return { view }
+    if (before.length === 0) throw new AgentMessagePageError(400, "before must be a non-empty cursor")
+    return { view, before }
+  }
   if (view !== undefined) {
-    if ((view !== "latest-turn" && view !== "latest-surface") || limit !== undefined || before !== undefined) {
-      throw new AgentMessagePageError(400, "view must be latest-turn or latest-surface and cannot be combined with limit or before")
+    if (view !== "latest-surface" || limit !== undefined || before !== undefined) {
+      throw new AgentMessagePageError(400, "view must be latest-turn or latest-surface, cannot be combined with limit, and only latest-turn takes before")
     }
     return { view }
   }
