@@ -2787,6 +2787,26 @@ void describe("RuntimeStore", () => {
     assert.equal(reopened.getSessionConfig("restricted")?.permissionState, undefined)
   })
 
+  void it("a config write moves the session's updated time only when its harness, model, variant or permission mode changes value", () => {
+    const store = new RuntimeStore(tmp())
+    const db = (store as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown } } }).db
+    const updatedAfter = (update: Parameters<typeof store.updateSessionConfig>[1]) => {
+      db.prepare("UPDATE session SET updated_at = ? WHERE id = ?").run(111, "native")
+      store.updateSessionConfig("native", update)
+      return store.getSession("native")?.time.updated
+    }
+    store.bindSession({ sessionId: "native", directory: "/work", agentSessionId: "a1" })
+    store.updateSessionConfig("native", { harness: { id: "claude", access: "native" } })
+
+    assert.equal(updatedAfter({ harness: { id: "claude", access: "native" }, model: { providerID: "claude", modelID: "default" }, permissionMode: "auto", agent: "build" }), 111)
+    assert.equal(updatedAfter({ variant: null, instructions: "Be brief." }), 111)
+    assert.ok((updatedAfter({ permissionMode: "plan" }) ?? 0) > 111)
+    assert.equal(updatedAfter({ permissionMode: "plan" }), 111)
+    assert.ok((updatedAfter({ model: { providerID: "claude", modelID: "claude-haiku-4-5-20251001" } }) ?? 0) > 111)
+    assert.ok((updatedAfter({ variant: "high" }) ?? 0) > 111)
+    assert.ok((updatedAfter({ harness: { id: "codex", access: "native" }, model: null, variant: null }) ?? 0) > 111)
+  })
+
   void it("the session row carries each selection's effective value: the stored one, else the harness default", () => {
     const store = new RuntimeStore(tmp())
     const config = (id: string) => (store.getSession(id) as { config?: Record<string, unknown> } | null)?.config

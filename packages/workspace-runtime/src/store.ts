@@ -787,6 +787,16 @@ function sessionRowConfig(harness: SessionHarness, row: {
   }
 }
 
+function sameRunningSelections(previous: ReturnType<typeof sessionRowConfig> | undefined, next: ReturnType<typeof sessionRowConfig>) {
+  return !!previous
+    && previous.harness.id === next.harness.id
+    && previous.harness.access === next.harness.access
+    && previous.model?.providerID === next.model?.providerID
+    && previous.model?.modelID === next.model?.modelID
+    && previous.variant === next.variant
+    && previous.permissionMode === next.permissionMode
+}
+
 /**
  * A session whose projection cannot be brought up to its journal. `repairable`
  * separates the two causes, because they need opposite handling: a projection
@@ -5026,11 +5036,19 @@ export class RuntimeStore {
       return
     }
     const nextHarness = patch.harness ?? prevHarness
-    if (prevHarness && (nextHarness?.id !== prevHarness.id || nextHarness?.access !== prevHarness.access)) {
+    const sameHarness = nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access
+    if (prevHarness && !sameHarness) {
       this.db.prepare("UPDATE session SET commands_json = NULL WHERE id = ?").run(id)
     }
-    const nextModelId = patch.model === undefined ? (prev?.model_id ?? null) : (patch.model?.modelID ?? null)
-    // Config hydrate / visit must not bump the session list's updated_at.
+    const nextProviderId = patch.model === undefined ? prev.model_provider_id : (patch.model?.providerID ?? null)
+    const nextModelId = patch.model === undefined ? prev.model_id : (patch.model?.modelID ?? null)
+    const nextVariant = patch.variant === undefined ? prev.variant : patch.variant
+    const nextPermissionMode = patch.permissionMode === undefined ? (sameHarness ? prev.permission_mode : null) : patch.permissionMode
+    const selectionChanged = !nextHarness || !sameRunningSelections(
+      prevHarness && sessionRowConfig(prevHarness, prev),
+      sessionRowConfig(nextHarness, { model_provider_id: nextProviderId, model_id: nextModelId, variant: nextVariant, permission_mode: nextPermissionMode }),
+    )
+    // Hydrating a session's config on a visit writes the values it already runs; only a changed selection may reorder the list.
     this.db
       .prepare(
         `
@@ -5046,21 +5064,19 @@ export class RuntimeStore {
         null,
         null,
         null,
-        patch.model === undefined ? (prev?.model_provider_id ?? null) : (patch.model?.providerID ?? null),
+        nextProviderId,
         nextModelId,
-        patch.variant === undefined ? (prev?.variant ?? null) : patch.variant,
+        nextVariant,
         patch.agent === undefined ? (prev?.agent ?? null) : patch.agent,
         patch.instructions === undefined ? (prev?.instructions ?? null) : patch.instructions,
         patch.group === undefined ? (prev?.group_json ?? null) : sessionModelGroupJson(patch.group),
         patch.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(patch.handoff),
-        patch.permissionMode === undefined
-          ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_mode : null
-          : patch.permissionMode,
+        nextPermissionMode,
         patch.permissionState === undefined
-          ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_state_json : null
+          ? sameHarness ? prev.permission_state_json : null
           : patch.permissionState ? JSON.stringify(patch.permissionState) : null,
         patch.permissionCeiling ?? prev.permission_ceiling,
-        prev.updated_at,
+        selectionChanged ? Math.max(prev.updated_at, ts) : prev.updated_at,
         id,
       )
   }
