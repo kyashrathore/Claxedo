@@ -40,7 +40,7 @@ export function createSourceMapper(distDir: string): Mapper {
   return {
     map: (file, line, column) => {
       const found = consumer(file)
-      if (!found) return `${file}:${line}:${column}`
+      if (!found || line < 1) return `${file}:${line}:${column}`
       const original = found.originalPositionFor({ line, column })
       if (!original.source) return `${file}:${line}:${column}`
       const source = original.source.replace(/^.*\/packages\//, "packages/").replace(/^\.\.\/\.\.\//, "")
