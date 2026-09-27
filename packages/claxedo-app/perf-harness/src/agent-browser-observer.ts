@@ -1385,7 +1385,7 @@ function installBrowserBenchmark() {
         resolve(paintedAtMs);
         return true;
       };
-      paintedFrames({ sample: () => undefined, painted, overtaken: painted });
+      paintedFrames({ sample: () => undefined, painted });
     });
   const hash = async (value: string) => {
     const bytes = new TextEncoder().encode(value);

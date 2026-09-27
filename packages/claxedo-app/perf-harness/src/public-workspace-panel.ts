@@ -1474,7 +1474,7 @@ async function twoPaintedFrames(page: Page) {
       resolve()
       return true
     }
-    paintedFrames({ sample: () => undefined, painted, overtaken: painted })
+    paintedFrames({ sample: () => undefined, painted })
   }))
 }
 
@@ -1566,7 +1566,7 @@ async function beginTrace(
         stable: 0,
       },
       pointer,
-      stopFrames: paintedFrames({ sample: sampleOpenFiles, painted, overtaken: (startedAt, paintedAt) => painted({ startedAt }, paintedAt) }),
+      stopFrames: paintedFrames({ sample: sampleOpenFiles, painted }),
     }
     function pointer(event: PointerEvent) {
       if (!event.isTrusted) return

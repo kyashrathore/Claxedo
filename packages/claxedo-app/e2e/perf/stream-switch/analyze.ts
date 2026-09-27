@@ -22,8 +22,8 @@ async function stdev(file: string) {
 
 const report = []
 const gaps: { at: number; gap: number }[] = []
-for (const [round, { frames, overtaken, inputs, timeOrigin }] of recording.rounds.entries()) {
-const painted = [...frames.map((frame) => frame.at), ...overtaken].sort((a, b) => a - b)
+for (const [round, { frames, inputs, timeOrigin }] of recording.rounds.entries()) {
+const painted = frames.map((frame) => frame.at)
 gaps.push(...painted.slice(1).map((at, index) => ({ at, gap: at - painted[index]! })).filter((entry) => entry.gap > 34))
 for (const [index, input] of inputs.entries()) {
   const end = Math.min(input.at + WINDOW_MS, inputs[index + 1]?.at ?? Infinity)

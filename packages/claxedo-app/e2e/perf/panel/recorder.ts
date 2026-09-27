@@ -43,7 +43,6 @@ export function installRecorder() {
   type State = {
     predicate: Predicate | undefined
     inputAt: number | undefined
-    handledAt: number | undefined
     actAt: number | undefined
     readyAt: number | undefined
     readyFrame: number | undefined
@@ -60,7 +59,7 @@ export function installRecorder() {
     deadline: number
   }
   const state: State = {
-    predicate: undefined, inputAt: undefined, handledAt: undefined, actAt: undefined, readyAt: undefined, readyFrame: undefined, settledAt: undefined, shellSettledAt: undefined,
+    predicate: undefined, inputAt: undefined, actAt: undefined, readyAt: undefined, readyFrame: undefined, settledAt: undefined, shellSettledAt: undefined,
     frames: [], loafs: [], longTasks: [], signatures: [], stable: 0, previous: "", resolve: undefined, reject: undefined, deadline: 0,
   }
   const visible = (element: Element | null | undefined) => {
@@ -215,14 +214,10 @@ export function installRecorder() {
   }
   const paintedFrames = window.__claxedoPaintedFrames
   if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
-  const overtaken = (startedAt: number, at: number) => {
-    if (state.predicate && state.handledAt !== undefined && startedAt > state.handledAt) state.frames.push(at)
-  }
-  paintedFrames({ sample, painted, overtaken })
+  paintedFrames({ sample, painted })
   const onInput = (event: Event) => {
     if (!event.isTrusted || !state.predicate || state.inputAt !== undefined) return
     state.inputAt = event.timeStamp
-    state.handledAt = performance.now()
     performance.mark("rec:input")
   }
   const onAct = (event: Event) => {
@@ -253,7 +248,6 @@ export function installRecorder() {
     arm: (predicate) => {
       state.predicate = predicate
       state.inputAt = undefined
-      state.handledAt = undefined
       state.actAt = undefined
       state.readyAt = undefined
       state.readyFrame = undefined

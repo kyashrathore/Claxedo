@@ -70,7 +70,6 @@ export type RendererPhase = { name: string; durationMs: number }
 export type PaintedFrame<T> = {
   sample: (startedAt: number) => T
   painted: (value: T, paintedAt: number) => boolean | void
-  overtaken?: (startedAt: number, paintedAt: number) => boolean | void
 }
 
 export type PaintedFrames = <T>(frame: PaintedFrame<T>) => () => void

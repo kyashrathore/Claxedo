@@ -75,7 +75,7 @@
     state.gaps = []
     state.arrivals = 0
     last = 0
-    stopFrames = window.__claxedoPaintedFrames({ sample: () => state.mutations, painted, overtaken: (_, at) => frame(at) })
+    stopFrames = window.__claxedoPaintedFrames({ sample: () => state.mutations, painted })
   }
   state.stop = () => {
     stopFrames()

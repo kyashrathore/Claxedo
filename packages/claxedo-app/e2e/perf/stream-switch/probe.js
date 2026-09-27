@@ -1,5 +1,5 @@
 ;(() => {
-  const state = { recording: false, frames: [], overtaken: [], inputs: [], loafs: [] }
+  const state = { recording: false, frames: [], inputs: [], loafs: [] }
   window.__switchProbe = state
 
   const painted = (element) => element.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })
@@ -64,7 +64,6 @@
   state.start = () => {
     state.recording = true
     state.frames = []
-    state.overtaken = []
     state.inputs = []
     state.loafs = []
     stopFrames = window.__claxedoPaintedFrames({
@@ -74,12 +73,11 @@
         panes: [...document.querySelectorAll('[data-testid="session-page-root"]')].map(pane),
       }),
       painted: (frame, at) => void state.frames.push({ ...frame, at }),
-      overtaken: (_, at) => void state.overtaken.push(at),
     })
   }
   state.stop = () => {
     stopFrames()
     state.recording = false
-    return { timeOrigin: performance.timeOrigin, frames: state.frames, overtaken: state.overtaken, inputs: state.inputs, loafs: state.loafs }
+    return { timeOrigin: performance.timeOrigin, frames: state.frames, inputs: state.inputs, loafs: state.loafs }
   }
 })()

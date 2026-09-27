@@ -539,11 +539,21 @@ describe("Claxedo public driver", () => {
     const sampledAt: number[] = []
     replaceGlobal("window", globalThis)
     replaceGlobal("innerWidth", 1000)
+    const element = () => ({ style: {}, isConnected: true, append: () => {} })
     replaceGlobal("document", {
+      createElement: element,
+      documentElement: element(),
       querySelector: () => {
         sampledAt.push(performance.now())
         return shells[Math.min(sampledAt.length - 1, shells.length - 1)]
       },
+    })
+    replaceGlobal("ResizeObserver", class {
+      constructor(private readonly callback: () => void) {}
+      observe() {
+        queueMicrotask(this.callback)
+      }
+      disconnect() {}
     })
     replaceGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       setTimeout(() => callback(performance.now()), 4)
@@ -571,8 +581,8 @@ describe("Claxedo public driver", () => {
       )
 
       expect(sampledAt.length).toBeGreaterThanOrEqual(5)
-      expect(at).toBeGreaterThan(sampledAt[2]!)
-      expect(at).toBeLessThanOrEqual(sampledAt[3]!)
+      expect(at).toBeGreaterThan(sampledAt[3]!)
+      expect(at).toBeLessThan(sampledAt[4]!)
     } finally {
       for (const [name, descriptor] of original) {
         if (descriptor) Object.defineProperty(globalThis, name, descriptor)

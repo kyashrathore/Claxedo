@@ -2,14 +2,18 @@ import type { PaintedFrames } from "./page-globals"
 
 export function installPaintedFrames() {
   if (window.__claxedoPaintedFrames) return
-  let inputAt = Number.NEGATIVE_INFINITY
-  const input = (event: Event) => {
-    if (event.isTrusted) inputAt = performance.now()
+  const sentinel = document.createElement("div")
+  sentinel.style.cssText = "width:1px;height:1px"
+  let sentinelRoot = sentinel
+  for (let depth = 1; depth < 256; depth += 1) {
+    const parent = document.createElement("div")
+    parent.append(sentinelRoot)
+    sentinelRoot = parent
   }
-  for (const type of ["pointerdown", "pointerup", "click", "keydown", "keyup"]) window.addEventListener(type, input, { capture: true })
+  sentinelRoot.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none;contain:strict"
   const paintedFrames: PaintedFrames = (frame) => {
     let stopped = false
-    const started: number[] = []
+    const samples: { readonly value: ReturnType<typeof frame.sample> }[] = []
     const channel = new MessageChannel()
     const stop = () => {
       stopped = true
@@ -17,16 +21,22 @@ export function installPaintedFrames() {
     }
     channel.port1.onmessage = () => {
       const paintedAt = performance.now()
-      const startedAt = started.shift()
-      if (stopped || startedAt === undefined) return
-      const done = inputAt > startedAt ? frame.overtaken?.(startedAt, paintedAt) : frame.painted(frame.sample(startedAt), paintedAt)
-      if (done === true) stop()
+      const sampled = samples.shift()
+      if (stopped || !sampled) return
+      if (frame.painted(sampled.value, paintedAt) === true) stop()
     }
     const callback = () => {
       if (stopped) return
-      started.push(performance.now())
+      const startedAt = performance.now()
       requestAnimationFrame(callback)
-      channel.port2.postMessage(undefined)
+      if (!sentinelRoot.isConnected) document.documentElement.append(sentinelRoot)
+      const observer = new ResizeObserver(() => {
+        observer.disconnect()
+        if (stopped) return
+        samples.push({ value: frame.sample(startedAt) })
+        channel.port2.postMessage(undefined)
+      })
+      observer.observe(sentinel)
     }
     requestAnimationFrame(callback)
     return stop
