@@ -94,8 +94,8 @@ export function storedSessionRef(input: {
 export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
   const item = asRecord(input)
   const session_id = txt(item?.id)
-  if (!session_id || (item?.host !== undefined && !host(item.host))) return undefined
-  const time = stamp(item)
+  if (!item || !session_id || (item.host !== undefined && !host(item.host))) return undefined
+  const time = stamp(session_id, item)
   const workspace_id = ws?.id ?? txt(item?.workspaceID) ?? null
   const hostValue = host(item?.host) ?? "workspace"
   const directory = txt(item?.directory) ?? ws?.directory ?? null
@@ -133,12 +133,18 @@ export function parseSessionMeta(input: unknown) {
   }
 }
 
-function stamp(input: unknown) {
-  const row = asRecord(input)
-  const time = asRecord(row?.time)
-  const created = asFiniteNumber(time?.created) ?? asFiniteNumber(row?.created_at) ?? now()
-  const updated = asFiniteNumber(time?.updated) ?? asFiniteNumber(row?.updated_at) ?? created
-  const archived = asFiniteNumber(time?.archived) ?? asFiniteNumber(row?.archived_at)
-  const lastHumanTurn = asFiniteNumber(time?.lastHumanTurn) ?? asFiniteNumber(row?.last_human_turn_at)
-  return { created, updated, archived, lastHumanTurn }
+/** A session's times are its runtime's; a synced session without them is refused, never stamped here. */
+function stamp(sessionId: string, input: Record<string, unknown>) {
+  const time = asRecord(input.time)
+  const created = asFiniteNumber(time?.created)
+  const updated = asFiniteNumber(time?.updated)
+  if (created === undefined || updated === undefined) {
+    throw new Error(`Session ${sessionId} has no runtime time.created and time.updated`)
+  }
+  return {
+    created,
+    updated,
+    archived: asFiniteNumber(time?.archived),
+    lastHumanTurn: asFiniteNumber(time?.lastHumanTurn),
+  }
 }

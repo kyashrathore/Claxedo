@@ -66,15 +66,16 @@ describe("session meta change notices", () => {
   })
 
   test("a synced session reports itself; a synced snapshot reports its workspace once", async () => {
-    await syncSessionMeta(ws, { id: "s2", title: "Synced" })
+    const time = { created: 1, updated: 2 }
+    await syncSessionMeta(ws, { id: "s2", title: "Synced", time })
     expect(heard).toEqual([{ kind: "changed", workspaceId: ws.id, sessionId: "s2" }])
 
     heard.length = 0
-    await syncSessionMetas(ws, [{ id: "s2" }, { id: "s3" }])
+    await syncSessionMetas(ws, [{ id: "s2", time }, { id: "s3", time }])
     expect(heard).toEqual([{ kind: "workspace", workspaceId: ws.id }])
 
     heard.length = 0
-    await syncSessionMetas(undefined, [{ id: "s4", workspaceID: ws.id }, { id: "s5" }])
+    await syncSessionMetas(undefined, [{ id: "s4", workspaceID: ws.id, time }, { id: "s5", time }])
     expect(heard, "with no workspace to sweep, each placed row reports itself").toEqual([{ kind: "changed", workspaceId: ws.id, sessionId: "s4" }])
   })
 

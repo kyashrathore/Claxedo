@@ -155,15 +155,18 @@ describe("central projection: pulled session metadata", () => {
     )
   })
 
-  test.each(["unsigned http", "signed http", "hosted"] as const)(
-    "%s metadata pull refuses a session with no time.updated before it projects anything",
-    async (flow) => {
+  test.each((["unsigned http", "signed http", "hosted"] as const).flatMap((flow) => [
+    [flow, "no time.updated", { created: 100 }],
+    [flow, "no time.created", { updated: 200 }],
+  ] as const))(
+    "%s metadata pull refuses a session with %s before it projects anything",
+    async (flow, _label, time) => {
       const svc = services()
       const authority = presentAuthority()
       svc.authority = authority as never
       const runtime = async (path: string) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Untimed", time: { created: 100 } })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Untimed", time })
         return new Response("not found", { status: 404 })
       }
       if (flow === "hosted") stubHostedTransport(svc, runtime)
@@ -523,10 +526,11 @@ describe("central projection: snapshot ordinal skip rules", () => {
     ["no time", {}],
     ["a snake_case updated_at", { updated_at: 200 }],
     ["only a creation time", { time: { created: 100 } }],
+    ["only an update time", { time: { updated: 200 } }],
     ["only a snake_case created_at", { created_at: 100 }],
   ] as const
   test.each((["http", "hosted"] as const).flatMap((flow) => untimedSessions.map(([label, stamp]) => [flow, label, stamp] as const)))(
-    "%s rejects a checkpoint whose session carries %s instead of its time.updated",
+    "%s rejects a checkpoint whose session carries %s instead of its time.created and time.updated",
     async (flow, _label, stamp) => {
       const svc = services()
       const authority = presentAuthority()

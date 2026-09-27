@@ -172,3 +172,18 @@ describe("session inventory notices on cp/events", () => {
     }
   })
 })
+
+describe("a synced session's times come only from its runtime", () => {
+  test.each([
+    ["no time", {}],
+    ["no creation time", { time: { updated: 2 } }],
+    ["no update time", { time: { created: 1 } }],
+    ["only snake_case times", { created_at: 1, updated_at: 2 }],
+  ] as const)("a session with %s is refused and writes nothing", async (_label, stamp) => {
+    const session = { id: "ses_untimed", title: "Untimed", ...stamp }
+
+    await expect(syncSessionMeta(ws, session)).rejects.toThrow("Session ses_untimed has no runtime time.created and time.updated")
+    await expect(syncSessionMetas(ws, [session])).rejects.toThrow("Session ses_untimed has no runtime time.created and time.updated")
+    expect(await sessionMeta("ses_untimed")).toBeUndefined()
+  })
+})

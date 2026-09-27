@@ -48,9 +48,9 @@ function fixture(storedWorkspace?: string, local = false) {
   const runtimeFetch = vi.fn(async (input: { path: string; workspaceId: string }) => {
     if (input.path === "/global/health") return Response.json({ workspaceId: input.workspaceId })
     if (input.path.endsWith("/message?snapshot=1")) {
-      return Response.json({ session: { id: "synthetic-session" }, messages: [], maxEventOrdinal: 1 })
+      return Response.json({ session: { id: "synthetic-session", time: { created: 1, updated: 2 } }, messages: [], maxEventOrdinal: 1 })
     }
-    return Response.json({ id: "synthetic-session", title: "Synthetic session" })
+    return Response.json({ id: "synthetic-session", title: "Synthetic session", time: { created: 1, updated: 2 } })
   })
   const sandboxManager = {
     register: vi.fn(async () => ({ ok: true, status: "ready" })),
