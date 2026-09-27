@@ -6,8 +6,19 @@ import { OpenCodeTheme } from "./marked-theme"
 
 export { OpenCodeTheme } from "./marked-theme"
 
+const codeBlockPattern = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
+
+function hasMath(html: string) {
+  return html.includes("$$") || html.includes("\\(")
+}
+
+/** False when the asynchronous parse returns marked's synchronous output with the same extensions unchanged. */
+export function markdownEnhances(html: string) {
+  return hasMath(html) || html.search(codeBlockPattern) !== -1
+}
+
 async function renderMathExpressions(html: string) {
-  if (!html.includes("$$") && !html.includes("\\(")) return html
+  if (!hasMath(html)) return html
   const math = await import("./marked-math")
   return math.renderMathExpressions(html)
 }
@@ -24,8 +35,7 @@ async function renderMathExpressions(html: string) {
  * blocks it builds itself.
  */
 async function highlightCodeBlocks(html: string): Promise<string> {
-  const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
-  const matches = [...html.matchAll(codeBlockRegex)]
+  const matches = [...html.matchAll(codeBlockPattern)]
   if (matches.length === 0) return html
 
   const [{ bundledLanguages, addClassToHast }, { getSharedHighlighter }] = await Promise.all([

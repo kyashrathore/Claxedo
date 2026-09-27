@@ -1,4 +1,3 @@
-import { checksum } from "@/ui/utils"
 import DOMPurify from "dompurify"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
@@ -176,30 +175,4 @@ export function mermaidSvgCacheStats() {
 export function clearMermaidSvgCache() {
   mermaidCache.clear()
   mermaidBytes = 0
-}
-
-export async function preloadMarkdown(
-  text: string,
-  cacheKey: string,
-  parser: { parse(text: string): string | Promise<string> },
-) {
-  const { project } = await import("./markdown-stream")
-  await Promise.all(
-    project(undefined, text, false).blocks.map(async (block, index) => {
-      if (block.mode === "code") return
-      const key = `${cacheKey}:${index}:${block.mode}`
-      const cached = getCachedMarkdown(key)
-      if (cached?.raw === block.raw) {
-        touchCachedMarkdown(key, cached)
-        return
-      }
-      const hash = checksum(block.raw)
-      if (!hash) return
-      touchCachedMarkdown(key, {
-        raw: block.raw,
-        hash,
-        html: sanitizeMarkdown(await Promise.resolve(parser.parse(block.src))),
-      })
-    }),
-  )
 }

@@ -1,4 +1,4 @@
-import { useMarked, transcriptMarkdownExtensions, useDialog, ImagePreview, Icon, IconButton, Tooltip } from "@/ui"
+import { useMarked, markdownEnhances, transcriptMarkdownExtensions, useDialog, ImagePreview, Icon, IconButton, Tooltip } from "@/ui"
 import { checksum, reportUiError } from "@/ui/utils"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
@@ -48,7 +48,7 @@ import { nextIdleSlice } from "@/lib/idle"
 import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
 
 type RenderedBlock =
-  | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
+  | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code">; final: boolean })
   | {
       key: string
       mode: "code"
@@ -84,13 +84,18 @@ function fallback(markdown: string) {
 
 const syncParser = new Marked(...transcriptMarkdownExtensions)
 
-function syncRichHtml(src: string) {
+function blockHash(raw: string, final: boolean) {
+  const hash = checksum(raw) ?? ""
+  return final ? hash : `${hash}:first-paint`
+}
+
+function syncRichHtml(src: string): { html: string; final: boolean } {
   try {
     const parsed = syncParser.parse(src, { async: false })
-    if (typeof parsed !== "string") return fallback(src)
-    return sanitizeMarkdown(parsed)
+    if (typeof parsed !== "string") return { html: fallback(src), final: false }
+    return { html: sanitizeMarkdown(parsed), final: !markdownEnhances(parsed) }
   } catch {
-    return fallback(src)
+    return { html: fallback(src), final: false }
   }
 }
 
@@ -101,7 +106,7 @@ function syncBlock(owner: string, cacheKey: string | undefined, index: number, b
       key,
       mode: "code",
       raw: block.raw,
-      hash: String(block.raw.length),
+      hash: blockHash(block.raw, true),
       language: block.language ?? "text",
       complete: !!block.complete,
       stable: [],
@@ -109,13 +114,8 @@ function syncBlock(owner: string, cacheKey: string | undefined, index: number, b
       unstable: [[block.src, ""] as MarkdownToken],
     }
   }
-  return {
-    key,
-    mode: block.mode,
-    raw: block.raw,
-    hash: String(block.raw.length),
-    html: syncRichHtml(block.src),
-  }
+  const { html, final } = syncRichHtml(block.src)
+  return { key, mode: block.mode, raw: block.raw, hash: blockHash(block.raw, final), html, final }
 }
 
 function codeLanguageName(language: string | undefined) {
@@ -676,7 +676,7 @@ function cachedRenderResult(
           key: markdownBlockKey(owner, key, index, block.mode),
           mode: block.mode,
           raw: block.raw,
-          hash: String(block.raw.length),
+          hash: blockHash(block.raw, true),
           complete: true,
           ...cached,
         },
@@ -685,7 +685,7 @@ function cachedRenderResult(
     const cacheKey = `${base}:${index}:${block.mode}`
     const cached = getCachedMarkdown(cacheKey)
     if (cached?.raw !== block.raw) return []
-    return [{ key: `${owner}:${cacheKey}`, mode: block.mode, ...cached }]
+    return [{ key: markdownBlockKey(owner, key, index, block.mode), mode: block.mode, ...cached, final: true }]
   })
   if (blocks.length !== projection.blocks.length) return undefined
   return { text, blocks }
@@ -696,6 +696,12 @@ function syncRenderResult(text: string, projection: Projection, owner: string, c
     text,
     blocks: projection.blocks.map((block, index) => syncBlock(owner, cacheKey, index, block)),
   }
+}
+
+function finalFirstPaint(initial: RenderResult | undefined, text: string, index: number, raw: string) {
+  const block = initial?.text === text ? initial.blocks[index] : undefined
+  if (!block || block.mode === "code" || !block.final || block.raw !== raw) return undefined
+  return block
 }
 
 function initialResult(
@@ -742,6 +748,7 @@ export function Markdown(
     traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
     return result
   }, undefined)
+  const initial = initialResult(local.text, local.cacheKey, projection()!, owner)
   const [html] = createResource(
     () => {
       return {
@@ -760,8 +767,9 @@ export function Markdown(
               key: "server",
               mode: "full" as const,
               raw: src.text,
-              hash: checksum(src.text) ?? "",
+              hash: blockHash(src.text, false),
               html: fallback(src.text),
+              final: false,
             },
           ],
         } satisfies RenderResult
@@ -784,7 +792,7 @@ export function Markdown(
               key: blockKey,
               mode: block.mode,
               raw: block.raw,
-              hash: String(block.raw.length),
+              hash: blockHash(block.raw, true),
               complete: !!block.complete,
               ...result,
             }
@@ -792,18 +800,24 @@ export function Markdown(
 
           if (src.streaming && block.mode === "live") return renderSync(index, block)
 
+          const painted = finalFirstPaint(initial, src.text, index, block.raw)
+          if (painted) {
+            if (key) touchCachedMarkdown(key, { raw: painted.raw, hash: painted.hash, html: painted.html })
+            return painted
+          }
+
           if (key) {
             const cached = getCachedMarkdown(key)
             if (cached?.raw === block.raw) {
               touchCachedMarkdown(key, cached)
-              return { key: blockKey, mode: block.mode, ...cached }
+              return { key: blockKey, mode: block.mode, ...cached, final: true }
             }
             traceRenderer(`markdown.parsemiss.${cached ? "raw-mismatch" : "no-entry"}.chars-${block.src.length}`)
           } else {
             traceRenderer(`markdown.parsemiss.no-key.chars-${block.src.length}`)
           }
 
-          const hash = checksum(block.raw)
+          const hash = blockHash(block.raw, true)
           const parsed = await parseMarkdownMeasured({
             parse: () => marked.parse(block.src),
             clock: rendererClock,
@@ -812,8 +826,8 @@ export function Markdown(
           const sanitizeStarted = rendererClock()
           const safe = sanitizeMarkdown(parsed)
           traceRenderer(`markdown.sanitize.chars-${block.src.length}`, sanitizeStarted)
-          if (key && hash) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
-          return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: safe }
+          if (key) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
+          return { key: blockKey, mode: block.mode, raw: block.raw, hash, html: safe, final: true }
         }),
       )
         .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)
@@ -824,7 +838,7 @@ export function Markdown(
         })
     },
     {
-      initialValue: initialResult(local.text, local.cacheKey, projection()!, owner),
+      initialValue: initial,
     },
   )
 

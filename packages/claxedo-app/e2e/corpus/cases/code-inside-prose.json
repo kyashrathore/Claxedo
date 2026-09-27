@@ -1,0 +1,29 @@
+{
+  "id": "code-inside-prose",
+  "title": "Code inside a prose block, indented or fenced in a list, is highlighted after the first paint",
+  "source": {
+    "kind": "test",
+    "file": "packages/ui/src/context/marked-enhances.test.ts",
+    "name": "the asynchronous parse changes marked's synchronous output exactly when markdownEnhances says so"
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Show the setup.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Run these first:\n\n    bun install\n    bun run build\n\n1. Then add the helper:\n\n   ```ts\n   export const answer: number = 42\n   ```\n\nThen the setup is done."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Then the setup is done.",
+  "interactions": [],
+  "invariant": "Code that sits inside a prose block (an indented block, a fence nested in a list) settles into the highlighted code frame, not the first paint's plain block."
+}
