@@ -29,8 +29,7 @@ body [data-component="menu-v2-content"] {
 
 @media (max-width: 767px), (pointer: coarse) {
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
-  [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
-  .claxedo-diagnostics-dialog :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]) {
+  [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]) {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     transition-property: background-color, border-color, color, box-shadow, opacity, transform;
@@ -51,13 +50,6 @@ body [data-component="menu-v2-content"] {
       button:has(> [data-component="icon"]),
       [role="button"][aria-label],
       [data-component="icon-button"]
-    ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *),
-  .claxedo-diagnostics-dialog
-    :is(
-      button[aria-label],
-      button:has(> [data-component="icon"]),
-      [role="button"][aria-label],
-      [data-component="icon-button"]
     ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *) {
     min-width: 40px;
     min-height: 40px;
@@ -70,18 +62,13 @@ body [data-component="menu-v2-content"] {
   [data-component="settings-surface"]
     :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]):active:not(:disabled):not(
       [data-disabled]
-    ),
-  .claxedo-diagnostics-dialog
-    :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]):active:not(:disabled):not(
-      [data-disabled]
     ) {
     background-color: var(--surface-base-active);
     transform: scale(0.94);
   }
 
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"]):focus-visible,
-  [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"]):focus-visible,
-  .claxedo-diagnostics-dialog :is(button, [role="button"], [data-component="icon-button"]):focus-visible {
+  [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"]):focus-visible {
     outline: 2px solid color-mix(in srgb, var(--border-interactive-focus) 70%, transparent);
     outline-offset: 2px;
   }
@@ -252,11 +239,6 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   display: flex;
   align-items: stretch;
   gap: 8px;
-}
-
-.claxedo-diagnostics-toolbar {
-  display: grid;
-  grid-template-columns: auto 34px;
 }
 
 .workspace-page-segmented {
@@ -543,59 +525,6 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   white-space: nowrap;
 }
 
-.diagnostics-metric-strip {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 0;
-}
-
-.diagnostics-chart-shell {
-  height: auto;
-}
-
-.diagnostics-chart-series {
-  align-items: center;
-}
-
-.diagnostics-series {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-base);
-  white-space: nowrap;
-}
-
-.diagnostics-series i {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--diagnostics-series-color);
-}
-
-.diagnostics-series-cpu {
-  --diagnostics-series-color: var(--text-strong);
-}
-
-.diagnostics-series-memory {
-  --diagnostics-series-color: var(--icon-provider-claude-base);
-}
-
-.diagnostics-chart-cpu {
-  --workspace-data-series-color: var(--text-strong);
-}
-
-.diagnostics-chart-memory {
-  --workspace-data-series-color: var(--icon-provider-claude-base);
-}
-
-.diagnostics-tooltip-attribution {
-  display: block !important;
-  margin-top: 5px;
-  padding-top: 7px !important;
-  border-top: 1px solid var(--workspace-data-hairline);
-}
-
 .workspace-page-mobile-header {
   display: none;
 }
@@ -718,16 +647,6 @@ body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay
 
   .workspace-data-metric-strip > div:nth-child(2n) {
     border-right: 0;
-  }
-
-  .claxedo-diagnostics-toolbar {
-    grid-template-columns: minmax(0, 1fr) 34px;
-  }
-
-  .claxedo-diagnostics-tabs button {
-    flex: 1;
-    min-width: 0;
-    padding-inline: 7px;
   }
 }
 
