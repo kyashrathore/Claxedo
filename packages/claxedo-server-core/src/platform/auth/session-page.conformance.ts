@@ -19,9 +19,14 @@ export type SessionPageConformanceUser = {
  * `reader` and `colleague` stand in one organization and may both create
  * sessions in `workspaceIds`, which all belong to `projectId`. `stranger`
  * belongs to another organization, with its own workspace and project.
+ * `now` is the clock `authority` stamps turns with, and the runner stamps its
+ * runtime sessions from it too. Each read must be later than the last: the
+ * runner prompts and creates faster than a millisecond, and two equal keys
+ * are ordered by session ref, not by which came first.
  */
 export type SessionPageConformanceHarness = {
   authority: PrivateSessionAuthority & SessionTurnAuthority
+  now: () => number
   projectId: string
   workspaceIds: [string, string]
   reader: SessionPageConformanceUser
@@ -45,13 +50,14 @@ export type SessionPageConformanceReport = {
 export async function exerciseSessionPageConformance(
   harness: SessionPageConformanceHarness,
 ): Promise<SessionPageConformanceReport> {
-  const { authority, reader, colleague, stranger, workspaceIds, projectId } = harness
+  const { authority, now, reader, colleague, stranger, workspaceIds, projectId } = harness
   let sequence = 0
   const create = async (user: SessionPageConformanceUser, workspaceId: string) => {
     const sessionId = `ses_page_${String(++sequence).padStart(2, "0")}`
     const operationId = `op_page_${sequence}`
     await authority.reserveSession(user.auth, { operationId, sessionId, workspaceId, kind: "create", title: sessionId })
-    await authority.registerRuntimeSession({ ...user.runtime, operationId, sessionId, workspaceId, title: sessionId, createdAt: Date.now(), updatedAt: Date.now() })
+    const at = now()
+    await authority.registerRuntimeSession({ ...user.runtime, operationId, sessionId, workspaceId, title: sessionId, createdAt: at, updatedAt: at })
     return sessionId
   }
   const prompt = async (user: SessionPageConformanceUser, sessionId: string, workspaceId: string) => {

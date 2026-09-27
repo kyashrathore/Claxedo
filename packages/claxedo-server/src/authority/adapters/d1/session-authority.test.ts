@@ -1309,6 +1309,7 @@ describe("D1 session list pages", () => {
 
     const report = await exerciseSessionPageConformance({
       authority: input.sessions,
+      now: input.now,
       projectId: second.project_id,
       workspaceIds: ["ws_main", "ws_second"],
       reader: user(alice),

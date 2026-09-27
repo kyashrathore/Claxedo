@@ -19,6 +19,7 @@ import {
 import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
 import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
 import { exerciseTurnOutlineConformance } from "@claxedo/server-core/platform/auth/turn-outline.conformance"
+import { createSqlitePrivateSessionAuthority } from "./private-session-authority"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
@@ -742,8 +743,22 @@ describe("SQLite session list pages", () => {
       runtime: { principalKind: "user" as const, actorId: value.user.tokenIdentifier, actorKind: "human" as const },
     })
 
+    let clock = 1_800_000_000_000
+    const now = () => ++clock
+    const sessions = createSqlitePrivateSessionAuthority({
+      database: seed,
+      principal: (value) => upsertUser(seed(), {
+        token_identifier: value.user.tokenIdentifier,
+        subject: value.user.subject,
+        issuer: value.user.issuer,
+        kind: "human",
+      }),
+      now,
+    })
+
     const report = await exerciseSessionPageConformance({
-      authority: store,
+      authority: sessions,
+      now,
       projectId,
       workspaceIds: ["workspace_one", "workspace_two"],
       reader: user(reader),
