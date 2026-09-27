@@ -5,7 +5,8 @@ replayable event model.
 
 `@claxedo/agent-event-runtime` owns harness event normalization and projection.
 It turns harness-native event frames from external agent harnesses into
-canonical `AgentRuntimeEvent` values, then lets host packages project those
+canonical `AgentRuntimeEvent` values owned by `@claxedo/agent-runtime-contract`,
+then lets host packages project those
 events into UI, compatibility, replay, or diagnostic formats.
 
 The package is intentionally browser-safe. Hosts still own process management,
@@ -20,7 +21,8 @@ npm install @claxedo/agent-event-runtime
 ## Quickstart
 
 ```ts
-import { createAgentEventRuntime, type RawHarnessEvent } from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 
 const runtime = createAgentEventRuntime({
@@ -58,8 +60,8 @@ The package ships public docs under `docs/`. Use
 
 Entry point status:
 
-- Stable: `@claxedo/agent-event-runtime`,
-  `@claxedo/agent-event-runtime/contracts`
+- Stable: `@claxedo/agent-event-runtime`
+- Shared event contracts: `@claxedo/agent-runtime-contract`
 - Integration: `@claxedo/agent-event-runtime/harnesses/acp`,
   `@claxedo/agent-event-runtime/harnesses/claude`,
   `@claxedo/agent-event-runtime/harnesses/codex`,

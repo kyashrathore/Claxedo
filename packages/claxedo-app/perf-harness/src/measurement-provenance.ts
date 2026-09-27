@@ -77,7 +77,7 @@ export const MEASUREMENT_RUNTIME_REQUIRED_PACKAGES = {
   "@claxedo/app": "packages/claxedo-app",
   "@opencode-ai/session-ui": "packages/session-ui",
   "@opencode-ai/ui": "packages/ui",
-  "@claxedo/agent-event-runtime": "packages/agent-event-runtime",
+  "@claxedo/agent-runtime-contract": "packages/agent-runtime-contract",
   "@claxedo/usage-contract": "packages/usage-contract",
 } as const
 

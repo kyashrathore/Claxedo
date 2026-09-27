@@ -1,4 +1,4 @@
-import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
+import type { RuntimeTokenUsage } from "@claxedo/agent-runtime-contract"
 import { isJsonRecord } from "../platform/runtime/lib/json"
 import { readTurnUsageTokens } from "./contracts"
 

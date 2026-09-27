@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from "solid-js"
-import type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { supportsAgentRuntimeGoalAction } from "@/platform/runtime/agent/agent-runtime-goal-client"
 import { Button } from "@opencode-ai/ui/button"

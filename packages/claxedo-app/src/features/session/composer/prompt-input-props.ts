@@ -7,7 +7,7 @@ import type { CloudLog } from "@/features/session/ui/components/cloud-startup-vi
 import type { HarnessSelectionController, HarnessSubmitController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "./mode"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import type { RelayHostKind, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 

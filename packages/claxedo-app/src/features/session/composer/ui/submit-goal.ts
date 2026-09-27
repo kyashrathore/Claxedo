@@ -1,4 +1,4 @@
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type {
   AgentRuntimeGoalCapabilities,
   AgentRuntimeGoalMutationResult,

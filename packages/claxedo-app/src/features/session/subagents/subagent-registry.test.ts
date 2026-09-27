@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { createSubagentRegistry, type SubagentRegistryEntry } from "./subagent-registry"
 import { hydrateSubagentRows, type HostSubagentRow } from "./subagent-presentation"
 

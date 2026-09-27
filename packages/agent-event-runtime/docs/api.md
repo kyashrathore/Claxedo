@@ -3,15 +3,15 @@
 This page describes the intended stable root API for
 `@claxedo/agent-event-runtime`.
 
-The root export is the public event contract and runtime core. Use subpaths for
-harness-adapter and projection implementations.
+The runtime core consumes shared events from `@claxedo/agent-runtime-contract`.
+Use subpaths for harness-adapter and projection implementations.
 
 ## Event Contract
 
 ### `AgentRuntimeEvent`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Type
 
 Canonical cross-harness event union. Projections and hosts should consume this
@@ -22,7 +22,7 @@ Use when writing host projections, event stores, replay tools, or tests.
 ### `agentRuntimeEvent`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Value
 
 Factory object for canonical runtime events. Harness event adapters should use
@@ -31,7 +31,7 @@ it so new event kinds remain type-visible.
 ### Event Registry Values
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Values and types
 
 Includes:
@@ -50,7 +50,7 @@ Use these for validation, diagnostics, and tooling.
 ### `RawHarnessEvent`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Type
 
 Ingress envelope for harness-native event frames.
@@ -70,7 +70,7 @@ intentionally unknown until a harness event adapter parses it.
 ### `rawHarnessEvent`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Function
 
 Validates the minimal `RawHarnessEvent` shape. It does not parse the native
@@ -148,7 +148,7 @@ models, or tests.
 ### `RuntimeDiagnostic`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Type
 
 Harness-neutral diagnostic object for lossy mappings, unknown frames, and
@@ -157,7 +157,7 @@ adapter failures.
 ### `runtimeDiagnostic`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Function
 
 Creates a diagnostic with normalized severity.
@@ -165,7 +165,7 @@ Creates a diagnostic with normalized severity.
 ### `normalizeDiagnostics`
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`  
+Import: `@claxedo/agent-runtime-contract`
 Kind: Function
 
 Converts unknown diagnostic values into a safe diagnostic list.
@@ -194,7 +194,7 @@ transport state, process handles, DB rows, auth state, or HTTP connection state.
 ## Determinism
 
 Status: Stable  
-Import: `@claxedo/agent-event-runtime`
+Import: `@claxedo/agent-runtime-contract`
 
 Determinism helpers:
 

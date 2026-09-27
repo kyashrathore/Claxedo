@@ -1,4 +1,4 @@
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import {

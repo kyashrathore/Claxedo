@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { SessionGoalDock } from "./session-goal-dock"
 

@@ -173,12 +173,12 @@ export const appLocal: Policy = {
   // gap invalidates — split out of the global-sdk provider. Reviewed owner:
   // the global-sdk provider itself, whose module this already was; one
   // module, no package edge; the measured closure is 966.
-  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` is the one
+  // `@claxedo/agent-runtime-contract`'s `turn-message-ids` is the one
   // owner of the runtime's turn message-id convention — the app reads a reply's
   // parent from it in `features/session/data/session-types` and
-  // `features/session/conversation/opencode-conversation`, and the compat
+  // `features/session/conversation/agent-conversation`, and the compat
   // projection the app already depends on mints and resolves ids through it.
-  // Reviewed owner: the agent event contracts package, which this closure
+  // Reviewed owner: the agent runtime contract package, which this closure
   // already carries; one module, no package edge.
   // -10 modules / -1 package: retiring the hosted work-ledger service took the
   // hosted content-surface module, its app-ports seam, the shared rich-text

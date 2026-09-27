@@ -1,4 +1,4 @@
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 
 export const MOCK_STREAM_FIXTURE_HEADER = "x-claxedo-perf-fixture"
 /** `createControlPlaneEventsHandler` (claxedo-local-server `shell/events.ts`) beats every 5 s. */

@@ -1,4 +1,4 @@
-import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
+import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@/lib/record"
 import type { RuntimeSession, SessionTurnOutcome } from "@/platform/runtime/session"
 export type { SessionTurnOutcome } from "@/platform/runtime/session"

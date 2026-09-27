@@ -406,11 +406,11 @@ export const desktopRendererUnsigned: Policy = {
   // `app/providers/global-sdk/presentation-frames.ts` reaches it the same
   // way — the meaning half of the global-sdk provider. Reviewed owner: the
   // global-sdk provider; one module, no package edge; the measured closure is 1052.
-  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` reaches this
+  // `@claxedo/agent-runtime-contract`'s `turn-message-ids` reaches this
   // renderer through the same session feature modules as the app entry: it is
   // the one owner of the runtime's turn message-id convention, which the
   // session transcript reads to place a reply under the message it answers.
-  // Reviewed owner: the agent event contracts package, already in this
+  // Reviewed owner: the agent runtime contract package, already in this
   // closure; one module, no package edge.
   // -46 modules / -3 packages: retiring the hosted work-ledger service took its
   // renderer contribution loader and the whole app-side surface graph out of

@@ -11,7 +11,7 @@ import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { SessionComposerRegion } from "./session-composer-region"
 import type { SessionComposerState } from "./session-composer-state"
 

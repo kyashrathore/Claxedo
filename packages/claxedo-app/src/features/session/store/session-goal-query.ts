@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { authFetch } from "@/platform/api/api"
 import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"

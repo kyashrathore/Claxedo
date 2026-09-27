@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
+import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
 import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import type { ConversationEventFrame } from "./conversation-event"

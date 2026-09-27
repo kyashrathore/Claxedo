@@ -1,16 +1,14 @@
 # Recipes
 
-Recipes show the preferred import style. Use root imports for canonical
-contracts and harness-agnostic runtime primitives. Use subpaths for harness
+Import canonical contracts from `@claxedo/agent-runtime-contract`. Use this
+package for harness-agnostic runtime primitives and its subpaths for harness
 adapters and projections.
 
 ## Translate One Raw Event
 
 ```ts
-import {
-  createAgentEventRuntime,
-  type RawHarnessEvent,
-} from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 
 const runtime = createAgentEventRuntime({

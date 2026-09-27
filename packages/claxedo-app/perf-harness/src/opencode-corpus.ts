@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util"
 import { isRecord } from "./json-fields"
-import type { EventMessagePartUpdated, EventMessageUpdated } from "@claxedo/agent-event-runtime/client-presentation"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import {
   importOpenCodeFixtureSessions,
   type OpenCodeFixtureSession,
@@ -16,9 +16,9 @@ const ASSISTANT_FINISH_REASONS = ["stop", "length", "tool-calls", "content-filte
 type Session = { id: string; projectId: string; directory: string; title: string; created: number; updated: number }
 type Message = { id: string; sessionId: string; data: Data }
 type Part = { id: string; messageId: string; ordinal: number; data: Data; updatedAt?: number }
-type TranscriptEvent = EventMessageUpdated | EventMessagePartUpdated
-type TranscriptMessageInfo = EventMessageUpdated["properties"]["info"]
-type TranscriptPart = EventMessagePartUpdated["properties"]["part"]
+type TranscriptEvent = Extract<AgentPresentationEvent, { type: "message.updated" | "message.part.updated" }>
+type TranscriptMessageInfo = Extract<AgentPresentationEvent, { type: "message.updated" }>["properties"]["info"]
+type TranscriptPart = Extract<AgentPresentationEvent, { type: "message.part.updated" }>["properties"]["part"]
 /** The part discriminants the transcript owner accepts, pinned to its own union. */
 const TRANSCRIPT_PART_TYPES = [
   "text", "reasoning", "file", "tool", "subtask", "step-start", "step-finish",

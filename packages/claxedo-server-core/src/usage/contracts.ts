@@ -1,4 +1,4 @@
-import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
+import type { RuntimeTokenUsage } from "@claxedo/agent-runtime-contract"
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 
 // The runtime lists are the single source for these unions: the SQLite schema

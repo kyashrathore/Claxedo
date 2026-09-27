@@ -4,7 +4,7 @@ import type {
   SubagentToolCallRole,
   SubagentTranscript,
   SubagentUpdatedEvent,
-} from "@claxedo/agent-event-runtime"
+} from "@claxedo/agent-runtime-contract"
 import type { SubagentRegistry, SubagentRegistryEntry } from "./subagent-registry"
 
 export type HostSubagentRow = {
