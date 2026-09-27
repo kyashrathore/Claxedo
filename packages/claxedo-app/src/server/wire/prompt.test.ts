@@ -24,5 +24,5 @@ test("prompt echo: the predicted user message carries the parts the body sends, 
     agent: "build",
     model: { providerID: "anthropic", modelID: "claude-haiku-4-5-20251001" },
   })
-  expect(echo.parts).toEqual(promptBody(input, "m1").parts.map((part, index) => ({ ...part, id: `m1:${index}`, sessionID: "s1", messageID: "m1" })))
+  expect(echo.parts).toEqual(promptBody(input, "m1").parts.map((part, index) => ({ ...part, id: `m1-part-${index}`, sessionID: "s1", messageID: "m1" })))
 })

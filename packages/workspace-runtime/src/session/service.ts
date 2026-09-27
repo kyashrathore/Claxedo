@@ -76,9 +76,9 @@ export type SessionPromptBody = {
 /**
  * Recognise one prompt part on the wire.
  *
- * A predicate rather than an assertion: the caller keeps the client's own
- * object — extra fields a harness understands still travel — while the part
- * type and the fields the turn machinery dereferences are actually checked.
+ * A predicate rather than an assertion: extra fields a harness understands
+ * still travel, while the part type and the fields the turn machinery
+ * dereferences are actually checked.
  */
 function isPromptPart(input: unknown): input is PromptInput["parts"][number] {
   const part = rec(input)
@@ -87,6 +87,14 @@ function isPromptPart(input: unknown): input is PromptInput["parts"][number] {
   if (part.type === "file") return str(part.mime) !== undefined && str(part.url) !== undefined
   if (part.type === "agent") return str(part.name) !== undefined
   return false
+}
+
+/** Part ids are the runtime's to mint (`promptPartId`), so the client's never travels. */
+function promptPart(input: unknown): PromptInput["parts"][number] | undefined {
+  const record = rec(input)
+  if (!record) return undefined
+  const { id: _clientId, ...part } = record
+  return isPromptPart(part) ? part : undefined
 }
 
 /** The `Record<string, boolean>` subset of a wire `tools` map. */
@@ -113,7 +121,7 @@ function promptTools(input: unknown): SessionPromptBody["tools"] {
 export function parseSessionPromptBody(input: unknown): SessionPromptBody {
   const body = rec(input)
   if (!body) return {}
-  const parts = arr(body.parts)?.filter(isPromptPart)
+  const parts = arr(body.parts)?.flatMap((input) => promptPart(input) ?? [])
   const model = rec(body.model)
   const format = rec(body.format)
   const formatType = str(format?.type)

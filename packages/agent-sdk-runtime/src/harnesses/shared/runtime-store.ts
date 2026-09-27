@@ -192,6 +192,12 @@ export type AgentRuntimeStoreCore = {
   appendEvent(input: AgentRuntimeAppendEventInput): AgentRuntimeCommittedCompatOutput
   getMessages(id: string): AgentMessage[]
   getLatestUserMessageId(id: string): string | undefined
+  /**
+   * The session holding `messageId`. Only a store whose message ids share one
+   * key across sessions has one: there, admitting an id another session holds
+   * would move that session's row.
+   */
+  messageSessionId?(messageId: string): string | undefined
   getTodos(sessionId: string): AgentTodo[]
   listPermissions(directory: string): AgentPermission[]
   listQuestions(directory: string): AgentQuestion[]

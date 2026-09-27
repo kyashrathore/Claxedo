@@ -1,9 +1,12 @@
+import { randomUUID } from "crypto"
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime"
 import type { SteerResult } from "../adapter-contract"
 import type { PromptDeliveryRequest, PromptInput } from "../index"
-import type {
-  AgentRuntimeStore,
-  AgentRuntimeTurnStartInput,
-  AgentRuntimeTurnStartResult,
+import {
+  AgentRuntimeMessageIdConflictError,
+  type AgentRuntimeStore,
+  type AgentRuntimeTurnStartInput,
+  type AgentRuntimeTurnStartResult,
 } from "./contracts"
 
 /** The host-owned durable admission a turn's authoritative writes carry. */
@@ -173,6 +176,23 @@ export function createTurnAdmissions(
 }
 
 export type TurnAdmissions = ReturnType<typeof createTurnAdmissions>
+
+/**
+ * The turn's user and reply message ids, refused when another session holds
+ * either; a session naming its own id again reruns that turn.
+ */
+export function admitTurnMessageIds(
+  store: Pick<AgentRuntimeStore, "messageSessionId">,
+  turn: Pick<AgentRuntimeTurnStartInput, "sessionId" | "messageId" | "assistantMessageId">,
+) {
+  const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
+  const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
+  for (const messageId of [userMessageId, assistantMessageId]) {
+    const holder = store.messageSessionId?.(messageId)
+    if (holder !== undefined && holder !== turn.sessionId) throw new AgentRuntimeMessageIdConflictError(turn.sessionId, messageId)
+  }
+  return { userMessageId, assistantMessageId }
+}
 
 /**
  * Acceptance and transcript incorporation are different facts. A refusal keeps

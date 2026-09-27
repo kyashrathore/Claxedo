@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { HTTPException } from "hono/http-exception"
 import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import { AGENT_RUNTIME_TURN_CONFLICT_CODE, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
+import {
+  AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
+  AGENT_RUNTIME_TURN_CONFLICT_CODE,
+  isAgentRuntimeMessageIdConflictError,
+  isAgentRuntimeTurnConflictError,
+} from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -99,6 +104,10 @@ export async function flushDocumentsAfterTurn(opts: Opts, sessionId: string) {
  */
 export function turnRefused(c: Ctx, refusal: SessionTurnRefusalCode, message: string) {
   return c.json(errorBody(refusal, message), 503)
+}
+
+export function messageIdConflict(c: Ctx) {
+  return c.json(errorBody(AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE, "Message id is already used by another session"), 409)
 }
 
 export function turnAdmissionConflict(c: Ctx) {
@@ -424,6 +433,10 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
       if (isAgentRuntimeTurnConflictError(admissionError)) {
         releasePromptAdmission(id, body.messageID)
         return turnAdmissionConflict(c)
+      }
+      if (isAgentRuntimeMessageIdConflictError(admissionError)) {
+        releasePromptAdmission(id, body.messageID)
+        return messageIdConflict(c)
       }
       if (admissionError !== undefined) failed = { error: admissionError }
       return c.body(null, 204)

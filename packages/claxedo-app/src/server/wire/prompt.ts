@@ -1,4 +1,4 @@
-import type { AgentContentPart, AgentUserMessage, PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
+import { promptPartId, type AgentContentPart, type AgentUserMessage, type PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
 import type { PromptAttachment, PromptDelivery, PromptInput } from "../types"
 
 export const PROMPT_ROUTE = "/prompt_async"
@@ -60,7 +60,7 @@ export function promptEcho(input: PromptInput, ids: { readonly sessionId: string
       agent: input.agent ?? DEFAULT_AGENT,
       ...wireModel(input),
     },
-    parts: promptParts(input).map((part, index) => ({ ...part, id: `${messageId}:${index}`, sessionID: sessionId, messageID: messageId })),
+    parts: promptParts(input).map((part, index) => ({ ...part, id: promptPartId(messageId, index), sessionID: sessionId, messageID: messageId })),
   }
 }
 

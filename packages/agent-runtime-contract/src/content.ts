@@ -170,9 +170,18 @@ export type AgentFilePart = AgentPartBase<"file"> & {
   source?: AgentFilePartSource
 }
 
-export type AgentTextPartInput = Omit<AgentTextPart, "id" | "sessionID" | "messageID"> & { id?: string }
-export type AgentFilePartInput = Omit<AgentFilePart, "id" | "sessionID" | "messageID"> & { id?: string }
-export type AgentAgentPartInput = Omit<AgentAgentPart, "id" | "sessionID" | "messageID"> & { id?: string }
+export type AgentTextPartInput = Omit<AgentTextPart, "id" | "sessionID" | "messageID">
+export type AgentFilePartInput = Omit<AgentFilePart, "id" | "sessionID" | "messageID">
+export type AgentAgentPartInput = Omit<AgentAgentPart, "id" | "sessionID" | "messageID">
+
+/**
+ * A prompt part's id, minted by the runtime from its message id. Part ids are
+ * one primary key across every session a runtime stores, so an id the client
+ * chose could name another session's part.
+ */
+export function promptPartId(messageId: string, index: number): string {
+  return `${messageId}-part-${index}`
+}
 
 export type AgentToolState =
   | { status: "pending"; input: Record<string, unknown>; raw: string }

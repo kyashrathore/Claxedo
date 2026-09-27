@@ -13,7 +13,7 @@ import type {
   AgentTodo,
   ConnectionRuntimeStatus,
 } from "@claxedo/agent-runtime-contract"
-import { parseAgentContentPart } from "@claxedo/agent-runtime-contract"
+import { parseAgentContentPart, promptPartId } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentHarnessAdapterHealth } from "./harness-health"
@@ -281,12 +281,6 @@ export function messageUpdated(info: EventMessageUpdated["properties"]["info"]):
   }
 }
 
-/**
- * The user message's parts as the transcript records them. The route admits
- * only these three shapes (`isPromptPart`), so there is nothing left over to
- * fall back on — a file part recorded as a serialized string once, which
- * nothing on the client read back and every history read then carried.
- */
 /** A submitted prompt as it enters the transcript: its user message, then its parts. */
 export function userPromptEvents(input: Parameters<typeof buildUserMessage>[0] & { parts: PromptInput["parts"] }): CompatEvent[] {
   const { parts, ...message } = input
@@ -299,7 +293,7 @@ export function userPromptEvents(input: Parameters<typeof buildUserMessage>[0] &
 export function buildUserPromptParts(sessionID: string, messageID: string, parts: PromptInput["parts"]): CompatPart[] {
   return parts.map((part, index): CompatPart => ({
     ...part,
-    id: part.id ?? `${messageID}-part-${index}`,
+    id: promptPartId(messageID, index),
     sessionID,
     messageID,
   }))

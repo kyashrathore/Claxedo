@@ -17,9 +17,9 @@ describe("buildUserPromptParts", () => {
     })
   })
 
-  it("keeps an @file context part's source and a text part's own id", () => {
+  it("mints every part's id from the message id and keeps an @file context part's source", () => {
     const parts = buildUserPromptParts("ses_1", "msg_1", [
-      { id: "prt_given", type: "text", text: "look at this" },
+      { type: "text", text: "look at this" },
       {
         type: "file",
         mime: "text/plain",
@@ -30,7 +30,7 @@ describe("buildUserPromptParts", () => {
       { type: "agent", name: "reviewer" },
     ])
     expect(parts.map((part) => [part.id, part.type])).toEqual([
-      ["prt_given", "text"],
+      ["msg_1-part-0", "text"],
       ["msg_1-part-1", "file"],
       ["msg_1-part-2", "agent"],
     ])

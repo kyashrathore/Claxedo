@@ -261,3 +261,27 @@ export function isAgentRuntimeTurnAdmissionError(error: unknown): error is Agent
     (error as { code?: unknown }).code === AGENT_RUNTIME_TURN_CONFLICT_CODE
   )
 }
+
+export const AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE = "message_id_conflict"
+
+/**
+ * A prompt named a message id another session already holds. Message ids are
+ * one primary key across every session a runtime stores, so admitting it would
+ * move that session's row into this one.
+ */
+export class AgentRuntimeMessageIdConflictError extends Error {
+  readonly code = AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE
+  readonly status = 409
+
+  constructor(readonly sessionId: string, readonly messageId: string) {
+    super("Message id is already used by another session")
+    this.name = "AgentRuntimeMessageIdConflictError"
+  }
+}
+
+export function isAgentRuntimeMessageIdConflictError(error: unknown): error is AgentRuntimeMessageIdConflictError {
+  return error instanceof AgentRuntimeMessageIdConflictError || (
+    !!error && typeof error === "object" &&
+    (error as { code?: unknown }).code === AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE
+  )
+}

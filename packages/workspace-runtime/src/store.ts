@@ -4280,6 +4280,10 @@ export class RuntimeStore {
     ).get(sessionId)?.id
   }
 
+  messageSessionId(messageId: string) {
+    return this.db.prepare<{ session_id: string }>("SELECT session_id FROM message WHERE id = ?").get(messageId)?.session_id
+  }
+
   getMessagePage(sessionId: string, page: AgentMessagePageInput): AgentMessagePage | undefined {
     this.settleDeltas(sessionId)
     if (!this.getSession(sessionId)) {

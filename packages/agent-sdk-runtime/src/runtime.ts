@@ -1,10 +1,9 @@
-import { randomUUID } from "crypto"
 import {
   AgentRuntimeContractError,
   connectionIdForHarness,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import { assistantMessageIdForTurn, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
   AgentPermission,
@@ -40,7 +39,7 @@ import { createRuntimeRecovery } from "./runtime/recovery"
 import { recoveryWiring } from "./runtime/recovery-wiring"
 import type { AdmittedTurnCapture, TurnFinalization } from "./runtime/recovery"
 import { createSessionTitleOwner } from "./runtime/session-titles"
-import { createTurnAdmissions, deliverToBusySession } from "./runtime/turn-admission"
+import { admitTurnMessageIds, createTurnAdmissions, deliverToBusySession } from "./runtime/turn-admission"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -640,8 +639,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         const directory = session.directory ?? undefined
         const binding = executionBinding(turn.sessionId, directory)
-        const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
-        const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
+        const { userMessageId, assistantMessageId } = admitTurnMessageIds(store, turn)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
         const prompt = turnPrompt({ turn, config, userMessageId, assistantMessageId, channel: adapter.instructionChannel })
         const running = admissions.active(turn.sessionId)

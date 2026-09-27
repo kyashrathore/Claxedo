@@ -35,7 +35,7 @@ import {
   IMMUTABLE_SESSION_CONFIG_FIELDS,
   type ImmutableSessionConfigField,
 } from "@claxedo/agent-sdk-runtime"
-import { isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
+import { isAgentRuntimeMessageIdConflictError, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import {
   messageUpdated,
   permissionReplied,
@@ -90,6 +90,7 @@ import {
   deferredTurnGrant,
   deferredTurnGrantRefused,
   flushDocumentsAfterTurn,
+  messageIdConflict,
   publishTurnFailure,
   queuedPromptRequester,
   settleChildTurn,
@@ -1762,6 +1763,7 @@ export function createSessionRoutes(opts: Opts) {
       } catch (error) {
         if (turnAdmission.lease?.lost()) return lostTurnResponse(id, turnAdmission.lease)
         if (isAgentRuntimeTurnConflictError(error)) return turnAdmissionConflict(c)
+        if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
         const refusal = sessionTurnRefusal(error)
         if (refusal) return turnRefused(c, refusal, streamTurnErrorMessage(error))
         throw error

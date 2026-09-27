@@ -25,6 +25,11 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 
 export {
+  AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
+  AgentRuntimeMessageIdConflictError,
+  isAgentRuntimeMessageIdConflictError,
+} from "./runtime/contracts"
+export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
   AgentRuntimeTurnConflictError,
   AgentRuntimeTurnConflictError as AgentRuntimeTurnAdmissionError,
