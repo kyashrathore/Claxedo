@@ -39,7 +39,7 @@
     user-select: text;
   }
 
-  > [data-component="collapsible"].tool-collapsible[data-open="true"] [data-slot="tool-error-card-content"] {
+  [data-slot="tool-error-card-content"]:has(> .ui-tool-error-card-copy) {
     padding-right: 40px;
   }
 
