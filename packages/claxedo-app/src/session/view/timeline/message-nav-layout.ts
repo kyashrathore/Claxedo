@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { createSignal, onCleanup, type Accessor } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 
 const WIDE_VIEWPORT_MIN_WIDTH = 1536
@@ -18,10 +18,7 @@ export function createMessageNavRoom(root: Accessor<HTMLElement | undefined>) {
     if (element) setHasRoom(messageNavFits(element.clientWidth, window.innerWidth))
   }
   createResizeObserver(root, update)
-  onMount(() => {
-    update()
-    window.addEventListener("resize", update)
-    onCleanup(() => window.removeEventListener("resize", update))
-  })
+  window.addEventListener("resize", update)
+  onCleanup(() => window.removeEventListener("resize", update))
   return hasRoom
 }

@@ -129,7 +129,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 
 - The compact rail reaches 48 px into the pane (`left-3` plus its 36 px width); the viewport reserves 60 px so every row, including a wide table or diagram, has 12 px after it. The rail mounts only when its ResizeObserver confirms the pane can afford the gutter.
 - The gutter is keyed off `data-session-timeline-nav-gutter`, set from the same memo that mounts the rail, never a `:has()` on the rail's own element. A `:has()` makes the timeline root a Blink invalidation anchor over the most mutated subtree in the app; on the session-switch perf flow, that root plus `.session-envcard-shell` caused 3426 of 3756 style invalidations and about 21% of RecalcStyleDuration. No `:has()` may have an ancestor of the timeline as its subject.
-- The gutter is decided before first paint: the observer's first callback lands a frame late, and a late flip shifts the whole column and restarts every pending paint-stability wait.
+- The gutter is decided before first paint by the observer alone: its first callback runs after the frame's layout and before that frame paints, and a flip after paint would shift the whole column and restart every pending paint-stability wait. A width read when the timeline mounts would force the new pane's whole layout inside the switch task.
 - The rail's idle readiness stays reactive without enrolling the pending idle promise in the pane's Suspense.
 
 ## Why links and files open this way
