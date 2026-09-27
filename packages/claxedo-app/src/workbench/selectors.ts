@@ -36,11 +36,11 @@ export const selectors = {
     return handing && handing.paneId === state.focusedPaneId ? handing.outgoing : selectors.focusedContent(state)
   },
 
-  mruHiddenContent(state: WorkbenchState): string | null {
+  mruHiddenContent(state: WorkbenchState, eligible: (contentId: string) => boolean): string | null {
     const bound = new Set(state.panes.map((p) => p.contentId).filter((id): id is string => !!id))
     const focused = selectors.focusedContent(state)
     for (const id of state.contentRecency) {
-      if (id === focused || !state.contentIds.includes(id) || bound.has(id)) continue
+      if (id === focused || !state.contentIds.includes(id) || bound.has(id) || !eligible(id)) continue
       return id
     }
     return null

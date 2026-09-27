@@ -203,6 +203,6 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     drag: createDragController(),
     holds,
     handing,
-    ...createLayoutApi(layout, apply, handing),
+    ...createLayoutApi(layout, apply, handing, (contentId) => content(contentId)?.kind.singleton !== true),
   }
 }

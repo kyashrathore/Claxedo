@@ -17,18 +17,20 @@ export function PaneChrome(props: { pane: Pane; style: JSX.CSSProperties; closab
     <Show when={props.pane.contentId}>
       {(contentId) => (
         <div class="workbench-pane-chrome" data-testid={`pane-chrome-${props.pane.id}`} style={props.style}>
-          <div
-            data-testid={`pane-handle-${props.pane.id}`}
-            aria-hidden="true"
-            title={t("workbench.dragPane")}
-            class="absolute left-2 top-2 flex size-5 cursor-grab items-center justify-center rounded border border-border-weak-base/35 bg-background-base/55 text-icon-weak-base opacity-0 backdrop-blur-sm transition-opacity duration-100 hover:opacity-100 active:cursor-grabbing"
-            style={{ "pointer-events": "auto" }}
-            ref={(el) => {
-              onCleanup(useDragSource(wb.drag, el, { contentId, sourceKind: "workbench-pane", label: title, touchAction: "none" }))
-            }}
-          >
-            <Icon name="three-dots" size="small" />
-          </div>
+          <Show when={wb.splittable(contentId())}>
+            <div
+              data-testid={`pane-handle-${props.pane.id}`}
+              aria-hidden="true"
+              title={t("workbench.dragPane")}
+              class="absolute left-2 top-2 flex size-5 cursor-grab items-center justify-center rounded border border-border-weak-base/35 bg-background-base/55 text-icon-weak-base opacity-0 backdrop-blur-sm transition-opacity duration-100 hover:opacity-100 active:cursor-grabbing"
+              style={{ "pointer-events": "auto" }}
+              ref={(el) => {
+                onCleanup(useDragSource(wb.drag, el, { contentId, sourceKind: "workbench-pane", label: title, touchAction: "none" }))
+              }}
+            >
+              <Icon name="three-dots" size="small" />
+            </div>
+          </Show>
           <Show when={props.closable}>
             <button
               type="button"
