@@ -1,9 +1,10 @@
 import type { Page } from "@playwright/test"
 import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { restingPanelWidth } from "../../src/panel/width"
-import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
+import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, UNTRACED } from "../harness"
 
 test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
+test.use(UNTRACED)
 
 type PaintedFrame = { readonly width: string; readonly available: number }
 

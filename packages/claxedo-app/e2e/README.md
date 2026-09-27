@@ -75,6 +75,7 @@ Rules the checks enforce:
 - One path: the accessible names and routes in `harness/ui-names.ts` (`UI`, `sessionRoute`) and the composer helper (`sendPrompt`). A flow may branch on the viewport where the app differs by size.
 - Select by role and accessible name, then by the frozen hook list. No CSS-class selectors.
 - No sleeps and no `waitForTimeout`. Wait on a visible state, an `expect.poll`, or `stream.waitFor`.
+- A flow that reports a frame or clock number (a painted-frame recording, a task duration) runs untraced: its own spec file with `test.use(UNTRACED)` from the harness. Playwright sets trace and video per worker, so only a file or the config can turn them off. With tracing kept for failures and video on, Playwright's snapshotter adds about 4 ms of main-thread work around each action; flow 12's reveal times ran 3–9 ms lower untraced. Functional flows keep tracing.
 - Every spec has a recorded red run: run it with `CLAXEDO_E2E_RED=1` (the ACP agent errors every turn, and model turns are refused at the egress guard) or script the failure explicitly (`{ kind: "error" }`, `scripted.scriptError(...)`) and paste the failing assertion into the commit message.
 - Real Claude Code and Codex flows check `installedCli("claude")` / `installedCli("codex")` first and `test.skip(true, availability.reason)` when the binary is missing.
 

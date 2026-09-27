@@ -1,6 +1,8 @@
 import { startLiveTurn } from "../corpus/live"
 import { taskInsertingMs } from "../corpus/tasks"
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UNTRACED } from "../harness"
+
+test.use(UNTRACED)
 
 const DIAGRAM = ["```mermaid", "flowchart LR", "  A[Stream frame] --> B[Delta buffer]", "  B --> C[Store commit]", "  C --> D[Markdown projection]", "  D --> E[Paint]", "```"].join("\n")
 
