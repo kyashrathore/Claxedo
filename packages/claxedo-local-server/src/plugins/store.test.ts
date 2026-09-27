@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { PLUGIN_BUNDLE_HASH_LENGTH } from "@claxedo/plugin-build"
+import { PLUGIN_BUNDLE_HASH_LENGTH } from "@claxedo/plugin-build/bundle-hash"
 import { readCurrentLivePluginBundle, saveLivePluginBundle } from "./bundles"
 import { livePluginRegistryFile, readLivePluginRegistry, writeLivePluginRegistry } from "./registry"
 

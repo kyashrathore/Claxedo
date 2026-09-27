@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { PluginManifest } from "@claxedo/plugin-api"
-import { buildPluginApp, PluginBuildError, readPluginPackage, watchPluginFolder, type PluginFolderWatch } from "@claxedo/plugin-build"
+import type { PluginFolderWatch } from "@claxedo/plugin-build"
 import { controlBus, type PluginsChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -12,6 +12,10 @@ import { readLivePluginRegistry, writeLivePluginRegistry, type LivePluginRegistr
 export const LIVE_PLUGINS_ROUTE_PATH = "/api/claxedo/live-plugins"
 
 const log = Log.create({ service: "live-plugins" })
+
+// Loaded, the toolchain holds 4.7 MB of a bundled daemon's heap; only a
+// registered plugin, an add or a check needs it.
+const pluginToolchain = () => import("@claxedo/plugin-build")
 
 export type LivePluginRow = {
   id: string
@@ -109,6 +113,7 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
 
   const runBuild = async (record: LivePluginRecord) => {
     apply(record, { type: "buildStarted" })
+    const { buildPluginApp, PluginBuildError } = await pluginToolchain()
     try {
       const built = await buildPluginApp({ rootDir: record.entry.directory })
       if (built.manifest.id !== record.entry.id) {
@@ -133,12 +138,14 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
     return record.queue
   }
 
-  const startWatch = (record: LivePluginRecord) =>
-    watchPluginFolder({
+  const startWatch = async (record: LivePluginRecord) => {
+    const { watchPluginFolder } = await pluginToolchain()
+    return watchPluginFolder({
       rootDir: record.entry.directory,
       onChange: () => void enqueueBuild(record),
       onError: (error) => apply(record, { type: "buildFailed", error: `The folder watch failed: ${error.message}` }),
     })
+  }
 
   const entries = () => [...plugins.values()].map((record) => record.entry)
 
@@ -147,7 +154,7 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
       const last = await readCurrentLivePluginBundle(root, entry.id)
       const record: LivePluginRecord = { entry, name: last?.manifest.name ?? null, version: last?.manifest.version ?? null, state: initialLivePluginState(last), queue: Promise.resolve() }
       plugins.set(entry.id, record)
-      record.watch = startWatch(record)
+      record.watch = await startWatch(record)
       void enqueueBuild(record)
     }
   })()
@@ -157,6 +164,7 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
     list: () => [...plugins.values()].map(row).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     async add(directory) {
       const real = await existingDirectory(directory)
+      const { PluginBuildError, readPluginPackage } = await pluginToolchain()
       let manifest
       try {
         manifest = (await readPluginPackage(real)).manifest
@@ -171,7 +179,7 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
       plugins.set(entry.id, record)
       await writeLivePluginRegistry(root, entries())
       await enqueueBuild(record)
-      record.watch = startWatch(record)
+      record.watch = await startWatch(record)
       return row(record)
     },
     async remove(id) {

@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto"
 import { build as esbuild, formatMessages, type Message } from "esbuild"
 import type { PluginManifest } from "@claxedo/plugin-api"
+import { PLUGIN_BUNDLE_HASH_LENGTH } from "./bundle-hash"
 import { PluginBuildError } from "./errors"
 import { readPluginPackage } from "./manifest-file"
 import { runtimeShimPlugin } from "./runtime-shims"
 import { solidJsxPlugin } from "./solid-jsx"
-
-export const PLUGIN_BUNDLE_HASH_LENGTH = 16
 
 export type PluginBuildOptions = {
   rootDir: string

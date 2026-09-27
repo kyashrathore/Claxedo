@@ -113,6 +113,13 @@ test("staging preserves the daemon inventory and resolution stays inside each ow
   expect(fs.realpathSync(toolchain.resolve("esbuild"))).toStartWith(fs.realpathSync(path.join(DEPENDENCIES, "esbuild")))
 })
 
+test("every source subpath of the toolchain resolves from the staged package", async () => {
+  const daemon = createRequire(path.join(CHUNKS, "probe.mjs"))
+  const leaf = (await import(daemon.resolve("@claxedo/plugin-build/bundle-hash"))) as { PLUGIN_BUNDLE_HASH_LENGTH: number }
+  expect(leaf.PLUGIN_BUNDLE_HASH_LENGTH).toBe(16)
+  expect(fs.readdirSync(TOOLCHAIN).filter((file) => file.endsWith(".js")).sort()).toEqual(["bundle-hash.js", "index.js"])
+})
+
 test("the plugin API source requires zod declarations even with skipLibCheck", async () => {
   const zod = path.join(DEPENDENCIES, "zod")
   fs.renameSync(zod, `${zod}.hidden`)

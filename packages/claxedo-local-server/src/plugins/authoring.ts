@@ -2,7 +2,6 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { realPathAllowingMissing } from "@claxedo/helpers/real-path"
 import type { AppPluginsGrant } from "@claxedo/mcp/client"
-import { checkPluginApp } from "@claxedo/plugin-build"
 import { AppPluginAuthoringError, appPluginScaffold } from "./scaffold"
 import { livePluginService, type LivePluginService } from "./service"
 import { isMissingFile } from "@claxedo/helpers/fs"
@@ -79,6 +78,7 @@ export function appPluginAuthoring(options: AppPluginAuthoringOptions): AppPlugi
     },
     async check(directory) {
       const real = await existingFolder(directory)
+      const { checkPluginApp } = await import("@claxedo/plugin-build")
       const checked = await checkPluginApp({ rootDir: real })
       return { directory: real, ok: checked.ok, ...(checked.manifest ? { pluginId: checked.manifest.id } : {}), diagnostics: checked.diagnostics }
     },

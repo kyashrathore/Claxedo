@@ -1,4 +1,4 @@
-export { buildPluginApp, PLUGIN_BUNDLE_HASH_LENGTH, pluginBundleHash } from "./build"
+export { buildPluginApp, pluginBundleHash } from "./build"
 export type { PluginBuild, PluginBuildOptions } from "./build"
 export { checkPluginApp } from "./check"
 export type { PluginCheck } from "./check"

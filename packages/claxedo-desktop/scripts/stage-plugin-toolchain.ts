@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
+import { readRecord, readString } from "@claxedo/helpers/readers"
 import { runBunBuild } from "../../../script/bun-build"
 
 const PLUGIN_BUILD_DIR = path.resolve(import.meta.dirname, "../../claxedo-plugin-build")
@@ -44,17 +45,27 @@ export async function stagePluginToolchain(nodeModules: string, target: { platfo
   const root = path.join(nodeModules, "@claxedo/plugin-build")
   const dependencies = path.join(root, "node_modules")
   fs.rmSync(root, { recursive: true, force: true })
+  // The daemon bundle keeps every subpath of the package external, so each
+  // source export needs its own staged file.
+  const manifest: unknown = JSON.parse(fs.readFileSync(path.join(PLUGIN_BUILD_DIR, "package.json"), "utf8"))
+  const sourceExports = Object.entries(readRecord(manifest, "exports") ?? {}).map(([subpath, entry]) => {
+    const source = readString(entry, "default")
+    if (!source) throw new Error(`@claxedo/plugin-build export ${subpath} names no default file`)
+    return { subpath, source }
+  })
   await runBunBuild("Failed to bundle plugin toolchain", {
-    entrypoints: [path.join(PLUGIN_BUILD_DIR, "src/index.ts")],
+    entrypoints: sourceExports.map(({ source }) => path.join(PLUGIN_BUILD_DIR, source)),
     outdir: root,
     target: "node",
     format: "esm",
-    naming: "index.js",
+    naming: "[name].js",
     // esbuild locates and spawns its binary relative to its own package.
     external: ["esbuild"],
   })
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
-    name: "@claxedo/plugin-build", type: "module", exports: "./index.js",
+    name: "@claxedo/plugin-build",
+    type: "module",
+    exports: Object.fromEntries(sourceExports.map(({ subpath, source }) => [subpath, `./${path.basename(source, ".ts")}.js`])),
   }))
   const esbuild = packageDirectory("esbuild", PLUGIN_BUILD_DIR)
   const esbuildBinary = `@esbuild/${target.platform}-${target.arch}`

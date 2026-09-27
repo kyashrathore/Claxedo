@@ -16,6 +16,11 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./bundle-hash": {
+      "types": "./src/bundle-hash.ts",
+      "development": "./src/bundle-hash.ts",
+      "default": "./src/bundle-hash.ts"
     }
   },
   "scripts": {
