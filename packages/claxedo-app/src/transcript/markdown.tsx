@@ -12,6 +12,7 @@ import {
   createResource,
   createSignal,
   createUniqueId,
+  on,
   onCleanup,
   type Setter,
   splitProps,
@@ -26,7 +27,7 @@ import {
   MarkdownWorkerUnavailableError,
 } from "./markdown-worker"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
-import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
+import { sameRenderedCode, sameToken, shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMermaidSvg, sanitizeSvg, touchCachedMermaidSvg } from "./markdown-cache"
 import {
   blockHash,
@@ -525,12 +526,6 @@ function setupLinkOpen(root: HTMLDivElement, openImage?: (src: string, alt?: str
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
   const timeouts = new Map<HTMLElement, ReturnType<typeof setTimeout>>()
 
-  const updateLabel = (button: HTMLElement) => {
-    const labels = getLabels()
-    const copied = button.getAttribute("data-copied") === "true"
-    setCopyState(button, labels, copied)
-  }
-
   const handleClick = async (event: MouseEvent) => {
     const target = event.target
     if (!(target instanceof Element)) return
@@ -550,11 +545,6 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     if (existing) clearTimeout(existing)
     const timeout = setTimeout(() => setCopyState(button, labels, false), 2000)
     timeouts.set(button, timeout)
-  }
-
-  const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
-  for (const button of buttons) {
-    if (button instanceof HTMLElement) updateLabel(button)
   }
 
   root.addEventListener("click", handleClick)
@@ -587,6 +577,7 @@ export function Markdown(
   const images = createImageWaits()
   const edges = createMarkdownEdges()
   const [root, setRoot] = createSignal<HTMLDivElement>()
+  const labels = createMemo((): CopyLabels => ({ copy: i18n.t("transcript.message.copy"), copied: i18n.t("transcript.message.copied") }))
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
   let liveBlock: RenderedBlock | undefined
@@ -712,17 +703,13 @@ export function Markdown(
     }
 
     const commitStarted = rendererClock()
-    const labels = {
-      copy: i18n.t("transcript.message.copy"),
-      copied: i18n.t("transcript.message.copied"),
-    }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
       if (!nextCodeKeys.has(key)) disposeCode(key)
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels, images, data))
+    content.forEach((block, index) => updateBlock(container, index, block, labels(), images, data))
     while (container.children.length > content.length) {
       const child = container.lastElementChild
       if (!child) break
@@ -731,17 +718,21 @@ export function Markdown(
     }
     images.commit(container)
     edges.mark(container)
-    container
-      .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
-      .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
-    if (!copyCleanup)
-      copyCleanup = setupCodeCopy(container, () => ({
-        copy: i18n.t("transcript.message.copy"),
-        copied: i18n.t("transcript.message.copied"),
-      }))
+    if (!copyCleanup) copyCleanup = setupCodeCopy(container, labels)
     if (!linkCleanup) linkCleanup = setupLinkOpen(container, openImage)
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
   })
+
+  createRenderEffect(
+    on(
+      labels,
+      (next) =>
+        root()
+          ?.querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
+          .forEach((button) => setCopyState(button, next, button.dataset.copied === "true")),
+      { defer: true },
+    ),
+  )
 
   onCleanup(() => {
     if (copyCleanup) copyCleanup()
@@ -799,6 +790,7 @@ function updateBlock(
   const started = rendererClock()
   const current = container.children[index]
   if (block.mode === "code") {
+    if (current instanceof HTMLDivElement && current.dataset.markdownKey === block.key && drawnCodeUnchanged(current, block)) return
     const node = updateCodeBlock(container, current, block, labels)
     if (block.complete) renderMermaidBlocks(node)
     traceRenderer(`markdown.block.code.chars-${block.raw.length}`, started)
@@ -866,21 +858,15 @@ function updateCodeBlock(
     if (tokens.length > highlightedCodeTokenLimit) {
       code.textContent = tokens.map((token) => token[0]).join("")
       code.dataset.markdownCodeRender = "plain-large"
-      renderedCodeTokens.delete(next)
+      renderedCodeTokens.set(next, drawnCode(block, "plain"))
       return next
     }
     if (code.dataset.markdownCodeRender) {
       code.textContent = ""
       delete code.dataset.markdownCodeRender
-      renderedCodeTokens.delete(next)
     }
     const previous = renderedCodeTokens.get(next)
-    const reset = shouldResetCodeTokens(previous, {
-      language: block.language,
-      generation: block.generation,
-      stableCount: block.stable.length,
-      raw: block.raw,
-    })
+    const reset = shouldResetCodeTokens(previous, drawnCode(block, "tokens"))
     const stableCount = reset ? 0 : previous!.stableCount
     const tail = [...block.stable.slice(stableCount), ...block.unstable]
     const prior = reset ? [] : previous!.unstable
@@ -891,13 +877,7 @@ function updateCodeBlock(
       .slice(keep - stableCount)
       .map(createTokenSpan)
       .forEach((span) => code.appendChild(span))
-    renderedCodeTokens.set(next, {
-      language: block.language,
-      generation: block.generation,
-      stableCount: block.stable.length,
-      unstable: block.unstable,
-      raw: block.raw,
-    })
+    renderedCodeTokens.set(next, drawnCode(block, "tokens"))
     return next
   }
 
@@ -909,7 +889,8 @@ function updateCodeBlock(
   const codeElement = document.createElement("code")
   codeElement.className = `language-${block.language}`
   const tokens = [...block.stable, ...block.unstable]
-  if (tokens.length > highlightedCodeTokenLimit) {
+  const render = tokens.length > highlightedCodeTokenLimit ? "plain" : "tokens"
+  if (render === "plain") {
     codeElement.textContent = tokens.map((token) => token[0]).join("")
     codeElement.dataset.markdownCodeRender = "plain-large"
   } else {
@@ -919,13 +900,7 @@ function updateCodeBlock(
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))
   next.appendChild(wrapper)
-  renderedCodeTokens.set(next, {
-    language: block.language,
-    generation: block.generation,
-    stableCount: block.stable.length,
-    unstable: block.unstable,
-    raw: block.raw,
-  })
+  renderedCodeTokens.set(next, drawnCode(block, render))
   if (current) {
     disposeMarkdownControls(current)
     current.replaceWith(next)
@@ -935,8 +910,21 @@ function updateCodeBlock(
   return next
 }
 
-function sameToken(left: MarkdownToken, right: MarkdownToken | undefined) {
-  return !!right && left[0] === right[0] && left[1] === right[1]
+function drawnCode(block: Extract<RenderedBlock, { mode: "code" }>, render: RenderedCodeState["render"]): RenderedCodeState {
+  return {
+    render,
+    language: block.language,
+    generation: block.generation,
+    stableCount: block.stable.length,
+    unstable: block.unstable,
+    raw: block.raw,
+  }
+}
+
+function drawnCodeUnchanged(node: HTMLDivElement, block: Extract<RenderedBlock, { mode: "code" }>) {
+  if (node.dataset.markdownComplete !== (block.complete ? "true" : "false")) return false
+  const render = block.stable.length + block.unstable.length > highlightedCodeTokenLimit ? "plain" : "tokens"
+  return sameRenderedCode(renderedCodeTokens.get(node), drawnCode(block, render))
 }
 
 function createTokenSpan(token: MarkdownToken) {

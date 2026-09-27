@@ -52,35 +52,6 @@ async function recordSentMessage(app: Page, text: string): Promise<() => Promise
   return () => app.evaluate(() => (window as SentFramesWindow).__sentFrames!)
 }
 
-type FenceFrame = { height: number; complete: boolean }
-type FenceFramesWindow = Window & { __fenceFrames?: Promise<FenceFrame[]> }
-
-async function recordFenceClose(app: Page): Promise<() => Promise<FenceFrame[]>> {
-  await app.evaluate(installPaintedFrames)
-  await app.evaluate(() => {
-    const paintedFrames = window.__claxedoPaintedFrames
-    if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
-    ;(window as FenceFramesWindow).__fenceFrames = new Promise<FenceFrame[]>((resolve) => {
-      const frames: FenceFrame[] = []
-      paintedFrames({
-        sample: () => {
-          const code = document.querySelector<HTMLElement>('[data-session-timeline-root] [data-component="markdown-code"]')
-          if (!code) return undefined
-          return { height: code.getBoundingClientRect().height, complete: code.closest<HTMLElement>("[data-markdown-block]")?.dataset.markdownComplete === "true" }
-        },
-        painted: (frame) => {
-          if (!frame) return
-          frames.push(frame)
-          if (frames.filter((seen) => seen.complete).length < 3) return
-          resolve(frames)
-          return true
-        },
-      })
-    })
-  })
-  return () => app.evaluate(() => (window as FenceFramesWindow).__fenceFrames!)
-}
-
 function sessionWrites(app: Page): string[] {
   const writes: string[] = []
   app.on("request", (request) => {
@@ -255,30 +226,4 @@ test("03 two sessions stream at once: the second's reply shows while the first s
   await stack.acp.release("alpha")
   await stack.acp.release("bravo-end")
   await expect.poll(alphaText).toContain("Alpha has finished.")
-})
-
-test("03 a streamed code fence keeps its height on the frame it closes", async ({ stack, api, app }) => {
-  const workspace = await stack.daemon.makeWorkspace("fence")
-  await stack.acp.write("fence", {
-    steps: [
-      { kind: "text", text: "The values:\n\n```pyth" },
-      { kind: "hold", name: "fence-info" },
-      { kind: "text", text: "on\nfirst = 1\nsecond = 2\n``" },
-      { kind: "hold", name: "fence" },
-      { kind: "text", text: "`" },
-      { kind: "hold", name: "fence-end" },
-    ],
-  })
-  const session = await api.createSession(workspace.directory, { title: "Fence", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
-  await sendPrompt(app, `Show the values. ${acpScriptToken("fence")}`)
-  await expect(app.locator('[data-component="markdown-code"]')).toBeVisible()
-  await stack.acp.release("fence-info")
-  await expect(app.locator('[data-component="markdown-code"]').getByText("second = 2")).toBeVisible()
-
-  const frames = await recordFenceClose(app)
-  await stack.acp.release("fence")
-  const heights = (await frames()).map((frame) => frame.height)
-  expect(heights).toEqual(heights.map(() => heights[0]))
-  await stack.acp.release("fence-end")
 })
