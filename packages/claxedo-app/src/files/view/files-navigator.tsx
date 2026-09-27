@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
@@ -33,6 +33,10 @@ function expandToActivePath(input: {
   )
 }
 
+function releaseChromiumAutofillAnchor(input: HTMLInputElement): void {
+  input.remove()
+}
+
 function SearchRow(): JSX.Element {
   const t = useTranslator(filesDictionary)
   const files = useFiles()
@@ -45,6 +49,7 @@ function SearchRow(): JSX.Element {
           value={files.search()}
           placeholder={t("files.search")}
           autofocus
+          ref={(element) => onCleanup(() => releaseChromiumAutofillAnchor(element))}
           class="flex-1 min-w-0 bg-transparent text-sm text-text-base placeholder:text-text-weak/60 outline-none"
           onInput={(event) => files.setSearch(event.currentTarget.value)}
           onKeyDown={(event) => {
