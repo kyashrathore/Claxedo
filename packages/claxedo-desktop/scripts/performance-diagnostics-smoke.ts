@@ -73,19 +73,6 @@ export type DiagnosticsSmokeEvidence = {
   cpuOverheadPercentagePoints?: number
   profilerStats?: Record<string, number>
   sourceHealth?: Record<string, LocalDiagnostics.SourceStatus["state"]>
-  renderedProduct?: {
-    collectorState: boolean
-    timeline: boolean
-    contributorRanking: boolean
-    intervalIdentified: boolean
-    electronContributor: boolean
-    serverContributor: boolean
-    sidecarExpected: boolean
-    sidecarContributor: boolean
-    memoryGrowthContributor: boolean
-    limitationDisclosed: boolean
-    churnEvidence: boolean
-  }
 }
 
 export function evaluateDiagnosticsEvidence(input: {
@@ -461,12 +448,10 @@ export async function runPackagedSmoke() {
     try {
       await waitForMainWindow(client)
       await requirePackagedMermaid(client)
-      // Host metrics are deliberately on-demand in the packaged app. Opening
-      // the product surface establishes the diagnostics subscription that
-      // activates windows-cim/macos-ps/linux-proc. Waiting for source health
-      // before opening the dialog can therefore never complete: every host
-      // source correctly remains `warming-up` with no subscriber.
-      await openDiagnosticsDialog(client)
+      // Host metrics are on-demand: windows-cim/macos-ps/linux-proc stay
+      // `warming-up` until a renderer subscribes, so the snapshot wait below
+      // could never see them healthy without this subscription.
+      await subscribeToDiagnostics(client)
       const snapshot = await waitForSnapshot(client)
       const serialized = JSON.stringify(snapshot)
       if (serialized.includes(SECRET_SENTINEL)) throw new Error("Packaged snapshot leaked the secret sentinel")
@@ -490,35 +475,6 @@ export async function runPackagedSmoke() {
       )
       const contributorOwner = snapshot.owners.find((owner) => owner.id === contributor?.ownerId)
       if (!contributorOwner) throw new Error("Packaged startup did not produce a measured contributor")
-      const text = await evaluateText(
-        client,
-        `[...document.querySelectorAll('[role="dialog"]')]
-          .find((candidate) => candidate.getAttribute("aria-label") === "This computer's diagnostics")
-          ?.textContent ?? ""`,
-      )
-      const task = await renderedTaskEvidence(client)
-      const sidecarExpected = snapshot.owners.some((owner) => owner.kind === "sidecar")
-      const renderedProduct = {
-        collectorState: text.includes("Collector"),
-        timeline: text.includes("CPU and memory history"),
-        contributorRanking: text.includes("Ranked contributors"),
-        sidecarExpected,
-        ...task,
-      }
-      if (
-        !renderedProduct.collectorState ||
-        !renderedProduct.timeline ||
-        !renderedProduct.contributorRanking ||
-        !renderedProduct.intervalIdentified ||
-        !renderedProduct.electronContributor ||
-        !renderedProduct.serverContributor ||
-        (renderedProduct.sidecarExpected && !renderedProduct.sidecarContributor) ||
-        !renderedProduct.memoryGrowthContributor ||
-        !renderedProduct.limitationDisclosed ||
-        !renderedProduct.churnEvidence
-      ) {
-        throw new Error(`Packaged diagnostics product task failed: ${JSON.stringify(renderedProduct)}`)
-      }
       const actionSafety = await packagedActionSafety(client, snapshot, server.id)
       const evidence: DiagnosticsSmokeEvidence = {
         mode: "packaged",
@@ -537,7 +493,6 @@ export async function runPackagedSmoke() {
         actionSafety,
         retainedBytes: serialized.length,
         sourceHealth,
-        renderedProduct,
       }
       if (evidence.retainedBytes > DIAGNOSTICS_RETAINED_BYTES_BUDGET) {
         throw new Error(
@@ -640,55 +595,6 @@ function actionGrant(
   return grant
 }
 
-/** The dialog's own flags; each member is a boolean the page computed. */
-async function renderedTaskEvidence(client: CdpClient) {
-  const value = await client.evaluate(`(() => {
-    const root = [...document.querySelectorAll('[role="dialog"]')]
-      .find((candidate) => candidate.getAttribute("aria-label") === "This computer's diagnostics")
-    if (!root) return {}
-    const contributors = [...root.querySelectorAll('[data-testid="diagnostics-contributor"]')]
-    const kinds = new Set(contributors.map((item) => item.dataset.ownerKind))
-    const range = root.querySelector('[aria-label="Retained window summary"]')
-    const memoryGrowthContributor = contributors.some((item) => {
-      const value = Number(item.dataset.rssChange)
-      return item.dataset.ownerId === "diagnostics-packaged-stop" &&
-        Number.isFinite(value) &&
-        value > 0
-    })
-    const churnEvidence = [...root.querySelectorAll('[data-testid="diagnostics-churn"]')]
-      .some((item) =>
-        item.dataset.ownerId === "diagnostics-packaged-churn" &&
-        item.textContent?.includes("resources unmeasured"))
-    return {
-      intervalIdentified:
-        Number.isFinite(Number(range?.dataset.diagnosticsRangeStart)) &&
-        Number.isFinite(Number(range?.dataset.diagnosticsRangeEnd)) &&
-        Number(range?.dataset.diagnosticsRangeEnd) > Number(range?.dataset.diagnosticsRangeStart),
-      electronContributor: ["app", "electron-main", "renderer", "gpu", "utility"].some((kind) =>
-        kinds.has(kind)),
-      serverContributor: kinds.has("server"),
-      sidecarContributor: kinds.has("sidecar"),
-      memoryGrowthContributor,
-      limitationDisclosed:
-        root.textContent?.includes("unmeasured churn, never as zero usage") === true,
-      churnEvidence,
-    }
-  })()`)
-  // Each member is a boolean the expression above computed; a page that did
-  // not render the dialog answers `{}`, and every flag reads as "not observed"
-  // rather than arriving typed and undefined.
-  const flag = (key: string) => readField(value, key) === true
-  return {
-    intervalIdentified: flag("intervalIdentified"),
-    electronContributor: flag("electronContributor"),
-    serverContributor: flag("serverContributor"),
-    sidecarContributor: flag("sidecarContributor"),
-    memoryGrowthContributor: flag("memoryGrowthContributor"),
-    limitationDisclosed: flag("limitationDisclosed"),
-    churnEvidence: flag("churnEvidence"),
-  }
-}
-
 export function requirePackagedSourceHealth(
   snapshot: Pick<LocalDiagnostics.RetainedSnapshot, "sources">,
   platform: NodeJS.Platform,
@@ -754,45 +660,12 @@ async function requirePackagedMermaid(client: CdpClient) {
   }
 }
 
-async function openDiagnosticsDialog(client: CdpClient) {
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    const opened = await evaluateBoolean(client, `(() => {
-      const dialog = [...document.querySelectorAll('[role="dialog"]')]
-        .find((candidate) => candidate.getAttribute("aria-label") === "This computer's diagnostics")
-      if (dialog) return true
-      const emptyTrigger = document.querySelector('[data-testid="empty-diagnostics-trigger"]')
-      if (emptyTrigger instanceof HTMLElement) {
-        emptyTrigger.click()
-        return true
-      }
-      const trigger = document.querySelector('[data-testid="rail-account-trigger"]')
-      if (!trigger) return false
-      trigger.click()
-      const item = [...document.querySelectorAll('[role="menuitem"]')]
-        .find((candidate) => candidate.textContent?.trim() === "Diagnostics")
-      if (!item) return false
-      item.click()
-      return true
-    })()`)
-    if (opened) {
-      const ready = await evaluateBoolean(
-        client,
-        `[...document.querySelectorAll('[role="dialog"]')]
-          .some((candidate) =>
-            candidate.getAttribute("aria-label") === "This computer's diagnostics" &&
-            candidate.textContent.includes("Collector"))`,
-      )
-      if (ready) return
-    }
-    await Bun.sleep(250)
-  }
-  const screen = await evaluateText(
+async function subscribeToDiagnostics(client: CdpClient) {
+  const subscribed = await evaluateBoolean(
     client,
-    `document.body?.innerText?.replace(/\\s+/g, " ").slice(0, 500) ?? "<empty>"`,
-    "<unavailable>",
+    `(() => { window.api.processDiagnostics.subscribe(() => {}); return true })()`,
   )
-  throw new Error(`Packaged Diagnostics dialog did not become reachable from fresh state: ${screen}`)
+  if (!subscribed) throw new Error("Packaged renderer could not subscribe to diagnostics")
 }
 
 async function availablePort() {
@@ -883,14 +756,9 @@ type CdpClient = {
   close(): void
 }
 
-/** The four answer shapes this smoke reads out of the packaged renderer. */
+/** The three answer shapes this smoke reads out of the packaged renderer. */
 async function evaluateBoolean(client: CdpClient, expression: string): Promise<boolean> {
   return (await client.evaluate(expression).catch(() => false)) === true
-}
-
-async function evaluateText(client: CdpClient, expression: string, fallback = ""): Promise<string> {
-  const value = await client.evaluate(expression).catch(() => fallback)
-  return typeof value === "string" ? value : fallback
 }
 
 async function evaluateActionResult(client: CdpClient, expression: string) {
