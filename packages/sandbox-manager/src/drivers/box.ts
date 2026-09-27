@@ -353,7 +353,20 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     })
     if (!created) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     const boxId = boxOf(created).id
-    await input.onResource?.({ sandboxId: boxId, hostId, driverResourceId: boxId, labels: input.labels })
+    const resource = { sandboxId: boxId, hostId, driverResourceId: boxId, labels: input.labels }
+    const failures: unknown[] = []
+    try {
+      await input.onResource?.(resource)
+    } catch (handoffError) {
+      failures.push(handoffError)
+      try {
+        await destroy({ ...resource, workspaceId: input.workspaceId })
+      } catch (deleteError) {
+        failures.push(deleteError)
+      }
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `Box ${boxId} resource handoff and deletion failed`)
     const ready = await waitUntilReady(boxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     return boot(boxId, input, hostId)

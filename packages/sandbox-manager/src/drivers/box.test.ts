@@ -140,12 +140,68 @@ describe("box sandbox driver", () => {
     expect(box.calls.filter((call) => call.path === "/boxes" && call.method === "POST")).toHaveLength(1)
   })
 
-  test("a rejected resource write prevents readiness polling", async () => {
+  test("a rejected resource write deletes the created box before propagating the handoff error", async () => {
+    const box = fakeBox()
+    const handoffError = new Error("epoch lost")
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl })
+    await expect(driver.ensureHost(ensureInput({ onResource: async () => { throw handoffError } }))).rejects.toBe(handoffError)
+    expect(box.calls).toEqual([
+      { path: "/boxes", method: "POST", body: { ttlSeconds: null } },
+      { path: "/boxes/bx_abc123", method: "DELETE", body: undefined },
+    ])
+  })
+
+  test.each(["transport", "http"])("a rejected resource write surfaces both handoff and deletion %s errors", async (failure) => {
+    const box = fakeBox()
+    const handoffError = new Error("epoch lost")
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+      const response = await box.fetchImpl(url, init)
+      if (init?.method !== "DELETE") return response
+      if (failure === "transport") throw new Error("delete connection refused")
+      return Response.json({ error: "delete denied" }, { status: 403 })
+    } })
+    const error = await driver.ensureHost(ensureInput({ onResource: async () => { throw handoffError } })).then(
+      () => { throw new Error("expected handoff to fail") },
+      (error: unknown) => error,
+    )
+    expect(error).toBeInstanceOf(AggregateError)
+    const aggregate = error as AggregateError
+    expect(aggregate.message).toMatch(/bx_abc123.*handoff.*delet/)
+    expect(aggregate.errors).toHaveLength(2)
+    expect(aggregate.errors[0]).toBe(handoffError)
+    expect(aggregate.errors[1]).toBeInstanceOf(Error)
+    expect(aggregate.errors[1].message).toContain(failure === "transport" ? "delete connection refused" : "delete denied")
+    expect(box.calls.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "POST", path: "/boxes" },
+      { method: "DELETE", path: "/boxes/bx_abc123" },
+    ])
+  })
+
+  test.each(["persistence failure", "lost epoch"])("manager resource handoff cleans up the box after %s", async (failure) => {
+    const store = createMemoryLeaseStore()
     const box = fakeBox()
     const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl })
-    await expect(driver.ensureHost(ensureInput({ onResource: async () => { throw new Error("epoch lost") } }))).rejects.toThrow("epoch lost")
-    expect(box.calls).toHaveLength(1)
-    expect(box.calls[0].path).toBe("/boxes")
+    const manager = createSandboxManager({
+      driver,
+      onEgressUnenforced: () => {},
+      leaseStore: {
+        ...store,
+        async recordTarget(workspaceId, epoch, target) {
+          if (failure === "persistence failure") throw new Error("storage unavailable")
+          await store.acquire(workspaceId, { homeRegion: "eu", driver: "box", staleAfterMs: 0 })
+          return store.recordTarget(workspaceId, epoch, target)
+        },
+      },
+    })
+    expect(await manager.ensure("ws1", { homeRegion: "eu" })).toMatchObject({
+      status: "unavailable",
+      error: failure === "persistence failure" ? "storage unavailable" : "runtime_lease_changed",
+    })
+    expect((await store.get("ws1"))?.sandboxId).toBeUndefined()
+    expect(box.calls.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "POST", path: "/boxes" },
+      { method: "DELETE", path: "/boxes/bx_abc123" },
+    ])
   })
 
   test.each(["auth", "malformed", "boot", "missing"])("resume propagates %s failure without creating a replacement", async (failure) => {

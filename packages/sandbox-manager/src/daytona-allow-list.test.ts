@@ -20,7 +20,7 @@ describe("formatDaytonaAllowList", () => {
 describe("formatDaytonaDomainAllowList", () => {
   test("deduplicates without truncating", () => {
     const hosts = Array.from({ length: 12 }, (_, i) => `h${i}.example.com`)
-    expect(formatDaytonaDomainAllowList([...hosts, hosts[0]!]).split(",")).toEqual(hosts)
+    expect(formatDaytonaDomainAllowList([...hosts, hosts[0]]).split(",")).toEqual(hosts)
   })
 
   test("refuses an entry carrying a delimiter", () => {
