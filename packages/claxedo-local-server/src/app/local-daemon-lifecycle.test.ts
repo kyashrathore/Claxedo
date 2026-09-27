@@ -149,8 +149,6 @@ describe("local daemon lifecycle", () => {
 
       const lease = lifecycle.acquire()!
       expect(vi.getTimerCount()).toBe(1)
-      expect(lifecycle.renew(lease.id)).toBeDefined()
-      expect(vi.getTimerCount()).toBe(1)
       expect(lifecycle.release(lease.id)).toBe(true)
       expect(vi.getTimerCount()).toBe(1)
 
@@ -166,7 +164,7 @@ describe("local daemon lifecycle", () => {
     try {
       let work = empty()
       const onScopeChanged = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: () => work, onStop() {}, onScopeChanged, machine, leaseTtlMs: 60_000, pollIntervalMs: 1_000 })
+      const lifecycle = createLocalDaemonLifecycle({ activity: () => work, onStop() {}, onScopeChanged, machine, pollIntervalMs: 1_000 })
       lifecycle.start()
       await lifecycle.recovery.launchesReconciled()
       expect(onScopeChanged).toHaveBeenCalledTimes(1)
@@ -174,11 +172,10 @@ describe("local daemon lifecycle", () => {
       await vi.advanceTimersByTimeAsync(10_000)
       expect(onScopeChanged, "idle polls").toHaveBeenCalledTimes(1)
 
-      const lease = lifecycle.acquire()!
+      lifecycle.acquire()
       expect(onScopeChanged, "a lease pins the daemon").toHaveBeenCalledTimes(2)
-      lifecycle.renew(lease.id)
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(onScopeChanged, "renewals and polls under a lease").toHaveBeenCalledTimes(2)
+      expect(onScopeChanged, "polls under a lease").toHaveBeenCalledTimes(2)
 
       const terminal: LocalDaemonOwner = { id: "terminal:t1", kind: "terminal", generation: "7", state: "running", pins: true }
       work = { ...empty(), owners: [terminal], residencyPins: 1, replacementBlockers: 1 }
@@ -193,31 +190,19 @@ describe("local daemon lifecycle", () => {
     }
   })
 
-  test("expires a crashed desktop lease and exits after one idle grace", async () => {
-    const onIdle = vi.fn()
-    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, leaseTtlMs: 20, idleGraceMs: 20, pollIntervalMs: 2 })
-    lifecycle.start()
-    lifecycle.acquire()
-
-    await wait(30)
-    expect(onIdle).not.toHaveBeenCalled()
-    await wait(20)
-    expect(onIdle).toHaveBeenCalledTimes(1)
-  })
-
-  test("renewal keeps the daemon resident and release starts a fresh grace", async () => {
+  test("a lease is held until released, however long that is, and its release starts a fresh grace", async () => {
     vi.useFakeTimers()
     try {
       const onIdle = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, leaseTtlMs: 30, idleGraceMs: 15, pollIntervalMs: 2 })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, idleGraceMs: 15, pollIntervalMs: 2 })
       lifecycle.start()
       const lease = lifecycle.acquire()!
-      await vi.advanceTimersByTimeAsync(20)
-      expect(lifecycle.renew(lease.id)).toBeDefined()
-      await vi.advanceTimersByTimeAsync(20)
+      await vi.advanceTimersByTimeAsync(3_600_000)
       expect(onIdle).not.toHaveBeenCalled()
       expect(lifecycle.release(lease.id)).toBe(true)
-      await vi.advanceTimersByTimeAsync(20)
+      await vi.advanceTimersByTimeAsync(14)
+      expect(onIdle).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
       expect(onIdle).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
@@ -228,7 +213,7 @@ describe("local daemon lifecycle", () => {
     const onIdle = vi.fn()
     let pins = 1
     const activity = () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins })
-    const lifecycle = createLocalDaemonLifecycle({ activity, onStop: onIdle, machine, leaseTtlMs: 20, idleGraceMs: 15, pollIntervalMs: 2 })
+    const lifecycle = createLocalDaemonLifecycle({ activity, onStop: onIdle, machine, idleGraceMs: 15, pollIntervalMs: 2 })
     lifecycle.start()
 
     await wait(50)
@@ -237,15 +222,6 @@ describe("local daemon lifecycle", () => {
     lifecycle.reconcile()
     await wait(20)
     expect(onIdle).toHaveBeenCalledTimes(1)
-  })
-
-  test("an expired lease cannot be renewed", async () => {
-    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine, leaseTtlMs: 15, idleGraceMs: 100, pollIntervalMs: 2 })
-    lifecycle.start()
-    const lease = lifecycle.acquire()!
-    await wait(20)
-    expect(lifecycle.renew(lease.id)).toBeUndefined()
-    lifecycle.stop()
   })
 })
 

@@ -186,10 +186,10 @@ export function localDaemonScopePreview(
   return { sessions, resources, summary: summary.join("; ") }
 }
 
+/** Held for as long as the connection that acquired it stays open. */
 export type LocalDaemonLease = Readonly<{
   id: string
   client: string
-  expiresAt: number
 }>
 
 export type LocalDaemonLifecycle = ReturnType<typeof createLocalDaemonLifecycle>
@@ -286,13 +286,11 @@ export function createLocalDaemonLifecycle(options: {
     /** `workspaceId` is absent when the ownership read itself failed. */
     onLaunchesUnreadable?: (workspaceId: string | undefined, reason: string) => void
   }
-  leaseTtlMs?: number
   idleGraceMs?: number
   pollIntervalMs?: number
   now?: () => number
 }) {
   const activity = options.activity ?? localDaemonWorkActivity
-  const leaseTtlMs = positive(options.leaseTtlMs, 15_000)
   const idleGraceMs = positive(options.idleGraceMs, 180_000)
   const pollIntervalMs = positive(options.pollIntervalMs, 1_000)
   const now = options.now ?? Date.now
@@ -350,12 +348,6 @@ export function createLocalDaemonLifecycle(options: {
     timer = undefined
   }
 
-  function prune(at: number) {
-    for (const [id, lease] of leases) {
-      if (lease.expiresAt <= at) leases.delete(id)
-    }
-  }
-
   function schedule(delayMs = pollIntervalMs) {
     if (state !== "running" && state !== "idle") return
     clearTimer()
@@ -365,7 +357,6 @@ export function createLocalDaemonLifecycle(options: {
 
   function evaluate() {
     const at = now()
-    prune(at)
     const work = activity()
     const residencyPins = work.residencyPins + leases.size
     // The listener can become reachable just before the entrypoint calls
@@ -405,19 +396,14 @@ export function createLocalDaemonLifecycle(options: {
       })
       return
     }
-    const nextExpiry = [...leases.values()].reduce<number | undefined>(
-      (soonest, lease) => soonest === undefined ? lease.expiresAt : Math.min(soonest, lease.expiresAt),
-      undefined,
-    )
-    const untilExpiry = nextExpiry === undefined ? pollIntervalMs : Math.max(1, nextExpiry - current.at)
-    schedule(Math.min(untilExpiry, current.idleRemainingMs ?? pollIntervalMs))
+    schedule(current.idleRemainingMs ?? pollIntervalMs)
   }
 
   function changed() {
     if (state !== "running" && state !== "idle") return
-    // A lease mutation can arrive before the currently scheduled poll fires.
+    // A lease can be acquired or released before the scheduled poll fires.
     // Cancel that poll before evaluating immediately, otherwise `tick()` loses
-    // the only handle to it and every renewal leaves another timer behind.
+    // the only handle to it and every lease change leaves another timer behind.
     clearTimer()
     tick()
   }
@@ -1117,19 +1103,8 @@ export function createLocalDaemonLifecycle(options: {
     },
     acquire(client = "desktop") {
       if (state === "stopping" || state === "stopped" || gate) return undefined
-      const lease = { id: randomUUID(), client, expiresAt: now() + leaseTtlMs }
+      const lease = { id: randomUUID(), client }
       leases.set(lease.id, lease)
-      idleSince = undefined
-      changed()
-      return lease
-    },
-    renew(id: string) {
-      const at = now()
-      prune(at)
-      const current = leases.get(id)
-      if (!current || state === "stopping" || state === "stopped") return undefined
-      const lease = { ...current, expiresAt: at + leaseTtlMs }
-      leases.set(id, lease)
       idleSince = undefined
       changed()
       return lease
@@ -1178,7 +1153,6 @@ export function createLocalDaemonLifecycle(options: {
       return {
         state,
         leases: leases.size,
-        leaseTtlMs,
         idleGraceMs,
         idleSince,
         residencyPins: current.residencyPins,

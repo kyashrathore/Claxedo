@@ -9,12 +9,12 @@ import { readField } from "@claxedo/helpers/readers"
 import { createDaemonFetch } from "./daemon-request"
 
 /**
- * The management protocol both halves must agree on. It is 2 because a daemon
- * now publishes its OS creation identity and answers recovery operations: a
- * launcher built against 1 would read neither, and would fall back to killing a
- * pid it never identified.
+ * The management protocol both halves must agree on. At 3 a lease is held by
+ * the connection that acquired it and has no renewal route, so a launcher
+ * speaking 2 would wait on a lease response that never ends and renew one that
+ * does not exist; the daemon refuses it on the version instead.
  */
-export const CLAXEDO_DAEMON_PROTOCOL = 2
+export const CLAXEDO_DAEMON_PROTOCOL = 3
 export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
 export const CLAXEDO_DAEMON_SERVICE = "claxedo-local-daemon" as const
 

@@ -89,7 +89,6 @@ const lifecycle = createLocalDaemonLifecycle({
         : `workspace ${workspaceId} could not be read for unsettled launches: ${reason}`)
     },
   },
-  ...positiveDuration("CLAXEDO_DAEMON_LEASE_TTL_MS", "leaseTtlMs"),
   ...positiveDuration("CLAXEDO_DAEMON_IDLE_GRACE_MS", "idleGraceMs"),
   ...positiveDuration("CLAXEDO_DAEMON_POLL_INTERVAL_MS", "pollIntervalMs"),
 })
@@ -263,7 +262,7 @@ function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): Diagnos
   return { pid: process.pid, launchId, generation }
 }
 
-function positiveDuration<Key extends "leaseTtlMs" | "idleGraceMs" | "pollIntervalMs">(
+function positiveDuration<Key extends "idleGraceMs" | "pollIntervalMs">(
   envKey: string,
   key: Key,
 ): Partial<Record<Key, number>> {

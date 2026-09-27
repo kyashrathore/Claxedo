@@ -60,7 +60,7 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
       }
       return Response.json({
         service: "claxedo-local-daemon",
-        protocol: 2,
+        protocol: 3,
         generation: identity.generation,
         pid: identity.pid,
         identity: fakeCreationIdentity(identity.pid),
@@ -75,7 +75,7 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
       const pid = overrides.pid ?? identity.pid
       return JSON.stringify({
         service: "claxedo-local-daemon",
-        protocol: 2,
+        protocol: 3,
         generation: identity.generation,
         token: identity.token,
         pid: identity.pid,
@@ -855,9 +855,9 @@ describe("claxedo connect", () => {
 })
 
 describe("desktop daemon discovery", () => {
-  const record: DesktopDaemonDiscovery = { pid: 7, port: 8, token: "t", generation: "g", protocol: 2 }
+  const record: DesktopDaemonDiscovery = { pid: 7, port: 8, token: "t", generation: "g", protocol: 3 }
   const text = (overrides: Record<string, unknown> = {}) =>
-    JSON.stringify({ service: "claxedo-local-daemon", protocol: 2, generation: "g", token: "t", pid: 7, port: 8, startedAt: "now", ...overrides })
+    JSON.stringify({ service: "claxedo-local-daemon", protocol: 3, generation: "g", token: "t", pid: 7, port: 8, startedAt: "now", ...overrides })
 
   test("every channel's data dir is probed, CLAXEDO_DATA_DIR first", () => {
     expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "/data" }, "/home/u")).toEqual([
@@ -909,10 +909,10 @@ describe("desktop daemon discovery", () => {
 
   test("a listener that disagrees about its own process is not live, whichever field differs", async () => {
     const record: DesktopDaemonDiscovery = {
-      pid: 7, port: 8, token: "t", generation: "g", protocol: 2, identity: fakeCreationIdentity(7),
+      pid: 7, port: 8, token: "t", generation: "g", protocol: 3, identity: fakeCreationIdentity(7),
     }
     const answer = (identity: unknown) => async () =>
-      Response.json({ service: "claxedo-local-daemon", protocol: 2, generation: "g", pid: 7, identity })
+      Response.json({ service: "claxedo-local-daemon", protocol: 3, generation: "g", pid: 7, identity })
 
     expect(await verifyDesktopDaemon(record, answer(fakeCreationIdentity(7)))).toBe("live")
     for (const differing of [
@@ -947,12 +947,12 @@ describe("desktop daemon discovery", () => {
   test("verification is the daemon identity route answering with the file's identity for the file's token", async () => {
     const daemon = fakeDesktopDaemon({ pid: 4242, generation: "gen-1", token: "secret" })
     try {
-      const live = { pid: 4242, port: daemon.port, token: "secret", generation: "gen-1", protocol: 2 }
+      const live = { pid: 4242, port: daemon.port, token: "secret", generation: "gen-1", protocol: 3 }
       expect(await verifyDesktopDaemon(live)).toBe("live")
       expect(await verifyDesktopDaemon({ ...live, token: "wrong" }), "401").toBe("unresponsive")
       expect(await verifyDesktopDaemon({ ...live, pid: process.pid }), "another process holds the pid").toBe("unresponsive")
       expect(await verifyDesktopDaemon({ ...live, generation: "gen-0" }), "an older daemon's file").toBe("unresponsive")
-      expect(await verifyDesktopDaemon({ ...live, protocol: 3 })).toBe("unresponsive")
+      expect(await verifyDesktopDaemon({ ...live, protocol: 2 })).toBe("unresponsive")
       await daemon.stop()
       expect(await verifyDesktopDaemon(live), "nothing on the port").toBe("unresponsive")
     } finally {

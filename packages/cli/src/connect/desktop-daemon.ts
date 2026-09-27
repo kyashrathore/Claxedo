@@ -43,7 +43,7 @@ export type DesktopDaemonState =
   | { state: "incompatible"; pid: number; port: number; file: string; protocol: number }
 
 /** The management protocol this build speaks; the desktop's own literal is its other half. */
-export const CLAXEDO_DAEMON_PROTOCOL = 2
+export const CLAXEDO_DAEMON_PROTOCOL = 3
 export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
 
 const DAEMON_SERVICE = "claxedo-local-daemon"

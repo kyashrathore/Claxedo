@@ -640,7 +640,8 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
       })
       if (serverConnection.variant === "daemon") {
         daemonLease = await holdClaxedoDaemonLease(serverConnection.discovery, {
-          onError: (error) => logger.warn("daemon lease renewal failed", { error: String(error) }),
+          onLost: () => logger.warn("the daemon closed this app's lease"),
+          onError: (error) => logger.warn("daemon lease failed", { error: String(error) }),
         })
       }
 

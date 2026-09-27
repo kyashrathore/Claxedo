@@ -99,8 +99,12 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
 
     // Held first: nothing else pins the daemon yet, and the idle grace above
     // is short enough to end it before the terminal exists.
-    const leaseId = id(await json(await daemon("/api/claxedo/daemon/leases", { method: "POST" }), 201), "the daemon lease")
-    record("lease held", `daemon lease ${leaseId}`)
+    const lease = new AbortController()
+    const held = await daemon("/api/claxedo/daemon/leases", { method: "POST", signal: lease.signal })
+    await expectStatus(held, 201)
+    const first = await held.body!.getReader().read()
+    const leaseId = id(JSON.parse(new TextDecoder().decode(first.value)), "the daemon lease")
+    record("lease held", `daemon lease ${leaseId}, held by its open connection`)
 
     const discovery: ClaxedoDaemonDiscovery = JSON.parse(fs.readFileSync(discoveryPath, "utf8"))
     if (discovery.generation !== generation || discovery.pid !== child.pid) {
@@ -130,7 +134,10 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
       "the terminal to appear in the machine inventory")
     record("terminal owned", `terminal:${ptyId}`)
 
-    await json(await daemon(`/api/claxedo/daemon/leases/${leaseId}`, { method: "DELETE" }), 200)
+    const pinned = (await inspectMachine(daemon)).residencyPins
+    lease.abort()
+    await until(async () => (await inspectMachine(daemon)).residencyPins === pinned - 1,
+      "closing the lease connection to release the lease")
     await Bun.sleep(IDLE_GRACE_MS * 3)
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`the daemon exited after a handoff release while a terminal was still running:\n${stderr.slice(-2000)}`)

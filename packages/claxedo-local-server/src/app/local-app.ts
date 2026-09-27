@@ -415,19 +415,26 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
       if (refused) return refused
       const lease = lifecycle.acquire(c.req.header("x-claxedo-daemon-client")?.trim() || "desktop")
       if (!lease) return c.json({ error: { code: "daemon_stopping", message: "Daemon is stopping" } }, 409)
-      return c.json(lease, 201)
-    })
-    app.put("/api/claxedo/daemon/leases/:leaseId", (c) => {
-      const refused = guard(c)
-      if (refused) return refused
-      const lease = lifecycle.renew(c.req.param("leaseId"))
-      if (!lease) return c.json({ error: { code: "daemon_lease_not_found", message: "Daemon lease was not found" } }, 404)
-      return c.json(lease)
-    })
-    app.delete("/api/claxedo/daemon/leases/:leaseId", (c) => {
-      const refused = guard(c)
-      if (refused) return refused
-      return c.json({ released: lifecycle.release(c.req.param("leaseId")) })
+      const closed = c.req.raw.signal
+      let open = true
+      const held = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify(lease)}\n`))
+          const release = () => {
+            lifecycle.release(lease.id)
+            if (!open) return
+            open = false
+            controller.close()
+          }
+          if (closed.aborted) release()
+          else closed.addEventListener("abort", release, { once: true })
+        },
+        cancel() {
+          open = false
+          lifecycle.release(lease.id)
+        },
+      })
+      return new Response(held, { status: 201, headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" } })
     })
   }
 

@@ -138,10 +138,13 @@ describe("startLocalServer", () => {
       [DAEMON_CAPABILITY_HEADER]: "shutdown-test",
       [DAEMON_PROTOCOL_HEADER]: "1",
     }
-    const acquired = await fetch(`${base}/leases`, { method: "POST", headers })
+    const connection = new AbortController()
+    const acquired = await fetch(`${base}/leases`, { method: "POST", headers, signal: connection.signal })
     expect(acquired.status).toBe(201)
-    const lease = await acquired.json() as { id: string }
-    expect((await fetch(`${base}/leases/${lease.id}`, { method: "DELETE", headers })).status).toBe(200)
+    await acquired.body!.getReader().read()
+    expect(lifecycle.snapshot().leases).toBe(1)
+    connection.abort()
+    await expect.poll(() => lifecycle.snapshot().leases, { message: "the lease goes with its connection" }).toBe(0)
 
     const inspected = await (await fetch(`${base}/recovery`, { headers })).json() as {
       scopeRevision: string

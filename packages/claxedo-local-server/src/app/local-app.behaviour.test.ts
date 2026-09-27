@@ -318,20 +318,19 @@ describe("local composition — health and telemetry", () => {
       pid: 42,
     })
 
+    const connection = new AbortController()
     const acquired = await local.request("http://localhost/api/claxedo/daemon/leases", {
       method: "POST",
       headers: { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" },
+      signal: connection.signal,
     })
     expect(acquired.status).toBe(201)
-    const lease = await acquired.json() as { id: string }
-    expect((await local.request(`http://localhost/api/claxedo/daemon/leases/${lease.id}`, {
-      method: "PUT",
-      headers: { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" },
-    })).status).toBe(200)
-    expect(await (await local.request(`http://localhost/api/claxedo/daemon/leases/${lease.id}`, {
-      method: "DELETE",
-      headers: { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" },
-    })).json()).toEqual({ released: true })
+    const first = await acquired.body!.getReader().read()
+    const lease = JSON.parse(new TextDecoder().decode(first.value)) as { id: string }
+    expect(lease.id).toBeTruthy()
+    expect(lifecycle.snapshot().leases, "held while the connection is open").toBe(1)
+    connection.abort()
+    expect(lifecycle.snapshot().leases, "released when the connection closes").toBe(0)
 
     // A caller that does not state the protocol is one built before this
     // daemon's, and is told so rather than served.
