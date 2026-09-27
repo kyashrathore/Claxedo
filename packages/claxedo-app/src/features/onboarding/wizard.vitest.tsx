@@ -54,9 +54,6 @@ vi.mock("@/features/onboarding/app-ports", async () => {
     error: () => undefined,
     refresh: async () => undefined,
   }),
-  workspaceSandboxDriversUrl: () => "http://server.test/api/workspace/drivers",
-  workspaceSandboxDriverAuthUrl: () => "http://server.test/api/workspace/drivers/x/auth",
-  SandboxDriverLogo: () => <span />,
   }
 })
 
@@ -64,7 +61,7 @@ vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}")
 
 const { OnboardingWizard } = await import("./wizard")
 
-function mount(input: { localExecution: boolean }) {
+function mount(input: { localExecution: boolean; cloudAvailable?: boolean }) {
   const events: OnboardingFunnelEvent[] = []
   const opened: Array<{ id: string; worktree: string }> = []
   const cloud: Array<{ projectName: string; source: ProjectSource }> = []
@@ -73,6 +70,7 @@ function mount(input: { localExecution: boolean }) {
     <OnboardingWizard
       baseUrl="http://server.test"
       localExecution={localExecution()}
+      cloudAvailable={input.cloudAvailable ?? !localExecution()}
       emit={(event) => events.push(event)}
       onProjectCreated={(project) => opened.push(project)}
       createCloudWorkspace={async (draft) => {
@@ -100,6 +98,35 @@ afterEach(() => {
 })
 
 describe("OnboardingWizard on a desktop", () => {
+  test("unsigned onboarding has no cloud option", async () => {
+    mount({ localExecution: true, cloudAvailable: false })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    expect(screen.queryByRole("radio", { name: /A cloud sandbox/ })).toBeNull()
+  })
+
+  test("signed onboarding finishes the selected cloud workspace instead of a local project", async () => {
+    fixture.source = { kind: "repository", repoUrl: "https://github.com/acme/widgets" }
+    const { cloud, opened } = mount({ localExecution: true, cloudAvailable: true })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("radio", { name: /A cloud sandbox/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }))
+    await waitFor(() => expect(cloud).toEqual([{ projectName: "widgets", source: fixture.source }]))
+    expect(fixture.created).toEqual([])
+    expect(opened).toEqual([])
+  })
+
+  test("a local folder cannot finish as a cloud sandbox", () => {
+    const { cloud, opened } = mount({ localExecution: true, cloudAvailable: true })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("radio", { name: /A cloud sandbox/ }))
+    expect(screen.getByRole("button", { name: "Create workspace" })).toBeDisabled()
+    expect(reason()).toBe("Choose a repository instead of a local folder to create a cloud sandbox.")
+    expect(cloud).toEqual([])
+    expect(opened).toEqual([])
+  })
   test("walks project → AI → where it runs and creates the project only at Finish", async () => {
     const { events, opened } = mount({ localExecution: true })
     expect(events).toEqual([{ name: "setup_form_shown" }])
@@ -205,7 +232,7 @@ describe("OnboardingWizard on a desktop", () => {
   })
 
   test("a step is shown again as it was left: each mounts once and is hidden, not rebuilt, while another is open", () => {
-    mount({ localExecution: true })
+    mount({ localExecution: true, cloudAvailable: true })
     const panel = (id: string) => document.querySelector<HTMLElement>(`[data-step-panel="${id}"]`)
     const url = screen.getByLabelText<HTMLInputElement>("Repository URL")
     fireEvent.input(url, { target: { value: "https://github.com/acme/widgets" } })
@@ -285,6 +312,7 @@ describe("OnboardingWizard on the hosted plane", () => {
 
   test("a server that declares itself hosted after the wizard mounted still preselects the cloud row", async () => {
     fixture.connected = { pi: ["anthropic"] }
+    fixture.source = { kind: "repository", repoUrl: "https://github.com/acme/widgets" }
     const { setLocalExecution } = mount({ localExecution: true })
     setLocalExecution(false)
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))

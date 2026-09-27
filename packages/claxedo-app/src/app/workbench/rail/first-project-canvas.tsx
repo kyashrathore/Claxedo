@@ -12,6 +12,7 @@ import { OnboardingWizard } from "@/features/onboarding/wizard"
 import { refreshProjectInventory } from "@/features/workspaces/data/query/project-ensure"
 import { cloudWorkspaceSource, createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
 import { workspaceSessionRoute } from "@/platform/identity/route"
+import { useAccountPort } from "@/platform/account/account-provider"
 
 import "./first-project-canvas.css"
 
@@ -28,6 +29,7 @@ export function FirstProjectCanvas(props: {
   onProjectCreated?: (project: NewSessionProjectSelection) => void
 }) {
   const server = useServer()
+  const account = useAccountPort()
   const dialog = useDialog()
   const layout = useLayout()
   const navigate = useNavigate()
@@ -63,19 +65,18 @@ export function FirstProjectCanvas(props: {
           <OnboardingWizard
             baseUrl={server.url}
             localExecution={localExecution()}
+            cloudAvailable={account.state().status === "signed"}
             pickFolder={pickProjectFolderWith(dialog)}
             emit={(event) => funnel.emit(event)}
             leadField={(element) => (leadField = element)}
             onProjectCreated={(project) => props.onProjectCreated?.({ id: project.id, worktree: project.worktree })}
             createCloudWorkspace={async (input) => {
-              // The hosted plane's project is its first cloud workspace; the
-              // route it lands on shows the sandbox coming up.
               const created = await createCloudWorkspace({
                 baseUrl: server.url,
                 projectName: input.projectName,
                 ...cloudWorkspaceSource(input.source),
               })
-              await refreshProjectInventory(queryOptions.projects()).catch(() => undefined)
+              await refreshProjectInventory(queryOptions.projects())
               navigate(workspaceSessionRoute(created.workspaceId))
             }}
             footer={

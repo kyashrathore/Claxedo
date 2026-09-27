@@ -13,6 +13,10 @@ const health = vi.hoisted(() => ({
   release: undefined as (() => void) | undefined,
 }))
 const posture = vi.hoisted(() => ({ issuesSessions: false as boolean | undefined }))
+const account = vi.hoisted(() => ({ status: "unsigned" }))
+vi.mock("@/platform/account/account-provider", () => ({
+  useAccountPort: () => ({ state: () => ({ status: account.status }) }),
+}))
 const createIntent = vi.hoisted(() => ({ pending: false, bump: () => {}, answer: () => {} }))
 const wizard = vi.hoisted(() => ({ props: undefined as WizardProps | undefined }))
 const funnel = vi.hoisted(() => ({ events: [] as string[] }))
@@ -120,6 +124,7 @@ const renderCanvas = (props: Parameters<typeof FirstProjectCanvas>[0] = {}) =>
   ))
 
 afterEach(() => {
+  account.status = "unsigned"
   health.localExecution = true
   health.held = false
   health.release = undefined
@@ -133,6 +138,11 @@ afterEach(() => {
 })
 
 describe("FirstProjectCanvas", () => {
+  test.each(["unsigned", "pending", "unavailable", "signed"])("reads cloud availability from the %s account authority", async (status) => {
+    account.status = status
+    renderCanvas()
+    await waitFor(() => expect(wizard.props?.cloudAvailable).toBe(status === "signed"))
+  })
   test("hosts the wizard as the whole screen, on the server's own account of local execution", async () => {
     renderCanvas()
     expect(screen.getByTestId("first-project-canvas")).toBeTruthy()

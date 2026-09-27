@@ -95,8 +95,6 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest, and the harness auth entry is dropped through the local server's own `/auth/:providerId`; hosted account identity stays on account-section.",
   "features/settings/ui/sandbox-section.tsx":
     "Sandbox driver settings talk only to the local sidecar `/api/workspace/drivers*`; not a Hosted Server AccountPort surface.",
-  "features/onboarding/sandbox-provider-api.ts":
-    "Onboarding sandbox write path is local-sidecar drivers; Hosted Server does not own these credentials.",
   "features/settings/data/connected-apps-api.ts":
     "Connected applications read and revoke OAuth consents at the authorization server's own `/api/auth/oauth2/*` endpoints, which authenticate a BROWSER session (cookie, or the bearer plugin's session token). The desktop's AccountPort credential is an OAuth access token for the control-plane resource, which those endpoints do not accept, so this is not a Hosted Server AccountPort surface.",
   "features/workspaces/data/share-workspace.ts":

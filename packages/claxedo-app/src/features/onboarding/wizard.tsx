@@ -60,13 +60,13 @@ const STEPS: ReadonlyArray<{
 export const OnboardingWizard: Component<{
   baseUrl: string
   localExecution: boolean
+  cloudAvailable: boolean
   pickFolder?: () => Promise<string | undefined>
   emit: (event: OnboardingFunnelEvent) => void
   /** Handed the control that leads the current step, so the host can focus it. */
   leadField?: (element: HTMLElement) => void
   /** A desktop: the project Finish created; the host opens it. */
   onProjectCreated: (project: { id: string; worktree: string }) => void
-  /** The hosted plane: the host creates the workspace from the draft and opens it. */
   createCloudWorkspace: (input: { projectName: string; source: ProjectSource }) => Promise<void>
   footer?: JSX.Element
 }> = (props) => {
@@ -119,11 +119,11 @@ export const OnboardingWizard: Component<{
 
   const finish = async () => {
     const held = draft()
-    if (!held || finishing()) return
+    if (!held || finishing() || !executionReady()) return
     setFinishing(true)
     setFailure(undefined)
     try {
-      if (props.localExecution) {
+      if (choice() !== "cloud" && props.localExecution) {
         const project = await createProject({ baseUrl: props.baseUrl, source: held.source }).catch(async (error: unknown) => {
           // A folder this server already holds as a project is that project:
           // open it rather than refuse, since picking it again says as much.
@@ -158,14 +158,18 @@ export const OnboardingWizard: Component<{
         : "Save a key for one provider to continue."
     }
     if (step() === "execution" && !executionReady()) {
-      if (choice() === "cloud") return "Save a sandbox key the provider accepts to finish here."
+      if (choice() === "cloud") {
+        if (!props.cloudAvailable) return "Sign in to a control plane to create a cloud sandbox."
+        if (draft()?.source.kind === "directory") return "Choose a repository instead of a local folder to create a cloud sandbox."
+      }
       return "Pick the cloud sandbox to finish; a connected machine cannot take this repository yet."
     }
     return undefined
   }
   const finishLabel = () => {
-    if (finishing()) return props.localExecution ? "Creating project…" : "Creating workspace…"
-    return props.localExecution ? "Open project" : "Create workspace"
+    const local = props.localExecution && choice() !== "cloud"
+    if (finishing()) return local ? "Creating project…" : "Creating workspace…"
+    return local ? "Open project" : "Create workspace"
   }
 
   return (
@@ -219,11 +223,11 @@ export const OnboardingWizard: Component<{
             <Show when={visited().has("execution")}>
               <div hidden={step() !== "execution"} data-step-panel="execution">
                 <ExecutionStep
-                  baseUrl={props.baseUrl}
                   localExecution={props.localExecution}
+                  cloudAvailable={props.cloudAvailable}
                   choice={choice()}
                   onChoice={setChosen}
-                  onReady={setExecutionReady}
+                  onReady={(ready) => setExecutionReady(ready && (choice() !== "cloud" || draft()?.source.kind === "repository"))}
                 />
               </div>
             </Show>

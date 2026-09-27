@@ -20,6 +20,7 @@ import {
   listStoredCredentials,
   removeCredential,
   runProviderDetect,
+  patchCredentialScope,
   type EffectiveCredential,
   type HarnessAccount,
   type StoredCredential,
@@ -114,6 +115,8 @@ const machineAccountsInput = {
     const [checking, setChecking] = createSignal<string>()
     const [selecting, setSelecting] = createSignal<string>()
     const [removing, setRemoving] = createSignal<string>()
+    const [scopeUpdating, setScopeUpdating] = createSignal<string>()
+    const [scopeErrors, setScopeErrors] = createSignal<Record<string, string | undefined>>({})
 
     const fail = (err: unknown) => {
       showToast({
@@ -276,6 +279,14 @@ const machineAccountsInput = {
           // worth a line, so the row carries it where a full value belongs.
           ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
           reach: accountReach(row.delivery),
+          cloudConsent: row.delivery === undefined ? undefined : {
+            allowed: row.scope === "shared",
+            partial: row.partialCloudConsent,
+            deliverable: row.delivery.cloud && row.scope !== undefined,
+            reason: row.delivery.reason,
+            busy: scopeUpdating() !== undefined,
+            error: scopeErrors()[row.id],
+          },
           selected: selected === row.id,
         }
       })
@@ -467,6 +478,26 @@ const machineAccountsInput = {
       return row !== undefined && !refused(accountCheck(row))
     }
 
+    const setCloudConsent = async (account: AgentAccount, allowed: boolean) => {
+      if (scopeUpdating() || !account.cloudConsent?.deliverable) return
+      setScopeUpdating(account.key)
+      setScopeErrors((previous) => ({ ...previous, [account.key]: undefined }))
+      try {
+        for (const id of account.ids) {
+          const scope = await patchCredentialScope(id, allowed ? "shared" : "local")
+          setStored((rows) => rows.map((row) => row.id === id ? { ...row, scope } : row))
+        }
+      } catch (error) {
+        setScopeErrors((previous) => ({
+          ...previous,
+          [account.key]: error instanceof Error ? error.message : String(error),
+        }))
+      } finally {
+        forgetProviderDetect()
+        setScopeUpdating(undefined)
+      }
+    }
+
     return {
       scanning,
       opened,
@@ -480,6 +511,7 @@ const machineAccountsInput = {
       checking,
       remove,
       removing,
+      setCloudConsent,
     }
   },
 }

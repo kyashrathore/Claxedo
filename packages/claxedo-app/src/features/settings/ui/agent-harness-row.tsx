@@ -3,6 +3,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Switch } from "@opencode-ai/ui/switch"
 import { createSignal, For, onMount, Show, type Component, type JSX } from "solid-js"
 import { DialogProviderConnect } from "@/features/settings/ui/dialog-provider-connect"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
@@ -50,6 +51,14 @@ export type AgentAccount = {
   identity?: string
   /** Where the authority says a turn on this account can run, where anywhere. */
   reach?: AccountReach
+  cloudConsent?: {
+    allowed: boolean
+    partial: boolean
+    deliverable: boolean
+    reason?: string
+    busy: boolean
+    error?: string
+  }
   selected: boolean
   /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
@@ -85,6 +94,7 @@ export const AgentHarnessRow: Component<{
   onRemove: (credentialIds: readonly string[]) => void | Promise<void>
   /** The entry whose removal is in flight. */
   removing?: string
+  onCloudConsent?: (account: AgentAccount, allowed: boolean) => void | Promise<void>
   onConnected?: () => void | Promise<void>
   /** Set where the surrounding surface already names the harness. */
   headerless?: boolean
@@ -320,6 +330,27 @@ export const AgentHarnessRow: Component<{
                     ? undefined
                     : <span class="text-13-regular text-text-weak">{account.detail}</span>}
                 >
+                  <Show when={account.cloudConsent}>
+                    {(consent) => (
+                      <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+                        <Show when={consent().deliverable} fallback={consent().reason}>
+                          <Switch
+                            checked={consent().allowed}
+                            disabled={consent().busy}
+                            onChange={(allowed) => void props.onCloudConsent?.(account, allowed)}
+                          >
+                            Allow in cloud sandboxes
+                          </Switch>
+                          <Show when={consent().partial}>
+                            <span>Cloud use is allowed for some harness bindings.</span>
+                          </Show>
+                        </Show>
+                        <Show when={consent().error}>
+                          {(error) => <span role="alert" class="text-icon-warning-base">{error()}</span>}
+                        </Show>
+                      </div>
+                    )}
+                  </Show>
                   <span class="relative flex shrink-0 items-center justify-end">
                     <Show when={account.checkedAt}>
                       {(at) => (

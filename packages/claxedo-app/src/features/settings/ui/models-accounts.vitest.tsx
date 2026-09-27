@@ -6,7 +6,7 @@ const clients = new Set<QueryClient>()
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { harnessBindingIds, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
-import { readField, readStringArray } from "@/lib/record"
+import { readField, readString, readStringArray } from "@/lib/record"
 import { queryClient } from "@/platform/query/query-client"
 
 type CatalogProject = {
@@ -46,6 +46,9 @@ const state = vi.hoisted(() => ({
   projects: [] as CatalogProject[],
   /** What the credential store already holds, as the list route reports it. */
   storedCredentials: [] as Array<Record<string, unknown>>,
+  scopeFailure: false,
+  scopeFailureId: undefined as string | undefined,
+  scopeReply: undefined as "local" | "shared" | undefined,
   /** Every activate call's body, in order. */
   activated: [] as string[][],
   /** Every credential row the page asked the store to forget, in order. */
@@ -209,6 +212,13 @@ afterAll(() => {
 globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input))
   state.credentialCalls.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`)
+  if (init?.method === "PATCH" && url.pathname.endsWith("/scope")) {
+    const id = decodeURIComponent(url.pathname.split("/").at(-2)!)
+    if (state.scopeFailure || state.scopeFailureId === id) return Response.json({ error: { message: "Cloud consent could not be saved" } }, { status: 500 })
+    const scope = state.scopeReply ?? readString(requestJson(init), "scope")
+    state.storedCredentials = state.storedCredentials.map((row) => row.id === id ? { ...row, scope } : row)
+    return Response.json({ ok: true, scope })
+  }
   if (url.pathname === "/api/claxedo/credentials") {
     return new Response(JSON.stringify({ credentials: state.storedCredentials }))
   }
@@ -434,6 +444,9 @@ beforeEach(() => {
   state.dialogs.length = 0
   state.toasts.length = 0
   state.storedCredentials = []
+  state.scopeFailure = false
+  state.scopeFailureId = undefined
+  state.scopeReply = undefined
   state.activated.length = 0
   state.removed.length = 0
   state.machineActivated.length = 0
@@ -912,6 +925,68 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountReachIcons("openai", "cred_codex")).toEqual(["monitor", "cloud"])
     expect(accountReachIcons("openai", "cred_codex_companion")).toEqual(["monitor"])
     expect(accountReachIcons("openai", "machine")).toEqual(["monitor"])
+    expect(accountRow("openai", "cred_codex_companion").textContent).toContain("needs a companion header")
+    expect(accountRow("openai", "cred_codex_companion").querySelector('[role="switch"]')).toBeNull()
+  })
+
+  test("cloud consent updates every stored binding and renders the returned scope", async () => {
+    state.storedCredentials = ["claude-sdk", "claude-acp"].map((provider_id) => ({
+      id: provider_id, provider_id, account_id: "account", label: "Work", is_active: true,
+      scope: "local", deliverable: { local: true, cloud: true },
+    }))
+    mount()
+    const toggle = () => screen.getByRole("switch", { name: "Allow in cloud sandboxes" })
+    await waitFor(() => expect(toggle()).not.toBeChecked())
+    fireEvent.click(toggle())
+    await waitFor(() => expect(toggle()).toBeChecked())
+    await waitFor(() => expect(toggle()).not.toBeDisabled())
+    expect(state.credentialCalls).toContain("PATCH /api/claxedo/credentials/claude-sdk/scope")
+    expect(state.credentialCalls).toContain("PATCH /api/claxedo/credentials/claude-acp/scope")
+    expect(state.storedCredentials.map((row) => row.scope)).toEqual(["shared", "shared"])
+    state.scopeReply = "shared"
+    fireEvent.click(toggle())
+    await waitFor(() => expect(toggle()).not.toBeDisabled())
+    expect(toggle()).toBeChecked()
+    state.scopeReply = undefined
+    fireEvent.click(toggle())
+    await waitFor(() => expect(toggle()).not.toBeChecked())
+  })
+
+  test.each(["local", "shared"])("a failed consent write preserves %s and shows the route error", async (scope) => {
+    state.storedCredentials = [{
+      id: "cred", provider_id: "codex-app-server", is_active: true,
+      scope, deliverable: { local: true, cloud: true },
+    }]
+    state.scopeFailure = true
+    mount()
+    const toggle = () => screen.getByRole("switch", { name: "Allow in cloud sandboxes" })
+    await waitFor(() => expect(toggle()).toHaveAttribute("aria-checked", String(scope === "shared")))
+    fireEvent.click(toggle())
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Cloud consent could not be saved"))
+    expect(toggle()).toHaveAttribute("aria-checked", String(scope === "shared"))
+    expect(toggle()).not.toBeDisabled()
+    expect(state.storedCredentials[0]?.scope).toBe(scope)
+  })
+
+  test("a partially saved binding stays visibly allowed and can be revoked", async () => {
+    state.storedCredentials = ["claude-sdk", "claude-acp"].map((provider_id) => ({
+      id: provider_id, provider_id, account_id: "account", label: "Work", is_active: true,
+      scope: "local", deliverable: { local: true, cloud: true },
+    }))
+    state.scopeFailureId = "claude-acp"
+    mount()
+    const toggle = () => screen.getByRole("switch", { name: "Allow in cloud sandboxes" })
+    await waitFor(() => expect(toggle()).not.toBeChecked())
+    fireEvent.click(toggle())
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Cloud consent could not be saved"))
+    expect(toggle()).toBeChecked()
+    expect(screen.getByText("Cloud use is allowed for some harness bindings.")).toBeTruthy()
+    state.scopeFailureId = undefined
+    fireEvent.click(toggle())
+    await waitFor(() => expect(toggle()).not.toBeChecked())
+    await waitFor(() => expect(toggle()).not.toBeDisabled())
+    expect(state.storedCredentials.map((row) => row.scope)).toEqual(["local", "local"])
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 
   test("this computer's login is not a choice while the harness runs on a binding it cannot drive", async () => {
