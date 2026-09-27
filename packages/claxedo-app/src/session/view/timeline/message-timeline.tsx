@@ -19,7 +19,7 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, unwrap } from "solid-js/store"
 import { createVirtualizer, elementScroll, type Range } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
 import { assistantMessageSettled, isSubagentToolPart } from "@claxedo/agent-runtime-contract/turn-fold"
@@ -400,10 +400,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
           whileOnScreen(props.onScreen, () => {
             const conversation = sessionConversation()
             const parts: Record<string, PartType[]> = {
-              [userMessage.id]: conversation?.parts[userMessage.id] ?? emptyParts,
+              [userMessage.id]: unwrap(conversation?.parts[userMessage.id]) ?? emptyParts,
             }
             for (const message of turnAssistants()) {
-              parts[message.id] = conversation?.parts[message.id] ?? emptyParts
+              parts[message.id] = unwrap(conversation?.parts[message.id]) ?? emptyParts
             }
             return parts
           }),
@@ -431,6 +431,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
           { equals: sameTurnOutcome },
         )
         const settling = createMemo(() => turnSettleRefreshPending(userMessage.id))
+        const thinkingHeading = createMemo(() => {
+          if (!isActive() || (turnStatus() !== "working" && !settling())) return undefined
+          const conversation = sessionConversation()
+          return Timeline.reasoningHeadingOf(turnAssistants().flatMap((message) => conversation?.parts[message.id] ?? emptyParts))
+        })
         const textParts = createMemo(
           () => {
             const conversation = sessionConversation()
@@ -465,6 +470,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             (partId) => toolOpen[partId] === true || toolRevealed[partId] === true,
             settling(),
             (messageId) => fragments().includes(messageId),
+            thinkingHeading(),
           )
           const fold = rows.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")
           if (fold) shownFoldCounts.set(userMessage.id, fold.foldCount)

@@ -102,6 +102,7 @@ export namespace Timeline {
     isPartExpanded: (partId: string) => boolean = () => false,
     settlePending = false,
     partsFragment: (messageId: string) => boolean = () => false,
+    thinkingHeading?: string,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -263,15 +264,10 @@ export namespace Timeline {
       (trailingGroup.type !== "part" || trailingPart?.type === "tool" || trailingPart?.type === "reasoning")
     const newestOpen = !lastAssistantMessage || !assistantMessageSettled(lastAssistantMessage)
     if (isActive && (status === "working" || settlePending) && newestOpen && !error && !trailingGroupIsLive) {
-      const heading = assistantMessages
-        .flatMap((message) => getMessageParts(message.id))
-        .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
-        .find((value): value is string => !!value)
-
       rows.push(
         TimelineRow.Thinking({
           userMessageId: userMessage.id,
-          reasoningHeading: heading,
+          reasoningHeading: thinkingHeading,
         }),
       )
     }
@@ -316,6 +312,12 @@ export namespace Timeline {
     }
 
     return rows
+  }
+
+  export function reasoningHeadingOf(parts: readonly Part[]): string | undefined {
+    return parts
+      .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
+      .find((value): value is string => !!value)
   }
 
   function reasoningHeading(text: string) {
