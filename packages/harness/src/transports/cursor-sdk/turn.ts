@@ -88,6 +88,7 @@ export type CursorRun = {
 }
 
 export async function* streamCursorRun(input: CursorRun): AsyncIterable<RoutedEvent> {
+  input.broker.signal.throwIfAborted()
   const queue = new AsyncPushQueue<HostReply>()
   const runtime = createAgentEventRuntime({ harness: "cursor", threadId: input.session.sessionId, adapter: cursorSdkAdapter() })
   const onAbort = () => {

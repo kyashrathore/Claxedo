@@ -1,5 +1,5 @@
 import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
-import { configOptionsPreview } from "../../contract"
+import { applySessionConfigUpdate, configOptionsPreview } from "../../contract"
 import { codexModelOptions, type CodexModel } from "./models"
 import { codexModeState, requireCodexMode } from "./modes"
 
@@ -14,18 +14,7 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
     read: async (session) => input.entry(session).start.config,
     update: async (session, update) => {
       const entry = input.entry(session)
-      entry.start = { ...entry.start, config: { ...entry.start.config,
-        ...(update.harness !== undefined ? { harness: update.harness } : {}),
-        ...(update.permissionCeiling !== undefined ? { permissionCeiling: update.permissionCeiling } : {}),
-        ...(update.permissionMode !== undefined ? { permissionMode: update.permissionMode ?? undefined } : {}),
-        ...(update.permissionState !== undefined ? { permissionState: update.permissionState ?? undefined } : {}),
-        ...(update.model !== undefined ? { model: update.model ?? undefined } : {}),
-        ...(update.variant !== undefined ? { variant: update.variant ?? undefined } : {}),
-        ...(update.agent !== undefined ? { agent: update.agent ?? undefined } : {}),
-        ...(update.instructions !== undefined ? { instructions: update.instructions ?? undefined } : {}),
-        ...(update.group !== undefined ? { group: update.group ?? undefined } : {}),
-        ...(update.handoff !== undefined ? { handoff: update.handoff ?? undefined } : {}),
-      } }
+      entry.start = { ...entry.start, config: applySessionConfigUpdate(entry.start.config, update) }
       return entry.start.config
     },
     options: async (target, mode) => {

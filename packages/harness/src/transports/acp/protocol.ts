@@ -40,13 +40,14 @@ function acpAttachmentBlock(file: PromptFile | MaterializedFile, index: number, 
 }
 
 export async function acpPrompt(turn: TurnInput, delivery: AcpPromptDelivery): Promise<ContentBlock[]> {
-  const { files } = promptFiles(turn, acpAttachmentError)
+  const { files, references } = promptFiles(turn, acpAttachmentError)
   const attachments: (PromptFile | MaterializedFile)[] = []
   for (const file of files) attachments.push(delivery.sharedDirectory ? await materializeAttachment(delivery.sharedDirectory, file, acpAttachmentError) : file)
   const lines = attachments.flatMap((file) => "path" in file ? [attachmentPathLine(file)] : [])
   const text = [flattenTurnPrompt(turn, { separator: "\n\n", system: "prefix" }), ...lines].filter(Boolean).join("\n")
   const blocks: ContentBlock[] = text ? [{ type: "text", text }] : []
   attachments.forEach((file, index) => blocks.push(acpAttachmentBlock(file, index, delivery.capabilities)))
+  for (const uri of references) blocks.push({ type: "resource_link", uri, name: uri })
   return blocks
 }
 

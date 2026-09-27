@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { HoldableCountdown, errorMessage, settleAtRequestDeadline, singleFlightUntil, stringRecord } from "@claxedo/helpers"
+import { HoldableCountdown, createKeyedSerializer, errorMessage, settleAtRequestDeadline, singleFlightUntil, stringRecord } from "@claxedo/helpers"
 import type { Clock, Deadline, HarnessServices, Logger, OwnedProcess } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
@@ -113,32 +113,57 @@ type Slot = { host: CursorHost; users: number }
 
 export class CursorHostRegistry {
   private readonly hosts = new Map<string, Slot>()
+  private readonly serial = createKeyedSerializer()
+  private readonly disposal = new AbortController()
+  private readonly signal: AbortSignal
 
-  constructor(private readonly services: HarnessServices, private readonly env: NodeJS.ProcessEnv, private readonly signal: AbortSignal) {}
+  constructor(private readonly services: HarnessServices, private readonly env: NodeJS.ProcessEnv, signal: AbortSignal) {
+    this.signal = AbortSignal.any([signal, this.disposal.signal])
+  }
 
-  private async spawn(key: CursorHostKey): Promise<CursorHost> {
+  private unavailable() {
+    return new TransportError("cursor", "worker", "Cursor SDK host registry disposed")
+  }
+
+  private async spawn(key: CursorHostKey, signal: AbortSignal): Promise<CursorHost> {
     const owned = await this.services.spawn({ file: process.execPath, args: [HOST_SCRIPT], cwd: key.home,
-      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", signal: this.signal })
-    return new CursorHost(owned, this.services.clock, this.services.log)
+      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", signal })
+    const host = new CursorHost(owned, this.services.clock, this.services.log)
+    if (signal.aborted) {
+      try { await host.retire() }
+      catch (error) {
+        this.services.log.error("Cursor late host retirement failed", { error: errorMessage(error) })
+        throw error
+      }
+      throw this.unavailable()
+    }
+    return host
   }
 
   private async live(key: CursorHostKey): Promise<Slot> {
+    if (this.signal.aborted) throw this.unavailable()
     const id = cursorHostId(key)
     const current = this.hosts.get(id)
     if (current && !current.host.failed) return current
-    const slot = { host: await this.spawn(key), users: current?.users ?? 0 }
+    if (current) await current.host.retire()
+    const abandoned = new AbortController()
+    const spawning = this.spawn(key, AbortSignal.any([this.signal, abandoned.signal]))
+    const host = await settleAtRequestDeadline("Cursor host spawn", { deadlineAt: this.services.clock.now() + COMMAND_MS, signal: this.signal },
+      spawning, () => abandoned.abort(), (_what, aborted) => aborted ? this.unavailable()
+        : new TransportError("cursor", "worker", "Cursor SDK host spawn exceeded its deadline"))
+    if (this.signal.aborted) { await host.retire(); throw this.unavailable() }
+    const slot = { host, users: 0 }
     this.hosts.set(id, slot)
     return slot
   }
 
-  async acquire(key: CursorHostKey): Promise<CursorHost> {
-    const slot = await this.live(key)
-    slot.users += 1
-    return slot.host
-  }
-
-  current(key: CursorHostKey): Promise<CursorHost> {
-    return this.live(key).then((slot) => slot.host)
+  acquire(key: CursorHostKey): Promise<CursorHost> {
+    return this.serial.run(cursorHostId(key), async () => {
+      const slot = await this.live(key)
+      if (this.signal.aborted) throw this.unavailable()
+      slot.users += 1
+      return slot.host
+    })
   }
 
   existing(key: CursorHostKey): CursorHost | undefined {
@@ -146,27 +171,23 @@ export class CursorHostRegistry {
     return slot && !slot.host.failed ? slot.host : undefined
   }
 
-  async release(key: CursorHostKey): Promise<void> {
-    const id = cursorHostId(key)
-    const slot = this.hosts.get(id)
-    if (!slot) return
-    slot.users = Math.max(0, slot.users - 1)
-    if (slot.users > 0) return
-    this.hosts.delete(id)
-    await slot.host.retire()
-  }
-
-  async replace(key: CursorHostKey): Promise<void> {
-    const id = cursorHostId(key)
-    const slot = this.hosts.get(id)
-    if (!slot) return
-    this.hosts.delete(id)
-    await slot.host.retire()
+  release(key: CursorHostKey, host: CursorHost): Promise<void> {
+    return this.serial.run(cursorHostId(key), async () => {
+      const id = cursorHostId(key)
+      const slot = this.hosts.get(id)
+      if (!slot || slot.host !== host) return
+      slot.users -= 1
+      if (slot.users > 0) return
+      await slot.host.retire()
+      if (this.hosts.get(id) === slot) this.hosts.delete(id)
+    })
   }
 
   async dispose(): Promise<void> {
-    const slots = [...this.hosts.values()]
-    this.hosts.clear()
-    await Promise.all(slots.map((slot) => slot.host.retire()))
+    this.disposal.abort()
+    await Promise.all([...this.hosts].map(async ([id, slot]) => {
+      await slot.host.retire()
+      if (this.hosts.get(id) === slot) this.hosts.delete(id)
+    }))
   }
 }

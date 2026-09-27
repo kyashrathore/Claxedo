@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { Clock, Deadline, OwnedProcess } from "../../contract"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
@@ -62,10 +63,15 @@ export class PiRpc {
 
   send(message: PiMessage): void { this.channel.send(message) }
 
-  request(type: string, body: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<unknown> {
+  request(type: string, body: Record<string, unknown> = {}, limit: number | Deadline = 30_000): Promise<unknown> {
     const id = randomUUID()
-    return this.pending.request(id, type, timeoutMs, () => new TransportError("pi", "timeout", `Pi ${type} timed out`),
+    const timeout = () => new TransportError("pi", "timeout", `Pi ${type} timed out`)
+    if (typeof limit !== "number" && (limit.signal.aborted || limit.at <= Date.now())) return Promise.reject(timeout())
+    const request = this.pending.request(id, type, typeof limit === "number" ? limit : undefined, timeout,
       () => this.send({ type, id, ...body }))
+    if (typeof limit === "number") return request
+    return settleAtRequestDeadline(`Pi ${type}`, { deadlineAt: limit.at, signal: limit.signal }, request,
+      () => { this.pending.reject(id, timeout()) }, timeout)
   }
 
   retire(deadline: Deadline): Promise<void> {

@@ -1437,6 +1437,7 @@ test("ACP delivers attachments by the agent's prompt capabilities", async () => 
       { type: "image", mimeType: "image/png", data: PNG },
       { type: "resource", resource: { uri: "wr://attachment/1", blob: TEXT_BASE64, mimeType: "text/plain" } },
       { type: "audio", mimeType: "audio/wav", data: WAV_BASE64 },
+      { type: "resource_link", uri: "https://attachments.invalid/remote.png", name: "https://attachments.invalid/remote.png" },
     ])
   } finally { await context.close() }
 }, 30_000)

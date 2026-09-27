@@ -1,18 +1,18 @@
 import os from "node:os"
 import path from "node:path"
 import type { SessionConfigUpdate, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import { errorMessage } from "@claxedo/helpers"
+import { createKeyedSerializer, errorMessage } from "@claxedo/helpers"
 import type {
   AttachInput, CapabilityContext, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, Deadline, DraftLaunch,
   HarnessServices, HarnessSession, HarnessTransport, MachineLoginPolicy, RoutedEvent, SessionBroker, StartInput, TransportCapabilities,
   TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
+import { applySessionConfigUpdate, attachedSessionEntry, configOptionsPreview, mergeStartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { composeCursorHome, cursorHomeKey, type CursorPluginOptions } from "../../profiles/cursor"
 import { cursorCredential, type CursorCredential } from "./credentials"
 import { CursorGoals } from "./goals"
-import { CursorHostRegistry, type CursorHostKey } from "./host-registry"
+import { CursorHostRegistry, type CursorHost, type CursorHostKey } from "./host-registry"
 import { cursorModelId, hostSession } from "./launch"
 import { CursorModelCatalog, catalogKey, cursorCatalogModels, cursorModelOptions } from "./models"
 import { cursorPermissionModeState } from "./permission-modes"
@@ -28,6 +28,7 @@ type Entry = {
   broker: SessionBroker
   credential: CursorCredential
   host: CursorHostKey
+  process: CursorHost
   plugins: CursorPluginOptions
   busy: boolean
   reopen: boolean
@@ -56,6 +57,7 @@ export class CursorSdkTransport implements HarnessTransport {
   private readonly env: NodeJS.ProcessEnv
   private readonly registry: CursorHostRegistry
   private readonly entries = new Map<string, Entry>()
+  private readonly refresh = createKeyedSerializer<Entry>()
   private readonly catalog = new CursorModelCatalog()
   private readonly goalRuntime = new CursorGoals()
   private readonly disposeAbort = new AbortController()
@@ -102,10 +104,10 @@ export class CursorSdkTransport implements HarnessTransport {
         throw error
       }
     } catch (error) {
-      await this.registry.release(host)
+      await this.registry.release(host, process)
       throw error
     }
-    this.entries.set(input.sessionId, { session, input, broker, credential, host, plugins: composed.local, busy: false, reopen: false })
+    this.entries.set(input.sessionId, { session, input, broker, credential, host, process, plugins: composed.local, busy: false, reopen: false })
     return session
   }
 
@@ -122,8 +124,18 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   private async closeAgent(entry: Entry): Promise<void> {
-    await this.registry.existing(entry.host)?.call({ kind: "close", sessionId: entry.session.binding.sessionId })
+    if (!entry.process.failed) await entry.process.call({ kind: "close", sessionId: entry.session.binding.sessionId })
     entry.reopen = false
+  }
+
+  private current(entry: Entry): Promise<CursorHost> {
+    return this.refresh.run(entry, async () => {
+      if (!entry.process.failed) return entry.process
+      const previous = entry.process
+      entry.process = await this.registry.acquire(entry.host)
+      await this.registry.release(entry.host, previous)
+      return entry.process
+    })
   }
 
   private async *run(entry: Entry, broker: TurnBroker, prompt: Awaited<ReturnType<typeof cursorPrompt>>,
@@ -131,7 +143,7 @@ export class CursorSdkTransport implements HarnessTransport {
     if (entry.busy) throw new TransportError("cursor", "session", "Cursor turn already active")
     entry.busy = true
     try {
-      const host = await this.registry.current(entry.host)
+      const host = await this.current(entry)
       if (entry.reopen) await this.closeAgent(entry)
       yield* streamCursorRun({ host, broker, prompt, services: this.services, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins, entry.session.binding.upstreamSessionId, turn?.model?.modelID) })
@@ -166,23 +178,19 @@ export class CursorSdkTransport implements HarnessTransport {
     const key = catalogKey(credential, input.credentials.leaseGeneration)
     const requested = cursorModelId(("model" in target ? target.model?.modelID : undefined) ?? input.config.model?.modelID ?? input.model?.modelID)
     if (mode === "peek") return configOptionsPreview(cursorModelOptions(this.catalog.peek(key) ?? [], requested))
-    if (entry) return configOptionsPreview(cursorModelOptions(await this.catalog.load(key, () => this.registry.current(entry.host), credential), requested))
+    if (entry) return configOptionsPreview(cursorModelOptions(await this.catalog.load(key, () => this.current(entry), credential), requested))
     const composed = await this.compose(input, credential, `${this.homeKey(input, credential)}-probe`)
     const probe = hostKey(credential, composed.home)
-    try { return configOptionsPreview(cursorModelOptions(await this.catalog.load(key, () => this.registry.acquire(probe), credential), requested)) }
-    finally { await this.registry.replace(probe) }
+    let host: CursorHost | undefined
+    try { return configOptionsPreview(cursorModelOptions(await this.catalog.load(key, async () => host = await this.registry.acquire(probe), credential), requested)) }
+    finally { if (host) await this.registry.release(probe, host) }
   }
 
   readonly config = {
     read: async (session: HarnessSession) => this.entry(session).input.config,
     update: async (session: HarnessSession, update: SessionConfigUpdate) => {
       const entry = this.entry(session)
-      const { permissionMode, model, permissionState, ...rest } = { ...entry.input.config, ...update }
-      const config: StartInput["config"] = { ...rest,
-        ...(permissionMode === null ? {} : { permissionMode }),
-        ...(model === null ? {} : { model }),
-        ...(permissionState === null ? {} : { permissionState }),
-      }
+      const config = applySessionConfigUpdate(entry.input.config, update)
       entry.input = { ...entry.input, config }
       return config
     },
@@ -202,7 +210,7 @@ export class CursorSdkTransport implements HarnessTransport {
   readonly naming = {
     generateTitle: async (session: HarnessSession, request: SessionTitleRequest) => {
       const entry = this.entry(session)
-      return cursorSessionTitle({ host: await this.registry.current(entry.host), request, log: this.services.log,
+      return cursorSessionTitle({ host: await this.current(entry), request, log: this.services.log,
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins) })
     },
   }
@@ -236,8 +244,9 @@ export class CursorSdkTransport implements HarnessTransport {
     const composed = await this.compose(input, credential, path.basename(entry.host.home))
     const host = hostKey(credential, composed.home)
     if (host.binding !== entry.host.binding) {
-      await this.registry.acquire(host)
-      await this.registry.release(entry.host)
+      const process = await this.registry.acquire(host)
+      await this.registry.release(entry.host, entry.process)
+      entry.process = process
     }
     Object.assign(entry, { input, credential, host, plugins: composed.local })
     return { state: "applied" }
@@ -249,7 +258,7 @@ export class CursorSdkTransport implements HarnessTransport {
     await this.goalRuntime.interrupt(session.binding.sessionId)
     this.entries.delete(session.binding.sessionId)
     await this.closeAgent(entry)
-    await this.registry.release(entry.host)
+    await this.registry.release(entry.host, entry.process)
   }
 
   async dispose(): Promise<void> {

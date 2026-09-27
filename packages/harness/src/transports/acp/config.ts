@@ -1,6 +1,5 @@
 import type { ConfigOperations, DraftLaunch, HarnessSession } from "../../contract"
-import { configOptionsPreview } from "../../contract"
-import type { SessionConfig } from "@claxedo/agent-runtime-contract"
+import { applySessionConfigUpdate, configOptionsPreview } from "../../contract"
 import type { AcpEntry } from "./index"
 import { acpOption, acpPermissionModes, type AcpCatalog } from "./options"
 import { acpApplySessionConfig, acpSetPermissionMode } from "./sync"
@@ -11,18 +10,7 @@ export function acpConfig(entryFor: (session: HarnessSession) => AcpEntry,
     read: async (session) => entryFor(session).start.config,
     update: async (session, update) => {
       const entry = entryFor(session)
-      const config: SessionConfig = { ...entry.start.config,
-        ...(update.harness !== undefined ? { harness: update.harness } : {}),
-        ...(update.permissionCeiling !== undefined ? { permissionCeiling: update.permissionCeiling } : {}),
-        ...(update.permissionMode !== undefined ? { permissionMode: update.permissionMode ?? undefined } : {}),
-        ...(update.permissionState !== undefined ? { permissionState: update.permissionState ?? undefined } : {}),
-        ...(update.model !== undefined ? { model: update.model ?? undefined } : {}),
-        ...(update.variant !== undefined ? { variant: update.variant ?? undefined } : {}),
-        ...(update.agent !== undefined ? { agent: update.agent ?? undefined } : {}),
-        ...(update.instructions !== undefined ? { instructions: update.instructions ?? undefined } : {}),
-        ...(update.group !== undefined ? { group: update.group ?? undefined } : {}),
-        ...(update.handoff !== undefined ? { handoff: update.handoff ?? undefined } : {}),
-      }
+      const config = applySessionConfigUpdate(entry.start.config, update)
       await acpApplySessionConfig(entry, config)
       entry.start = { ...entry.start, config }
       return entry.start.config
