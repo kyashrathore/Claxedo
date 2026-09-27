@@ -98,7 +98,8 @@ async function main() {
     await page.waitForURL(new RegExp(`${sessionRoute(workspace.id)}$`))
     samples.push(await snapshot(page))
     const picker = page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
-    if ((await picker.getAttribute("data-harness")) !== "scripted-acp") {
+    console.log(`[third] draft harness ${await picker.getAttribute("data-harness")}`)
+    if (process.env.C_HARNESS !== "default" && (await picker.getAttribute("data-harness")) !== "scripted-acp") {
       await picker.click()
       await page.getByRole("button", { name: /^Harness/ }).click()
       await page.getByRole("button", { name: "Scripted ACP" }).click()
