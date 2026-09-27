@@ -9,7 +9,7 @@ import { getFilename } from "@/ui/utils"
 import { MAX_DIFF_CHANGED_LINES } from "../diff-content"
 import { reviewDictionary } from "../i18n"
 
-export type ReviewFileHeaderDiff = {
+type ReviewFileHeaderDiff = {
   readonly file: string
   readonly status?: string
   readonly additions: number
@@ -72,7 +72,7 @@ function RowControls(props: { readonly file: string; readonly onViewFile?: (file
   )
 }
 
-export function ReviewFileHeaderContent(props: {
+function ReviewFileHeaderContent(props: {
   readonly diff: ReviewFileHeaderDiff
   readonly onViewFile?: (file: string) => void
   readonly showControls?: boolean

@@ -1,6 +1,6 @@
 import type { Translations } from "@/i18n"
 
-export type AccessKey =
+type AccessKey =
   | "access.org.title"
   | "access.org.description"
   | "access.org.role.owner"

@@ -16,9 +16,9 @@ export function fillTemplate(text: string, params?: TemplateParams): string {
   })
 }
 
-export type Resolved = { readonly text: string; readonly found: boolean }
+type Resolved = { readonly text: string; readonly found: boolean }
 
-export type Dictionaries = {
+type Dictionaries = {
   readonly add: (domain: Translations) => boolean
   readonly remove: (domain: Translations) => boolean
   readonly resolve: (locale: Locale, key: string) => Resolved

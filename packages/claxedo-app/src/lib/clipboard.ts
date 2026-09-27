@@ -1,4 +1,4 @@
-export type CopyResult = { readonly copied: true } | { readonly copied: false; readonly error: unknown }
+type CopyResult = { readonly copied: true } | { readonly copied: false; readonly error: unknown }
 
 export async function copyText(text: string): Promise<CopyResult> {
   try {

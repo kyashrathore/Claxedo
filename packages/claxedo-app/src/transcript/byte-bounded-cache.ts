@@ -1,4 +1,4 @@
-export type ByteBoundedCache<K, V> = {
+type ByteBoundedCache<K, V> = {
   peek(key: K): V | undefined
   get(key: K): V | undefined
   set(key: K, value: V): void

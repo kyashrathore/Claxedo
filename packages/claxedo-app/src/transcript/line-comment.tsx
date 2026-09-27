@@ -6,7 +6,7 @@ import { useTranscriptI18n } from "./i18n"
 
 installLineCommentStyles()
 
-export type LineCommentVariant = "default" | "editor"
+type LineCommentVariant = "default" | "editor"
 
 function InlineGlyph() {
   return (
@@ -32,7 +32,7 @@ export type LineCommentAnchorProps = {
   children?: JSX.Element
 }
 
-export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
+const LineCommentAnchor = (props: LineCommentAnchorProps) => {
   const hidden = () => !props.inline && props.top === undefined
   const variant = () => props.variant ?? "default"
   const inlineBody = () => props.inline && props.hideButton
@@ -111,7 +111,7 @@ export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
   )
 }
 
-export type LineCommentProps = Omit<LineCommentAnchorProps, "children" | "variant"> & {
+type LineCommentProps = Omit<LineCommentAnchorProps, "children" | "variant"> & {
   comment: JSX.Element
   selection: JSX.Element
   actions?: JSX.Element

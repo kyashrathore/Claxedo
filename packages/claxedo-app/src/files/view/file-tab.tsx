@@ -17,7 +17,7 @@ import { createFileComments, type FileCommentProps, type FileLineComments } from
 const FOCUS_FRESH_MS = 5000
 const COPIED_MS = 2000
 
-export type FileTabProps = {
+type FileTabProps = {
   readonly placementId: PlacementId
   readonly path: string
   readonly headerActive: boolean

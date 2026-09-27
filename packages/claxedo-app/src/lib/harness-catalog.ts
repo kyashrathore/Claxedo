@@ -9,7 +9,7 @@ type HarnessEntry = {
   vendorProvider?: string
 }
 
-export const HARNESS_CATALOG = {
+const HARNESS_CATALOG = {
   claude: { ...HARNESS_TABLE.claude, icon: "anthropic" },
   codex: { ...HARNESS_TABLE.codex, icon: "openai" },
   cursor: { ...HARNESS_TABLE.cursor, icon: "cursor" },
@@ -55,7 +55,7 @@ export function harnessConnectContext(harness: string, fallbackLabel?: string): 
   return { kind: "harness", harness: label, vendor: known?.vendor ?? label }
 }
 
-export function engineConnectContext(engine: string, vendor: string): ConnectContext {
+function engineConnectContext(engine: string, vendor: string): ConnectContext {
   return { kind: "engine", engine: harnessLabel(engine) ?? engine, vendor }
 }
 
@@ -67,7 +67,7 @@ export function harnessLabelForProviderId(providerId: string): string | undefine
   return harnessLabel(harnessForProviderId(providerId) ?? providerId)
 }
 
-export function harnessForConnectProvider(providerId: string): string | undefined {
+function harnessForConnectProvider(providerId: string): string | undefined {
   return Object.keys(HARNESS_CATALOG).find((id) => entry(id)?.connectProvider === providerId)
 }
 

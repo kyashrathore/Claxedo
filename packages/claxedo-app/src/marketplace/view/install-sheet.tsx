@@ -72,7 +72,7 @@ function createInstall(props: {
   return { error, busy, install }
 }
 
-export function InstallPluginSheet(props: {
+function InstallPluginSheet(props: {
   readonly plugin: PluginCandidate
   readonly revision: number
   readonly supportedHarnesses: readonly PluginHarness[]

@@ -6,7 +6,7 @@ import { useTranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { ToolExitCode } from "./basic-tool"
 import { safeLinkHref } from "./safe-link"
 
-export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
+interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   icon?: IconProps["name"]
   tool: string
   error: string

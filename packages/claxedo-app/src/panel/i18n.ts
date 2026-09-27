@@ -21,7 +21,7 @@ const en = {
   "panel.markdown.source": "Show source",
 }
 
-export type PanelKey = keyof typeof en
+type PanelKey = keyof typeof en
 
 export const panelDictionary = {
   en,

@@ -27,7 +27,7 @@ const en = {
   "cloud.status.failed": "Failed",
 }
 
-export type CloudKey = keyof typeof en
+type CloudKey = keyof typeof en
 
 const cloudDictionary = {
   en,

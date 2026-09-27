@@ -2,7 +2,7 @@ import { checksum } from "@/ui/utils"
 import { createByteBoundedCache } from "./byte-bounded-cache"
 import type { MarkdownToken } from "./markdown-worker-protocol"
 
-export type CodeHighlight = {
+type CodeHighlight = {
   language: string
   generation: number
   stable: MarkdownToken[]

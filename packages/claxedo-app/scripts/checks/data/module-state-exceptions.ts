@@ -1,4 +1,4 @@
-export type ModuleStateException = {
+type ModuleStateException = {
   readonly file: string
   readonly binding: string
   readonly reason: string

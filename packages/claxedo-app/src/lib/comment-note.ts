@@ -1,7 +1,7 @@
 import { readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { FileSelection } from "./file-selection"
 
-export type PromptComment = {
+type PromptComment = {
   path: string
   selection?: FileSelection
   comment: string
@@ -68,7 +68,7 @@ export function parseCommentNote(text: string) {
   } satisfies PromptComment
 }
 
-export type PromptImageMarkComment = {
+type PromptImageMarkComment = {
   filename: string
   number: number
   comment: string

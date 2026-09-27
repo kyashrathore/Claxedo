@@ -107,7 +107,7 @@ function WorktreeGroups(props: {
   )
 }
 
-export type SourceControlViewProps = {
+type SourceControlViewProps = {
   readonly placementId: PlacementId
   readonly active: boolean
   readonly activePath?: string

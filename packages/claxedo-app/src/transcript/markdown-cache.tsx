@@ -45,13 +45,13 @@ const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/
 const CSS_AT_RULE = /@(?:import|namespace)\b/gi
 const CSS_URL = /url\(\s*(['"]?)([^)]*?)\1\s*\)/gi
 
-export function hardenSvgCss(css: string) {
+function hardenSvgCss(css: string) {
   return css
     .replace(CSS_AT_RULE, "@blocked")
     .replace(CSS_URL, (rule, _quote, target: string) => (target.trim().startsWith("#") ? rule : "none"))
 }
 
-export const svgConfig = {
+const svgConfig = {
   USE_PROFILES: { svg: true, svgFilters: true },
   ALLOWED_URI_REGEXP: SAFE_SVG_URI,
   ADD_TAGS: ["style"],

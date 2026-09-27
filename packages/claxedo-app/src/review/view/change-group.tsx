@@ -7,7 +7,7 @@ import { getFilename } from "@/ui/utils"
 import type { GitAction } from "../git-actions"
 import { reviewDictionary, type ReviewKey } from "../i18n"
 
-export type ChangeGroupId = "staged" | "changes"
+type ChangeGroupId = "staged" | "changes"
 
 export type ChangeEntry = {
   readonly path: string

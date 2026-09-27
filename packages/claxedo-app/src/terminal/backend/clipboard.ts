@@ -4,7 +4,7 @@ import { copyText } from "@/lib/clipboard"
 type PasteTerminal = Pick<XTerm, "textarea" | "paste">
 type CopyTerminal = Pick<XTerm, "element" | "getSelection">
 
-export type PasteOptions = {
+type PasteOptions = {
   readonly onWrite: (data: string) => void
   readonly bracketedPaste: () => boolean
 }
