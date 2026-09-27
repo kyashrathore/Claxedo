@@ -6,7 +6,6 @@ import {
   claxedoDaemonOwnershipPath,
   clearDaemonOwnershipSnapshot,
   createDaemonOwnershipPublisher,
-  daemonOwnershipSnapshotIsStale,
   readDaemonOwnershipSnapshot,
   writeDaemonOwnershipSnapshot,
   type DaemonOwnershipSnapshot,
@@ -50,7 +49,7 @@ function snapshot(overrides: Partial<DaemonOwnershipSnapshot> = {}): DaemonOwner
     generation: "generation-1",
     pid: 42,
     revision: "rev-1",
-    writtenAt: 1_000,
+    changedAt: 1_000,
     residencyPins: 1,
     owners: [owner("workspace:ws_a")],
     ...overrides,
@@ -76,49 +75,43 @@ describe("the daemon ownership snapshot", () => {
       inspect: () => inspection({ owners: [owner("terminal:t1", "running")] }),
       now: () => 5_000,
     })
-    publisher.publish(true)
+    publisher.start()
 
     const written = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>
     expect(Object.keys(written).sort()).toEqual([
-      "generation", "machineId", "owners", "pid", "residencyPins", "revision", "writtenAt",
+      "changedAt", "generation", "machineId", "owners", "pid", "residencyPins", "revision",
     ])
     const [row] = written.owners as Array<Record<string, unknown>>
     expect(Object.keys(row).sort()).toEqual(["generation", "id", "kind", "pins", "state"])
   })
 
-  test("republishes on a transition and no more than once every five seconds otherwise", () => {
+  test("writes when publishing starts and on each change it is told of, and nothing before it starts or after it stops", () => {
     const file = claxedoDaemonOwnershipPath(root())
     let at = 1_000
     let owners = [owner("workspace:ws_a")]
-    let revision = "rev-1"
     const publisher = createDaemonOwnershipPublisher({
       file,
       pid: 42,
-      inspect: () => inspection({ owners, scopeRevision: revision }),
+      inspect: () => inspection({ owners }),
       now: () => at,
     })
 
-    publisher.publish(true)
-    expect(readDaemonOwnershipSnapshot(file)?.writtenAt).toBe(1_000)
-
-    at = 2_000
     publisher.publish()
-    expect(readDaemonOwnershipSnapshot(file)?.writtenAt, "inside the interval, unchanged").toBe(1_000)
+    expect(readDaemonOwnershipSnapshot(file), "before start").toBeUndefined()
 
+    publisher.start()
+    expect(readDaemonOwnershipSnapshot(file)?.changedAt).toBe(1_000)
+
+    at = 60_000
     owners = [...owners, owner("terminal:t1", "running")]
-    revision = "rev-2"
     publisher.publish()
-    expect(readDaemonOwnershipSnapshot(file)?.writtenAt, "a transition publishes at once").toBe(2_000)
+    expect(readDaemonOwnershipSnapshot(file)?.changedAt).toBe(60_000)
     expect(readDaemonOwnershipSnapshot(file)?.owners).toHaveLength(2)
 
-    at = 8_000
+    publisher.stop()
+    at = 90_000
     publisher.publish()
-    expect(readDaemonOwnershipSnapshot(file)?.writtenAt, "the interval elapsed with work active").toBe(8_000)
-  })
-
-  test("a snapshot older than ten seconds is stale for presentation", () => {
-    expect(daemonOwnershipSnapshotIsStale(snapshot(), 11_001)).toBe(true)
-    expect(daemonOwnershipSnapshotIsStale(snapshot(), 11_000)).toBe(false)
+    expect(readDaemonOwnershipSnapshot(file)?.changedAt, "after stop").toBe(60_000)
   })
 
   test("only the generation that wrote it can clear it", () => {
@@ -154,7 +147,7 @@ describe("the daemon ownership snapshot", () => {
       onError: (error) => failures.push(error),
     })
 
-    publisher.publish(true)
+    publisher.start()
 
     expect(failures).toHaveLength(1)
   })

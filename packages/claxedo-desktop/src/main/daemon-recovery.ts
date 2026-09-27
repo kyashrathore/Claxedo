@@ -19,7 +19,6 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import {
-  DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
   daemonOwnershipSnapshotPath,
   isDaemonOwnershipSnapshot,
   DEFAULT_RECOVERY_BUDGETS,
@@ -40,6 +39,7 @@ import {
   retire,
   retirementSettled,
   verifyCreationIdentity,
+  type IdentityVerdict,
   type RetirementBudgets,
   type RetirementResult,
 } from "@claxedo/agent-sdk-runtime/launch"
@@ -55,7 +55,7 @@ export type DaemonOwnershipView = {
   generation: string
   pid: number
   revision: string
-  writtenAt: number
+  changedAt: number
   residencyPins: number
   owners: Array<{ id: string; kind: string; generation: string; state: string; pins: boolean; detail?: string }>
 }
@@ -95,18 +95,25 @@ export function readDaemonOwnershipView(file: string): DaemonOwnershipView | und
   return isDaemonOwnershipSnapshot(parsed) ? parsed as DaemonOwnershipView : undefined
 }
 
+const RECORDED_BY: Record<Exclude<IdentityVerdict["state"], "live">, string> = {
+  exited: "which is no longer running",
+  identity_mismatch: "which now belongs to a different process",
+  unknown: "whose state could not be checked",
+}
+
 /**
  * What stopping this daemon would interrupt, as far as anything here can know.
  *
- * The snapshot is one process's last published view of itself, so its age is
- * part of the answer and "additional impact is unknown" is stated rather than
- * implied. Authorization therefore always covers the whole verified daemon
- * generation — a recent snapshot does not narrow it.
+ * The snapshot is rewritten only when the daemon's owners change, so it is
+ * current exactly while that daemon is alive; `daemon` is the caller's identity
+ * check of it. Authorization always covers the whole verified daemon
+ * generation — a current snapshot does not narrow it.
  */
 export function daemonRecoveryPreview(
   discovery: ClaxedoDaemonDiscovery,
   snapshot: DaemonOwnershipView | undefined,
   at: number,
+  daemon: IdentityVerdict["state"],
 ): RecoveryScopePreview {
   if (!snapshot || snapshot.generation !== discovery.generation) {
     return {
@@ -115,18 +122,21 @@ export function daemonRecoveryPreview(
       summary: "no ownership snapshot for this daemon generation; everything it owns is unknown",
     }
   }
-  const ageMs = at - snapshot.writtenAt
-  const stale = ageMs > DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS
+  const recorded = daemon === "live"
+    ? `${snapshot.owners.length} owners recorded, last changed ${Math.round((at - snapshot.changedAt) / 1000)}s ago`
+    : `${snapshot.owners.length} owners last recorded by pid ${discovery.pid}, ${RECORDED_BY[daemon]}`
   return {
     sessions: [],
     resources: [
       `daemon generation ${discovery.generation} (pid ${discovery.pid})`,
       ...snapshot.owners.map((owner) => `${owner.id} (${owner.state})`),
     ],
-    summary: `${snapshot.owners.length} owners recorded ${Math.round(ageMs / 1000)}s ago${
-      stale ? " (stale)" : ""
-    }; additional impact is unknown, so this authorizes the entire daemon generation`,
+    summary: `${recorded}; additional impact is unknown, so this authorizes the entire daemon generation`,
   }
+}
+
+async function daemonState(discovery: ClaxedoDaemonDiscovery, verify: typeof verifyCreationIdentity) {
+  return discovery.identity ? (await verify(discovery.identity)).state : "unknown"
 }
 
 /**
@@ -154,7 +164,8 @@ export async function recoverPublishedDaemon(input: {
     machineId: "local",
     ownerGeneration: input.discovery.generation,
   }
-  const preview = daemonRecoveryPreview(input.discovery, input.snapshot, now())
+  const verdict = input.discovery.identity ? await verify(input.discovery.identity) : undefined
+  const preview = daemonRecoveryPreview(input.discovery, input.snapshot, now(), verdict?.state ?? "unknown")
   const started = now()
   const operation = (
     state: RecoveryOperation["state"],
@@ -196,7 +207,7 @@ export async function recoverPublishedDaemon(input: {
       [{ action: "inspect", scopePreviewRequired: false, reason: preview.summary }],
     )
 
-  if (!input.discovery.identity) {
+  if (!verdict) {
     return refusal(
       "ownership_unverified",
       `The daemon published as pid ${input.discovery.pid} recorded no process identity, so nothing here can establish that this pid is still it. `
@@ -205,7 +216,6 @@ export async function recoverPublishedDaemon(input: {
     )
   }
 
-  const verdict = await verify(input.discovery.identity)
   if (verdict.state === "unknown") {
     return refusal(
       "ownership_unverified",
@@ -384,7 +394,9 @@ export function daemonRecoveryBridge(input: {
   unresolved: () => { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
   ownershipView: () => DaemonOwnershipView | undefined
   onRecovered: (result: DaemonRecoveryResult) => void | Promise<void>
+  verify?: typeof verifyCreationIdentity
 }) {
+  const verify = input.verify ?? verifyCreationIdentity
   const protocol = { [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL) }
   return {
     async inspect(): Promise<DaemonRecoveryInspection> {
@@ -417,7 +429,7 @@ export function daemonRecoveryBridge(input: {
         target: { scope: "machine", machineId: "local", ownerGeneration: held.discovery.generation },
         scopeRevision: snapshot?.generation === held.discovery.generation ? snapshot.revision : "unverified",
         owners: snapshot?.generation === held.discovery.generation ? snapshot.owners : [],
-        preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now()),
+        preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now(), await daemonState(held.discovery, verify)),
         residencyPins: snapshot?.generation === held.discovery.generation ? snapshot.residencyPins : 0,
         operations: held.result.outcome.kind === "operation" ? [held.result.outcome.operation] : [],
         receipt: "volatile",
@@ -483,7 +495,7 @@ export function daemonRecoveryBridge(input: {
             kind: "scope_changed",
             message: "this daemon's last published ownership differs from the preview this stop was authorized against",
             scopeRevision,
-            preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now()),
+            preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now(), await daemonState(held.discovery, verify)),
           },
         }
       }
@@ -494,6 +506,7 @@ export function daemonRecoveryBridge(input: {
         discovery: held.discovery,
         snapshot,
         authorize: () => true,
+        verify,
       })
       await input.onRecovered(recovered)
       return recovered.outcome

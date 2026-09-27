@@ -11,7 +11,6 @@ import {
   parseRecoveryTarget,
   RECOVERY_ACTION_SCOPES,
   DAEMON_OWNERSHIP_SNAPSHOT_FILE,
-  DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
   RECOVERY_ACTIONS,
   daemonOwnershipSnapshotPath,
   isDaemonOwnershipSnapshot,
@@ -292,7 +291,7 @@ describe("the ownership snapshot two products share", () => {
     generation: "generation-1",
     pid: 42,
     revision: "rev-1",
-    writtenAt: 1_000,
+    changedAt: 1_000,
     residencyPins: 1,
     owners: [{ id: "workspace:ws_a", kind: "workspace_runtime", generation: "mount-1", state: "serving", pins: false }],
   }
@@ -308,15 +307,11 @@ describe("the ownership snapshot two products share", () => {
     // Each field a reader relies on, absent or wrong.
     expect(isDaemonOwnershipSnapshot({ ...snapshot, machineId: "" })).toBe(false)
     expect(isDaemonOwnershipSnapshot({ ...snapshot, pid: 0 })).toBe(false)
-    expect(isDaemonOwnershipSnapshot({ ...snapshot, writtenAt: "soon" })).toBe(false)
+    expect(isDaemonOwnershipSnapshot({ ...snapshot, changedAt: "soon" })).toBe(false)
     expect(isDaemonOwnershipSnapshot({ ...snapshot, residencyPins: undefined })).toBe(false)
     expect(isDaemonOwnershipSnapshot({ ...snapshot, owners: [{ id: "x" }] })).toBe(false)
     expect(isDaemonOwnershipSnapshot({ ...snapshot, owners: "none" })).toBe(false)
     expect(isDaemonOwnershipSnapshot(undefined)).toBe(false)
-  })
-
-  test("ten seconds is the age past which a snapshot is only history", () => {
-    expect(DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS).toBe(10_000)
   })
 })
 

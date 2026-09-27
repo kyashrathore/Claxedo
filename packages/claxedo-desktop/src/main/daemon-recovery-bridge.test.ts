@@ -37,7 +37,7 @@ function snapshot(overrides: Partial<DaemonOwnershipView> = {}): DaemonOwnership
     generation: GENERATION,
     pid: 4242,
     revision: "rev-1",
-    writtenAt: Date.now(),
+    changedAt: Date.now(),
     residencyPins: 1,
     owners: [{ id: "workspace:ws_a", kind: "workspace_runtime", generation: "mount-1", state: "serving", pins: false }],
     ...overrides,
@@ -74,6 +74,7 @@ function externalBridge(options: { snapshot?: DaemonOwnershipView | undefined; r
     unresolved: () => unresolved(),
     ownershipView: () => ("snapshot" in options ? options.snapshot : snapshot()),
     onRecovered: (result) => { recovered.push(result) },
+    verify: async () => ({ state: "exited" }),
   })
 }
 
@@ -154,6 +155,7 @@ describe("the daemon recovery bridge, with no daemon to ask", () => {
     expect(inspected.receipt).toBe("volatile")
     expect(inspected.scopeRevision).toBe("rev-1")
     expect(inspected.owners.map((owner) => owner.id)).toEqual(["workspace:ws_a"])
+    expect(inspected.preview.summary).toStartWith("1 owners last recorded by pid 4242, which is no longer running;")
     expect(inspected.preview.summary).toContain("additional impact is unknown")
   })
 

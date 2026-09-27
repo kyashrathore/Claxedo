@@ -161,6 +161,38 @@ describe("local daemon lifecycle", () => {
     }
   })
 
+  test("reports a change of owners or residency once, and nothing on the ticks between", async () => {
+    vi.useFakeTimers()
+    try {
+      let work = empty()
+      const onScopeChanged = vi.fn()
+      const lifecycle = createLocalDaemonLifecycle({ activity: () => work, onStop() {}, onScopeChanged, machine, leaseTtlMs: 60_000, pollIntervalMs: 1_000 })
+      lifecycle.start()
+      await lifecycle.recovery.launchesReconciled()
+      expect(onScopeChanged).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(onScopeChanged, "idle polls").toHaveBeenCalledTimes(1)
+
+      const lease = lifecycle.acquire()!
+      expect(onScopeChanged, "a lease pins the daemon").toHaveBeenCalledTimes(2)
+      lifecycle.renew(lease.id)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(onScopeChanged, "renewals and polls under a lease").toHaveBeenCalledTimes(2)
+
+      const terminal: LocalDaemonOwner = { id: "terminal:t1", kind: "terminal", generation: "7", state: "running", pins: true }
+      work = { ...empty(), owners: [terminal], residencyPins: 1, replacementBlockers: 1 }
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(onScopeChanged, "a terminal started").toHaveBeenCalledTimes(3)
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(onScopeChanged).toHaveBeenCalledTimes(3)
+      lifecycle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test("expires a crashed desktop lease and exits after one idle grace", async () => {
     const onIdle = vi.fn()
     const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, leaseTtlMs: 20, idleGraceMs: 20, pollIntervalMs: 2 })

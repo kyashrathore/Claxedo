@@ -262,6 +262,12 @@ export function createLocalDaemonLifecycle(options: {
    * the exit it requested.
    */
   onStopped?: () => void
+  /**
+   * Called from the lifecycle's own evaluation when the owners, the gate or the
+   * residency pins changed since the last call, and never on a tick that found
+   * them unchanged.
+   */
+  onScopeChanged?: () => void
   machine: {
     machineId: string
     generation: string
@@ -327,6 +333,7 @@ export function createLocalDaemonLifecycle(options: {
     return operationStore
   }
   let timer: ReturnType<typeof setTimeout> | undefined
+  let reportedScope: string | undefined
   let idleSince: number | undefined
   let state: "created" | "running" | "idle" | "stopping" | "stopped" = "created"
 
@@ -384,6 +391,11 @@ export function createLocalDaemonLifecycle(options: {
     timer = undefined
     if (state === "stopping" || state === "stopped" || state === "created") return
     const current = evaluate()
+    const scope = `${localDaemonScopeRevision(current.work)}:${gate?.operationId ?? ""}:${current.residencyPins}`
+    if (scope !== reportedScope) {
+      reportedScope = scope
+      options.onScopeChanged?.()
+    }
     if (current.residencyPins === 0 && current.idleRemainingMs === 0) {
       state = "stopping"
       const idleMs = current.at - (idleSince ?? current.at)

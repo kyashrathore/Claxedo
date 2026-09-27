@@ -10,27 +10,24 @@
  * exposes.
  *
  * It is informational. It is not authorization, and it is not evidence that
- * anything exited: a snapshot is only ever as true as its `writtenAt`.
+ * anything exited: it is current only while the process that wrote it is.
  */
 
 import fs from "node:fs"
 import path from "node:path"
 import { isMissingFile, writeFileAtomicSync } from "@claxedo/helpers/fs"
 import {
-  DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
   daemonOwnershipSnapshotPath,
   isDaemonOwnershipSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { LocalDaemonOwner, MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
-
-const PUBLISH_INTERVAL_MS = 5_000
 
 export type DaemonOwnershipSnapshot = {
   machineId: string
   generation: string
   pid: number
   revision: string
-  writtenAt: number
+  changedAt: number
   residencyPins: number
   owners: LocalDaemonOwner[]
   gate?: MachineRecoveryGate
@@ -41,14 +38,14 @@ export const claxedoDaemonOwnershipPath = daemonOwnershipSnapshotPath
 export function daemonOwnershipSnapshot(
   inspection: MachineRecoveryInspection,
   pid: number,
-  writtenAt: number,
+  changedAt: number,
 ): DaemonOwnershipSnapshot {
   return {
     machineId: inspection.machineId,
     generation: inspection.generation,
     pid,
     revision: inspection.scopeRevision,
-    writtenAt,
+    changedAt,
     residencyPins: inspection.residencyPins,
     owners: inspection.owners.map((owner) => ({
       id: owner.id,
@@ -104,14 +101,10 @@ function isLocalDaemonOwnershipSnapshot(value: unknown): value is DaemonOwnershi
     && value.owners.every((owner) => DAEMON_OWNER_KINDS.some((kind) => kind === owner.kind))
 }
 
-export function daemonOwnershipSnapshotIsStale(snapshot: DaemonOwnershipSnapshot, at: number) {
-  return at - snapshot.writtenAt > DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS
-}
-
 /**
- * Republishes on every owner or scope transition, and no more than once every
- * five seconds while work is active. The revision is the transition test, so a
- * daemon whose inventory is unchanged writes nothing at all.
+ * Writes the snapshot when publishing starts and on each `publish()`, which the
+ * lifecycle's `onScopeChanged` calls. Nothing here runs on a timer, so an idle
+ * daemon leaves the file untouched.
  */
 export function createDaemonOwnershipPublisher(options: {
   file: string
@@ -121,21 +114,12 @@ export function createDaemonOwnershipPublisher(options: {
   onError?: (error: unknown) => void
 }) {
   const now = options.now ?? Date.now
-  let lastRevision: string | undefined
-  let lastWriteAt = 0
-  let timer: ReturnType<typeof setInterval> | undefined
+  let publishing = false
 
-  function publish(force = false) {
-    const at = now()
-    const inspection = options.inspect()
-    const revision = `${inspection.scopeRevision}:${inspection.gate?.operationId ?? ""}`
-    const transition = revision !== lastRevision
-    if (!force && !transition && at - lastWriteAt < PUBLISH_INTERVAL_MS) return
-    if (!transition && inspection.residencyPins === 0 && !force) return
+  function publish() {
+    if (!publishing) return
     try {
-      writeDaemonOwnershipSnapshot(options.file, daemonOwnershipSnapshot(inspection, options.pid, at))
-      lastRevision = revision
-      lastWriteAt = at
+      writeDaemonOwnershipSnapshot(options.file, daemonOwnershipSnapshot(options.inspect(), options.pid, now()))
     } catch (error) {
       options.onError?.(error)
     }
@@ -144,14 +128,11 @@ export function createDaemonOwnershipPublisher(options: {
   return {
     publish,
     start() {
-      timer ??= setInterval(() => publish(), PUBLISH_INTERVAL_MS)
-      timer.unref?.()
-      publish(true)
+      publishing = true
+      publish()
     },
     stop() {
-      if (!timer) return
-      clearInterval(timer)
-      timer = undefined
+      publishing = false
     },
   }
 }

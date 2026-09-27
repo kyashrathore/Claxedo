@@ -47,16 +47,18 @@ export type RecoveryFacts = {
 }
 
 /**
- * The redacted ownership view a machine owner republishes beside its discovery
- * record, and the age past which a reader must treat it as stale.
+ * The redacted ownership view a machine owner rewrites beside its discovery
+ * record each time what it owns changes, and never otherwise: `changedAt` is
+ * when that last happened, not a heartbeat. Whether the view is still current
+ * is whether its writer is still alive, which a reader establishes from the
+ * writer's process identity rather than from the file's age.
  *
- * Both halves live here because the writer and the reader are in different
+ * The file name lives here because the writer and the reader are in different
  * products with a boundary between them: the launcher that reads this file
  * cannot import the daemon that writes it, and a filename agreed twice is a
  * filename that drifts once.
  */
 export const DAEMON_OWNERSHIP_SNAPSHOT_FILE = "local-daemon-ownership.json"
-export const DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS = 10_000
 
 /** The snapshot's path under a daemon data root, for the writer and the reader alike. */
 export function daemonOwnershipSnapshotPath(dataRoot: string): string {
@@ -85,7 +87,7 @@ export function isDaemonOwnershipSnapshot(value: unknown): value is {
   generation: string
   pid: number
   revision: string
-  writtenAt: number
+  changedAt: number
   residencyPins: number
   owners: DaemonOwnershipRow[]
 } {
@@ -94,7 +96,7 @@ export function isDaemonOwnershipSnapshot(value: unknown): value is {
     !!row
     && isNonEmptyString(row.machineId) && isNonEmptyString(row.generation) && isNonEmptyString(row.revision)
     && typeof row.pid === "number" && Number.isSafeInteger(row.pid) && row.pid > 0
-    && typeof row.writtenAt === "number" && Number.isFinite(row.writtenAt)
+    && typeof row.changedAt === "number" && Number.isFinite(row.changedAt)
     && typeof row.residencyPins === "number" && Number.isFinite(row.residencyPins)
     && Array.isArray(row.owners)
     && row.owners.every((owner) => {

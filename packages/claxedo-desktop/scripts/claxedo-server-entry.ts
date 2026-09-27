@@ -65,6 +65,7 @@ const lifecycle = createLocalDaemonLifecycle({
     return requestStop()
   },
   onStopped: () => requestExit("lifecycle"),
+  onScopeChanged: () => ownership.publish(),
   machine: {
     machineId: "local",
     generation: startup.daemonGeneration,

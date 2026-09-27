@@ -249,7 +249,7 @@ describe("recovering a published daemon", () => {
 })
 
 describe("the ownership snapshot a launcher reads", () => {
-  test("names the owners it recorded and how old the record is", () => {
+  test("names the owners it recorded, and says when they last changed only while their daemon is alive", () => {
     const dir = root()
     const file = claxedoDaemonOwnershipPath(dir)
     writeFileSync(file, JSON.stringify({
@@ -257,7 +257,7 @@ describe("the ownership snapshot a launcher reads", () => {
       generation: "generation-1",
       pid: 4242,
       revision: "rev-1",
-      writtenAt: 1_000,
+      changedAt: 1_000,
       residencyPins: 2,
       owners: [
         { id: "workspace:ws_a", kind: "workspace_runtime", generation: "serving#0", state: "serving", pins: false },
@@ -267,14 +267,21 @@ describe("the ownership snapshot a launcher reads", () => {
 
     const view = readDaemonOwnershipView(file)
     expect(view?.owners.map((owner) => owner.id)).toEqual(["workspace:ws_a", "terminal:t1"])
-    const preview = daemonRecoveryPreview(discovery(), view, 31_000)
-    expect(preview.resources).toEqual([
+    const live = daemonRecoveryPreview(discovery(), view, 31_000, "live")
+    expect(live.resources).toEqual([
       "daemon generation generation-1 (pid 4242)",
       "workspace:ws_a (serving)",
       "terminal:t1 (running)",
     ])
-    expect(preview.summary).toContain("stale")
-    expect(preview.summary).toContain("additional impact is unknown")
+    expect(live.summary).toStartWith("2 owners recorded, last changed 30s ago;")
+    expect(live.summary).toContain("additional impact is unknown")
+
+    expect(daemonRecoveryPreview(discovery(), view, 31_000, "exited").summary)
+      .toStartWith("2 owners last recorded by pid 4242, which is no longer running;")
+    expect(daemonRecoveryPreview(discovery(), view, 31_000, "identity_mismatch").summary)
+      .toStartWith("2 owners last recorded by pid 4242, which now belongs to a different process;")
+    expect(daemonRecoveryPreview(discovery(), view, 31_000, "unknown").summary)
+      .toStartWith("2 owners last recorded by pid 4242, whose state could not be checked;")
   })
 
   test("a snapshot from another generation says nothing about this one", () => {
@@ -285,12 +292,12 @@ describe("the ownership snapshot a launcher reads", () => {
       generation: "generation-0",
       pid: 1,
       revision: "rev-0",
-      writtenAt: 1_000,
+      changedAt: 1_000,
       residencyPins: 0,
       owners: [{ id: "workspace:ws_old", kind: "workspace_runtime", generation: "serving#0", state: "serving", pins: false }],
     }))
 
-    const preview = daemonRecoveryPreview(discovery(), readDaemonOwnershipView(file), 1_500)
+    const preview = daemonRecoveryPreview(discovery(), readDaemonOwnershipView(file), 1_500, "live")
     expect(preview.resources).toEqual(["daemon generation generation-1 (pid 4242)"])
     expect(preview.summary).toContain("unknown")
   })
