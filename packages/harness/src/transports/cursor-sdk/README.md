@@ -4,6 +4,10 @@ The pinned SDK reads `CURSOR_BACKEND_URL` as its module loads, locates every con
 
 The home comes from the Cursor profile, keyed by the session owner, the binding and the plugin selection; the host key combines the binding with that home, so sessions of one owner on one binding with one plugin selection share a host and sessions that differ in any of the three do not. A projection change on a live session updates the plugin folder of its current home in place, so the agent store the SDK keeps under that home stays resumable.
 
+`CursorEntryLifecycle` serializes host refresh, configuration and close for each attached entry. Closing blocks new entry operations immediately. An acquisition already in flight releases its host when it completes after close begins; close releases the entry's remaining reference. Concurrent closes share the same completion.
+
+`CursorRunState` owns the SDK run until terminal observation and any outstanding cancellation settle. A cancellation during send waits for the SDK handle; concurrent callers share one cancellation outcome. If the SDK rejects cancellation, each caller receives the error and a later explicit cancel can use the retained handle. Cancellation failure does not stop stream observation or acknowledge a successful stop.
+
 The host receives a broker-signed placeholder for a bound account. The egress broker exchanges the real key, keeps the real access token, and returns that signed placeholder in the exchange reply; subsequent Connect calls are substituted inside the broker. With no product binding, only a machine-owner local session can use the machine's explicit `CURSOR_BACKEND_URL` and `CURSOR_API_KEY`.
 
 The native SDK carries run status, usage and tools through `Agent.create` and `Agent.send`. ACP does not expose these SDK calls. The transport uses the existing Cursor translator in `@claxedo/agent-event-runtime`; the SDK owns its own loop and tools.

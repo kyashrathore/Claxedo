@@ -13,6 +13,10 @@ const health = vi.hoisted(() => ({
   release: undefined as (() => void) | undefined,
 }))
 const posture = vi.hoisted(() => ({ issuesSessions: false as boolean | undefined }))
+const account = vi.hoisted(() => ({ status: "unsigned" }))
+vi.mock("@/platform/account/account-provider", () => ({
+  useAccountPort: () => ({ state: () => ({ status: account.status }) }),
+}))
 const createIntent = vi.hoisted(() => ({ pending: false, bump: () => {}, answer: () => {} }))
 const wizard = vi.hoisted(() => ({ props: undefined as WizardProps | undefined }))
 const funnel = vi.hoisted(() => ({ events: [] as string[] }))
@@ -120,6 +124,7 @@ const renderCanvas = (props: Parameters<typeof FirstProjectCanvas>[0] = {}) =>
   ))
 
 afterEach(() => {
+  account.status = "unsigned"
   health.localExecution = true
   health.held = false
   health.release = undefined
@@ -133,6 +138,11 @@ afterEach(() => {
 })
 
 describe("FirstProjectCanvas", () => {
+  test.each(["unsigned", "pending", "unavailable", "signed"])("reads cloud availability from the %s account authority", async (status) => {
+    account.status = status
+    renderCanvas()
+    await waitFor(() => expect(wizard.props?.cloudAvailable).toBe(status === "signed"))
+  })
   test("hosts the wizard as the whole screen, on the server's own account of local execution", async () => {
     renderCanvas()
     expect(screen.getByTestId("first-project-canvas")).toBeTruthy()
@@ -187,7 +197,7 @@ describe("FirstProjectCanvas", () => {
 
   test("a created project reaches onProjectCreated as the record the shell opens", async () => {
     const opened: NewSessionProjectSelection[] = []
-    renderCanvas({ onProjectCreated: (project) => opened.push(project) })
+    renderCanvas({ onProjectCreated: (project) => { opened.push(project) } })
     await waitFor(() => expect(wizard.props).toBeTruthy())
     wizard.props?.onProjectCreated({ id: "prj_1", worktree: "/home/me/demo" })
     expect(opened).toEqual([{ id: "prj_1", worktree: "/home/me/demo" }])
@@ -197,13 +207,16 @@ describe("FirstProjectCanvas", () => {
     health.localExecution = false
     renderCanvas()
     await waitFor(() => expect(wizard.props).toBeTruthy())
-    await wizard.props!.createCloudWorkspace({
+    const created = await wizard.props!.createCloudWorkspace({
       projectName: "widgets",
       source: { kind: "repository", repoUrl: "https://github.com/acme/widgets" },
     })
     expect(cloud.calls).toEqual([
       { baseUrl: "http://server.test", projectName: "widgets", repoUrl: "https://github.com/acme/widgets" },
     ])
+    expect(created.workspaceId).toBe("ws_1")
+    expect(cloud.inventoryRefreshes).toBe(0)
+    await wizard.props!.onCloudWorkspaceCreated(created.workspaceId)
     expect(cloud.inventoryRefreshes).toBe(1)
     expect(cloud.navigated).toEqual(["/w/ws_1/session"])
   })

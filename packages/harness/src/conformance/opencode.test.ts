@@ -121,7 +121,7 @@ test("OpenCode loads projected MCP and skills through engine hooks without writi
     const state = await backend()
     const plugin = await writeSkill(state.root, "plugin", "conform-skill", "SKILL_MARKER")
     return { ...state, projection: { generation: "mcp", pluginRoots: [
-      { pluginInstanceId: "conform", root: plugin, dataRoot: plugin },
+      { pluginInstanceId: "conform", root: plugin, skillNames: ["conform-skill"], dataRoot: plugin },
     ], notApplied: [], mcpServers: [
       { kind: "http" as const, name: "proof", url: mcp.url, origin: "configured" as const },
     ] } }
@@ -261,7 +261,7 @@ test("a failed OpenCode open releases its launch document ownership", async () =
     await fs.mkdir(skill, { recursive: true })
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: replacement\ndescription: Replacement\n---\n")
     const second = { ...first, sessionId: "replacement", projection: { ...first.projection,
-      pluginRoots: [{ pluginInstanceId: "replacement", root: plugin, dataRoot: plugin }] } }
+      pluginRoots: [{ pluginInstanceId: "replacement", root: plugin, skillNames: ["replacement"], dataRoot: plugin }] } }
     const opened = await context.transport.start(second, { ...context.sessionBroker,
       rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: second.sessionId, upstreamSessionId }) })
     expect(opened.binding.sessionId).toBe("replacement")
@@ -442,7 +442,7 @@ test("a projection change reaches every OpenCode session in the folder", async (
       { ...context.sessionBroker, rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) })
     const plugin = await writeSkill(state.root, "folder-plugin", "folder-skill", "FOLDER_SKILL_MARKER")
     const projection = { ...context.start.projection, generation: "folder",
-      pluginRoots: [{ pluginInstanceId: "folder", root: plugin, dataRoot: plugin }] }
+      pluginRoots: [{ pluginInstanceId: "folder", root: plugin, skillNames: ["folder-skill"], dataRoot: plugin }] }
     expect((await context.transport.configure(context.session, { projection })).state).toBe("applied")
     state.server.scriptToolSequence("FOLDERSKILL", [{ name: "skill", input: { id: "folder-skill" } }])
     const events = []

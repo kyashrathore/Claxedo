@@ -4,8 +4,8 @@ import {
   AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
   AGENT_RUNTIME_EVENT_TYPES,
   agentRuntimeEvent,
-  isRuntimeGoalStatus,
 } from "./agent-runtime-event"
+import { isRuntimeGoalStatus } from "./subagents"
 
 describe("AgentRuntimeEvent contract", () => {
   test("exposes an explicit contract version and event kind registry", () => {

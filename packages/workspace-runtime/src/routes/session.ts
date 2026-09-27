@@ -1,5 +1,5 @@
 import type { SessionConfig, SessionHarness, SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"

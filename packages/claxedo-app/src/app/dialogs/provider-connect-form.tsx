@@ -55,8 +55,6 @@ export type ProviderConnectFormProps = {
    * Omitted inside a workspace SDK scope, which resolves its own.
    */
   workspaceScope?: string
-  /** Written with the credential so onboarding's scope choice is honoured. */
-  scope?: "local" | "shared"
   /**
    * Replaces the token on this stored row instead of storing another account.
    * The row keeps its id, its name and its place in the accounts list, so the
@@ -254,10 +252,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
           body: JSON.stringify({
             provider_id: props.provider,
             kind: "api_key",
-            // An unscoped save defaults to `managed`; onboarding passes a scope so
-            // "this machine only" is stored as the user asked.
-            source: props.scope === "local" ? "local_only" : "managed",
-            ...(props.scope ? { scope: props.scope } : {}),
+            source: "managed",
             label,
             secret: apiKey,
           }),

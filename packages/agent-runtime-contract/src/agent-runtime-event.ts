@@ -1,5 +1,7 @@
-import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
-import type { AgentSubagentUpdate, RuntimeGoalSnapshot, RuntimeQuestion, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
+import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
+import type { RuntimeQuestion, RuntimeUsageObservation } from "./events"
+import type { AgentSessionCommand } from "./sessions"
+import type { RuntimeContentBlock, RuntimeToolCallContent } from "./runtime-content"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
@@ -8,20 +10,6 @@ export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 7
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
 export type RuntimeNoticeSeverity = "debug" | "info" | "warn" | "error"
-export {
-  RUNTIME_GOAL_STATUSES,
-  isRuntimeGoalStatus,
-  type AgentSubagentUpdate,
-  type RuntimeGoalSnapshot,
-  type RuntimeGoalStatus,
-  type SubagentMode,
-  type SubagentStatus,
-  type SubagentToolCallRole,
-  type SubagentTranscript,
-  type SubagentWake,
-  type RuntimeTokenUsage,
-  type RuntimeUsageObservation,
-} from "@claxedo/agent-runtime-contract"
 
 export type SubagentUpdatedEvent = { type: "subagent-updated" } & AgentSubagentUpdate
 
@@ -44,10 +32,6 @@ export type ToolIntent =
   | "computer"
   | "switch_mode"
   | "generic"
-
-export type AcpContentBlock = ContentBlock
-export type AcpAvailableCommand = AvailableCommand
-export type AcpToolCallContent = ToolCallContent
 
 type RuntimeEventMeta = {
   harness?: string
@@ -94,11 +78,11 @@ export type ToolDisplay = {
 export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "text-delta"; delta: string }
   | { type: "thinking-delta"; delta: string }
-  | { type: "user-message-delta"; messageId?: string; content: AcpContentBlock }
+  | { type: "user-message-delta"; messageId?: string; content: RuntimeContentBlock }
   | { type: "tool-start"; toolCallId: string; toolName: string; kind?: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-input"; toolCallId: string; input: unknown; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-status"; toolCallId: string; status: RuntimeToolStatus; display?: ToolDisplay; metadata?: Record<string, unknown> }
-  | { type: "tool-content"; toolCallId: string; content: AcpToolCallContent; display?: ToolDisplay; metadata?: Record<string, unknown> }
+  | { type: "tool-content"; toolCallId: string; content: RuntimeToolCallContent; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-output"; toolCallId: string; output: unknown; attachments?: RuntimeToolAttachment[]; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-error"; toolCallId: string; error: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
@@ -130,7 +114,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "resource-delta"; resource: unknown; channel: "assistant" | "thinking" }
   | { type: "tool-location"; toolCallId: string; locations: Array<{ path: string; line?: number }> }
   | { type: "tool-terminal"; toolCallId: string; terminalId: string }
-  | { type: "available-commands-update"; commands: AcpAvailableCommand[] }
+  | { type: "available-commands-update"; commands: AgentSessionCommand[] }
   | { type: "session-agent"; agentId: string }
   | { type: "config-update"; options: Array<{ id: string; name: string; category?: string; type: "select" | "boolean"; currentValue: string | boolean; selectOptions?: Array<{ id: string; name: string }> }> }
   | {

@@ -10,10 +10,11 @@ export type ProjectionSource = {
 }
 
 function skillRoot(harnessId: string, value: unknown): SkillRoot {
-  if (!isRecord(value) || typeof value.pluginInstanceId !== "string" || typeof value.root !== "string" || typeof value.dataRoot !== "string") {
-    throw new Error(`The ${harnessId} plugin launch names a plugin root without pluginInstanceId, root and dataRoot`)
+  if (!isRecord(value) || typeof value.pluginInstanceId !== "string" || typeof value.root !== "string" || typeof value.dataRoot !== "string"
+    || !Array.isArray(value.skillNames) || !value.skillNames.every((name): name is string => typeof name === "string")) {
+    throw new Error(`The ${harnessId} plugin launch names a plugin root without pluginInstanceId, root, dataRoot and skillNames`)
   }
-  return { pluginInstanceId: value.pluginInstanceId, root: value.root, dataRoot: value.dataRoot }
+  return { pluginInstanceId: value.pluginInstanceId, root: value.root, dataRoot: value.dataRoot, skillNames: value.skillNames }
 }
 
 function pluginLaunchFor(harness: SessionHarness, harnessLaunch: ProjectionSource["harnessLaunch"]): { generation?: string; pluginRoots: SkillRoot[] } {

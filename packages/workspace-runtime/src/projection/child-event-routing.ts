@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeUsageObservation } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
 import type { RuntimeAppendSource, TurnEventProjector } from "./turn-projection"
 

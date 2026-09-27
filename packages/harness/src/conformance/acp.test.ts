@@ -1215,7 +1215,7 @@ test("an ACP agent without plugin intake receives MCP servers and a not-applied 
     async backend() {
       const state = await backend("process")
       return { ...state, projection: { generation: "g1", notApplied: [],
-        pluginRoots: [{ pluginInstanceId: "plugin-one", root: path.join(state.root, "plugin"), dataRoot: path.join(state.root, "plugin-data") }],
+        pluginRoots: [{ pluginInstanceId: "plugin-one", root: path.join(state.root, "plugin"), skillNames: [], dataRoot: path.join(state.root, "plugin-data") }],
         mcpServers: [{ kind: "http" as const, name: "plugin-http", url: "http://127.0.0.1:47357/mcp", origin: "plugin" as const }] } }
     },
     makeTransport(services, state) {
@@ -1328,7 +1328,7 @@ test("claude-agent-acp receives plugin roots through its claudeCode options", as
     async backend() {
       const state = await parityBackend({ PARITY_ACP_AGENT_INFO: JSON.stringify({ name: "@agentclientprotocol/claude-agent-acp", version: "0.81.2" }) })
       return { ...state, projection: { generation: "g1", notApplied: [], mcpServers: [],
-        pluginRoots: [{ pluginInstanceId: "plugin-one", root: path.join(state.root, "plugin"), dataRoot: path.join(state.root, "plugin-data") }] } }
+        pluginRoots: [{ pluginInstanceId: "plugin-one", root: path.join(state.root, "plugin"), skillNames: [], dataRoot: path.join(state.root, "plugin-data") }] } }
     },
     makeTransport: parityTransport,
   })
@@ -1437,6 +1437,7 @@ test("ACP delivers attachments by the agent's prompt capabilities", async () => 
       { type: "image", mimeType: "image/png", data: PNG },
       { type: "resource", resource: { uri: "wr://attachment/1", blob: TEXT_BASE64, mimeType: "text/plain" } },
       { type: "audio", mimeType: "audio/wav", data: WAV_BASE64 },
+      { type: "resource_link", uri: "https://attachments.invalid/remote.png", name: "https://attachments.invalid/remote.png" },
     ])
   } finally { await context.close() }
 }, 30_000)

@@ -2,7 +2,7 @@
   "name": "@claxedo/agent-event-runtime",
   "version": "0.10.0",
   "type": "module",
-  "description": "Canonical agent event contracts and harness adapters: normalize Claude SDK, Codex, Cursor, and ACP event streams into one runtime event model",
+  "description": "Harness-agnostic runtime snapshots and projections over the canonical agent runtime events",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -26,13 +26,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
-    },
-    "./contracts": {
-      "development": "./src/contracts/index.ts",
-      "bun": "./src/contracts/index.ts",
-      "types": "./dist/contracts/index.d.ts",
-      "import": "./dist/contracts.mjs",
-      "default": "./dist/contracts.mjs"
     },
     "./debug-trace": {
       "development": "./src/projections/debug-trace/index.ts",

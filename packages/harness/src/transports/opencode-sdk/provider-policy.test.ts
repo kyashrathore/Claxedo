@@ -36,6 +36,13 @@ test("provider policy updates the real SDK catalog, is workspace-scoped, and sur
     expect(await reopened.read()).toEqual({ disabled_providers: ["claxedo_test"] })
     await reopened.write({ disabled_providers: [] })
     expect(await ids(scopeA)).toContain("claxedo_test")
+    const disable = reopened.write({ disabled_providers: ["claxedo_test"] })
+    const disabledSnapshot = reopened.read()
+    const enable = reopened.write({ disabled_providers: [] })
+    expect(await disable).toEqual({ disabled_providers: ["claxedo_test"] })
+    expect(await disabledSnapshot).toEqual({ disabled_providers: ["claxedo_test"] })
+    expect(await enable).toEqual({ disabled_providers: [] })
+    expect(await reopened.read()).toEqual({ disabled_providers: [] })
   } finally {
     await runtime.close()
     fs.rmSync(root, { recursive: true, force: true })

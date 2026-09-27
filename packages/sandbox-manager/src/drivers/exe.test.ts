@@ -79,6 +79,16 @@ function fakeExe(options?: { failNohup?: boolean }) {
 }
 
 describe("exe.dev sandbox driver", () => {
+  test.each(["{}", "null", '{"vms":{}}', '{"vms":[null]}', '{"vms":[{}]}', "invalid-json"])("listing rejects malformed successful payload %s", async (payload) => {
+    const driver = createExeSandboxDriver({ apiToken: "k", fetchImpl: (async () => new Response(payload)) as typeof fetch })
+    await expect(driver.list!()).rejects.toThrow()
+  })
+
+  test("listing accepts an explicitly empty inventory", async () => {
+    const driver = createExeSandboxDriver({ apiToken: "k", fetchImpl: (async () => Response.json({ vms: [] })) as typeof fetch })
+    expect(await driver.list!()).toEqual([])
+  })
+
   test("creates provider-safe stable workspace names", () => {
     const name = exeWorkspaceName("Workspace / With_UNSAFE Characters and a very long suffix", 42)
     expect(name).toMatch(/^claxedo-ws-[a-z0-9-]+-g42$/)

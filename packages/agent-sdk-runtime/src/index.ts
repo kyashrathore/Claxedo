@@ -16,7 +16,7 @@ import type {
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
-import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-runtime-contract"
 export type { AgentRuntimeTurnStartInput as AgentRuntimeStoreTurnStartInput } from "./runtime-store"
 import type {
   AgentHarnessId,
@@ -49,8 +49,8 @@ export type {
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
 export { connectionIdForHarness, isAgentMessage, isProviderUnavailable } from "@claxedo/agent-runtime-contract"
-export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-event-runtime"
-export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
+export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-runtime-contract"
+export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-runtime-contract"
 export {
   GOAL_ACTIONS,
   GOAL_OPTIONAL_FIELDS,

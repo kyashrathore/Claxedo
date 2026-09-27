@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { AgentMessage, AgentSession, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
-import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime"
+import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { eventSessionId, sessionIdle, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"

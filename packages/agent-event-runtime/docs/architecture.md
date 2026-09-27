@@ -28,7 +28,8 @@ A snapshot is a serializable checkpoint for resuming one state boundary:
 
 ### Contracts
 
-`src/contracts` defines the cross-harness data model.
+`@claxedo/agent-runtime-contract` defines the cross-harness data model; this
+package imports it and re-exports none of it.
 
 - `RawHarnessEvent` is the ingress envelope. It carries `source`, optional
   `method`, raw `payload`, and optional `receivedAt`.

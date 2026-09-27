@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
-import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime"
+import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import type { AgentPermissionMode, AgentPermissionModeState, SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { AgentSession } from "@claxedo/agent-sdk-runtime"
 import type { ConfigOperations } from "@claxedo/harness/contract"

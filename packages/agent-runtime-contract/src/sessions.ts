@@ -1,7 +1,8 @@
 import type { SessionHarness } from "./harnesses"
 import type { SessionModelGroup } from "./session-group"
 import type { AutoLevel } from "./permissions"
-import type { CleanupFact, ExecutionFact, RecoveryErrorCode } from "./recovery"
+import type { CleanupFact, ExecutionFact } from "./recovery/facts"
+import type { RecoveryErrorCode } from "./recovery/operations"
 import type { ExecutionAvailability } from "./availability"
 import type { AgentAgentPartInput, AgentFilePartInput, AgentTextPartInput } from "./content"
 

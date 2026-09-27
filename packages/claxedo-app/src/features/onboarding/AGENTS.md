@@ -2,8 +2,7 @@
 
 The first run: the wizard the no-project canvas hosts (`wizard`, one file per
 step, the draft it holds until Finish) and the data paths it is built from —
-GitHub connection and repository listing (`code-host-api`), the sandbox
-provider catalog and keys (`sandbox-provider-api`), machine-login discovery and
+GitHub connection and repository listing (`code-host-api`), machine-login discovery and
 verification (`ai-connect-*`, read by Settings → Models), and the funnel events
 the steps report (`funnel`). The wizard draws the Models page's own account
 rows and provider sections and the workspaces feature's create form through
@@ -23,9 +22,9 @@ rows and provider sections and the workspaces feature's create form through
 - **Proven, not saved.** The largest silent funnel leak is
   `provider_connected` → `first_turn_ok`: a credential that saved but cannot
   work (no billing, a rate cap, a stale token) is the common case. Where a
-  probe exists — the machine scan and the sandbox key's own verdict — a step
+  probe exists — the machine scan — a step
   is done only on it. The hosted plane has no probe for a Pi key; its "done"
   is the catalog reporting the provider connected, and the copy says so.
 - **Pull, not push.** Cloud and detached sessions sell themselves after the
   first local turn, not before it. The desktop's step 3 is preselected "Just
-  this machine"; the cloud and machine rows are offered, never required.
+  this machine"; the cloud row requires a signed control plane, and neither cloud nor a connected machine is required.

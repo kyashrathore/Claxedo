@@ -120,7 +120,6 @@
     "findFreePort": 2,
     "first": 2,
     "formatBytes": 2,
-    "formatDaytonaAllowList": 2,
     "formatDuration": 2,
     "formatMsg": 2,
     "formatTime": 2,

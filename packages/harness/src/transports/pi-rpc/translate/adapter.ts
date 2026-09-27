@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter } from "../../../translate/adapter"
 import { object, text } from "@claxedo/agent-event-runtime/value"
 import { contentBlockImages } from "../../../translate/tool-attachments"

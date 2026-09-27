@@ -121,8 +121,13 @@ export async function readMaterializedAgentPluginGeneration(
       if (typeof entry.pluginInstanceId !== "string" || !materializedRoot) {
         throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection root escapes its generation`)
       }
+      if (!Array.isArray(entry.skillNames) || !entry.skillNames.every((name) =>
+        typeof name === "string" && !/[/\\]/.test(name) && contained(path.join(materializedRoot, "skills"), name) !== undefined)) {
+        throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection has invalid skill names`)
+      }
       return {
         pluginInstanceId: entry.pluginInstanceId,
+        skillNames: entry.skillNames,
         root: materializedRoot,
         dataRoot: pluginDataDirectory(runtimeRoot, entry.pluginInstanceId),
         ...(external ? { external: true as const } : {}),
@@ -356,6 +361,7 @@ export async function materializeAgentPluginGeneration(input: {
           ...(projection.configFile ? { configFile: path.relative(finalRoot, projection.configFile) } : {}),
           pluginRoots: projection.pluginRoots.map((plugin) => ({
             pluginInstanceId: plugin.pluginInstanceId,
+            skillNames: plugin.skillNames,
             ...(plugin.external
               ? { root: plugin.root, external: true }
               : { root: path.relative(finalRoot, plugin.root) }),
@@ -402,7 +408,7 @@ export function agentPluginHarnessLaunch(
     if (!projection || harnessId === "acp") continue
     result[harnessId] = {
       generation: generation.generationId,
-      pluginRoots: projection.pluginRoots.map(({ pluginInstanceId, root, dataRoot }) => ({ pluginInstanceId, root, dataRoot })),
+      pluginRoots: projection.pluginRoots.map(({ pluginInstanceId, root, dataRoot, skillNames }) => ({ pluginInstanceId, root, dataRoot, skillNames })),
     }
   }
   return result

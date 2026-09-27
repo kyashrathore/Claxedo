@@ -53,6 +53,13 @@ const input = {
 }
 
 describe("VercelSandboxDriver", () => {
+  test("touch propagates timeout-extension failures", async () => {
+    const error = new Error("extension denied")
+    const existing = sandbox({ extendTimeout: async () => { throw error } })
+    const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory({ get: async () => existing }) })
+    await expect(driver.touch!({ sandboxId: existing.sandboxId, hostId: "host", url: "https://r/" })).rejects.toBe(error)
+  })
+
   test("brokered secrets are injected via a firewall header-transform network policy, never in env", async () => {
     const created = sandbox()
     const vercel = factory({ create: vi.fn(async () => created) })

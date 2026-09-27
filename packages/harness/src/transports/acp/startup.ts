@@ -1,4 +1,4 @@
-import type { CreateElicitationRequest, RequestPermissionRequest } from "@agentclientprotocol/sdk"
+import type { CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest } from "@agentclientprotocol/sdk"
 import type { AttachInput, HarnessServices, HarnessSession, McpServerSpec, SessionBroker, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
 import { AcpStartupDeadline } from "./deadline"
@@ -23,8 +23,7 @@ export type AcpHost = {
 }
 
 async function acpSidePermission(entry: AcpEntry | undefined, broker: SessionBroker, request: RequestPermissionRequest, startupSignal: AbortSignal) {
-  if (entry?.sideSessions.has(request.sessionId)) return { outcome: { outcome: "cancelled" as const } }
-  if (entry?.session.binding.upstreamSessionId && request.sessionId !== entry.session.binding.upstreamSessionId) return { outcome: { outcome: "cancelled" as const } }
+  if (!ownsRequest(entry, request.sessionId)) return { outcome: { outcome: "cancelled" as const } }
   const release = entry?.startup?.hold() ?? entry?.quiet?.hold()
   try {
     const response = await acpPermission(request, entry?.turnBroker ?? broker, broker.sessionId, entry?.turnBroker ? undefined : { signal: startupSignal })
@@ -32,7 +31,16 @@ async function acpSidePermission(entry: AcpEntry | undefined, broker: SessionBro
   } finally { release?.() }
 }
 
-async function acpSideElicitation(entry: AcpEntry | undefined, broker: SessionBroker, request: CreateElicitationRequest, startupSignal: AbortSignal) {
+function ownsRequest(entry: AcpEntry | undefined, sessionId: string | undefined): boolean {
+  if (sessionId && entry?.sideSessions.has(sessionId)) return false
+  const upstream = entry?.session.binding.upstreamSessionId
+  return !upstream || upstream === sessionId
+}
+
+export async function acpSideElicitation(entry: AcpEntry | undefined, broker: SessionBroker, request: CreateElicitationRequest,
+  startupSignal: AbortSignal): Promise<CreateElicitationResponse> {
+  const sessionId = "sessionId" in request && typeof request.sessionId === "string" ? request.sessionId : undefined
+  if (!ownsRequest(entry, sessionId)) return { action: "cancel" }
   const release = entry?.startup?.hold() ?? entry?.quiet?.hold()
   try { return await acpElicitation(request, entry?.turnBroker ?? broker, entry?.turnBroker ? undefined : { signal: startupSignal }) }
   finally { release?.() }

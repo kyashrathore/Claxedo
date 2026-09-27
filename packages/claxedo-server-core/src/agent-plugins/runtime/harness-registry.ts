@@ -1,6 +1,4 @@
-export const SUPPORTED_AGENT_PLUGIN_HARNESSES = ["opencode", "claude", "codex", "cursor", "acp"] as const
-
-export type AgentPluginHarnessId = (typeof SUPPORTED_AGENT_PLUGIN_HARNESSES)[number]
+export type AgentPluginHarnessId = keyof typeof AGENT_PLUGIN_HARNESS_REGISTRY
 
 export const CLAUDE_AGENT_ACP = "@agentclientprotocol/claude-agent-acp"
 
@@ -40,8 +38,7 @@ export type AgentPluginHarnessDelivery = {
   }
 }
 
-export type AgentPluginHarnessDescriptor = {
-  id: AgentPluginHarnessId
+type AgentPluginHarnessMetadata = {
   label: string
   projection: "standard-root" | "generated-view" | "session-request"
   /**
@@ -55,6 +52,8 @@ export type AgentPluginHarnessDescriptor = {
   delivery: AgentPluginHarnessDelivery
 }
 
+export type AgentPluginHarnessDescriptor = AgentPluginHarnessMetadata & { id: AgentPluginHarnessId }
+
 const NATIVE_DELIVERY: AgentPluginHarnessDelivery = {
   mcpServers: true,
   wholePlugins: { reach: "every-agent" },
@@ -63,13 +62,12 @@ const NATIVE_DELIVERY: AgentPluginHarnessDelivery = {
   local: { readsOwnGlobalConfiguration: true },
 }
 
-export const AGENT_PLUGIN_HARNESS_REGISTRY: readonly AgentPluginHarnessDescriptor[] = [
-  { id: "opencode", label: "OpenCode", projection: "generated-view", skillNamespace: "flat", delivery: NATIVE_DELIVERY },
-  { id: "claude", label: "Claude Code", projection: "generated-view", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
-  { id: "codex", label: "Codex", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
-  { id: "cursor", label: "Cursor", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
-  {
-    id: "acp",
+export const AGENT_PLUGIN_HARNESS_REGISTRY = {
+  opencode: { label: "OpenCode", projection: "generated-view", skillNamespace: "flat", delivery: NATIVE_DELIVERY },
+  claude: { label: "Claude Code", projection: "generated-view", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
+  codex: { label: "Codex", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
+  cursor: { label: "Cursor", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
+  acp: {
     label: "Custom ACP agents",
     projection: "session-request",
     skillNamespace: "plugin",
@@ -81,30 +79,35 @@ export const AGENT_PLUGIN_HARNESS_REGISTRY: readonly AgentPluginHarnessDescripto
       local: { readsOwnGlobalConfiguration: true },
     },
   },
-]
+} satisfies Record<string, AgentPluginHarnessMetadata>
+
+export const SUPPORTED_AGENT_PLUGIN_HARNESSES: readonly AgentPluginHarnessId[] = Object.keys(AGENT_PLUGIN_HARNESS_REGISTRY)
+  .filter(isAgentPluginHarnessId)
 
 export function agentPluginHarnessDescriptor(harnessId: AgentPluginHarnessId): AgentPluginHarnessDescriptor {
-  const descriptor = AGENT_PLUGIN_HARNESS_REGISTRY.find((candidate) => candidate.id === harnessId)
-  if (!descriptor) throw new Error(`Unsupported Agent Plugins harness: ${harnessId}`)
-  return descriptor
+  return { id: harnessId, ...AGENT_PLUGIN_HARNESS_REGISTRY[harnessId] }
 }
 
-/** The catalog's per-target rows: the id, its label and what a plugin delivers to it. */
 export function agentPluginHarnessTargets() {
-  return AGENT_PLUGIN_HARNESS_REGISTRY.map(({ id, label, delivery }) => ({ id, label, delivery }))
+  return SUPPORTED_AGENT_PLUGIN_HARNESSES.map((id) => {
+    const { label, delivery } = AGENT_PLUGIN_HARNESS_REGISTRY[id]
+    return { id, label, delivery }
+  })
 }
 
-/**
- * One value per supported harness, built from a static list so adding a
- * harness fails to compile until every builder names it.
- */
 export function agentPluginHarnessRecord<T>(build: (harnessId: AgentPluginHarnessId) => T): Record<AgentPluginHarnessId, T> {
-  return { opencode: build("opencode"), claude: build("claude"), codex: build("codex"), cursor: build("cursor"), acp: build("acp") }
+  const record = Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((id) => [id, build(id)]))
+  if (!isCompleteHarnessRecord(record)) throw new Error("Agent Plugins harness record is incomplete")
+  return record
+}
+
+function isCompleteHarnessRecord<T>(record: Record<string, T>): record is Record<AgentPluginHarnessId, T> {
+  return SUPPORTED_AGENT_PLUGIN_HARNESSES.every((id) => Object.hasOwn(record, id))
 }
 
 export function isAgentPluginHarnessId(value: unknown): value is AgentPluginHarnessId {
   return typeof value === "string"
-    && SUPPORTED_AGENT_PLUGIN_HARNESSES.some((harnessId) => harnessId === value)
+    && Object.hasOwn(AGENT_PLUGIN_HARNESS_REGISTRY, value)
 }
 
 /**

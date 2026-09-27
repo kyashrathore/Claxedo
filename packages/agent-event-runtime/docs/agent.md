@@ -77,16 +77,15 @@ Those concerns belong to a host or to `@claxedo/agent-sdk-runtime`.
 
 ## Default Import Rules
 
-Use root imports only for canonical contracts and harness-agnostic runtime
-primitives:
+Import canonical contracts from `@claxedo/agent-runtime-contract` and
+harness-agnostic runtime primitives from this package:
 
 ```ts
 import {
   createAgentEventRuntime,
-  agentRuntimeEvent,
-  type AgentRuntimeEvent,
   type HarnessEventAdapter,
 } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 ```
 
 Use subpaths for projection implementations. The harness translators are

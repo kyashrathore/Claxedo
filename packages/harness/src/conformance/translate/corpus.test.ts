@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
-import type { RawHarnessEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter } from "../../translate/adapter"
 import { createAcpEventTranslator } from "../../transports/acp/translate"
 import { claudeSdkAdapter } from "../../transports/claude-sdk/translate"

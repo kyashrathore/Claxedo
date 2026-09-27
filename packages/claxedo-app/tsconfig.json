@@ -22,9 +22,7 @@
       "#terminal-backend": ["./src/features/terminal/core/backend/xterm"],
       "@opencode-ai/app-shared": ["./src/features/extensions/data/index.ts"],
       "@/*": ["./src/*"],
-      "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
-      "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/client-presentation": ["../agent-event-runtime/src/projections/client-presentation/index.ts"]
+      "@claxedo/agent-runtime-contract": ["../agent-runtime-contract/src/index.ts"]
     }
   },
   "include": ["src", "vite.cloud.config.ts", "vitest.config.ts", "vitest.setup.ts"],

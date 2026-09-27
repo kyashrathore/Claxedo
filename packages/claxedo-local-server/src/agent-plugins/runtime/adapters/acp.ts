@@ -26,6 +26,7 @@ export function acpAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter {
           pluginInstanceId: plugin.pluginInstanceId,
           root: plugin.root,
           dataRoot: plugin.dataRoot,
+          skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })),
         diagnostics: [],
       }

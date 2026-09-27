@@ -5,7 +5,7 @@ import {
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxTarget,
-} from ".."
+} from "../contract"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { workspaceRuntimeVersion } from "../runtime-version"
 import { shell } from "../command"
@@ -435,7 +435,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     return readyTarget(input, sandbox, hostId)
   }
 
-  async function sandboxById(target: SandboxTarget) {
+  async function sandboxById(target: Pick<SandboxTarget, "sandboxId">) {
     return (await resolveFactory()).get({
       ...credentials(),
       sandboxId: target.sandboxId,
@@ -455,7 +455,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),
     async touch(target) {
-      await (await sandboxById(target)).extendTimeout(keepAliveMs).catch(() => undefined)
+      await (await sandboxById(target)).extendTimeout(keepAliveMs)
     },
     async suspend(target) {
       await (await sandboxById(target)).stop({ blocking: false })

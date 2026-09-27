@@ -117,6 +117,7 @@ export function cursorAgentPluginAdapter(input: { userHomeDirectory?: string } =
           pluginInstanceId: plugin.pluginInstanceId,
           root: path.join(localRoot, name),
           dataRoot: plugin.dataRoot,
+          skillNames: plugin.plugin.skills.map((skill) => skill.name),
           external: true as const,
         })),
         diagnostics: [],

@@ -32,6 +32,13 @@
       "import": "./dist/guards.mjs",
       "default": "./dist/guards.mjs"
     },
+    "./skill-frontmatter": {
+      "development": "./src/skill-frontmatter.ts",
+      "bun": "./src/skill-frontmatter.ts",
+      "types": "./dist/skill-frontmatter.d.ts",
+      "import": "./dist/skill-frontmatter.mjs",
+      "default": "./dist/skill-frontmatter.mjs"
+    },
     "./crypto": {
       "development": "./src/crypto.ts",
       "bun": "./src/crypto.ts",
@@ -95,7 +102,7 @@
       "import": "./dist/process.mjs",
       "default": "./dist/process.mjs"
     },
-      "./machine-name": {
+    "./machine-name": {
       "development": "./src/machine-name.ts",
       "bun": "./src/machine-name.ts",
       "types": "./dist/machine-name.d.ts",
@@ -129,5 +136,8 @@
     "@types/bun": "1.3.13",
     "typescript": "catalog:"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "dependencies": {
+    "yaml": "2.9.0"
+  }
 }

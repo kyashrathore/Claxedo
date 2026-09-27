@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { SubagentStatus, SubagentToolCallRole } from "@claxedo/agent-event-runtime/contracts"
+import type { SubagentStatus, SubagentToolCallRole } from "@claxedo/agent-runtime-contract"
 import { text } from "@claxedo/agent-event-runtime/value"
 
 export const HOST_SUBAGENT_MCP_SERVER = "claxedo"

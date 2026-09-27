@@ -8,7 +8,7 @@ import type {
   SessionHandoff,
   SubagentObservation,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type {
   ChildSessionRef,
   OutsideTurnUsage,

@@ -1,5 +1,5 @@
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import type { AgentRuntime, AgentRuntimeRecovery } from "../host/runtime"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"

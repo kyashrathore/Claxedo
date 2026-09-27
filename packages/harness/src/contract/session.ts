@@ -5,7 +5,7 @@ import type {
   PromptModel,
   SessionConfig,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { PluginProjection, ResolvedCredentials } from "./projection"
 
 export type Locality = "local" | "remote"

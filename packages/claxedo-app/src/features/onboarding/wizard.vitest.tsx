@@ -14,7 +14,44 @@ const fixture = vi.hoisted(() => ({
   machineRunnable: false,
   connected: {} as Record<string, string[]>,
   formMounts: 0,
+  localExecution: false,
+  cloudCreated: [] as unknown[],
+  navigated: [] as string[],
+  refreshFailure: undefined as Error | undefined,
+  refreshes: 0,
 }))
+
+vi.mock("@/app/connection/server", () => ({ useServer: () => ({ url: "http://server.test" }) }))
+vi.mock("@/app/connection/server-product", () => ({
+  useServerProduct: () => ({ known: () => true, localExecution: () => fixture.localExecution }),
+}))
+vi.mock("@/platform/account/account-provider", () => ({
+  useAccountPort: () => ({ state: () => ({ status: "signed" }) }),
+}))
+vi.mock("@opencode-ai/ui/context/dialog", () => ({ useDialog: () => ({}) }))
+vi.mock("@/features/session/ui/components/session-pick-project-folder", () => ({
+  pickProjectFolderWith: () => async () => undefined,
+}))
+vi.mock("@/app/providers/layout", () => ({
+  useLayout: () => ({ projects: { registerCreateSurface: () => () => {}, createPending: () => false } }),
+}))
+vi.mock("@/app/integrations/onboarding-funnel", () => ({ useOnboardingFunnel: () => ({ emit: () => {} }) }))
+vi.mock("@/app/integrations/sync/query-options", () => ({ useShellQueryOptions: () => ({ projects: () => ({}) }) }))
+vi.mock("@/features/workspaces/data/query/project-ensure", () => ({
+  refreshProjectInventory: async () => {
+    fixture.refreshes += 1
+    if (fixture.refreshFailure) throw fixture.refreshFailure
+    return []
+  },
+}))
+vi.mock("@/features/workspaces/data/workspace-create-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/workspaces/data/workspace-create-api")>()),
+  createCloudWorkspace: async (input: unknown) => {
+    fixture.cloudCreated.push(input)
+    return { workspaceId: "ws_created" }
+  },
+}))
+vi.mock("@solidjs/router", () => ({ useNavigate: () => (path: string) => fixture.navigated.push(path) }))
 
 vi.mock("@/features/onboarding/app-ports", async () => {
   const projectApi = await vi.importActual<typeof import("@/features/workspaces/data/project-api")>("@/features/workspaces/data/project-api")
@@ -54,17 +91,16 @@ vi.mock("@/features/onboarding/app-ports", async () => {
     error: () => undefined,
     refresh: async () => undefined,
   }),
-  workspaceSandboxDriversUrl: () => "http://server.test/api/workspace/drivers",
-  workspaceSandboxDriverAuthUrl: () => "http://server.test/api/workspace/drivers/x/auth",
-  SandboxDriverLogo: () => <span />,
   }
 })
 
 vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}") }))
 
 const { OnboardingWizard } = await import("./wizard")
+const { FirstProjectCanvas } = await import("@/app/workbench/rail/first-project-canvas")
+const { refreshProjectInventory } = await import("@/features/workspaces/data/query/project-ensure")
 
-function mount(input: { localExecution: boolean }) {
+function mount(input: { localExecution: boolean; cloudAvailable?: boolean }) {
   const events: OnboardingFunnelEvent[] = []
   const opened: Array<{ id: string; worktree: string }> = []
   const cloud: Array<{ projectName: string; source: ProjectSource }> = []
@@ -73,11 +109,14 @@ function mount(input: { localExecution: boolean }) {
     <OnboardingWizard
       baseUrl="http://server.test"
       localExecution={localExecution()}
+      cloudAvailable={input.cloudAvailable ?? !localExecution()}
       emit={(event) => events.push(event)}
-      onProjectCreated={(project) => opened.push(project)}
+      onProjectCreated={(project) => { opened.push(project) }}
       createCloudWorkspace={async (draft) => {
         cloud.push(draft)
+        return { workspaceId: "ws_created" }
       }}
+      onCloudWorkspaceCreated={async () => {}}
     />
   ))
   return { events, opened, cloud, setLocalExecution }
@@ -96,10 +135,79 @@ afterEach(() => {
   fixture.machineRunnable = false
   fixture.connected = {}
   fixture.formMounts = 0
+  fixture.localExecution = false
+  fixture.cloudCreated = []
+  fixture.navigated = []
+  fixture.refreshFailure = undefined
+  fixture.refreshes = 0
   cleanup()
 })
 
+test.each([false, true])("a completed creation survives an inventory refresh failure (local=%s)", async (localExecution) => {
+  fixture.localExecution = localExecution
+  fixture.connected = localExecution ? {} : { pi: ["anthropic"] }
+  fixture.source = { kind: "repository", repoUrl: "https://github.com/acme/widgets" }
+  fixture.refreshFailure = new Error("Inventory unavailable")
+  const opened: Array<{ id?: string; worktree: string }> = []
+  render(() => <FirstProjectCanvas onProjectCreated={async (project) => {
+    await refreshProjectInventory({ queryKey: ["projects"] })
+    opened.push(project)
+  }} />)
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+  if (localExecution) fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+  else {
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).toBeEnabled())
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+  }
+  const finish = screen.getByRole("button", { name: localExecution ? "Open project" : "Create workspace" })
+  fireEvent.click(finish)
+  await waitFor(() => expect(fixture.refreshes).toBe(1))
+  await waitFor(() => expect(finish).toBeEnabled())
+  expect(screen.getByRole("alert").textContent).toBe("Created successfully, but could not open it: Inventory unavailable")
+  expect(screen.getByRole("button", { name: "Back" })).toBeDisabled()
+  expect(finish.textContent).toContain(localExecution ? "Open created project" : "Open created workspace")
+  fixture.refreshFailure = undefined
+  fireEvent.click(finish)
+  await waitFor(() => expect(localExecution ? opened : fixture.navigated).toHaveLength(1))
+  expect(localExecution ? fixture.created : fixture.cloudCreated).toHaveLength(1)
+  expect(fixture.refreshes).toBe(2)
+  if (localExecution) expect(opened).toEqual([{ id: "prj_1", worktree: "/home/me/widgets" }])
+  else expect(fixture.navigated).toEqual(["/w/ws_created/session"])
+  expect(finish).toBeDisabled()
+  fireEvent.click(finish)
+  expect(localExecution ? fixture.created : fixture.cloudCreated).toHaveLength(1)
+})
+
 describe("OnboardingWizard on a desktop", () => {
+  test("unsigned onboarding has no cloud option", async () => {
+    mount({ localExecution: true, cloudAvailable: false })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    expect(screen.queryByRole("radio", { name: /A cloud sandbox/ })).toBeNull()
+  })
+
+  test("signed onboarding finishes the selected cloud workspace instead of a local project", async () => {
+    fixture.source = { kind: "repository", repoUrl: "https://github.com/acme/widgets" }
+    const { cloud, opened } = mount({ localExecution: true, cloudAvailable: true })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("radio", { name: /A cloud sandbox/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }))
+    await waitFor(() => expect(cloud).toEqual([{ projectName: "widgets", source: fixture.source }]))
+    expect(fixture.created).toEqual([])
+    expect(opened).toEqual([])
+  })
+
+  test("a local folder cannot finish as a cloud sandbox", () => {
+    const { cloud, opened } = mount({ localExecution: true, cloudAvailable: true })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("radio", { name: /A cloud sandbox/ }))
+    expect(screen.getByRole("button", { name: "Create workspace" })).toBeDisabled()
+    expect(reason()).toBe("Choose a repository instead of a local folder to create a cloud sandbox.")
+    expect(cloud).toEqual([])
+    expect(opened).toEqual([])
+  })
   test("walks project → AI → where it runs and creates the project only at Finish", async () => {
     const { events, opened } = mount({ localExecution: true })
     expect(events).toEqual([{ name: "setup_form_shown" }])
@@ -205,7 +313,7 @@ describe("OnboardingWizard on a desktop", () => {
   })
 
   test("a step is shown again as it was left: each mounts once and is hidden, not rebuilt, while another is open", () => {
-    mount({ localExecution: true })
+    mount({ localExecution: true, cloudAvailable: true })
     const panel = (id: string) => document.querySelector<HTMLElement>(`[data-step-panel="${id}"]`)
     const url = screen.getByLabelText<HTMLInputElement>("Repository URL")
     fireEvent.input(url, { target: { value: "https://github.com/acme/widgets" } })
@@ -277,7 +385,7 @@ describe("OnboardingWizard on the hosted plane", () => {
     await waitFor(() => expect(again.cloud).toEqual([{ projectName: "widgets", source: fixture.source }]))
     expect(again.opened).toEqual([])
     expect(fixture.created).toEqual([])
-    expect(again.events.at(-1)).toEqual({ name: "step_done", step: "execution" })
+    await waitFor(() => expect(again.events.at(-1)).toEqual({ name: "step_done", step: "execution" }))
     expect(events.length).toBeGreaterThan(0)
     expect(cloud).toEqual([])
     expect(opened).toEqual([])
@@ -285,6 +393,7 @@ describe("OnboardingWizard on the hosted plane", () => {
 
   test("a server that declares itself hosted after the wizard mounted still preselects the cloud row", async () => {
     fixture.connected = { pi: ["anthropic"] }
+    fixture.source = { kind: "repository", repoUrl: "https://github.com/acme/widgets" }
     const { setLocalExecution } = mount({ localExecution: true })
     setLocalExecution(false)
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))

@@ -85,6 +85,7 @@
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.115.0",
+    "@claxedo/egress-broker": "workspace:*",
     "@claxedo/sandbox-manager": "workspace:*",
     "@openai/codex": "0.156.1",
     "@tsconfig/node-lts": "22.0.4",

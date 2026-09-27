@@ -17,5 +17,8 @@ export function openCodeLaunchDocument(projection: PluginProjection, servers: re
   const entries = servers.map((server): [string, Mcp.ServerConfig] => {
     return [server.name, mcp(server)]
   })
-  return { skills: projection.pluginRoots.map((plugin) => path.join(plugin.root, "skills")), mcp: Object.fromEntries(entries) }
+  return {
+    skills: projection.pluginRoots.flatMap((plugin) => plugin.skillNames.map((name) => path.join(plugin.root, "skills", name))),
+    mcp: Object.fromEntries(entries),
+  }
 }

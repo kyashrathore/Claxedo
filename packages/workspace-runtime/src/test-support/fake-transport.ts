@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { NO_HARNESS_EFFORT, type AdapterCancelOutcome, type HarnessConnectionCapabilities, type SessionConfig, type SteerResult } from "@claxedo/agent-runtime-contract"
 import type {
   AgentListOperations,

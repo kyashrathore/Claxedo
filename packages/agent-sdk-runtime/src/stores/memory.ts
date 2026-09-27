@@ -17,7 +17,7 @@ import type {
   AgentSessionCommand,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import { acceptsSessionTitle, boundSessionTitleSource } from "../session-title"
 import { sameSessionStartBinding, SessionStartStore } from "./session-start"

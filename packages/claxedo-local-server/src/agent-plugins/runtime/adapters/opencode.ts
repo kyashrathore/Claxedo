@@ -49,9 +49,8 @@ export function openCodeAgentPluginAdapter(): AgentPluginHarnessProjectionAdapte
     async project({ generationRoot, plugins, mcpServers = [] }) {
       const root = path.join(generationRoot, "harnesses", "opencode")
       await fs.mkdir(root, { recursive: true })
-      const skills = plugins
-        .filter((plugin) => plugin.plugin.skills.length > 0)
-        .map((plugin) => path.join(plugin.root, "skills"))
+      const skills = plugins.flatMap((plugin) =>
+        plugin.plugin.skills.map((skill) => path.join(plugin.root, skill.path)))
       const mcp = Object.fromEntries(plugins.flatMap((plugin) =>
         plugin.plugin.mcp.status === "valid"
           ? projectedMcpServers(plugin, mcpServers).map((server) => [serverName(plugin, server.name), openCodeMcpServer(plugin, server)] as const)
@@ -69,6 +68,7 @@ export function openCodeAgentPluginAdapter(): AgentPluginHarnessProjectionAdapte
           pluginInstanceId: plugin.pluginInstanceId,
           root: plugin.root,
           dataRoot: plugin.dataRoot,
+          skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })),
         diagnostics: [],
       }

@@ -33,7 +33,7 @@ import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
-import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   type CompatEvent,
@@ -3073,6 +3073,7 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM message WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_map WHERE session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_owner WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session WHERE id = ?").run(id)
   }
 

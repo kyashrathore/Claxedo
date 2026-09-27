@@ -1,5 +1,5 @@
 import type { AgentExecutionBinding, AgentTurnOutcome, PromptInput } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { sessionIdle, toCompatEvent, type CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createTurnBroker, type BrokerOwner, type TurnAuthority } from "@claxedo/harness/broker"

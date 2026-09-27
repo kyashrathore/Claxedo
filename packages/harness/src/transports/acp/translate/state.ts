@@ -1,8 +1,8 @@
 import { boundKeyedMap, boundList, text as str } from "@claxedo/agent-event-runtime/value"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { ToolCallContent, ToolKind } from "./types"
-import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "@claxedo/agent-event-runtime/contracts"
-import type { ToolIntent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "@claxedo/agent-runtime-contract"
+import type { ToolIntent } from "@claxedo/agent-runtime-contract"
 import { diagnoseTranslation, type AcpDiagnostics } from "./diagnostics"
 
 type Spot = { path: string; line?: number | null }

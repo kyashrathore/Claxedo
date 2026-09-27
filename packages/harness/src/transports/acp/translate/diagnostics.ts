@@ -1,4 +1,4 @@
-import { runtimeDiagnostic, type RuntimeDiagnostic } from "@claxedo/agent-event-runtime/contracts"
+import { runtimeDiagnostic, type RuntimeDiagnostic } from "@claxedo/agent-runtime-contract"
 
 export type AcpTranslationDiagnostic =
   | "acp.malformed_raw_input"

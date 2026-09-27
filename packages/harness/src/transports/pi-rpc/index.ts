@@ -165,16 +165,21 @@ export class PiRpcTransport implements HarnessTransport {
     }
   }
 
-  async cancel(session: HarnessSession, _turn: TurnRef, _deadline: Deadline) {
+  async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)
     if (!entry.busy) return { execution: "terminal" as const, cleanup: "unknown" as const }
     try {
-      await entry.rpc.request("clear_queue")
-      await entry.rpc.request("abort")
+      const results = await Promise.allSettled([
+        entry.rpc.request("clear_queue", {}, deadline),
+        entry.rpc.request("abort", {}, deadline),
+      ])
+      const failure = results.find((result) => result.status === "rejected")
+      if (failure?.status === "rejected") throw failure.reason
       return { execution: entry.settled ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
     } catch (error) {
       return { execution: "unknown" as const, cleanup: "owned" as const,
-        error: { code: "provider_unreachable" as const, message: errorMessage(error) } }
+        error: { code: error instanceof TransportError && error.code === "timeout" ? "cancellation_timeout" as const : "provider_unreachable" as const,
+          message: errorMessage(error) } }
     }
   }
 
@@ -265,8 +270,4 @@ export class PiRpcTransport implements HarnessTransport {
       return { status: !entry || entry.rpc.alive ? "ok" as const : "degraded" as const }
     },
   }
-}
-
-export function createPiRpcTransport(services: HarnessServices, options: PiRpcOptions): HarnessTransport {
-  return new PiRpcTransport(services, options)
 }

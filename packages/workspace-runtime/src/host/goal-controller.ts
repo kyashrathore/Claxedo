@@ -1,5 +1,5 @@
 import type { AgentGoalMutationResult, GoalAction, GoalCapabilities } from "@claxedo/agent-runtime-contract"
-import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { GoalCapabilityError, requireGoalAction } from "@claxedo/agent-sdk-runtime/adapters"
 import type { NativeGoalOperations } from "@claxedo/harness/contract"

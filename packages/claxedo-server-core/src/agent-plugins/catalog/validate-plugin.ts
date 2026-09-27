@@ -1,5 +1,5 @@
 import { isRecord, isString } from "@claxedo/helpers/guards"
-import { parse as parseYaml } from "yaml"
+import { decodeSkillFrontmatter } from "@claxedo/helpers/skill-frontmatter"
 import type { AgentPluginTree } from "../artifacts/tree"
 import { treeChildren, treeEntry, treeText } from "../artifacts/tree"
 import {
@@ -106,32 +106,25 @@ function validateManifest(raw: unknown): { manifest?: AgentPluginManifest; diagn
   return { manifest, diagnostics }
 }
 
-function parseSkillFrontmatter(text: string, directoryName: string): { name: string; description: string } | undefined {
-  const normalized = text.replace(/\r\n/g, "\n")
-  const match = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(normalized)
-  if (!match) return undefined
-  try {
-    const fields = parseYaml(match[1]) as unknown
-    if (!isRecord(fields)) return undefined
-    if (typeof fields.name !== "string"
-      || fields.name !== directoryName
-      || fields.name.length > 64
-      || !/^(?!.*--)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(fields.name)) return undefined
-    if (typeof fields.description !== "string"
-      || fields.description.length < 1
-      || fields.description.length > 1024) return undefined
-    if (fields.license !== undefined && typeof fields.license !== "string") return undefined
-    if (fields.compatibility !== undefined
-      && (typeof fields.compatibility !== "string"
-        || fields.compatibility.length < 1
-        || fields.compatibility.length > 500)) return undefined
-    if (fields.metadata !== undefined
-      && !stringRecord(fields.metadata)) return undefined
-    if (fields["allowed-tools"] !== undefined && typeof fields["allowed-tools"] !== "string") return undefined
-    return { name: fields.name, description: fields.description }
-  } catch {
-    return undefined
-  }
+function validateSkillFrontmatter(text: string, directoryName: string): { name: string; description: string } | undefined {
+  const { fields } = decodeSkillFrontmatter(text)
+  if (!fields) return undefined
+  if (typeof fields.name !== "string"
+    || fields.name !== directoryName
+    || fields.name.length > 64
+    || !/^(?!.*--)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(fields.name)) return undefined
+  if (typeof fields.description !== "string"
+    || fields.description.length < 1
+    || fields.description.length > 1024) return undefined
+  if (fields.license !== undefined && typeof fields.license !== "string") return undefined
+  if (fields.compatibility !== undefined
+    && (typeof fields.compatibility !== "string"
+      || fields.compatibility.length < 1
+      || fields.compatibility.length > 500)) return undefined
+  if (fields.metadata !== undefined
+    && !stringRecord(fields.metadata)) return undefined
+  if (fields["allowed-tools"] !== undefined && typeof fields["allowed-tools"] !== "string") return undefined
+  return { name: fields.name, description: fields.description }
 }
 
 function loadSkills(tree: AgentPluginTree, diagnostics: AgentPluginDiagnostic[]): AgentPluginSkill[] {
@@ -156,10 +149,10 @@ function loadSkills(tree: AgentPluginTree, diagnostics: AgentPluginDiagnostic[])
       diagnostics.push({ code: "skill_invalid", path: relative, message: "SKILL.md must resolve to a regular file" })
       continue
     }
-    let frontmatter: ReturnType<typeof parseSkillFrontmatter>
+    let frontmatter: ReturnType<typeof validateSkillFrontmatter>
     try {
       const text = treeText(tree, relative)
-      frontmatter = text === undefined ? undefined : parseSkillFrontmatter(text, child)
+      frontmatter = text === undefined ? undefined : validateSkillFrontmatter(text, child)
     } catch {
       frontmatter = undefined
     }

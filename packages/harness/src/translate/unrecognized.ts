@@ -1,4 +1,4 @@
-import type { AgentRuntimeEventOf } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
 
 export function unrecognizedEvent(protocol: string, method: string, payload: unknown): AgentRuntimeEventOf<"diagnostic"> {
   const raw = Buffer.from(JSON.stringify(payload) ?? "null").subarray(0, 4096).toString("utf8")

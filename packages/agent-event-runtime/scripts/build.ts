@@ -17,7 +17,6 @@ fs.mkdirSync(DIST, { recursive: true })
 
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/index.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/value.ts --bundle --platform=browser --format=esm --outfile=${DIST}/value.mjs --target=es2022`)
-run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/contracts/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/contracts.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/projections/client-presentation/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/client-presentation.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/projections/debug-trace/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/debug-trace.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/tsc")} -p tsconfig.build.json`)

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { prefixedRandomId } from "@claxedo/helpers"
 import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 

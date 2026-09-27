@@ -18,7 +18,7 @@
 // module by path — but they are stated once, here, where they can be reviewed
 // against the real exports, rather than copied into five call sites.
 
-import type { ClientPresentationEvent } from "@claxedo/agent-event-runtime/client-presentation"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "./json-fields"
 
 const WORKSPACE_STORE = "../../../claxedo-server-core/src/workspace/store/index.ts"
@@ -81,7 +81,7 @@ type RuntimeStoreModule = {
       update: { harness: { id: "opencode"; access: "native" }; variant: null; agent: null },
       input: { directory: string },
     ): unknown
-    appendEvent(input: { sessionId: string; agentSessionId: string; payload: ClientPresentationEvent }): unknown
+    appendEvent(input: { sessionId: string; agentSessionId: string; payload: AgentPresentationEvent }): unknown
     flush(): void
     close(): void
   }

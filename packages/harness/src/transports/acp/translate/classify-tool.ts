@@ -1,5 +1,5 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
-import type { ToolIntent as AcpIntent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { ToolIntent as AcpIntent } from "@claxedo/agent-runtime-contract"
 import type { ToolView } from "./state"
 import type { AcpDiagnostics } from "./diagnostics"
 

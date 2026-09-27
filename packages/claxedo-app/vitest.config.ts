@@ -28,16 +28,8 @@ export default defineConfig({
         replacement: normalizePath(fileURLToPath(new URL("./src/features/extensions/data/index.ts", import.meta.url))),
       },
       {
-        find: "@claxedo/agent-event-runtime/contracts",
-        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url))),
-      },
-      {
-        find: "@claxedo/agent-event-runtime/client-presentation",
-        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/projections/client-presentation/index.ts", import.meta.url))),
-      },
-      {
-        find: "@claxedo/agent-event-runtime",
-        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/index.ts", import.meta.url))),
+        find: "@claxedo/agent-runtime-contract",
+        replacement: normalizePath(fileURLToPath(new URL("../agent-runtime-contract/src/index.ts", import.meta.url))),
       },
       { find: "@/", replacement: normalizePath(fileURLToPath(new URL("./src/", import.meta.url))) },
     ],

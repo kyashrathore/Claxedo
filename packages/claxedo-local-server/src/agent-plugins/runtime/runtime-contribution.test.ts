@@ -81,7 +81,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     expect(first.status).toBe(200)
     const applied = await first.json() as { generationId: string; harnessLaunch: { claude: { generation: string; pluginRoots: LaunchedPluginRoot[] } } }
     expect(applied.harnessLaunch.claude.generation).toBe(applied.generationId)
-    expect(applied.harnessLaunch.claude.pluginRoots).toEqual([{ pluginInstanceId: "claxedo/review", root: expect.any(String), dataRoot: expect.any(String) }])
+    expect(applied.harnessLaunch.claude.pluginRoots).toEqual([{ pluginInstanceId: "claxedo/review", root: expect.any(String), dataRoot: expect.any(String), skillNames: expect.any(Array) }])
     expect(await fs.readFile(path.join(applied.harnessLaunch.claude.pluginRoots[0].root, "plugin.json"), "utf8")).toContain("review")
 
     const second = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {

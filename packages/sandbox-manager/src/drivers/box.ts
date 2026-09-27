@@ -4,7 +4,8 @@ import type {
   SandboxDriverEnsureInput,
   SandboxLease,
   SandboxTarget,
-} from ".."
+  SandboxResource,
+} from "../contract"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -302,13 +303,21 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     if (options.registryAuth) {
       await putFile(boxId, REGISTRY_PASSWORD_PATH, options.registryAuth.password)
     }
+    const failures: unknown[] = []
     try {
       await execOrThrow(boxId, script, "docker run")
-    } finally {
-      // The login step removes the staged password when it runs; this covers
-      // failures before the command reaches it.
-      if (options.registryAuth) await exec(boxId, `rm -f ${REGISTRY_PASSWORD_PATH}`).catch(() => undefined)
+    } catch (error) {
+      failures.push(error)
     }
+    // The login step removes the staged password when it runs; this covers
+    // failures before the command reaches it.
+    try {
+      if (options.registryAuth) await execOrThrow(boxId, `rm -f ${REGISTRY_PASSWORD_PATH}`, "registry password cleanup")
+    } catch (error) {
+      failures.push(error)
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `Box ${boxId} docker run and registry password cleanup failed`)
     // Publish the box-host port to a stable public HTTPS route, then read it back.
     await execOrThrow(boxId, `host ${port}`, "host publish")
     await waitForHealth(boxId, input)
@@ -344,6 +353,20 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     })
     if (!created) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     const boxId = boxOf(created).id
+    const resource = { sandboxId: boxId, hostId, driverResourceId: boxId, labels: input.labels }
+    const failures: unknown[] = []
+    try {
+      await input.onResource?.(resource)
+    } catch (handoffError) {
+      failures.push(handoffError)
+      try {
+        await destroy({ ...resource, workspaceId: input.workspaceId })
+      } catch (deleteError) {
+        failures.push(deleteError)
+      }
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `Box ${boxId} resource handoff and deletion failed`)
     const ready = await waitUntilReady(boxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     return boot(boxId, input, hostId)
@@ -351,28 +374,20 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
 
   async function resumeHost(input: { lease: SandboxLease; ensure: SandboxDriverEnsureInput }) {
     const boxId = input.lease.sandboxId
-    if (!boxId) return ensureHost(input.ensure)
+    if (!boxId) throw new BoxApiError("Cannot resume Box without its resource id")
     assertNetwork(input.ensure)
     const hostId = input.ensure.hostId ?? input.lease.hostId ?? `box-${input.ensure.workspaceId}`
-    try {
-      await api(`/boxes/${boxId}/resume`, { method: "POST" })
-      const ready = await waitUntilReady(boxId)
-      if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
-      // Re-establish the runtime container + route: an archived box stops its
-      // processes, so the container and `host` route must be brought back.
-      return await boot(boxId, input.ensure, hostId)
-    } catch (err) {
-      if (transientDriverError(err)) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
-      // A resume against a deleted/errored box falls back to a fresh box.
-      return ensureHost(input.ensure)
-    }
+    if (input.lease.url !== undefined) await api(`/boxes/${boxId}/resume`, { method: "POST" })
+    const ready = await waitUntilReady(boxId)
+    if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    return boot(boxId, input.ensure, hostId)
   }
 
   async function stop(target: SandboxTarget) {
     await api(`/boxes/${target.sandboxId}/stop`, { method: "POST" })
   }
 
-  async function destroy(target: SandboxTarget) {
+  async function destroy(target: SandboxResource) {
     await api(`/boxes/${target.sandboxId}`, { method: "DELETE" })
   }
 

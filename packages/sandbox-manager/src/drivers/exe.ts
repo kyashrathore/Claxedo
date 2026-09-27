@@ -5,7 +5,7 @@ import type {
   SandboxDriverEnsureInput,
   SandboxLease,
   SandboxTarget,
-} from ".."
+} from "../contract"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { sandboxDriverCatalog } from "../driver-catalog"
@@ -115,28 +115,9 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
   }
 
   /**
-   * Recover GC's labels from DURABLE provider state.
-   *
-   * The in-process `labels` Map is a cache, not storage: it is written only on a
-   * successful boot in THIS process. So a fresh driver instance — a Worker
-   * isolate recycle, a control-plane redeploy, or simply the GC cron running
-   * anywhere other than the process that provisioned — listed the same VMs with
-   * `labels: undefined`, and GC skips an unlabeled target as
-   * `unmanaged_app_label`. No exe orphan was ever reaped. Same invisible-orphan
-   * class as the Daytona and Cloudflare gaps, hidden behind a cache that happens
-   * to be warm in single-process tests.
-   *
-   * Two durable sources already written by `ensureHost` carry what GC needs:
-   *   - `--tag=claxedo` and `--tag=workspace-<workspaceId>` → `app`, `workspaceId`
-   *   - the `-g<epoch>` suffix of the deterministic VM name → `epoch`
-   *
-   * `app` is asserted from the `claxedo` tag rather than assumed: it is the
-   * ownership gate GC destroys on, so inferring it from "we found this VM" would
-   * let a sweep claim a VM it does not own. No claxedo tag ⇒ no labels ⇒ skipped.
-   *
-   * The `workspace-` tag is the authority for `workspaceId`. The VM name carries
-   * only a lossy slug (lowercased, punctuation-collapsed, truncated to 30 chars)
-   * plus a hash, so it cannot round-trip an id and is never parsed for one.
+   * The process cache cannot establish ownership after restart. Provider tags
+   * carry app/workspace identity; the VM name carries the epoch. The sanitized
+   * name cannot recover the original workspace id, so missing tags stay unowned.
    */
   function durableLabels(item: ExeVm): Record<string, string> | undefined {
     const cached = labels.get(item.vm_name)
@@ -307,9 +288,14 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
     // than acting on a guess; it is never destroyed on partial identity.
     async list() {
       const result = await api("ls claxedo-ws-*")
-      return (Array.isArray(result.vms) ? result.vms : [])
-        .map(vm)
-        .filter((item): item is ExeVm => !!item && item.vm_name.startsWith("claxedo-ws-"))
+      if (!Array.isArray(result.vms)) throw new Error("Invalid exe.dev listing: expected vms array")
+      return result.vms
+        .map((value) => {
+          const item = vm(value)
+          if (!item || !item.vm_name) throw new Error("Invalid exe.dev listing entry: expected vm_name")
+          return item
+        })
+        .filter((item) => item.vm_name.startsWith("claxedo-ws-"))
         .map((item) => {
           const recovered = durableLabels(item)
           // `hostId` comes from the durable `host-` tag when present. Falling

@@ -6,17 +6,8 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type {
-  AgentRuntimeEvent,
-  AgentRuntimeEventOf,
-  RuntimeTokenUsage,
-  RuntimeToolAttachment,
-  SubagentMode,
-  SubagentStatus,
-  SubagentToolCallRole,
-  ToolDisplay,
-} from "@claxedo/agent-event-runtime/contracts"
-import { runtimeDiagnostic } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeTokenUsage, RuntimeToolAttachment, SubagentMode, SubagentStatus, SubagentToolCallRole, ToolDisplay } from "@claxedo/agent-runtime-contract"
+import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../../translate/adapter"
 import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { imageAttachment } from "../../../translate/tool-attachments"

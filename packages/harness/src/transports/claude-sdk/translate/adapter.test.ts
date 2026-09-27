@@ -4,7 +4,7 @@ import { createAgentEventRuntime } from "../../../translate/runtime"
 import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import { TOOL_ATTACHMENT_INLINE_MAX_BYTES } from "../../../translate/tool-attachments"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import {
   CLAUDE_SUBAGENT_USAGE_METHOD,
   claudeChildCorrelationKey,

@@ -1,7 +1,7 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
-import type { Clock, CreateId } from "@claxedo/agent-event-runtime/contracts"
-import type { RawHarnessEvent } from "@claxedo/agent-event-runtime/contracts"
-import type { RuntimeDiagnostic } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { Clock, CreateId } from "@claxedo/agent-runtime-contract"
+import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
+import type { RuntimeDiagnostic } from "@claxedo/agent-runtime-contract"
 
 export type HarnessEventAdapterContext = {
   harness: string

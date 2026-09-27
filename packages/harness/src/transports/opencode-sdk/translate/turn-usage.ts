@@ -1,5 +1,5 @@
-import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { RuntimeTokenUsage } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { ProjectedEvent } from "../event-pump.js"
 import { tokenUsage, type TokenUsage } from "../session-port.js"
 import { errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"

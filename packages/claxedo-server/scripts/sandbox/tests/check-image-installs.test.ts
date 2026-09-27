@@ -33,7 +33,24 @@ test("the artifact must have a literal version and digest before use", () => {
 
 test("every global npm package names an exact version", () => {
   expect(imageInstallErrors("RUN npm i -g @example/tool@latest"))
-    .toContain("npm i -g: unpinned package @example/tool@latest")
+    .toContain("npm global install: unpinned package @example/tool@latest")
   expect(imageInstallErrors("ARG AGENTS=\"@example/tool@latest\"\nRUN npm i -g ${AGENTS}"))
-    .toContain("npm i -g: unpinned package @example/tool@latest")
+    .toContain("npm global install: unpinned package @example/tool@latest")
+})
+
+test.each(["i -g", "install -g", "install --global", "--global install", "i --global"])(
+  "global npm spelling %s cannot bypass version pins",
+  (command) => {
+    expect(imageInstallErrors(`RUN npm ${command} @example/tool`))
+      .toEqual([expect.stringContaining("unpinned package @example/tool")])
+    expect(imageInstallErrors(`RUN npm ${command} @example/tool@1.2.3`)).toEqual([])
+    expect(imageInstallErrors(`RUN npm ${command} install`))
+      .toEqual([expect.stringContaining("unpinned package install")])
+  },
+)
+
+test("latest cannot select an image or artifact even beside an exact version", () => {
+  expect(imageInstallErrors("FROM example/agent:latest")).toContain("mutable latest reference")
+  expect(imageInstallErrors(installer.replace("/lab/${cursor_version}/", "/lab/latest/${cursor_version}/")))
+    .toContain("mutable latest reference")
 })

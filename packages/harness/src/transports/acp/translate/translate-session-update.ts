@@ -6,7 +6,7 @@ import type {
   StopReason,
   ToolKind,
 } from "./types"
-import type { AgentRuntimeEvent, RuntimeToolStatus } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, RuntimeToolStatus } from "@claxedo/agent-runtime-contract"
 import { drainContent, drainSpots, reduceTool, RETAINED_MESSAGE_TEXTS_MAX, viewToolWithDiagnostics, type SessionState } from "./state"
 import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"

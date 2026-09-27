@@ -8,7 +8,7 @@ import {
   type SessionHandoffSource,
   type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { admitSessionInstructions, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { createSessionBroker, type createRequestBroker, type SessionBrokerContext } from "@claxedo/harness/broker"
 import { applySessionConfigUpdate, type HarnessSession, type SessionBroker, type TurnActor } from "@claxedo/harness/contract"
@@ -211,11 +211,14 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
           ...(create.instructions ? { instructions: create.instructions } : {}),
         }), broker)
       } catch (error) {
-        if (!existed) store.deleteSession(sessionId)
-        throw error
-      } finally {
         await endStart(context)
+        if (!existed) {
+          input.broker.broker.closeSession(sessionId)
+          store.deleteSession(sessionId)
+        }
+        throw error
       }
+      await endStart(context)
       attachments.register(sessionId, { handle, session, broker, context, owner: create.owner })
       const persisted = store.getSession(sessionId)
       if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)

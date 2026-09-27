@@ -8,7 +8,8 @@ import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
   SandboxTarget,
-} from ".."
+  SandboxResource,
+} from "../contract"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -127,21 +128,25 @@ async function stageLocalAgentAuth(
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-docker-auth-"))
   try {
     const stagedRoot = path.join(tmp, "root")
-    const copied = await Promise.all(dockerLocalAuthCandidates(input.authHome).map(async (item) => {
-      const stat = await fs.stat(item.source).catch(() => undefined)
-      if (!stat) return false
-      if (item.kind === "file" && !stat.isFile()) return false
-      if (item.kind === "dir" && !stat.isDirectory()) return false
+    let copied = false
+    for (const item of dockerLocalAuthCandidates(input.authHome)) {
+      const stat = await fs.stat(item.source).catch((error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
+        throw error
+      })
+      if (!stat) continue
+      if (item.kind === "file" && !stat.isFile()) continue
+      if (item.kind === "dir" && !stat.isDirectory()) continue
       const target = path.join(stagedRoot, item.target.replace(/^\/root\/?/, ""))
       await fs.mkdir(path.dirname(target), { recursive: true })
       if (item.kind === "dir") await fs.cp(item.source, target, { recursive: true })
       else await fs.copyFile(item.source, target)
-      return true
-    }))
-    if (!copied.some(Boolean)) return
+      copied = true
+    }
+    if (!copied) return
     await input.docker(["cp", stagedRoot, `${containerId}:${AUTH_STAGE_DIR}`], input.timeoutMs)
   } finally {
-    await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
+    await fs.rm(tmp, { recursive: true, force: true })
   }
 }
 
@@ -300,7 +305,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
   async function resumeHost(input: { lease: { sandboxId?: string; sandbox_id?: string }; ensure: SandboxDriverEnsureInput }) {
     const sandboxId = input.lease.sandboxId ?? input.lease.sandbox_id
     if (!sandboxId) return ensureHost(input.ensure)
-    await dockerCommand(["inspect", "-f", "{{.Id}}", sandboxId], timeoutMs).catch(() => undefined)
+    await dockerCommand(["inspect", "-f", "{{.Id}}", sandboxId], timeoutMs)
     await dockerCommand(["start", sandboxId], timeoutMs).catch((err) => {
       if (transientDriverError(err)) return undefined
       throw err
@@ -312,7 +317,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
     await dockerCommand(["stop", target.sandboxId], 30_000)
   }
 
-  async function destroy(target: SandboxTarget) {
+  async function destroy(target: SandboxResource) {
     await dockerCommand(["rm", "-f", target.sandboxId], 30_000)
   }
 

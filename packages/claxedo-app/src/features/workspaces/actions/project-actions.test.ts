@@ -322,6 +322,32 @@ describe("createProjectActions New Project", () => {
 })
 
 describe("createProjectActions", () => {
+  test("opening a created project reports a failed inventory refresh before navigation", async () => {
+    const { props, nav, navs, adds } = make("/workspace/created")
+    const failure = new Error("Inventory unavailable")
+    let unavailable = true
+    props.projectInventoryActions.query = () => ({
+      queryKey: ["test", "created-project-refresh"],
+      queryFn: async () => {
+        if (unavailable) throw failure
+        return [project({ id: "prj_created", worktree: "/workspace/created" })]
+      },
+      retry: false,
+    })
+    await expect(createProjectActions(props, nav).handleProjectCreated({ worktree: "/workspace/created" })).rejects.toBe(failure)
+    expect(navs).toEqual([])
+    expect(adds).toEqual([])
+    unavailable = false
+    await createProjectActions(props, nav).handleProjectCreated({ worktree: "/workspace/created" })
+    expect(navs.map((entry) => entry.path)).toEqual(["/w/prj_created/session"])
+    expect(adds).toEqual([{
+      directory: "/workspace/created",
+      sessionId: "new",
+      title: "New Session",
+      workspaceRouteId: "prj_created",
+    }])
+  })
+
   // handleNewLocalWorkspace/handleNewCloudWorkspace are driven end to end by the
   // session composer's environment selector (core-cloud-provisioning.spec.ts,
   // core-workspace-lifecycle.spec.ts).

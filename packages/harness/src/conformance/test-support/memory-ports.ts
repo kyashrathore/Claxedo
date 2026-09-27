@@ -1,6 +1,6 @@
 import type { AgentSessionStartBinding, RuntimeGoalSnapshot, SessionConfig, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
-import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { PendingRequest, ProviderTurnInput, ProviderTurnResult, RequestAnswer } from "../../contract/broker"
 import type { HarnessBinding, TurnRef } from "../../contract/session"
 import type { BrokerEvent, BrokerPorts, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"

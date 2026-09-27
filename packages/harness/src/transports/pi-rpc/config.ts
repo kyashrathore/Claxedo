@@ -1,6 +1,6 @@
-import type { PromptModel, SessionConfig } from "@claxedo/agent-runtime-contract"
+import type { PromptModel } from "@claxedo/agent-runtime-contract"
 import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
-import { configOptionsPreview, modelAndEffortOptions } from "../../contract"
+import { applySessionConfigUpdate, configOptionsPreview, modelAndEffortOptions } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import type { PiRpc } from "./rpc"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
@@ -58,18 +58,7 @@ export function createPiConfig(input: {
     read: async (session) => input.entry(session).start.config,
     update: async (session, update) => {
       const entry = input.entry(session)
-      const config: SessionConfig = { ...entry.start.config,
-        ...(update.harness !== undefined ? { harness: update.harness } : {}),
-        ...(update.permissionCeiling !== undefined ? { permissionCeiling: update.permissionCeiling } : {}),
-        ...(update.permissionMode !== undefined ? { permissionMode: update.permissionMode ?? undefined } : {}),
-        ...(update.permissionState !== undefined ? { permissionState: update.permissionState ?? undefined } : {}),
-        ...(update.model !== undefined ? { model: update.model ?? undefined } : {}),
-        ...(update.variant !== undefined ? { variant: update.variant ?? undefined } : {}),
-        ...(update.agent !== undefined ? { agent: update.agent ?? undefined } : {}),
-        ...(update.instructions !== undefined ? { instructions: update.instructions ?? undefined } : {}),
-        ...(update.group !== undefined ? { group: update.group ?? undefined } : {}),
-        ...(update.handoff !== undefined ? { handoff: update.handoff ?? undefined } : {}),
-      }
+      const config = applySessionConfigUpdate(entry.start.config, update)
       entry.start = { ...entry.start, config }
       return entry.start.config
     },

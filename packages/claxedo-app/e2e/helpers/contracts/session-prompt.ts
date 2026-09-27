@@ -46,7 +46,7 @@
 // zod schema, because no such schema exists yet. If one is ever added server-side,
 // replace the validator body with `schema.parse()` and delete the hand-written
 // checks — the field table stays as the compile-time tripwire either way.
-import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
+import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import type { SessionPromptBody } from "@claxedo/workspace-runtime/routes"
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,8 @@ replayable event model.
 
 `@claxedo/agent-event-runtime` owns harness event normalization and projection.
 It turns harness-native event frames from external agent harnesses into
-canonical `AgentRuntimeEvent` values, then lets host packages project those
+canonical `AgentRuntimeEvent` values owned by `@claxedo/agent-runtime-contract`,
+then lets host packages project those
 events into UI, compatibility, replay, or diagnostic formats.
 
 The package is intentionally browser-safe. Hosts still own process management,
@@ -20,7 +21,7 @@ npm install @claxedo/agent-event-runtime
 ## Quickstart
 
 ```ts
-import { agentRuntimeEvent, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 const projection = createClientPresentationProjection({ sessionId: "ses_1", directory: "/work", assistantMessageId: "msg_1" })
@@ -30,8 +31,8 @@ for (const frame of projection.ingest(event)) console.log(frame.payload.type)
 
 The harness translators and the translation runner live inside
 `@claxedo/harness`, each transport's in its own `translate/` folder, and are
-not exported. This package keeps the event contracts, the snapshot helpers and
-the projections.
+not exported. The event contracts live in `@claxedo/agent-runtime-contract`.
+This package keeps the snapshot helpers and the projections.
 
 ## Agent-First Public Docs
 
@@ -48,8 +49,8 @@ The package ships public docs under `docs/`. Use
 
 Entry point status:
 
-- Stable: `@claxedo/agent-event-runtime`,
-  `@claxedo/agent-event-runtime/contracts`
+- Stable: `@claxedo/agent-event-runtime`
+- Shared event contracts: `@claxedo/agent-runtime-contract`
 - Integration: `@claxedo/agent-event-runtime/projections/debug-trace`
 - Compatibility:
   `@claxedo/agent-event-runtime/client-presentation`

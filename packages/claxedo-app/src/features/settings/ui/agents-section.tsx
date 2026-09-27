@@ -77,6 +77,7 @@ export const AgentHarnessAccounts: Component<{
           checking={machine.checking()}
           onRemove={(ids) => machine.remove(ids)}
           removing={machine.removing()}
+          onCloudConsent={(account, allowed) => machine.setCloudConsent(account, allowed)}
           onConnected={() => machine.scan({ fresh: true })}
         />
       </SettingsList>

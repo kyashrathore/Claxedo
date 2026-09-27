@@ -30,6 +30,8 @@ describe("OpenCode Agent Plugins projection", () => {
         local: { type: "stdio", command: "./bin/server", args: ["${PLUGIN_DATA}/state"], cwd: "${PLUGIN_ROOT}" },
       },
     }))
+    await fs.mkdir(path.join(root, "skills", "broken"), { recursive: true })
+    await fs.writeFile(path.join(root, "skills", "broken", "SKILL.md"), "---\nname: [broken\ndescription: Invalid\n---\n")
     const validated = validatePluginTree(await loadAgentPluginTreeFromDirectory(root), root)
     expect(validated.status).toBe("valid")
     if (validated.status !== "valid") return
@@ -40,8 +42,10 @@ describe("OpenCode Agent Plugins projection", () => {
       plugins: [{ pluginInstanceId: "[\"claxedo\",\"review\"]", artifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", plugin: validated.plugin, root, dataRoot }],
     })
 
+    expect(validated.diagnostics).toContainEqual(expect.objectContaining({ code: "skill_invalid", path: "skills/broken/SKILL.md" }))
+    expect(projection.pluginRoots[0].skillNames).toEqual(["review"])
     const config = JSON.parse(await fs.readFile(projection.configFile!, "utf8"))
-    expect(config.skills).toEqual([path.join(root, "skills")])
+    expect(config.skills).toEqual([path.join(root, "skills", "review")])
     expect(Object.values(config.mcp)).toEqual([{
       type: "local",
       command: ["./bin/server", `${dataRoot}/state`],

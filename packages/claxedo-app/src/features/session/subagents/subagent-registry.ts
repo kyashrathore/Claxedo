@@ -4,7 +4,7 @@ import type {
   SubagentToolCallRole,
   SubagentTranscript,
   SubagentUpdatedEvent,
-} from "@claxedo/agent-event-runtime"
+} from "@claxedo/agent-runtime-contract"
 
 type MutableField = "mode" | "status" | "label" | "subagentType" | "description" | "transcript"
 type ImmutableField = "providerId" | "providerKind" | "childSessionId"

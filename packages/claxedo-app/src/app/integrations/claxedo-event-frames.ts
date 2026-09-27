@@ -6,7 +6,7 @@
  * (claxedo-server-core `platform/runtime/lib/bus.ts`), the pty/process/
  * agent/session control frames with `WorkspaceRuntimeEvent`
  * (workspace-runtime `bus.ts`), and the session frames with the runtime's
- * projected presentation events (`ClientPresentationEvent`).
+ * projected presentation events (`AgentPresentationEvent`).
  * `ClaxedoEventsProvider` (./claxedo-events.tsx) reads the streams and feeds
  * the emitter; consumers subscribe by type or listen to all.
  */

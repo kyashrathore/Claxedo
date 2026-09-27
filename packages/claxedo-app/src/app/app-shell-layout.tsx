@@ -134,7 +134,7 @@ export type AppShellLayoutProps = ParentProps<{
    */
   onNewProject?: () => void
   /** A project the empty canvas's composer created; opens it. */
-  onProjectCreated?: (project: { worktree: string }) => void
+  onProjectCreated?: (project: { worktree: string }) => void | Promise<void>
 
   /**
    * Callback to open settings

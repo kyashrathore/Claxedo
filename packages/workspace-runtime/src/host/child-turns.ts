@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { PromptInput, SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { BrokerPorts } from "@claxedo/harness/broker"
 import type { ChildSessionRef } from "@claxedo/harness/contract"

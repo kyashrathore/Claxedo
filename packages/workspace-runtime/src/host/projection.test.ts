@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { pluginProjectionFor } from "./projection"
 
-const root = { pluginInstanceId: "pi_review", root: "/runtime/generations/g7/plugins/review", dataRoot: "/runtime/data/pi_review" }
+const root = { pluginInstanceId: "pi_review", root: "/runtime/generations/g7/plugins/review", dataRoot: "/runtime/data/pi_review", skillNames: ["review"] }
 const harnessLaunch = { claude: { generation: "generation-7-abc", pluginRoots: [root] } }
 
 describe("pluginProjectionFor", () => {
@@ -22,7 +22,7 @@ describe("pluginProjectionFor", () => {
   test("a launch row with bare paths is refused rather than rebuilt into identities", () => {
     expect(() => pluginProjectionFor({ id: "claude", access: "native" }, {
       generation: "runtime-config:3", mcp: {}, harnessLaunch: { claude: { generation: "g", pluginRoots: [root.root] } },
-    })).toThrow("without pluginInstanceId, root and dataRoot")
+    })).toThrow("without pluginInstanceId, root, dataRoot and skillNames")
     expect(() => pluginProjectionFor({ id: "claude", access: "native" }, {
       generation: "runtime-config:3", mcp: {}, harnessLaunch: { claude: { pluginRoots: [root] } },
     })).toThrow("must name its generation")

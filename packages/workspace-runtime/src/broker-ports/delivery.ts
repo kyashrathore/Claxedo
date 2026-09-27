@@ -1,5 +1,5 @@
 import type { CompatEvent } from "../compat-events"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
 import type { RuntimeStore, RuntimeEventSource } from "../store"
 

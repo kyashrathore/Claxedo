@@ -1,5 +1,5 @@
 import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { PendingRequest, RequestAnswer, RequestScope } from "@claxedo/harness/contract"
 import type { BrokerEvent } from "@claxedo/harness/broker"
 import type { RuntimeStore, SqliteDatabase } from "../store"

@@ -53,6 +53,43 @@ async function fixture(tuning: {
 }
 
 describe("binding broker HTTP entrypoint", () => {
+  test("caller abort after headers cancels upstream and releases its lane", async () => {
+    let upstreamSignal: AbortSignal | undefined
+    const f = await fixture({ upstreamTimeoutMs: 30, maxConcurrentUpstream: 1, fetch: (async (_url, init) => {
+      upstreamSignal = init?.signal as AbortSignal
+      return new Response(new ReadableStream({ start(controller) {
+        upstreamSignal!.addEventListener("abort", () => controller.error(upstreamSignal!.reason), { once: true })
+      } }))
+    }) as typeof fetch })
+    const caller = new AbortController()
+    const response = await f.request(undefined, { signal: caller.signal })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(upstreamSignal!.aborted).toBe(false)
+    caller.abort(new Error("caller disconnected"))
+    expect(upstreamSignal!.aborted).toBe(true)
+    await expect(response.text()).rejects.toThrow("caller disconnected")
+    const next = await f.request()
+    expect(next.status).toBe(200)
+    await next.body!.cancel()
+  })
+
+  test.each([false, true])("stalled exchange body releases its lane (caller abort: %s)", async (abort) => {
+    const caller = new AbortController()
+    const f = await fixture({ upstreamTimeoutMs: 30, maxConcurrentUpstream: 1 })
+    f.update({ destination: { origin: "https://provider.example", methods: ["POST"], pathPrefixes: ["/exchange"],
+      exchange: { path: "/exchange", tokenField: "token" } } })
+    let bodyStarted!: () => void
+    const started = new Promise<void>((resolve) => { bodyStarted = resolve })
+    f.respond(async () => new Response(new ReadableStream({ start() { bodyStarted() } })))
+    const pending = f.request("/exchange", { signal: caller.signal })
+    await started
+    if (abort) caller.abort()
+    const result = await Promise.race([pending, new Promise<undefined>((resolve) => setTimeout(resolve, 150))])
+    expect(result?.status).toBe(502)
+    f.respond(async () => Response.json({ token: "private" }))
+    expect((await f.request("/exchange")).status).toBe(200)
+  })
+
   test("Cursor exchange keeps the access token behind a signed placeholder", async () => {
     const f = await fixture()
     f.update({ destination: { origin: "https://api2.cursor.sh", methods: ["POST"], pathPrefixes: [
@@ -293,22 +330,16 @@ describe("binding broker HTTP entrypoint", () => {
 
   test("refuses a caller that cannot get a lane while one is held", async () => {
     let upstreamCalls = 0
-    let reachedFetch!: () => void
-    let releaseFetch!: (response: Response) => void
-    const reached = new Promise<void>((resolve) => { reachedFetch = resolve })
-    const gate = new Promise<Response>((resolve) => { releaseFetch = resolve })
     const f = await fixture({
       maxConcurrentUpstream: 1,
       upstreamTimeoutMs: 30,
-      fetch: (async () => { upstreamCalls += 1; reachedFetch(); return gate }) as typeof fetch,
+      fetch: (async () => { upstreamCalls += 1; return new Response(new ReadableStream()) }) as typeof fetch,
     })
-    const first = f.request()
-    await reached
+    const first = await f.request()
     const second = await f.request()
     expect([second.status, (await second.json()).error.code]).toEqual([503, "broker_authority_unavailable"])
     expect(upstreamCalls).toBe(1)
-    releaseFetch(new Response("done"))
-    const firstResponse = await first
+    const firstResponse = first
     expect(firstResponse.status).toBe(200)
     await firstResponse.body?.cancel()
   })

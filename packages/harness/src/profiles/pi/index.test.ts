@@ -2,11 +2,28 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { piEnvironment, piProjectionArgs, preparePiProfile, selectPiProfile, type PiProfileOptions } from "./index"
 
 const credentials = { providers: {}, secrets: {}, leaseGeneration: "g1" }
 const owner = { kind: "machine-owner" as const }
 const member = { kind: "person" as const, userId: "member" }
+
+test.each([...PI_LAUNCH_PROVIDERS])("projects the canonical URL for connected Pi provider %s", async (provider) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-provider-overlay-"))
+  try {
+    const profile = selectPiProfile(member, { ...credentials, providers: {
+      [piCredentialProviderIDs(provider)[0]!]: {
+        baseUrl: "https://broker.test", apiPath: "/selected/provider/api", placeholder: "member-account", authMode: "api-key",
+      },
+    } }, root, "session", { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
+      stateRoot: path.join(root, "state"), ownerAgentDir: path.join(root, "owner") })
+    await preparePiProfile(profile, { providerID: "pi", modelID: `${provider}/model` })
+    expect(JSON.parse(await fs.readFile(path.join(profile.agentDir, "models.json"), "utf8"))).toEqual({
+      providers: { [provider]: { baseUrl: "https://broker.test/selected/provider/api", apiKey: "member-account" } },
+    })
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})
 
 describe("Pi profile selection", () => {
   test("keeps the owner's files unchanged and isolates brokered credentials", async () => {
@@ -63,7 +80,7 @@ describe("Pi profile selection", () => {
   })
 
   test("adds a Pi package without admitting MCP", () => {
-    const projection = { generation: "g1", pluginRoots: [{ pluginInstanceId: "plugin", root: "/tmp/pi-extension", dataRoot: "/tmp/pi-data" }],
+    const projection = { generation: "g1", pluginRoots: [{ pluginInstanceId: "plugin", root: "/tmp/pi-extension", skillNames: [], dataRoot: "/tmp/pi-data" }],
       mcpServers: [], notApplied: [] }
     expect(piProjectionArgs(projection)).toEqual(["-e", "/tmp/pi-extension"])
     expect(() => piProjectionArgs({ ...projection, mcpServers: [{ kind: "http", name: "server", url: "https://example.test", origin: "configured" }] }))

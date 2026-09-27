@@ -488,7 +488,7 @@ describe("daytona egress translation", () => {
     const sandbox = {
       id: "sbx_1",
       state: "started",
-      process: { executeCommand: async () => ({}) },
+      process: { executeCommand: async () => ({ exitCode: 0 }) },
       getPreviewLink: async () => ({ url: "https://preview.test" }),
       getSignedPreviewUrl: async () => ({ url: "https://preview.test" }),
       refreshActivity: async () => {},

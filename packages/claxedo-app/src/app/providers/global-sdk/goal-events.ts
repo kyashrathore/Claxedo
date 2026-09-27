@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { LiveSession } from "./live-session"
 import {
   applySessionGoalRuntimeEvent,

@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { acpGrantKey } from "./protocol"
+import { acpGrantKey, acpPrompt } from "./protocol"
+import type { TurnInput } from "../../contract"
+
+test("ACP delivers URL references using its mandatory resource-link block", async () => {
+  const uri = "https://attachments.invalid/remote.png"
+  const turn = { prompt: { parts: [{ type: "file", mime: "image/png", filename: "remote.png", url: uri }] } } as TurnInput
+  for (const capabilities of [undefined, {}, { image: true, embeddedContext: true }]) {
+    expect(await acpPrompt(turn, { capabilities })).toEqual([{ type: "resource_link", uri, name: uri }])
+  }
+})
 
 describe("ACP grant identity", () => {
   test("an absent kind is other, never a wildcard", () => {

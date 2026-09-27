@@ -1,4 +1,4 @@
-import type { RuntimeTokenUsage, RuntimeUsageObservation } from "@claxedo/agent-event-runtime"
+import type { RuntimeTokenUsage, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
 import { jsonRecord } from "../platform/runtime/lib/json"

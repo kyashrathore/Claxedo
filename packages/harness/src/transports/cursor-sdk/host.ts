@@ -2,6 +2,7 @@ import { createInterface } from "node:readline"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentOptions, Run, SDKAgent } from "@cursor/sdk"
 import { isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
+import { CursorRunState } from "./run-state"
 
 const TITLE_AGENT_NAME = "Claxedo session title"
 
@@ -23,11 +24,12 @@ function agentOptions(session: HostSession): AgentOptions {
   }
 }
 
-class CursorHostRuntime {
+export class CursorHostRuntime {
   private readonly agents = new Map<string, SDKAgent>()
-  private readonly runs = new Map<string, Run>()
+  private readonly runs = new Map<string, CursorRunState>()
 
-  private post(reply: HostReply) { protocolOut(`${JSON.stringify(reply)}\n`) }
+  constructor(private readonly post: (reply: HostReply) => void = (reply) => { protocolOut(`${JSON.stringify(reply)}\n`) },
+    private readonly sdk: () => Promise<Pick<typeof import("@cursor/sdk"), "Agent" | "Cursor">> = () => import("@cursor/sdk")) {}
 
   private discard(sessionId: string): void {
     this.agents.get(sessionId)?.close()
@@ -37,7 +39,7 @@ class CursorHostRuntime {
   private async open(session: HostSession): Promise<SDKAgent> {
     const existing = this.agents.get(session.sessionId)
     if (existing) return existing
-    const { Agent } = await import("@cursor/sdk")
+    const { Agent } = await this.sdk()
     const options = agentOptions(session)
     const agent = session.agentId ? await Agent.resume(session.agentId, options) : await Agent.create(options)
     this.agents.set(session.sessionId, agent)
@@ -45,7 +47,28 @@ class CursorHostRuntime {
   }
 
   private async run(command: Extract<HostCommand, { kind: "run" }>): Promise<void> {
+    const pending = this.begin(command.session.sessionId)
+    try { await this.send(command, pending) }
+    finally {
+      pending.finish()
+      this.release(command.session.sessionId, pending)
+    }
+  }
+
+  private begin(sessionId: string): CursorRunState {
+    if (this.runs.has(sessionId)) throw new Error("Cursor run already active")
+    const pending = new CursorRunState()
+    this.runs.set(sessionId, pending)
+    return pending
+  }
+
+  private release(sessionId: string, pending: CursorRunState): void {
+    if (pending.releasable) this.runs.delete(sessionId)
+  }
+
+  private async send(command: Extract<HostCommand, { kind: "run" }>, pending: CursorRunState): Promise<void> {
     const agent = await this.open(command.session)
+    pending.beforeSend()
     let run: Run
     try {
       run = await agent.send(command.prompt, {
@@ -57,32 +80,38 @@ class CursorHostRuntime {
       this.discard(command.session.sessionId)
       throw error
     }
-    this.runs.set(command.session.sessionId, run)
-    try {
-      for await (const message of run.stream()) this.post({ id: command.id, kind: "event", message })
-      const result = await run.wait()
-      this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id,
-        status: result.status, ...(result.result ? { result: result.result } : {}) } })
-    } finally { this.runs.delete(command.session.sessionId) }
+    pending.activate(run)
+    for await (const message of run.stream()) this.post({ id: command.id, kind: "event", message })
+    const result = await run.wait()
+    this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id,
+      status: result.status, ...(result.result ? { result: result.result } : {}) } })
   }
 
   private async title(command: Extract<HostCommand, { kind: "title" }>): Promise<void> {
-    const { Agent } = await import("@cursor/sdk")
+    const pending = this.begin(command.session.sessionId)
+    try { await this.sendTitle(command, pending) }
+    finally {
+      pending.finish()
+      this.discard(command.session.sessionId)
+      this.release(command.session.sessionId, pending)
+    }
+  }
+
+  private async sendTitle(command: Extract<HostCommand, { kind: "title" }>, pending: CursorRunState): Promise<void> {
+    const { Agent } = await this.sdk()
     const agent = await Agent.create({ ...agentOptions(command.session), name: TITLE_AGENT_NAME })
-    try {
-      const run = await agent.send(command.prompt, { local: { force: false } })
-      this.runs.set(command.session.sessionId, run)
-      try {
-        for await (const _message of run.stream()) {}
-        const result = await run.wait()
-        this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id, status: result.status,
-          ...(result.result ? { result: result.result } : {}) } })
-      } finally { this.runs.delete(command.session.sessionId) }
-    } finally { agent.close() }
+    this.agents.set(command.session.sessionId, agent)
+    pending.beforeSend()
+    const run = await agent.send(command.prompt, { local: { force: false } })
+    pending.activate(run)
+    for await (const _message of run.stream()) {}
+    const result = await run.wait()
+    this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id, status: result.status,
+      ...(result.result ? { result: result.result } : {}) } })
   }
 
   private async models(command: Extract<HostCommand, { kind: "models" }>): Promise<void> {
-    const { Cursor } = await import("@cursor/sdk")
+    const { Cursor } = await this.sdk()
     const listed = await Cursor.models.list({ apiKey: command.apiKey })
     this.post({ id: command.id, kind: "result", value: { models: listed.map((model) => ({ id: model.id, name: model.displayName,
       ...(model.description ? { description: model.description } : {}) })) } })
@@ -97,7 +126,11 @@ class CursorHostRuntime {
         const agent = await this.open(command.session)
         this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId } })
       } else if (command.kind === "cancel") {
-        await this.runs.get(command.sessionId)?.cancel()
+        const pending = this.runs.get(command.sessionId)
+        if (pending) {
+          try { await pending.cancel() }
+          finally { this.release(command.sessionId, pending) }
+        }
         this.post({ id: command.id, kind: "result" })
       } else {
         this.discard(command.sessionId)
@@ -109,13 +142,15 @@ class CursorHostRuntime {
   }
 }
 
-keepStdoutForProtocol()
-const runtime = new CursorHostRuntime()
-const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
-lines.on("line", (line) => {
-  if (!line.trim()) return
-  const command: unknown = JSON.parse(line)
-  if (!isHostCommand(command)) throw new Error(`Cursor SDK host received an invalid command: ${line.slice(0, 120)}`)
-  void runtime.receive(command)
-})
-lines.on("close", () => process.exit(0))
+if (import.meta.main) {
+  keepStdoutForProtocol()
+  const runtime = new CursorHostRuntime()
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
+  lines.on("line", (line) => {
+    if (!line.trim()) return
+    const command: unknown = JSON.parse(line)
+    if (!isHostCommand(command)) throw new Error(`Cursor SDK host received an invalid command: ${line.slice(0, 120)}`)
+    void runtime.receive(command)
+  })
+  lines.on("close", () => process.exit(0))
+}

@@ -544,7 +544,7 @@ test("brokered Codex discovers a projected plugin skill through its composed hom
   await fs.mkdir(skill, { recursive: true })
   await fs.writeFile(path.join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "conform-plugin", version: "1.0.0", skills: "./skills/" }))
   await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: conform-skill\ndescription: Conformance plugin\n---\nConformance\n")
-  const projection = { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "one", root: plugin, dataRoot: plugin }] }
+  const projection = { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "one", root: plugin, skillNames: [], dataRoot: plugin }] }
   const services = createTestServices()
   let rpc: CodexRpc | undefined
   try {

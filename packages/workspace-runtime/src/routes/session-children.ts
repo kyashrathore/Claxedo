@@ -1,7 +1,7 @@
 import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { createHmac, randomUUID } from "crypto"
 import type { AgentMessage, AgentSession, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import type { SubagentStatus, SubagentUpdatedEvent, SubagentWake } from "@claxedo/agent-event-runtime"
+import type { SubagentStatus, SubagentUpdatedEvent, SubagentWake } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { CompatEnvelope } from "../compat-events"
 import type { SessionPromptBody } from "../session/service"
@@ -382,4 +382,4 @@ function attentionChange(payload: CompatEnvelope["payload"]): { kind: "add" | "r
   }
 }
 
-export type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+export type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"

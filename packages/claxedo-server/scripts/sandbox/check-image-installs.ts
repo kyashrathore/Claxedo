@@ -17,20 +17,23 @@ export function imageInstallErrors(source: string) {
   const errors: string[] = []
   const lines = commands(source)
   const content = lines.join("\n")
+  if (/\blatest\b/i.test(content)) errors.push("mutable latest reference")
   if (/\b(?:curl|wget)\b[^\n|]*\|\s*(?:\/bin\/)?(?:ba)?sh\b/.test(content)) errors.push("remote installer piped to a shell")
   if (/\bwget\b/.test(content)) errors.push("wget download")
   if (/^ADD\s+(?:--\S+\s+)*https?:\/\//m.test(content)) errors.push("remote ADD")
 
-  for (const match of content.matchAll(/\bnpm\s+i\s+-g\b([^\n;&]*)/g)) {
+  for (const match of content.matchAll(/\bnpm\s+([^\n;&|]+)/g)) {
     const arg = match[1].trim()
+    if (!/(?:^|\s)(?:i|install)(?:\s|$)/.test(arg) || !/(?:^|\s)(?:-g|--global)(?:\s|$)/.test(arg)) continue
     const variables = [...arg.matchAll(/\$\{(\w+)\}/g)].map((item) => item[1])
-    const literals = arg.replace(/\$\{\w+\}/g, "").split(/\s+/).filter((token) => token && !token.startsWith("--"))
+    const literals = arg.replace(/\$\{\w+\}/g, "").replace(/(?:^|\s)(?:i|install)(?=\s|$)/, " ").split(/\s+/)
+      .filter((token) => token && !token.startsWith("-"))
     for (const variable of variables) {
       const value = content.match(new RegExp(`\\bARG\\s+${variable}="([^"]+)"`))?.[1]
-      if (!value) errors.push(`npm i -g: ${variable} has no literal package list`)
+      if (!value) errors.push(`npm global install: ${variable} has no literal package list`)
       else literals.push(...value.split(/\s+/))
     }
-    for (const token of literals) if (!hasExactPackage(token)) errors.push(`npm i -g: unpinned package ${token}`)
+    for (const token of literals) if (!hasExactPackage(token)) errors.push(`npm global install: unpinned package ${token}`)
   }
 
   const digestAssignments = [...content.matchAll(/\b([A-Za-z_]\w*sha256)=([^\s;]+)/g)]

@@ -1,5 +1,5 @@
 import { cloneSnapshotValue } from "../../core/state"
-import type { RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
+import type { RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
 
 export const RETAINED_TOOL_CALLS_MAX = 256
 export const RETAINED_PART_IDS_MAX = 1024

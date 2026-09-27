@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { createBoxSandboxDriver, type BoxFetch } from "./box"
-import type { SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, type SandboxDriverEnsureInput } from ".."
+import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; body?: any }
 
@@ -75,6 +76,150 @@ function fakeBox(options?: { states?: string[]; hostUrl?: string; failHealthOnce
 }
 
 describe("box sandbox driver", () => {
+  test.each(["transport", "http", "exit"] as const)("registry password cleanup %s failure prevents publishing the runtime", async (failure) => {
+    const box = fakeBox()
+    const error = new Error("cleanup connection refused")
+    const driver = createBoxSandboxDriver({
+      apiKey: "k",
+      healthIntervalMs: 0,
+      registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
+      fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command === "rm -f .claxedo-registry-password") {
+          if (failure === "transport") throw error
+          if (failure === "http") return Response.json({ error: "cleanup denied" }, { status: 403 })
+          return Response.json({ ok: true, exitCode: 1, stderr: "cleanup denied" })
+        }
+        return box.fetchImpl(url, init)
+      },
+    })
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow(/cleanup/)
+    expect(box.calls.some((call) => call.body?.command?.startsWith("host "))).toBe(false)
+  })
+
+  test("persists a created box before readiness polling and resumes it after manager restart", async () => {
+    let store = createMemoryLeaseStore()
+    const box = fakeBox({ states: ["provisioning", "ready"] })
+    let observedId: string | undefined
+    let observedStatus: string | undefined
+    const driver = createBoxSandboxDriver({ apiKey: "k", provisionTimeoutMs: 0, provisionIntervalMs: 0,
+      fetchImpl: async (url, init) => {
+        if (url.endsWith("/boxes/bx_abc123") && (!init?.method || init.method === "GET")) {
+          const lease = await store.get("ws1")
+          observedId = lease?.sandboxId
+          observedStatus = lease?.status
+        }
+        return box.fetchImpl(url, init)
+      } })
+    const options = { leaseStore: store, driver, onEgressUnenforced: () => {} }
+    expect((await createSandboxManager(options).ensure("ws1", { homeRegion: "eu" })).status).toBe("provisioning")
+    expect(observedId).toBe("bx_abc123")
+    expect(observedStatus).toBe("acquiring")
+    expect((await store.get("ws1"))?.url).toBeUndefined()
+    store = createMemoryLeaseStore(await store.list())
+    expect((await createSandboxManager({ ...options, leaseStore: store }).ensure("ws1", { homeRegion: "eu" })).status).toBe("ready")
+    expect(box.calls.filter((call) => call.path === "/boxes" && call.method === "POST")).toHaveLength(1)
+    expect(box.calls.filter((call) => call.path.endsWith("/resume"))).toHaveLength(0)
+  })
+
+  test("a failed readiness read retains the Box identity beyond acquisition staleness", async () => {
+    const store = createMemoryLeaseStore()
+    const box = fakeBox()
+    let fail = true
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+      if (fail && url.endsWith("/boxes/bx_abc123")) {
+        fail = false
+        return Response.json({ error: "provider down" }, { status: 500 })
+      }
+      return box.fetchImpl(url, init)
+    } })
+    const manager = createSandboxManager({ leaseStore: store, driver, staleAfterMs: 0, retryDelayMs: () => 0, onEgressUnenforced: () => {} })
+    expect((await manager.ensure("ws1", { homeRegion: "eu" })).status).toBe("unavailable")
+    expect((await store.get("ws1"))?.sandboxId).toBe("bx_abc123")
+    expect((await manager.ensure("ws1", { homeRegion: "eu" })).status).toBe("ready")
+    expect(box.calls.filter((call) => call.path === "/boxes" && call.method === "POST")).toHaveLength(1)
+  })
+
+  test("a rejected resource write deletes the created box before propagating the handoff error", async () => {
+    const box = fakeBox()
+    const handoffError = new Error("epoch lost")
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl })
+    await expect(driver.ensureHost(ensureInput({ onResource: async () => { throw handoffError } }))).rejects.toBe(handoffError)
+    expect(box.calls).toEqual([
+      { path: "/boxes", method: "POST", body: { ttlSeconds: null } },
+      { path: "/boxes/bx_abc123", method: "DELETE", body: undefined },
+    ])
+  })
+
+  test.each(["transport", "http"])("a rejected resource write surfaces both handoff and deletion %s errors", async (failure) => {
+    const box = fakeBox()
+    const handoffError = new Error("epoch lost")
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+      const response = await box.fetchImpl(url, init)
+      if (init?.method !== "DELETE") return response
+      if (failure === "transport") throw new Error("delete connection refused")
+      return Response.json({ error: "delete denied" }, { status: 403 })
+    } })
+    const error = await driver.ensureHost(ensureInput({ onResource: async () => { throw handoffError } })).then(
+      () => { throw new Error("expected handoff to fail") },
+      (error: unknown) => error,
+    )
+    expect(error).toBeInstanceOf(AggregateError)
+    const aggregate = error as AggregateError
+    expect(aggregate.message).toMatch(/bx_abc123.*handoff.*delet/)
+    expect(aggregate.errors).toHaveLength(2)
+    expect(aggregate.errors[0]).toBe(handoffError)
+    expect(aggregate.errors[1]).toBeInstanceOf(Error)
+    expect(aggregate.errors[1].message).toContain(failure === "transport" ? "delete connection refused" : "delete denied")
+    expect(box.calls.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "POST", path: "/boxes" },
+      { method: "DELETE", path: "/boxes/bx_abc123" },
+    ])
+  })
+
+  test.each(["persistence failure", "lost epoch"])("manager resource handoff cleans up the box after %s", async (failure) => {
+    const store = createMemoryLeaseStore()
+    const box = fakeBox()
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl })
+    const manager = createSandboxManager({
+      driver,
+      onEgressUnenforced: () => {},
+      leaseStore: {
+        ...store,
+        async recordTarget(workspaceId, epoch, target) {
+          if (failure === "persistence failure") throw new Error("storage unavailable")
+          await store.acquire(workspaceId, { homeRegion: "eu", driver: "box", staleAfterMs: 0 })
+          return store.recordTarget(workspaceId, epoch, target)
+        },
+      },
+    })
+    expect(await manager.ensure("ws1", { homeRegion: "eu" })).toMatchObject({
+      status: "unavailable",
+      error: failure === "persistence failure" ? "storage unavailable" : "runtime_lease_changed",
+    })
+    expect((await store.get("ws1"))?.sandboxId).toBeUndefined()
+    expect(box.calls.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "POST", path: "/boxes" },
+      { method: "DELETE", path: "/boxes/bx_abc123" },
+    ])
+  })
+
+  test.each(["auth", "malformed", "boot", "missing"])("resume propagates %s failure without creating a replacement", async (failure) => {
+    const box = fakeBox()
+    const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+      if (failure === "auth" && url.endsWith("/resume")) return Response.json({ error: "denied" }, { status: 401 })
+      if (failure === "missing" && url.endsWith("/resume")) return Response.json({ error: "gone" }, { status: 404 })
+      if (failure === "malformed" && url.endsWith("/boxes/bx_abc123")) return Response.json({ ok: true })
+      if (failure === "boot" && url.endsWith("/commands")) return Response.json({ exitCode: 1, stderr: "boot failed" })
+      return box.fetchImpl(url, init)
+    } })
+    await expect(driver.resumeHost!({
+      lease: sandboxLease({ workspaceId: "ws1", sandboxId: "bx_abc123", hostId: "box-ws1", url: "https://runtime.test", status: "stopped" }),
+      ensure: ensureInput(),
+    })).rejects.toThrow()
+    expect(box.calls.filter((call) => call.path === "/boxes" && call.method === "POST")).toHaveLength(0)
+  })
+
   test("exposes relay metadata and box identity", () => {
     const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: async () => new Response("{}") })
     expect(driver.id).toBe("box")
@@ -169,6 +314,9 @@ describe("box sandbox driver", () => {
       (err: unknown) => err as Error,
     )
     expect(failure.message).toContain("docker run")
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toHaveLength(2)
+    expect((failure as AggregateError).errors[1].message).toContain("registry password cleanup")
     expect(failure.message).not.toContain("synthetic-runtime-secret")
     expect(failure.message).not.toContain("synthetic-registry-pw")
   })
@@ -233,7 +381,7 @@ describe("box sandbox driver", () => {
     const box = fakeBox()
     const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl, healthIntervalMs: 0 })
     const target = await driver.resumeHost?.({
-      lease: { sandboxId: "bx_abc123", hostId: "box-ws1" } as any,
+      lease: sandboxLease({ workspaceId: "ws1", sandboxId: "bx_abc123", hostId: "box-ws1", url: "https://runtime.test", status: "stopped" }),
       ensure: ensureInput(),
     })
     if (!target || "provisioning" in target) throw new Error("unexpected provisioning")

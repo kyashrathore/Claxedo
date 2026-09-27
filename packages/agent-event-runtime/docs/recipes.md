@@ -1,8 +1,8 @@
 # Recipes
 
-Recipes show the preferred import style. Use root imports for canonical
-contracts and subpaths for projections. The harness translators that produce
-these events are internal to `@claxedo/harness` transports.
+Import canonical contracts from `@claxedo/agent-runtime-contract`. Use this
+package's subpaths for projections. The harness translators that produce these
+events are internal to `@claxedo/harness` transports.
 
 ## Use A Projection
 

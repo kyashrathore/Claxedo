@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { errorMessage } from "@claxedo/helpers"
 import type { ProjectedEvent } from "../event-pump.js"

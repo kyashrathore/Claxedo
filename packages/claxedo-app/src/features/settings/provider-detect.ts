@@ -86,6 +86,7 @@ export function agentInUse(check: { providerIds: readonly string[] }, effective:
 /** One account the server holds for a provider, as the accounts list shows it. */
 export type StoredCredential = EffectiveCredential & {
   isActive: boolean
+  scope?: "local" | "shared"
   expiresAt?: number
   /** The surface the account was stored from; the machine scan is one of them. */
   consentSurface?: string
@@ -100,9 +101,11 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
     if (credential === undefined) return []
     const expiresAt = readFiniteNumber(row, "expires_at")
     const consentSurface = readString(readField(row, "consent"), "surface")
+    const scope = readString(row, "scope")
     return [{
       ...credential,
       isActive: readBoolean(row, "is_active") === true,
+      ...(scope === "local" || scope === "shared" ? { scope } : {}),
       ...(expiresAt === undefined ? {} : { expiresAt }),
       ...(consentSurface === undefined ? {} : { consentSurface }),
     }]
@@ -134,7 +137,7 @@ const OPAQUE_ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
  * one — the row the list is keyed by and the one whose fields the account
  * shows.
  */
-export type HarnessAccount = StoredCredential & { ids: string[] }
+export type HarnessAccount = StoredCredential & { ids: string[]; partialCloudConsent: boolean }
 
 /**
  * The accounts one harness row lists, active first.
@@ -168,11 +171,16 @@ export function harnessAccounts(
     const lastValidatedAt = ordered.find((row) => row.lastValidatedAt !== undefined)?.lastValidatedAt
     const expiresAt = ordered.find((row) => row.expiresAt !== undefined)?.expiresAt
     const usageRead = ordered.find((row) => row.usage !== undefined)
-    const delivery = ordered.find((row) => row.delivery !== undefined)?.delivery
+    const delivery = ordered.find((row) => row.delivery?.cloud === false)?.delivery
+      ?? (ordered.every((row) => row.delivery?.cloud === true) ? first.delivery : undefined)
     return [{
       ...first,
       ids: ordered.map((row) => row.id),
       isActive: ordered.every((row) => row.isActive),
+      scope: ordered.some((row) => row.scope === "shared")
+        ? "shared" as const
+        : ordered.every((row) => row.scope === "local") ? "local" as const : undefined,
+      partialCloudConsent: ordered.some((row) => row.scope === "shared") && ordered.some((row) => row.scope !== "shared"),
       ...(health === undefined ? {} : { health }),
       ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
       ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -180,7 +188,7 @@ export function harnessAccounts(
         usage: usageRead.usage,
         ...(usageRead.usageAt === undefined ? {} : { usageAt: usageRead.usageAt }),
       }),
-      ...(delivery === undefined ? {} : { delivery }),
+      delivery,
     }]
   })
   return [...accounts.filter((account) => account.isActive), ...accounts.filter((account) => !account.isActive)]
@@ -208,6 +216,16 @@ export async function removeCredential(credentialIds: readonly string[]) {
   for (const id of credentialIds) {
     await claxedoCredentialRequest({ credentialId: id }, { method: "DELETE" })
   }
+}
+
+export async function patchCredentialScope(credentialId: string, scope: "local" | "shared") {
+  const res = await claxedoCredentialRequest({ credentialId, action: "scope" }, {
+    method: "PATCH",
+    body: JSON.stringify({ scope }),
+  })
+  const returned = readString(await res.json(), "scope")
+  if (returned !== "local" && returned !== "shared") throw new Error("Credential scope response is invalid")
+  return returned
 }
 
 /**

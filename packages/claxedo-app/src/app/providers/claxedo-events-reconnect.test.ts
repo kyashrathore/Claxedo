@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import {
   HEARTBEAT_TIMEOUT_MS,
   MAX_RECONNECT_DELAY_MS,

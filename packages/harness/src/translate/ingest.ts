@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { EventRoute, RoutedEvent } from "../contract"
 
 type Runtime = { ingest(input: { source: string; method: string; payload: unknown }): { events: readonly AgentRuntimeEvent[] } }

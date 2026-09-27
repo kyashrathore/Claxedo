@@ -6,7 +6,7 @@ import type {
   SandboxManagerInput,
   SandboxSnapshotManagerResult,
   SandboxTargetResult,
-} from "."
+} from "./contract"
 
 export type SandboxCheckpointRuntime = {
   freeze: (policy: "drain" | "interrupt") => Promise<void>

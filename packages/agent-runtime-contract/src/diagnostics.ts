@@ -1,4 +1,4 @@
-import { object, text } from "../value"
+import { asRecord, asText } from "./values"
 
 /** The declared severities, as the single source for both the type and the parser. */
 const RUNTIME_DIAGNOSTIC_SEVERITIES = ["debug", "info", "warn", "error"] as const
@@ -43,7 +43,7 @@ function diagnosticSeverity(value: unknown): RuntimeDiagnosticSeverity | undefin
 export function normalizeDiagnostics(input: unknown): RuntimeDiagnostic[] {
   if (!Array.isArray(input)) return []
   return input.flatMap((item: unknown) => {
-    const row = object(item)
+    const row = asRecord(item)
     if (!row) return []
     const { code, message } = row
     if (typeof code !== "string" || typeof message !== "string") return []
@@ -51,10 +51,10 @@ export function normalizeDiagnostics(input: unknown): RuntimeDiagnostic[] {
       code,
       message,
       severity: diagnosticSeverity(row.severity) ?? "warn",
-      source: text(row.source),
-      method: text(row.method),
+      source: asText(row.source),
+      method: asText(row.method),
       raw: row.raw,
-      details: object(row.details),
+      details: asRecord(row.details),
     })]
   })
 }

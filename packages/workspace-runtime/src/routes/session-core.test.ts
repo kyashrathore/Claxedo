@@ -2096,6 +2096,21 @@ describe("public startup question lifecycle", () => {
     expect(await (await f.app.request("/question")).json()).toEqual([])
   })
 
+  test("a start that throws leaves no session, binding, owner or pending request in the store", async () => {
+    const f = startupRouteFixture()
+    const creation = f.launch("orphan")
+    await creation.started
+    expect(f.store.getExecutionBinding("orphan")).not.toBeNull()
+    expect(f.store.sessionOwner("orphan")).toBeDefined()
+    f.waiting.get("orphan")!.reject(new Error("provider disconnected"))
+    expect((await creation.response).status).toBe(500)
+    expect(f.store.getSession("orphan")).toBeNull()
+    expect(f.store.getExecutionBinding("orphan")).toBeNull()
+    expect(f.store.sessionOwner("orphan")).toBeUndefined()
+    expect(await (await f.app.request("/question")).json()).toEqual([])
+    expect(f.store.sessionStarts.get("orphan")).toMatchObject({ status: "failed", error: "provider disconnected" })
+  })
+
   test("delete cannot retire a creation whose provider configuration is still running", async () => {
     let entered!: () => void, release!: () => void
     const configuring = new Promise<void>(resolve => { entered = resolve })

@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
 import {

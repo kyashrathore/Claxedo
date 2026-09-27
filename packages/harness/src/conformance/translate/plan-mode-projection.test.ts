@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../translate/runtime"
 import type { HarnessEventAdapter } from "../../translate/adapter"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import { claudeSdkAdapter } from "../../transports/claude-sdk/translate/adapter"
 import { codexAppServerAdapter } from "../../transports/codex-app-server/translate/adapter"

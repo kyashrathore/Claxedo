@@ -1,13 +1,6 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import type {
-  AgentRuntimeEvent,
-  AgentRuntimeEventOf,
-  RuntimeTokenUsage,
-  RuntimeUsageObservation,
-  SubagentStatus,
-  SubagentToolCallRole,
-} from "@claxedo/agent-event-runtime/contracts"
-import { runtimeDiagnostic } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeTokenUsage, RuntimeUsageObservation, SubagentStatus, SubagentToolCallRole } from "@claxedo/agent-runtime-contract"
+import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../../translate/adapter"
 import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { contentBlockImages, imageUrlAttachment } from "../../../translate/tool-attachments"

@@ -78,20 +78,12 @@ function gatewayBase(input: string) {
 }
 
 /**
- * Where a runtime's brokered gateway credential may travel.
- *
- * `subdomain`: one `mcp-<key>-<gateway-host>` origin per brokered secret, so a
- * sandbox driver's host-scoped secret injection cannot leak one server's
- * credential to another. Needs a proxied wildcard DNS record below the gateway
- * zone. `origin`: the gateway on its own origin, for runtimes whose credential
- * lives in a process the user already owns (the signed desktop) and for
- * deployments without wildcard DNS. The gateway route verifies the token's
- * audience and scope either way; the host split is an egress-isolation
- * property, not an authorization one.
+ * Every gateway credential travels to the gateway's one origin. What keeps one
+ * server's credential from another is the registration's path policy (the
+ * integration's own gateway path) and the token's scope, which the gateway
+ * route verifies; the host carries no isolation of its own.
  */
-export type McpGatewayEndpointStyle = "subdomain" | "origin"
-
-function gatewayEndpoint(base: URL, scope: McpGatewayTokenScope, style: McpGatewayEndpointStyle) {
+function gatewayEndpoint(base: URL, scope: McpGatewayTokenScope) {
   const key = createHash("sha256").update(JSON.stringify([
     scope.workspaceId,
     scope.harnessId,
@@ -100,11 +92,6 @@ function gatewayEndpoint(base: URL, scope: McpGatewayTokenScope, style: McpGatew
     scope.integrationId,
   ])).digest("hex").slice(0, 32)
   const endpoint = new URL(base)
-  // Keep every brokered secret on its own origin without creating a deep
-  // subdomain. Cloudflare Universal SSL covers one label below the zone; the
-  // former `mcp-<key>.<gateway-host>` shape required a paid/custom wildcard
-  // certificate before a runtime could complete TLS.
-  if (style === "subdomain") endpoint.hostname = `mcp-${key}-${base.hostname}`
   endpoint.pathname = `/api/claxedo/plugins/mcp/${encodeURIComponent(scope.integrationId)}`
   const secretName = `CLAXEDO_MCP_${key.toUpperCase()}`
   return { url: endpoint.toString(), host: endpoint.hostname, secretName }
@@ -138,8 +125,6 @@ export type HostedMcpRuntimePreparerInput = {
     dynamicRegistration?: McpOAuthDynamicRegistrationPort
   }
   gatewayUrl: string
-  /** Defaults to `subdomain`, the sandbox-isolating shape. */
-  endpointStyle?: McpGatewayEndpointStyle
   signingEnv: Record<string, string | undefined>
   secretBrokering: SandboxDriverMetadata["secretBrokering"]
   /** Where each minted gateway token is written down, so a workspace's deletion can take it back. */
@@ -170,7 +155,6 @@ export function createHostedMcpRuntimePreparation(input: HostedMcpRuntimePrepare
  */
 export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerInput) {
   const base = gatewayBase(input.gatewayUrl)
-  const style = input.endpointStyle ?? "subdomain"
   const oauthFetch = (url: string, init?: RequestInit) => input.oauth.fetch(url, init)
   const forSnapshot = async (
     snapshot: SignedAgentPluginRuntimeSnapshot,
@@ -354,7 +338,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             artifactDigest: selection.artifactDigest,
             execution: execution ? "selected" : "default",
           }
-          const endpoint = gatewayEndpoint(base, scope, style)
+          const endpoint = gatewayEndpoint(base, scope)
           const credential = await mintMcpGatewayToken(scope, input.signingEnv, input.passes ? { register: input.passes } : {})
           // A provider edge attaches the credential only within the stated
           // methods and paths, and an empty policy names nothing; Streamable

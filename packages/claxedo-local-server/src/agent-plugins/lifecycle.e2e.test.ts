@@ -149,7 +149,7 @@ describe("local Agent Plugins lifecycle", () => {
     expect([...generations][0]).toMatch(/^generation-/)
 
     const openCode = pluginRoots(launch, "opencode")
-    expect(openCode).toEqual([{ pluginInstanceId: candidate.pluginInstanceId, root: expect.any(String), dataRoot: expect.any(String) }])
+    expect(openCode).toEqual([{ pluginInstanceId: candidate.pluginInstanceId, root: expect.any(String), dataRoot: expect.any(String), skillNames: ["code-review"] }])
     await expect(fs.readFile(path.join(openCode[0].root, "skills", "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
 

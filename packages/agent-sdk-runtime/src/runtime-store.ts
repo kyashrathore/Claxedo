@@ -9,7 +9,7 @@ import type {
   RecoveryOperation,
   RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { AgentSession, AgentTurnOutcome, PromptInput } from "./index"
 
 export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"

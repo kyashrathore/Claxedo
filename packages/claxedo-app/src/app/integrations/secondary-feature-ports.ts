@@ -27,8 +27,6 @@ import * as TerminalCommands from "@/features/terminal/core/terminal-commands"
 import * as SessionModels from "@/features/session/providers/models"
 import * as HarnessModelOptions from "@/features/session/harness/harness-model-options"
 import * as LinkModule from "@/app/controls/link"
-import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
-import * as SandboxDriverLogoModule from "@/features/settings/ui/sandbox-driver-logo"
 import * as ProjectCreateFormModule from "@/features/workspaces/ui/project-create-form"
 import * as ProjectApi from "@/features/workspaces/data/project-api"
 import * as MachineAccounts from "@/features/settings/machine-accounts"
@@ -118,9 +116,6 @@ configureOnboardingAppPorts({
   AgentHarnessAccounts: AgentsSection.AgentHarnessAccounts,
   HarnessProvidersSection: HarnessProviders.HarnessProvidersSection,
   useProviders: Providers.useProviders,
-  workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
-  workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
-  SandboxDriverLogo: SandboxDriverLogoModule.SandboxDriverLogo,
 })
 
 configureReviewAppPorts({

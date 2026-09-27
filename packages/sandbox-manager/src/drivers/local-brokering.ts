@@ -7,7 +7,7 @@ import net from "node:net"
 import path from "node:path"
 import type { Duplex } from "node:stream"
 import { substituteNativeSecrets } from "@claxedo/egress-broker"
-import type { SandboxBrokeredSecret, SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from ".."
+import type { SandboxBrokeredSecret, SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from "../contract"
 import { localBrokeringTestDriverCatalogEntry } from "../driver-catalog"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 
@@ -311,7 +311,7 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
     }
   }
 
-  async function stop(target: SandboxTarget) {
+  async function stop(target: Pick<SandboxTarget, "workspaceId">) {
     const host = hosts.get(target.workspaceId ?? "")
     if (!host) return
     hosts.delete(target.workspaceId ?? "")

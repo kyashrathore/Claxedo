@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import type { GoalCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { CompatEnvelope, CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
 import type { Hono } from "hono"

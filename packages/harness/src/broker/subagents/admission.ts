@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation, SubagentAdmissionStore } from "../ports"
 
 type AdmissionInput = Parameters<SubagentAdmissionStore["admit"]>[0]

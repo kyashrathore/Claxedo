@@ -1,6 +1,6 @@
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import { projectSessionCommands } from "@claxedo/agent-event-runtime/client-presentation"
-import type { RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { OutsideTurnEvent, OutsideTurnUsage, RoutedEvent } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 import type { BrokerEventDelivery } from "./delivery"

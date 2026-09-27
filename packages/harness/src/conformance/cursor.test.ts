@@ -558,7 +558,7 @@ test("a projected plugin reaches Cursor through a Claxedo home that mirrors the 
     const personal = await seedPersonalConfig(state, personalMcp.url)
     const before = await hashTree(personal)
     const root = await pluginRoot(state, "conform-plugin", pluginMcp.url)
-    const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conform/plugin", root, dataRoot: root }] }
+    const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conform/plugin", root, skillNames: [], dataRoot: root }] }
     const context = await setupConformance({ name: "plugin", backend: async () => ({ ...state, projection }), makeTransport: transportFor(state) })
     try {
       expect((await context.transport.capabilities({ directory: state.directory })).pluginIntake).toEqual({ mcp: "session", skills: "plugin-dir" })
@@ -615,7 +615,7 @@ test("a plugin root whose link escapes it is refused before Cursor starts", asyn
   await fs.mkdir(path.join(root, ".cursor-plugin"), { recursive: true })
   await fs.writeFile(path.join(root, ".cursor-plugin", "plugin.json"), JSON.stringify({ name: "escaping", version: "1.0.0" }))
   await fs.symlink(state.directory, path.join(root, "outside"))
-  const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "escaping/plugin", root, dataRoot: root }] }
+  const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "escaping/plugin", root, skillNames: [], dataRoot: root }] }
   const escaping = { ...state, projection, close: async () => {} }
   await expect(setupConformance({ name: "escaping", backend: async () => escaping, makeTransport: transportFor(state) }))
     .rejects.toThrow("Cursor plugin link escapes its root")

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { piRpcAdapter } from "./adapter"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 function translate() {
   const adapter = piRpcAdapter()
   let state = adapter.createInitialState!()

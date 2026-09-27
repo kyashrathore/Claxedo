@@ -366,7 +366,11 @@ describe("signed Composio Gmail on Miniflare", () => {
     expect(localMcp.mcpServers.gmail.url).toContain("mcp-gateway.claxedo.test")
     expect(cloudMcp.mcpServers.gmail.url).toContain("mcp-gateway.claxedo.test")
     expect(localMcp.mcpServers.gmail.url).not.toBe(COMPOSIO_MCP)
-    expect(cloudMcp.mcpServers.gmail.url).not.toBe(localMcp.mcpServers.gmail.url)
+    // One gateway origin and path for every runtime; each runtime's own credential is what sets them apart.
+    expect(cloudMcp.mcpServers.gmail.url).toBe(localMcp.mcpServers.gmail.url)
+    expect(localMcp.mcpServers.gmail.headers?.Authorization).toMatch(/^Bearer /)
+    expect(cloudMcp.mcpServers.gmail.headers?.Authorization).toMatch(/^Bearer /)
+    expect(cloudMcp.mcpServers.gmail.headers?.Authorization).not.toBe(localMcp.mcpServers.gmail.headers?.Authorization)
     expect(JSON.stringify(localMcp)).not.toContain("composio-gmail-access-token")
     expect(JSON.stringify(cloudMcp)).not.toContain("composio-gmail-access-token")
   })

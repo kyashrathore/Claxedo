@@ -16,7 +16,7 @@ async function plugin(root: string, name: string, version = "1.0.0") {
   await fs.mkdir(path.join(folder, ".codex-plugin"), { recursive: true })
   await fs.writeFile(path.join(folder, ".codex-plugin", "plugin.json"), JSON.stringify({ name, version }))
   await fs.writeFile(path.join(folder, "sentinel"), `${name} retained`)
-  return { pluginInstanceId: name, root: folder, dataRoot: root }
+  return { pluginInstanceId: name, root: folder, skillNames: [], dataRoot: root }
 }
 
 async function ownerHome(root: string) {

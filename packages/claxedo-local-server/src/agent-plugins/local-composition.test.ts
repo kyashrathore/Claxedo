@@ -85,6 +85,7 @@ describe("local Agent Plugins composition", () => {
     const launch = (await composition.runtimeContribution()).harnessLaunch
     const projected = pluginRoots(launch, "opencode")
     expect(projected).toHaveLength(1)
+    expect(projected[0].skillNames).toEqual(["review"])
     const skills = path.join(projected[0].root, "skills")
     expect(skills).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(skills).not.toContain(collection)

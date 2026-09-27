@@ -1,9 +1,10 @@
+import { daytonaSecretName, daytonaSecretEnvName, listWorkspaceSecrets, withdrawSecret } from "./daytona-secrets"
 import type { CreateSandboxFromImageParams, CreateSandboxFromSnapshotParams } from "@daytona/sdk"
 import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
   SandboxTarget,
-} from ".."
+} from "../contract"
 import { formatDaytonaAllowList, formatDaytonaDomainAllowList } from "../daytona-allow-list"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { shell } from "../command"
@@ -23,7 +24,7 @@ export type DaytonaSandboxLike = {
       cwd?: string,
       env?: Record<string, string>,
       timeout?: number,
-    ) => Promise<unknown>
+    ) => Promise<{ exitCode: number }>
   }
   getPreviewLink: (port: number) => Promise<{ url?: string; token?: string }>
   getSignedPreviewUrl: (port: number, expiresInSeconds?: number) => Promise<{ url?: string; token?: string }>
@@ -182,7 +183,6 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DEFAULT_PREVIEW_EXPIRY_S = 3600
 const DEFAULT_OPERATION_TIMEOUT_S = 60
 const LIST_PAGE_SIZE = 100
-const SECRET_LIST_PAGE_SIZE = 200
 /**
  * Mounted on every sandbox this driver creates, referencing a valueless org
  * secret. @daytona/sdk 0.211.2 documents that a sandbox created with NO secrets
@@ -191,91 +191,12 @@ const SECRET_LIST_PAGE_SIZE = 200
  * name to an existing mount.
  */
 const SENTINEL_SECRET_ENV = "CLAXEDO_BROKERED_SECRET_SLOT"
-const REVOKED_SECRET_VALUE = "claxedo-revoked"
 // A bounded walk, so a client that ignores the "short page ends it" rule costs
 // a finite sweep instead of an infinite one.
 const MAX_LIST_PAGES = 100
 
 function labelName(workspaceId: string) {
   return `claxedo-${workspaceId}`
-}
-
-/**
- * Percent-encode a segment into `[A-Za-z0-9_]`, with `_` as the escape
- * character. Injective, which a character-class replacement is not: collapsing
- * every disallowed character to `-` made `A.B` and `A-B` the same org secret,
- * and left `-` doing double duty as both data and the segment separator.
- */
-function encodeSecretSegment(value: string) {
-  return encodeURIComponent(value)
-    .replace(/[-_.!~*'()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%/g, "_")
-}
-
-// Org-scoped Daytona secret names for a workspace. Namespaced per workspace so
-// one workspace's secret can never be referenced by another, and so the prefix
-// enumerates exactly this workspace's secrets.
-function workspaceSecretPrefix(workspaceId: string) {
-  return `claxedo-${encodeSecretSegment(workspaceId)}-`
-}
-
-function daytonaSecretName(workspaceId: string, secretName: string) {
-  return `${workspaceSecretPrefix(workspaceId)}${encodeSecretSegment(secretName)}`
-}
-
-/**
- * The env var name a workspace-prefixed org secret was minted for, or nothing
- * when the name did not come from `encodeSecretSegment` — a secret someone
- * created by hand under this prefix would otherwise fail the whole ensure on a
- * `URIError` raised while reading an unrelated row.
- */
-function daytonaSecretEnvName(workspaceId: string, secretName: string) {
-  try {
-    return decodeURIComponent(secretName.slice(workspaceSecretPrefix(workspaceId).length).replace(/_/g, "%"))
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Every org secret this driver holds for the workspace, by name.
- *
- * This driver is their only writer and nothing on the SDK's `Sandbox` reports
- * what is mounted, so the prefix listing is the only inventory there is — of
- * what a reuse must reconcile against, and of what a destroy must withdraw.
- */
-async function listWorkspaceSecrets(secrets: DaytonaSecretServiceLike, workspaceId: string) {
-  const prefix = workspaceSecretPrefix(workspaceId)
-  const held = new Map<string, DaytonaSecretLike>()
-  let cursor: string | undefined
-  for (let page = 0; page < MAX_LIST_PAGES; page++) {
-    const result = await secrets.list({ name: prefix, limit: SECRET_LIST_PAGE_SIZE, ...(cursor ? { cursor } : {}) })
-    for (const secret of result.items ?? []) {
-      // `name` matches partially, so the page can carry another workspace's
-      // secrets; the prefix test is the real filter.
-      if (secret.name.startsWith(prefix)) held.set(secret.name, secret)
-    }
-    cursor = result.nextCursor ?? undefined
-    if (!cursor) break
-  }
-  return held
-}
-
-/**
- * End a secret's authority, and optionally drop the row.
- *
- * The dead value and the empty host list are what actually end it: rotations
- * take effect for outbound substitution within seconds, while unmounting or
- * deleting a secret a live sandbox references has no such documented window.
- * `delete` is for a workspace that will never mount the row again.
- */
-async function withdrawSecret(
-  secrets: DaytonaSecretServiceLike,
-  secret: DaytonaSecretLike,
-  options: { delete: boolean },
-) {
-  await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE, hosts: [] })
-  if (options.delete) await secrets.delete(secret.id)
 }
 
 // Markers this driver's SDK has been seen to use for a retryable failure.
@@ -367,13 +288,13 @@ export function createDaytonaSandboxDriver(
   async function findExisting(workspaceId: string) {
     const client = await resolveClient()
     const labels = { "claxedo.workspaceId": workspaceId }
-    if (client.findByLabels) return client.findByLabels(labels).catch(() => undefined)
+    if (client.findByLabels) return client.findByLabels(labels)
     // The `1, 1` here is "first page, one per page" — a hint, NOT a cap (see
     // DaytonaClientLike.list). Do not turn `limit` into a hard result cap to
     // make this line cheaper: `list()` below pages with it, so a cap would
     // silently truncate the GC sweep at one page and hide every orphan past it.
     // Unreachable in the default composition, which defines `findByLabels`.
-    const result = await client.list?.(labels, 1, 1).catch(() => undefined)
+    const result = await client.list?.(labels, 1, 1)
     return result?.items?.[0]
   }
 
@@ -383,9 +304,8 @@ export function createDaytonaSandboxDriver(
 
   async function previewUrl(sandbox: DaytonaSandboxLike) {
     const signed = await sandbox.getSignedPreviewUrl(runtimePort, previewExpiry)
-      .catch(() => undefined)
     if (signed?.url) return signed
-    return sandbox.getPreviewLink(runtimePort).catch(() => undefined)
+    return sandbox.getPreviewLink(runtimePort)
   }
 
   async function startRuntime(sandbox: DaytonaSandboxLike, input: SandboxDriverEnsureInput, env: Record<string, string>) {
@@ -394,13 +314,14 @@ export function createDaytonaSandboxDriver(
       `if (command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q :${runtimePort}); then exit 0; fi; ` +
       `mkdir -p ${shell(directory)}; cd ${shell(directory)}; ` +
       `nohup ${runtimeCommand} > /tmp/claxedo-wr.log 2>&1 & sleep 1`
-    await sandbox.process.executeCommand(`sh -lc ${shell(script)}`, directory, env, operationTimeout).catch(() => undefined)
+    const result = await sandbox.process.executeCommand(`sh -lc ${shell(script)}`, directory, env, operationTimeout)
+    if (result.exitCode !== 0) throw new Error(`Daytona runtime boot failed (exit ${result.exitCode}) for ${sandbox.id}`)
   }
 
   async function ensureStarted(sandbox: DaytonaSandboxLike) {
     if (!sandbox.state || sandbox.state === "started") return true
     if (sandbox.state === "starting") return false
-    await sandbox.start(operationTimeout).catch(() => undefined)
+    await sandbox.start(operationTimeout)
     return sandbox.state === "started"
   }
 
@@ -704,6 +625,11 @@ export function createDaytonaSandboxDriver(
     return readyTarget(input, sandbox, hostId)
   }
 
+  async function stop(target: SandboxTarget) {
+    const sandbox = await sandboxById(target.sandboxId)
+    await sandbox.stop(operationTimeout)
+  }
+
   return {
     id: "daytona",
 
@@ -719,31 +645,9 @@ export function createDaytonaSandboxDriver(
 
     ensureHost,
 
-    // Provider-state enumeration for `garbageCollect()`.
-    //
-    // Two label sets exist on a sandbox this driver created (`ensureHost`
-    // above): the manager's flat set — `app`, `workspaceId`, `epoch`,
-    // `homeRegion` (built at index.ts `ensureHostInput`) — and the dotted
-    // `claxedo.workspaceId` this driver adds for `findExisting`. Every target
-    // returned here carries `sandbox.labels` **as the provider reports them**,
-    // never labels reconstructed from ensure inputs: GC's ownership check reads
-    // `labels.app` and its identity check reads flat `labels.workspaceId` /
-    // `labels.epoch`, so a synthesized label set would decide the fate of a
-    // sandbox using values that never left this process. (That is the bug in
-    // the `exe` driver's `list()`, which sources labels from a per-process
-    // `Map` — after a restart it reports `labels: undefined` and GC skips
-    // every sandbox as unlabeled. Not fixed here; different owner.)
-    //
-    // The filter is deliberately WIDE: any claxedo ownership marker qualifies.
-    // Narrowing it here would re-create the defect W1 exists to remove — an
-    // orphan the sweep cannot see is an orphan that lives forever — and the
-    // authority on what may be DESTROYED is the manager's `app`-label check,
-    // which skips anything else as `unmanaged_app_label`. Visibility is this
-    // function's job; destruction is not.
-    //
-    // No preview URL is resolved: `getSignedPreviewUrl` is a per-sandbox
-    // round-trip and GC only needs identity, so a sweep over N orphans would
-    // cost N extra API calls to fill a field it then discards.
+    // GC must use provider labels for ownership. Include either ownership marker;
+    // the manager applies the app-label destruction policy after enumeration.
+    // Preview URLs require one API call per sandbox and are unused by GC.
     async list() {
       const client = await resolveClient()
       if (!client.list) {
@@ -754,7 +658,7 @@ export function createDaytonaSandboxDriver(
       // No server-side label filter: Daytona matches label VALUES exactly, so
       // it cannot express "has an ownership label at all". Filtering happens
       // below. A listing error propagates rather than degrading to an empty
-      // page — "nothing is orphaned" is precisely the lie W1 stops telling.
+      // page.
       for (let page = 1; page <= MAX_LIST_PAGES; page++) {
         const result = await client.list(undefined, page, LIST_PAGE_SIZE)
         const items = result?.items ?? []
@@ -804,22 +708,11 @@ export function createDaytonaSandboxDriver(
     },
 
     async touch(target) {
-      await sandboxById(target.sandboxId)
-        .then((sandbox) => sandbox.refreshActivity())
-        .catch(() => undefined)
+      await (await sandboxById(target.sandboxId)).refreshActivity()
     },
 
-    async suspend(target) {
-      await sandboxById(target.sandboxId)
-        .then((sandbox) => sandbox.stop(operationTimeout))
-        .catch(() => undefined)
-    },
-
-    async stop(target) {
-      await sandboxById(target.sandboxId)
-        .then((sandbox) => sandbox.stop(operationTimeout))
-        .catch(() => undefined)
-    },
+    suspend: stop,
+    stop,
 
     async destroy(target) {
       await sandboxById(target.sandboxId)

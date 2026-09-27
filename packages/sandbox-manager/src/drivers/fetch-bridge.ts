@@ -1,5 +1,5 @@
 import { record } from "../json"
-import type { SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from ".."
+import type { SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from "../contract"
 
 export type FetchBridgeSandboxDriverOptions = {
   id: string

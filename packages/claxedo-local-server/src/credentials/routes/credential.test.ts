@@ -716,6 +716,7 @@ describe("credential routes", () => {
       listCredentials: async () => [
         { ...row, id: "cred_key", provider_id: "openai", kind: "api_key" as const },
         { ...row, id: "cred_sub", provider_id: "openai", kind: "oauth_token" as const },
+        { ...row, id: "cred_cursor", provider_id: "cursor-sdk", kind: "api_key" as const },
       ],
     })
     const app = CredentialRoutes(registry)
@@ -727,6 +728,7 @@ describe("credential routes", () => {
     expect(list.credentials.map((row) => [row.id, row.deliverable])).toEqual([
       ["cred_key", { local: true, cloud: true }],
       ["cred_sub", { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }],
+      ["cred_cursor", { local: true, cloud: false, reason: "native_delivery_needs_token_exchange" }],
     ])
   })
 

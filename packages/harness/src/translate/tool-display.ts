@@ -1,5 +1,5 @@
 import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
-import type { ToolDisplay, ToolIntent } from "@claxedo/agent-event-runtime/contracts"
+import type { ToolDisplay, ToolIntent } from "@claxedo/agent-runtime-contract"
 import { text } from "@claxedo/agent-event-runtime/value"
 import { isHostSubagentTool } from "./host-subagent"
 

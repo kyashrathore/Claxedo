@@ -41,7 +41,7 @@ function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
 /** A driver whose resources are told apart by which one each call reached. */
 function twoResourceDriver() {
   const calls: Array<{ op: string; sandboxId: string }> = []
-  const record = (op: string) => async (target: SandboxTarget) => {
+  const record = (op: string) => async (target: Pick<SandboxTarget, "sandboxId">) => {
     calls.push({ op, sandboxId: target.sandboxId })
   }
   const driver = fakeDriver({
@@ -68,6 +68,59 @@ function checkpointRuntime(): SandboxCheckpointRuntime {
 }
 
 describe("sandbox manager", () => {
+  test("a resource report does not admit a second ensure during active acquisition", async () => {
+    const store = createMemoryLeaseStore()
+    let reported!: () => void
+    let finish!: () => void
+    const report = new Promise<void>((resolve) => { reported = resolve })
+    const waiting = new Promise<void>((resolve) => { finish = resolve })
+    const resumeHost = vi.fn(async () => ({ sandboxId: "sb_1", hostId: "host_1", url: "https://runtime.test" }))
+    const driver = fakeDriver({ resumeHost, ensureHost: async (input) => {
+      await input.onResource!({ sandboxId: "sb_1", hostId: "host_1", labels: input.labels })
+      reported()
+      await waiting
+      return { sandboxId: "sb_1", hostId: "host_1", url: "https://runtime.test" }
+    } })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    const first = manager.ensure("ws_1", { homeRegion: "us-east" })
+    await report
+    try {
+      expect((await manager.ensure("ws_1", { homeRegion: "us-east" })).status).toBe("provisioning")
+      expect(resumeHost).not.toHaveBeenCalled()
+    } finally {
+      finish()
+      await first
+    }
+  })
+
+  test.each(["stopped", "unavailable", "acquiring"] as const)("destroy uses durable identity for a %s lease", async (status) => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", status, sandboxId: "sb_1", hostId: "host_1", url: "https://runtime.test", epoch: 4 })])
+    const destroy = vi.fn(async () => {})
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver({ destroy }) })
+    expect((await manager.target("ws_1")).status).toBe("unavailable")
+    expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect(destroy).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sb_1", epoch: 4 }))
+    expect((await store.get("ws_1"))?.status).toBe("destroyed")
+  })
+
+  test("destroy removes a resource whose acquisition never reached a URL", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", status: "unavailable", sandboxId: "sb_1", hostId: "host_1" })])
+    const destroy = vi.fn(async () => {})
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver({ destroy }) })
+    expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect(destroy).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sb_1", url: undefined }))
+  })
+
+  test("destroy reports a lost epoch instead of marking the replacement destroyed", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", status: "stopped", sandboxId: "sb_1", hostId: "host_1", url: "https://runtime.test", epoch: 4 })])
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver({ destroy: async () => {
+      await store.acquire("ws_1", { driver: "test", homeRegion: "us-east", staleAfterMs: 0 })
+    } }) })
+    expect(await manager.destroy("ws_1")).toEqual({ ok: false, reason: "runtime_lease_changed" })
+    expect((await store.get("ws_1"))?.epoch).toBe(5)
+    expect((await store.get("ws_1"))?.status).toBe("acquiring")
+  })
+
   test.each(["stopped", "destroyed"] as const)("a failed in-flight resume does not overwrite %s or return its stale target", async (status) => {
     const store = createMemoryLeaseStore()
     const driver = fakeDriver({ resumeHost: async () => {

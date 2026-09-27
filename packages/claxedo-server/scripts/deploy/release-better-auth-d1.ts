@@ -446,7 +446,6 @@ export function betterAuthD1ReleaseInputs(
         ? ([
             ["CLAXEDO_HOSTED_CREDENTIALS_ENABLED", "1"],
             ["CLAXEDO_PUBLIC_URL", apiOrigin.origin],
-            ["CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE", "origin"],
           ] as const)
         : []),
     ] as Array<readonly [string, string]>,

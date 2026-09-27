@@ -9,7 +9,7 @@ import type {
   SessionHandoff,
   SubagentObservation,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-event-runtime/contracts"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
 import type { HarnessBinding, RoutedEvent, TurnOrigin, TurnRef } from "./session"
 
 export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always"

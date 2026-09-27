@@ -1,5 +1,5 @@
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import {
   connectionIdForHarness,
   sameSessionHarness,

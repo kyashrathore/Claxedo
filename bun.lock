@@ -276,6 +276,9 @@
     "packages/claxedo-helpers": {
       "name": "@claxedo/helpers",
       "version": "0.2.0",
+      "dependencies": {
+        "yaml": "2.9.0",
+      },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "1.3.13",
@@ -448,7 +451,6 @@
         "hono": "4.12.34",
         "jose": "6.2.4",
         "tokentracker-cli": "0.91.0",
-        "yaml": "2.9.0",
         "zod": "4.4.3",
       },
       "devDependencies": {
@@ -536,12 +538,14 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/agent-runtime-contract": "workspace:*",
+        "@claxedo/helpers": "workspace:*",
         "@hono/node-server": "1.19.11",
         "jose": "6.2.4",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "catalog:",
+        "@types/node": "catalog:",
         "typescript": "catalog:",
         "vitest": "2.1.9",
       },
@@ -562,6 +566,7 @@
       },
       "devDependencies": {
         "@anthropic-ai/sdk": "0.115.0",
+        "@claxedo/egress-broker": "workspace:*",
         "@claxedo/sandbox-manager": "workspace:*",
         "@openai/codex": "0.156.1",
         "@tsconfig/node-lts": "22.0.4",

@@ -1,4 +1,4 @@
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { readRuntimeJson } from "./agent-runtime-json"
 import type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 import { asRecord } from "@/lib/record"
