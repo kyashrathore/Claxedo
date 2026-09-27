@@ -13,6 +13,7 @@ import type {
   AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import { cancelledAssistantMessageId } from "@claxedo/agent-runtime-contract/turn-fold"
 import {
   parseRecoveryRequest,
   RecoveryContractError,
@@ -250,11 +251,6 @@ function firstPageQuery(c: Ctx): FirstPageQuery | undefined {
     if (error instanceof FirstPageQueryError) throw new HTTPException(400, { message: error.message })
     throw error
   }
-}
-
-function cancelledAssistantMessageId(session: unknown): string | undefined {
-  const lastTurn = rec(rec(session)?.lastTurn)
-  return lastTurn?.status === "cancelled" ? str(lastTurn.assistantMessageId) : undefined
 }
 
 function messagePageResponse(c: Ctx, page: AgentMessagePage) {
@@ -1969,7 +1965,7 @@ export function createSessionRoutes(opts: Opts) {
         normalizeSession(session, directory),
         outline,
         (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }),
-        query && { ...query, cancelledAssistantMessageId: cancelledAssistantMessageId(session) },
+        query && { ...query, cancelledAssistantMessageId: cancelledAssistantMessageId(session.lastTurn) },
       ))
     })
     .get("/permission/modes", async (c) => {

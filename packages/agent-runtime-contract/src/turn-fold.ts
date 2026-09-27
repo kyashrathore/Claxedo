@@ -319,6 +319,11 @@ function assistantMessageInterrupted(message: AgentAssistantMessage) {
   return asRecord(message.error.data)?.message === "Codex turn aborted"
 }
 
+/** The assistant message a session's last turn was cancelled at, which that turn draws as an interruption. */
+export function cancelledAssistantMessageId(lastTurn: { status: string; assistantMessageId?: string } | undefined): string | undefined {
+  return lastTurn?.status === "cancelled" ? lastTurn.assistantMessageId : undefined
+}
+
 export function turnInterruption(messages: readonly AgentAssistantMessage[], cancelledAssistantMessageId?: string) {
   const harnessIndex = messages.findIndex(assistantMessageInterrupted)
   if (harnessIndex !== -1 || cancelledAssistantMessageId === undefined) return { index: harnessIndex, harness: harnessIndex !== -1 }
