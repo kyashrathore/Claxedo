@@ -1,4 +1,4 @@
-import { hashKey, type QueryClient } from "@tanstack/solid-query"
+import { QueryObserver, type QueryClient } from "@tanstack/solid-query"
 import { createSignal, type Accessor } from "solid-js"
 import type { HostedAccount } from "./account"
 import type { LinkedCatalog } from "./account-link"
@@ -54,13 +54,12 @@ function placementRecordAt(records: readonly PlacementRecord[], directory: strin
   return byWorkspace ?? records.find((record) => locatedAt(record, wanted))
 }
 
-function watchQuery(queryClient: QueryClient, key: readonly unknown[]): { readonly revision: Accessor<number>; readonly dispose: () => void } {
-  const hash = hashKey(key)
+function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { readonly revision: Accessor<number>; readonly dispose: () => void } {
   const [revision, setRevision] = createSignal(0)
   let seen: unknown
-  const dispose = queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryHash !== hash || event.query.state.data === seen) return
-    seen = event.query.state.data
+  const dispose = new QueryObserver(queryClient, { queryKey: key, enabled: false }).subscribe((result) => {
+    if (result.data === seen) return
+    seen = result.data
     setRevision((value) => value + 1)
   })
   return { revision, dispose }
@@ -103,7 +102,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
 }
 
 function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
-  const watched = [watchQuery(queryClient, key), ...(accountPlacements ? [watchQuery(queryClient, accountPlacements.key)] : [])]
+  const watched = [observeQuery(queryClient, key), ...(accountPlacements ? [observeQuery(queryClient, accountPlacements.key)] : [])]
   let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
   const merge = (local: BootstrapCatalog) => {
     const linked = accountPlacements?.link(local.placements)

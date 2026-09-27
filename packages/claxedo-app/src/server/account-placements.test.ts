@@ -23,8 +23,8 @@ function transport(): Transport {
   return { serverUrl: "http://127.0.0.1:1", loopback: true, json: async (path: string) => answers[path] } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
 }
 
-function world(run: (operation: string) => Promise<unknown>) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function world(run: (operation: string) => Promise<unknown>, gcTime?: number) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, ...(gcTime === undefined ? {} : { gcTime }) } } })
   const calls: string[] = []
   const account = createHostedAccount(async (operation) => (calls.push(operation), run(operation)))
   const workspaces = createWorkspaces(transport(), queryClient, account)
@@ -70,6 +70,20 @@ test("signed desktop catalog: an account that cannot answer leaves this machine'
     }
     expect(workspaces.list().map((placement) => String(placement.id))).toEqual(["ws_shared"])
     expect(errors).toHaveLength(1)
+    dispose()
+  })
+})
+
+test("signed desktop catalog: the account's placements stay in the catalog once the query cache's collection time has passed", async () => {
+  await createRoot(async (dispose) => {
+    const { calls, workspaces } = world(async (operation) => (operation === "workspace.list.machine" ? machines : provisioned), 1)
+    await workspaces.load()
+    await Bun.sleep(20)
+    expect(workspaces.list().map((placement) => String(placement.id))).toEqual(["ws_shared", "ws_cloud", "ws_web"])
+    expect(workspaces.accountProjectIds(projectId("local_app"))).toEqual([projectId("prj_app")])
+    await workspaces.load()
+    expect(calls.toSorted()).toEqual(["workspace.list.machine", "workspace.list.provisioner"])
+    workspaces.dispose()
     dispose()
   })
 })
