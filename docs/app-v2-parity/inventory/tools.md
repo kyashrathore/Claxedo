@@ -1,6 +1,6 @@
 # Inventory: tools (workspace panel: Files, Changes/Review, Terminal, Browser)
 
-Counts (108 items): **SAME 10 · DIFFERS 69 · MISSING 24 · EXTRA 5**. Section A0 holds the owner-reported panel tab and file-tab items.
+Counts (108 items): **SAME 11 · DIFFERS 68 · MISSING 24 · EXTRA 5**. Section A0 holds the owner-reported panel tab and file-tab items.
 
 Screens covered. Shots are in `tools/shots/`, named `<screen>-<app>-<width>.png`; both apps ran on the same daemon, project "Claxedo", session "Markdown blocks sample" (the file-link shots use the session "Local changes review", which has path chips).
 - Session with the panel closed: `session-*-1280`, `session-*-390`.
@@ -82,7 +82,7 @@ Verified live in v1 (view-only clicks): tree open, path-chip open with the panel
 | TOOL-022 | Search pending / empty | Pending: a 16px spinner centered in a 96px box (delayed). Empty: "No files found" (`text-12-regular text-text-weak`, centered, 24px vertical padding). The built tree stays mounted and hidden, so clearing the search is instant. | `files-navigator.tsx` | DIFFERS | Pending: grey placeholder bars labelled "Searching files". Empty: "No files found" (`text-sm`). Failure: "The search failed" + Retry (EXTRA). |
 | TOOL-023 | Row geometry and text | Row 24px (`h-6`), `rounded-md`, gap 6px, name `text-12-medium`, `truncate`. Default name color `text-text-weak` (grey). Hover `bg-surface-raised-base-hover`, pressed `bg-surface-base-active`. Indent: 12px per level. | `app/workbench/controls/file-tree.tsx` | DIFFERS | Class `h-7` renders 23px at v2's 13px root (36px on touch via `pointer-coarse:min-h-11`); rows spaced 24.5px instead of 26px; name `text-sm` weight 400 (v1: 500) in `text-text-base` (dark) instead of grey; hover `bg-overlay-hover`. Indent `6 + 12 × level`px. `files/view/file-tree-row.tsx` |
 | TOOL-024 | Folder rows | Chevron only (`chevron-right` / `chevron-down`, 16px box, `text-icon-weak-base`); NO folder icon. | `file-tree.tsx` | DIFFERS | Chevron plus a colored folder icon that changes when expanded (e.g. `.vscode` blue, `node_modules` green, `docs` with a badge). |
-| TOOL-025 | File rows | 16px spacer where the chevron would be, then the file-type icon drawn MONO (grey) that crossfades to its color on hover of the tree. | `file-tree.tsx` (`filetree-iconpair`) | DIFFERS | 14px spacer, the file-type icon always in color. |
+| TOOL-025 | File rows | 16px spacer where the chevron would be, then the file-type icon drawn MONO (grey). A colored twin sits under it at opacity 0 behind `group-hover/filetree:`, but nothing declares `group/filetree`, so it never shows. | `file-tree.tsx` (`filetree-iconpair`) | SAME | 16px spacer (`w-4`), one mono file-type icon (`filetree-icon--mono`). `files/view/file-tree-row.tsx`, `files/view/file-tree-node.tsx` |
 | TOOL-026 | Ignored entries | Name `text-text-weaker`, mono icon in `--icon-weak-base`. | `file-tree.tsx` | DIFFERS | Name `text-text-faint`; icon still colored. |
 | TOOL-027 | Change markers | Changed file: name and mono icon take the change color; a trailing letter "A" / "D" / "M" (`text-12-medium`, 16px wide). Folder containing changes: name colored and a trailing 6px round dot with 6px right margin. Colors: added `--icon-diff-add-base`, deleted `--icon-diff-delete-base`, else `--icon-diff-modified-base`. Markers load 250ms after the panel shows. | `file-tree.tsx`, `files-navigator.tsx` | DIFFERS | Letters the same, but colors are `text-success-fg` / `text-danger-fg` / `text-warning-fg`, the folder mark is a "•" text glyph (`text-xs`) not a drawn dot, plus a screen-reader word "Added" / "Deleted" / "Modified". Untracked counts as added. `files/model.ts` |
 | TOOL-028 | Indent guides | Inside an expanded folder, a 1px vertical line (`bg-border-weak-base`) at the folder's indent, invisible until the tree is hovered (100% for the deepest open folder, 50% for the others, 150ms fade). | `file-tree.tsx` | MISSING | No guide lines. |
@@ -217,9 +217,9 @@ Shots: `session-v1-390.png`, `panel-open-v1-390.png`, `changes-nav-v1-390.png`, 
 5. **TOOL-009, TOOL-002: the panel is the wrong size.**
    - v2 opens it 420px wide; v1 opens it at about 70% of the workbench (712px at 1280).
    - v2 has no "Maximize workspace panel".
-6. **TOOL-023 to TOOL-025: the tree looks different.**
-   - v2: colored folder and file icons, and dark names.
-   - v1: folders show a chevron only, file icons are grey and gain color on hover, and names are grey 12px medium.
+6. **TOOL-023, TOOL-024: the tree looks different.**
+   - v2: see those rows; file icons already match v1 (TOOL-025).
+   - v1: folders show a chevron only, file icons are grey, and names are grey 12px medium.
 7. **TOOL-052, TOOL-051: Markdown files open as raw source.**
    - v1 renders them, with "Show source", "Add to Documents" and "Copy relative path".
 8. **TOOL-090, TOOL-096 to TOOL-099: the Changes column is gone.**
