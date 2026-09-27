@@ -9,22 +9,12 @@ test("failed startup waits for owned descendants before disposable state is remo
   const root = await mkdtemp(path.join(tmpdir(), "claxedo-launch-cleanup-"))
   const node = Bun.which("node")!
   const executable = path.join(root, "app")
-  const parent = path.join(root, "parent.cjs")
-  const pidFile = path.join(root, "child.json")
+  const pidFile = path.join(root, "child.pid")
   let owned: ProcessSnapshot | undefined
   const unrelated = Bun.spawn([node, "-e", "setInterval(() => {}, 1000)"], { stdout: "ignore", stderr: "ignore" })
   try {
-    await writeFile(parent, `
-      const { spawn } = require('node:child_process');
-      const fs = require('node:fs');
-      const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
-      child.unref();
-      fs.writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({ pid: child.pid }));
-      process.on('SIGTERM', () => process.exit(0));
-      setInterval(() => {}, 1000);
-    `)
     const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
-    await writeFile(executable, `#!/bin/sh\nexec ${quote(node)} ${quote(parent)}\n`)
+    await writeFile(executable, `#!/bin/sh\nsleep 60 &\necho $! > ${quote(pidFile)}\nexec sleep 60\n`)
     await chmod(executable, 0o700)
     const launching = launchPackagedClaxedo({
       executable,
@@ -39,8 +29,8 @@ test("failed startup waits for owned descendants before disposable state is remo
     const failure = launching.catch((error) => error as Error)
     const deadline = performance.now() + 3_000
     while (!owned && performance.now() < deadline) {
-      const child = await readFile(pidFile, "utf8").then(JSON.parse).catch(() => undefined)
-      if (child) owned = (await readProcessTable()).find((item) => item.pid === child.pid)
+      const child = Number(await readFile(pidFile, "utf8").catch(() => ""))
+      if (child > 0) owned = (await readProcessTable()).find((item) => item.pid === child)
       if (!owned) await Bun.sleep(25)
     }
     expect(owned).toBeDefined()
