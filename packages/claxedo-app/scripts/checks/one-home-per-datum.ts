@@ -28,7 +28,7 @@ const namespaces = new Set(["claxedo", "app"])
 const retiredPackages = [/^@tanstack\/ai(-|\/|$)/, /^@solid-primitives\/event-bus(\/|$)/]
 const cacheWriters = new Set(["setQueryData", "setQueriesData"])
 const mutableContainers = new Set(["Map", "Set", "WeakMap", "WeakSet"])
-const stateFactories = new Set(["createSignal", "createStore", "createMutable", "createResource"])
+const stateFactories = new Set(["createSignal", "createStore", "createMutable", "createResource", "createByteBoundedCache"])
 const mutators = ["add", "set", "delete", "clear"]
 
 type ModuleState = { readonly binding: string; readonly message: string }

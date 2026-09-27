@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify"
+import { createByteBoundedCache } from "./byte-bounded-cache"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
 export type MarkdownCacheEntry = {
@@ -7,16 +8,11 @@ export type MarkdownCacheEntry = {
   html: string
 }
 
-export const markdownCacheLimits = {
-  entries: 4096,
-  bytes: 8_000_000,
-}
-const cache = new Map<string, MarkdownCacheEntry>()
-let totalBytes = 0
+const cache = createByteBoundedCache<string, MarkdownCacheEntry>(
+  { entries: 4096, bytes: 8_000_000 },
+  (_key, value) => value.raw.length + value.html.length,
+)
 
-function entryBytes(value: MarkdownCacheEntry) {
-  return value.raw.length + value.html.length
-}
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
   ALLOWED_URI_REGEXP: transcriptLinkUriPattern,
@@ -102,58 +98,23 @@ export function sanitizeSvg(svg: string, purifier: SvgPurifier | undefined = svg
 }
 
 export function getCachedMarkdown(key: string) {
-  return cache.get(key)
+  return cache.peek(key)
 }
 
 export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
-  const bytes = entryBytes(value)
-  if (bytes > markdownCacheLimits.bytes) return
-  const existing = cache.get(key)
-  if (existing) {
-    totalBytes -= entryBytes(existing)
-    cache.delete(key)
-  }
   cache.set(key, value)
-  totalBytes += bytes
-
-  while (cache.size > markdownCacheLimits.entries || totalBytes > markdownCacheLimits.bytes) {
-    const oldest = cache.entries().next().value
-    if (!oldest) break
-    totalBytes -= entryBytes(oldest[1])
-    cache.delete(oldest[0])
-  }
 }
 
-export const mermaidSvgCacheLimits = {
-  entries: 256,
-  bytes: 2_000_000,
-}
-const mermaidCache = new Map<string, string>()
-let mermaidBytes = 0
+const mermaidCache = createByteBoundedCache<string, string>(
+  { entries: 256, bytes: 2_000_000 },
+  (source, svg) => source.length + svg.length,
+)
 
 export function getCachedMermaidSvg(source: string): string | undefined {
-  const value = mermaidCache.get(source)
-  if (value === undefined) return undefined
-  mermaidCache.delete(source)
-  mermaidCache.set(source, value)
-  return value
+  return mermaidCache.get(source)
 }
 
 export function touchCachedMermaidSvg(source: string, svg: string) {
   if (!svg) return
-  const bytes = source.length + svg.length
-  if (bytes > mermaidSvgCacheLimits.bytes) return
-  const existing = mermaidCache.get(source)
-  if (existing) {
-    mermaidBytes -= source.length + existing.length
-    mermaidCache.delete(source)
-  }
   mermaidCache.set(source, svg)
-  mermaidBytes += bytes
-  while (mermaidCache.size > mermaidSvgCacheLimits.entries || mermaidBytes > mermaidSvgCacheLimits.bytes) {
-    const oldest = mermaidCache.entries().next().value
-    if (!oldest) break
-    mermaidBytes -= oldest[0].length + oldest[1].length
-    mermaidCache.delete(oldest[0])
-  }
 }

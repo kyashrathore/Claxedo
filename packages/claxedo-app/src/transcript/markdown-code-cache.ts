@@ -1,4 +1,5 @@
 import { checksum } from "@/ui/utils"
+import { createByteBoundedCache } from "./byte-bounded-cache"
 import type { MarkdownToken } from "./markdown-worker-protocol"
 
 export type CodeHighlight = {
@@ -11,55 +12,29 @@ export type CodeHighlight = {
 type CodeHighlightEntry = {
   src: string
   value: CodeHighlight
-  bytes: number
 }
-
-export const codeHighlightCacheLimits = {
-  entries: 4096,
-  bytes: 8_000_000,
-}
-
-const cache = new Map<string, CodeHighlightEntry>()
-let totalBytes = 0
 
 function cacheKey(src: string, language: string, theme: string) {
   return `${theme}\u0000${language}\u0000${src.length}\u0000${checksum(src) ?? "0"}`
 }
 
-function entryBytes(src: string, value: CodeHighlight) {
-  let bytes = src.length
-  for (const token of value.stable) bytes += token[0].length + token[1].length
-  for (const token of value.unstable) bytes += token[0].length + token[1].length
+function entryBytes(entry: CodeHighlightEntry) {
+  let bytes = entry.src.length
+  for (const token of entry.value.stable) bytes += token[0].length + token[1].length
+  for (const token of entry.value.unstable) bytes += token[0].length + token[1].length
   return bytes
 }
 
+const cache = createByteBoundedCache<string, CodeHighlightEntry>({ entries: 4096, bytes: 8_000_000 }, (_key, entry) => entryBytes(entry))
+
 export function getCachedCodeHighlight(src: string, language: string, theme: string) {
   const key = cacheKey(src, language, theme)
-  const entry = cache.get(key)
-  if (!entry) return undefined
-  if (entry.src !== src) return undefined
-  cache.delete(key)
-  cache.set(key, entry)
-  return entry.value
+  if (cache.peek(key)?.src !== src) return undefined
+  return cache.get(key)?.value
 }
 
-export function cacheCodeHighlight(src: string, language: string, theme: string, value: CodeHighlight) {
-  const bytes = entryBytes(src, value)
-  if (bytes > codeHighlightCacheLimits.bytes) return
-  const key = cacheKey(src, language, theme)
-  const existing = cache.get(key)
-  if (existing) {
-    totalBytes -= existing.bytes
-    cache.delete(key)
-  }
-  cache.set(key, { src, value, bytes })
-  totalBytes += bytes
-  while (cache.size > codeHighlightCacheLimits.entries || totalBytes > codeHighlightCacheLimits.bytes) {
-    const oldest = cache.entries().next().value
-    if (!oldest) break
-    totalBytes -= oldest[1].bytes
-    cache.delete(oldest[0])
-  }
+function cacheCodeHighlight(src: string, language: string, theme: string, value: CodeHighlight) {
+  cache.set(cacheKey(src, language, theme), { src, value })
 }
 
 export async function highlightCodeThroughCache(
