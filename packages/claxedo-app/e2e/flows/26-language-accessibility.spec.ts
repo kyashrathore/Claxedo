@@ -8,8 +8,10 @@ import {
   type SessionRow,
   type Stack,
   type Workspace,
+  sessionRoute,
   UI,
 } from "../harness"
+import { openSection, openSettings } from "./15-settings.navigation"
 
 type Arranged = { readonly workspace: Workspace; readonly session: SessionRow }
 
@@ -59,6 +61,25 @@ async function english(stack: Stack, api: ClaxedoApi, app: Page): Promise<Arrang
   return arranged
 }
 
+async function bind(app: Page, command: string, keys: string): Promise<void> {
+  const binding = app.locator(`[data-keybind-id="${command}"]`)
+  await binding.click()
+  await expect(binding).toHaveText("Press keys")
+  await app.keyboard.press(keys)
+  await expect(binding).not.toHaveText("Press keys")
+}
+
+async function toastStates(app: Page) {
+  return app.locator("[data-sonner-toast]").evaluateAll((toasts) =>
+    toasts.map((toast) => ({
+      role: toast.getAttribute("role"),
+      visible: toast.getAttribute("data-visible"),
+      inert: (toast as HTMLElement).inert,
+      tabIndex: (toast as HTMLElement).tabIndex,
+    })),
+  )
+}
+
 async function german(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arranged): Promise<void> {
   await openGeneralSettings(stack, app)
   await expectWithinBaseline(app, "settings-surface")
@@ -77,4 +98,36 @@ test.skip(({ isMobile }) => isMobile, "flow 26 runs at desktop width; flow 33 sw
 
 test("26 language switch and an accessibility sweep of the main screens", async ({ stack, api, app }) => {
   await german(stack, api, app, await english(stack, api, app))
+})
+
+test("26 toasts are announced and the ones stacked out of view are inert, after the toast region empties and comes back", async ({ stack, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("toasts", "Toasts")
+  const draft = `${stack.url}${sessionRoute(workspace.id)}`
+  await app.goto(draft)
+  await openSettings(app, isMobile)
+  await openSection(app, isMobile, "Keyboard shortcuts")
+  await bind(app, "theme.scheme.cycle", "ControlOrMeta+Alt+KeyJ")
+  await bind(app, "theme.cycle", "ControlOrMeta+Alt+KeyL")
+  await app.goto(draft)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  const toasts = app.locator("[data-sonner-toast]")
+
+  await app.keyboard.press("ControlOrMeta+Alt+KeyJ")
+  await expect(toasts).toHaveCount(1)
+  expect(await toastStates(app)).toEqual([{ role: "status", visible: "true", inert: false, tabIndex: 0 }])
+  await expect(app.locator("[data-sonner-toaster]")).toHaveCount(0, { timeout: 15_000 })
+
+  await app.keyboard.press("ControlOrMeta+Alt+KeyJ")
+  await app.keyboard.press("ControlOrMeta+Alt+KeyJ")
+  await app.keyboard.press("ControlOrMeta+Alt+KeyJ")
+  await app.keyboard.press("ControlOrMeta+Alt+KeyL")
+  await expect(toasts).toHaveCount(4)
+  await expect
+    .poll(() => toastStates(app), { timeout: 3_000 })
+    .toEqual([
+      { role: "status", visible: "true", inert: false, tabIndex: 0 },
+      { role: "status", visible: "true", inert: false, tabIndex: 0 },
+      { role: "status", visible: "true", inert: false, tabIndex: 0 },
+      { role: "status", visible: "false", inert: true, tabIndex: -1 },
+    ])
 })

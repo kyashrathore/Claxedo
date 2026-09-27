@@ -12,41 +12,23 @@ export interface ToastV2RegionProps extends ToasterProps {}
 function ToastV2Region(props: ToastV2RegionProps) {
   const i18n = useI18n()
   const [local, rest] = splitProps(props, ["class", "className", "style", "toastOptions", "swipeDirections"])
+  let host!: HTMLDivElement
   onMount(() => {
     const sync = () => {
-      document.querySelectorAll<HTMLElement>(".toast-v2-region .toast-v2").forEach((element) => {
+      host.querySelectorAll<HTMLElement>(".toast-v2").forEach((element) => {
         const hidden = element.dataset.visible === "false"
         element.setAttribute("role", "status")
         element.inert = hidden
         element.tabIndex = hidden ? -1 : 0
       })
     }
-    let connected = false
-    const connect = () => {
-      const regions = document.querySelectorAll(".toast-v2-region")
-      if (!regions.length) return
-      observer.disconnect()
-      regions.forEach((region) => {
-        observer.observe(region, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["data-visible"],
-        })
-      })
-      connected = true
-      sync()
-    }
-    const observer = new MutationObserver(() => {
-      if (!connected) connect()
-      else sync()
-    })
-    observer.observe(document.body, { subtree: true, childList: true })
-    queueMicrotask(connect)
+    const observer = new MutationObserver(sync)
+    observer.observe(host, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-visible"] })
+    sync()
     onCleanup(() => observer.disconnect())
   })
   return (
-    <Portal>
+    <Portal ref={host}>
       <Toaster
         position={isRTL(i18n.locale()) ? "bottom-left" : "bottom-right"}
         offset={isRTL(i18n.locale()) ? { left: 32, bottom: 48 } : { right: 32, bottom: 48 }}
