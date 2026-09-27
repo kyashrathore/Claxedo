@@ -10,6 +10,15 @@
  * anything failing.
  */
 
+import {
+  CLAUDE_PERMISSION_MODES,
+  CODEX_PERMISSION_MODES,
+  CURSOR_PERMISSION_MODES,
+  defaultPermissionModeId,
+  type HarnessPermissionModes,
+} from "./harness-permission-modes"
+import { harnessKey, type SessionHarness } from "./harnesses"
+
 export const HARNESS_IDS = ["claude", "codex", "cursor"] as const
 
 export type HarnessId = (typeof HARNESS_IDS)[number]
@@ -45,6 +54,14 @@ type HarnessRecord = {
    * an `Agent.create` argument and refuses a turn however signed in the CLI is.
    */
   machineLoginServes: readonly string[]
+  permissionModes: HarnessPermissionModes
+  /**
+   * The model row a session that stored no model runs on, where the harness
+   * declares one without asking its live catalog. Absent on codex: an unnamed
+   * model is the app-server's own configured default, which only `model/list`
+   * reports.
+   */
+  defaultModelId?: string
 }
 
 export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
@@ -55,6 +72,8 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
     connectProvider: "claude-sdk",
     vendorProvider: "anthropic",
     machineLoginServes: ["claude-sdk", "claude-acp"],
+    permissionModes: CLAUDE_PERMISSION_MODES,
+    defaultModelId: "default",
   },
   codex: {
     label: "Codex",
@@ -63,6 +82,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
     connectProvider: "codex-app-server",
     vendorProvider: "openai",
     machineLoginServes: ["codex-app-server", "openai"],
+    permissionModes: CODEX_PERMISSION_MODES,
   },
   cursor: {
     label: "Cursor",
@@ -71,11 +91,51 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
     connectProvider: "cursor-sdk",
     vendorProvider: "cursor",
     machineLoginServes: ["cursor-acp"],
+    permissionModes: CURSOR_PERMISSION_MODES,
+    defaultModelId: "auto",
   },
 }
 
 export function isHarnessId(value: string): value is HarnessId {
   return (HARNESS_IDS as readonly string[]).includes(value)
+}
+
+function tableHarness(harness: SessionHarness): HarnessId | undefined {
+  return harness.access === "native" && isHarnessId(harness.id) ? harness.id : undefined
+}
+
+/**
+ * The permission modes a session's harness declares. Undefined for an ACP
+ * connection, whose agent reports its own list, and for a native harness with
+ * no mode surface.
+ */
+export function declaredPermissionModes(harness: SessionHarness): HarnessPermissionModes | undefined {
+  const id = tableHarness(harness)
+  return id ? HARNESS_TABLE[id].permissionModes : undefined
+}
+
+/**
+ * The mode a session runs under: the stored one while its harness still offers
+ * it, else the harness's `auto` rung. A harness the table does not describe
+ * runs what was stored, or nothing that anyone chose.
+ */
+export function effectivePermissionModeId(harness: SessionHarness, stored: string | null | undefined): string | null {
+  const table = declaredPermissionModes(harness)
+  if (!table) return stored ?? null
+  if (stored && table.modes.some((mode) => mode.id === stored)) return stored
+  return defaultPermissionModeId(table) ?? null
+}
+
+/** The model a session runs on: the stored one, else the row its harness declares as default. */
+export function effectiveSessionModel(
+  harness: SessionHarness,
+  stored: { providerID: string; modelID: string } | undefined,
+): { providerID: string; modelID: string } | undefined {
+  if (stored) return stored
+  const id = tableHarness(harness)
+  const modelID = id ? HARNESS_TABLE[id].defaultModelId : undefined
+  const providerID = modelID ? harnessKey(harness) : undefined
+  return modelID && providerID ? { providerID, modelID } : undefined
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { asRecord } from "@claxedo/helpers/guards"
 import { responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { PlacementId } from "./ids"
@@ -39,9 +40,13 @@ export function createPermissionModeWriter(transport: Transport, workspaces: Wor
     setPermissionMode: async (ref: SessionRef, modeId: string) => {
       const response = await transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/permission-mode"), jsonInit("PUT", { modeId }))
       if (!response.ok) throw await responseError(response, "Permission mode")
-      const state = permissionModeStateFromWire(await response.json())
-      queryClient.setQueryData(queryKeys.sessionPermissionModes(transport.serverUrl, ref.sessionId), state)
-      return state
+      const kept = asRecord(asRecord(await response.json())?.config)?.permissionMode
+      const currentModeId = typeof kept === "string" ? kept : undefined
+      queryClient.setQueryData<PermissionModeState>(
+        queryKeys.sessionPermissionModes(transport.serverUrl, ref.sessionId),
+        (state) => state && { ...state, ...(currentModeId ? { currentModeId } : {}) },
+      )
+      return { currentModeId }
     },
     sessionHarnessChanged: (ref: SessionRef) =>
       queryClient.invalidateQueries({ queryKey: queryKeys.sessionPermissionModes(transport.serverUrl, ref.sessionId) }),

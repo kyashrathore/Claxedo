@@ -23,11 +23,7 @@ import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-p
 import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
-import {
-  CURSOR_PERMISSION_MODES,
-  PermissionModeSelection,
-  cursorPermissionOptions,
-} from "../shared/permission-modes"
+import { cursorPermissionOptions } from "../shared/permission-modes"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
@@ -248,11 +244,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     }
   }
 
-  /**
-   * `Agent.create` runs before a Claxedo session id exists, so it carries the
-   * user's servers only; every `send` names the session and adds the
-   * first-party entry.
-   */
+  /** `Agent.create` carries the user's servers only; every `send` adds the session's first-party entry. */
   private mcpServersFor(sessionId: string): { mcpServers?: Record<string, CursorMcpServerConfig> } {
     const firstParty = this.firstPartyMcp?.server(sessionId)
     const mcpServers = {
@@ -262,27 +254,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     return Object.keys(mcpServers).length ? { mcpServers } : {}
   }
 
-  /**
-   * Keyed by DIRECTORY, not session id — the one place in this file that departs
-   * from how the other drivers store this.
-   *
-   * Forced by where the options are read: `Agent.create` consumes them, and it
-   * runs before a Claxedo session id exists to key on. Keying by directory also
-   * matches what the setting can actually promise — "the next Cursor agent in
-   * this workspace" — rather than implying it is scoped to a conversation it
-   * cannot reach.
-   */
-  private readonly permissionSelection = new PermissionModeSelection(CURSOR_PERMISSION_MODES, "next-session")
-
-  permissionModes(_sessionId: string, directory: string) {
-    return this.permissionSelection.state(directory)
-  }
-
-  async setPermissionMode(_sessionId: string, modeId: string, directory: string) {
-    return this.permissionSelection.set(directory, modeId)
-  }
-
-  async createAgentSession(input: { directory: string; title?: string; model: string }) {
+  async createAgentSession(input: { directory: string; title?: string; model: string; sessionId: string }) {
     const { Agent } = await this.loadAgent()
     const model = cursorSdkModel(input.model)
     const apiKey = this.cursorApiKey()
@@ -296,9 +268,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         local: {
           cwd: input.directory,
           ...cursorPluginLocalOptions(this.currentPluginRoots),
-          // Cursor reads permission policy while creating the local agent, so
-          // mode changes apply to the next session.
-          ...cursorPermissionOptions(this.permissionSelection.currentId(input.directory)),
+          ...cursorPermissionOptions(this.host.permissionModeId(input.sessionId)),
         },
       })
       observation.update({ lifecycle: "ready" })
@@ -543,21 +513,14 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     const observation = this.observeAgent(directory, sessionId)
     let agent: CursorSDKAgent
     try {
+      const local = {
+        cwd: directory,
+        ...cursorPluginLocalOptions(this.currentPluginRoots),
+        ...cursorPermissionOptions(this.host.permissionModeId(sessionId)),
+      }
       agent = agentSessionId.startsWith(CURSOR_PENDING_PREFIX)
-        ? await Agent.create({
-            ...(apiKey ? { apiKey } : {}),
-            local: {
-              cwd: directory,
-              ...cursorPluginLocalOptions(this.currentPluginRoots),
-            },
-          })
-        : await Agent.resume(agentSessionId, {
-            ...(apiKey ? { apiKey } : {}),
-            local: {
-              cwd: directory,
-              ...cursorPluginLocalOptions(this.currentPluginRoots),
-            },
-          })
+        ? await Agent.create({ ...(apiKey ? { apiKey } : {}), local })
+        : await Agent.resume(agentSessionId, { ...(apiKey ? { apiKey } : {}), local })
     } catch (cause) {
       observation.exit({ reason: "error" })
       throw cause

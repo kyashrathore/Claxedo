@@ -14,7 +14,6 @@ import type {
 import type {
   AgentGoalResource,
   AgentHarnessAdapterProcessOptions,
-  AgentPermissionModeState,
 } from "../../adapter-contract"
 import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
@@ -114,6 +113,8 @@ export type SdkRuntimeDriverHost = {
   getSessionForAgentSession(agentSessionId: string): AgentSessionBinding | null
   getGoal(sessionId: string): RuntimeGoalSnapshot | null
   getSessionConfig(sessionId: string): SessionConfig | null | undefined
+  /** The mode the session runs under: its stored one, else this harness's default. */
+  permissionModeId(sessionId: string): string | undefined
   updatePermissionState(sessionId: string, state: Record<string, unknown>, modeId?: string): void
   publishGoal(input: {
     sessionId: string
@@ -207,8 +208,6 @@ export type SdkRuntimeDriver = {
    * separates "this harness takes no effort" from "its catalog is still cold".
    */
   effortLevels?(directory?: string): HarnessEffortLevels
-  permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
-  setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
 }
 
 export type SdkRuntimeDriverFactory = (host: SdkRuntimeDriverHost) => SdkRuntimeDriver

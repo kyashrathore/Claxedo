@@ -381,16 +381,12 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
-  test("restores the accepted permission mode before a provider turn in a new adapter", async () => {
+  test("a turn runs under the stored permission mode, also in a new adapter over the same store", async () => {
     const order: string[] = []
     const store = createMemoryRuntimeStore()
-    const driver = () => ({
+    const driver = (host: SdkRuntimeDriverHost) => ({
       ...minimalSdkRuntimeDriver(),
-      setPermissionMode: async (_sessionId: string, modeId: string) => {
-        order.push(`mode:${modeId}`)
-        return { modes: [], currentModeId: modeId, appliesFrom: "next-turn" as const }
-      },
-      runTurn: async () => { order.push("turn") },
+      runTurn: async (turn: { sessionId: string }) => { order.push(`turn:${host.permissionModeId(turn.sessionId)}`) },
     })
     const adapter = new SdkRuntimeAdapter({ store, driver })
     const directory = path.resolve("/repo")
@@ -401,12 +397,15 @@ describe("SdkRuntimeAdapter", () => {
       agent: "general",
       model: { providerID: "codex", modelID: "test" },
     }
-    for await (const _event of executeTestTurn(adapter, session.id, { ...prompt, permissionMode: "read-only" }, directory)) {}
+    for await (const _event of executeTestTurn(adapter, session.id, prompt, directory)) {}
+    for await (const _event of executeTestTurn(adapter, session.id, { ...prompt, assistantMessageId: "second", permissionMode: "read-only" }, directory)) {}
     expect(store.getSessionConfig(session.id)?.permissionMode).toBe("read-only")
     await adapter.dispose()
     const restored = new SdkRuntimeAdapter({ store, driver })
-    for await (const _event of executeTestTurn(restored, session.id, { ...prompt, assistantMessageId: "next" }, directory)) {}
-    expect(order).toEqual(["mode:read-only", "turn", "mode:read-only", "turn"])
+    for await (const _event of executeTestTurn(restored, session.id, { ...prompt, assistantMessageId: "third" }, directory)) {}
+    expect(order).toEqual(["turn:workspace-write", "turn:read-only", "turn:read-only"])
+    await expect(restored.setPermissionMode(executionBinding(session.id, directory), "plan")).rejects.toMatchObject({ code: "unknown_permission_mode" })
+    expect(store.getSessionConfig(session.id)?.permissionMode).toBe("read-only")
     await restored.dispose()
   })
 

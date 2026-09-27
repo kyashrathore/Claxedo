@@ -91,6 +91,7 @@ function driverFor(binary: string, codexHome: string) {
     getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
     publishGoal() {},
     async runProviderTurn() { return true },
     meterUsage() {},

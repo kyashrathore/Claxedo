@@ -28,7 +28,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { CODEX_PERMISSION_MODES, CODEX_SETTINGS, PermissionModeSelection, codexSandboxPolicy, codexSettingsFor } from "../shared/permission-modes"
+import { codexSandboxPolicy, codexSettingsFor } from "../shared/permission-modes"
 import { generateCodexTitle, setCodexThreadName } from "./title"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
@@ -188,18 +188,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.process = null
     if (retiring) await this.retireProcess(retiring)
     if (startup) await startup.catch(() => undefined)
-  }
-
-  private readonly permissionSelection = new PermissionModeSelection(CODEX_PERMISSION_MODES, "next-turn")
-
-  permissionModes(sessionId: string) {
-    return this.permissionSelection.state(sessionId)
-  }
-
-  /** Stores the selection applied by every subsequent thread and turn request. */
-  async setPermissionMode(sessionId: string, modeId: string, _directory: string) {
-    if (!CODEX_SETTINGS[modeId]) throw new Error(`Unknown Codex permission mode "${modeId}"`)
-    return this.permissionSelection.set(sessionId, modeId)
   }
 
   async createAgentSession(input: { directory: string; model: string; system?: string; sessionId: string }) {
@@ -381,10 +369,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       threadId,
       input: await codexUserInput({ parts: input.input.parts, directory: input.directory }),
       cwd: input.directory,
-      approvalPolicy: codexSettingsFor(this.permissionSelection.currentId(input.sessionId)).approvalPolicy,
+      approvalPolicy: codexSettingsFor(this.host.permissionModeId(input.sessionId)).approvalPolicy,
       approvalsReviewer: "user",
       sandboxPolicy: codexSandboxPolicy(
-        codexSettingsFor(this.permissionSelection.currentId(input.sessionId)).sandbox,
+        codexSettingsFor(this.host.permissionModeId(input.sessionId)).sandbox,
         input.directory,
       ),
       ...(model ? { model } : {}),
@@ -615,7 +603,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       message,
       activeThreads: this.threads.activeThreads,
       host: this.host,
-      permissionModeId: (sessionId) => this.permissionSelection.currentId(sessionId),
+      permissionModeId: (sessionId) => this.host.permissionModeId(sessionId),
       refreshTokens: () => this.operatorLogin.refresh(),
     })
   }

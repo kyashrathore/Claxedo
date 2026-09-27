@@ -1,8 +1,11 @@
 import { randomUUID } from "crypto"
 import {
+  effectivePermissionModeId,
+  declaredPermissionModes,
   requireAgentExecutionBinding,
   type AgentExecutionBinding,
   type HarnessInstructionChannel,
+  type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
 import { type RawHarnessEvent } from "@claxedo/agent-event-runtime"
 import { createAgentSessionIndex } from "./agent-session-index"
@@ -42,6 +45,7 @@ import type {
 } from "../../adapter-contract"
 import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import { turnWriteFence } from "../../adapter-contract"
+import { PermissionModeRefusedError } from "../../permission-ceiling"
 import { generateDriverTitle, pushDriverTitle, type SessionTitleRequest } from "./sdk-runtime-title"
 import type { HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
@@ -174,6 +178,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       getSessionForAgentSession: (agentSessionId) => this.agentSessionIndex.get(agentSessionId),
       getGoal: (sessionId) => this.store.getGoal?.(sessionId) ?? null,
       getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
+      permissionModeId: (sessionId) => effectivePermissionModeId(this.harness(), this.store.getSessionConfig(sessionId)?.permissionMode) ?? undefined,
       updatePermissionState: (sessionId, state, modeId) => {
         if (!this.store.updateSessionConfig(sessionId, {
           permissionState: state,
@@ -395,8 +400,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.agentSessionIndex.remember({ sessionId: id, directory, agentSessionId: current })
     let agentSessionId = current
     const created = Date.now()
-    const permissionMode = input.permissionMode ?? this.store.getSessionConfig(id)?.permissionMode
-    if (permissionMode) await this.applyPermissionMode(id, directory, permissionMode)
+    if (input.permissionMode) this.selectPermissionMode(id, input.permissionMode)
     const start = [
       sessionStatus(id, { type: "busy" }),
       ...(input.userMessageId
@@ -706,34 +710,43 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async listDraftPermissionModes(directory: string): Promise<AgentPermissionModeState> {
-    directory = requireWorkspaceDirectory(directory)
-    return this.driver.permissionModes?.("", directory) ?? { modes: [], appliesFrom: "next-turn" }
+    requireWorkspaceDirectory(directory)
+    return this.permissionModeState(undefined)
   }
 
   async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
-    const { sessionId, directory } = requireAgentExecutionBinding(binding)
-    const selected = this.store.getSessionConfig(sessionId)?.permissionMode
-    if (selected) return this.setPermissionMode(binding, selected)
-    return this.driver.permissionModes?.(sessionId, directory) ?? { modes: [], appliesFrom: "next-turn" }
+    const { sessionId } = requireAgentExecutionBinding(binding)
+    return this.permissionModeState(this.store.getSessionConfig(sessionId)?.permissionMode)
   }
 
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
-    const { sessionId, directory } = requireAgentExecutionBinding(binding)
-    return this.applyPermissionMode(sessionId, directory, modeId)
+    const { sessionId } = requireAgentExecutionBinding(binding)
+    return this.selectPermissionMode(sessionId, modeId)
   }
 
-  private async applyPermissionMode(sessionId: string, directory: string, modeId: string): Promise<AgentPermissionModeState> {
-    if (!this.driver.setPermissionMode) {
-      throw new Error(`${this.driver.type} does not support permission modes`)
+  private harness(): SessionHarness {
+    return { id: this.driver.type, access: "native" }
+  }
+
+  private permissionModeState(stored: string | undefined): AgentPermissionModeState {
+    const table = declaredPermissionModes(this.harness())
+    if (!table) return { modes: [], unsupported: `${this.driver.type} has no permission modes of its own`, appliesFrom: "next-turn" }
+    const currentModeId = effectivePermissionModeId(this.harness(), stored)
+    return { modes: [...table.modes], ...(currentModeId ? { currentModeId } : {}), appliesFrom: table.appliesFrom }
+  }
+
+  /** The store is the only record of the choice: every driver reads it back through `permissionModeId`. */
+  private selectPermissionMode(sessionId: string, modeId: string): AgentPermissionModeState {
+    const table = declaredPermissionModes(this.harness())
+    if (!table) throw new PermissionModeRefusedError("permission_modes_unsupported", `${this.driver.type} has no permission modes of its own`)
+    if (!table.modes.some((mode) => mode.id === modeId)) {
+      throw new PermissionModeRefusedError("unknown_permission_mode", `Unknown ${this.driver.type} permission mode "${modeId}"`)
     }
-    const state = await this.driver.setPermissionMode(sessionId, modeId, directory)
-    if (!state.currentModeId) throw new Error(`${this.driver.type} did not report its selected permission mode`)
-    if (this.store.getSessionConfig(sessionId)?.permissionMode !== state.currentModeId) {
-      if (!this.store.updateSessionConfig(sessionId, { permissionMode: state.currentModeId })) {
-        throw new Error(`Session ${sessionId} has no runtime config`)
-      }
+    if (this.store.getSessionConfig(sessionId)?.permissionMode !== modeId
+      && !this.store.updateSessionConfig(sessionId, { permissionMode: modeId })) {
+      throw new Error(`Session ${sessionId} has no runtime config`)
     }
-    return state
+    return this.permissionModeState(modeId)
   }
 
   async listPermissions(directory: string): Promise<AgentPermission[]> { return this.interactions.listPermissions(directory) }

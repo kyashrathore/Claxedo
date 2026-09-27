@@ -113,6 +113,22 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     proc.listenSubagents(aid, (notification) => runtime.receive(notification), () => runtime.disconnect())
     return runtime
   }
+  /**
+   * A resumed agent session starts in the agent's own default mode. The stored
+   * mode is put back while the agent still offers it, and the store then keeps
+   * whatever the agent reports, so the session row names the mode it runs.
+   */
+  protected async restoreStoredPermissionMode(proc: ACPProcess, agentSessionId: string, sessionId: string) {
+    const stored = this.store.getSessionConfig(sessionId)?.permissionMode
+    if (!stored) return
+    const state = proc.permissionModes(agentSessionId)
+    if (state.currentModeId === stored) return
+    const kept = state.modes.some((mode) => mode.id === stored)
+      ? (await proc.setPermissionMode(agentSessionId, stored)).currentModeId
+      : state.currentModeId
+    if (kept !== stored) this.store.updateSessionConfig(sessionId, { permissionMode: kept ?? null })
+  }
+
   protected bindCommandUpdates(sessionId: string, agentSessionId: string, directory: string, proc: ACPProcess) {
     const runtime = createAgentEventRuntime({
       harness: this.harnessId(),
@@ -587,12 +603,14 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           if (!missingAcpSession(err, agentSessionId)) throw err
           await replace()
         }
+        if (!input.permissionMode) await bound("ACP permission mode", this.restoreStoredPermissionMode(proc, agentSessionId, id))
       }
       if (input.permissionMode) {
         const applied = await bound("ACP permission mode", proc.setPermissionMode(agentSessionId, input.permissionMode))
         if (applied.currentModeId !== input.permissionMode) {
           throw new Error(`ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${input.permissionMode}`)
         }
+        this.store.updateSessionConfig(id, { permissionMode: applied.currentModeId })
       }
       await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
       // Recovery may have committed its new binding just before a host crash.

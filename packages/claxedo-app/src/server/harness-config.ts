@@ -9,7 +9,6 @@ import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-option
 import type { HarnessOptions, HarnessState, SessionConfig } from "./harness-types"
 import { readSessionConfig, writeSessionConfig, type SessionConfigPatch } from "./session-config"
 import { harnessStateFromWire } from "./wire/harness-state"
-import type { PermissionModeState } from "./wire/permission-modes"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
 
@@ -20,7 +19,7 @@ export type HarnessConfigApi = {
   readonly options: (request: HarnessOptionsRequest) => Promise<HarnessOptions>
   readonly sessionConfig: (ref: SessionRef) => Promise<SessionConfig | undefined>
   readonly updateSessionConfig: (ref: SessionRef, patch: SessionConfigPatch) => Promise<void>
-  readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<PermissionModeState>
+  readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<{ readonly currentModeId?: string }>
 }
 
 export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces, queryClient: QueryClient): HarnessConfigApi {

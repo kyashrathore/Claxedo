@@ -30,6 +30,7 @@ function host(overrides: Partial<SdkRuntimeDriverHost> = {}): SdkRuntimeDriverHo
     bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
     getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
     getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    permissionModeId: () => undefined,
     updatePermissionState() {},
     ...overrides,
   }

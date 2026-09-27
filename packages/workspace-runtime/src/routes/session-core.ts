@@ -66,7 +66,7 @@ import {
 } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT } from "./session-children"
 import type { QueuedPromptAction } from "../session/delivery-owner"
-import { narrowerPermissionLevel } from "@claxedo/agent-sdk-runtime"
+import { narrowerPermissionLevel, PermissionModeRefusedError } from "@claxedo/agent-sdk-runtime"
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
@@ -109,6 +109,17 @@ import {
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
+
+/**
+ * Publish a session's row after a write to one of its selections, so every
+ * client's copy of the row moves with it. Answers the row, or nothing when the
+ * session is gone.
+ */
+async function publishSessionRow(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) {
+  const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
+  if (session) opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
+  return session
+}
 
 /**
  * A child session lives under its parent: archiving the parent cancels and
@@ -1632,7 +1643,9 @@ export function createSessionRoutes(opts: Opts) {
           : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
         if (!sameSessionHarness(current.harness, body.harness)) {
           if (opts.switchSessionHarness) {
-            return c.json(await opts.switchSessionHarness(c, directory, sessionId, body, adapter))
+            const switched = await opts.switchSessionHarness(c, directory, sessionId, body, adapter)
+            await publishSessionRow(opts, c, directory, sessionId, adapter)
+            return c.json(switched)
           }
           return harnessSwitchUnsupported(
             c,
@@ -1645,6 +1658,7 @@ export function createSessionRoutes(opts: Opts) {
       const config = opts.updateSessionConfig
         ? await opts.updateSessionConfig(c, directory, sessionId, body, adapter)
         : await adapter.updateSessionConfig(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body)
+      await publishSessionRow(opts, c, directory, sessionId, adapter)
       return c.json(config)
     })
     .delete("/session/:id", async (c) => {
@@ -1949,26 +1963,17 @@ export function createSessionRoutes(opts: Opts) {
         const permitted = await permissionModeUnderCeiling(c, adapter, directory, ceiling, modeId)
         if (permitted.refusal) return permitted.refusal
       }
-      // The adapter's own read-back is returned verbatim. A harness that kept a
-      // different mode than the one requested must reach the client as the mode
-      // it kept, not as an echo of the request.
       try {
-        return c.json(await adapter.setPermissionMode(
-          await requireExecutionBinding(opts, c, directory, sessionId, adapter),
-          modeId,
-        ))
+        await adapter.setPermissionMode(await requireExecutionBinding(opts, c, directory, sessionId, adapter), modeId)
       } catch (error) {
-        // A mode this harness does not offer is BAD INPUT, not a server fault.
-        // Every adapter rejects an unknown id by throwing — silently accepting
-        // one would store a mode the harness will never honour — and left to
-        // escape that throw is a 500, which reads as "the runtime broke" and
-        // sends debugging to the wrong layer.
-        const message = error instanceof Error ? error.message : String(error)
-        if (/does not offer|unknown permission mode/i.test(message)) {
-          return c.json({ error: { code: "unknown_permission_mode", message } }, 400)
-        }
+        if (error instanceof PermissionModeRefusedError) return c.json(errorBody(error.code, error.message), 400)
         throw error
       }
+      // The row names the mode the store kept, which for an ACP agent is the
+      // one the agent reported keeping rather than an echo of the request.
+      const updated = await publishSessionRow(opts, c, directory, sessionId, adapter)
+      if (!updated) return c.json(errorBody("session_not_found", "Session not found"), 404)
+      return c.json(normalizeSession(updated, directory))
     })
     .post("/session/:id/revert", async (c) => {
       const sessionId = c.req.param("id")

@@ -20,6 +20,7 @@ import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-eve
 import type {
   AgentHarnessId,
   AgentHarnessTransport,
+  AutoLevel,
   SessionHarness,
   SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
@@ -80,6 +81,7 @@ export type {
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
 export { connectionIdForHarness, isAgentMessage } from "@claxedo/agent-runtime-contract"
+export type { AgentPermissionMode, AutoLevel } from "@claxedo/agent-runtime-contract"
 export { AgentRuntimeGoalError, isAgentRuntimeGoalError } from "./runtime"
 export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-event-runtime"
 export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
@@ -104,9 +106,7 @@ export type {
 export { requireGoalResource } from "./adapter-contract"
 export type {
   AgentConfigOptions,
-  AgentPermissionMode,
   AgentPermissionModeState,
-  AutoLevel,
   ResolvedHarnessModel,
   AgentGoalMutationFailure,
   AgentGoalMutationResult,
@@ -160,6 +160,7 @@ export {
   permissionCeilingAdmits,
   PermissionCeilingError,
   permissionModeLevel,
+  PermissionModeRefusedError,
   widestPermissionModeUnder,
 } from "./permission-ceiling"
 export { chunk, live, recovering } from "./status"
@@ -281,7 +282,7 @@ export type SessionHandoffSource = {
 
 export type SessionConfig = {
   /** Host-owned maximum permission level, retained across harness changes. */
-  permissionCeiling?: import("./adapter-contract").AutoLevel
+  permissionCeiling?: AutoLevel
   /** Accepted harness mode, persisted by the permission-mode operation. */
   permissionMode?: string
   /** Native permission state accepted by the driver; opaque to shared consumers. */

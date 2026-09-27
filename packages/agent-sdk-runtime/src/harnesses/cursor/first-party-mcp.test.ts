@@ -49,6 +49,7 @@ function fixture() {
     getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
     publishGoal() {},
     async runProviderTurn() { return true },
     meterUsage() {},

@@ -536,10 +536,13 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return state
   }
 
+  /** The agent's own read-back is what is stored, so the session row names the mode the agent kept. */
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
     requireAgentExecutionBinding(binding)
     const { proc, agentSessionId } = await this.restoreSessionForConfiguration(binding)
-    return proc.setPermissionMode(agentSessionId, modeId)
+    const state = await proc.setPermissionMode(agentSessionId, modeId)
+    if (state.currentModeId) this.store.updateSessionConfig(binding.sessionId, { permissionMode: state.currentModeId })
+    return state
   }
 
   async getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>> {
@@ -729,6 +732,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       const pending = proc.resumeSession(agentSessionId, directory, binding.sessionId)
       try { await this.boundConfigProbe("ACP session config resume", pending) }
       catch (error) { proc.quarantineSession(agentSessionId, pending); throw error }
+      await this.boundConfigProbe("ACP permission mode", this.restoreStoredPermissionMode(proc, agentSessionId, binding.sessionId))
     }
     return { proc, agentSessionId }
   }

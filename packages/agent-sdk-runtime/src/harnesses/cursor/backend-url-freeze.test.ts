@@ -38,6 +38,7 @@ function host(): SdkRuntimeDriverHost {
     bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
     getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
     getSessionConfig: () => ({ harness: { id: "cursor", access: "native" } }),
+    permissionModeId: () => undefined,
     updatePermissionState() {},
   }
 }

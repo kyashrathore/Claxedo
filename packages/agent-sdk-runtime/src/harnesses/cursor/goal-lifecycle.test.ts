@@ -51,6 +51,7 @@ describe("Cursor native Goal lifecycle", () => {
       getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
       publishGoal(input) {
         published.push(input.goal)
       },
@@ -132,6 +133,7 @@ describe("Cursor native Goal lifecycle", () => {
       getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
       publishGoal(input) {
         published.push(input.goal)
       },
@@ -189,6 +191,7 @@ describe("Cursor native Goal lifecycle", () => {
       getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
       publishGoal() {},
       async runProviderTurn() { return true },
       meterUsage() {},

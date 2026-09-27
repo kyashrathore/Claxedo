@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import {
   CLAUDE_SDK_PERMISSION_MODES,
   CLAUDE_SDK_PERMISSION_MODE_IS_A_REAL_UNION,
@@ -26,6 +27,10 @@ describe("Claude SDK PermissionMode parity", () => {
       "dontAsk",
       "auto",
     ])
+  })
+
+  test("the harness table offers exactly the SDK's modes", () => {
+    expect(HARNESS_TABLE.claude.permissionModes.modes.map((mode) => mode.id).sort()).toEqual([...CLAUDE_SDK_PERMISSION_MODES].sort())
   })
 
   test("mode ids are unique", () => {

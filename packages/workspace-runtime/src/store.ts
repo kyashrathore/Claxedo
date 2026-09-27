@@ -47,7 +47,13 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
+import {
+  effectivePermissionModeId,
+  effectiveSessionModel,
+  RECOVERY_OPERATION_RETENTION_MS,
+  parseRecoveryOperation,
+  type RecoveryOperation,
+} from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -755,6 +761,30 @@ function sessionHarness(input: {
       : undefined,
   )
   return identity ?? undefined
+}
+
+/**
+ * A session row's selections, each as the session runs it: what was stored,
+ * else what its harness runs when nothing was.
+ */
+function sessionRowConfig(harness: SessionHarness, row: {
+  model_provider_id?: string | null
+  model_id?: string | null
+  variant?: string | null
+  agent?: string | null
+  permission_mode?: string | null
+}) {
+  const model = effectiveSessionModel(
+    harness,
+    row.model_provider_id && row.model_id ? { providerID: row.model_provider_id, modelID: row.model_id } : undefined,
+  )
+  return {
+    harness,
+    ...(model ? { model } : {}),
+    variant: row.variant ?? null,
+    agent: row.agent ?? null,
+    permissionMode: effectivePermissionModeId(harness, row.permission_mode),
+  }
 }
 
 /**
@@ -3766,6 +3796,7 @@ export class RuntimeStore {
     model_id?: string | null
     variant?: string | null
     agent?: string | null
+    permission_mode?: string | null
     process_key?: string | null
     created_at: number
     updated_at: number
@@ -3796,14 +3827,7 @@ export class RuntimeStore {
       },
       ...(harness
         ? {
-            config: {
-              harness,
-              ...(row.model_provider_id && row.model_id
-                ? { model: { providerID: row.model_provider_id, modelID: row.model_id } }
-                : {}),
-              variant: row.variant ?? null,
-              agent: row.agent ?? null,
-            },
+            config: sessionRowConfig(harness, row),
           }
         : {}),
       ...(row.status ? { status: row.status } : {}),
@@ -3893,6 +3917,7 @@ export class RuntimeStore {
         model_id: string | null
         variant: string | null
         agent: string | null
+        permission_mode: string | null
         created_at: number
         updated_at: number
         status: string | null
@@ -3920,6 +3945,7 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
+          permission_mode,
           created_at,
           updated_at,
           last_human_turn_at,
@@ -4017,6 +4043,7 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      permission_mode: string | null
       created_at: number
       updated_at: number
       status: string | null
@@ -4045,6 +4072,7 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
+          permission_mode,
           created_at,
           updated_at,
           last_human_turn_at,

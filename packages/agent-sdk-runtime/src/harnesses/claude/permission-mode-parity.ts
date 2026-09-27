@@ -1,19 +1,14 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 
 /**
- * Compile-time lock between the Claude Agent SDK's `PermissionMode` union and the
- * copy claxedo-app carries.
+ * Compile-time lock between the Claude Agent SDK's `PermissionMode` union and
+ * the ids the driver forwards as `permissionMode`.
  *
- * This assertion lives in production source because test files are excluded
- * from the package typecheck.
- *
- * The app cannot import the SDK type directly — claxedo-app must not depend on
- * `@anthropic-ai/claude-agent-sdk` — so it mirrors the union structurally in
- * `features/session/permission/mechanisms.ts` (`ClaudeSdkPermissionMode`) and
- * this file guarantees the mirror stays exact.
- *
- * If this file stops compiling, the SDK changed its permission modes: reconcile
- * BOTH the list below and `ClaudeSdkPermissionMode` in claxedo-app.
+ * The contract's `HARNESS_TABLE.claude.permissionModes` cannot name the SDK
+ * type (the contract package depends on nothing), so this mirror is the typed
+ * copy and the parity test holds the table's ids to it. The assertions live in
+ * production source because test files are excluded from the package
+ * typecheck.
  */
 export const CLAUDE_SDK_PERMISSION_MODES = [
   "default",
@@ -21,14 +16,6 @@ export const CLAUDE_SDK_PERMISSION_MODES = [
   "bypassPermissions",
   "plan",
   "dontAsk",
-  // First-class classifier-gated mode (the "auto mode" Anthropic documents):
-  // auto-approves safe tiers and escalates only genuinely risky actions.
-  //
-  // Claxedo's Auto maps to the edit-oriented rung. `CLAUDE_PERMISSION_MODES` leaves this
-  // id unlevelled and tags `acceptEdits` as the `auto` rung, and the ACP table
-  // excludes a bare `auto` for the stated reason that a classifier can approve
-  // COMMANDS as well as edits, while the rung means "edits yes, risk asks".
-  // The classifier mode remains directly selectable.
   "auto",
 ] as const
 

@@ -1,4 +1,4 @@
-import type { AgentPermissionMode, AutoLevel } from "./adapter-contract"
+import type { AgentPermissionMode, AutoLevel } from "@claxedo/agent-runtime-contract"
 
 /**
  * The one ordering of {@link AutoLevel}: how much runs without asking. It is
@@ -62,4 +62,15 @@ export class PermissionCeilingError extends Error {
 
 export function isPermissionCeilingError(error: unknown): error is PermissionCeilingError {
   return error instanceof PermissionCeilingError
+}
+
+/**
+ * A mode write the harness cannot take: an id it does not offer, or a harness
+ * with no mode surface at all. Bad input rather than a runtime fault.
+ */
+export class PermissionModeRefusedError extends Error {
+  constructor(readonly code: "unknown_permission_mode" | "permission_modes_unsupported", message: string) {
+    super(message)
+    this.name = "PermissionModeRefusedError"
+  }
 }

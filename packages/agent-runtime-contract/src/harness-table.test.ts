@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, harnessForProviderId, isHarnessId, vendorCredentialProviderIds } from "./harness-table"
+import {
+  effectivePermissionModeId,
+  effectiveSessionModel,
+  HARNESS_IDS,
+  HARNESS_TABLE,
+  harnessBindingIds,
+  harnessForProviderId,
+  isHarnessId,
+  vendorCredentialProviderIds,
+} from "./harness-table"
 import { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "./pi-providers"
 
 describe("harness table", () => {
@@ -98,5 +107,48 @@ describe("piCredentialProviderIDs", () => {
       expect(piCredentialProviderIDs(provider).length).toBeGreaterThan(0)
       expect(isPiLaunchProvider(provider)).toBe(true)
     }
+  })
+})
+
+describe("a session's effective selections", () => {
+  const claude = { id: "claude", access: "native" } as const
+  const codex = { id: "codex", access: "native" } as const
+  const cursor = { id: "cursor", access: "native" } as const
+  const pi = { id: "pi", access: "native" } as const
+  const acp = { id: "claude", access: "connection" } as const
+
+  // The rung is the default, so exactly one mode per harness may carry it —
+  // otherwise which one is chosen is list-order trivia.
+  test("each harness declares exactly one auto rung", () => {
+    for (const harness of HARNESS_IDS) {
+      expect(HARNESS_TABLE[harness].permissionModes.modes.filter((mode) => mode.level === "auto"), harness).toHaveLength(1)
+    }
+  })
+
+  test("Claude's rung is the classifier, not acceptEdits", () => {
+    expect(effectivePermissionModeId(claude, undefined)).toBe("auto")
+    expect(HARNESS_TABLE.claude.permissionModes.modes.find((mode) => mode.id === "acceptEdits")?.level).toBeUndefined()
+  })
+
+  test("a stored mode wins while the harness offers it; otherwise the harness default", () => {
+    expect(effectivePermissionModeId(codex, "read-only")).toBe("read-only")
+    expect(effectivePermissionModeId(codex, "plan")).toBe("workspace-write")
+    expect(effectivePermissionModeId(cursor, null)).toBe("auto-review")
+  })
+
+  test("a harness the table does not describe runs only what was stored", () => {
+    expect(effectivePermissionModeId(pi, null)).toBeNull()
+    expect(effectivePermissionModeId(acp, null)).toBeNull()
+    expect(effectivePermissionModeId(acp, "agent-mode")).toBe("agent-mode")
+  })
+
+  test("a session with no stored model runs on the row its harness declares, where it declares one", () => {
+    expect(effectiveSessionModel(claude, undefined)).toEqual({ providerID: "claude", modelID: "default" })
+    expect(effectiveSessionModel(cursor, undefined)).toEqual({ providerID: "cursor", modelID: "auto" })
+    expect(effectiveSessionModel(codex, undefined)).toBeUndefined()
+    expect(effectiveSessionModel(pi, undefined)).toBeUndefined()
+    expect(effectiveSessionModel(acp, undefined)).toBeUndefined()
+    expect(effectiveSessionModel(claude, { providerID: "claude", modelID: "claude-haiku-4-5-20251001" }))
+      .toEqual({ providerID: "claude", modelID: "claude-haiku-4-5-20251001" })
   })
 })

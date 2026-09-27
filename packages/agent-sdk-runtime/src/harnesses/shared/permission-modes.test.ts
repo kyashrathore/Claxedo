@@ -1,71 +1,14 @@
 import { describe, expect, test } from "bun:test"
+import { HARNESS_TABLE, defaultPermissionModeId } from "@claxedo/agent-runtime-contract"
 import {
   CLAUDE_DENY_FLOOR,
-  CLAUDE_PERMISSION_MODES,
-  CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
-  CURSOR_PERMISSION_MODES,
-  DEFAULT_CODEX_MODE,
-  PermissionModeSelection,
   codexSandboxPolicy,
   codexSettingsFor,
   cursorPermissionOptions,
 } from "./permission-modes"
 
-describe("PermissionModeSelection", () => {
-  const selection = () => new PermissionModeSelection(CLAUDE_PERMISSION_MODES, "next-turn")
-
-  test("the auto rung is the default before anyone chooses", () => {
-    expect(selection().currentId("ses_1")).toBe("auto")
-  })
-
-  test("sessions do not share a selection", () => {
-    const modes = selection()
-    modes.set("ses_1", "plan")
-    expect(modes.currentId("ses_1")).toBe("plan")
-    expect(modes.currentId("ses_2")).toBe("auto")
-  })
-
-  // Storing an id the harness will later refuse produces a picker that reads as
-  // applied while nothing happens — the divergence this channel exists to stop.
-  test("an unknown id throws instead of being stored", () => {
-    const modes = selection()
-    expect(() => modes.set("ses_1", "not-a-mode")).toThrow(/unknown permission mode/i)
-    expect(modes.currentId("ses_1")).toBe("auto")
-  })
-
-  test("state carries appliesFrom so the picker can say when it lands", () => {
-    expect(new PermissionModeSelection(CURSOR_PERMISSION_MODES, "next-session").state("ses_1").appliesFrom).toBe(
-      "next-session",
-    )
-  })
-})
-
-describe("the auto rung means full access with the danger tier gated", () => {
-  // The rung is a promise about behaviour, so exactly one mode per harness may
-  // carry it — otherwise which one becomes the default is list-order trivia.
-  test("each harness table has exactly one auto rung", () => {
-    for (const [name, modes] of [
-      ["claude", CLAUDE_PERMISSION_MODES],
-      ["cursor", CURSOR_PERMISSION_MODES],
-      ["codex", CODEX_PERMISSION_MODES],
-    ] as const) {
-      expect(modes.filter((mode) => mode.level === "auto"), name).toHaveLength(1)
-    }
-  })
-
-  /** The automatic rung approves safe tiers and escalates risky operations. */
-  test("Claude's rung is the classifier, not acceptEdits", () => {
-    expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.level === "auto")?.id).toBe("auto")
-    expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.id === "acceptEdits")?.level).toBeUndefined()
-  })
-
-  test("Codex's rung is the workspace sandbox, which asks outside it", () => {
-    const rung = CODEX_PERMISSION_MODES.find((mode) => mode.level === "auto")!
-    expect(rung.id).toBe(DEFAULT_CODEX_MODE)
-    expect(CODEX_SETTINGS[rung.id]).toEqual({ approvalPolicy: "on-request", sandbox: "workspace-write" })
-  })
-})
+const CODEX_DEFAULT_MODE = defaultPermissionModeId(HARNESS_TABLE.codex.permissionModes)!
 
 describe("Codex encodings", () => {
   // `turn/start` takes a structured policy while `thread/start` takes the slug.
@@ -78,13 +21,17 @@ describe("Codex encodings", () => {
     })
   })
 
+  test("the default rung is the workspace sandbox, which asks outside it", () => {
+    expect(CODEX_SETTINGS[CODEX_DEFAULT_MODE]).toEqual({ approvalPolicy: "on-request", sandbox: "workspace-write" })
+  })
+
   test("an unset or unknown mode resolves to the default rung, never undefined", () => {
-    expect(codexSettingsFor(undefined)).toEqual(CODEX_SETTINGS[DEFAULT_CODEX_MODE])
-    expect(codexSettingsFor("nonsense")).toEqual(CODEX_SETTINGS[DEFAULT_CODEX_MODE])
+    expect(codexSettingsFor(undefined)).toEqual(CODEX_SETTINGS[CODEX_DEFAULT_MODE])
+    expect(codexSettingsFor("nonsense")).toEqual(CODEX_SETTINGS[CODEX_DEFAULT_MODE])
   })
 
   test("every codex mode has settings, so no row can be chosen without an encoding", () => {
-    for (const mode of CODEX_PERMISSION_MODES) expect(CODEX_SETTINGS[mode.id], mode.id).toBeTruthy()
+    for (const mode of HARNESS_TABLE.codex.permissionModes.modes) expect(CODEX_SETTINGS[mode.id], mode.id).toBeTruthy()
   })
 })
 
@@ -103,7 +50,7 @@ describe("Cursor options", () => {
   })
 
   test("every cursor mode has an encoding", () => {
-    for (const mode of CURSOR_PERMISSION_MODES) {
+    for (const mode of HARNESS_TABLE.cursor.permissionModes.modes) {
       expect(Object.keys(cursorPermissionOptions(mode.id)).length, mode.id).toBeGreaterThan(0)
     }
   })

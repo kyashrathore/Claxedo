@@ -2,12 +2,14 @@ import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type {
   AgentExecutionBinding,
+  AgentPermissionMode,
   CleanupFact,
   ConnectionRuntimeStatus,
   AgentSessionStartBinding,
   AgentQuestionAnswer,
   ExecutionFact,
   HarnessInstructionChannel,
+  PermissionModesApplyFrom,
   RecoveryErrorCode,
   SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
@@ -332,35 +334,6 @@ export interface SupportsPermissions {
   respondPermission(binding: AgentExecutionBinding, permId: string, decision: PermissionDecision, optionId?: string): Promise<AgentInteractionResult | void>
 }
 
-/**
- * The three rungs every harness's permission surface is mapped onto.
- *
- * A LADDER, not a taxonomy: the rungs are ordered by how much runs without
- * asking, and that ordering is the only thing shared across harnesses. What each
- * rung concretely does is the harness's business and differs wildly — `auto` is
- * an OS sandbox on codex and a model classifier on claude and cursor.
- *
- * `level` is therefore a HINT for choosing a default, never a promise about
- * behaviour. Anything user-facing must show `AgentPermissionMode.name` — the
- * harness's own word for it — because that is the only label guaranteed to
- * describe what actually happens.
- */
-export type AutoLevel = "ask" | "auto" | "full"
-
-/** One selectable permission mode, in the harness's own vocabulary. */
-export type AgentPermissionMode = {
-  id: string
-  /** The harness's own name. Rendered as-is; never paraphrased. */
-  name: string
-  description?: string
-  /**
-   * Which rung this is, when it maps to one at all. Absent means the harness
-   * offers it but it does not correspond to a rung — still selectable, just not
-   * a candidate for the default.
-   */
-  level?: AutoLevel
-}
-
 export type AgentPermissionModeState = {
   modes: AgentPermissionMode[]
   /**
@@ -374,12 +347,7 @@ export type AgentPermissionModeState = {
    * requires telling those apart.
    */
   unsupported?: string
-  /**
-   * When a change lands. `next-session` is not a rounding error: on cursor these
-   * are `Agent.create` options, so a change cannot affect the session in front
-   * of the user at all.
-   */
-  appliesFrom: "next-turn" | "next-session"
+  appliesFrom: PermissionModesApplyFrom
 }
 
 export interface SupportsPermissionModes {

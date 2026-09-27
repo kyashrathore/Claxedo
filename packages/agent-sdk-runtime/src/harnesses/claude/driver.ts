@@ -75,11 +75,7 @@ import {
 import {
   type LaunchOwnershipStore,
 } from "../../launch"
-import {
-  CLAUDE_DENY_FLOOR,
-  CLAUDE_PERMISSION_MODES,
-  PermissionModeSelection,
-} from "../shared/permission-modes"
+import { CLAUDE_DENY_FLOOR } from "../shared/permission-modes"
 import { isClaudeSdkPermissionMode } from "./permission-mode-parity"
 import {
 } from "../../process-observer"
@@ -264,27 +260,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     fetchModels: (directory) => this.fetchModels(directory),
   })
 
-  /**
-   * `next-turn`: `permissionMode` is read when `query()` is called, and a turn
-   * is one query, so a change is live from the next message. The SDK also has
-   * `setPermissionMode()` for mid-turn changes, deliberately unused — it applies
-   * to a streaming-input query this driver does not hold open between turns, so
-   * calling it would mean keeping a handle alive purely to mutate it.
-   */
-  private readonly permissionSelection = new PermissionModeSelection(CLAUDE_PERMISSION_MODES, "next-turn")
-
   constructor(
     private readonly host: SdkRuntimeDriverHost,
     private readonly driverOptions: ClaudeSdkDriverOptions,
   ) {}
-
-  permissionModes(sessionId: string) {
-    return this.permissionSelection.state(sessionId)
-  }
-
-  async setPermissionMode(sessionId: string, modeId: string) {
-    return this.permissionSelection.set(sessionId, modeId)
-  }
 
   /**
    * The binding this spawn runs on, refused when the placeholder it holds has
@@ -502,7 +481,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       listSubkeys: async () => [],
     }
     const requestPermission: CanUseTool = async (toolName, toolInput, options) => {
-      const grant = claudeCommandGrant(toolName, toolInput, options, input.directory, this.permissionSelection.currentId(input.sessionId))
+      const grant = claudeCommandGrant(toolName, toolInput, options, input.directory, this.host.permissionModeId(input.sessionId))
       if (grant && hasClaudeCommandGrant(this.host.getSessionConfig(input.sessionId)?.permissionState, grant)) {
         return { behavior: "allow", updatedInput: toolInput }
       }
@@ -574,7 +553,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // Persist before allowing execution, so a failed write cannot silently
         // turn a durable approval into a one-turn approval.
         this.host.updatePermissionState(input.sessionId, grant ? withClaudeCommandGrant(accepted.permissions, grant) : accepted.permissions, accepted.mode)
-        if (accepted.mode) this.permissionSelection.set(input.sessionId, accepted.mode)
       }
       const result: PermissionResult = decision === "allow_once" || decision === "allow_always"
         ? {
@@ -598,7 +576,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         }))
       : undefined
     const systemPrompt = claudeSystemPrompt(input.input.system)
-    const permissionModeId = this.permissionSelection.currentId(input.sessionId)
+    const permissionModeId = this.host.permissionModeId(input.sessionId)
     const permissions = readClaudePermissionState(this.host.getSessionConfig(input.sessionId)?.permissionState)
     const turnBinding = this.launchBinding()
     const q: Query = (this.driverOptions.query ?? query)({

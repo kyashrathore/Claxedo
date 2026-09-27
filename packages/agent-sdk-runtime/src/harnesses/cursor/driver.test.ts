@@ -8,6 +8,10 @@ import {
   ingestCursorSdkMessage,
 } from "./driver"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
+import path from "node:path"
+import { createMemoryRuntimeStore } from "../../stores/memory"
+import { executionBinding } from "../../test-utils/execution-binding"
+import { SdkRuntimeAdapter } from "../shared/sdk-runtime-adapter"
 
 describe("Cursor SDK driver", () => {
   // The SDK freezes its backend URL once per process, and every test here is a
@@ -33,6 +37,7 @@ describe("Cursor SDK driver", () => {
       pendingPermissions: new Map(),
       pendingQuestions: new Map(),
       bindSession() {},
+      permissionModeId: () => undefined,
     } as never, {
       loadSdk: async () => ({
         Agent: {
@@ -55,12 +60,40 @@ describe("Cursor SDK driver", () => {
     }])
   })
 
+  test("a permission mode chosen for one session does not reach another session's agent in the same folder", async () => {
+    const created: Array<{ local?: Record<string, unknown> }> = []
+    const adapter = new SdkRuntimeAdapter({
+      store: createMemoryRuntimeStore(),
+      driver: (host) => createCursorSdkDriver(host, {
+        loadSdk: async () => ({
+          Agent: {
+            async create(options: { local?: Record<string, unknown> }) {
+              created.push(options)
+              return { agentId: `cursor-agent-${created.length}`, close() {} }
+            },
+          },
+          Cursor: { models: { list: async () => [] } },
+        } as never),
+      }),
+    })
+    const directory = path.resolve("/workspace")
+    await adapter.createSession(directory, undefined, "session-a")
+    await adapter.setPermissionMode(executionBinding("session-a", directory), "unsandboxed")
+    await adapter.createSession(directory, undefined, "session-b")
+
+    expect(created[1]?.local).toMatchObject({ sandboxOptions: { enabled: true }, autoReview: true })
+    expect((await adapter.listPermissionModes(executionBinding("session-b", directory))).currentModeId).toBe("auto-review")
+    expect((await adapter.listPermissionModes(executionBinding("session-a", directory))).currentModeId).toBe("unsandboxed")
+    await adapter.dispose()
+  })
+
   function probeDriver(created: unknown[]) {
     return createCursorSdkDriver({
       lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
       pendingPermissions: new Map(),
       pendingQuestions: new Map(),
       bindSession() {},
+      permissionModeId: () => undefined,
     } as never, {
       loadSdk: async () => ({
         Agent: {
@@ -368,6 +401,7 @@ describe("Cursor SDK driver", () => {
       pendingPermissions: new Map(),
       pendingQuestions: new Map(),
       bindSession() {},
+      permissionModeId: () => undefined,
     } as never, {
       loadSdk: async () => ({
         Agent: { async create() { return { agentId: "cursor-agent-1", close() {} } } },

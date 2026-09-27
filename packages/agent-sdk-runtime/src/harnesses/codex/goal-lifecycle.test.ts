@@ -109,6 +109,7 @@ function goalControllerHarness() {
     getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
     publishGoal: (input) => published.push(input),
     meterUsage() {},
     runProviderTurn: (binding, execute) => {

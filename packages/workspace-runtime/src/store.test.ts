@@ -2787,6 +2787,44 @@ void describe("RuntimeStore", () => {
     assert.equal(reopened.getSessionConfig("restricted")?.permissionState, undefined)
   })
 
+  void it("the session row carries each selection's effective value: the stored one, else the harness default", () => {
+    const store = new RuntimeStore(tmp())
+    const config = (id: string) => (store.getSession(id) as { config?: Record<string, unknown> } | null)?.config
+    store.bindSession({ sessionId: "native", directory: "/work", agentSessionId: "a1" })
+    store.updateSessionConfig("native", { harness: { id: "claude", access: "native" } })
+    assert.deepEqual(config("native"), {
+      harness: { id: "claude", access: "native" },
+      model: { providerID: "claude", modelID: "default" },
+      variant: null,
+      agent: null,
+      permissionMode: "auto",
+    })
+
+    store.updateSessionConfig("native", { permissionMode: "plan", model: { providerID: "claude", modelID: "claude-haiku-4-5-20251001" }, variant: "high" })
+    assert.equal(config("native")?.permissionMode, "plan")
+    assert.deepEqual(config("native")?.model, { providerID: "claude", modelID: "claude-haiku-4-5-20251001" })
+    assert.equal(config("native")?.variant, "high")
+
+    store.updateSessionConfig("native", { harness: { id: "codex", access: "native" }, model: null, variant: null })
+    assert.equal(config("native")?.permissionMode, "workspace-write")
+    assert.equal(config("native")?.model, undefined)
+
+    store.updateSessionConfig("native", { harness: { id: "cursor", access: "native" } })
+    assert.equal(config("native")?.permissionMode, "auto-review")
+    assert.deepEqual(config("native")?.model, { providerID: "cursor", modelID: "auto" })
+
+    store.bindSession({ sessionId: "engine", directory: "/work", agentSessionId: "a2" })
+    store.updateSessionConfig("engine", { harness: { id: "pi", access: "native" } })
+    assert.equal(config("engine")?.permissionMode, null)
+
+    store.bindSession({ sessionId: "acp", directory: "/work", agentSessionId: "a3" })
+    store.updateSessionConfig("acp", { harness: { id: "scripted-acp", access: "connection" } })
+    assert.equal(config("acp")?.permissionMode, null)
+    store.updateSessionConfig("acp", { permissionMode: "agent-mode" })
+    assert.equal(config("acp")?.permissionMode, "agent-mode")
+    assert.equal(store.listSessions("/work").find((session) => session.id === "acp")?.config?.permissionMode, "agent-mode")
+  })
+
   void it("persists startup questions without an executable session or cross-directory visibility", () => {
     const root = tmp()
     const store = new RuntimeStore(root)

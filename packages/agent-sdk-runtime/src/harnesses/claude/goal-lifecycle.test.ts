@@ -25,6 +25,7 @@ function goalDriver(
     getGoal: () => null,
     updatePermissionState() {},
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
     publishGoal(input) {
       onPublish(input.goal)
     },

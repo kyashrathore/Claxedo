@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { NO_HARNESS_EFFORT, type RecoveryFacts } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { PiHarnessAdapter, type AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { Hono } from "hono"
 import { buildSession, type CompatEnvelope } from "../compat-events"
@@ -1020,6 +1020,48 @@ describe("permission mode changes retain session ceilings", () => {
       expect(item.store.getSessionConfig(session.id)?.permissionCeiling).toBe("ask")
     })
   }
+})
+
+
+describe("a session's selection writes", () => {
+  const sessionUpdates = (events: CompatEnvelope[], sessionId: string) => events
+    .map((event) => event.payload as { type?: string; properties?: { info?: { id?: string } } })
+    .filter((payload) => payload.type === "session.updated" && payload.properties?.info?.id === sessionId)
+  const put = (item: ReturnType<typeof fixture>, sessionId: string, modeId: string) =>
+    item.app.request(`http://localhost/session/${sessionId}/permission-mode?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ modeId }),
+    })
+
+  test("a permission mode write answers with the session row and publishes it", async () => {
+    const item = fixture()
+    item.seedParent("s1")
+    const response = await put(item, "s1", "read-only")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ id: "s1", title: "Parent" })
+    expect(sessionUpdates(item.globalEvents, "s1")).toHaveLength(1)
+  })
+
+  test("a config write publishes the session row", async () => {
+    const item = fixture()
+    item.seedParent("s1")
+    const response = await item.app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ variant: "high" }),
+    })
+    expect(response.status).toBe(200)
+    expect(sessionUpdates(item.globalEvents, "s1")).toHaveLength(1)
+  })
+
+  test("a harness with no mode surface refuses a mode write as bad input", async () => {
+    const item = fixture()
+    item.seedParent("s1")
+    const pi = new PiHarnessAdapter({ store: item.store })
+    item.adapter.setPermissionMode = (binding, modeId) => pi.setPermissionMode(binding, modeId)
+    const response = await put(item, "s1", "read-only")
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "permission_modes_unsupported" } })
+    expect(sessionUpdates(item.globalEvents, "s1")).toHaveLength(0)
+    await pi.dispose()
+  })
 })
 
 

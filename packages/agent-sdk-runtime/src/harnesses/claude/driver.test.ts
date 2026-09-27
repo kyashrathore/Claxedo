@@ -56,6 +56,7 @@ describe("Claude SDK driver", () => {
         getAgentSessionId: () => "claude-sdk:pending",
         getSessionForAgentSession: () => null,
         getSessionConfig: () => null,
+        permissionModeId: () => undefined,
         updatePermissionState() {},
         publishGoal() {},
         async runProviderTurn() { return true },
@@ -456,6 +457,7 @@ describe("Claude SDK driver", () => {
       bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
       getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
       getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+      permissionModeId: () => undefined,
       updatePermissionState() {},
     } as unknown as SdkRuntimeDriverHost
 
@@ -515,6 +517,7 @@ async function turnModelOption(modelID: string) {
     bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
     getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
     getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    permissionModeId: () => undefined,
     updatePermissionState() {},
   } as unknown as SdkRuntimeDriverHost
   await createClaudeSdkDriver(host, { query: probeQuery(calls), executable: () => "/fake/claude" }).runTurn({
@@ -542,6 +545,7 @@ function steeringTurn(opts: { replay: boolean }) {
     bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
     getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
     getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    permissionModeId: () => undefined,
     updatePermissionState() {},
   } as unknown as SdkRuntimeDriverHost
   const running = createClaudeSdkDriver(host, {
@@ -597,6 +601,7 @@ function turnHost() {
     bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
     getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
     getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    permissionModeId: () => undefined,
     updatePermissionState() {},
   } as unknown as SdkRuntimeDriverHost
 }

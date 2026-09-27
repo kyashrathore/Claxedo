@@ -7,9 +7,11 @@ import {
   permissionModeLevel,
   widestPermissionModeUnder,
 } from "./permission-ceiling"
-import { CLAUDE_PERMISSION_MODES, CODEX_PERMISSION_MODES, CURSOR_PERMISSION_MODES } from "./harnesses/shared/permission-modes"
-import type { AgentPermissionMode } from "./adapter-contract"
+import { HARNESS_TABLE, type AgentPermissionMode } from "@claxedo/agent-runtime-contract"
 
+const CLAUDE_PERMISSION_MODES = HARNESS_TABLE.claude.permissionModes.modes
+const CODEX_PERMISSION_MODES = HARNESS_TABLE.codex.permissionModes.modes
+const CURSOR_PERMISSION_MODES = HARNESS_TABLE.cursor.permissionModes.modes
 const mode = (table: readonly AgentPermissionMode[], id: string) => table.find((entry) => entry.id === id)
 
 describe("permission ceiling", () => {

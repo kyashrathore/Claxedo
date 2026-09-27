@@ -52,6 +52,7 @@ function host() {
     getSessionForAgentSession: () => null,
     getGoal: () => null,
     getSessionConfig: () => null,
+    permissionModeId: () => undefined,
     publishGoal() {},
     async runProviderTurn() { return true },
   }

@@ -31,6 +31,7 @@ for (const decision of ["allow_always", "allow_once", "deny", "storage-failure"]
       bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
       getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
       getSessionConfig: (id) => ({ harness: { id: "claude", access: "native" }, permissionState: states.get(id) }),
+      permissionModeId: () => "auto",
       updatePermissionState: (id, state) => {
         if (decision === "storage-failure") throw new Error("Permission store unavailable")
         states.set(id, structuredClone(state))
@@ -81,11 +82,13 @@ for (const decision of ["allow_always", "allow_once", "deny", "reject_always"] a
   test(`${decision} only reuses the exact accepted Bash request after driver reconstruction`, async () => {
     const states = new Map<string, Record<string, unknown>>()
     const pendingPermissions = new Map<string, PendingPermission>()
+    const modes = new Map<string, string>()
     const host = {
       lifecycle: () => createSessionTurnLifecycle(), pendingPermissions, pendingQuestions: new Map(),
       bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
       getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
       getSessionConfig: (id: string) => ({ harness: { id: "claude", access: "native" }, permissionState: states.get(id) }),
+      permissionModeId: (id: string) => modes.get(id) ?? "auto",
       updatePermissionState: (id: string, state: Record<string, unknown>) => states.set(id, JSON.parse(JSON.stringify(state))),
     } as SdkRuntimeDriverHost
     let requests = 0
@@ -109,8 +112,12 @@ for (const decision of ["allow_always", "allow_once", "deny", "reject_always"] a
         expect(reply.behavior).toBe(answer === "allow_always" || answer === "allow_once" ? "allow" : "deny")
       })(), { close() {} }) as unknown as Query
       const driver = createClaudeSdkDriver(host, { query, executable: () => "/fake/claude" })
-      if (overrides.mode) await driver.setPermissionMode!(sessionId, overrides.mode, overrides.directory ?? "/repo")
-      await driver.runTurn({ ...turn(sessionId), directory: overrides.directory ?? "/repo" })
+      if (overrides.mode) modes.set(sessionId, overrides.mode)
+      try {
+        await driver.runTurn({ ...turn(sessionId), directory: overrides.directory ?? "/repo" })
+      } finally {
+        modes.delete(sessionId)
+      }
     }
     await run("approved", decision)
     expect(requests).toBe(1)

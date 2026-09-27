@@ -10,7 +10,7 @@ import type {
   SessionMode,
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
-import { asRecord, isRecord, type HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
+import { asRecord, isRecord, type AgentPermissionMode, type HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
 import path from "path"
 import { pathToFileURL } from "url"
 import type { PromptInput } from "../../index"
@@ -23,10 +23,10 @@ import {
 import { extractTextFromParts } from "../shared/sdk-runtime-values"
 import type {
   AgentConfigOptions,
-  AgentPermissionMode,
   AgentPermissionModeState,
   ResolvedHarnessModel,
 } from "../../adapter-contract"
+import { PermissionModeRefusedError } from "../../permission-ceiling"
 import { GOAL_OPTIONAL_FIELDS, type GoalAction, type GoalCapabilities, type GoalOptionalField } from "../../capabilities"
 
 export const ACP_GOAL_METHODS = {
@@ -424,7 +424,7 @@ export async function setPermissionMode(
   const cfg = pick(state.cfg, "mode")
   if (cfg && cfg.type === "select") {
     const known = flat(cfg.options ?? []).some((opt) => opt.value === modeId)
-    if (!known) throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
+    if (!known) throw new PermissionModeRefusedError("unknown_permission_mode", `ACP agent does not offer permission mode "${modeId}"`)
     const next = merge(
       state,
       sessionMeta(await conn.request(methods.agent.session.setConfigOption, {
@@ -442,7 +442,7 @@ export async function setPermissionMode(
     const next: ACPState = { ...state, currentModeId: modeId }
     return { state: next, result: permissionModes(next) }
   }
-  throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
+  throw new PermissionModeRefusedError("unknown_permission_mode", `ACP agent does not offer permission mode "${modeId}"`)
 }
 
 /** Derive available agents from ACP session state (config options or modeIds). */
