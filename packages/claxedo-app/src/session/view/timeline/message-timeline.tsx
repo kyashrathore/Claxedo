@@ -642,11 +642,15 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   createEffect(() => {
-    props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
+    props.setScrollToEnd?.(() => {
+      prepend.clear()
+      virtualizer.scrollToEnd()
+    })
     props.setScrollToMessage?.((id, behavior) => {
       const root = listRoot()
       const index = messageRowIndex().get(id)
       if (!root || index === undefined) return false
+      prepend.clear()
       virtualizer.getTotalSize()
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
