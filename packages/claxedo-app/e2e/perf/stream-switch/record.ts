@@ -1,16 +1,12 @@
-import { chromium, type CDPSession, type Page } from "@playwright/test"
+import type { CDPSession, Page } from "@playwright/test"
+import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
 import { acpScriptToken } from "../../harness/acp/script"
-import { ClaxedoApi } from "../../harness/api"
-import { git } from "../../harness/git"
-import { prepareHarness } from "../../harness/global-setup"
-import { startStack, type Stack } from "../../harness/stack"
 import { sessionRoute } from "../../harness/ui-names"
-import type { Workspace } from "../../harness/workspaces"
 import { longReplyScript, seedTurnScript, streamScript } from "../stream-script"
-
+import { desktopSurface, webSurface, type Surface } from "./surface"
 const SEED_TURNS = Number(process.env.SEED_TURNS ?? "8")
 const SWITCHES = Number(process.env.SWITCHES ?? "30")
 const SCENARIO = process.env.SCENARIO ?? "one"
@@ -19,32 +15,60 @@ const SCALE = Number(process.env.SCALE ?? "1")
 const COLD = Number(process.env.COLD ?? "4")
 const ROUNDS = Number(process.env.ROUNDS ?? "3")
 const PROFILE = process.env.PROFILE === "1"
+const TRACE_FROM = Number(process.env.TRACE_FROM ?? "-1")
+const TRACE_COUNT = Number(process.env.TRACE_COUNT ?? "4")
+const TRACE_CATEGORIES = [
+  "devtools.timeline",
+  "disabled-by-default-devtools.timeline",
+  "disabled-by-default-devtools.timeline.frame",
+  "disabled-by-default-devtools.timeline.stack",
+  "v8.execute",
+  "blink.user_timing",
+  "latencyInfo",
+  "cc",
+  "viz",
+  "gpu",
+]
+
+async function startTrace(cdp: CDPSession) {
+  const chunks: unknown[] = []
+  cdp.on("Tracing.dataCollected", (event) => chunks.push(...event.value))
+  await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: TRACE_CATEGORIES } })
+  return async (file: string) => {
+    const done = new Promise<void>((resolve) => cdp.once("Tracing.tracingComplete", () => resolve()))
+    await cdp.send("Tracing.end")
+    await done
+    await fs.writeFile(file, JSON.stringify({ traceEvents: chunks }))
+  }
+}
 const OUT = process.env.OUT ?? path.join(process.env.HOME ?? "", "test/claxedo-perf-private/perf/stream-switch/run")
+const TARGET = process.env.TARGET ?? "web"
+const VIDEO = process.env.VIDEO === "1"
 
 type ScreencastFrame = { wall: number; data: Buffer }
 
-async function makeWorkspace(stack: Stack) {
-  const workspace = await stack.daemon.makeWorkspace("switch", "Switch")
-  await fs.mkdir(path.join(workspace.directory, "src"), { recursive: true })
-  await fs.writeFile(path.join(workspace.directory, "src/values.ts"), "export const value0 = 0\n")
-  await git(workspace.directory, "add", "--", "src/values.ts")
-  await git(workspace.directory, "commit", "-q", "-m", "values", "--", "src/values.ts")
-  return workspace
-}
-
-async function seedSession(api: ClaxedoApi, stack: Stack, workspace: Workspace, title: string) {
+async function seedSession(surface: Surface, title: string) {
+  const { api, workspace } = surface
   const session = await api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   for (let turn = 1; turn <= SEED_TURNS; turn += 1) {
     const script = `${title}-seed-${turn}`
-    await stack.acp.write(script, seedTurnScript(workspace.directory, turn))
+    await surface.writeScript(script, seedTurnScript(workspace.directory, turn))
     await api.prompt(workspace.directory, session.id, `Earlier question ${turn}. ${acpScriptToken(script)}`)
   }
   return session.id
 }
 
-async function startStream(api: ClaxedoApi, stack: Stack, workspace: Workspace, sessionId: string, name: string) {
-  await stack.acp.write(name, process.env.STREAM === "report" ? streamScript(workspace.directory) : longReplyScript(workspace.directory))
+async function startStream(surface: Surface, sessionId: string, name: string) {
+  const { api, workspace } = surface
+  await surface.writeScript(name, process.env.STREAM === "report" ? streamScript(workspace.directory) : longReplyScript(workspace.directory))
   await api.promptAsync(workspace.directory, sessionId, `Write the long report. ${acpScriptToken(name)}`)
+}
+
+function startVideo(bounds: { x: number; y: number; width: number; height: number } | undefined, file: string, seconds: number) {
+  const region = bounds ? [`-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`] : []
+  const child = spawn("screencapture", ["-v", "-x", "-k", `-V${seconds}`, ...region, file], { stdio: ["ignore", "inherit", "inherit"] })
+  console.log(`[switch] screencapture pid ${child.pid} for ${seconds}s`)
+  return new Promise<void>((resolve) => child.on("exit", () => resolve()))
 }
 
 async function startScreencast(cdp: CDPSession, frames: ScreencastFrame[]) {
@@ -78,34 +102,34 @@ function plan(scenario: string, cold: number) {
 
 async function main() {
   await fs.mkdir(OUT, { recursive: true })
-  await prepareHarness()
-  const stack = await startStack({ label: "stream-switch" })
-  const browser = await chromium.launch({ channel: "chromium" })
+  const surface = TARGET === "desktop" ? await desktopSurface() : await webSurface(SCALE)
   try {
-    const api = new ClaxedoApi(stack.url)
-    const workspace = await makeWorkspace(stack)
+    const { workspace } = surface
     const steps = plan(SCENARIO, COLD)
     const ids: Record<string, string> = {}
-    for (const title of steps.seeded) ids[title] = await seedSession(api, stack, workspace, title)
+    for (const title of steps.seeded) ids[title] = await seedSession(surface, title)
     console.log(`[switch] seeded ${steps.seeded.length} sessions, ${SEED_TURNS} turns each`)
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: SCALE, colorScheme: "light", locale: "en-US", timezoneId: "UTC" })
-    await context.addInitScript({ path: path.join(import.meta.dirname, "probe.js") })
-    const page = await context.newPage()
-    const cdp = await context.newCDPSession(page)
+    const { page, cdp, bounds } = await surface.open()
     const seeded = page.getByText(`Seed turn ${SEED_TURNS} done.`).first()
-    if (steps.seeded.includes("Beta")) {
-      await page.goto(`${stack.url}${sessionRoute(workspace.id, ids.Beta)}`)
-      await seeded.waitFor({ state: "visible", timeout: 60_000 })
-      await page.mouse.click(...Object.values(await railRow(page, ids.Alpha!)) as [number, number])
+    const first = steps.seeded.includes("Beta") ? ids.Beta! : ids.Alpha!
+    if (TARGET === "desktop") {
+      await page.reload()
+      await page.locator('[data-testid="rail-sidebar-session-row"]').first().waitFor({ state: "visible", timeout: 60_000 })
+      await page.mouse.click(...Object.values(await railRow(page, first)) as [number, number])
     } else {
-      await page.goto(`${stack.url}${sessionRoute(workspace.id, ids.Alpha)}`)
+      await page.goto(`${surface.url}${sessionRoute(workspace.id, first)}`)
     }
     await seeded.waitFor({ state: "visible", timeout: 60_000 })
+    if (first !== ids.Alpha) {
+      await page.mouse.click(...Object.values(await railRow(page, ids.Alpha!)) as [number, number])
+      await seeded.waitFor({ state: "visible", timeout: 60_000 })
+    }
     if (THROTTLE > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE })
     const screencast: ScreencastFrame[] = []
     await startScreencast(cdp, screencast)
+    const video = VIDEO ? { startedAt: Date.now(), done: startVideo(bounds, path.join(OUT, "screen.mov"), Math.ceil((steps.clicks.length * 1.0 + 4) * (SCENARIO === "cold" ? ROUNDS : 1))) } : undefined
     await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
-    for (const title of steps.streaming) await startStream(api, stack, workspace, ids[title]!, `stream-${title.replace(/ /g, "-")}`)
+    for (const title of steps.streaming) await startStream(surface, ids[title]!, `stream-${title.replace(/ /g, "-")}`)
     await page.waitForTimeout(1500)
     if (PROFILE) {
       await cdp.send("Profiler.enable")
@@ -114,6 +138,7 @@ async function main() {
     }
     const clicks: { title: string; wall: number }[] = []
     const rounds: unknown[] = []
+    let endTrace: ((file: string) => Promise<void>) | undefined
     for (let round = 0; round < (SCENARIO === "cold" ? ROUNDS : 1); round += 1) {
       if (round > 0) {
         rounds.push(await page.evaluate(() => (window as unknown as { __switchProbe: { stop(): unknown } }).__switchProbe.stop()))
@@ -123,6 +148,11 @@ async function main() {
         await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
       }
       for (const [index, title] of steps.clicks.entries()) {
+        if (index === TRACE_FROM) endTrace = await startTrace(cdp)
+        if (index === TRACE_FROM + TRACE_COUNT && endTrace) {
+          await endTrace(path.join(OUT, "switch.trace.json"))
+          endTrace = undefined
+        }
         const row = await railRow(page, ids[title]!)
         clicks.push({ title, wall: Date.now() })
         await page.mouse.click(row.x, row.y)
@@ -136,16 +166,15 @@ async function main() {
     }
     rounds.push(await page.evaluate(() => (window as unknown as { __switchProbe: { stop(): unknown } }).__switchProbe.stop()))
     await cdp.send("Page.stopScreencast")
+    await video?.done
     const framesDir = path.join(OUT, "frames")
     await fs.mkdir(framesDir, { recursive: true })
     const index = screencast.map((frame, n) => ({ n, wall: frame.wall, file: `f${String(n).padStart(5, "0")}.jpg` }))
     await Promise.all(screencast.map((frame, n) => fs.writeFile(path.join(framesDir, index[n]!.file), frame.data)))
-    await fs.writeFile(path.join(OUT, "recording.json"), JSON.stringify({ alpha: ids.Alpha, beta: ids.Beta, ids, scenario: SCENARIO, clicks, screencast: index, rounds }))
+    await fs.writeFile(path.join(OUT, "recording.json"), JSON.stringify({ target: TARGET, alpha: ids.Alpha, beta: ids.Beta, ids, scenario: SCENARIO, clicks, videoStartedAt: video?.startedAt, bounds, screencast: index, rounds }))
     console.log(`[switch] ${clicks.length} switches, ${screencast.length} screencast frames, out ${OUT}`)
-    await context.close()
   } finally {
-    await browser.close()
-    await stack.close()
+    await surface.close()
   }
 }
 
