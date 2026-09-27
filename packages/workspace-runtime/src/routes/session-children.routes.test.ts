@@ -1032,13 +1032,12 @@ describe("a session's selection writes", () => {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ modeId }),
     })
 
-  test("a permission mode write answers with the session row and publishes it", async () => {
+  test("a permission mode write answers with the session row", async () => {
     const item = fixture()
     item.seedParent("s1")
     const response = await put(item, "s1", "read-only")
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ id: "s1", title: "Parent" })
-    expect(sessionUpdates(item.globalEvents, "s1")).toHaveLength(1)
   })
 
   test("a config write publishes the session row", async () => {

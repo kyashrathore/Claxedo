@@ -5,6 +5,7 @@ import { MemoryRuntimeStore } from "../../stores/memory"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
+import { createRuntimeEventHub } from "../../runtime-event-hub"
 
 const WORK = runtimeWorkspaceDirectory("work")
 
@@ -27,8 +28,14 @@ function fixture() {
   let textUpdate!: (sessionId: string, text: string) => void
   let clearOptions!: (sessionId: string) => void
   let disconnect!: () => void
+  const eventHub = createRuntimeEventHub()
+  const updates: string[] = []
+  eventHub.subscribeGlobal((event) => {
+    const payload = event.payload as { type?: string; properties?: { info?: { id?: string } } }
+    if (payload.type === "session.updated") updates.push(payload.properties?.info?.id ?? "")
+  })
   const adapter = new AcpHarnessAdapter({
-    harness: "test-acp", connection: { kind: "process", command: "scripted-agent" }, store,
+    harness: "test-acp", connection: { kind: "process", command: "scripted-agent" }, store, eventHub,
     createTransport() {
       let send!: (message: AnyMessage) => void
       const readable = new ReadableStream<AnyMessage>({ start(c) {
@@ -102,7 +109,7 @@ function fixture() {
     for (let n = 0; n < 100 && !predicate(); n++) await Bun.sleep(5)
     expect(predicate()).toBe(true)
   }
-  return { adapter, store, permission: (id: string, toolCall: object) => permission(id, toolCall), text: (id: string, text: string) => textUpdate(id, text), requests, prompts, promptBodies, rejectPrompts, rejectConfig, holdConfig, configReplies, holdResume, resumeReplies, cancelPrompts, transports, turn, waitFor,
+  return { adapter, store, updates, permission: (id: string, toolCall: object) => permission(id, toolCall), text: (id: string, text: string) => textUpdate(id, text), requests, prompts, promptBodies, rejectPrompts, rejectConfig, holdConfig, configReplies, holdResume, resumeReplies, cancelPrompts, transports, turn, waitFor,
     disconnect: () => disconnect(), notify: (id: string, names: string[]) => notify(id, names), clearOptions: (id: string) => clearOptions(id) }
 }
 
@@ -425,10 +432,39 @@ test("cold permission reads and writes restore the owned session without creatin
   const f = fixture()
   try {
     f.store.bindSession({ sessionId: "saved", directory: WORK, agentSessionId: "agent-saved" })
+    f.store.updateSessionConfig("saved", { harness: { id: "test-acp", access: "connection" } })
     const binding = { ...executionBinding("saved", WORK), upstreamSessionId: "agent-saved" }
     expect(await f.adapter.listPermissionModes(binding)).toMatchObject({ currentModeId: "ask" })
     expect(await f.adapter.setPermissionMode(binding, "auto")).toMatchObject({ currentModeId: "auto" })
     expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)
     expect(f.requests.some((row) => row.method === "session/new")).toBe(false)
   } finally { f.adapter.dispose() }
+})
+
+test("an agent's mode writes reach the store and publish the row: a change, a resume the stored mode no longer fits, and a turn's own mode", async () => {
+  const f = fixture()
+  try {
+    f.store.bindSession({ sessionId: "a", directory: WORK, agentSessionId: "agent-saved" })
+    f.store.updateSessionConfig("a", { harness: { id: "test-acp", access: "connection" }, permissionMode: "plan" })
+    const binding = executionBinding("a", WORK)
+    expect(await f.adapter.listPermissionModes(binding)).toMatchObject({ currentModeId: "ask" })
+    expect(f.store.getSessionConfig("a")?.permissionMode, "the agent no longer offers plan").toBe("ask")
+    expect(f.updates).toEqual(["a"])
+    await f.adapter.setPermissionMode(binding, "auto")
+    expect(f.store.getSessionConfig("a")?.permissionMode).toBe("auto")
+    expect(f.updates).toEqual(["a", "a"])
+    const turn = (async () => {
+      for await (const _event of executeTestTurn(f.adapter, "a", {
+        parts: [{ type: "text", text: "go" }], assistantMessageId: "reply-a", userMessageId: "user-a", agent: "build",
+        model: { providerID: "test-acp", modelID: "one" }, permissionMode: "ask",
+      }, WORK)) {}
+    })()
+    await f.waitFor(() => f.prompts.has("agent-saved"))
+    f.prompts.get("agent-saved")!()
+    await turn
+    expect(f.store.getSessionConfig("a")?.permissionMode).toBe("ask")
+    expect(f.updates).toEqual(["a", "a", "a"])
+  } finally {
+    await f.adapter.dispose()
+  }
 })

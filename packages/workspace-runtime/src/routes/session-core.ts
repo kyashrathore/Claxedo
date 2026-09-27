@@ -110,15 +110,10 @@ import {
 } from "./session-route-options"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 
-/**
- * Publish a session's row after a write to one of its selections, so every
- * client's copy of the row moves with it. Answers the row, or nothing when the
- * session is gone.
- */
+/** Publish a session's row after a config write, so every client's copy of the row moves with it. */
 async function publishSessionRow(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) {
   const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
   if (session) opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
-  return session
 }
 
 /**
@@ -1969,9 +1964,9 @@ export function createSessionRoutes(opts: Opts) {
         if (error instanceof PermissionModeRefusedError) return c.json(errorBody(error.code, error.message), 400)
         throw error
       }
-      // The row names the mode the store kept, which for an ACP agent is the
-      // one the agent reported keeping rather than an echo of the request.
-      const updated = await publishSessionRow(opts, c, directory, sessionId, adapter)
+      // The adapter stored and published the mode it kept, which for an ACP
+      // agent is the one the agent reported rather than an echo of the request.
+      const updated = await readRuntimeSession(opts, c, directory, sessionId, adapter)
       if (!updated) return c.json(errorBody("session_not_found", "Session not found"), 404)
       return c.json(normalizeSession(updated, directory))
     })

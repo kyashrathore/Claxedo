@@ -88,6 +88,7 @@ import {
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
 import { acceptedSessionConfig } from "../shared/accepted-session-mutation"
+import { storePermissionMode } from "../shared/session-permission-mode"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -541,7 +542,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     requireAgentExecutionBinding(binding)
     const { proc, agentSessionId } = await this.restoreSessionForConfiguration(binding)
     const state = await proc.setPermissionMode(agentSessionId, modeId)
-    if (state.currentModeId) this.store.updateSessionConfig(binding.sessionId, { permissionMode: state.currentModeId })
+    if (state.currentModeId) storePermissionMode({ store: this.store, eventHub: this.options.eventHub }, binding.sessionId, state.currentModeId)
     return state
   }
 

@@ -46,6 +46,7 @@ import type {
 import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import { turnWriteFence } from "../../adapter-contract"
 import { PermissionModeRefusedError } from "../../permission-ceiling"
+import { storePermissionMode } from "./session-permission-mode"
 import { generateDriverTitle, pushDriverTitle, type SessionTitleRequest } from "./sdk-runtime-title"
 import type { HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
@@ -180,10 +181,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
       permissionModeId: (sessionId) => effectivePermissionModeId(this.harness(), this.store.getSessionConfig(sessionId)?.permissionMode) ?? undefined,
       updatePermissionState: (sessionId, state, modeId) => {
-        if (!this.store.updateSessionConfig(sessionId, {
-          permissionState: state,
-          ...(modeId ? { permissionMode: modeId } : {}),
-        })) throw new Error(`Cannot persist permissions for missing session ${sessionId}`)
+        if (!this.store.updateSessionConfig(sessionId, { permissionState: state })) throw new Error(`Cannot persist permissions for missing session ${sessionId}`)
+        if (modeId) storePermissionMode({ store: this.store, eventHub: this.options.eventHub }, sessionId, modeId)
       },
       publishGoal: (input) => this.goalSurface().publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.goalSurface().runProviderTurn(input.sessionId, input.directory, execute, input.userMessage),
@@ -742,10 +741,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     if (!table.modes.some((mode) => mode.id === modeId)) {
       throw new PermissionModeRefusedError("unknown_permission_mode", `Unknown ${this.driver.type} permission mode "${modeId}"`)
     }
-    if (this.store.getSessionConfig(sessionId)?.permissionMode !== modeId
-      && !this.store.updateSessionConfig(sessionId, { permissionMode: modeId })) {
-      throw new Error(`Session ${sessionId} has no runtime config`)
-    }
+    storePermissionMode({ store: this.store, eventHub: this.options.eventHub }, sessionId, modeId)
     return this.permissionModeState(modeId)
   }
 

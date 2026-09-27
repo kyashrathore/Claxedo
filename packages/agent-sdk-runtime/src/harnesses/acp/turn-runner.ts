@@ -40,6 +40,7 @@ import { generateAcpTitle } from "./title"
 import type { SessionTitleRequest } from "../../title-generation"
 import { acpTurnFailure, ACP_CONTEXT_REBUILT, AcpSessionUncertainError, missingAcpSession, renderAcpRecoveryContext, uncertainAcpSession } from "./recovery"
 import { cancelPendingPermissions, type PermissionReplyPort } from "./permission-reply"
+import { storePermissionMode } from "../shared/session-permission-mode"
 import { createTurnStopRecord, observeStopAttempt, type TurnStopRecord } from "../shared/cancellation-facts"
 import {
   finalizeAuthoredTurn,
@@ -126,7 +127,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const kept = state.modes.some((mode) => mode.id === stored)
       ? (await proc.setPermissionMode(agentSessionId, stored)).currentModeId
       : state.currentModeId
-    if (kept !== stored) this.store.updateSessionConfig(sessionId, { permissionMode: kept ?? null })
+    storePermissionMode({ store: this.store, eventHub: this.options.eventHub }, sessionId, kept ?? null)
   }
 
   protected bindCommandUpdates(sessionId: string, agentSessionId: string, directory: string, proc: ACPProcess) {
@@ -610,7 +611,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         if (applied.currentModeId !== input.permissionMode) {
           throw new Error(`ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${input.permissionMode}`)
         }
-        this.store.updateSessionConfig(id, { permissionMode: applied.currentModeId })
+        storePermissionMode({ store: this.store, eventHub: this.options.eventHub }, id, applied.currentModeId)
       }
       await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
       // Recovery may have committed its new binding just before a host crash.

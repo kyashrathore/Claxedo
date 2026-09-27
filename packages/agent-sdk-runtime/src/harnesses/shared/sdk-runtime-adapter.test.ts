@@ -409,6 +409,39 @@ describe("SdkRuntimeAdapter", () => {
     await restored.dispose()
   })
 
+  test("every permission mode write publishes the session row once, and a write that changes nothing publishes none", async () => {
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const updates: string[] = []
+    eventHub.subscribeGlobal((event) => {
+      const payload = event.payload as { type?: string; properties?: { info?: { id?: string } } }
+      if (payload.type === "session.updated") updates.push(payload.properties?.info?.id ?? "")
+    })
+    let accept: ((modeId: string) => void) | undefined
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: (host: SdkRuntimeDriverHost) => ({
+        ...minimalSdkRuntimeDriver(),
+        runTurn: async (turn: { sessionId: string }) => {
+          accept = (modeId) => host.updatePermissionState(turn.sessionId, {}, modeId)
+          accept("untrusted")
+        },
+      }),
+    })
+    const directory = path.resolve("/repo")
+    const session = await adapter.createSession(directory)
+    await adapter.setPermissionMode(executionBinding(session.id, directory), "read-only")
+    expect(updates).toEqual([session.id])
+    await adapter.setPermissionMode(executionBinding(session.id, directory), "read-only")
+    expect(updates, "the same mode again").toEqual([session.id])
+    const prompt = { parts: [{ type: "text" as const, text: "go" }], assistantMessageId: "assistant", agent: "general", model: { providerID: "codex", modelID: "test" } }
+    for await (const _event of executeTestTurn(adapter, session.id, { ...prompt, permissionMode: "full-access" }, directory)) {}
+    expect(updates, "a turn's mode, then a mode the harness accepted during it").toEqual([session.id, session.id, session.id])
+    expect(store.getSessionConfig(session.id)?.permissionMode).toBe("untrusted")
+    await adapter.dispose()
+  })
+
   test("admits revisioned subagent observations and reuses one opaque child target across interaction edges", async () => {
     const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
