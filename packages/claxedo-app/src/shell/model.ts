@@ -81,7 +81,7 @@ function phoneTransition(state: Extract<ShellLayoutState, { kind: "phone" }>, ev
   }
 }
 
-export function transitionShellLayout(state: ShellLayoutState, event: ShellLayoutEvent): ShellLayoutState {
+function nextLayout(state: ShellLayoutState, event: ShellLayoutEvent): ShellLayoutState {
   switch (state.kind) {
     case "wide":
       return wideTransition(state, event)
@@ -90,6 +90,16 @@ export function transitionShellLayout(state: ShellLayoutState, event: ShellLayou
     default:
       return unreachable(state)
   }
+}
+
+function sameLayout(a: ShellLayoutState, b: ShellLayoutState): boolean {
+  const keys = Object.keys(b)
+  return keys.length === Object.keys(a).length && keys.every((key) => Reflect.get(a, key) === Reflect.get(b, key))
+}
+
+export function transitionShellLayout(state: ShellLayoutState, event: ShellLayoutEvent): ShellLayoutState {
+  const next = nextLayout(state, event)
+  return sameLayout(state, next) ? state : next
 }
 
 export function createShellLayout(phone: boolean, wide: WideRegions): Machine<ShellLayoutState, ShellLayoutEvent> {

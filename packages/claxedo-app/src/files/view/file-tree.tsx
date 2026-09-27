@@ -90,7 +90,10 @@ export function FileTree(props: FileTreeProps): JSX.Element {
     onFileClick: (file) => props.onFileClick?.(file),
     onFilePress: (file) => props.onFilePress?.(file),
   }
-  const scrollTo = (index: number) => virtualizer.scrollToIndex(index, { align: "auto" })
+  const scrollTo = (index: number) => {
+    const [, align] = virtualizer.getOffsetForIndex(index, "auto") ?? []
+    if (align && align !== "auto") virtualizer.scrollToIndex(index, { align: "auto" })
+  }
   const keys = createTreeKeys({ rows, visible, container: () => container, scrollTo })
   const [pendingReveal, setPendingReveal] = createSignal<string>()
   createEffect(on(() => props.reveal, setPendingReveal))
