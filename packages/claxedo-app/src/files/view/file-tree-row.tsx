@@ -17,6 +17,7 @@ export type TreeRowContext = {
   readonly loadingEpisode: () => string | undefined
   readonly showMore: (dir: string, side: "before" | "after") => void
   readonly onFileClick: (file: FileNode) => void
+  readonly onFilePress: (file: FileNode) => void
 }
 
 function DirectoryRow(props: { readonly tree: TreeRowContext; readonly node: FileNode; readonly level: number }): JSX.Element {
@@ -58,6 +59,7 @@ function FileRow(props: { readonly tree: TreeRowContext; readonly node: FileNode
       aria-level={props.level + 1}
       aria-selected={props.node.path === props.tree.active()}
       data-file-tree-path={props.node.path}
+      onPointerDown={(event: PointerEvent) => event.button === 0 && props.tree.onFilePress(props.node)}
       onClick={() => props.tree.onFileClick(props.node)}
     >
       <div class="w-4 shrink-0" />

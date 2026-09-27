@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX }
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import { restoreScrollTop } from "@/lib/scroll-restore"
-import type { PlacementId } from "@/server"
+import { useServer, type PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, DelayedLoading, Spinner, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
 import { filesDictionary } from "../i18n"
@@ -75,6 +75,7 @@ function SearchRow(): JSX.Element {
 export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const t = useTranslator(filesDictionary)
   const api = useFilesApi()
+  const server = useServer()
   const files = useFiles()
   const search = createSearchView(
     () => props.placementId,
@@ -132,6 +133,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
             active={props.activePath}
             visibleLimit={VISIBLE_LIMIT}
             onFileClick={(node) => props.onOpenFile(node.path)}
+            onFilePress={(node) => void server.queryClient.prefetchQuery(api.content(props.placementId, node.path))}
           />
         </div>
       </ScrollView>

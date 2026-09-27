@@ -333,6 +333,11 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **Workspace panel: 1,760.** The press handler and the one opening-navigator rule add 8 lines to the 1,752 above. The budget is the measured 1,760, with no headroom.
 - **Workspace panel: 1,761.** The navigator column and its content read one width, `min(280px, 45cqw)`, and the panel row is the inline-size container it resolves against. Before, the content resolved `cqw` against the viewport, was wider than the column below a 622 px row, and a focused row scrolled the column sideways. The shared constant adds 1 line. The content no longer has a 220 px minimum: the visible column never had one (v1's `min(280px, 45%)`). The budget is the measured 1,761, with no headroom.
 
+## Panel lane, 2026-09-27: a file is read when its tree row is pressed
+- A primary-button pointerdown on a file row in the files tree issues the file's content read through the query the file tab reads (`api.content`, from `files-navigator.tsx`). Hover, focus and idle never read it; it is the start of the user's committed action, like the panel toggle's press above.
+- The tab still opens on click. A press released off the row costs one bounded read, which the next open reuses from the query cache.
+- Measured on the bench workspace, headless, n=16: with a 60 ms press, click to painted went from 15.4 to 10.5 ms (median), and the file paints in the first frame after the click. A zero-length click is unchanged (19.0 vs 19.4 ms): the read cannot beat the server round trip.
+
 ## Lane perf/exp-switch-budget, 2026-09-27: session meta's model columns are filled only by a Tasks start (recorded, not fixed)
 - No chat session ever gets `claxedo_session_meta.model_provider_id` or `model_id` (`packages/claxedo-server-core/src/session/meta.sql.ts`). The snapshot sync (`sessionMetaSyncRow` in `session/meta/shape.ts`) reads the session's top-level `model`, but the workspace runtime reports the model under `config.model` (the session row mapper in `packages/workspace-runtime/src/store.ts`), so it always yields null. The meta PUT route (`parseSessionMeta`) takes no model, and the machine dispatch's create writes none.
 - The one writer is a Tasks start: `projectSessionMeta` in both products' `tasks/session-bridge.ts` passes the task's model to `putSessionMeta`.

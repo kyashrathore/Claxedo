@@ -26,6 +26,7 @@ export type FileTreeProps = {
   readonly visibleLimit?: number
   readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
+  readonly onFilePress?: (file: FileNode) => void
 }
 
 function sameRow(a: TreeRow | undefined, b: TreeRow | undefined): boolean {
@@ -87,6 +88,7 @@ export function FileTree(props: FileTreeProps): JSX.Element {
     loadingEpisode: () => props.loadingEpisode,
     showMore: (dir, side) => props.showMore(dir, side),
     onFileClick: (file) => props.onFileClick?.(file),
+    onFilePress: (file) => props.onFilePress?.(file),
   }
   const scrollTo = (index: number) => virtualizer.scrollToIndex(index, { align: "auto" })
   const keys = createTreeKeys({ rows, visible, container: () => container, scrollTo })

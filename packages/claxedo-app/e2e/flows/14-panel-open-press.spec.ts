@@ -5,6 +5,15 @@ import { apiRequests, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type
 
 test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
 
+function contentReads(app: Page, file: string) {
+  const reads: string[] = []
+  app.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === "/api/wr/file/content" && url.searchParams.get("path") === file) reads.push(request.url())
+  })
+  return reads
+}
+
 function rootListingReads(app: Page) {
   const reads: string[] = []
   app.on("request", (request) => {
@@ -101,4 +110,27 @@ test("14 pressing the panel toggle when the panel opens on Changes reads no file
   await expect(panel.getByTestId("workspace-files-navigator")).toHaveCount(0)
   await settled()
   expect(reads, "root listing reads for an open on Changes").toEqual([])
+})
+
+test("14 pressing a file row with the primary button reads the file before the release opens its tab, and the tab uses that read", async ({ stack, api, app }) => {
+  const { toggle, panel, readme, settled } = await openSession({ stack, api, app }, "row-press")
+  await toggle.click()
+  await expect(readme).toBeVisible()
+  await settled()
+  const reads = contentReads(app, "README.md")
+  const box = await readme.boundingBox()
+  if (!box) throw new Error("the README.md row has no box")
+  await app.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await app.mouse.down({ button: "right" })
+  await app.mouse.up({ button: "right" })
+  await app.keyboard.press("Escape")
+  await settled()
+  expect(reads, "content reads for a hover and a secondary press").toEqual([])
+  await app.mouse.down()
+  await expect.poll(() => reads.length, { message: "content reads while the row is held" }).toBe(1)
+  await expect(panel.getByRole("button", { name: "Close README.md tab" })).toHaveCount(0)
+  await app.mouse.up()
+  await expect(panel.getByText("row-press", { exact: true })).toBeVisible()
+  await settled()
+  expect(reads, "content reads for one press and open").toHaveLength(1)
 })
