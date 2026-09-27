@@ -1,4 +1,25 @@
+import type { Page } from "@playwright/test"
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+
+type FirstPaintWindow = Window & { __firstTranscriptPaint?: Promise<string> }
+
+async function firstPaintedTranscript(app: Page, sessionId: string): Promise<() => Promise<string>> {
+  await app.evaluate((id) => {
+    ;(window as FirstPaintWindow).__firstTranscriptPaint = new Promise<string>((resolve) => {
+      const painted = new MessageChannel()
+      const afterPaint = () => painted.port2.postMessage(undefined)
+      painted.port1.onmessage = () => {
+        const root = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${id}"]`)
+        if (root?.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true }) && root.querySelector("[data-timeline-key]")) {
+          return resolve(root.querySelector("[data-session-timeline-root]")?.textContent ?? "")
+        }
+        requestAnimationFrame(afterPaint)
+      }
+      requestAnimationFrame(afterPaint)
+    })
+  }, sessionId)
+  return () => app.evaluate(() => (window as FirstPaintWindow).__firstTranscriptPaint!)
+}
 
 const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
@@ -64,7 +85,7 @@ test("03 a new session's first send creates the session and its draft pane becom
   expect(JSON.stringify(sent)).toContain("Start the draft session")
 })
 
-test("03 two sessions stream at once: the second's reply shows while the first still runs, in the foreground and after a switch", async ({ stack, api, app, isMobile }) => {
+test("03 two sessions stream at once: the second's reply shows while the first still runs, in the foreground and in the first frame after a switch", async ({ stack, api, app, isMobile }) => {
   test.skip(isMobile, "the switch goes through the desktop rail; flow 33 owns the phone rail")
   const workspace = await stack.daemon.makeWorkspace("concurrent", "Concurrent")
   const alpha = await api.createSession(workspace.directory, { title: "Alpha", harness: SCRIPTED_ACP_HARNESS })
@@ -72,7 +93,12 @@ test("03 two sessions stream at once: the second's reply shows while the first s
   await stack.acp.write("alpha", { steps: [{ kind: "text", text: "Alpha has started." }, { kind: "hold", name: "alpha" }, { kind: "text", text: "Alpha has finished." }] })
   await stack.acp.write("bravo", { steps: [{ kind: "text", text: "Bravo streams in the foreground.", chunks: 4, delayMs: 50 }] })
   await stack.acp.write("bravo-background", {
-    steps: [{ kind: "hold", name: "bravo-background" }, { kind: "text", text: "Bravo streamed in the background.", chunks: 4, delayMs: 50 }, { kind: "hold", name: "bravo-end" }],
+    steps: [
+      { kind: "text", text: "Bravo starts the second reply. " },
+      { kind: "hold", name: "bravo-background" },
+      { kind: "text", text: `${"Bravo streams in the background. ".repeat(24)}Bravo streamed in the background.${" It keeps streaming.".repeat(40)}`, chunks: 110, delayMs: 30 },
+      { kind: "hold", name: "bravo-end" },
+    ],
   })
   const rail = app.getByRole("navigation", { name: UI.rail })
   const alphaText = async () => assistantText(await api.messages(workspace.directory, alpha.id))
@@ -89,14 +115,16 @@ test("03 two sessions stream at once: the second's reply shows while the first s
 
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
   await sendPrompt(app, `Again. ${acpScriptToken("bravo-background")}`)
+  await expect(app.getByText("Bravo starts the second reply.")).toBeVisible()
   await rail.getByRole("button", { name: "Alpha", exact: true }).click()
   await expect(app).toHaveURL(new RegExp(alpha.id))
   await expect(app.getByText("Alpha has started.")).toBeVisible()
   await stack.acp.release("bravo-background")
-  await expect.poll(async () => assistantText(await api.messages(workspace.directory, bravo.id))).toContain("Bravo streamed in the background.")
+  await expect.poll(async () => assistantText(await api.messages(workspace.directory, bravo.id))).toContain("Bravo streamed in the background. It keeps streaming. It keeps")
+  const firstFrame = await firstPaintedTranscript(app, bravo.id)
   await rail.getByRole("button", { name: "Bravo", exact: true }).click()
   await expect(app).toHaveURL(new RegExp(bravo.id))
-  await expect(app.getByText("Bravo streamed in the background.")).toBeVisible()
+  expect(await firstFrame()).toContain("Bravo streamed in the background.")
   expect(await alphaText()).not.toContain("Alpha has finished.")
 
   await stack.acp.release("alpha")

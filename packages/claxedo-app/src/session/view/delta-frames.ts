@@ -1,7 +1,8 @@
-import { createEffect, onCleanup, type Accessor } from "solid-js"
+import { createComputed, createEffect, on, onCleanup, type Accessor } from "solid-js"
 import type { SessionView } from "@/session"
 
-export function commitDeltasEachFrame(view: Accessor<SessionView>): void {
+export function commitDeltasWhileShown(view: Accessor<SessionView>): void {
+  createComputed(on(view, (shown) => shown.commitDeltas()))
   createEffect(() => {
     const shown = view()
     if (!shown.pendingDeltas()) return

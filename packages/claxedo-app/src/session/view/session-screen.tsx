@@ -20,7 +20,7 @@ import { createFirstViewFill } from "./first-view"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
-import { commitDeltasEachFrame } from "./delta-frames"
+import { commitDeltasWhileShown } from "./delta-frames"
 import { registerSessionCommands } from "./session-commands"
 import { createScreenTurnRecovery } from "./turn-recovery-actions"
 import { createFloatingPeek } from "./floating-peek"
@@ -178,7 +178,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const panel = usePanel()
   const floating = () => !props.readOnly && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
-  commitDeltasEachFrame(view)
+  commitDeltasWhileShown(view)
   holdPaneReveal(() => view().state().kind === "loading")
   const failure = () => {
     const state = view().state()
