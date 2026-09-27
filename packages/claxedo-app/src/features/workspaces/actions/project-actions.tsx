@@ -128,8 +128,8 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     return props.state.layout.openSession(workspaceDir, "new", "New Session", { workspaceRouteId })
   }
   /**
-   * A project the create route just made (from the composer's Project chip):
-   * refresh the inventory it is not in yet, open it, and land on a draft there.
+   * The creation response names a project and checkout; its workspace route
+   * comes from the refreshed inventory.
    */
   const handleProjectCreated = async (project: { worktree: string }) => {
     const workspaceDir = project.worktree
@@ -139,13 +139,9 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       routeSession: props.params.id,
     })
 
-    // Validity is the composer's to refuse (its Project chip keeps the create
-    // panel open on a bad checkout); by the time a project reaches here it is
-    // one the composer accepted.
-    const projects = await refreshProjectInventory(props.projectInventoryActions.query()).catch(() => undefined)
-    const routeId = (Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined)
-      ?? props.workspaceRouteId(workspaceDir)
-    if (!routeId) return
+    const projects = await refreshProjectInventory(props.projectInventoryActions.query())
+    const routeId = Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined
+    if (!routeId) throw new Error("The created project's workspace is missing from the project inventory")
     props.layout.projects.open(workspaceDir)
     void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
     const id = openProjectSessionSurface(workspaceDir, routeId)

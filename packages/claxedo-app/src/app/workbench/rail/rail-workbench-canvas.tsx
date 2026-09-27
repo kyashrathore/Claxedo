@@ -37,7 +37,7 @@ export function RailWorkbenchCanvas(props: {
   onCloseFocusedPane: (paneId: string, contentId: string | null) => void
   onDiagnostics?: () => void
   /** A project the first-project canvas just created; the shell opens it. */
-  onProjectCreated?: (project: NewSessionProjectSelection) => void
+  onProjectCreated?: (project: NewSessionProjectSelection) => void | Promise<void>
 }) {
   // Keep only the three most-recent hidden sessions mounted. The bounded
   // latest-surface hydrate makes a remount cheap; retaining 23 hidden pages made

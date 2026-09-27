@@ -10,6 +10,10 @@ import { ExecutionStep, type ExecutionChoice } from "./execution-step"
 import type { OnboardingFunnelEvent, OnboardingStepId } from "./funnel"
 import { ProjectStep } from "./project-step"
 
+type CreatedTarget =
+  | { kind: "local"; id: string; checkoutDirectory: string | null }
+  | { kind: "cloud"; workspaceId: string }
+
 const STEPS: ReadonlyArray<{
   id: OnboardingStepId
   label: string
@@ -66,8 +70,9 @@ export const OnboardingWizard: Component<{
   /** Handed the control that leads the current step, so the host can focus it. */
   leadField?: (element: HTMLElement) => void
   /** A desktop: the project Finish created; the host opens it. */
-  onProjectCreated: (project: { id: string; worktree: string }) => void
-  createCloudWorkspace: (input: { projectName: string; source: ProjectSource }) => Promise<void>
+  onProjectCreated: (project: { id: string; worktree: string }) => void | Promise<void>
+  createCloudWorkspace: (input: { projectName: string; source: ProjectSource }) => Promise<{ workspaceId: string }>
+  onCloudWorkspaceCreated: (workspaceId: string) => Promise<void>
   footer?: JSX.Element
 }> = (props) => {
   const [step, setStep] = createSignal<OnboardingStepId>("project")
@@ -87,6 +92,8 @@ export const OnboardingWizard: Component<{
   const choice = () => chosen() ?? (props.localExecution ? "local" : "cloud")
   const [executionReady, setExecutionReady] = createSignal(false)
   const [finishing, setFinishing] = createSignal(false)
+  const [created, setCreated] = createSignal<CreatedTarget>()
+  const [finished, setFinished] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
   let card!: HTMLDivElement
   let steps!: HTMLDivElement
@@ -119,11 +126,12 @@ export const OnboardingWizard: Component<{
 
   const finish = async () => {
     const held = draft()
-    if (!held || finishing() || !executionReady()) return
+    if (!held || finishing() || finished() || (!created() && !executionReady())) return
     setFinishing(true)
     setFailure(undefined)
     try {
-      if (choice() !== "cloud" && props.localExecution) {
+      let target = created()
+      if (!target && choice() !== "cloud" && props.localExecution) {
         const project = await createProject({ baseUrl: props.baseUrl, source: held.source }).catch(async (error: unknown) => {
           // A folder this server already holds as a project is that project:
           // open it rather than refuse, since picking it again says as much.
@@ -132,18 +140,27 @@ export const OnboardingWizard: Component<{
           if (!existing) throw error
           return existing
         })
-        if (!project.checkoutDirectory || !validWorktree(project.checkoutDirectory)) {
-          setFailure(`The project was created but its folder cannot be opened here: ${project.checkoutDirectory ?? "no checkout"}`)
+        target = { kind: "local", id: project.id, checkoutDirectory: project.checkoutDirectory }
+        setCreated(target)
+      } else if (!target) {
+        const workspace = await props.createCloudWorkspace({ projectName: draftProjectName(held.source), source: held.source })
+        target = { kind: "cloud", workspaceId: workspace.workspaceId }
+        setCreated(target)
+      }
+      if (target.kind === "local") {
+        if (!target.checkoutDirectory || !validWorktree(target.checkoutDirectory)) {
+          setFailure(`The project was created but its folder cannot be opened here: ${target.checkoutDirectory ?? "no checkout"}`)
           return
         }
-        props.emit({ name: "step_done", step: "execution" })
-        props.onProjectCreated({ id: project.id, worktree: project.checkoutDirectory })
-        return
+        await props.onProjectCreated({ id: target.id, worktree: target.checkoutDirectory })
+      } else {
+        await props.onCloudWorkspaceCreated(target.workspaceId)
       }
-      await props.createCloudWorkspace({ projectName: draftProjectName(held.source), source: held.source })
+      setFinished(true)
       props.emit({ name: "step_done", step: "execution" })
     } catch (error) {
-      setFailure(projectRequestMessage(error))
+      const message = projectRequestMessage(error)
+      setFailure(created() ? `Created successfully, but could not open it: ${message}` : message)
     } finally {
       setFinishing(false)
     }
@@ -167,6 +184,8 @@ export const OnboardingWizard: Component<{
     return undefined
   }
   const finishLabel = () => {
+    const target = created()
+    if (target) return finishing() ? "Opening…" : `Open created ${target.kind === "local" ? "project" : "workspace"}`
     const local = props.localExecution && choice() !== "cloud"
     if (finishing()) return local ? "Creating project…" : "Creating workspace…"
     return local ? "Open project" : "Create workspace"
@@ -221,7 +240,7 @@ export const OnboardingWizard: Component<{
               </div>
             </Show>
             <Show when={visited().has("execution")}>
-              <div hidden={step() !== "execution"} data-step-panel="execution">
+              <div hidden={step() !== "execution"} data-step-panel="execution" inert={finishing() || !!created()}>
                 <ExecutionStep
                   localExecution={props.localExecution}
                   cloudAvailable={props.cloudAvailable}
@@ -246,7 +265,7 @@ export const OnboardingWizard: Component<{
               {reason() ?? ""}
             </p>
             <div class="flex shrink-0 items-center gap-2">
-              <Button type="button" variant="ghost" size="normal" onClick={back} disabled={finishing()}>
+              <Button type="button" variant="ghost" size="normal" onClick={back} disabled={finishing() || !!created()}>
                 Back
               </Button>
               <Show when={step() === "ai" && props.localExecution && !aiReady()}>
@@ -266,7 +285,7 @@ export const OnboardingWizard: Component<{
                   type="button"
                   variant="primary"
                   size="normal"
-                  disabled={nextDisabled() || finishing()}
+                  disabled={(!created() && nextDisabled()) || finishing() || finished()}
                   onClick={() => void finish()}
                 >
                   {finishLabel()}

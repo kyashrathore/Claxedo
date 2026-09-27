@@ -14,7 +14,44 @@ const fixture = vi.hoisted(() => ({
   machineRunnable: false,
   connected: {} as Record<string, string[]>,
   formMounts: 0,
+  localExecution: false,
+  cloudCreated: [] as unknown[],
+  navigated: [] as string[],
+  refreshFailure: undefined as Error | undefined,
+  refreshes: 0,
 }))
+
+vi.mock("@/app/connection/server", () => ({ useServer: () => ({ url: "http://server.test" }) }))
+vi.mock("@/app/connection/server-product", () => ({
+  useServerProduct: () => ({ known: () => true, localExecution: () => fixture.localExecution }),
+}))
+vi.mock("@/platform/account/account-provider", () => ({
+  useAccountPort: () => ({ state: () => ({ status: "signed" }) }),
+}))
+vi.mock("@opencode-ai/ui/context/dialog", () => ({ useDialog: () => ({}) }))
+vi.mock("@/features/session/ui/components/session-pick-project-folder", () => ({
+  pickProjectFolderWith: () => async () => undefined,
+}))
+vi.mock("@/app/providers/layout", () => ({
+  useLayout: () => ({ projects: { registerCreateSurface: () => () => {}, createPending: () => false } }),
+}))
+vi.mock("@/app/integrations/onboarding-funnel", () => ({ useOnboardingFunnel: () => ({ emit: () => {} }) }))
+vi.mock("@/app/integrations/sync/query-options", () => ({ useShellQueryOptions: () => ({ projects: () => ({}) }) }))
+vi.mock("@/features/workspaces/data/query/project-ensure", () => ({
+  refreshProjectInventory: async () => {
+    fixture.refreshes += 1
+    if (fixture.refreshFailure) throw fixture.refreshFailure
+    return []
+  },
+}))
+vi.mock("@/features/workspaces/data/workspace-create-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/workspaces/data/workspace-create-api")>()),
+  createCloudWorkspace: async (input: unknown) => {
+    fixture.cloudCreated.push(input)
+    return { workspaceId: "ws_created" }
+  },
+}))
+vi.mock("@solidjs/router", () => ({ useNavigate: () => (path: string) => fixture.navigated.push(path) }))
 
 vi.mock("@/features/onboarding/app-ports", async () => {
   const projectApi = await vi.importActual<typeof import("@/features/workspaces/data/project-api")>("@/features/workspaces/data/project-api")
@@ -60,6 +97,8 @@ vi.mock("@/features/onboarding/app-ports", async () => {
 vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}") }))
 
 const { OnboardingWizard } = await import("./wizard")
+const { FirstProjectCanvas } = await import("@/app/workbench/rail/first-project-canvas")
+const { refreshProjectInventory } = await import("@/features/workspaces/data/query/project-ensure")
 
 function mount(input: { localExecution: boolean; cloudAvailable?: boolean }) {
   const events: OnboardingFunnelEvent[] = []
@@ -72,10 +111,12 @@ function mount(input: { localExecution: boolean; cloudAvailable?: boolean }) {
       localExecution={localExecution()}
       cloudAvailable={input.cloudAvailable ?? !localExecution()}
       emit={(event) => events.push(event)}
-      onProjectCreated={(project) => opened.push(project)}
+      onProjectCreated={(project) => { opened.push(project) }}
       createCloudWorkspace={async (draft) => {
         cloud.push(draft)
+        return { workspaceId: "ws_created" }
       }}
+      onCloudWorkspaceCreated={async () => {}}
     />
   ))
   return { events, opened, cloud, setLocalExecution }
@@ -94,7 +135,47 @@ afterEach(() => {
   fixture.machineRunnable = false
   fixture.connected = {}
   fixture.formMounts = 0
+  fixture.localExecution = false
+  fixture.cloudCreated = []
+  fixture.navigated = []
+  fixture.refreshFailure = undefined
+  fixture.refreshes = 0
   cleanup()
+})
+
+test.each([false, true])("a completed creation survives an inventory refresh failure (local=%s)", async (localExecution) => {
+  fixture.localExecution = localExecution
+  fixture.connected = localExecution ? {} : { pi: ["anthropic"] }
+  fixture.source = { kind: "repository", repoUrl: "https://github.com/acme/widgets" }
+  fixture.refreshFailure = new Error("Inventory unavailable")
+  const opened: Array<{ id?: string; worktree: string }> = []
+  render(() => <FirstProjectCanvas onProjectCreated={async (project) => {
+    await refreshProjectInventory({ queryKey: ["projects"] })
+    opened.push(project)
+  }} />)
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+  if (localExecution) fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+  else {
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).toBeEnabled())
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+  }
+  const finish = screen.getByRole("button", { name: localExecution ? "Open project" : "Create workspace" })
+  fireEvent.click(finish)
+  await waitFor(() => expect(fixture.refreshes).toBe(1))
+  await waitFor(() => expect(finish).toBeEnabled())
+  expect(screen.getByRole("alert").textContent).toBe("Created successfully, but could not open it: Inventory unavailable")
+  expect(screen.getByRole("button", { name: "Back" })).toBeDisabled()
+  expect(finish.textContent).toContain(localExecution ? "Open created project" : "Open created workspace")
+  fixture.refreshFailure = undefined
+  fireEvent.click(finish)
+  await waitFor(() => expect(localExecution ? opened : fixture.navigated).toHaveLength(1))
+  expect(localExecution ? fixture.created : fixture.cloudCreated).toHaveLength(1)
+  expect(fixture.refreshes).toBe(2)
+  if (localExecution) expect(opened).toEqual([{ id: "prj_1", worktree: "/home/me/widgets" }])
+  else expect(fixture.navigated).toEqual(["/w/ws_created/session"])
+  expect(finish).toBeDisabled()
+  fireEvent.click(finish)
+  expect(localExecution ? fixture.created : fixture.cloudCreated).toHaveLength(1)
 })
 
 describe("OnboardingWizard on a desktop", () => {
@@ -304,7 +385,7 @@ describe("OnboardingWizard on the hosted plane", () => {
     await waitFor(() => expect(again.cloud).toEqual([{ projectName: "widgets", source: fixture.source }]))
     expect(again.opened).toEqual([])
     expect(fixture.created).toEqual([])
-    expect(again.events.at(-1)).toEqual({ name: "step_done", step: "execution" })
+    await waitFor(() => expect(again.events.at(-1)).toEqual({ name: "step_done", step: "execution" }))
     expect(events.length).toBeGreaterThan(0)
     expect(cloud).toEqual([])
     expect(opened).toEqual([])

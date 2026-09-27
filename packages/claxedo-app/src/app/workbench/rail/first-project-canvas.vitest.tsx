@@ -197,7 +197,7 @@ describe("FirstProjectCanvas", () => {
 
   test("a created project reaches onProjectCreated as the record the shell opens", async () => {
     const opened: NewSessionProjectSelection[] = []
-    renderCanvas({ onProjectCreated: (project) => opened.push(project) })
+    renderCanvas({ onProjectCreated: (project) => { opened.push(project) } })
     await waitFor(() => expect(wizard.props).toBeTruthy())
     wizard.props?.onProjectCreated({ id: "prj_1", worktree: "/home/me/demo" })
     expect(opened).toEqual([{ id: "prj_1", worktree: "/home/me/demo" }])
@@ -207,13 +207,16 @@ describe("FirstProjectCanvas", () => {
     health.localExecution = false
     renderCanvas()
     await waitFor(() => expect(wizard.props).toBeTruthy())
-    await wizard.props!.createCloudWorkspace({
+    const created = await wizard.props!.createCloudWorkspace({
       projectName: "widgets",
       source: { kind: "repository", repoUrl: "https://github.com/acme/widgets" },
     })
     expect(cloud.calls).toEqual([
       { baseUrl: "http://server.test", projectName: "widgets", repoUrl: "https://github.com/acme/widgets" },
     ])
+    expect(created.workspaceId).toBe("ws_1")
+    expect(cloud.inventoryRefreshes).toBe(0)
+    await wizard.props!.onCloudWorkspaceCreated(created.workspaceId)
     expect(cloud.inventoryRefreshes).toBe(1)
     expect(cloud.navigated).toEqual(["/w/ws_1/session"])
   })

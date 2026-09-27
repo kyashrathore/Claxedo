@@ -26,7 +26,7 @@ import "./first-project-canvas.css"
 export function FirstProjectCanvas(props: {
   onDiagnostics?: () => void
   /** The project the wizard created; the shell opens it and the normal composer takes over. */
-  onProjectCreated?: (project: NewSessionProjectSelection) => void
+  onProjectCreated?: (project: NewSessionProjectSelection) => void | Promise<void>
 }) {
   const server = useServer()
   const account = useAccountPort()
@@ -70,14 +70,16 @@ export function FirstProjectCanvas(props: {
             emit={(event) => funnel.emit(event)}
             leadField={(element) => (leadField = element)}
             onProjectCreated={(project) => props.onProjectCreated?.({ id: project.id, worktree: project.worktree })}
-            createCloudWorkspace={async (input) => {
-              const created = await createCloudWorkspace({
+            createCloudWorkspace={(input) =>
+              createCloudWorkspace({
                 baseUrl: server.url,
                 projectName: input.projectName,
                 ...cloudWorkspaceSource(input.source),
               })
+            }
+            onCloudWorkspaceCreated={async (workspaceId) => {
               await refreshProjectInventory(queryOptions.projects())
-              navigate(workspaceSessionRoute(created.workspaceId))
+              navigate(workspaceSessionRoute(workspaceId))
             }}
             footer={
               <Show when={props.onDiagnostics}>
