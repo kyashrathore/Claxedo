@@ -9,6 +9,7 @@ import * as path from "node:path"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "../src/main/daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
+import { parseClaxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
 import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
@@ -187,6 +188,9 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
   try {
     const base = `http://127.0.0.1:${port}`
     await waitForHealth(base, child, () => stderr)
+    // The listener answers health before the discovery record exists; the
+    // ready message is what the daemon sends once the record is written.
+    await waitForMessage(messages, (message) => parseClaxedoServerReadyMessage(message) !== null)
     expect(child.connected).toBe(true)
     expect(JSON.parse(fs.readFileSync(daemonDiscoveryPath, "utf8"))).toMatchObject({
       service: "claxedo-local-daemon",
@@ -362,8 +366,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
   child.stderr?.on("data", (chunk) => { stderr += String(chunk) })
   const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
   try {
-    await waitForMessage(messages, (message) =>
-      !!message && typeof message === "object" && "type" in message && message.type === "claxedo-server-ready")
+    await waitForMessage(messages, (message) => parseClaxedoServerReadyMessage(message) !== null)
     expect(fs.existsSync(discoveryPath)).toBe(true)
     expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
     expect(child.exitCode).toBe(0)
@@ -447,6 +450,9 @@ test("a terminal whose daemon was killed is reported gone and restored from hist
     const before = first.attach(lostId)
     await before.opened
     await before.waitForText("written-before-the-daemon-died")
+    // History is appended in 8 ms batches, so output a client has seen can
+    // still be staged in memory; SIGKILL before the append lands loses it.
+    await waitForHistory(root, lostId, "written-before-the-daemon-died")
     before.ws.close()
     first.child.kill("SIGKILL")
     await new Promise((resolve) => first.child.once("exit", resolve))
@@ -507,6 +513,17 @@ async function waitForHealth(base: string, child: ChildProcess, stderr: () => st
     if (res?.ok) return
   }
   throw new Error("claxedo-server did not become healthy in time")
+}
+
+async function waitForHistory(root: string, ptyId: string, text: string) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const file = fs.readdirSync(root, { recursive: true, withFileTypes: true })
+      .find((entry) => entry.isFile() && entry.name === `${ptyId}.log`)
+    if (file && fs.readFileSync(path.join(file.parentPath, file.name), "utf8").includes(text)) return
+    await Bun.sleep(25)
+  }
+  throw new Error(`pty ${ptyId} history never recorded ${JSON.stringify(text)}`)
 }
 
 async function waitForMessage(messages: unknown[], match: (message: unknown) => boolean) {
