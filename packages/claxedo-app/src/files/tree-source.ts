@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQueries } from "@tanstack/solid-query"
-import type { AppError, FileNode, PlacementId } from "@/server"
+import { useServer, type AppError, type FileNode, type PlacementId } from "@/server"
 import { useFilesApi } from "./api"
 import { sortNodes } from "./model"
 import { useFiles } from "./store"
@@ -46,4 +46,10 @@ export function createTreeSource(placementId: Accessor<PlacementId>, enabled: Ac
     expand: (dir) => files.setExpanded(dir, true),
     collapse: (dir) => files.setExpanded(dir, false),
   }
+}
+
+export function useRootListingPrefetch(): (placementId: PlacementId) => void {
+  const server = useServer()
+  const api = useFilesApi()
+  return (placementId) => void server.queryClient.prefetchQuery(api.tree(placementId, ""))
 }

@@ -1,4 +1,5 @@
 import { Show, type JSX } from "solid-js"
+import { useRootListingPrefetch } from "@/files"
 import { useTranslator } from "@/i18n"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { panelDictionary } from "../i18n"
@@ -7,6 +8,7 @@ import { usePanel } from "../store"
 export function PanelToggleButton(): JSX.Element {
   const t = useTranslator(panelDictionary)
   const panel = usePanel()
+  const prefetchRootListing = useRootListingPrefetch()
   const label = () => (panel.open() ? t("panel.close") : t("panel.open"))
   return (
     <button
@@ -17,6 +19,11 @@ export function PanelToggleButton(): JSX.Element {
       aria-label={label()}
       title={label()}
       aria-pressed={panel.open()}
+      onPointerDown={(event) => {
+        const placementId = panel.placementId()
+        if (event.button !== 0 || panel.open() || panel.phone() || !placementId) return
+        if (panel.openingNavigator() === "files") prefetchRootListing(placementId)
+      }}
       onClick={() => panel.toggle()}
     >
       <Icon name={panel.open() ? "layout-right-full" : "layout-right-partial"} size="small" />

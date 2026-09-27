@@ -30,6 +30,7 @@ export type Panel = {
   readonly tabs: Accessor<readonly ReviewWorkspaceTab[]>
   readonly activeTab: Accessor<ReviewWorkspaceTab>
   readonly navigator: Accessor<WorkspacePanelNavigator | null>
+  readonly openingNavigator: Accessor<WorkspacePanelNavigator | null>
   readonly fullWidth: Accessor<boolean>
   readonly maximized: Accessor<boolean>
   readonly width: Accessor<number>
@@ -81,13 +82,15 @@ function createOpenRules(input: {
   readonly tabs: ReturnType<typeof createPanelTabs>
   readonly size: PanelSize
   readonly setFullWidth: (fullWidth: boolean) => void
-}): Pick<Panel, "toggle" | "toggleFullWidth" | "show"> {
+}): Pick<Panel, "openingNavigator" | "toggle" | "toggleFullWidth" | "show"> {
   const { layout, tabs, size, setFullWidth } = input
   const onReview = () => tabs.activeTab().kind === "review"
+  const openingNavigator = () => (onReview() ? (tabs.navigator() ?? "files") : tabs.navigator())
   return {
+    openingNavigator,
     toggle: () => {
       if (layout.panelShown()) setFullWidth(false)
-      else if (onReview()) tabs.defaultNavigator()
+      else if (onReview()) tabs.setNavigator(openingNavigator())
       layout.send({ type: "togglePanel" })
     },
     toggleFullWidth: () => {

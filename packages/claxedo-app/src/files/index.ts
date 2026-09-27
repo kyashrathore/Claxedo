@@ -1,5 +1,6 @@
 export { FilesProvider, useFiles, type Files } from "./store"
 export { useActiveSession } from "./location"
+export { useRootListingPrefetch } from "./tree-source"
 export { basename, parentPath } from "./path"
 export { isMarkdownPath, isMediaPath } from "./preview"
 export { FileTab, type FileTabProps } from "./view/file-tab"

@@ -20,7 +20,6 @@ export type PanelTabs = {
   readonly closeTab: (tabId: string) => void
   readonly toggleNavigator: (navigator: WorkspacePanelNavigator) => void
   readonly setNavigator: (navigator: WorkspacePanelNavigator | null) => void
-  readonly defaultNavigator: () => void
   readonly focus: (focus: PanelFocus) => void
   readonly fileReveal: Accessor<FileReveal | undefined>
   readonly reviewFocus: Accessor<ReviewFocus | undefined>
@@ -74,7 +73,6 @@ export function createPanelTabs(
       }),
     toggleNavigator: (next) => setNavigator((current) => (current === next ? null : next)),
     setNavigator: (next) => setNavigator(next),
-    defaultNavigator: () => setNavigator((current) => current ?? "files"),
     focus: (focus) => workingSet.update((set) => applyFocus(set, focus, effects)),
     fileReveal,
     reviewFocus,
