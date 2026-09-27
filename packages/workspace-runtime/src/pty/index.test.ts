@@ -273,7 +273,9 @@ describe("Pty activity changes", () => {
     const stop = Pty.onActivityChange(() => running.push(Pty.activity().running))
     try {
       const first = await Pty.create({ cwd: tmpDir, title: "first" }, ownership)
+      Pty.commit(first.id)
       const second = await Pty.create({ cwd: tmpDir, title: "second" }, ownership)
+      Pty.commit(second.id)
       expect(running).toEqual([1, 2])
 
       await Promise.all(fakeProcesses.get(first.pid)!.exitHandlers.map((handler) => handler({ exitCode: 0 })))
