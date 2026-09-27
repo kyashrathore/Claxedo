@@ -13,7 +13,7 @@
   "scripts": {
     "test:contract": "bun test ./scripts/contract.test.ts",
     "test:diagnostics-release": "bun test ./src/main/diagnostics ./src/shared/diagnostics-transport.test.ts ./scripts/performance-diagnostics-smoke.test.ts ./scripts/verify-diagnostics-dependencies.test.ts ./scripts/verify-diagnostics-privacy.test.ts",
-    "test:native-rich-content": "cargo test --manifest-path ./native/rich-content-renderer/Cargo.toml --locked",
+    "test:native-mermaid": "cargo test --manifest-path ./native/mermaid-renderer/Cargo.toml --locked",
     "verify:diagnostics-dependencies": "bun ./scripts/verify-diagnostics-dependencies.ts",
     "verify:diagnostics-privacy": "bun ./scripts/verify-diagnostics-privacy.ts",
     "smoke:diagnostics": "bun ./scripts/performance-diagnostics-smoke.ts",
@@ -30,7 +30,7 @@
     "predev": "bun ./scripts/predev.ts",
     "dev": "GOMAXPROCS=2 electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",
-    "build:rich-content": "bun ./scripts/build-rich-content-renderer.ts",
+    "build:mermaid-renderer": "bun ./scripts/build-mermaid-renderer.ts",
     "build": "bun ./scripts/build.ts",
     "build:inner": "electron-vite build",
     "preview": "electron-vite preview",

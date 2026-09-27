@@ -23,7 +23,7 @@ import {
 import { bundleHostConnector } from "./bundle-host-connector"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { LOCAL_SERVER_ENTRY, resolveLocalServerEntry } from "./local-server"
-import { prepareRichContentRenderer } from "./build-rich-content-renderer"
+import { prepareMermaidRenderer } from "./build-mermaid-renderer"
 import { copyIcons as copyChannelIcons } from "./utils"
 
 // ── Paths ──
@@ -87,7 +87,7 @@ await Promise.all([
   bundleServer(),
   bundleHostConnector(),
   buildMemoryImpactHelper(),
-  prepareRichContentRenderer({ required: process.env.CLAXEDO_REQUIRE_NATIVE_RICH_CONTENT === "1" }),
+  prepareMermaidRenderer({ required: process.env.CLAXEDO_REQUIRE_NATIVE_MERMAID === "1" }),
 ])
 
 log("Done.")

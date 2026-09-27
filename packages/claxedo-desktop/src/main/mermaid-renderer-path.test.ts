@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
-import { resolveRichContentRendererPath, richContentRendererBinaryName } from "./rich-content-renderer-path"
+import { resolveMermaidRendererPath, mermaidRendererBinaryName } from "./mermaid-renderer-path"
 
-describe("rich-content renderer path", () => {
+describe("Mermaid renderer path", () => {
   test("resolves the target-specific development artifact", () => {
     expect(
-      resolveRichContentRendererPath({
+      resolveMermaidRendererPath({
         packaged: false,
         resourcesPath: "/resources",
         appPath: "/app",
@@ -13,12 +13,12 @@ describe("rich-content renderer path", () => {
         arch: "arm64",
         exists: () => true,
       }),
-    ).toBe(join("/app", "resources", "rich-content", "darwin-arm64", "claxedo-rich-content-renderer"))
+    ).toBe(join("/app", "resources", "mermaid", "darwin-arm64", "claxedo-mermaid-renderer"))
   })
 
   test("resolves the flattened packaged artifact", () => {
     expect(
-      resolveRichContentRendererPath({
+      resolveMermaidRendererPath({
         packaged: true,
         resourcesPath: "/bundle/Resources",
         appPath: "/bundle/Resources/app.asar",
@@ -26,12 +26,12 @@ describe("rich-content renderer path", () => {
         arch: "x64",
         exists: () => true,
       }),
-    ).toBe(join("/bundle/Resources", "rich-content", "claxedo-rich-content-renderer.exe"))
+    ).toBe(join("/bundle/Resources", "mermaid", "claxedo-mermaid-renderer.exe"))
   })
 
   test("prefers an explicit override and returns undefined when no artifact exists", () => {
     expect(
-      resolveRichContentRendererPath({
+      resolveMermaidRendererPath({
         packaged: true,
         resourcesPath: "/resources",
         appPath: "/app",
@@ -40,7 +40,7 @@ describe("rich-content renderer path", () => {
       }),
     ).toBe("/custom/renderer")
     expect(
-      resolveRichContentRendererPath({
+      resolveMermaidRendererPath({
         packaged: true,
         resourcesPath: "/resources",
         appPath: "/app",
@@ -50,7 +50,7 @@ describe("rich-content renderer path", () => {
   })
 
   test("uses an executable suffix only on Windows", () => {
-    expect(richContentRendererBinaryName("linux")).toBe("claxedo-rich-content-renderer")
-    expect(richContentRendererBinaryName("win32")).toBe("claxedo-rich-content-renderer.exe")
+    expect(mermaidRendererBinaryName("linux")).toBe("claxedo-mermaid-renderer")
+    expect(mermaidRendererBinaryName("win32")).toBe("claxedo-mermaid-renderer.exe")
   })
 })

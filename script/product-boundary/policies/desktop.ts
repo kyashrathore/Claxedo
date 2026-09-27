@@ -44,7 +44,7 @@ export const desktopMainComposition: Policy = {
     ],
     requiredPackages: ["electron"],
   },
-  // Renderer trust/readiness and native-rich-content supervision add nine
+  // Renderer trust/readiness and native Mermaid supervision add nine
   // reviewed main-process modules. Durable local-server startup then adds the
   // daemon discovery and lease owners. The app-exit fix adds the canonical
   // daemon-exit lifecycle owner. Account identity resolution (`account/identity.ts`,

@@ -77,8 +77,8 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/claxedo-desktop/src/main/ipc.ts", callee: "execFile", calls: 1 },
   }),
   product({
-    id: "desktop-rich-content-renderer",
-    family: "One-shot native rich-content renderer",
+    id: "desktop-mermaid-renderer",
+    family: "One-shot native Mermaid renderer",
     owner: "desktop",
     linkage: "session",
     observation: "host-tree",

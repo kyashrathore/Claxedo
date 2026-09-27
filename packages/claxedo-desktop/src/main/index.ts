@@ -104,7 +104,7 @@ import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
 import { createNativeMermaidRenderer } from "./native-mermaid"
-import { resolveRichContentRendererPath } from "./rich-content-renderer-path"
+import { resolveMermaidRendererPath } from "./mermaid-renderer-path"
 import {
   checkHealth,
   checkHealthOrAskRetry,
@@ -167,11 +167,11 @@ const daemonEndpoint = defer<DaemonEndpoint>()
 const serverOrigin = defer<string>()
 const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
 const logger = initLogging()
-const richContentRendererPath = resolveRichContentRendererPath({
+const mermaidRendererPath = resolveMermaidRendererPath({
   packaged: IS_PACKAGED,
   resourcesPath: process.resourcesPath,
   appPath: join(import.meta.dirname, "../.."),
-  override: process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
+  override: process.env.CLAXEDO_MERMAID_RENDERER_PATH,
 })
 const startAtLogin = createStartAtLogin(app)
 const electronDiagnosticsSource = createElectronSource({
@@ -1017,7 +1017,7 @@ const diagnosticsIpc = registerIpcHandlers({
   installUpdate: async () => installUpdate(),
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
-  renderMermaid: createNativeMermaidRenderer(richContentRendererPath),
+  renderMermaid: createNativeMermaidRenderer(mermaidRendererPath),
   browser: browserRegistry,
   processDiagnostics: {
     profiler: diagnosticsProfiler,

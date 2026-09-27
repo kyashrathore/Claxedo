@@ -30,7 +30,7 @@ import {
   localServerPackageDir,
   resolveLocalServerEntry,
 } from "./local-server"
-import { prepareRichContentRenderer } from "./build-rich-content-renderer"
+import { prepareMermaidRenderer } from "./build-mermaid-renderer"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
@@ -69,7 +69,7 @@ try {
 await ensureElectronNativeModules()
 const [, , hostConnector] = await Promise.all([
   buildMemoryImpactHelper(),
-  prepareRichContentRenderer(),
+  prepareMermaidRenderer(),
   bundleHostConnector(),
 ])
 console.log(`[predev] Host Connector child bundled (${hostConnector.manifest.sha256})`)

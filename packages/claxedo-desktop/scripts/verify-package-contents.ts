@@ -214,17 +214,17 @@ export function verifyPackageContents(
     } catch (error) {
       failures.push(`${archive}: ${String(error)}`)
     }
-    const richContent = path.join(path.dirname(archive), "rich-content")
+    const mermaidDir = path.join(path.dirname(archive), "mermaid")
     const binaries = [
-      path.join(richContent, "claxedo-rich-content-renderer"),
-      path.join(richContent, "claxedo-rich-content-renderer.exe"),
+      path.join(mermaidDir, "claxedo-mermaid-renderer"),
+      path.join(mermaidDir, "claxedo-mermaid-renderer.exe"),
     ].filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile())
     if (binaries.length !== 1) {
-      failures.push(`${archive}: expected one packaged rich-content renderer in ${richContent}`)
+      failures.push(`${archive}: expected one packaged Mermaid renderer in ${mermaidDir}`)
       continue
     }
     if (!binaries[0].endsWith(".exe") && (fs.statSync(binaries[0]).mode & 0o111) === 0) {
-      failures.push(`${archive}: packaged rich-content renderer is not executable: ${binaries[0]}`)
+      failures.push(`${archive}: packaged Mermaid renderer is not executable: ${binaries[0]}`)
       continue
     }
     // Cross-packaging creates binaries the host cannot execute (for example a
@@ -238,7 +238,7 @@ export function verifyPackageContents(
     })
     const svg = mermaid.stdout
     if (mermaid.status !== 0 || !svg.startsWith("<svg") || !svg.includes("#123456")) {
-      failures.push(`${archive}: packaged rich-content renderer failed its Mermaid smoke`)
+      failures.push(`${archive}: packaged Mermaid renderer failed its Mermaid smoke`)
     }
   }
   for (const archive of asars) {
@@ -331,7 +331,7 @@ if (import.meta.main) {
     process.exit(1)
   }
   console.log(
-    `[verify-package-contents] ok — ${asars.length} package(s) contain only bundled output + native modules and a working rich-content renderer`,
+    `[verify-package-contents] ok — ${asars.length} package(s) contain only bundled output + native modules and a working Mermaid renderer`,
   )
 }
 

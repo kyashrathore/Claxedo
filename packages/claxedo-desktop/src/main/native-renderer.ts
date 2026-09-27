@@ -82,7 +82,7 @@ export function createOneShotNativeRenderer(input: {
 
 function schedule(run: () => Promise<string>) {
   if (active >= maxConcurrent && queued.length >= maxQueued) {
-    return Promise.reject(new Error("Native rich-content renderer queue is full"))
+    return Promise.reject(new Error("Native Mermaid renderer queue is full"))
   }
   return new Promise<string>((resolve, reject) => {
     const start = () => {

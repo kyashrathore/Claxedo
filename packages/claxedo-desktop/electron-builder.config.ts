@@ -190,9 +190,9 @@ const getBase = (): Configuration => ({
       to: "opencode-sdk-inventory.json",
     },
     {
-      from: `resources/rich-content/${targetOsArch}/`,
-      to: "rich-content/",
-      filter: [targetOsArch.startsWith("win32-") ? "claxedo-rich-content-renderer.exe" : "claxedo-rich-content-renderer"],
+      from: `resources/mermaid/${targetOsArch}/`,
+      to: "mermaid/",
+      filter: [targetOsArch.startsWith("win32-") ? "claxedo-mermaid-renderer.exe" : "claxedo-mermaid-renderer"],
     },
     ...(targetOsArch.startsWith("darwin-")
       ? [{ from: "resources/diagnostics/", to: "diagnostics/", filter: ["macos-memory-impact"] }]
