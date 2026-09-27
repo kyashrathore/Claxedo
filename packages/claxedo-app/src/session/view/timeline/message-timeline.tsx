@@ -447,7 +447,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: sameArrayItems },
         )
-        const folded = createMemo(() => sessionConversation()?.folded.get(userMessage.id))
         const turnRows = createMemo(whileOnScreen(props.onScreen, (previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
           const withText = new Set(textParts())
@@ -462,7 +461,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             (userMessageId) => turnFold.isFolded(userMessageId),
             turnOutcome(),
             visibleAssistantMessageIds(),
-            folded(),
             (partId) => toolOpen[partId] === true || toolRevealed[partId] === true,
             settling(),
             thinkingHeading(),
@@ -537,9 +535,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
   holdPaneReveal(() => !initialRevealReady())
-  createEffect(() => {
-    for (const row of timelineRows()) if (row._tag === "TurnFold" && row.opening) host.loadTurn(row.userMessageId)
-  })
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {

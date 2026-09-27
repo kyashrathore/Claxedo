@@ -1,9 +1,9 @@
 import { batch } from "solid-js"
-import { toAppError, type AppError, type TurnPageRead } from "@/server"
+import { toAppError, type AppError, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { prependPage } from "./conversation"
 
-type OlderOutcome = { readonly page: TurnPageRead } | { readonly error: AppError } | undefined
+type OlderOutcome = { readonly page: TranscriptPage } | { readonly error: AppError } | undefined
 
 export function loadOlder(context: TranscriptContext): Promise<void> {
   context.olderRead.current ??= readOlderPage(context).then((outcome) => {
@@ -30,11 +30,10 @@ function landOlderPage(context: TranscriptContext, outcome: OlderOutcome): void 
     context.older.send({ type: "olderFailed", error: outcome.error })
     return
   }
-  const { transcript, folded } = outcome.page
+  const { page } = outcome
   batch(() => {
-    prependPage(context.setData, transcript)
-    if (folded.size > 0) context.setData("folded", new Map([...context.data.folded, ...folded]))
-    context.setOlderCursor(transcript.olderCursor)
+    prependPage(context.setData, page)
+    context.setOlderCursor(page.olderCursor)
     context.older.send({ type: "olderLanded" })
   })
 }

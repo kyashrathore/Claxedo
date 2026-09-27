@@ -9,7 +9,6 @@ import type {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { SessionShareChangedSink } from "./session/session-people-contract"
 import type { MachineSessionCreate } from "./session/machine-dispatch"
-import type { FoldRead } from "@claxedo/agent-sdk-runtime/turn-page"
 
 export {
   ControlPlaneAuthError,
@@ -25,10 +24,9 @@ export type ControlPlaneAppOptions = {
   beforeLocalSessionList?: () => Promise<void>
   sessionShareChangedSink?: SessionShareChangedSink
   createMachineSession?: (input: MachineSessionCreate, auth?: SignedControlPlaneAuth) => Promise<{ id: string }>
-  foldRead: FoldRead
 }
 
-export function createControlPlaneApp(services: ControlPlaneServices, options: ControlPlaneAppOptions) {
+export function createControlPlaneApp(services: ControlPlaneServices, options: ControlPlaneAppOptions = {}) {
   const app = new Hono()
   app.route(
     "/api/control",
@@ -38,7 +36,6 @@ export function createControlPlaneApp(services: ControlPlaneServices, options: C
       ...(options.beforeLocalSessionList ? { beforeLocalList: options.beforeLocalSessionList } : {}),
       ...(options.sessionShareChangedSink ? { sessionShareChangedSink: options.sessionShareChangedSink } : {}),
       createMachineSession: options.createMachineSession,
-      foldRead: options.foldRead,
     }),
   )
   app.route(

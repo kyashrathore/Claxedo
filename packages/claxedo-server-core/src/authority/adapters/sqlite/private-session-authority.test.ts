@@ -795,7 +795,7 @@ describe("SQLite latest views", () => {
       authority: store,
       workspaceId: "workspace_main",
       creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
-    })).resolves.toEqual({ outline: ["u1", "u2"], foldableCounts: [0, 2] })
+    })).resolves.toEqual({ outline: ["u1", "u2"], page: ["u1", "u2"] })
     await expect(exerciseTurnPageConformance({
       authority: store,
       workspaceId: "workspace_main",

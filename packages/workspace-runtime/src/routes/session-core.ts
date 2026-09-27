@@ -30,7 +30,7 @@ import type {
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { TurnPageQueryError, parseOlderTurnPageQuery, parseOpenTurnQuery, parseTurnPageQuery, readFirstRead, readOpenTurn, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -1125,7 +1125,6 @@ async function admitQuestionOperation(
 }
 
 export function createSessionRoutes(opts: Opts) {
-  const fold = opts.foldRead ?? "terminal"
   const app = new Hono()
   // The other routers in this package re-throw whatever is not an oversized
   // body and let the app they are mounted into answer it. This router is also
@@ -1980,7 +1979,7 @@ export function createSessionRoutes(opts: Opts) {
         normalizeSession(session, directory),
         outline,
         turnReader(opts, c, directory, sessionId),
-        query && { ...query, fold, cancelledAssistantMessageId: cancelledAssistantMessageId(session.lastTurn) },
+        query && { ...query, cancelledAssistantMessageId: cancelledAssistantMessageId(session.lastTurn) },
       ))
     })
     .get("/session/:id/page", async (c) => {
@@ -1989,15 +1988,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const request = pageQuery(c, parseOlderTurnPageQuery)
       const directory = await opts.resolveDirectory(c, { sessionId })
-      return noStoreJson(c, await readTurnPage(turnReader(opts, c, directory, sessionId), { ...request, fold }))
-    })
-    .get("/session/:id/turn", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
-      if (guarded) return guarded
-      const { settings, before } = pageQuery(c, parseOpenTurnQuery)
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      return noStoreJson(c, await readOpenTurn(turnReader(opts, c, directory, sessionId), settings, before))
+      return noStoreJson(c, await readTurnPage(turnReader(opts, c, directory, sessionId), request))
     })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.

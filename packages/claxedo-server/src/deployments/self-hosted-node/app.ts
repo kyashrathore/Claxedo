@@ -114,7 +114,6 @@ import { selfHostedTasksClientInput } from "../../tasks/session-grants"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
-import { FOLD_READ_ENV, foldReadFrom } from "@claxedo/agent-sdk-runtime/turn-page"
 import { createMachineSessionDispatch } from "../../session/machine-dispatch"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
@@ -1000,7 +999,6 @@ export function createSelfHostedApp(
     createMachineSession: machineSessions.create,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
     sessionShareChangedSink: (event) => controlBus.publish(event),
-    foldRead: foldReadFrom(process.env[FOLD_READ_ENV]),
   })
   const wakeStore = process.env.CLAXEDO_WAKES === "1" ? new SqliteWakeStore({ path: process.env.CLAXEDO_WAKE_DB_PATH ?? path.join(dataDir(), "machine-wakes.sqlite") }) : undefined
   const machineWakes = wakeStore ? createMachineWakes({ services, runtime: machineSessions, store: wakeStore }) : undefined

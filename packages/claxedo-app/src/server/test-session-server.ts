@@ -63,7 +63,6 @@ type FakeServerOptions = {
 function controlPlaneAnswer(options: FakeServerOptions, path: string): Response {
   if (path === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.reachable, options.machine ?? false))
   if (path.startsWith("/api/control/sessions/ses_1/page")) return Response.json({ turns: [{ messages: stored }] })
-  if (path.startsWith("/api/control/sessions/ses_1/turn")) return Response.json({ messages: stored, cursor: "cursor_older" })
   if (path.startsWith("/api/control/sessions/ses_1/part")) return Response.json({ part: storedTool })
   if (path.startsWith("/api/control/sessions/ses_1/outline")) return firstRead(centralRow, { turns: [{ messages: stored, cursor: "cursor_older" }] })
   if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [centralRow] })

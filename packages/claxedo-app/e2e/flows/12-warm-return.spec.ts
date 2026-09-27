@@ -82,7 +82,7 @@ async function warmReturn(app: Page, cdp: CDPSession, settled: () => Promise<str
 
 test.skip(({ isMobile }) => isMobile, "the warm return is measured at desktop width")
 
-const LATER_READS = new Set(["page", "turn", "part"])
+const LATER_READS = new Set(["page", "part"])
 
 function readKind(route: string, url: URL): string | null {
   if (route === "outline") return url.searchParams.has("rows") ? "first" : "outline"
@@ -94,7 +94,7 @@ function transcriptBytes(app: Page) {
   const reads: { readonly sessionId: string; readonly view: string | null; readonly bytes: number }[] = []
   app.on("response", (response) => {
     const url = new URL(response.url())
-    const match = /\/session\/([^/]+)\/(message|outline|page|turn|message\/[^/]+\/part\/[^/]+)$/.exec(url.pathname)
+    const match = /\/session\/([^/]+)\/(message|outline|page|message\/[^/]+\/part\/[^/]+)$/.exec(url.pathname)
     if (!match || response.request().method() !== "GET") return
     const view = readKind(match[2], url)
     void response.body().then((body) => reads.push({ sessionId: decodeURIComponent(match[1]), view, bytes: body.length }))

@@ -29,47 +29,23 @@ const GROUP_ROW_LINES = 2
 const FENCE_FRAME_LINES = 2
 const USER_BUBBLE_SHARE = 0.8
 
-/**
- * What a folded turn sends: `terminal` sends only the parts the fold leaves
- * drawn and reads the rest when the fold opens; `headers` also sends the
- * folded parts, tools as headers. A measurement switch, read once by each
- * producer at start from `FOLD_READ_ENV`; one variant is deleted once measured.
- */
-export type FoldRead = "terminal" | "headers"
-
-export const FOLD_READ_ENV = "CLAXEDO_PERF_FOLD_READ"
-
-export function foldReadFrom(value: string | undefined): FoldRead {
-  if (value === undefined || value === "" || value === "terminal") return "terminal"
-  if (value === "headers") return "headers"
-  throw new Error(`${FOLD_READ_ENV} must be terminal or headers, not ${value}`)
-}
-
 /** What the reader's transcript draws: reasoning, and whether shell and edit rows open by default. */
 export type ReaderSettings = { reasoning: boolean; shell: boolean; edit: boolean }
 
 /** The reader's viewport in body lines and columns, with its settings: every query parameter a page read names. */
 export type TurnPageQuery = ReaderSettings & { rows: number; cols: number }
 
-/** A page read: the reader's query, the producer's fold read, the cancelled message of the session's last turn, and the cursor it reads before. */
+/** A page read: the reader's query, the cancelled message of the session's last turn, and the cursor it reads before. */
 export type TurnPageRequest = TurnPageQuery & {
-  fold: FoldRead
   /** The assistant message the session's last turn was cancelled at, which that turn draws as an interruption. */
   cancelledAssistantMessageId?: string
   /** Read the turns before this cursor; absent reads from the newest turn. */
   before?: string
 }
 
-/**
- * One turn as a page sends it, with every tool part a header unless the
- * reader's settings open its row. A turn the fold decision folds is sent,
- * under `terminal`, as its user message and every assistant envelope, each
- * carrying only the parts the fold leaves drawn, with `foldableCount` naming
- * how many groups it hides; any other turn is sent with all its parts.
- */
+/** One turn as a page sends it: every part, each tool a header unless the reader's settings open its row. */
 export type PageTurn = {
   messages: AgentMessage[]
-  foldableCount?: number
   /** Pages back from this turn's user message; absent on a session's first turn. */
   cursor?: string
 }
@@ -128,14 +104,6 @@ export function parseOlderTurnPageQuery(query: Query): TurnPageQuery & { before:
   return { ...page, before }
 }
 
-/** An open-turn read: the reader's settings, and the cursor it reads before when it names one, never empty. */
-export function parseOpenTurnQuery(query: Query): { settings: ReaderSettings; before?: string } {
-  const settings = parseReaderSettings(query)
-  const before = query("before")
-  if (before === "") throw new TurnPageQueryError("before must be a non-empty cursor")
-  return before === undefined ? { settings } : { settings, before }
-}
-
 type AssistantEntry = AgentMessage & { info: AgentMessage["info"] & AgentAssistantMessage }
 
 function isAssistant(message: AgentMessage): message is AssistantEntry {
@@ -161,38 +129,9 @@ function headed(messages: readonly AgentMessage[], settings: ReaderSettings): Ag
   return messages.map((message) => ({ ...message, parts: message.parts.map(part) }))
 }
 
-type ProjectRequest = ReaderSettings & Pick<TurnPageRequest, "fold" | "cancelledAssistantMessageId">
-
-/** A turn as the reader draws it on arrival (`drawn`, whose lines fill a page) and as the page sends it (`sent`). */
-function viewTurn(messages: AgentMessage[], request: ProjectRequest): { drawn: PageTurn; sent: PageTurn } {
-  const whole = { messages: headed(messages, request) }
-  const [user, ...rest] = messages
-  const assistants = rest.filter(isAssistant)
-  const last = assistants.at(-1)
-  if (!user || !last) return { drawn: whole, sent: whole }
-  const compaction = user.parts.some((part) => part.type === "compaction")
-  const { shape, groups, part } = turnGroups(assistants, request.reasoning, request.cancelledAssistantMessageId, compaction)
-  const foldableCount = countFoldableGroups(groups, part)
-  const decision = turnFoldDecision({
-    foldableCount,
-    settled: shape.settled,
-    interrupted: shape.interruptedMessageIndex !== -1,
-    errored: !!shape.errorMessage,
-    busy: !assistantMessageSettled(last.info),
-  })
-  if (!decision.folded) return { drawn: whole, sent: whole }
-  const folded = foldedGroupKeys(decision, groups, part)
-  const kept = new Set(groups.filter((group) => !folded.has(group.key)).flatMap((group) => groupMembers(group).map((ref) => ref.partId)))
-  const drawn = {
-    messages: whole.messages.map((message) => (isAssistant(message) ? { ...message, parts: message.parts.filter((item) => kept.has(item.id)) } : message)),
-    foldableCount,
-  }
-  return { drawn, sent: request.fold === "terminal" ? drawn : whole }
-}
-
-/** The turn a page sends: its tools as headers, folded to the parts the fold leaves drawn under `terminal` when the contract's fold decision folds it. */
-export function projectTurn(messages: AgentMessage[], request: ProjectRequest): PageTurn {
-  return viewTurn(messages, request).sent
+/** The turn a page sends: every part, its tools as headers unless the reader's settings open them. */
+export function projectTurn(messages: AgentMessage[], settings: ReaderSettings): PageTurn {
+  return { messages: headed(messages, settings) }
 }
 
 function wrappedLines(line: string, cols: number): number {
@@ -219,9 +158,9 @@ function visiblePromptText(user: AgentMessage): string {
   return user.parts.flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : [])).join("\n")
 }
 
-function drawnGroupLines(assistants: readonly AgentMessage[], cols: number): number {
+function drawnGroupLines(assistants: readonly AgentMessage[], cols: number, reasoning: boolean): number {
   const items = assistants.flatMap((message) =>
-    message.parts.filter((part) => isGroupablePart(part, partHasText, true)).map((part) => ({ messageId: message.info.id, part })),
+    message.parts.filter((part) => isGroupablePart(part, partHasText, reasoning)).map((part) => ({ messageId: message.info.id, part })),
   )
   const byId = new Map<string, AgentContentPart>(items.map((item) => [item.part.id, item.part]))
   return groupParts(items).reduce((lines, group) => {
@@ -230,19 +169,41 @@ function drawnGroupLines(assistants: readonly AgentMessage[], cols: number): num
   }, 0)
 }
 
+/** What a turn's lines are estimated for: the reader's columns and reasoning setting, and the cancelled message of the session's last turn. */
+export type LineRequest = Pick<TurnPageRequest, "cols" | "reasoning" | "cancelledAssistantMessageId">
+
+function drawnAssistants(assistants: readonly AssistantEntry[], request: LineRequest, compaction: boolean): { assistants: readonly AgentMessage[]; folded: boolean } {
+  const last = assistants.at(-1)
+  if (!last) return { assistants, folded: false }
+  const { shape, groups, part } = turnGroups(assistants, request.reasoning, request.cancelledAssistantMessageId, compaction)
+  const decision = turnFoldDecision({
+    foldableCount: countFoldableGroups(groups, part),
+    settled: shape.settled,
+    interrupted: shape.interruptedMessageIndex !== -1,
+    errored: !!shape.errorMessage,
+    busy: !assistantMessageSettled(last.info),
+  })
+  if (!decision.folded) return { assistants, folded: false }
+  const folded = foldedGroupKeys(decision, groups, part)
+  const kept = new Set(groups.filter((group) => !folded.has(group.key)).flatMap((group) => groupMembers(group).map((ref) => ref.partId)))
+  return { assistants: assistants.map((message) => ({ ...message, parts: message.parts.filter((item) => kept.has(item.id)) })), folded: true }
+}
+
 /**
- * How many body lines a turn takes as it is drawn on arrival at `cols`
- * columns: a fixed frame per turn, the prompt wrapped at the user bubble's
- * width, the fold row when it folds, a row per tool or reasoning group, and
- * every drawn text wrapped. It is an estimate for choosing how many turns to
- * send, never a layout.
+ * How many body lines a turn takes as it is drawn on arrival at
+ * `request.cols` columns: a fixed frame per turn, the prompt wrapped at the
+ * user bubble's width, the fold row and only the parts the fold leaves drawn
+ * when the contract's fold decision folds it, a row per tool or shown
+ * reasoning group, and every drawn text wrapped. It is an estimate for
+ * choosing how many turns to send, never a layout.
  */
-export function estimateTurnLines(turn: PageTurn, cols: number): number {
-  const [user, ...rest] = turn.messages
+export function estimateTurnLines(messages: readonly AgentMessage[], request: LineRequest): number {
+  const [user, ...rest] = messages
   if (!user) return 0
-  const prompt = textLines(visiblePromptText(user), Math.max(1, Math.floor(cols * USER_BUBBLE_SHARE)))
-  const fold = turn.foldableCount === undefined ? 0 : FOLD_ROW_LINES
-  return TURN_CHROME_LINES + prompt + fold + drawnGroupLines(rest.filter(isAssistant), cols)
+  const prompt = textLines(visiblePromptText(user), Math.max(1, Math.floor(request.cols * USER_BUBBLE_SHARE)))
+  const compaction = user.parts.some((part) => part.type === "compaction")
+  const drawn = drawnAssistants(rest.filter(isAssistant), request, compaction)
+  return TURN_CHROME_LINES + prompt + (drawn.folded ? FOLD_ROW_LINES : 0) + drawnGroupLines(drawn.assistants, request.cols, true)
 }
 
 const encoder = new TextEncoder()
@@ -263,19 +224,13 @@ export async function readTurnPage(read: TurnRead, request: TurnPageRequest): Pr
   do {
     const page = await read(before)
     if (page.messages.length === 0) break
-    const { drawn, sent } = viewTurn(page.messages, request)
+    const sent = projectTurn(page.messages, request)
     turns.unshift(page.nextCursor === undefined ? sent : { ...sent, cursor: page.nextCursor })
-    lines += estimateTurnLines(drawn, request.cols)
+    lines += estimateTurnLines(page.messages, request)
     bytes += encoder.encode(JSON.stringify(sent.messages)).byteLength
     before = page.nextCursor
   } while (before !== undefined && lines < wanted && turns.length < TURN_PAGE_TURN_CAP && bytes < TURN_PAGE_BYTE_CAP)
   return { turns }
-}
-
-/** One turn opened: every part it has, its tools as headers, read before `before` (the newest turn without it). */
-export async function readOpenTurn(read: TurnRead, settings: ReaderSettings, before?: string): Promise<PageTurn> {
-  const page = await read(before)
-  return { messages: headed(page.messages, settings), ...(page.nextCursor === undefined ? {} : { cursor: page.nextCursor }) }
 }
 
 /** A session's first read from its row and outline, with the first page read through `read` only when `request` asks for one. */

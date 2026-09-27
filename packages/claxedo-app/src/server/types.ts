@@ -164,10 +164,6 @@ export type ReaderSettings = { readonly reasoning: boolean; readonly shell: bool
 
 export type PageShape = ReaderSettings & { readonly rows: number; readonly cols: number }
 
-export type FoldedTurn = { readonly foldableCount: number; readonly openBefore?: string }
-
-export type TurnPageRead = { readonly transcript: TranscriptPage; readonly folded: ReadonlyMap<string, FoldedTurn> }
-
 export type SessionGoal = RuntimeGoalSnapshot
 
 export type GoalAction = "pause" | "resume" | "remove" | "stop"
@@ -183,7 +179,6 @@ export type SessionFirstRead = {
   readonly diff: readonly FileDiff[]
   readonly outline: SessionOutline | undefined
   readonly transcript: TranscriptPage
-  readonly folded: ReadonlyMap<string, FoldedTurn>
   readonly latestTurn: TranscriptPage | undefined
 }
 

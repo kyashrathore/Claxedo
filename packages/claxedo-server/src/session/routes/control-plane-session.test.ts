@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import type { FoldRead, ReaderSettings } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { ReaderSettings } from "@claxedo/agent-sdk-runtime/turn-page"
 import { exerciseToolHeaderReads, toolHeaderTranscript } from "@claxedo/server-core/platform/auth/turn-page.conformance"
 import type { ControlPlaneServices } from "../../authority/services"
 
@@ -57,7 +57,6 @@ function servicesWithWorkspaceOpenAuthorization(
 }
 
 const signedOptions = {
-  foldRead: "terminal" as const,
   authConfig: {
     enabled: true as const,
     issuer: "https://auth.example.test",
@@ -331,7 +330,6 @@ describe("control plane session routes", () => {
     })
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 7)
     const app = ControlPlaneSessionRoutes(svc, {
-      foldRead: "terminal",
       authConfig: {
         enabled: true,
         issuer: "https://auth.example.test",
@@ -383,7 +381,7 @@ describe("control plane session routes", () => {
     expect(authority.readSessionFirstRead).toHaveBeenCalledWith(expect.anything(), {
       sessionId: "session-1",
       workspaceId: "ws_1",
-      firstPage: { rows: 10, cols: 100, reasoning: false, shell: false, edit: false, fold: "terminal" },
+      firstPage: { rows: 10, cols: 100, reasoning: false, shell: false, edit: false },
     })
     expect(missingOutline.status).toBe(404)
     await expect(missingOutline.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
@@ -433,7 +431,7 @@ describe("control plane session routes", () => {
     expect(authority.readSessionPage).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       sessionId: "session-1",
       workspaceId: "ws_1",
-      page: { rows: 10, cols: 100, reasoning: false, shell: true, edit: false, before: "cursor-2", fold: "terminal" },
+      page: { rows: 10, cols: 100, reasoning: false, shell: true, edit: false, before: "cursor-2" },
     })
 
     authority.readSessionPage.mockClear()
@@ -452,37 +450,6 @@ describe("control plane session routes", () => {
     expect(missing.status).toBe(404)
     await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
     expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
-  })
-
-  test("a signed turn read answers the authority's open turn, passes the reader's settings and cursor, and the router's fold read reaches the signed page", async () => {
-    const svc = services()
-    const turn = { messages: [{ info: { id: "u2", role: "user" }, parts: [] }], cursor: "cursor-2" }
-    const authority = {
-      readSessionTurn: vi.fn(async (_auth: unknown, input: { sessionId: string }) => (input.sessionId === "session-1" ? turn : undefined)),
-      readSessionPage: vi.fn(async () => ({ turns: [] })),
-    }
-    svc.authority = authority as never
-    const app = ControlPlaneSessionRoutes(svc, { ...signedOptions, foldRead: "headers" })
-    const headers = { Authorization: "Bearer signed-token" }
-
-    const read = await app.request("http://127.0.0.1/sessions/session-1/turn?workspaceId=ws_1&reasoning=1&shell=0&edit=0&before=cursor-3", { headers })
-    expect(read.status).toBe(200)
-    await expect(read.json()).resolves.toEqual(turn)
-    expect(authority.readSessionTurn).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
-      sessionId: "session-1",
-      workspaceId: "ws_1",
-      settings: { reasoning: true, shell: false, edit: false },
-      before: "cursor-3",
-    })
-    const refused = await app.request("http://127.0.0.1/sessions/session-1/turn?workspaceId=ws_1&reasoning=1&shell=0", { headers })
-    expect(refused.status).toBe(400)
-    await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
-    const missing = await app.request("http://127.0.0.1/sessions/session-2/turn?workspaceId=ws_1&reasoning=1&shell=0&edit=0", { headers })
-    expect(missing.status).toBe(404)
-    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
-
-    await app.request("http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&rows=10&cols=100&reasoning=0&shell=0&edit=0&before=cursor-3", { headers })
-    expect(authority.readSessionPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ page: expect.objectContaining({ fold: "headers" }) }))
   })
 
   test("a signed part read answers the authority's whole part and names a missing part or a session it cannot read", async () => {
@@ -983,7 +950,6 @@ describe("control plane session routes", () => {
     ])
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 2)
     const app = ControlPlaneSessionRoutes(svc, {
-      foldRead: "terminal",
       authConfig: {
         enabled: true,
         issuer: "https://auth.example.test",
@@ -1021,7 +987,7 @@ describe("machine session admission", () => {
   const request = (body: unknown, signed = false) => new Request(signed ? "https://control.example.test/sessions" : "http://127.0.0.1/sessions", { method: "POST", headers: { "content-type": "application/json", ...(signed ? { Authorization: "Bearer account" } : {}) }, body: JSON.stringify(body) })
   test("passes the selected machine, native harness and model to the admission owner", async () => {
     const createMachineSession = vi.fn(async () => ({ id: "native-session" }))
-    const app = ControlPlaneSessionRoutes(services(), { createMachineSession, foldRead: "terminal" })
+    const app = ControlPlaneSessionRoutes(services(), { createMachineSession })
     const response = await app.request(request({ workspaceId: "ws_1", harness: "pi", title: "Coding", model: { providerID: "anthropic", modelID: "selected" } }))
     expect(response.status).toBe(201)
     expect(await response.json()).toEqual({ session: { id: "native-session" } })
@@ -1036,7 +1002,7 @@ describe("machine session admission", () => {
     { workspaceId: "ws_1", harness: "pi", title: 42 }, [], null,
   ])("rejects invalid or removed contracts before native admission: %j", async body => {
     const createMachineSession = vi.fn(async () => ({ id: "unwanted" }))
-    const response = await ControlPlaneSessionRoutes(services(), { createMachineSession, foldRead: "terminal" }).request(request(body))
+    const response = await ControlPlaneSessionRoutes(services(), { createMachineSession }).request(request(body))
     expect(response.status).toBe(400)
     expect(createMachineSession).not.toHaveBeenCalled()
   })
@@ -1075,13 +1041,13 @@ describe("a loopback caller without a bearer reads the local projection's first 
   const second = [turnMessage("u2", "user", [{ type: "text", text: "second" }]), work, answer]
   const meta = sessionMeta({ id: "session-1", updatedAt: 30 })
 
-  function loopback(foldRead: FoldRead = "terminal") {
+  function loopback() {
     const svc = services()
     svc.projectionStore.session_meta = vi.fn(async (sessionId: string) => (sessionId === "session-1" ? meta : undefined))
     svc.projectionStore.read_session_messages = vi.fn(() => [...first, ...second])
     svc.projectionStore.read_session_message_page = vi.fn((_sessionId: string, page) =>
       "before" in page && page.before === "cursor-u2" ? { messages: first } : { messages: second, nextCursor: "cursor-u2" })
-    return { svc, app: ControlPlaneSessionRoutes(svc, { foldRead }) }
+    return { svc, app: ControlPlaneSessionRoutes(svc) }
   }
 
   const outline = {
@@ -1099,56 +1065,22 @@ describe("a loopback caller without a bearer reads the local projection's first 
     expect(await response.json()).toEqual({ session: meta, outline })
   })
 
-  test("with the reader's viewport, answers the first page: the latest turn folded with its cursor, the first turn whole", async () => {
+  test("with the reader's viewport, answers the first page: the first turn whole, and the latest turn with every part, its tools as headers, and its cursor", async () => {
     const { svc, app } = loopback()
     const response = await app.request("http://127.0.0.1/sessions/session-1/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
-      session: meta,
-      outline,
-      page: {
-        turns: [
-          { messages: first },
-          { messages: [second[0], { ...work, parts: [] }, answer], foldableCount: 2, cursor: "cursor-u2" },
-        ],
-      },
-    })
+    const { page, ...read } = await response.json()
+    expect(read).toEqual({ session: meta, outline })
+    expect(page.turns).toHaveLength(2)
+    expect(page.turns[0]).toEqual({ messages: first })
+    const latest = page.turns[1]
+    expect(Object.keys(latest).sort()).toEqual(["cursor", "messages"])
+    expect(latest.cursor).toBe("cursor-u2")
+    expect(latest.messages.map((message: { parts: Array<{ id: string }> }) => message.parts.map((part) => part.id))).toEqual(second.map((message) => message.parts.map((part) => part.id)))
+    expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })
+    expect(latest.messages[2]).toEqual(answer)
     expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(1, "session-1", { view: "latest-turn" })
     expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(2, "session-1", { view: "latest-turn", before: "cursor-u2" })
-  })
-
-  test("under the headers fold read the first page sends the folded latest turn with every part and no foldable count", async () => {
-    const { app } = loopback("headers")
-    const response = await app.request("http://127.0.0.1/sessions/session-1/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
-    expect(response.status).toBe(200)
-    const { page } = await response.json()
-    expect(page.turns[1].foldableCount).toBeUndefined()
-    expect(page.turns[1].messages.map((message: { parts: Array<{ id: string }> }) => message.parts.map((part) => part.id))).toEqual(second.map((message) => message.parts.map((part) => part.id)))
-    expect(page.turns[1].messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true })
-  })
-
-  test("a turn read opens the projection's newest turn, or the one before the reader's cursor, with every part and its tools as headers", async () => {
-    const { svc, app } = loopback()
-    const newest = await app.request("http://127.0.0.1/sessions/session-1/turn?reasoning=0&shell=0&edit=0")
-    expect(newest.status).toBe(200)
-    const opened = await newest.json()
-    expect(opened.cursor).toBe("cursor-u2")
-    expect(opened.foldableCount).toBeUndefined()
-    expect(opened.messages.map((message: { parts: Array<{ id: string }> }) => message.parts.map((part) => part.id))).toEqual(second.map((message) => message.parts.map((part) => part.id)))
-    expect(opened.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true })
-    const older = await app.request("http://127.0.0.1/sessions/session-1/turn?reasoning=0&shell=0&edit=0&before=cursor-u2")
-    expect(await older.json()).toEqual({ messages: first })
-    expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(1, "session-1", { view: "latest-turn" })
-    expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(2, "session-1", { view: "latest-turn", before: "cursor-u2" })
-
-    for (const query of ["reasoning=0&shell=0", "reasoning=0&shell=0&edit=0&before="]) {
-      const refused = await app.request(`http://127.0.0.1/sessions/session-1/turn?${query}`)
-      expect(refused.status, query).toBe(400)
-      expect(await refused.json()).toMatchObject({ error: { code: "turn_page_query_error" } })
-    }
-    const missing = await app.request("http://127.0.0.1/sessions/session-2/turn?reasoning=0&shell=0&edit=0")
-    expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
   })
 
   test("a page read answers the projection's turns before the reader's cursor, projected as the first page is", async () => {
@@ -1207,28 +1139,24 @@ describe("a loopback caller without a bearer reads the local projection's first 
     const transcript = toolHeaderTranscript("session-1")
     const starts = transcript.flatMap((message, index) => (message.info.role === "user" ? [index] : []))
     const turns = starts.map((start, index) => transcript.slice(start, starts[index + 1]))
-    const app = (foldRead: FoldRead) => {
-      const svc = services()
-      svc.projectionStore.session_meta = vi.fn(async (sessionId: string) => (sessionId === "session-1" ? meta : undefined))
-      svc.projectionStore.read_session_messages = vi.fn(() => transcript as never)
-      svc.projectionStore.read_session_message_page = vi.fn((_sessionId: string, page) => {
-        const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
-        return { messages: (turns[end - 1] ?? []) as never, ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
-      })
-      return ControlPlaneSessionRoutes(svc, { foldRead })
-    }
-    const apps = { terminal: app("terminal"), headers: app("headers") }
+    const svc = services()
+    svc.projectionStore.session_meta = vi.fn(async (sessionId: string) => (sessionId === "session-1" ? meta : undefined))
+    svc.projectionStore.read_session_messages = vi.fn(() => transcript as never)
+    svc.projectionStore.read_session_message_page = vi.fn((_sessionId: string, page) => {
+      const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
+      return { messages: (turns[end - 1] ?? []) as never, ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
+    })
+    const app = ControlPlaneSessionRoutes(svc)
     const settings = (reader: ReaderSettings) => `reasoning=${Number(reader.reasoning)}&shell=${Number(reader.shell)}&edit=${Number(reader.edit)}`
-    const read = async (foldRead: FoldRead, path: string) => {
-      const response = await apps[foldRead].request(`http://127.0.0.1/sessions/session-1/${path}`)
+    const read = async (path: string) => {
+      const response = await app.request(`http://127.0.0.1/sessions/session-1/${path}`)
       expect(response.status, path).toBe(200)
       return await response.json()
     }
 
     await exerciseToolHeaderReads({
-      first: async (reader, fold) => (await read(fold, `outline?rows=40&cols=100&${settings(reader)}`)).page,
-      page: async (reader, fold, before) => await read(fold, `page?rows=40&cols=100&${settings(reader)}&before=${before}`),
-      turn: async (reader, before) => await read("terminal", `turn?${settings(reader)}${before === undefined ? "" : `&before=${before}`}`),
+      first: async (reader) => (await read(`outline?rows=40&cols=100&${settings(reader)}`)).page,
+      page: async (reader, before) => await read(`page?rows=40&cols=100&${settings(reader)}&before=${before}`),
     }, transcript)
   })
 })

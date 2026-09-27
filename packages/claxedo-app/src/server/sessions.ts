@@ -8,7 +8,7 @@ import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { readSession } from "./session-reads"
-import { readTurnOpened, readPart, readTurnPageBefore } from "./transcript-reads"
+import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
 import { cancelRunningTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
@@ -91,7 +91,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     list: (options) => listSessions(context, options),
     read: (ref, shape, held) => readSession(context, ref, shape, held),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
-    openTurn: (ref, settings, before) => readTurnOpened(context, ref, settings, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),
     turn: (ref, turnId) => readTurn(context, ref, turnId),
     create: async (input) => {

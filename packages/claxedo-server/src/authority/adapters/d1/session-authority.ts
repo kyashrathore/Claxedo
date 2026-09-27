@@ -52,7 +52,7 @@ import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-cor
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
-import { readFirstRead, readOpenTurn, readTurnPage, type ReaderSettings, type TurnPageRequest, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -67,7 +67,6 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "readSessionMessages",
   "readSessionFirstRead",
   "readSessionPage",
-  "readSessionTurn",
   "readSessionPart",
   "syncSessionMessages",
   "upsertSessionVisibility",
@@ -1576,18 +1575,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return await readFirstRead(sessionJson(access), outline, this.turnRead(sessionId, workspaceId), args.firstPage)
   }
 
-  async readSessionPage(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; page: TurnPageRequest & { before: string } }) {
+  async readSessionPage(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } }) {
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     if (!(await this.readableSession(auth, sessionId, workspaceId))) return undefined
     return await readTurnPage(this.turnRead(sessionId, workspaceId), args.page)
-  }
-
-  async readSessionTurn(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; settings: ReaderSettings; before?: string }) {
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!(await this.readableSession(auth, sessionId, workspaceId))) return undefined
-    return await readOpenTurn(this.turnRead(sessionId, workspaceId), args.settings, args.before)
   }
 
   async readSessionPart(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; messageId: string; partId: string }) {

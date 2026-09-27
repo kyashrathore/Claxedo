@@ -1,11 +1,11 @@
-import { readCentralOpenTurn, readCentralPart, readCentralTurnPage } from "./central-session"
+import { readCentralPart, readCentralTurnPage } from "./central-session"
 import { responseError, ServerError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { PageShape, ReaderSettings, SessionRef, TranscriptPage, TranscriptPart, TurnPageRead } from "./types"
-import { openTurnFromWire, partFromWire, settingsQuery, turnPageFromWire, viewportQuery } from "./wire/turn-page"
+import type { PageShape, SessionRef, TranscriptPage, TranscriptPart } from "./types"
+import { partFromWire, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 
-const NO_PAGE: TurnPageRead = { transcript: { entries: [] }, folded: new Map() }
+const NO_PAGE: TranscriptPage = { entries: [] }
 
 async function runtimeBody(context: SessionContext, where: RuntimeRoute, path: string, what: string): Promise<unknown> {
   const response = await context.transport.runtime(where, path)
@@ -29,25 +29,14 @@ function offlineRefusal(what: string): never {
   throw new ServerError({ class: "network", message: `${what} cannot be read while the session's machine is offline` })
 }
 
-export function readTurnPageBefore(context: SessionContext, ref: SessionRef, shape: PageShape, before: string): Promise<TurnPageRead> {
+export function readTurnPageBefore(context: SessionContext, ref: SessionRef, shape: PageShape, before: string): Promise<TranscriptPage> {
   const path = withQuery(sessionEndpoint(ref, "/page"), { before, ...viewportQuery(shape) })
   return readHistory(
     context,
     ref,
-    async (where) => turnPageFromWire(await runtimeBody(context, where, path, "Transcript page"), before),
+    async (where) => turnPageFromWire(await runtimeBody(context, where, path, "Transcript page")),
     (workspaceId) => readCentralTurnPage(context, workspaceId, ref, shape, before),
     () => NO_PAGE,
-  )
-}
-
-export function readTurnOpened(context: SessionContext, ref: SessionRef, settings: ReaderSettings, before: string | undefined): Promise<TranscriptPage> {
-  const path = withQuery(sessionEndpoint(ref, "/turn"), { ...settingsQuery(settings), ...(before ? { before } : {}) })
-  return readHistory(
-    context,
-    ref,
-    async (where) => openTurnFromWire(await runtimeBody(context, where, path, "Opened turn")),
-    (workspaceId) => readCentralOpenTurn(context, workspaceId, ref, settings, before),
-    () => offlineRefusal("A folded turn"),
   )
 }
 

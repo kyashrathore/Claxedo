@@ -9,7 +9,7 @@ import type {
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
 import type { LatestView } from "../../session/latest-view-page"
-import type { PageTurn, ReaderSettings, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 
@@ -598,13 +598,8 @@ export type WorkspaceAuthority = {
   /** The turns before `page.before`, read and projected as the first page is; nothing when the reader cannot read the session. */
   readSessionPage: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; page: TurnPageRequest & { before: string } },
+    args: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } },
   ) => Promise<TurnPage | undefined>
-  /** One turn opened, every part with its tools as headers: the newest, or the one before `before`; nothing when the reader cannot read the session. */
-  readSessionTurn: (
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; settings: ReaderSettings; before?: string },
-  ) => Promise<PageTurn | undefined>
   /** One part of one of the session's messages whole, `{}` when there is no such part; nothing when the reader cannot read the session. */
   readSessionPart: (
     auth: SignedControlPlaneAuth,

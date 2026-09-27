@@ -1,6 +1,6 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { ServerError } from "../errors"
-import type { OutlineTurn, SessionOutline, TranscriptPage, TurnPageRead } from "../types"
+import type { OutlineTurn, SessionOutline, TranscriptPage } from "../types"
 import { cursorPage, pageTurnsFromWire, turnPageRead } from "./turn-page"
 
 type WireTurn = {
@@ -27,17 +27,14 @@ function outlineFromWire(body: unknown): SessionOutline {
   return { turns: record.turns.flatMap((turn) => turnFromWire(turn) ?? []), complete: record.complete === true }
 }
 
-export type FirstPageFromWire = TurnPageRead & { readonly latestTurn: TranscriptPage | undefined }
+export type FirstPageFromWire = { readonly transcript: TranscriptPage; readonly latestTurn: TranscriptPage | undefined }
 
-export const NO_FIRST_PAGE: FirstPageFromWire = { transcript: { entries: [] }, folded: new Map(), latestTurn: undefined }
+export const NO_FIRST_PAGE: FirstPageFromWire = { transcript: { entries: [] }, latestTurn: undefined }
 
 function firstPageFromWire(body: unknown): FirstPageFromWire {
   const turns = pageTurnsFromWire(body)
   const latest = turns.at(-1)
-  return {
-    ...turnPageRead(turns, undefined),
-    latestTurn: latest && latest.foldableCount === undefined ? cursorPage(latest.entries, latest.cursor) : undefined,
-  }
+  return { transcript: turnPageRead(turns), latestTurn: latest ? cursorPage(latest.entries, latest.cursor) : undefined }
 }
 
 export type FirstReadFromWire = { readonly session: unknown; readonly outline: SessionOutline; readonly page?: FirstPageFromWire }

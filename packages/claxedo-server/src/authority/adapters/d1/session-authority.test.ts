@@ -1318,7 +1318,7 @@ describe("D1 latest views", () => {
       authority: input.sessions,
       workspaceId: "ws_main",
       creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
-    })).resolves.toEqual({ outline: ["u1", "u2"], foldableCounts: [0, 2] })
+    })).resolves.toEqual({ outline: ["u1", "u2"], page: ["u1", "u2"] })
     await expect(exerciseTurnPageConformance({
       authority: input.sessions,
       workspaceId: "ws_main",

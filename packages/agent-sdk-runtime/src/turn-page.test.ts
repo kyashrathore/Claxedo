@@ -1,18 +1,15 @@
 import { describe, expect, test } from "bun:test"
+import { toolPartHeader } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart, AgentMessage } from "./index"
 import {
-  FOLD_READ_ENV,
   TURN_PAGE_BYTE_CAP,
   TURN_PAGE_TURN_CAP,
   TurnPageQueryError,
   estimateTurnLines,
-  foldReadFrom,
   parseOlderTurnPageQuery,
-  parseOpenTurnQuery,
   parseTurnPageQuery,
   projectTurn,
   readFirstRead,
-  readOpenTurn,
   readTurnPage,
   type PageTurn,
   type TurnRead,
@@ -80,40 +77,52 @@ function turnReader(turnsOldestFirst: AgentMessage[][]) {
   return { read, calls }
 }
 
-const settings = { reasoning: false, shell: false, edit: false, fold: "terminal" as const }
-const reasoned = { ...settings, reasoning: true }
+const settings = { reasoning: false, shell: false, edit: false }
 const viewport = (rows: number) => ({ ...settings, rows, cols: 100 })
-
-const shapeOf = (messages: AgentMessage[]) => messages.map((message) => [message.info.id, message.parts.map((part) => part.id)])
 
 const drawnTexts = (turn: PageTurn) =>
   turn.messages.flatMap((message) => message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])))
 
 describe("projectTurn", () => {
-  test("a settled turn that folds is its user message, every assistant envelope, and only the parts the fold leaves drawn", () => {
-    const turn = workedTurn("Fix the build", "Done: the build passes.")
-    const page = projectTurn(turn, settings)
-    expect(page.foldableCount).toBe(3)
-    expect(page.messages.map((message) => message.info.id)).toEqual(turn.map((message) => message.info.id))
-    expect(drawnTexts(page)).toEqual(["Fix the build", "Done: the build passes."])
-    expect(page.messages[1]?.parts).toEqual([])
-  })
-
-  test("a part the fold never hides stays drawn, and the answer is the turn's last text even when a later message has none", () => {
-    const id = nextId("user")
-    const image = file()
-    const turn = [user(id, "Draw it"), assistant(id, [text("Working."), tool("bash"), text("Here it is."), image]), assistant(id, [tool("bash")])]
-    const page = projectTurn(turn, settings)
-    expect(page.foldableCount).toBe(3)
-    expect(page.messages[1]?.parts.map((part) => part.id)).toEqual([turn[1].parts[2].id, image.id])
-    expect(page.messages[2]?.parts).toEqual([])
-  })
-
-  test("a turn below the fold minimum, a busy turn, an interrupted turn and a failed turn are drawn whole", () => {
+  test("every turn is sent with every part, each tool its header, whether or not the reader folds it", () => {
     const id = nextId("user")
     const short = [user(id, "Hi"), assistant(id, [text("Hello.")])]
-    expect(projectTurn(short, settings)).toEqual({ messages: short })
+    const busy = workedTurn("Go", "Still going")
+    busy[2] = assistant(busy[0].info.id, busy[2].parts, {})
+    for (const turn of [workedTurn("Fix the build", "Done."), short, busy]) {
+      expect(projectTurn(turn, settings)).toEqual({
+        messages: turn.map((message) => ({ ...message, parts: message.parts.map((part) => (part.type === "tool" ? toolPartHeader(part) : part)) })),
+      })
+    }
+  })
+})
 
+describe("estimateTurnLines", () => {
+  const request = { cols: 100, reasoning: false }
+
+  test("a folded one-line exchange is its chrome, the prompt, the fold row and the answer", () => {
+    expect(estimateTurnLines(workedTurn("Fix the build", "Done."), request)).toBe(3 + 1 + 2 + 1)
+  })
+
+  test("prose wraps at the column width, the prompt at the user bubble's width, and blank lines take no line", () => {
+    const prompt = "p".repeat(90)
+    const answer = `${"a".repeat(250)}\n\n${"b".repeat(100)}\n- one\n- two`
+    expect(estimateTurnLines(workedTurn(prompt, answer), request)).toBe(3 + 2 + 2 + (3 + 1 + 1 + 1))
+  })
+
+  test("a fenced block counts every code line once and adds its frame", () => {
+    const code = Array.from({ length: 12 }, (_, index) => `const value${index} = ${"x".repeat(150)}`).join("\n")
+    const answer = `Here is the change:\n\n\`\`\`ts\n${code}\n\`\`\`\nThat is all.`
+    expect(estimateTurnLines(workedTurn("Show me", answer), request)).toBe(3 + 1 + 2 + (1 + 2 + 12 + 1))
+  })
+
+  test("a turn that does not fold draws a row for every tool group and wraps every text", () => {
+    const id = nextId("user")
+    expect(estimateTurnLines([user(id, "Hi"), assistant(id, [tool("bash"), text("Hello.")])], request)).toBe(3 + 1 + 2 + 1)
+  })
+
+  test("a busy, interrupted, failed or cancelled turn is drawn whole, with no fold row", () => {
+    const whole = 3 + 1 + (1 + 2 + 2 + 1)
     const busy = workedTurn("Go", "Still going")
     busy[2] = assistant(busy[0].info.id, busy[2].parts, {})
     const aborted = workedTurn("Go", "Stopped")
@@ -121,50 +130,16 @@ describe("projectTurn", () => {
     const failed = workedTurn("Go", "Broke")
     failed[2] = assistant(failed[0].info.id, failed[2].parts, { completed: 6_000, error: "APIError" })
     const cancelled = workedTurn("Go", "Cancelled")
-    const drawn = [
-      [busy, projectTurn(busy, settings)],
-      [aborted, projectTurn(aborted, settings)],
-      [failed, projectTurn(failed, settings)],
-      [cancelled, projectTurn(cancelled, { ...settings, cancelledAssistantMessageId: cancelled[2].info.id })],
-    ] as const
-    for (const [turn, page] of drawn) {
-      expect(page.foldableCount).toBeUndefined()
-      expect(shapeOf(page.messages)).toEqual(shapeOf(turn))
-    }
+    expect(estimateTurnLines(busy, request)).toBe(whole)
+    expect(estimateTurnLines(aborted, request)).toBe(whole)
+    expect(estimateTurnLines(failed, request)).toBe(whole)
+    expect(estimateTurnLines(cancelled, { ...request, cancelledAssistantMessageId: cancelled[2].info.id })).toBe(whole)
   })
 
-  test("reasoning counts toward the fold only when the reader shows it", () => {
+  test("a part the fold never hides stays drawn under the fold row", () => {
     const id = nextId("user")
-    const turn = [user(id, "Think"), assistant(id, [text("First."), reasoning("Weighing it."), text("Answer.")])]
-    expect(projectTurn(turn, settings).foldableCount).toBeUndefined()
-    expect(projectTurn(turn, reasoned).foldableCount).toBe(2)
-  })
-})
-
-describe("estimateTurnLines", () => {
-  const folded = (prompt: string, answer: string) => projectTurn(workedTurn(prompt, answer), settings)
-
-  test("a folded one-line exchange is its chrome, the prompt, the fold row and the answer", () => {
-    expect(estimateTurnLines(folded("Fix the build", "Done."), 100)).toBe(3 + 1 + 2 + 1)
-  })
-
-  test("prose wraps at the column width, the prompt at the user bubble's width, and blank lines take no line", () => {
-    const prompt = "p".repeat(90)
-    const answer = `${"a".repeat(250)}\n\n${"b".repeat(100)}\n- one\n- two`
-    expect(estimateTurnLines(folded(prompt, answer), 100)).toBe(3 + 2 + 2 + (3 + 1 + 1 + 1))
-  })
-
-  test("a fenced block counts every code line once and adds its frame", () => {
-    const code = Array.from({ length: 12 }, (_, index) => `const value${index} = ${"x".repeat(150)}`).join("\n")
-    const answer = `Here is the change:\n\n\`\`\`ts\n${code}\n\`\`\`\nThat is all.`
-    expect(estimateTurnLines(folded("Show me", answer), 100)).toBe(3 + 1 + 2 + (1 + 2 + 12 + 1))
-  })
-
-  test("a whole turn draws a row for every tool group and wraps every text", () => {
-    const id = nextId("user")
-    const whole = projectTurn([user(id, "Hi"), assistant(id, [tool("bash"), text("Hello.")])], settings)
-    expect(whole.foldableCount).toBeUndefined()
-    expect(estimateTurnLines(whole, 100)).toBe(3 + 1 + 2 + 1)
+    const turn = [user(id, "Draw it"), assistant(id, [text("Working."), tool("bash"), text("Here it is."), file()]), assistant(id, [tool("bash")])]
+    expect(estimateTurnLines(turn, request)).toBe(3 + 1 + 2 + (1 + 2))
   })
 })
 
@@ -191,12 +166,12 @@ describe("readTurnPage", () => {
     expect(page.turns).toHaveLength(TURN_PAGE_TURN_CAP)
   })
 
-  test("stops once the page reaches the byte cap and never trims the turn that crossed it", async () => {
+  test("a cold read stops once the page reaches the byte cap and never trims the turn that crossed it", async () => {
     const huge = "z".repeat(TURN_PAGE_BYTE_CAP)
     const turns = [workedTurn("Older", "Older answer."), workedTurn("Big", huge), workedTurn("Newest", "Short.")]
     const page = await readTurnPage(turnReader(turns).read, viewport(10_000))
     expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Big", "Newest"])
-    expect(drawnTexts(page.turns[0])[1]).toBe(huge)
+    expect(drawnTexts(page.turns[0]).at(-1)).toBe(huge)
   })
 
   test("an empty session has an empty page", async () => {
@@ -246,24 +221,6 @@ describe("parseOlderTurnPageQuery", () => {
   })
 })
 
-describe("parseOpenTurnQuery", () => {
-  const query = (search: string) => {
-    const params = new URLSearchParams(search)
-    return (name: string) => params.get(name) ?? undefined
-  }
-
-  test("an open-turn read names the reader's settings, and a cursor only when it reads before one", () => {
-    expect(parseOpenTurnQuery(query("reasoning=1&shell=0&edit=1"))).toEqual({ settings: { reasoning: true, shell: false, edit: true } })
-    expect(parseOpenTurnQuery(query("reasoning=0&shell=1&edit=0&before=cursor-1"))).toEqual({ settings: { reasoning: false, shell: true, edit: false }, before: "cursor-1" })
-  })
-
-  test("a read missing a setting, with one out of range, or with an empty cursor is refused", () => {
-    for (const search of ["reasoning=0&shell=0", "reasoning=0&shell=0&edit=2", "reasoning=0&shell=0&edit=0&before="]) {
-      expect(() => parseOpenTurnQuery(query(search)), search).toThrow(TurnPageQueryError)
-    }
-  })
-})
-
 describe("readFirstRead", () => {
   const outline = { turns: [{ id: "u", createdAt: 1 }], complete: true }
 
@@ -291,7 +248,6 @@ describe("tool bodies stay off every page", () => {
   test("a latest turn that does not fold sends its tool as a header, so the page does not grow with the tool's output", async () => {
     const small = await readTurnPage(turnReader([answeredWith("x".repeat(1024))]).read, request)
     const large = await readTurnPage(turnReader([answeredWith("x".repeat(1024 * 1024))]).read, request)
-    expect(small.turns[0]?.foldableCount).toBeUndefined()
     expect(bytes(large)).toBe(bytes(small))
   })
 
@@ -312,42 +268,5 @@ describe("tool parts on a page", () => {
     expect(tools(projectTurn(turn, settings))).toEqual([["bash", true, ""], ["edit", true, ""]])
     expect(tools(projectTurn(turn, { ...settings, shell: true }))).toEqual([["bash", false, "listing"], ["edit", true, ""]])
     expect(tools(projectTurn(turn, { ...settings, edit: true }))).toEqual([["bash", true, ""], ["edit", false, "diff"]])
-  })
-})
-
-describe("fold reads", () => {
-  const headers = { ...settings, fold: "headers" as const }
-
-  test("under headers a folded turn sends every part, its tools as headers, and names no fold count", () => {
-    const turn = workedTurn("Fix the build", "Done.")
-    const page = projectTurn(turn, headers)
-    expect(page.foldableCount).toBeUndefined()
-    expect(shapeOf(page.messages)).toEqual(shapeOf(turn))
-    expect(page.messages.flatMap((message) => message.parts).filter((part) => part.type === "tool").every((part) => part.type === "tool" && part.headerOnly)).toBe(true)
-  })
-
-  test("both reads fill a page with the same turns, since the reader draws a folded turn closed either way", async () => {
-    const turns = Array.from({ length: 10 }, (_, index) => workedTurn(`Prompt ${index}`, `Answer ${index}.`))
-    const terminal = await readTurnPage(turnReader(turns).read, viewport(10))
-    const opened = await readTurnPage(turnReader(turns).read, { ...viewport(10), fold: "headers" })
-    expect(opened.turns.map((turn) => turn.cursor)).toEqual(terminal.turns.map((turn) => turn.cursor))
-  })
-
-  test("an opened turn is every part it has, its tools as headers, read before a cursor or from the newest", async () => {
-    const turns = [workedTurn("First", "One."), workedTurn("Second", "Two.")]
-    const newest = await readOpenTurn(turnReader(turns).read, settings)
-    expect(shapeOf(newest.messages)).toEqual(shapeOf(turns[1]!))
-    expect(newest.cursor).toBe("cursor-1")
-    expect(newest.foldableCount).toBeUndefined()
-    const older = await readOpenTurn(turnReader(turns).read, settings, "cursor-1")
-    expect(shapeOf(older.messages)).toEqual(shapeOf(turns[0]!))
-    expect(older.cursor).toBeUndefined()
-  })
-
-  test(`${FOLD_READ_ENV} names terminal or headers, and terminal when unset`, () => {
-    expect(foldReadFrom(undefined)).toBe("terminal")
-    expect(foldReadFrom("")).toBe("terminal")
-    expect(foldReadFrom("headers")).toBe("headers")
-    expect(() => foldReadFrom("both")).toThrow()
   })
 })

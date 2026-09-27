@@ -8,7 +8,6 @@ import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
 import { settleTurn } from "./settle"
 import { isReading, type SessionPhase } from "./model"
-import { openFoldedTurn } from "./folded-turn"
 import { loadOlder } from "./older"
 import { loadPart } from "./part"
 import { sendPrompt, showSent, stopTurn } from "./send"
@@ -36,7 +35,6 @@ function loadState(phase: SessionPhase): SessionLoadState {
     case "loading":
       return LOADING
     case "ready":
-    case "completing":
     case "rereading":
       return READY
     case "missing":
@@ -79,7 +77,6 @@ function sessionView(context: TranscriptContext): SessionView {
     olderState: older.state,
     outline: context.outline,
     loadOlder: () => loadOlder(context),
-    loadTurn: (userMessageId) => openFoldedTurn(context, userMessageId),
     loadPart: (messageId, partId) => loadPart(context, messageId, partId),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),

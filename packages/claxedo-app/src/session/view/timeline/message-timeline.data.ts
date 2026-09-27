@@ -81,7 +81,6 @@ export namespace Timeline {
     isFoldedChoice: (userMessageId: string) => boolean | undefined = () => undefined,
     lastTurn?: TurnOutcome,
     visibleAssistantMessageIds?: ReadonlySet<string>,
-    folded?: { readonly foldableCount: number },
     isPartExpanded: (partId: string) => boolean = () => false,
     settlePending = false,
     thinkingHeading?: string,
@@ -149,7 +148,7 @@ export namespace Timeline {
       const found = partById.get(ref.partId)
       return found ? { type: untrack(() => found.type), userOpen: isPartExpanded(ref.partId) } : found
     }
-    const foldableCount = folded ? folded.foldableCount : countFoldableGroups(turnSegments(assistantPartRefs, shape).flat(), partOfRef)
+    const foldableCount = countFoldableGroups(turnSegments(assistantPartRefs, shape).flat(), partOfRef)
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
@@ -167,7 +166,7 @@ export namespace Timeline {
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
     const working = isActive && (status === "working" || status === "retrying" || settlePending)
-    const decided = turnFoldDecision({
+    const fold = turnFoldDecision({
       foldableCount,
       settled: shape.settled,
       interrupted,
@@ -175,8 +174,6 @@ export namespace Timeline {
       busy: working,
       userChoice: isFoldedChoice(userMessage.id),
     })
-    const opening = folded !== undefined && !decided.folded && !working
-    const fold = opening ? { ...decided, folded: true } : decided
     const turnTokens = assistantMessages.reduce((sum, message) => {
       const t = message.tokens
       if (!t) return sum
@@ -200,7 +197,6 @@ export namespace Timeline {
           durationMs,
           foldCount: foldableCount,
           folded: fold.folded,
-          opening,
           tokens: turnTokens,
           cost: turnCost,
         }),

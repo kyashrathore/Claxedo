@@ -4,7 +4,7 @@ export type StillFrame = { readonly at: number; readonly scrollTop: number; read
 
 export type ScrollEvent = { readonly at: number; readonly scrollTop: number }
 
-export type TranscriptRead = { readonly at: number; readonly kind: "first" | "page" | "turn" | "part" | "message" | "row"; readonly path: string }
+export type TranscriptRead = { readonly at: number; readonly kind: "first" | "page" | "part" | "message" | "row"; readonly path: string }
 
 export type Stillness = {
   readonly frames: readonly StillFrame[]
@@ -26,7 +26,6 @@ function installStillness({ sessionId, marker, scroller: inner }: { readonly ses
     const rest = url.pathname.slice(url.pathname.indexOf(prefix) + prefix.length)
     if (rest === "/outline") return "first"
     if (rest === "/page") return "page"
-    if (rest === "/turn") return "turn"
     if (/^\/message\/[^/]+\/part\/[^/]+$/.test(rest)) return "part"
     if (rest === "/message") return "message"
     if (rest === "" && !url.searchParams.has("view")) return "row"

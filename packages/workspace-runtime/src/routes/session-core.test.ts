@@ -672,7 +672,7 @@ describe("createSessionRoutes message paging", () => {
     ]
   }
 
-  function pagedRoutes(foldRead?: "terminal" | "headers") {
+  function pagedRoutes() {
     const turns = Array.from({ length: 30 }, (_, index) => pagedTurn(index))
     const reads: AgentMessagePageInput[] = []
     const app = routes({
@@ -684,14 +684,13 @@ describe("createSessionRoutes message paging", () => {
         },
       }),
       getTurnOutline: () => ({ turns: [], complete: true }),
-      foldRead,
     })
     return { app, turns, reads }
   }
 
   const viewport = "rows=10&cols=100&reasoning=0&shell=0&edit=0"
 
-  test("a first read's page walks back one whole turn at a time and folds each turn the fold decision folds", async () => {
+  test("a first read's page walks back one whole turn at a time and sends every part of each turn, its tools as headers", async () => {
     const { app, turns, reads } = pagedRoutes()
 
     const response = await app.request(`http://localhost/session/session-1/outline?${viewport}`)
@@ -700,11 +699,10 @@ describe("createSessionRoutes message paging", () => {
     const { page } = await response.json()
     expect(reads).toEqual([{ view: "latest-turn" }, ...["29", "28", "27", "26"].map((before) => ({ view: "latest-turn" as const, before }))])
     expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["25", "26", "27", "28", "29"])
-    expect(page.turns[4]).toEqual({
-      messages: [turns[29]?.[0], { ...turns[29]?.[1], parts: [] }, turns[29]?.[2]],
-      foldableCount: 2,
-      cursor: "29",
-    })
+    const latest = page.turns.at(-1)
+    expect(Object.keys(latest).sort()).toEqual(["cursor", "messages"])
+    expect(latest.messages.map((message: AgentMessage) => message.parts.map((part) => part.id))).toEqual(turns[29]!.map((message) => message.parts.map((part) => part.id)))
+    expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })
   })
 
   test("a page read answers the turns before its cursor, projected as the first page is", async () => {
@@ -716,33 +714,7 @@ describe("createSessionRoutes message paging", () => {
     expect(response.headers.get("cache-control")).toBe("no-store")
     const page = await response.json()
     expect(reads).toEqual(["27", "26", "25", "24", "23"].map((before) => ({ view: "latest-turn" as const, before })))
-    expect(page.turns.map((item: { cursor: string; foldableCount: number }) => [item.cursor, item.foldableCount])).toEqual([["22", 2], ["23", 2], ["24", 2], ["25", 2], ["26", 2]])
-  })
-
-  test("under the headers fold read a folded turn sends every part, its tools as headers", async () => {
-    const { app, turns } = pagedRoutes("headers")
-    const { page } = await (await app.request(`http://localhost/session/session-1/outline?${viewport}`)).json()
-    const latest = page.turns.at(-1)
-    expect(latest.foldableCount).toBeUndefined()
-    expect(latest.messages.map((message: AgentMessage) => message.parts.map((part) => part.id))).toEqual(turns[29]!.map((message) => message.parts.map((part) => part.id)))
-    expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })
-  })
-
-  test("a turn read opens the newest turn, or the one before its cursor, with every part and its tools as headers", async () => {
-    const { app, turns, reads } = pagedRoutes()
-    const newest = await app.request("http://localhost/session/session-1/turn?reasoning=0&shell=0&edit=0")
-    expect(newest.status).toBe(200)
-    const opened = await newest.json()
-    expect(opened.cursor).toBe("29")
-    expect(opened.foldableCount).toBeUndefined()
-    expect(opened.messages[1].parts.map((part: { id: string }) => part.id)).toEqual(turns[29]![1]!.parts.map((part) => part.id))
-    expect(opened.messages[1].parts[1]).toMatchObject({ headerOnly: true })
-    const older = await (await app.request("http://localhost/session/session-1/turn?reasoning=0&shell=0&edit=0&before=29")).json()
-    expect(older.messages[0].info.id).toBe("user-28")
-    expect(reads).toEqual([{ view: "latest-turn" }, { view: "latest-turn", before: "29" }])
-    for (const query of ["reasoning=0&shell=0", "reasoning=0&shell=0&edit=0&before="]) {
-      expect((await app.request(`http://localhost/session/session-1/turn?${query}`)).status).toBe(400)
-    }
+    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["22", "23", "24", "25", "26"])
   })
 
   const toolBody = (name: string, bytes = 1024) => `${name}:${"x".repeat(bytes)}`
@@ -787,7 +759,7 @@ describe("createSessionRoutes message paging", () => {
   test("every read sends a tool as its header, and whole only when the reader's shell or edit setting opens it", async () => {
     const turns = bodiedTurns()
     const stored = new Map(turns.flat().map((message) => [message.info.id, message.parts.map((part) => part.id)]))
-    const app = (foldRead: "terminal" | "headers") => routes({
+    const app = routes({
       adapter: adapter({
         getMessagePage: async (_id, page) => {
           const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
@@ -795,13 +767,11 @@ describe("createSessionRoutes message paging", () => {
         },
       }),
       getTurnOutline: () => ({ turns: [], complete: true }),
-      foldRead,
     })
-    const apps = { terminal: app("terminal"), headers: app("headers") }
-    type Turn = { messages: AgentMessage[]; foldableCount?: number; cursor?: string }
+    type Turn = { messages: AgentMessage[]; cursor?: string }
     const sentAsHeaders = (label: string, sent: Turn[], reader: { shell: boolean; edit: boolean }) => {
       const tools = sent.flatMap((turn) => {
-        if (turn.foldableCount === undefined) expect(turn.messages.map((message) => message.parts.map((part) => part.id)), label).toEqual(turn.messages.map((message) => stored.get(message.info.id)!))
+        expect(turn.messages.map((message) => message.parts.map((part) => part.id)), label).toEqual(turn.messages.map((message) => stored.get(message.info.id)!))
         return turn.messages.flatMap((message) => message.parts.filter((part): part is AgentToolPart => part.type === "tool"))
       })
       expect(new Set(tools.map((part) => part.tool)), label).toEqual(new Set(["read", "bash", "edit"]))
@@ -820,20 +790,13 @@ describe("createSessionRoutes message paging", () => {
 
     for (const reader of [{ reasoning: false, shell: false, edit: false }, { reasoning: false, shell: true, edit: true }]) {
       const settings = `reasoning=0&shell=${Number(reader.shell)}&edit=${Number(reader.edit)}`
-      for (const fold of ["terminal", "headers"] as const) {
-        const label = `${fold}, ${settings}`
-        const { page: first } = await (await apps[fold].request(`http://localhost/session/session-1/outline?rows=40&cols=100&${settings}`)).json() as { page: { turns: Turn[] } }
-        const latest = first.turns.at(-1)!
-        expect(first.turns.length, label).toBe(4)
-        expect(latest.foldableCount === undefined, label).toBe(fold === "headers")
-        sentAsHeaders(`first read, ${label}`, first.turns, reader)
-        const page = await (await apps[fold].request(`http://localhost/session/session-1/page?rows=40&cols=100&${settings}&before=${latest.cursor}`)).json() as { turns: Turn[] }
-        expect(page.turns.length, label).toBe(3)
-        sentAsHeaders(`page read, ${label}`, page.turns, reader)
-      }
-      const newest = await (await apps.terminal.request(`http://localhost/session/session-1/turn?${settings}`)).json() as Turn
-      const before = await (await apps.terminal.request(`http://localhost/session/session-1/turn?${settings}&before=${newest.cursor}`)).json() as Turn
-      sentAsHeaders(`turn read, ${settings}`, [newest, before], reader)
+      const { page: first } = await (await app.request(`http://localhost/session/session-1/outline?rows=40&cols=100&${settings}`)).json() as { page: { turns: Turn[] } }
+      const latest = first.turns.at(-1)!
+      expect(first.turns.length, settings).toBe(4)
+      sentAsHeaders(`first read, ${settings}`, first.turns, reader)
+      const page = await (await app.request(`http://localhost/session/session-1/page?rows=40&cols=100&${settings}&before=${latest.cursor}`)).json() as { turns: Turn[] }
+      expect(page.turns.length, settings).toBe(3)
+      sentAsHeaders(`page read, ${settings}`, page.turns, reader)
     }
   })
 
@@ -1117,7 +1080,6 @@ function routes(input: {
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   getTurnOutline?: (directory: RuntimeDirectory, sessionId: string) => TurnOutline | undefined
   getPart?: (sessionId: string, messageId: string, partId: string) => AgentMessage["parts"][number] | undefined
-  foldRead?: "terminal" | "headers"
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
@@ -1136,7 +1098,6 @@ function routes(input: {
       : undefined,
     getTurnOutline: input.getTurnOutline ? (_c, directory, sessionId) => input.getTurnOutline?.(directory, sessionId) : undefined,
     getPart: input.getPart ? (_c, _directory, sessionId, messageId, partId) => input.getPart?.(sessionId, messageId, partId) : undefined,
-    foldRead: input.foldRead,
     sessionAccessPolicy: input.sessionAccessPolicy,
     afterCreateSession: input.afterCreateSession
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)

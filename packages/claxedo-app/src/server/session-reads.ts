@@ -36,7 +36,7 @@ async function readHeldFirst(context: SessionContext, ref: SessionRef, held: Hel
   const home = await context.workspaces.home(ref)
   const live = await readLiveSession(context, ref)
   const row = live ? runtimeRow(live, ref) : { row: await readCentralRow(context, home.route.workspaceId, ref), diff: [] }
-  return { ...row, outline: held.outline, transcript: held.latestTurn, folded: NO_FIRST_PAGE.folded, latestTurn: held.latestTurn }
+  return { ...row, outline: held.outline, transcript: held.latestTurn, latestTurn: held.latestTurn }
 }
 
 async function readFirst(context: SessionContext, ref: SessionRef, shape: PageShape): Promise<SessionFirstRead> {

@@ -44,7 +44,6 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "GET /session/:id/recovery",
   "GET /session/:id/recovery/operations/:operationId",
   "GET /session/:id/subagents",
-  "GET /session/:id/turn",
   "GET /session/capabilities",
   "GET /session/status",
   "PATCH /session/:id",

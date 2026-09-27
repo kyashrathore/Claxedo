@@ -31,7 +31,6 @@ import {
   type AgentHarnessAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import type { FoldRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { workspaceRuntimeBus } from "../bus"
 import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
@@ -179,7 +178,6 @@ export function SessionRoutes(
       directory: string
       sessionId: string
     }) => Promise<unknown[] | undefined> | unknown[] | undefined
-    foldRead?: FoldRead
     getTurnOutline?: (input: {
       directory: string
       sessionId: string
@@ -565,7 +563,6 @@ export function SessionRoutes(
           page,
         })
       : undefined,
-    foldRead: options?.foldRead,
     getPart: options?.getPart
       ? (_c, directory, sessionId, messageId, partId) => options.getPart!({ directory: requiredDirectory(directory), sessionId, messageId, partId })
       : undefined,

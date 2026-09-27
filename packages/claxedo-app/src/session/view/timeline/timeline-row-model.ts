@@ -32,7 +32,6 @@ export type TimelineRowMap = {
     durationMs?: number
     foldCount: number
     folded: boolean
-    opening: boolean
     tokens?: number
     cost?: number
   }
@@ -203,7 +202,7 @@ export namespace TimelineRow {
           a.modelID === b.modelID && a.presentation === b.presentation
       case "TurnFold":
         return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
-          a.folded === b.folded && a.opening === b.opening && a.tokens === b.tokens && a.cost === b.cost
+          a.folded === b.folded && a.tokens === b.tokens && a.cost === b.cost
       default: {
         const exhaustive: never = a
         return exhaustive

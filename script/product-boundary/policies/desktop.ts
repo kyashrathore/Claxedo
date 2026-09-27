@@ -359,7 +359,7 @@ export const desktopRenderer: Policy = {
   // page its transcript draws first, sized by `session/transcript-viewport.ts`
   // from the transcript's measured size; the open view
   // (`server/wire/session-open.ts`) carries the facts beside the row. Every
-  // later page, an opened fold and a tool row's whole part are read by
+  // later page and a tool row's whole part are read by
   // `server/transcript-reads.ts` and parsed by `server/wire/turn-page.ts`. The
   // rail's turn list (`session/view/nav-turns.ts`) lists every turn before the
   // transcript loads it, and `session/transcript/retained.ts` holds the latest

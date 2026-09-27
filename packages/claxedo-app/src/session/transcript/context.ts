@@ -50,7 +50,6 @@ export type TranscriptContext = {
   readonly snapshotRead: { current: Promise<void> | undefined }
   readonly latestTurnRead: { current: TranscriptPage | undefined }
   readonly olderRead: { current: Promise<void> | undefined }
-  readonly turnReads: Map<string, Promise<void>>
   readonly partReads: Map<string, Promise<void>>
 }
 
@@ -80,7 +79,6 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     snapshotRead: { current: undefined },
     latestTurnRead: { current: undefined },
     olderRead: { current: undefined },
-    turnReads: new Map(),
     partReads: new Map(),
   }
 }

@@ -1,5 +1,5 @@
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import { projectTurn, type FoldRead, type PageTurn, type ReaderSettings, type TurnPage, type TurnPageRequest } from "@claxedo/agent-sdk-runtime/turn-page"
+import { projectTurn, type PageTurn, type ReaderSettings, type TurnPage, type TurnPageRequest } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { AgentMessage, AgentToolPart } from "@claxedo/agent-runtime-contract"
 import { registerTranscriptSession, syncTranscript, syncedMessage, type SyncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
@@ -18,15 +18,12 @@ const readTool = (callID: string, at: number) => ({
 
 /**
  * A registry's page of the turns before a cursor its own latest-turn view
- * issued: each whole turn, oldest first, projected by the contract (folded
- * when the fold decision folds it, its tools as headers), with a cursor on
- * every turn that has older history. A cursor at the transcript's oldest turn
- * reads an empty page, a cursor the registry did not issue is refused as a 400
- * message-page error, and a session the registry does not hold has no page.
- * Under the `headers` fold read a folded turn is sent with every part. An
- * open-turn read answers the newest turn, or the one before a cursor, with
- * every part and its tools as headers. Every read passes the tool-header
- * reads (`exerciseToolHeaderReads`).
+ * issued: each whole turn, oldest first, projected by the contract (every
+ * part, its tools as headers), with a cursor on every turn that has older
+ * history. A cursor at the transcript's oldest turn reads an empty page, a
+ * cursor the registry did not issue is refused as a 400 message-page error,
+ * and a session the registry does not hold has no page. Every read passes the
+ * tool-header reads (`exerciseToolHeaderReads`).
  */
 export async function exerciseTurnPageConformance(harness: TranscriptConformanceHarness) {
   const { authority, workspaceId, creator } = harness
@@ -50,52 +47,27 @@ export async function exerciseTurnPageConformance(harness: TranscriptConformance
   turnPageHolds(third.nextCursor && second.nextCursor && first.nextCursor, "every turn after the leading greeting did not carry a cursor before it")
 
   const settings: ReaderSettings = { reasoning: false, shell: false, edit: false }
-  const query: TurnPageRequest = { ...settings, rows: 40, cols: 100, fold: "terminal" }
-  const read = async (id: string, before: string, fold = query.fold) =>
-    await authority.readSessionPage(creator.auth, { sessionId: id, workspaceId, page: { ...query, fold, before } })
-  const opened = (messages: AgentMessage[]) => projectTurn(messages, { ...settings, fold: "headers" })
+  const query: TurnPageRequest = { ...settings, rows: 40, cols: 100 }
+  const read = async (id: string, before: string) =>
+    await authority.readSessionPage(creator.auth, { sessionId: id, workspaceId, page: { ...query, before } })
 
   const page = await read(sessionId, third.nextCursor)
   turnPageHolds(page, "a session the reader can read answered no page")
   turnPageHolds(
     JSON.stringify(page) === JSON.stringify({
       turns: [
-        { ...projectTurn(first.messages, query), cursor: first.nextCursor },
-        { ...projectTurn(second.messages, query), cursor: second.nextCursor },
+        { ...projectTurn(first.messages, settings), cursor: first.nextCursor },
+        { ...projectTurn(second.messages, settings), cursor: second.nextCursor },
       ],
     }),
     "the page is not the two turns before the cursor, projected, each with its own cursor",
   )
-  turnPageHolds(page.turns[1]?.foldableCount === 2, "the folded turn before the cursor did not name its two foldable groups")
   turnPageHolds(!JSON.stringify(page).includes(toolOutput), "a tool the reader's settings leave closed was sent whole")
 
   turnPageHolds(JSON.stringify(await read(sessionId, first.nextCursor)) === JSON.stringify({ turns: [] }), "a cursor at the oldest turn did not read an empty page")
   turnPageHolds((await read("ses_turn_page_missing", third.nextCursor)) === undefined, "a session the registry does not hold answered a page")
   const refused = await read(sessionId, "not-a-cursor").then(() => undefined, (error: unknown) => error)
   turnPageHolds(refused instanceof AgentMessagePageError && refused.status === 400, "a cursor the registry did not issue was not refused as a 400 message-page error")
-
-  const headers = await read(sessionId, third.nextCursor, "headers")
-  const foldedWhole = headers?.turns[1]
-  turnPageHolds(
-    foldedWhole?.foldableCount === undefined && JSON.stringify(foldedWhole?.messages) === JSON.stringify(opened(second.messages).messages),
-    "under the headers fold read the folded turn was not sent with every part and no foldable count",
-  )
-
-  const newest = await authority.readSessionTurn(creator.auth, { sessionId, workspaceId, settings })
-  turnPageHolds(
-    JSON.stringify(newest) === JSON.stringify({ ...opened(third.messages), cursor: third.nextCursor }),
-    "the open turn is not the newest turn with every part, tools as headers, and its cursor",
-  )
-  const before = await authority.readSessionTurn(creator.auth, { sessionId, workspaceId, settings, before: third.nextCursor })
-  turnPageHolds(
-    JSON.stringify(before) === JSON.stringify({ ...opened(second.messages), cursor: second.nextCursor }),
-    "the open turn before the cursor is not the folded turn opened whole with its cursor",
-  )
-  turnPageHolds(!JSON.stringify(before).includes(toolOutput), "an opened turn sent a closed tool whole")
-  turnPageHolds(
-    (await authority.readSessionTurn(creator.auth, { sessionId: "ses_turn_page_missing", workspaceId, settings })) === undefined,
-    "a session the registry does not hold answered an open turn",
-  )
 
   const headerSession = "ses_turn_page_tool_headers"
   const transcript = toolHeaderTranscript(headerSession)
@@ -104,9 +76,8 @@ export async function exerciseTurnPageConformance(harness: TranscriptConformance
   const at = { sessionId: headerSession, workspaceId }
   const extent = { rows: 40, cols: 100 }
   await exerciseToolHeaderReads({
-    first: async (reader, fold) => (await authority.readSessionFirstRead(creator.auth, { ...at, firstPage: { ...reader, ...extent, fold } }))?.page,
-    page: async (reader, fold, before) => await authority.readSessionPage(creator.auth, { ...at, page: { ...reader, ...extent, fold, before } }),
-    turn: async (reader, before) => await authority.readSessionTurn(creator.auth, { ...at, settings: reader, ...(before === undefined ? {} : { before }) }),
+    first: async (reader) => (await authority.readSessionFirstRead(creator.auth, { ...at, firstPage: { ...reader, ...extent } }))?.page,
+    page: async (reader, before) => await authority.readSessionPage(creator.auth, { ...at, page: { ...reader, ...extent, before } }),
   }, transcript)
   return page.turns.map((turn) => turn.messages[0]?.info.id)
 }
@@ -159,19 +130,17 @@ export function toolHeaderTranscript(sessionId: string): SyncedMessage[] {
   ]
 }
 
-/** A producer's first read's page, page read and turn read of the session holding `toolHeaderTranscript`, each with the reader's settings. */
+/** A producer's first read's page and page read of the session holding `toolHeaderTranscript`, each with the reader's settings. */
 export type ToolHeaderReads = {
-  first: (reader: ReaderSettings, fold: FoldRead) => Promise<TurnPage | undefined>
-  page: (reader: ReaderSettings, fold: FoldRead, before: string) => Promise<TurnPage | undefined>
-  turn: (reader: ReaderSettings, before?: string) => Promise<PageTurn | undefined>
+  first: (reader: ReaderSettings) => Promise<TurnPage | undefined>
+  page: (reader: ReaderSettings, before: string) => Promise<TurnPage | undefined>
 }
 
 /**
  * Every read sends each tool part as its header: marked `headerOnly`, with no
  * output, body input, body metadata or attachments. A tool the reader's shell or edit setting opens comes whole
- * instead, and a turn sent with no foldable count carries every part it
- * stores. Checked under both fold reads, with the shell and edit settings both
- * closed and both open.
+ * instead, and every turn carries every part it stores. Checked with the shell
+ * and edit settings both closed and both open.
  */
 export async function exerciseToolHeaderReads(reads: ToolHeaderReads, transcript: readonly SyncedMessage[]) {
   const stored = new Map(transcript.map((message) => [message.info.id, message.parts.map((part) => part.id)]))
@@ -179,8 +148,8 @@ export async function exerciseToolHeaderReads(reads: ToolHeaderReads, transcript
     const tools = turns.flatMap((turn) => {
       const sent = turn.messages.map((message) => message.parts.map((part) => part.id))
       turnPageHolds(
-        turn.foldableCount !== undefined || JSON.stringify(sent) === JSON.stringify(turn.messages.map((message) => stored.get(message.info.id))),
-        `${label} sent a turn with no foldable count without every part it stores`,
+        JSON.stringify(sent) === JSON.stringify(turn.messages.map((message) => stored.get(message.info.id))),
+        `${label} sent a turn without every part it stores`,
       )
       return turn.messages.flatMap((message) => message.parts.filter((part): part is AgentToolPart => part.type === "tool"))
     })
@@ -207,23 +176,13 @@ export async function exerciseToolHeaderReads(reads: ToolHeaderReads, transcript
 
   for (const reader of [{ reasoning: false, shell: false, edit: false }, { reasoning: false, shell: true, edit: true }]) {
     const settings = `shell ${reader.shell ? "open" : "closed"}, edit ${reader.edit ? "open" : "closed"}`
-    for (const fold of ["terminal", "headers"] as const) {
-      const first = await reads.first(reader, fold)
-      const latest = first?.turns.at(-1)
-      turnPageHolds(first?.turns.length === 4 && latest?.cursor, `the ${fold} first read (${settings}) did not send all four turns with the latest turn's cursor`)
-      turnPageHolds(
-        (latest.foldableCount === undefined) === (fold === "headers"),
-        `the ${fold} first read (${settings}) did not ${fold === "headers" ? "send the folded turn with every part" : "fold the latest turn"}`,
-      )
-      sentAsHeaders(`the ${fold} first read (${settings})`, first.turns, reader)
-      const page = await reads.page(reader, fold, latest.cursor)
-      turnPageHolds(page?.turns.length === 3, `the ${fold} page read (${settings}) did not send the three turns before the latest`)
-      sentAsHeaders(`the ${fold} page read (${settings})`, page.turns, reader)
-    }
-    const newest = await reads.turn(reader)
-    const before = newest?.cursor === undefined ? undefined : await reads.turn(reader, newest.cursor)
-    turnPageHolds(newest && before, `the turn read (${settings}) did not open the newest turn and the one before its cursor`)
-    sentAsHeaders(`the turn read (${settings})`, [newest, before], reader)
+    const first = await reads.first(reader)
+    const latest = first?.turns.at(-1)
+    turnPageHolds(first?.turns.length === 4 && latest?.cursor, `the first read (${settings}) did not send all four turns with the latest turn's cursor`)
+    sentAsHeaders(`the first read (${settings})`, first.turns, reader)
+    const page = await reads.page(reader, latest.cursor)
+    turnPageHolds(page?.turns.length === 3, `the page read (${settings}) did not send the three turns before the latest`)
+    sentAsHeaders(`the page read (${settings})`, page.turns, reader)
   }
 }
 

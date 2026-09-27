@@ -58,7 +58,6 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
-import { FOLD_READ_ENV, foldReadFrom } from "@claxedo/agent-sdk-runtime/turn-page"
 import { isSessionRecoveryPath } from "../routes/session-core"
 import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import type { SessionDeliveryStore } from "../session/delivery-owner"
@@ -748,7 +747,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const hostFrames = createWorkspaceEventFramesTap()
   // A subagent child's frames are scoped as its parent's on the workspace
   // stream; the store that filed the child knows the parent.
-  const foldRead = foldReadFrom(process.env[FOLD_READ_ENV])
   const sessionParents: WorkspaceEventParents = {
     parentSessionIdFor: (sessionId) => (store().getSession(sessionId) as { parentID?: string | null } | null)?.parentID ?? undefined,
   }
@@ -2005,7 +2003,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       const sessions = SessionRoutes((input) => adapterForSession(input), {
-        foldRead,
         eventHub,
         sessionAccessPolicy,
         sessionStarts: store().sessionStarts,

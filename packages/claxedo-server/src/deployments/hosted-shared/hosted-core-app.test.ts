@@ -282,7 +282,7 @@ describe("resource-closed hosted core app", () => {
     expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), {
       sessionId: "ses_1",
       workspaceId: "ws_1",
-      firstPage: { rows: 10, cols: 100, reasoning: true, shell: true, edit: false, fold: "terminal" },
+      firstPage: { rows: 10, cols: 100, reasoning: true, shell: true, edit: false },
     })
 
     readSessionFirstRead.mockClear()
@@ -316,7 +316,7 @@ describe("resource-closed hosted core app", () => {
     expect(readSessionPage).toHaveBeenLastCalledWith(expect.anything(), {
       sessionId: "ses_1",
       workspaceId: "ws_1",
-      page: { rows: 10, cols: 100, reasoning: true, shell: false, edit: true, before: "cursor-2", fold: "terminal" },
+      page: { rows: 10, cols: 100, reasoning: true, shell: false, edit: true, before: "cursor-2" },
     })
 
     const unscoped = await app.request(`/api/control/sessions/ses_1/page?${viewport}&before=cursor-2`, { headers })
@@ -336,53 +336,6 @@ describe("resource-closed hosted core app", () => {
     await expect(foreign.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
 
     const missing = await app.request(`/api/control/sessions/ses_missing/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
-    expect(missing.status).toBe(404)
-    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
-  })
-
-  test("the fold read the Worker's bindings name reaches the authority's first read and page", async () => {
-    const hosted = plane()
-    Object.assign(hosted.env, { CLAXEDO_PERF_FOLD_READ: "headers" })
-    const readSessionFirstRead = vi.fn(async () => ({ session: {}, outline: { turns: [], complete: true }, page: { turns: [] } }))
-    const readSessionPage = vi.fn(async () => ({ turns: [] }))
-    Object.assign(hosted.services.authority!, { readSessionFirstRead, readSessionPage })
-    const app = createHostedCoreApp(hosted, options) as unknown as Hono
-    const headers = { authorization: "Bearer alice" }
-    const viewport = "rows=10&cols=100&reasoning=0&shell=0&edit=0"
-
-    expect((await app.request(`/api/control/sessions/ses_1/outline?workspaceId=ws_1&${viewport}`, { headers })).status).toBe(200)
-    expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ firstPage: expect.objectContaining({ fold: "headers" }) }))
-    expect((await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${viewport}&before=cursor-1`, { headers })).status).toBe(200)
-    expect(readSessionPage).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ page: expect.objectContaining({ fold: "headers" }) }))
-
-    Object.assign(hosted.env, { CLAXEDO_PERF_FOLD_READ: "folded" })
-    expect(() => createHostedCoreApp(hosted, options)).toThrow(/CLAXEDO_PERF_FOLD_READ/)
-  })
-
-  test("the session turn route opens the newest turn or the one before the reader's cursor, and refuses bad settings, an empty cursor or a missing session", async () => {
-    const hosted = plane()
-    const turn = { messages: [{ info: { id: "u2", role: "user" }, parts: [] }], cursor: "cursor-2" }
-    const readSessionTurn = vi.fn(async (_auth: unknown, input: { sessionId: string }) => (input.sessionId === "ses_1" ? turn : undefined))
-    Object.assign(hosted.services.authority!, { readSessionTurn })
-    const app = createHostedCoreApp(hosted, options) as unknown as Hono
-    const headers = { authorization: "Bearer alice" }
-
-    const newest = await app.request("/api/control/sessions/ses_1/turn?workspaceId=ws_1&reasoning=1&shell=0&edit=1", { headers })
-    expect(newest.status).toBe(200)
-    await expect(newest.json()).resolves.toEqual(turn)
-    expect(readSessionTurn).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1", settings: { reasoning: true, shell: false, edit: true } })
-    expect((await app.request("/api/control/sessions/ses_1/turn?workspaceId=ws_1&reasoning=0&shell=0&edit=0&before=cursor-2", { headers })).status).toBe(200)
-    expect(readSessionTurn).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1", settings: { reasoning: false, shell: false, edit: false }, before: "cursor-2" })
-
-    readSessionTurn.mockClear()
-    for (const query of ["reasoning=0&shell=0", "reasoning=0&shell=0&edit=2", "reasoning=0&shell=0&edit=0&before="]) {
-      const refused = await app.request(`/api/control/sessions/ses_1/turn?workspaceId=ws_1&${query}`, { headers })
-      expect(refused.status, query).toBe(400)
-      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
-    }
-    expect(readSessionTurn).not.toHaveBeenCalled()
-
-    const missing = await app.request("/api/control/sessions/ses_missing/turn?workspaceId=ws_1&reasoning=0&shell=0&edit=0", { headers })
     expect(missing.status).toBe(404)
     await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })

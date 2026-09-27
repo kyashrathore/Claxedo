@@ -32,28 +32,24 @@ test("first read wire: a body without its session or a list of outline turns is 
   expect(() => firstReadFromWire({ session, outline: { turns: [], complete: true }, page: {} })).toThrow("The page is not a list of turns")
 })
 
-test("first read wire: a page lands oldest first, pages back from its first turn, and names each folded turn with the cursor that reads it whole", () => {
+test("first read wire: a page lands oldest first, pages back from its first turn, and its newest turn is the latest turn a reader keeps", () => {
   const read = firstReadFromWire({
     session,
     outline: { turns: [], complete: false },
     page: {
       turns: [
-        { messages: [message("u1", "user"), message("a1", "assistant")], foldableCount: 3, cursor: "at-u1" },
+        { messages: [message("u1", "user"), message("a1", "assistant")], cursor: "at-u1" },
         { messages: [message("u2", "user"), message("a2", "assistant")], cursor: "at-u2" },
-        { messages: [message("u3", "user"), message("a3", "assistant")], foldableCount: 2, cursor: "at-u3" },
+        { messages: [message("u3", "user"), message("a3", "assistant")], cursor: "at-u3" },
       ],
     },
   })
   expect(read.page?.transcript.entries.map((entry) => entry.info.id)).toEqual(["u1", "a1", "u2", "a2", "u3", "a3"])
   expect(read.page?.transcript.olderCursor).toBe("at-u1")
-  expect([...(read.page?.folded ?? [])]).toEqual([
-    ["u1", { foldableCount: 3, openBefore: "at-u2" }],
-    ["u3", { foldableCount: 2 }],
-  ])
-  expect(read.page?.latestTurn).toBeUndefined()
+  expect(read.page?.latestTurn).toEqual({ entries: [message("u3", "user"), message("a3", "assistant")], olderCursor: "at-u3" })
 })
 
-test("first read wire: a whole latest turn is the latest turn a reader keeps, paging back from its user message", () => {
+test("first read wire: a session's only turn is its latest turn and pages back to nothing", () => {
   const read = firstReadFromWire({ session, outline: { turns: [], complete: true }, page: { turns: [{ messages: [message("u1", "user"), message("a1", "assistant")] }] } })
   expect(read.page?.latestTurn).toEqual({ entries: [message("u1", "user"), message("a1", "assistant")] })
   expect(read.page?.transcript.olderCursor).toBeUndefined()

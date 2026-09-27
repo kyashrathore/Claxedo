@@ -1,10 +1,9 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
 import { createEffect, createRoot, on } from "solid-js"
-import { placementId, projectId, ServerError, sessionId, type FoldedTurn, type Server, type SessionFirstRead, type SessionReads, type SessionRef, type TranscriptPage, type TurnPageRead } from "@/server"
+import { placementId, projectId, ServerError, sessionId, type Server, type SessionFirstRead, type SessionReads, type SessionRef, type TranscriptPage } from "@/server"
 import { createRequests } from "../requests"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
-import { openFoldedTurn } from "./folded-turn"
 import { loadOlder } from "./older"
 import { readSnapshot } from "./snapshot"
 
@@ -17,26 +16,25 @@ const entry = (id: string, role: "user" | "assistant", parts: readonly { readonl
 
 const page = (entries: ReturnType<typeof entry>[], olderCursor?: string) => ({ entries, ...(olderCursor ? { olderCursor } : {}) }) as unknown as TranscriptPage
 
-const foldedLatest = page([entry("msg_2", "user", [{ type: "text", id: "p1" }]), entry("msg_2_r", "assistant", [{ type: "text", id: "p3" }])], "before-the-turn")
-const wholeTurn = page([entry("msg_2", "user", [{ type: "text", id: "p1" }]), entry("msg_2_r", "assistant", [{ type: "tool", id: "p2" }, { type: "text", id: "p3" }])], "before-the-turn")
-const olderPage = page([entry("msg_1", "user", [{ type: "text", id: "p0" }])])
-const olderTurn = page([entry("msg_1", "user", [{ type: "text", id: "p0" }]), entry("msg_1_r", "assistant", [{ type: "tool", id: "p8" }, { type: "text", id: "p9" }])])
-const pageRead = (transcript: TranscriptPage, folded: readonly (readonly [string, FoldedTurn])[] = []): TurnPageRead => ({ transcript, folded: new Map(folded) })
-const olderPages: TurnPageRead[] = [pageRead(page([entry("msg_1_r", "assistant", [{ type: "text", id: "p9" }])], "before-msg-1")), pageRead(olderPage)]
+const turn = (userId: string, partIds: readonly [string, string]) => [
+  entry(userId, "user", [{ type: "text", id: partIds[0] }]),
+  entry(`${userId}_r`, "assistant", [{ type: "text", id: partIds[1] }]),
+]
+
+const latest = page(turn("msg_2", ["p1", "p3"]), "before-the-turn")
+const olderPage = page(turn("msg_1", ["p0", "p9"]))
 const outline = { turns: [{ id: "msg_1", createdAt: 1, preview: {} }, { id: "msg_2", createdAt: 1, preview: {} }], complete: true }
 
-const firstRead = (transcript: TranscriptPage, folded: readonly (readonly [string, FoldedTurn])[]): SessionFirstRead => ({
+const firstRead = (transcript: TranscriptPage): SessionFirstRead => ({
   row: { ref, title: "Two turns", createdAt: 1, updatedAt: 2 },
   diff: [],
   outline,
   transcript,
-  folded: new Map(folded),
   latestTurn: undefined,
 })
 
-function fakeServer(first: SessionFirstRead = firstRead(foldedLatest, [["msg_2", { foldableCount: 2 }]]), pages: readonly TurnPageRead[] = [pageRead(olderPage)], turns: (before?: string) => TranscriptPage = (before) => (before === undefined ? wholeTurn : olderTurn)) {
+function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly TranscriptPage[] = [olderPage]) {
   const olderReads: string[] = []
-  const turnReads: (string | undefined)[] = []
   const reads = {
     first: Promise.resolve(first),
     status: Promise.resolve({ kind: "idle" }),
@@ -48,13 +46,9 @@ function fakeServer(first: SessionFirstRead = firstRead(foldedLatest, [["msg_2",
   const server = {
     sessions: {
       read: () => reads,
-      openTurn: async (_ref: SessionRef, _settings: unknown, before?: string) => {
-        turnReads.push(before)
-        return turns(before)
-      },
       page: async (_ref: SessionRef, _shape: unknown, cursor: string) => {
         olderReads.push(cursor)
-        return pages[olderReads.length - 1] ?? pageRead(olderPage)
+        return pages[olderReads.length - 1] ?? olderPage
       },
     },
   } as unknown as Server
@@ -63,86 +57,38 @@ function fakeServer(first: SessionFirstRead = firstRead(foldedLatest, [["msg_2",
     requests: { read: () => undefined, readFailed: () => undefined },
     pageShape: () => ({ rows: 40, cols: 100, reasoning: false, shell: false, edit: false }),
   } as unknown as TranscriptDeps
-  return { server, deps, olderReads, turnReads }
+  return { server, deps, olderReads }
 }
 
 const idle = () => new Promise((resolve) => setTimeout(resolve, 5))
 
-test("snapshot: a first read lands its row, outline and page in one update, and nothing more is read until the reader opens a fold or pages", async () => {
-  const { server, deps, olderReads, turnReads } = fakeServer()
+test("snapshot: a first read lands its row, outline and page in one update, and nothing more is read until the reader pages", async () => {
+  const { server, deps, olderReads } = fakeServer()
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
     const seen: string[] = []
     createEffect(
       on(
-        () => [context.phase.state().kind, context.data.messages.length, context.outline().kind, context.data.folded.size] as const,
+        () => [context.phase.state().kind, context.data.messages.length, context.outline().kind] as const,
         (state) => seen.push(state.join(" ")),
       ),
     )
     await readSnapshot(context)
-    expect(seen, "the row, page, outline and fold land together").toEqual(["loading 0 loading 0", "ready 2 ready 1"])
+    expect(seen, "the row, page and outline land together").toEqual(["loading 0 loading", "ready 2 ready"])
     expect(context.olderCursor()).toBe("before-the-turn")
     await idle()
-    expect(turnReads, "an idle transcript reads nothing").toEqual([])
-    expect(olderReads).toEqual([])
-
-    await Promise.all([openFoldedTurn(context, "msg_2"), openFoldedTurn(context, "msg_2")])
-    expect(turnReads, "opening the newest turn's fold reads it once").toEqual([undefined])
-    expect(context.data.parts["msg_2_r"]?.map((part) => part.id)).toEqual(["p2", "p3"])
-    expect(context.data.folded.size).toBe(0)
-    expect(context.latestTurnRead.current).toBe(wholeTurn)
+    expect(olderReads, "an idle transcript reads nothing").toEqual([])
 
     await loadOlder(context)
     expect(olderReads).toEqual(["before-the-turn"])
-    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_2_r"])
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
     dispose()
   })
 })
 
-test("snapshot: a folded older turn opens from the next turn's cursor when its reader opens it, once however often it is asked", async () => {
-  const oldestFolded = page([entry("msg_1", "user", [{ type: "text", id: "p0" }]), entry("msg_1_r", "assistant", [{ type: "text", id: "p9" }]), ...wholeTurn.entries.map((item) => item as ReturnType<typeof entry>)])
-  const { server, deps, turnReads } = fakeServer(firstRead(oldestFolded, [["msg_1", { foldableCount: 3, openBefore: "at-msg-2" }]]))
-  await createRoot(async (dispose) => {
-    const context = createTranscriptContext(server, ref, deps)
-    await readSnapshot(context)
-    await Promise.all([openFoldedTurn(context, "msg_1"), openFoldedTurn(context, "msg_1")])
-    expect(turnReads).toEqual(["at-msg-2"])
-    expect(context.data.parts["msg_1_r"]?.map((part) => part.id)).toEqual(["p8", "p9"])
-    expect(context.data.folded.size).toBe(0)
-    dispose()
-  })
-})
-
-test("snapshot: a turn that arrived as the newest and is no longer the newest opens by reading back from the newest to it", async () => {
-  const newer = page([entry("msg_3", "user", [{ type: "text", id: "p5" }]), entry("msg_3_r", "assistant", [{ type: "text", id: "p6" }])], "at-msg-3")
-  const { server, deps, turnReads } = fakeServer(undefined, undefined, (before) => (before === undefined ? newer : wholeTurn))
-  await createRoot(async (dispose) => {
-    const context = createTranscriptContext(server, ref, deps)
-    await readSnapshot(context)
-    context.setData("messages", (messages) => [...messages, newer.entries[0]!.info as never])
-    await openFoldedTurn(context, "msg_2")
-    expect(turnReads).toEqual([undefined, "at-msg-3"])
-    expect(context.data.parts["msg_2_r"]?.map((part) => part.id)).toEqual(["p2", "p3"])
-    expect(context.data.folded.size).toBe(0)
-    dispose()
-  })
-})
-
-test("older: a page lands its folded turns, each opening before the turn after it and its last before the cursor it was read before", async () => {
-  const folded = pageRead(page([entry("msg_1", "user", [{ type: "text", id: "p0" }]), entry("msg_1_r", "assistant", [{ type: "text", id: "p9" }])]), [["msg_1", { foldableCount: 2, openBefore: "before-the-turn" }]])
-  const { server, deps } = fakeServer(undefined, [folded])
-  await createRoot(async (dispose) => {
-    const context = createTranscriptContext(server, ref, deps)
-    await readSnapshot(context)
-    await loadOlder(context)
-    expect([...context.data.folded]).toEqual([["msg_2", { foldableCount: 2 }], ["msg_1", { foldableCount: 2, openBefore: "before-the-turn" }]])
-    dispose()
-  })
-})
-
 test("older: a page that lands is out of flight before it is announced, so a watcher of the landing can page again at once", async () => {
-  const { server, deps, olderReads } = fakeServer(undefined, olderPages)
+  const { server, deps, olderReads } = fakeServer(undefined, [page(turn("msg_1", ["p0", "p9"]), "before-msg-1"), page(turn("msg_0", ["p5", "p6"]))])
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
     await readSnapshot(context)
@@ -158,7 +104,7 @@ test("older: a page that lands is out of flight before it is announced, so a wat
     await loadOlder(context)
     await idle()
     expect(olderReads).toEqual(["before-the-turn", "before-msg-1"])
-    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_0", "msg_0_r", "msg_1", "msg_1_r", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
     dispose()
   })

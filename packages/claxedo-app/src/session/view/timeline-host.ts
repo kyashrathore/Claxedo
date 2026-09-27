@@ -93,7 +93,6 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     navigation: {
       toSession: (id) => input.routing.navigate(sessionPath(refFor(view, id))),
     },
-    loadTurn: (userMessageId) => void view.loadTurn(userMessageId),
     recordViewport: (size) => input.stores.recordViewport(transcriptViewport(size, resolveTranscriptTypography(transcriptTypography()))),
   }
 }

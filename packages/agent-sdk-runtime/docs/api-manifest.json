@@ -67,7 +67,7 @@
     },
     "@claxedo/agent-sdk-runtime/turn-page": {
       "status": "integration",
-      "purpose": "The pages of turns a transcript reads, the first one included: each turn folded or whole by the contract's fold decision with its tools sent as headers, the fill chosen by an estimate of their lines, and the viewport and cursor queries every producer parses."
+      "purpose": "The pages of turns a transcript reads, the first one included: every part of each turn with its tools sent as headers, the fill chosen by an estimate of their lines, and the viewport and cursor queries every producer parses."
     },
     "@claxedo/agent-sdk-runtime/turn-outline": {
       "status": "integration",
@@ -138,7 +138,7 @@
     "@claxedo/agent-sdk-runtime/launch": "c6ae1e0deb72710355058ba6fa6b45981db145171b09dae809a06759ce31e3d0",
     "@claxedo/agent-sdk-runtime/launch-gate-child": "afec65c73d13c49ba01624719bbcad89235bf3f6af78751d6a71b7554e0c6051",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311",
-    "@claxedo/agent-sdk-runtime/turn-page": "3d649603589c6521b39f0758288899785b79f36f861a857b5f527622b13f2da4"
+    "@claxedo/agent-sdk-runtime/turn-page": "27130117feab9f711ff9482dc5012a1046116c2c8484f8108ef65b284ad12c7c"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

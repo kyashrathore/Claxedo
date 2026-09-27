@@ -1,8 +1,9 @@
-import type { TurnPageRequest, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { projectTurn, type TurnPageRequest, type FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { AgentMessage } from "@claxedo/agent-runtime-contract"
 import type { PrivateSessionInventoryRow } from "./private-session-authority"
 import { registerTranscriptSession, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
-type Page = { messages: Array<{ info: { id: string }; parts: Array<{ type: string }> }>; nextCursor?: string }
+type Page = { messages: AgentMessage[]; nextCursor?: string }
 
 const sessionId = "ses_first_read"
 const message = syncedMessage.bind(undefined, sessionId)
@@ -11,15 +12,15 @@ const message = syncedMessage.bind(undefined, sessionId)
  * A registry's first read of a session it stores: the row exactly as its
  * inventory lists it; the outline of every turn of the window, oldest first,
  * with the prompt cut to a snippet; and, when the read names a viewport, the
- * first page, read one whole turn at a time from the newest, each turn folded
- * when the contract's fold decision folds it, with a cursor on every turn that
- * has older history. A session with no transcript reads as complete and empty
+ * first page, read one whole turn at a time from the newest, each turn with
+ * every part and its tools as headers, with a cursor on every turn that has
+ * older history. A session with no transcript reads as complete and empty
  * with an empty page; a session the registry does not hold has no first read.
  */
 export async function exerciseFirstReadConformance(harness: TranscriptConformanceHarness) {
   const { authority, workspaceId, creator } = harness
   await registerTranscriptSession(harness, sessionId)
-  const viewport: TurnPageRequest = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false, fold: "terminal" }
+  const viewport: TurnPageRequest = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
   const read = async (firstPage?: TurnPageRequest) =>
     await authority.readSessionFirstRead(creator.auth, { sessionId, workspaceId, ...(firstPage ? { firstPage } : {}) })
   const listed = async () => (await authority.listSessions(creator.auth, { workspaceId })).find((row) => row.session_id === sessionId)
@@ -64,16 +65,13 @@ export async function exerciseFirstReadConformance(harness: TranscriptConformanc
   const first = (await read(viewport)) as FirstRead<PrivateSessionInventoryRow>
   firstReadHolds(
     JSON.stringify(first.page?.turns) === JSON.stringify([
-      { messages: earlier.messages },
-      {
-        messages: [prompt, { ...work, parts: [] }, { ...answer, parts: answer.parts.filter((part) => part.type === "text") }],
-        foldableCount: 2,
-        cursor: latest.nextCursor,
-      },
+      projectTurn(earlier.messages, viewport),
+      { ...projectTurn(latest.messages, viewport), cursor: latest.nextCursor },
     ]),
-    "the page is not the first turn whole and the latest turn folded to its answer, with the latest turn's cursor",
+    "the page is not the first turn and the latest turn, each projected, with the latest turn's cursor",
   )
-  return { outline: first.outline.turns.map((turn) => turn.id), foldableCounts: first.page?.turns.map((turn) => turn.foldableCount ?? 0) }
+  firstReadHolds(!JSON.stringify(first.page).includes("x".repeat(2048)), "the page sent a tool the reader's settings leave closed whole")
+  return { outline: first.outline.turns.map((turn) => turn.id), page: first.page?.turns.map((turn) => turn.messages[0]?.info.id) }
 }
 
 function firstReadHolds(condition: unknown, text: string): asserts condition {

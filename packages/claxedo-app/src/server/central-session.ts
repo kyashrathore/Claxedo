@@ -3,10 +3,10 @@ import type { HostedOperationName } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 import type { SessionContext } from "./session-context"
 import { withQuery } from "./transport"
-import type { PageShape, ReaderSettings, SessionFirstRead, SessionRef, SessionRow, TranscriptPage, TranscriptPart, TurnPageRead } from "./types"
+import type { PageShape, SessionFirstRead, SessionRef, SessionRow, TranscriptPage, TranscriptPart } from "./types"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { sessionRowFromCentral } from "./wire/session-row"
-import { openTurnFromWire, partFromWire, settingsQuery, turnPageFromWire, viewportQuery } from "./wire/turn-page"
+import { partFromWire, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 
 const SESSIONS = "/api/control/sessions"
 
@@ -26,12 +26,8 @@ function storedRow(item: unknown, ref: SessionRef, workspaceId: string): Session
   return row
 }
 
-export async function readCentralTurnPage(context: SessionContext, workspaceId: string, ref: SessionRef, shape: PageShape, before: string): Promise<TurnPageRead> {
-  return turnPageFromWire(await storedRead(context, ref, "session.turnPage", "page", { workspaceId, before, ...viewportQuery(shape) }), before)
-}
-
-export async function readCentralOpenTurn(context: SessionContext, workspaceId: string, ref: SessionRef, settings: ReaderSettings, before: string | undefined): Promise<TranscriptPage> {
-  return openTurnFromWire(await storedRead(context, ref, "session.openTurn", "turn", { workspaceId, ...settingsQuery(settings), ...(before ? { before } : {}) }))
+export async function readCentralTurnPage(context: SessionContext, workspaceId: string, ref: SessionRef, shape: PageShape, before: string): Promise<TranscriptPage> {
+  return turnPageFromWire(await storedRead(context, ref, "session.turnPage", "page", { workspaceId, before, ...viewportQuery(shape) }))
 }
 
 export async function readCentralPart(context: SessionContext, workspaceId: string, ref: SessionRef, messageId: string, partId: string): Promise<TranscriptPart> {

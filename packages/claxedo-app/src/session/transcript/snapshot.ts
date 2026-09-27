@@ -1,10 +1,15 @@
 import { batch } from "solid-js"
-import { toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads } from "@/server"
+import { toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
-import { adoptOlderCursor } from "./folded-turn"
+import { isOptimisticMessage } from "./merge"
 import { isReading, outlineOf } from "./model"
+
+function hasOlderLoaded(context: TranscriptContext, page: TranscriptPage): boolean {
+  const first = page.entries[0]?.info.id
+  return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && message.id < first)
+}
 
 function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
   const current = context.phase.state()
@@ -12,9 +17,8 @@ function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
   batch(() => {
     context.deps.list.readRow(first.row)
     replaceLatest(context.setData, first.transcript)
-    context.setData("folded", first.folded)
     context.latestTurnRead.current = first.latestTurn
-    adoptOlderCursor(context, first.transcript)
+    if (!hasOlderLoaded(context, first.transcript)) context.setOlderCursor(first.transcript.olderCursor)
     context.setData("diff", [...first.diff])
     context.setOutline(outlineOf(first.outline))
     for (const event of held) applyTranscriptEvent(context, event)

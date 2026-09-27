@@ -95,7 +95,6 @@ export type TimelineHost = {
   readonly sessions: Accessor<readonly TimelineSessionRow[]>
   readonly status: Accessor<SessionStatus>
   readonly turnSettlePending: (userMessageId: string) => boolean
-  readonly loadTurn: (userMessageId: string) => void
   readonly recordViewport: (size: { readonly width: number; readonly height: number }) => void
   readonly syncSession?: (sessionId: string) => Promise<unknown>
   readonly settings: TimelineSettings

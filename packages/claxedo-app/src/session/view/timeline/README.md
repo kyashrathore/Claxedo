@@ -16,7 +16,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `props.directorySessions` (`ClaxedoSession[]`) | `sessions: Accessor<readonly TimelineSessionRow[]>` (`id`, `title`, `parentId`, `archived`, `lastTurn`) |
 | `props.status()` (`AgentRuntimeStatus`) | `status: Accessor<SessionStatus>` from `@/server` (see the status table) |
 | `turnCoverageInFlight(userMessageId)` | `turnSettlePending(userMessageId)`: true while the post-acceptance transcript read for that turn is still in flight |
-| the first-fold prefetch page read inside the mount cache | `loadTurn(userMessageId)`: reads the parts of a turn a page sent folded, tools as headers, asked for by its opening fold row; `recordViewport(size)`: the scroller's measured size, which sizes the next first read's page |
+| the first-fold prefetch page read inside the mount cache | `recordViewport(size)`: the scroller's measured size, which sizes the next first read's page |
 | `useSessionSyncOptional().syncSession` | `syncSession?`: fetch a session's conversation (used for the parent of a subagent when its transcript is not loaded) |
 | `useSettings().general.*` | `settings`: the five accessors the timeline reads |
 | `useTranscriptTypography().typography` | `transcriptTypography` |
@@ -37,7 +37,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 
 ## Data shapes
 
-`TranscriptConversation` (`@/transcript`): `messages` in transcript order, sorted by id so `Binary.search` works; `parts` keyed by message id; `folded`, the turns, by user message id, whose parts are only those their fold draws, with the fold's `foldableCount`; `partsWithText`, the ids of parts whose text has had a non-blank character. The timeline never mutates these; identities of unchanged messages and part arrays must be stable across updates, because the per-turn row memos are gated on identity (`timeline-row-equality.ts`).
+`TranscriptConversation` (`@/transcript`): `messages` in transcript order, sorted by id so `Binary.search` works; `parts` keyed by message id; `partsWithText`, the ids of parts whose text has had a non-blank character. The timeline never mutates these; identities of unchanged messages and part arrays must be stable across updates, because the per-turn row memos are gated on identity (`timeline-row-equality.ts`).
 
 ## Status
 
@@ -52,7 +52,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 ## Invariants
 
 - A `session.idle` can land before the turn's final transcript read. While `turnSettlePending(userMessageId)` is true the turn is still working: its Thinking row stays and its rows are not folded.
-- A turn a page sent folded (`folded`) that its reader opens stays drawn folded, its fold row `opening`, until its parts land, so nothing it drew disappears while they load; the row asks for them. A reader's toggle of a fold, a group or a tool row stops following the end (`onReaderToggle`), so what opens grows downward and no row above it moves.
+- A reader's toggle of a fold, a group or a tool row stops following the end (`onReaderToggle`), so what opens grows downward and no row above it moves.
 - The Thinking row is held for a short hide delay when status blips off `working` mid-stream, so the virtualizer does not collapse.
 - A row's key is stable across rebuilds (`TimelineRow.reuse`), and a tag-narrowed row accessor latches the last matching row for the tick before Solid disposes the branch.
 - `followsEnd` holds only while a turn streams; on a settled transcript a size change (a fold or a tool row opening) never re-pins the viewport to the end.
@@ -71,10 +71,10 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 - The builder reads only a user message's `id`, `time` and optional `summary`, all of which the optimistic stub carries, so a just-typed turn renders before the runtime echoes it. A turn's duration reads only the user message's creation stamp, so a turn opened by a prompt that never reached the runtime still has one.
 - Turn semantics (error, interruption, settlement, fold, tokens, cost) always come from every assistant sibling of the turn. The optional visibility set only bounds the part rows built for the first cold frame.
 - A run of tools cannot span the interruption row: grouping the refs whole would merge the runs either side into one group, which the fold counts as one where the turn draws two.
-- A turn has a fold row only when it has `FOLD_MINIMUM` foldable groups, and the count is always a fact: for a turn a page sent folded it is the page's `foldableCount`, which the producer counted over the whole turn with the same contract functions; otherwise the builder counts the parts it has, which every page sends whole. Nothing is folded on a guess while parts are missing, so a turn with fewer groups never shows the row, cold, warm or live.
+- A turn has a fold row only when it has `FOLD_MINIMUM` foldable groups, counted by the builder over the parts the turn holds, which every page sends whole with tools as headers; the producer's page estimate counts them with the same contract functions. A turn with fewer groups never shows the row, cold, warm or live.
 - The fold row is the turn's header: it sits above the turn's content, not wherever the first tool landed.
 - The gap row before a turn is built once per turn outside its row memo and placed when the turns' rows are joined, before every turn but the first. A turn's rows never depend on its position, so a page landing above does not rebuild the turn that was first: with the gap inside the memo, a 9 KiB turn landing above a 5 MB one cost 91 ms at 4x CPU, most of it the 5 MB turn's rebuild.
-- A working turn paints its fragment now: its rows grow as the harness writes them, and a loader in place of its Thinking row reads as a stop. A folded turn its reader unfolds holds its body until the full read, because painting its drawn texts and then the tools under them moves what the reader was given; the first page sends an interrupted or failed turn whole. The loader's reveal delay lives in `session-turn.css`.
+- A working turn paints its fragment now: its rows grow as the harness writes them.
 - The live row: while a tool runs or a thought streams, the turn's trailing group is live (the work-group header reads "Running <command>", the reasoning row shimmers). The Thinking row fills every other stretch of a working turn, before the first part and between groups, so the live row flips between "Running …" and "Thinking" rather than stacking both. Only the newest message says whether the turn is open and only its groups can be live: a step-per-message harness completes each earlier step while the next streams, and a stale busy status must not hang the row under a completed answer.
 - Aborts: OpenCode-native aborts are recorded on the message itself; SDK-runtime aborts on the session's turn outcome, which must match the exact assistant message. Missing completion metadata is not an abort: a normal turn can be observed between its idle event and its completion checkpoint. The interrupted row's duration uses the SDK's cancellation timestamp; a native abort may have none, so it falls back to the latest activity on the interrupted message's parts.
 - Terminal states (interrupted, failed) are a centred hairline divider, a peer of the "Worked for" row, never a card; the interrupted duration uses the same `formatDuration` wording as "Worked for {duration}".

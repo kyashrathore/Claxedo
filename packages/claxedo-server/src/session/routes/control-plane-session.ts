@@ -27,19 +27,7 @@ import {
 import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
 import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
-import {
-  TurnPageQueryError,
-  parseOlderTurnPageQuery,
-  parseOpenTurnQuery,
-  parseTurnPageQuery,
-  readFirstRead,
-  readOpenTurn,
-  readTurnPage,
-  type FoldRead,
-  type ReaderSettings,
-  type TurnPageRequest,
-  type TurnRead,
-} from "@claxedo/agent-sdk-runtime/turn-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -51,8 +39,6 @@ type Options = {
   beforeLocalList?: () => Promise<void>
   createMachineSession?: (input: MachineSessionCreate, auth?: SignedControlPlaneAuth) => Promise<{ id: string }>
   sessionShareChangedSink?: SessionShareChangedSink
-  /** What a folded turn sends, read once where the process starts. */
-  foldRead: FoldRead
 }
 
 async function signedAuth(req: Request, options: Options) {
@@ -117,7 +103,7 @@ function projectedTurnRead(services: ControlPlaneServices, sessionId: string): T
 }
 
 /** A loopback first read: the session's projected meta as the loopback inventory lists it, its replay's outline, and the projection's latest turns. */
-async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageRequest | undefined) {
+async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageQuery | undefined) {
   const meta = await services.projectionStore.session_meta(sessionId)
   if (!meta) return undefined
   return await readFirstRead(
@@ -137,15 +123,9 @@ async function projectedPart(services: ControlPlaneServices, sessionId: string, 
 }
 
 /** A loopback page of the projection's turns before the reader's cursor, for a session the projection holds. */
-async function projectedPage(services: ControlPlaneServices, sessionId: string, page: TurnPageRequest & { before: string }) {
+async function projectedPage(services: ControlPlaneServices, sessionId: string, page: TurnPageQuery & { before: string }) {
   if (!(await services.projectionStore.session_meta(sessionId))) return undefined
   return await readTurnPage(projectedTurnRead(services, sessionId), page)
-}
-
-/** A loopback open turn from the projection's latest-turn views, for a session the projection holds. */
-async function projectedTurn(services: ControlPlaneServices, sessionId: string, read: { settings: ReaderSettings; before?: string }) {
-  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
-  return await readOpenTurn(projectedTurnRead(services, sessionId), read.settings, read.before)
 }
 
 const sessionNotFound = { error: { code: "session_not_found", message: "Session not found" } } as const
@@ -177,8 +157,7 @@ function workspaceTransportCapabilities(transport: string) {
   } as const
 }
 
-export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options) {
-  const fold = options.foldRead
+export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
   const app = new Hono()
   // The People routes are also mounted by hosted workerd. Keep the central
   // surface on that worker-safe owner rather than maintaining two copies.
@@ -330,8 +309,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/outline", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        const query = parseTurnPageQuery((name) => c.req.query(name))
-        const firstPage = query && { ...query, fold }
+        const firstPage = parseTurnPageQuery((name) => c.req.query(name))
         const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
           ? await projectedFirstRead(services, sessionId, firstPage)
           : await requireAuthority(services).readSessionFirstRead(await signedAuth(c.req.raw, options), {
@@ -347,7 +325,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/page", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        const page = { ...parseOlderTurnPageQuery((name) => c.req.query(name)), fold }
+        const page = parseOlderTurnPageQuery((name) => c.req.query(name))
         const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
           ? await projectedPage(services, sessionId, page)
           : await requireAuthority(services).readSessionPage(await signedAuth(c.req.raw, options), {
@@ -356,22 +334,6 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
               page,
             })
         return read ? c.json(read) : c.json(sessionNotFound, 404)
-      } catch (err) {
-        return transcriptReadError(c, err)
-      }
-    })
-    .get("/sessions/:sessionId/turn", async (c) => {
-      try {
-        const sessionId = c.req.param("sessionId")
-        const read = parseOpenTurnQuery((name) => c.req.query(name))
-        const turn = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
-          ? await projectedTurn(services, sessionId, read)
-          : await requireAuthority(services).readSessionTurn(await signedAuth(c.req.raw, options), {
-              sessionId,
-              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
-              ...read,
-            })
-        return turn ? c.json(turn) : c.json(sessionNotFound, 404)
       } catch (err) {
         return transcriptReadError(c, err)
       }

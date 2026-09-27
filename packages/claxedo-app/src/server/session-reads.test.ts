@@ -110,7 +110,7 @@ test("session reads: an offline machine's session renders its published row, rea
   expect(await reads.requests).toEqual([])
   expect(server.requests.filter((path) => path.includes("/messages") || path.includes("/outline"))).toEqual([])
   expect(server.runtimeCalls).toEqual([])
-  expect((await readTurnPageBefore(server.context, ref, shape, "cursor_older")).transcript.entries).toEqual([])
+  expect((await readTurnPageBefore(server.context, ref, shape, "cursor_older")).entries).toEqual([])
   expect(server.runtimeCalls).toEqual([])
 })
 
@@ -182,7 +182,6 @@ test("session reads: a held latest turn and outline answer the page and outline,
   expect(first.transcript).toBe(latestTurn)
   expect(first.latestTurn).toBe(latestTurn)
   expect(first.outline).toBe(outline)
-  expect(first.folded.size).toBe(0)
   expect(first.row.title).toBe("Live title")
   expect(server.runtimeCalls.filter((path) => path.includes("/message") || path.includes("/outline"))).toEqual([])
 })

@@ -78,7 +78,6 @@ import type {
   Subagent,
   TranscriptPage,
   TranscriptPart,
-  TurnPageRead,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
@@ -86,8 +85,7 @@ import type { LivePlugin } from "./live-plugin-types"
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
   readonly read: (ref: SessionRef, shape: PageShape, held?: HeldSessionReads) => SessionReads
-  readonly page: (ref: SessionRef, shape: PageShape, before: string) => Promise<TurnPageRead>
-  readonly openTurn: (ref: SessionRef, settings: ReaderSettings, before: string | undefined) => Promise<TranscriptPage>
+  readonly page: (ref: SessionRef, shape: PageShape, before: string) => Promise<TranscriptPage>
   readonly part: (ref: SessionRef, messageId: string, partId: string) => Promise<TranscriptPart>
   readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>

@@ -28,7 +28,7 @@ export async function exerciseSessionPartConformance(harness: TranscriptConforma
   const first = await authority.readSessionFirstRead(creator.auth, {
     sessionId,
     workspaceId,
-    firstPage: { rows: 40, cols: 100, reasoning: false, shell: false, edit: false, fold: "terminal" },
+    firstPage: { rows: 40, cols: 100, reasoning: false, shell: false, edit: false },
   })
   const header = first?.page?.turns[0]?.messages[1]?.parts[0]
   sessionPartHolds(header?.type === "tool" && header.headerOnly === true, "the page did not send the tool as its header")

@@ -8,7 +8,6 @@ import { SessionPeopleControlRoutes } from "./session-people-routes"
 import type { SessionShareChangedSink, SessionShareFanoutTarget } from "../session-people-contract"
 
 const signedOptions = {
-  foldRead: "terminal" as const,
   authConfig: {
     enabled: true as const,
     issuer: "https://auth.example.test",
