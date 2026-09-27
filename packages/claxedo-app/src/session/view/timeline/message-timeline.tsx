@@ -35,8 +35,8 @@ import {
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
 import { holdPaneReveal } from "@/workbench"
-import { FileIcon, ScrollView, resolveTranscriptTypography, transcriptTypographyStyle, showToast } from "@/ui"
-import { Binary, getFilename } from "@/ui/utils"
+import { FileIcon, ScrollView, showToast } from "@/ui"
+import { Binary, getFilename, resolveTranscriptTypography, transcriptTypographyStyle } from "@/ui/utils"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
 import { TimelineJumpButton } from "./timeline-jump-button"
@@ -71,6 +71,7 @@ import { timelineRenderIndexes } from "./timeline-render-range"
 import {
   createTimelineResizeAnchor,
   estimateTimelineRowSize,
+  fixedRowHeights,
   measureUnmeasuredRows,
   scheduleConnectedMeasure,
   timelineRowFrameStyle,
@@ -145,7 +146,8 @@ const taskDescription = (part: PartType, sessionId: string) => {
 export function MessageTimeline(props: MessageTimelineProps) {
   const host = props.host
   const data = useData()
-  const transcriptStyle = createMemo(() => transcriptTypographyStyle(resolveTranscriptTypography(host.transcriptTypography())))
+  const typography = createMemo(() => resolveTranscriptTypography(host.transcriptTypography()))
+  const transcriptStyle = createMemo(() => transcriptTypographyStyle(typography()))
   const ownerSessionKey = host.sessionKey()
   const cached = readTimelineMountSnapshot(ownerSessionKey, host.seededTurnFoldableCounts)
   const savedScroll = cached?.scroll
@@ -548,7 +550,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     },
     initialOffset: () => props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : (savedScroll?.offset ?? 0),
     initialMeasurementsCache: initialMeasurements,
-    estimateSize: (index) => untrack(() => estimateTimelineRowSize({ index, rows: timelineRows(), parts: getMsgParts })),
+    estimateSize: (index) =>
+      untrack(() => estimateTimelineRowSize({ index, rows: timelineRows(), parts: getMsgParts, fixed: fixedRowHeights(typography()) })),
     scrollToFn: (offset, options, instance) => {
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
       elementScroll(offset, options, instance)

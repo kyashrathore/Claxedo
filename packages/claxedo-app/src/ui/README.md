@@ -16,7 +16,7 @@ The app's door to the kit, plus the few components that are the app's own.
 `@opencode-ai/ui` may be imported only inside `src/ui` (`scripts/checks/v2-only.ts`). Everything else imports it through two entries, which `scripts/checks/domain-boundaries.ts` admits into `src/ui`:
 
 - `@/ui` (`index.ts`): components, contexts and hooks;
-- `@/ui/utils` (`utils.ts`): the kit's pure helpers (`checksum`, `sampledChecksum`, `Binary`, the path helpers, `readableText`, `reportUiError`, the theme's `withAlpha` and `HexColor`, the transcript's marked extensions, link helpers and `markdownEnhances`). A store or logic module takes them from here and never loads the component barrel: toast-v2 imports solid-sonner, which registers delegated events on `window.document` at import, and the app's unit tests run without a DOM.
+- `@/ui/utils` (`utils.ts`): the kit's pure helpers (`checksum`, `sampledChecksum`, `Binary`, the path helpers, `readableText`, `reportUiError`, the theme's `withAlpha` and `HexColor`, the transcript typography resolver and its knobs, the transcript's marked extensions, link helpers and `markdownEnhances`). A store or logic module takes them from here and never loads the component barrel: toast-v2 imports solid-sonner, which registers delegated events on `window.document` at import, and the app's unit tests run without a DOM.
 
 The only kit stylesheet imports outside `src/ui` are the two Tailwind entries at the top of `shell/styles/index.css`, listed in `v2-only.ts`.
 

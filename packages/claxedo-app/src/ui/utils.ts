@@ -13,3 +13,12 @@ export {
   transcriptMarkdownExtensions,
 } from "@opencode-ai/ui/context/marked"
 export type { HexColor } from "@opencode-ai/ui/theme/types"
+export {
+  DEFAULT_TRANSCRIPT_TYPOGRAPHY,
+  TRANSCRIPT_NUMBERS,
+  composeTranscriptTypography,
+  resolveTranscriptTypography,
+  transcriptTypographyStyle,
+  type PairedTranscriptTypography,
+  type ResolvedTranscriptTypography,
+} from "@opencode-ai/ui/theme/transcript-typography"

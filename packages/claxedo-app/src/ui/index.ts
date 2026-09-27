@@ -73,4 +73,3 @@ export { TextShimmerV2 as TextShimmer } from "@opencode-ai/ui/v2/text-shimmer-v2
 export { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 export { ThemeProvider } from "@opencode-ai/ui/theme"
 export { useThemeOptional } from "@opencode-ai/ui/theme/context"
-export { DEFAULT_TRANSCRIPT_TYPOGRAPHY, composeTranscriptTypography, resolveTranscriptTypography, transcriptTypographyStyle, type PairedTranscriptTypography } from "@opencode-ai/ui/theme/transcript-typography"

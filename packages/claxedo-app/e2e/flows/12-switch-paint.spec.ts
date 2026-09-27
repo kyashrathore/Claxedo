@@ -21,6 +21,47 @@ async function seedTurns(stack: Stack, api: ClaxedoApi, directory: string, title
   return session
 }
 
+type RowHeightsWindow = Window & { __claxedoFixedRowHeights?: Record<string, string[]> }
+
+test("12 a switch lays out every turn gap and turn fold at its drawn height from the frame it mounts", async ({ stack, api, app }) => {
+  const here = await stack.daemon.makeWorkspace("rows", "Rows")
+  const previous = await seedTurns(stack, api, here.directory, "Previous", 1)
+  const target = await seedTurns(stack, api, here.directory, "Target", 6)
+  await app.goto(`${stack.url}${sessionRoute(here.id, previous.id)}`)
+  await expect(app.getByText("Previous reply line 6.").first()).toBeVisible()
+  await app.evaluate(() => {
+    const heights: Record<string, string[]> = {}
+    const note = (row: HTMLElement, style = row.getAttribute("style") ?? "") => {
+      const key = row.dataset.timelineKey
+      if (!key?.startsWith("turn-gap:") && !key?.startsWith("turn-fold:")) return
+      const height = /(?:^|;)\s*height:\s*([^;]+)/.exec(style)?.[1]?.trim() ?? "none"
+      const seen = (heights[key] ??= [])
+      if (!seen.includes(height)) seen.push(height)
+    }
+    ;(window as RowHeightsWindow).__claxedoFixedRowHeights = heights
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === "attributes" && record.target instanceof HTMLElement) note(record.target, record.oldValue ?? "")
+        for (const node of record.addedNodes) {
+          if (node instanceof HTMLElement) [node, ...node.querySelectorAll<HTMLElement>("[data-timeline-key]")].forEach((row) => note(row))
+        }
+      }
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ["style"] })
+  })
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: target.title, exact: true }).click()
+  await expect(app.getByText("Target reply line 6.").last()).toBeVisible()
+  await expectNothingAnimating(app)
+
+  const rows = await app.evaluate(() =>
+    Object.entries((window as RowHeightsWindow).__claxedoFixedRowHeights ?? {}).map(([key, heights]) => {
+      const drawn = document.querySelector<HTMLElement>(`[data-timeline-key="${key}"] > [data-index]`)
+      return drawn ? [{ key: key.split(":")[0], heights, drawn: `${drawn.getBoundingClientRect().height}px` }] : []
+    }).flat(),
+  )
+  expect(new Set(rows.map((row) => row.key)), "row kinds still mounted after the switch").toEqual(new Set(["turn-gap", "turn-fold"]))
+  expect(rows.filter((row) => row.heights.some((height) => height !== row.drawn))).toEqual([])
+})
+
 test("12 a session switch shows the previous session until the next one is laid out in its final place, and nothing between", async ({ stack, api, app }, info) => {
   const here = await stack.daemon.makeWorkspace("paint", "Paint")
   const there = await stack.daemon.makeWorkspace("elsewhere", "Elsewhere")

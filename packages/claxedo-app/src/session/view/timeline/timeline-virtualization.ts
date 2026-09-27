@@ -1,5 +1,6 @@
 import { batch } from "solid-js"
 import type { VirtualItem, Virtualizer } from "@tanstack/solid-virtual"
+import { TRANSCRIPT_NUMBERS, type ResolvedTranscriptTypography } from "@/ui/utils"
 
 export function estimateLongMarkdownHeight(text: string) {
   let lineCount = 1
@@ -34,12 +35,26 @@ type TimelineResizeAnchorInput = {
   followsInsertBeside?: (displacedKey: string) => boolean
 }
 
+export type FixedRowHeights = { readonly turnGap: number; readonly turnFold: number }
+
+const turnFoldRuleHeight = 1
+
+export function fixedRowHeights(typography: Pick<ResolvedTranscriptTypography, "turnGap" | "toolRowHeight">): FixedRowHeights {
+  return {
+    turnGap: typography.turnGap ?? TRANSCRIPT_NUMBERS.turnGap.shipped,
+    turnFold: (typography.toolRowHeight ?? TRANSCRIPT_NUMBERS.toolRowHeight.shipped) + turnFoldRuleHeight,
+  }
+}
+
 export function estimateTimelineRowSize(input: {
   index: number
   rows: readonly { _tag: string; group?: { type: string; ref?: { messageId: string; partId: string } } }[]
   parts: (messageId: string) => readonly { id: string; type: string; text?: string }[]
+  fixed: FixedRowHeights
 }) {
   const row = input.rows[input.index]
+  if (row?._tag === "TurnGap") return input.fixed.turnGap
+  if (row?._tag === "TurnFold") return input.fixed.turnFold
   if (row?._tag !== "AssistantPart") return timelineInitialEstimatedItemSize
   if (input.index < input.rows.length - 50) return timelineInitialEstimatedItemSize
   const group = row.group

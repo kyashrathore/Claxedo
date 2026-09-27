@@ -1,6 +1,6 @@
 import { useServer, type PlacementId } from "@/server"
 import { DataProvider, TranscriptKitProviders, type OptimisticUserMessage } from "@/transcript"
-import { resolveTranscriptTypography, transcriptTypographyStyle } from "@/ui"
+import { resolveTranscriptTypography, transcriptTypographyStyle } from "@/ui/utils"
 import { EMPTY_DATA } from "./session-timeline"
 import { TimelineUserMessage } from "./timeline/timeline-user-message"
 import { useTranscriptTypography } from "./timeline/transcript-typography"

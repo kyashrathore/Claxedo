@@ -1,5 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useThemeOptional, composeTranscriptTypography, DEFAULT_TRANSCRIPT_TYPOGRAPHY, type PairedTranscriptTypography } from "@/ui"
+import { useThemeOptional } from "@/ui"
+import { composeTranscriptTypography, DEFAULT_TRANSCRIPT_TYPOGRAPHY, type PairedTranscriptTypography } from "@/ui/utils"
 
 export function useTranscriptTypography(): Accessor<PairedTranscriptTypography> {
   const themes = useThemeOptional()
