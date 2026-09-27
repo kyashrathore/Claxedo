@@ -5,7 +5,7 @@ const maxSvgBytes = 4 * 1024 * 1024
 const defaultTimeoutMs = 2_000
 
 export function createNativeMermaidRenderer(
-  path = process.env.CLAXEDO_MERMAID_RENDERER_PATH,
+  path: string | undefined,
   options: { args?: string[]; timeoutMs?: number } = {},
 ) {
   const render = createOneShotNativeRenderer({

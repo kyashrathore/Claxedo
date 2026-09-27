@@ -12,17 +12,17 @@ function rendererOutput() {
 }
 
 /**
- * Normal source builds and dev sessions use the JavaScript renderer when no
- * prebuilt native helper is present. Release packaging opts into a required
- * Cargo build explicitly; contributors can do the same with
- * CLAXEDO_BUILD_NATIVE_RICH_CONTENT=1.
+ * The desktop draws Mermaid only through this helper, so a source build or dev
+ * session without it shows each diagram as its code block. Release packaging
+ * opts into a required Cargo build explicitly; contributors can do the same
+ * with CLAXEDO_BUILD_NATIVE_RICH_CONTENT=1.
  */
 export async function prepareRichContentRenderer(options: { required?: boolean } = {}) {
   const output = rendererOutput()
   const shouldBuild = options.required || process.env.CLAXEDO_BUILD_NATIVE_RICH_CONTENT === "1"
   if (shouldBuild) return buildRichContentRenderer()
   if (existsSync(output)) return output
-  console.warn("[rich-content] native helper unavailable; desktop will use the lazy JavaScript renderer")
+  console.warn("[rich-content] native helper unavailable; desktop shows Mermaid diagrams as code")
   return undefined
 }
 

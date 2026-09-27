@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { createContext, createEffect, createMemo, getOwner, on, onCleanup, useContext, type Accessor, type JSX } from "solid-js"
 import type { PluginCapability, PluginPlatform } from "@claxedo/plugin-api"
 import { useI18n } from "@/i18n"
+import { desktopBridge } from "@/lib/desktop-bridge"
 import { useServer } from "@/server"
 import { useSessionStores } from "@/session"
 import { useCommands, useShellRegistries, useShellRoute } from "@/shell"
@@ -37,7 +38,7 @@ export function usePluginHost(): PluginsContext {
 }
 
 function currentPlatform(): PluginPlatform {
-  return typeof (globalThis as { api?: unknown }).api === "object" ? "desktop" : "web"
+  return desktopBridge() ? "desktop" : "web"
 }
 
 function useHostServices(): HostServices {

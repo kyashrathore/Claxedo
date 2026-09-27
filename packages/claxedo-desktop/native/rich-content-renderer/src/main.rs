@@ -26,9 +26,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let mode = env::args()
-        .nth(1)
-        .ok_or("expected mermaid mode")?;
+    let mode = env::args().nth(1).ok_or("expected mermaid mode")?;
     let mut input = String::new();
     io::stdin()
         .take(MAX_REQUEST_BYTES + 1)
@@ -63,39 +61,53 @@ fn require_source_limit(source: &str, limit: usize, name: &str) -> Result<(), St
     Err(format!("{name} source exceeds the native renderer limit"))
 }
 
+// Mermaid's base theme derives actor, cluster, edge-label and pie colors from
+// these keys; this renderer keeps its light defaults for them unless told.
 fn apply_theme(options: &mut RenderOptions, theme: &HashMap<String, String>) {
+    let target = &mut options.theme;
     if let Some(value) = theme.get("background") {
-        options.theme.background = value.clone();
+        target.background = value.clone();
     }
     if let Some(value) = theme.get("primaryColor").or_else(|| theme.get("mainBkg")) {
-        options.theme.primary_color = value.clone();
+        target.primary_color = value.clone();
+        target.sequence_actor_fill = value.clone();
     }
     if let Some(value) = theme.get("primaryTextColor") {
-        options.theme.primary_text_color = value.clone();
+        target.primary_text_color = value.clone();
     }
     if let Some(value) = theme
         .get("primaryBorderColor")
         .or_else(|| theme.get("nodeBorder"))
     {
-        options.theme.primary_border_color = value.clone();
+        target.primary_border_color = value.clone();
+        target.sequence_actor_border = value.clone();
+        target.sequence_actor_line = value.clone();
+        target.cluster_border = value.clone();
     }
     if let Some(value) = theme.get("lineColor") {
-        options.theme.line_color = value.clone();
+        target.line_color = value.clone();
     }
     if let Some(value) = theme.get("secondaryColor") {
-        options.theme.secondary_color = value.clone();
+        target.secondary_color = value.clone();
+        target.sequence_activation_fill = value.clone();
+        target.edge_label_background = value.clone();
     }
     if let Some(value) = theme.get("tertiaryColor") {
-        options.theme.tertiary_color = value.clone();
+        target.tertiary_color = value.clone();
+        target.cluster_background = value.clone();
     }
     if let Some(value) = theme.get("textColor") {
-        options.theme.text_color = value.clone();
+        target.text_color = value.clone();
+        target.pie_title_text_color = value.clone();
+        target.pie_section_text_color = value.clone();
+        target.pie_legend_text_color = value.clone();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mermaid_rs_renderer::Theme;
 
     #[test]
     fn renders_mermaid_with_desktop_theme_values() {
@@ -110,6 +122,70 @@ mod tests {
         assert!(svg.starts_with("<svg"));
         assert!(svg.contains("#123456"));
         assert!(svg.contains("#abcdef"));
+    }
+
+    fn themed(source: &str, theme: &[(&str, &str)]) -> String {
+        render_mermaid(&RenderRequest {
+            source: source.to_string(),
+            theme: theme
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn draws_sequence_actors_in_the_theme_colors() {
+        let svg = themed(
+            "sequenceDiagram\nApp->>Server: POST\nServer-->>App: ok",
+            &[
+                ("primaryColor", "#123456"),
+                ("primaryBorderColor", "#abcdef"),
+                ("secondaryColor", "#0d0e0f"),
+            ],
+        );
+        assert!(svg.contains("#123456"));
+        assert!(svg.contains("#abcdef"));
+        for default in ["#EAEAEA", "#666666", "#999999"] {
+            assert!(
+                !svg.contains(default),
+                "{default} kept from the light default theme"
+            );
+        }
+    }
+
+    #[test]
+    fn draws_clusters_and_edge_labels_in_the_theme_colors() {
+        let svg = themed(
+            "flowchart LR\nsubgraph Store\nA -->|commit| B\nend",
+            &[
+                ("primaryBorderColor", "#abcdef"),
+                ("secondaryColor", "#0d0e0f"),
+                ("tertiaryColor", "#0a0b0c"),
+            ],
+        );
+        assert!(svg.contains("#0a0b0c"));
+        assert!(svg.contains("#0d0e0f"));
+        for default in ["#FFFFDE", "#AAAA33", "rgba(248,250,252, 0.92)"] {
+            assert!(
+                !svg.contains(default),
+                "{default} kept from the light default theme"
+            );
+        }
+    }
+
+    #[test]
+    fn draws_pie_text_in_the_theme_text_color() {
+        let svg = themed(
+            "pie title Share\n\"a\" : 1\n\"b\" : 2",
+            &[("textColor", "#fedcba")],
+        );
+        assert!(svg.contains("#fedcba"));
+        assert!(!svg.contains(&format!(
+            "fill=\"{}\"",
+            Theme::mermaid_default().pie_title_text_color
+        )));
     }
 
     #[test]

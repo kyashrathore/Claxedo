@@ -21,7 +21,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `useSettings().general.*` | `settings`: the five accessors the timeline reads |
 | `useTranscriptTypography().typography` | `transcriptTypography` |
 | `useLanguage().t` | `t: TimelineTranslate`, typed on the 38 keys the timeline uses (`TimelineTextKey`) |
-| `usePlatform()` | `platform`: `openLink`, `renderMermaid?` |
+| `usePlatform()` | `platform`: `openLink`, and `renderMermaid` from `desktopBridge()` (`@/lib/desktop-bridge`), present only on desktop |
 | `useClaxedoState().workspacePanel.open(...)` with `workspaceDir`, `targetPaneId`, `navigator: null` | `openFocus(focus)`: the host opens each focus as a workspace-panel tab; a `subagent` tab belongs to the session holding the pane |
 | `layout.showContent(layout.openSession(...))` at phone width | `openSessionInPane(sessionId, label?)` |
 | `sdk.client.find.files({ query, dirs: "false" })` | `findFiles(query, signal)`: exact-path candidates; resolves to `[]` on a failed lookup, never rejects |
@@ -141,7 +141,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 - Path chips render mentions as `@path`, and the sigil is stripped before resolving; a path that really starts with `@` (an npm scope folder) is indistinguishable, and the mention reading wins.
 - The context menu's path comes from the chip's text or, for filename slots that render only the basename, from `data-path`; falling back to the slot text would fabricate `<placement>/<basename>` for Open, Copy and Reveal.
 - The open-file event's detail rides on a DOM `CustomEvent`, so it is read structurally.
-- Mermaid rendering is registered once at app start; the transcript's Mermaid decorator re-sanitizes its output through `sanitizeSvg` before it reaches `innerHTML`.
+- Mermaid rendering is registered once at app start (`installTimelineMermaid`). On desktop the renderer is the preload's `renderMermaid`: the main process runs the native helper (`claxedo-desktop/native/rich-content-renderer`) with the colors from `mermaidThemeVariables`, and mermaid.js is never loaded. A native failure leaves the code block; there is no fallback to mermaid.js. The web build draws with mermaid.js. Either way the transcript's Mermaid decorator re-sanitizes the SVG through `sanitizeSvg` before it reaches `innerHTML`.
 - A wide table or diagram borrows the pane gutters only when its content is wider than the column, at most 20% of the column on either side, and never beyond the scroll viewport's content box after the rail and environment-card gutters, so shrinking the pane removes bleed first (`markdown-surfaces.css`).
 
 ## Why failed turns read this way

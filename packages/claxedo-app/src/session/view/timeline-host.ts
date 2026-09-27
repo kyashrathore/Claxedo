@@ -7,6 +7,7 @@ import { sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
 import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
+import { desktopBridge } from "@/lib/desktop-bridge"
 import { openExternal } from "@/lib/external-link"
 
 export type TimelineHostInput = {
@@ -83,7 +84,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     settings,
     transcriptTypography,
     t: (key, params) => input.t(`sessionScreen.timeline.${key}`, params),
-    platform: { openLink: openExternal },
+    platform: { openLink: openExternal, renderMermaid: desktopBridge()?.renderMermaid },
     openFocus: (focus) => openFocus(input, focus),
     openSessionInPane: (id) => void input.workbench.openRoute({ kind: "session", ...refFor(view, id) }),
     findFiles: (query) => findFiles(input, query),

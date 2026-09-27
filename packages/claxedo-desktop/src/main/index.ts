@@ -170,10 +170,9 @@ const logger = initLogging()
 const richContentRendererPath = resolveRichContentRendererPath({
   packaged: IS_PACKAGED,
   resourcesPath: process.resourcesPath,
-  appPath: app.getAppPath(),
+  appPath: join(import.meta.dirname, "../.."),
   override: process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
 })
-if (richContentRendererPath) process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH = richContentRendererPath
 const startAtLogin = createStartAtLogin(app)
 const electronDiagnosticsSource = createElectronSource({
   process,
@@ -1019,7 +1018,7 @@ const diagnosticsIpc = registerIpcHandlers({
   installUpdate: async () => installUpdate(),
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
-  renderMermaid: createNativeMermaidRenderer(process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? richContentRendererPath),
+  renderMermaid: createNativeMermaidRenderer(richContentRendererPath),
   browser: browserRegistry,
   processDiagnostics: {
     profiler: diagnosticsProfiler,
