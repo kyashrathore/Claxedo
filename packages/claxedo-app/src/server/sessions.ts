@@ -4,7 +4,7 @@ import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
 import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
-import { readLatestTurn } from "./latest-turn"
+import { readWholeTurn } from "./whole-turn"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
@@ -92,7 +92,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     list: (options) => listSessions(context, options),
     read: (ref, held) => readSession(context, ref, held),
     older: (ref, cursor) => readOlder(context, ref, cursor),
-    latestTurn: (ref) => readLatestTurn(context, ref),
+    wholeTurn: (ref, before) => readWholeTurn(context, ref, before),
     turn: (ref, turnId) => readTurn(context, ref, turnId),
     create: async (input) => {
       const row = await createSession(context, wakes, input)

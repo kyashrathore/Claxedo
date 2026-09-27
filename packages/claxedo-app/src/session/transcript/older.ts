@@ -5,20 +5,27 @@ import { prependPage } from "./conversation"
 
 type OlderOutcome = { readonly page: TranscriptPage } | { readonly error: AppError } | undefined
 
-export function loadOlder(context: TranscriptContext): Promise<void> {
-  context.olderRead.current ??= readOlderPage(context).then((outcome) => {
+export type OlderWindow = "page" | "turn"
+
+export function loadOlder(context: TranscriptContext, window: OlderWindow): Promise<void> {
+  context.olderRead.current ??= readOlderPage(context, window).then((outcome) => {
     context.olderRead.current = undefined
     landOlderPage(context, outcome)
   })
   return context.olderRead.current
 }
 
-async function readOlderPage(context: TranscriptContext): Promise<OlderOutcome> {
+function readOlderWindow(context: TranscriptContext, cursor: string, window: OlderWindow): Promise<TranscriptPage> {
+  const { sessions } = context.server
+  return window === "turn" ? sessions.wholeTurn(context.ref, cursor) : sessions.older(context.ref, cursor)
+}
+
+async function readOlderPage(context: TranscriptContext, window: OlderWindow): Promise<OlderOutcome> {
   const cursor = context.olderCursor()
   if (cursor === undefined) return undefined
   context.older.send({ type: "olderStarted" })
   try {
-    return { page: await context.server.sessions.older(context.ref, cursor) }
+    return { page: await readOlderWindow(context, cursor, window) }
   } catch (cause) {
     return { error: toAppError(cause) }
   }

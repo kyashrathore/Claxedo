@@ -82,14 +82,52 @@ async function warmReturn(app: Page, cdp: CDPSession, settled: () => Promise<str
 
 test.skip(({ isMobile }) => isMobile, "the warm return is measured at desktop width")
 
+const BACKFILL_VIEWPORTS = 2
+
+type BackfillStart = { readonly sessionId: string; readonly viewports: number }
+
+function recordBackfillStarts() {
+  const starts: BackfillStart[] = []
+  Reflect.set(window, "__claxedoBackfillStarts", starts)
+  const send = window.fetch.bind(window)
+  window.fetch = (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), location.href)
+    const match = /\/session\/([^/]+)\/message$/.exec(url.pathname)
+    if (match && url.searchParams.get("view") === "latest-turn" && url.searchParams.has("before")) {
+      const sessionId = decodeURIComponent(match[1])
+      const scroller = document.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(sessionId)}"] [data-slot="session-timeline-scroll"] [data-scrollable]`)
+      starts.push({ sessionId, viewports: scroller ? scroller.scrollTop / scroller.clientHeight : -1 })
+    }
+    return send(input, init)
+  }
+}
+
+async function backfillStops(app: Page, session: { readonly id: string; readonly title: string }) {
+  const firstTurn = app.locator(`[data-session-id="${session.id}"] [data-timeline-content]`).getByText(`${session.title} turn 1:`, { exact: false })
+  const above = () =>
+    app.evaluate((sessionId) => {
+      const scroller = document.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(sessionId)}"] [data-slot="session-timeline-scroll"] [data-scrollable]`)
+      return scroller ? scroller.scrollTop / scroller.clientHeight : -1
+    }, session.id)
+  await expect
+    .poll(async () => (await above()) >= BACKFILL_VIEWPORTS || (await firstTurn.count()) > 0, { message: `the backfill of ${session.title} stops at ${BACKFILL_VIEWPORTS} viewports above the reader or at its first turn`, timeout: 15_000 })
+    .toBe(true)
+  const starts = await app.evaluate((sessionId) => {
+    const all = Reflect.get(window, "__claxedoBackfillStarts") as BackfillStart[]
+    return all.splice(0).filter((start) => start.sessionId === sessionId).map((start) => start.viewports)
+  }, session.id)
+  return { backfillStarts: starts, stoppedAt: await above() }
+}
+
 function transcriptBytes(app: Page) {
-  const reads: { readonly sessionId: string; readonly view: string | null; readonly bytes: number }[] = []
+  const reads: { readonly sessionId: string; readonly view: string | null; readonly backfill: boolean; readonly bytes: number }[] = []
   app.on("response", (response) => {
     const url = new URL(response.url())
     const match = /\/session\/([^/]+)\/(message|outline)$/.exec(url.pathname)
     if (!match || response.request().method() !== "GET") return
     const view = match[2] === "outline" ? "outline" : url.searchParams.get("view")
-    void response.body().then((body) => reads.push({ sessionId: decodeURIComponent(match[1]), view, bytes: body.length }))
+    const backfill = view === "latest-turn" && url.searchParams.has("before")
+    void response.body().then((body) => reads.push({ sessionId: decodeURIComponent(match[1]), view, backfill, bytes: body.length }))
   })
   return reads
 }
@@ -122,6 +160,7 @@ test("12 a return after a walk past the open-session cache does the same work fo
   }
   const reads = transcriptBytes(app)
   await app.addInitScript(installPaintedFrames)
+  await app.addInitScript(recordBackfillStarts)
   await app.goto(`${stack.url}${sessionRoute(home.id, anchor.id)}`)
   await expect(app.getByText("Anchor reply 2").first()).toBeVisible()
   const rail = app.getByRole("navigation", { name: UI.rail })
@@ -129,7 +168,7 @@ test("12 a return after a walk past the open-session cache does the same work fo
   await settled()
   const cdp = await app.context().newCDPSession(app)
   await cdp.send("Performance.enable")
-  type Work = ReturnWork & { readonly transcriptBytes: number; readonly olderPageReads: number; readonly outlineBytes: number }
+  type Work = ReturnWork & { readonly transcriptBytes: number; readonly olderPageReads: number; readonly backfillReads: number; readonly backfillStarts: readonly number[]; readonly stoppedAt: number; readonly outlineBytes: number }
   const runs: Record<string, Work[]> = { small: [], large: [], "first small": [], "first large": [], "again small": [], "again large": [] }
   const heaps: number[] = []
   const rss: number[] = [await rendererRssBytes(app.context().browser()!)]
@@ -141,10 +180,13 @@ test("12 a return after a walk past the open-session cache does the same work fo
       const nav = app.getByRole("button", { name: `${step.label === "large" ? 40 : 4}. New message`, exact: true })
       if (step.label === "large") await expect(nav, `the rail lists every turn of ${step.session.title} on its ${pass} visit, with no scroll`).toBeVisible()
       else await expect(nav, "four turns show no rail").toHaveCount(0)
+      const backfill = await backfillStops(app, step.session)
       runs[pass === "return" ? step.label : `${pass} ${step.label}`].push({
         ...work,
-        transcriptBytes: reads.filter((read) => read.view !== "outline").reduce((sum, read) => sum + read.bytes, 0),
+        transcriptBytes: reads.filter((read) => read.view !== "outline" && !read.backfill).reduce((sum, read) => sum + read.bytes, 0),
         olderPageReads: reads.filter((read) => read.view === null).length,
+        backfillReads: reads.filter((read) => read.backfill && read.sessionId === step.session.id).length,
+        ...backfill,
         outlineBytes: reads.filter((read) => read.view === "outline").reduce((sum, read) => sum + read.bytes, 0),
       })
     }
@@ -156,11 +198,13 @@ test("12 a return after a walk past the open-session cache does the same work fo
   for (const label of Object.keys(runs)) {
     expect.soft(runs[label].map((work) => work.olderPageReads), `older-page reads on ${label} visits, which no visit makes without a scroll, pull or pick`).toEqual([0, 0, 0, 0, 0])
     expect.soft(runs[label].map((work) => work.fromEnd <= 2), `${label} visits stay bottom-anchored`).toEqual([true, true, true, true, true])
+    expect.soft(runs[label].map((work) => work.backfillStarts.length), `backfill reads seen in the page on ${label} visits, against the reads on the wire`).toEqual(runs[label].map((work) => work.backfillReads))
+    expect.soft(runs[label].flatMap((work) => work.backfillStarts).filter((viewports) => viewports >= BACKFILL_VIEWPORTS), `viewports above the reader when a ${label} visit's backfill read a turn it did not need`).toEqual([])
   }
   for (const pass of ["first", "return"] as const) {
     const large = pass === "return" ? "large" : "first large"
     const small = pass === "return" ? "small" : "first small"
-    expect.soft(median(large, (work) => work.transcriptBytes), `transcript bytes a ${pass} visit to a large session reads, against a small one's (${median(small, (work) => work.transcriptBytes)})`).toBeLessThanOrEqual(median(small, (work) => work.transcriptBytes) * 1.5 + 2048)
+    expect.soft(median(large, (work) => work.transcriptBytes), `transcript bytes a ${pass} visit to a large session reads before its idle backfill, against a small one's (${median(small, (work) => work.transcriptBytes)})`).toBeLessThanOrEqual(median(small, (work) => work.transcriptBytes) * 1.5 + 2048)
     expect.soft(median(large, (work) => work.addedElements), `elements a ${pass} visit to a large session adds, against a small one's`).toBeLessThanOrEqual(median(small, (work) => work.addedElements) * 1.5 + 200)
     expect.soft(median(large, (work) => work.outlineBytes), `outline bytes a ${pass} visit to a large session reads`).toBeLessThanOrEqual(40 * 512)
   }

@@ -10,7 +10,10 @@ import { transcriptPageFromWire } from "./wire/transcript"
 const CENTRAL_PAGE_SIZE = 50
 const SESSIONS = "/api/control/sessions"
 
-export type CentralPage = { readonly view: "latest-surface" | "latest-turn" } | { readonly before: string }
+export type CentralPage =
+  | { readonly view: "latest-surface" }
+  | { readonly view: "latest-turn"; readonly before?: string }
+  | { readonly before: string }
 
 async function storedMessages(context: SessionContext, ref: SessionRef, query: Readonly<Record<string, string>>): Promise<unknown> {
   if (context.account) return context.account.run("session.messages", { sessionId: ref.sessionId, ...query })
@@ -23,7 +26,11 @@ async function storedInventory(context: SessionContext, workspaceId: string): Pr
 }
 
 export async function readCentralPage(context: SessionContext, workspaceId: string, ref: SessionRef, page: CentralPage): Promise<TranscriptPage> {
-  const window: Record<string, string> = "view" in page ? { view: page.view } : { limit: String(CENTRAL_PAGE_SIZE), before: page.before }
+  const window: Record<string, string> = !("view" in page)
+    ? { limit: String(CENTRAL_PAGE_SIZE), before: page.before }
+    : page.view === "latest-turn" && page.before !== undefined
+      ? { view: page.view, before: page.before }
+      : { view: page.view }
   const body = await storedMessages(context, ref, { workspaceId, ...window })
   return transcriptPageFromWire(readField(body, "messages"), readString(body, "nextCursor") ?? null)
 }

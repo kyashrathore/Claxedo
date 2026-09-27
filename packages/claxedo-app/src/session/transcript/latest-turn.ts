@@ -39,7 +39,7 @@ export async function completeLatestTurn(context: TranscriptContext): Promise<vo
   context.phase.send({ type: "latestStarted" })
   if (context.phase.state().kind !== "completing") return
   try {
-    land(context, await context.server.sessions.latestTurn(context.ref))
+    land(context, await context.server.sessions.wholeTurn(context.ref))
   } catch (cause) {
     console.error("The latest turn could not be read in full", { sessionId: context.ref.sessionId, error: toAppError(cause) })
     land(context, undefined)

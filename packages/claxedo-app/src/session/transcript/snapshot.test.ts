@@ -18,10 +18,12 @@ const page = (entries: ReturnType<typeof entry>[], olderCursor?: string) => ({ e
 const surface = page([entry("msg_2", "user", [{ type: "text", id: "p1" }]), entry("msg_2_r", "assistant", [{ type: "text", id: "p3" }])], "before-the-reply")
 const wholeTurn = page([entry("msg_2", "user", [{ type: "text", id: "p1" }]), entry("msg_2_r", "assistant", [{ type: "tool", id: "p2" }, { type: "text", id: "p3" }])], "before-the-turn")
 const olderPage = page([entry("msg_1", "user", [{ type: "text", id: "p0" }])])
+const olderTurn = page([entry("msg_1", "user", [{ type: "text", id: "p0" }]), entry("msg_1_r", "assistant", [{ type: "tool", id: "p8" }, { type: "text", id: "p9" }])])
 const olderPages: TranscriptPage[] = [page([entry("msg_1_r", "assistant", [{ type: "text", id: "p9" }])], "before-msg-1"), olderPage]
 
 function fakeServer(pages: readonly TranscriptPage[] = [olderPage], outlines: Promise<SessionOutline>[] = []) {
   const olderReads: string[] = []
+  const turnReads: string[] = []
   const reads: SessionReads = {
     surface: Promise.resolve({ row: { ref, title: "Two turns", createdAt: 1, updatedAt: 2 }, diff: [], transcript: surface, latestTurnComplete: false }),
     outline: Promise.resolve(undefined),
@@ -33,7 +35,11 @@ function fakeServer(pages: readonly TranscriptPage[] = [olderPage], outlines: Pr
   const server = {
     sessions: {
       read: () => ({ ...reads, outline: outlines.shift() ?? reads.outline }),
-      latestTurn: async () => wholeTurn,
+      wholeTurn: async (_ref: SessionRef, before?: string) => {
+        if (before === undefined) return wholeTurn
+        turnReads.push(before)
+        return olderTurn
+      },
       older: async (_ref: SessionRef, cursor: string) => {
         olderReads.push(cursor)
         return pages[olderReads.length - 1] ?? olderPage
@@ -41,7 +47,7 @@ function fakeServer(pages: readonly TranscriptPage[] = [olderPage], outlines: Pr
     },
   } as unknown as Server
   const deps = { list: { readRow: () => undefined, readStatus: () => undefined }, requests: { read: () => undefined, readFailed: () => undefined } } as unknown as TranscriptDeps
-  return { server, deps, olderReads }
+  return { server, deps, olderReads, turnReads }
 }
 
 test("snapshot: once the whole latest turn lands, older history pages from before the turn, not from the surface's cursor into it", async () => {
@@ -51,7 +57,7 @@ test("snapshot: once the whole latest turn lands, older history pages from befor
     await readSnapshot(context)
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBe("before-the-turn")
-    await loadOlder(context)
+    await loadOlder(context, "page")
     expect(olderReads).toEqual(["before-the-turn"])
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
@@ -68,12 +74,12 @@ test("older: a page that lands is out of flight before it is announced, so a wat
       on(
         () => context.older.state().kind,
         (kind) => {
-          if (kind === "idle" && context.olderCursor() !== undefined) void loadOlder(context)
+          if (kind === "idle" && context.olderCursor() !== undefined) void loadOlder(context, "page")
         },
         { defer: true },
       ),
     )
-    await loadOlder(context)
+    await loadOlder(context, "page")
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(olderReads).toEqual(["before-the-turn", "before-msg-1"])
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
@@ -99,4 +105,21 @@ test("snapshot: an outline read sent earlier that lands after a later one loses"
     dispose()
   })
   clock.mockRestore()
+})
+
+test("older: a whole-turn read pages from the same cursor, in the same slot, and lands the turn above like a page", async () => {
+  const { server, deps, olderReads, turnReads } = fakeServer()
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    const turn = loadOlder(context, "turn")
+    expect(loadOlder(context, "page"), "a page asked for while the turn is in flight joins it").toBe(turn)
+    await turn
+    expect(turnReads).toEqual(["before-the-turn"])
+    expect(olderReads).toEqual([])
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
+    expect(context.olderCursor()).toBeUndefined()
+    expect(context.older.state().kind).toBe("idle")
+    dispose()
+  })
 })
