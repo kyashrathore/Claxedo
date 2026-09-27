@@ -218,7 +218,7 @@ runConformance({
     await fs.writeFile(path.join(root, "extensions", "conformance.ts"), extension)
     return { ...state, owner: origin.actor, origin, credentials, authFile: undefined,
       sharedSender: { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false },
-      projection: { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conformance", root, dataRoot: root }] },
+      projection: { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conformance", root, skillNames: [], dataRoot: root }] },
       rotate: async () => {
         const port = await reservePort()
         const server = await startScriptedModelServer({ port, red: false })

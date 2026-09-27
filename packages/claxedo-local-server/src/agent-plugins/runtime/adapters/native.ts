@@ -12,6 +12,7 @@ export function nativeAgentPluginAdapter(harnessId: AgentPluginHarnessId): Agent
           pluginInstanceId: plugin.pluginInstanceId,
           root: plugin.root,
           dataRoot: plugin.dataRoot,
+          skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })),
         diagnostics: [],
       }

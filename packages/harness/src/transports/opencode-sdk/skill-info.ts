@@ -3,27 +3,13 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { decodeSkillFrontmatter } from "@claxedo/helpers/skill-frontmatter"
 
-function missingFile(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT"
-}
-
 export async function loadSkills(directories: readonly string[]): Promise<Skill.Info[]> {
   const skills = new Map<string, Skill.Info>()
   for (const directory of directories) {
-    const entries = await fs.readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
-      if (missingFile(error)) return []
-      throw error
-    })
-    for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
-      if (!entry.isDirectory()) continue
-      const location = path.join(directory, entry.name, "SKILL.md")
-      const text = await fs.readFile(location, "utf8").catch((error: unknown) => {
-        if (missingFile(error)) return undefined
-        throw error
-      })
-      if (text === undefined) continue
-      skills.set(entry.name, parseSkill(entry.name, location, text))
-    }
+    const id = path.basename(directory)
+    const location = path.join(directory, "SKILL.md")
+    const text = await fs.readFile(location, "utf8")
+    skills.set(id, parseSkill(id, location, text))
   }
   return [...skills.values()]
 }

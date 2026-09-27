@@ -78,6 +78,7 @@ describe("codexAgentPluginAdapter", () => {
       pluginInstanceId: "claxedo-review",
       root: projectedRoot,
       dataRoot: path.join(generationRoot, "plugins", "data", "claxedo-review"),
+      skillNames: [],
     }])
     expect(projectedRoot.startsWith(path.join(generationRoot, "harnesses", "codex", "plugins"))).toBe(true)
     expect(projectedRoot).not.toBe(retainedRoot)

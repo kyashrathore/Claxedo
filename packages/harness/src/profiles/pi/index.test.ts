@@ -80,7 +80,7 @@ describe("Pi profile selection", () => {
   })
 
   test("adds a Pi package without admitting MCP", () => {
-    const projection = { generation: "g1", pluginRoots: [{ pluginInstanceId: "plugin", root: "/tmp/pi-extension", dataRoot: "/tmp/pi-data" }],
+    const projection = { generation: "g1", pluginRoots: [{ pluginInstanceId: "plugin", root: "/tmp/pi-extension", skillNames: [], dataRoot: "/tmp/pi-data" }],
       mcpServers: [], notApplied: [] }
     expect(piProjectionArgs(projection)).toEqual(["-e", "/tmp/pi-extension"])
     expect(() => piProjectionArgs({ ...projection, mcpServers: [{ kind: "http", name: "server", url: "https://example.test", origin: "configured" }] }))

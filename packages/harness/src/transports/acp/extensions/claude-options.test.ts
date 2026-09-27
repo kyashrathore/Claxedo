@@ -3,7 +3,7 @@ import type { InitializeResponse } from "@agentclientprotocol/sdk"
 import { claudeOptionsMeta } from "./claude-options"
 
 const input = { locality: "local" as const, projection: { generation: "g1", mcpServers: [], notApplied: [],
-  pluginRoots: [{ pluginInstanceId: "p1", root: "/plugins/one", dataRoot: "/data/one" }] } }
+  pluginRoots: [{ pluginInstanceId: "p1", root: "/plugins/one", skillNames: [], dataRoot: "/data/one" }] } }
 
 function handshake(name: string, version: string): InitializeResponse {
   return { protocolVersion: 1, agentInfo: { name, version }, agentCapabilities: {}, authMethods: [] }

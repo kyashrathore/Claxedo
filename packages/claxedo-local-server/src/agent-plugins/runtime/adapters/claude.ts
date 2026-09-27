@@ -60,6 +60,7 @@ export function claudeAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter 
           pluginInstanceId: plugin.pluginInstanceId,
           root: await projectPlugin(viewRoot, plugin, mcpServers),
           dataRoot: plugin.dataRoot,
+          skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })
       }
       return { harnessId: "claude", pluginRoots: roots, diagnostics: [] }

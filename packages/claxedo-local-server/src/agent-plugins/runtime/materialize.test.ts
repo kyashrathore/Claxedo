@@ -189,6 +189,8 @@ describe("materializeAgentPluginGeneration", () => {
     await expect(fs.stat(config.skills[0])).resolves.toMatchObject({})
 
     const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)
+    expect(restored?.projections.opencode?.pluginRoots[0]?.skillNames).toEqual(["review"])
+    expect(restored?.projections.opencode?.pluginRoots).toEqual(materialized.projections.opencode?.pluginRoots)
     expect(restored?.revision).toBe(1)
     expect(restored?.projections.opencode?.configFile).toBe(configFile)
     expect(restored?.projections.opencode?.pluginRoots[0]?.root).toContain(restored!.root)
@@ -222,3 +224,23 @@ describe("materializeAgentPluginGeneration", () => {
     expect(restored?.projections.opencode?.pluginRoots[0]?.root).toContain(restored!.root)
   })
 })
+
+test.each([undefined, null, [42], ["../broken"], [".."], ["/tmp/skill"], ["..\\broken"]])(
+  "rejects a generation with invalid approved skill names: %j",
+  async (skillNames) => {
+    const runtimeRoot = await temporary("claxedo-plugin-runtime-")
+    const artifacts = new LocalAgentPluginArtifactStore(await temporary("claxedo-plugin-artifacts-"))
+    const retained = await artifacts.put(await inspectPluginDirectory(await plugin("review", "one")))
+    const generation = await materializeAgentPluginGeneration({
+      runtimeRoot, identity: { mode: "unsigned", machineId: "machine" }, revision: 1, artifacts,
+      selections: [{ pluginInstanceId: "review", artifactDigest: retained.digest, harnessIds: ["opencode"] }],
+      adapters: [openCodeAgentPluginAdapter()],
+    })
+    expect((await readMaterializedAgentPluginGeneration(runtimeRoot))?.projections.opencode?.pluginRoots[0].skillNames).toEqual([])
+    const manifestPath = path.join(generation.root, "generation.json")
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"))
+    manifest.projections.opencode.pluginRoots[0].skillNames = skillNames
+    await fs.writeFile(manifestPath, JSON.stringify(manifest))
+    await expect(readMaterializedAgentPluginGeneration(runtimeRoot)).rejects.toThrow("invalid skill names")
+  },
+)

@@ -24,6 +24,7 @@ export type SkillRoot = {
   pluginInstanceId: string
   root: string
   dataRoot: string
+  skillNames: readonly string[]
 }
 
 export type NotApplied = {

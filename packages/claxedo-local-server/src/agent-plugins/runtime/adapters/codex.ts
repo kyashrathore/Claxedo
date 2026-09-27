@@ -244,6 +244,7 @@ export function codexAgentPluginAdapter(input: { codexHome?: string } = {}): Age
           pluginInstanceId: projected.plugin.pluginInstanceId,
           root: projected.root,
           dataRoot: projected.plugin.dataRoot,
+          skillNames: projected.plugin.plugin.skills.map((skill) => skill.name),
         })),
         diagnostics: [],
       }

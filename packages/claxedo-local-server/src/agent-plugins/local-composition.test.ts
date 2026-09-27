@@ -87,7 +87,7 @@ describe("local Agent Plugins composition", () => {
     const skills = config.skills![0]
     expect(skills).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(skills).not.toContain(collection)
-    await expect(fs.readFile(path.join(skills, "review", "SKILL.md"), "utf8"))
+    await expect(fs.readFile(path.join(skills, "SKILL.md"), "utf8"))
       .resolves.toContain("name: review")
 
     // A restart over a generation this build cannot restore (here: a manifest
@@ -122,7 +122,7 @@ describe("local Agent Plugins composition", () => {
     if (!reprojected) throw new Error("relaunch projected no skill root")
     expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
-    await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")
+    await expect(fs.readFile(path.join(reprojected, "SKILL.md"), "utf8")).resolves.toContain("name: review")
   })
 
   test("a signed world pushed through the loopback surface launches instead of the machine world until withdrawn", async () => {

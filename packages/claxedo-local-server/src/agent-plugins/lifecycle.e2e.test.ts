@@ -146,7 +146,7 @@ describe("local Agent Plugins lifecycle", () => {
     // OpenCode: the SDK harness adapter receives `launch.config` verbatim (embedded SDK config shape).
     const openCode = launch.opencode.config as { skills?: string[]; mcp?: Record<string, unknown> }
     expect(openCode.skills).toHaveLength(1)
-    await expect(fs.readFile(path.join(openCode.skills![0], "code-review", "SKILL.md"), "utf8"))
+    await expect(fs.readFile(path.join(openCode.skills![0], "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
     expect(Object.keys(openCode.mcp ?? {})).toHaveLength(1)
 
@@ -256,7 +256,7 @@ describe("local Agent Plugins lifecycle", () => {
 
     const launch = (await second.composition.runtimeContribution()).harnessLaunch
     const skills = (launch.opencode.config as { skills: string[] }).skills[0]
-    await expect(fs.readFile(path.join(skills, "code-review", "SKILL.md"), "utf8"))
+    await expect(fs.readFile(path.join(skills, "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
 
     // A new generation must still be buildable from retained bytes alone.

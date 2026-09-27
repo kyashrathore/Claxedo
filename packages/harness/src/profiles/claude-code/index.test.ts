@@ -6,8 +6,8 @@ import { CLAUDE_COMMAND_DENY_RULES, claudePermissionSettings, claudePlugins, com
 
 test("plugin roots reach the SDK as distinct local folders", () => {
   expect(claudePlugins({ generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [
-    { pluginInstanceId: "one", root: "/plugin", dataRoot: "/data" },
-    { pluginInstanceId: "two", root: "/plugin", dataRoot: "/data" },
+    { pluginInstanceId: "one", root: "/plugin", skillNames: [], dataRoot: "/data" },
+    { pluginInstanceId: "two", root: "/plugin", skillNames: [], dataRoot: "/data" },
   ] })).toEqual([{ type: "local", path: "/plugin" }])
 })
 
