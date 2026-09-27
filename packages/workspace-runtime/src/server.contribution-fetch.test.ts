@@ -5,6 +5,7 @@ import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from 
 import { createRuntimeCredentialIssuer } from "./first-party-mcp/index"
 import type { WorkspaceRuntimeRouteContribution } from "./route-contribution"
 import type { EmbeddedRelayHostIdentity } from "./workspace-host-service-auth"
+import { loopbackMachineLoginPolicy } from "./testing"
 
 function probe(calls: Array<() => Promise<Response>>): WorkspaceRuntimeRouteContribution {
   return {
@@ -22,6 +23,7 @@ describe("the route-contribution in-process fetch", () => {
   test("passes the relay host-token boundary that refuses the same route to an outside caller", async () => {
     const calls: Array<() => Promise<Response>> = []
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       exposure: relayWorkspaceRuntimeExposure(relayAuth),
       routeContributions: [probe(calls)],
     })
@@ -36,6 +38,7 @@ describe("the route-contribution in-process fetch", () => {
   test("reaches the runtime's routes on a loopback runtime too", async () => {
     const calls: Array<() => Promise<Response>> = []
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       exposure: loopbackWorkspaceRuntimeExposure(),
       routeContributions: [probe(calls)],
     })
@@ -78,6 +81,7 @@ describe("an owner grant presented on the in-process fetch", () => {
     const probe = echo()
     const seen: string[] = []
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       exposure: relayWorkspaceRuntimeExposure(relayAuth),
       ownerGrantIdentity: async (token) => {
         seen.push(token)
@@ -99,7 +103,7 @@ describe("an owner grant presented on the in-process fetch", () => {
 
   test("is ignored by a runtime composed without a verifier", async () => {
     const probe = echo()
-    const runtime = createWorkspaceRuntimeApp({ exposure: relayWorkspaceRuntimeExposure(relayAuth), routeContributions: [probe] })
+    const runtime = createWorkspaceRuntimeApp({ placement: loopbackMachineLoginPolicy(), exposure: relayWorkspaceRuntimeExposure(relayAuth), routeContributions: [probe] })
     try {
       expect(await (await probe.calls[0]({ authorization: "Bearer minted-for-ws_1" })).json()).toEqual({ identity: null })
     } finally {
@@ -113,6 +117,7 @@ describe("the first-party MCP credential as a direct caller", () => {
     const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
     const foreign = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       exposure: relayWorkspaceRuntimeExposure(relayAuth),
       firstPartyMcpLaunch: { enabledToolGroups: () => ["sessions"], baseUrl: "http://127.0.0.1:2593", issuer },
       routeContributions: [{
@@ -138,6 +143,7 @@ describe("the first-party MCP credential as a direct caller", () => {
   test("is refused when no launch option was composed, so the endpoint is unreachable", async () => {
     const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       exposure: relayWorkspaceRuntimeExposure(relayAuth),
       routeContributions: [{
         id: "mcp",

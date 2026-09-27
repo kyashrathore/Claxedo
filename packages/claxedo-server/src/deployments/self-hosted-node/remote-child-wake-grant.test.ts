@@ -55,7 +55,6 @@ const RAT = "rat_bob"
 const AUTHORITY_URL = "https://control.test/api/runtime-authority/session-authorize"
 const CONFIG = { harness: { id: "codex" as const, access: "native" as const }, variant: null, agent: null }
 
-type HostAdapter = Awaited<ReturnType<Parameters<typeof SessionRoutes>[0]>>
 type AuthorityCall = { action: string; authorization: string | null; grant: boolean; turnId?: string; status: number; code?: string }
 type TurnAttempt = { actorId?: string; turnId: string; grant: boolean }
 
@@ -162,29 +161,15 @@ function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
   }
 }
 
-const adapter = { instructionChannel: "turn-system-prompt", deleteSession: async () => {} } as Pick<HostAdapter, "instructionChannel" | "deleteSession">
-
 /**
  * A host over the store behind the relay ingress. The same shape serves a
  * fresh process: it keeps nothing but the store, so what it delivers after a
  * restart is what the store says.
  */
 function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, runtime: HostRuntime, relayKey: CryptoKey) {
-  const host = SessionRoutes(() => adapter as HostAdapter, {
+  const host = SessionRoutes(async () => runtime, {
     sessionAccessPolicy: policy,
-    resolveRuntime: () => runtime,
-    resolveExecutionBinding: ({ sessionId, directory }) => ({ workspaceId: WORKSPACE, directory, sessionId, connectionId: "connection_wake", upstreamSessionId: sessionId }),
-    createSession: async (_c, directory, title, id, create) => {
-      if (!id) throw new Error("A managed create carries the id its reservation named")
-      store.bindSession({
-        sessionId: id,
-        directory,
-        agentSessionId: id,
-        ...(title ? { title } : {}),
-        ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
-      })
-      return { id }
-    },
+    requestedSessionHarness: (requested) => requested ?? { id: "connection_wake", access: "connection" },
     getSessionConfig: async () => CONFIG,
     queuedPrompts: () => queuedPromptStore(store),
     ...storeBackedHostOptions(store),

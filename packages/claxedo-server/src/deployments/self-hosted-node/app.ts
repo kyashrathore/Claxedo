@@ -58,8 +58,6 @@ import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-executio
 import { LocalProjectRoutes, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
-import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
@@ -1798,10 +1796,6 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
 function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services
-  const connectionProviders = [
-    createAcpConnectionProvider(),
-    createOpenCodeServerConnectionProvider(),
-  ] as const
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
   const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
@@ -1844,8 +1838,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
   // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
-  // One process-owned public embedded-SDK runtime: the native `opencode` harness.
-  const opencodeRuntime = openCodeSdkRuntime()
+  // The process-owned public embedded-SDK runtime behind the provider and
+  // credential routes; every embedded workspace host composes its own engine.
+  openCodeSdkRuntime()
   // One reader for both halves: the runtime decides whether a session gets the
   // endpoint at all, and the mount decides which tools it serves, from the
   // same machine-wide activation rows this node's Marketplace writes.
@@ -1856,8 +1851,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // reads, and it dies with the lease that admitted it.
   const connectionTurnCredentials = createConnectionTurnCredentials()
   configureEmbeddedWorkspaceRuntime({
-    opencodeRuntime,
-    connectionProviders,
     // The origin this process serves `/api/claxedo/mcp` on; `port` is the one
     // `startServer` binds and every caller reads back as this node's address.
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, enabledToolGroups: builtinToolGroups },
@@ -1903,7 +1896,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ? undefined
     : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}` })
   configureAgentConfig({
-    connectionConfigs: [...defaultConnectionConfigs(), createOpenCodeServerConnectionProvider()],
+    connectionConfigs: defaultConnectionConfigs(),
     projectAuth: selfHostedCredentialAuthority(credentialBroker),
     ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
   })

@@ -3,12 +3,10 @@ import type { HarnessEventAdapter } from "../../../translate/adapter"
 import { object, text } from "@claxedo/agent-event-runtime/value"
 import { contentBlockImages } from "../../../translate/tool-attachments"
 
-/** Pi payload readers: absent or non-object fields read as empty rather than throwing. */
 const row = (value: unknown): Record<string, unknown> => object(value) ?? {}
 const string = (value: unknown) => text(value) ?? ""
 type State = { blocks: Record<number, string>; finished: boolean }
 
-/** The only Pi RPC → product event translation. No upstream model library enters the host. */
 export function piRpcAdapter(): HarnessEventAdapter<State> {
   return {
     name: "pi-rpc",
@@ -169,7 +167,6 @@ export function piRpcAdapter(): HarnessEventAdapter<State> {
   }
 }
 
-/** Pi reports billable compaction work separately from assistant messages. */
 function usageEvents(value: unknown, providerObservationId?: string): AgentRuntimeEvent[] {
   const usage = row(value)
   if (typeof usage.input !== "number" || typeof usage.output !== "number") return []

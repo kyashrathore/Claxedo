@@ -9,7 +9,7 @@ import { sep } from "node:path"
 import { errorBody } from "./error-body"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { registeredWorkspaceDirectories } from "../target"
-import type { RuntimeEventHub } from "../runtime-event-hub"
+import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import {

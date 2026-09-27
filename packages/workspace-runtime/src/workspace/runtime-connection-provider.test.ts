@@ -2,18 +2,22 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
-import type { ConnectionProvider, HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
+import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
 import { withWorkspaceTarget } from "../target"
-import { createWorkspaceHost } from "./runtime"
+import { loopbackMachineLoginPolicy } from "../testing"
+import { createWorkspaceHost, type WorkspaceHostOptions } from "./runtime"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 
 const roots: string[] = []
-afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
+const cleanups: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
 
 const capabilities: HarnessConnectionCapabilities = {
   abort: false,
@@ -30,128 +34,94 @@ const capabilities: HarnessConnectionCapabilities = {
   subagents: false,
 }
 
-function adapter(): AgentHarnessAdapter {
-  return {
-    instructionChannel: "none",
-    async *executeTurn() {},
-    async createSession() { return { id: "session-1" } },
-    async getSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
-    async updateSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
-    async deleteSession() {},
-    async getSessionConfig() { return { harness: { id: "fixture-primary", access: "connection" }, variant: null, agent: null } },
-    async updateSessionConfig(_binding, update) {
-      return { harness: update.harness ?? { id: "fixture-primary", access: "connection" }, variant: null, agent: null }
-    },
-    async getMessages() { return [] },
-    readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: "fixture-primary" } },
-    dispose() {},
-  }
+async function workspaceRoot(prefix: string) {
+  const root = await mkdtemp(join(tmpdir(), prefix))
+  roots.push(root)
+  return root
 }
 
-function nativeAdapter(harnessId: string): AgentHarnessAdapter {
-  return {
-    ...adapter(),
-    async createSession(directory: string, title?: string, id?: string) {
-      return { id: id ?? "native-session", ...(title ? { title } : {}), directory, time: { created: 10, updated: 10 } }
-    },
-    async getSessionConfig() { return { harness: { id: harnessId, access: "native" as const }, variant: null, agent: null } },
-    async updateSessionConfig(_binding: AgentExecutionBinding, update: { harness?: { id: string; access: "native" | "connection" } }) {
-      return { harness: update.harness ?? { id: harnessId, access: "native" as const }, variant: null, agent: null }
-    },
-    readHarnessCapabilities() {
-      return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none" as const, harness: harnessId }
-    },
-  }
+function mountedHost(root: string, workspaceId: string, options: Omit<WorkspaceHostOptions, "placement" | "target" | "storeRoot" | "harnessStateRoot">) {
+  const target = { workspaceId, directory: root }
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(root, "store"), harnessStateRoot: join(root, "harness"), ...options })
+  const app = new Hono()
+  host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
+  const create = (id: string, query = "&connectionId=fixture-primary") => withWorkspaceTarget(target, () => app.request(
+    `http://runtime.test/session?directory=${encodeURIComponent(root)}${query}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) },
+  ))
+  return { host, create }
 }
+
+const fixtureConnection = (secretRefs?: Record<string, string>) => ({
+  connectionId: "fixture-primary", providerKey: "fixture", configRevision: 1, enabled: true, config: { label: "Fixture" },
+  ...(secretRefs ? { secretRefs } : {}),
+})
 
 describe("WorkspaceRuntime generic connection selection", () => {
-  test("concurrent duplicate resolutions await rejected loser teardown without returning the cached adapter", async () => {
-    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-loser-"))
-    roots.push(root)
+  test("concurrent first resolutions of one connection compose one transport and dispose it once", async () => {
+    const root = await workspaceRoot("workspace-runtime-concurrent-")
     let created = 0
-    let canonicalDisposed = 0
-    const provider: ConnectionProvider<Record<string, never>> = {
+    let disposed = 0
+    const provider = fakeConnectionProvider({
       providerKey: "fixture",
-      validateConfig: () => ({}),
-      project: () => ({ label: "Fixture", readiness: "ready", capabilities }),
-      resolve: () => ({ config: {} }),
-      createAdapter() {
-        const instance = ++created
-        return {
-          ...adapter(),
-          dispose() {
-            if (instance === 1) {
-              canonicalDisposed++
-              return Promise.resolve()
-            }
-            const rejected = Promise.reject(new Error("Loser teardown failed"))
-            void rejected.catch(() => {})
-            return rejected
-          },
-        }
+      capabilities,
+      transport: () => {
+        created++
+        return new FakeTransport({ onDispose: () => { disposed++ } })
       },
-    }
-    const target = { workspaceId: "ws-loser", directory: root }
-    const host = createWorkspaceHost({ target, storeRoot: join(root, "store"), connectionProviders: [provider] })
-    const app = new Hono()
-    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
+    })
+    const { host, create } = mountedHost(root, "ws-concurrent", { connectionProviders: [provider] })
     try {
-      await host.apply({ version: 4, mcp: {}, auth: {}, connections: [{
-        connectionId: "fixture-primary", providerKey: "fixture", configRevision: 1, enabled: true, config: {},
-      }], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
-      const request = (id: string) => withWorkspaceTarget(target, () => app.request(
-        `http://runtime.test/session?directory=${encodeURIComponent(root)}&connectionId=fixture-primary`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) },
-      ))
-      const responses = await Promise.all([request("one"), request("two")])
-      expect(responses.map((response) => response.status)).toEqual([500, 500])
-      expect(created).toBe(3)
-      expect(canonicalDisposed).toBe(0)
+      await host.apply({ version: 4, mcp: {}, auth: {}, connections: [fixtureConnection()], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
+      const responses = await Promise.all([create("one"), create("two")])
+      expect(responses.map((response) => response.status)).toEqual([201, 201])
+      expect(created).toBe(1)
+      expect(disposed).toBe(0)
     } finally { await host.dispose() }
-    expect(canonicalDisposed).toBe(1)
+    expect(disposed).toBe(1)
   })
 
   test("resolves a host-owned secret lease and reports only the public selection", async () => {
-    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
-    roots.push(root)
+    const root = await workspaceRoot("workspace-runtime-provider-")
     let resolvedSecrets: Readonly<Record<string, string>> | undefined
     let resolutions = 0
-    const provider: ConnectionProvider<{ label: string }> = {
+    const provider = fakeConnectionProvider<{ label: string }>({
       providerKey: "fixture",
       validateConfig(input) {
         if (!input || typeof input !== "object" || typeof (input as { label?: unknown }).label !== "string") throw new Error("label required")
         return { label: (input as { label: string }).label }
       },
-      project(config) { return { label: config.label, readiness: "ready", capabilities } },
+      label: (config) => config.label,
+      capabilities,
       resolve({ descriptor, secrets }) {
         resolutions++
         resolvedSecrets = secrets
-        return { config: descriptor.config }
+        return descriptor.config
       },
-      createAdapter: () => ({ ...adapter(), readConnectionState: () => ({ state: "ready", processes: [{ generation: "opaque-generation", role: "execution", state: "ready", observedAt: 1 }] }) }),
-    }
-    const host = createWorkspaceHost({
-      target: { workspaceId: "ws-1", directory: root },
-      storeRoot: join(root, "store"),
+      transport: () => new FakeTransport({
+        health: {
+          connection: () => ({ state: "ready", processes: [{ generation: "opaque-generation", role: "execution", state: "ready", observedAt: 1 }] }),
+          runtime: () => ({ status: "ok" }),
+        },
+      }),
+    })
+    const { host, create } = mountedHost(root, "ws-1", {
       connectionProviders: [provider],
       resolveConnectionSecrets: () => ({ secrets: { token: "runtime-only" }, secretLeaseGeneration: "lease-1" }),
     })
     await host.apply({
       version: 4,
       mcp: {},
-      connections: [{
-        connectionId: "fixture-primary",
-        providerKey: "fixture",
-        configRevision: 1,
-        enabled: true,
-        config: { label: "Fixture" },
-        secretRefs: { token: "credentials/fixture" },
-      }],
+      connections: [fixtureConnection({ token: "credentials/fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
       auth: {},
     })
-    expect(resolvedSecrets).toEqual({ token: "runtime-only" })
     expect(host.detail().harness).toEqual({ kind: "connection", connectionId: "fixture-primary" })
+    expect(host.detail().connectionState).toEqual({ connectionId: "fixture-primary", state: "configured", processes: [] })
+    expect(resolutions).toBe(0)
+
+    expect((await create("local-one")).status).toBe(201)
+    expect(resolvedSecrets).toEqual({ token: "runtime-only" })
     expect(host.detail().connectionState).toEqual({ connectionId: "fixture-primary", state: "ready", processes: [{ generation: "opaque-generation", role: "execution", state: "ready", observedAt: 1 }] })
     expect(host.readConnectionState()).toEqual(host.detail().connectionState)
     expect(await host.readHarnessHealth({ sessionId: "unknown" })).toEqual({ status: "ok" })
@@ -162,137 +132,94 @@ describe("WorkspaceRuntime generic connection selection", () => {
     await host.dispose()
   })
 
-  test("fails closed when a selected connection has unresolved secret references", async () => {
-    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
-    roots.push(root)
-    const host = createWorkspaceHost({ target: { workspaceId: "ws-1", directory: root }, storeRoot: join(root, "store") })
-    await expect(host.apply({
+  test("fails closed when a session selects a connection whose secret references no host resolves", async () => {
+    const root = await workspaceRoot("workspace-runtime-provider-")
+    const provider = fakeConnectionProvider({ providerKey: "fixture", capabilities, transport: () => new FakeTransport() })
+    const { host, create } = mountedHost(root, "ws-1", { connectionProviders: [provider] })
+    await host.apply({
       version: 4,
       mcp: {},
-      connections: [{
-        connectionId: "acp-primary",
-        providerKey: "acp",
-        configRevision: 1,
-        enabled: true,
-        config: { label: "ACP", connection: { kind: "process", command: "/bin/agent" } },
-        secretRefs: { token: "credentials/acp" },
-      }],
-      defaultHarness: { kind: "connection", connectionId: "acp-primary" },
+      connections: [fixtureConnection({ token: "credentials/fixture" })],
+      defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
       auth: {},
-    })).rejects.toBeInstanceOf(WorkspaceHarnessUnavailableError)
+    })
+    const refused = await create("unresolved")
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ error: { code: new WorkspaceHarnessUnavailableError({ id: "fixture-primary", access: "connection" }).code } })
     await host.dispose()
   })
 
-  test("rotates connection adapters when a VM secret lease changes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
-    roots.push(root)
+  test("rotates connection transports when a VM secret lease changes", async () => {
+    const root = await workspaceRoot("workspace-runtime-provider-")
     const createdWith: string[] = []
     const disposed: string[] = []
-    const provider: ConnectionProvider<{ label: string }, { token: string }> = {
+    const provider = fakeConnectionProvider<{ label: string }, { token: string }>({
       providerKey: "fixture",
-      validateConfig(input) { return input as { label: string } },
-      project(config) { return { label: config.label, readiness: "ready", capabilities } },
-      resolve({ secrets }) { return { config: { token: secrets.token } } },
-      createAdapter({ resolved }) {
+      validateConfig: (input) => input as { label: string },
+      label: (config) => config.label,
+      capabilities,
+      resolve: ({ secrets }) => ({ token: secrets.token }),
+      transport: ({ resolved }) => {
         const token = resolved.config.token
         const generation = crypto.randomUUID()
-        return {
-          sessionConfigOwner: "runtime" as const,
-          instructionChannel: "none" as const,
-          async *executeTurn() {},
-          async createSession(_directory, _title, id) {
-            createdWith.push(token)
-            return { id: id ?? `session-${createdWith.length}` }
+        return new FakeTransport({
+          capabilities: { instructionChannel: "none" },
+          onStart: () => { createdWith.push(token) },
+          onDispose: () => { disposed.push(token) },
+          health: {
+            connection: () => ({ state: "ready", processes: [{ generation, role: "execution", state: "ready", observedAt: 1 }] }),
+            runtime: () => ({ status: "ok" }),
           },
-          async getSession(binding) { return { id: binding.sessionId } },
-          async updateSession(binding) { return { id: binding.sessionId } },
-          async deleteSession() {},
-          async getSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
-          async updateSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
-          async getMessages() { return [] },
-          readConnectionState() { return { state: "ready", processes: [{ generation, role: "execution", state: "ready", observedAt: 1 }] } },
-          readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: "fixture-primary" } },
-          dispose() { disposed.push(token) },
-        }
+        })
       },
-    }
+    })
     let lease = "lease-one"
-    const host = createWorkspaceHost({
-      target: { workspaceId: "ws-1", directory: root },
-      storeRoot: join(root, "store"),
+    const { host, create } = mountedHost(root, "ws-1", {
       connectionProviders: [provider],
       resolveConnectionSecrets: () => ({ secrets: { token: lease }, secretLeaseGeneration: lease }),
     })
-    const snapshot = () => ({
-      version: 4 as const,
+    await host.apply({
+      version: 4,
       mcp: {},
-      connections: [{
-        connectionId: "fixture-primary",
-        providerKey: "fixture",
-        configRevision: 1,
-        enabled: true,
-        config: { label: "Fixture" },
-        secretRefs: { token: "credential:fixture" },
-      }],
-      defaultHarness: { kind: "connection" as const, connectionId: "fixture-primary" },
+      connections: [fixtureConnection({ token: "credential:fixture" })],
+      defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
       auth: {},
     })
-    const app = new Hono()
-    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
 
-    await host.apply(snapshot())
-    const request = (id: string) => withWorkspaceTarget(
-      { workspaceId: "ws-1", directory: root },
-      () => app.request(`http://runtime.test/session?directory=${encodeURIComponent(root)}&connectionId=fixture-primary`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      }),
-    )
-    const first = await request("local-one")
+    const first = await create("local-one")
     expect(first.status, await first.clone().text()).toBe(201)
     const beforeRotation = host.readConnectionState({ sessionId: "local-one", directory: root })
     expect(beforeRotation?.state).toBe("ready")
     expect(beforeRotation?.connectionId).toBe("fixture-primary")
 
     lease = "lease-two"
-    const second = await request("local-two")
+    const second = await create("local-two")
     expect(second.status, await second.clone().text()).toBe(201)
     expect(createdWith).toEqual(["lease-one", "lease-two"])
-    expect(disposed).toContain("lease-one")
+    for (let attempt = 0; attempt < 100 && !disposed.includes("lease-one"); attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(disposed).toEqual(["lease-one"])
     const afterRotation = host.readConnectionState({ sessionId: "local-one", directory: root })
     expect(afterRotation?.state).toBe("ready")
     expect(afterRotation?.processes[0]?.generation).not.toBe(beforeRotation?.processes[0]?.generation)
-    expect(host.readConnectionState({ sessionId: "local-one", directory: "/other" })?.state).toBe("configured")
     await host.dispose()
   })
 
   test("a connection default handed at creation applies its first snapshot and still serves a native session", async () => {
-    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-creation-default-"))
-    roots.push(root)
-    const provider: ConnectionProvider<Record<string, never>> = {
-      providerKey: "fixture",
-      validateConfig: () => ({}),
-      project: () => ({ label: "Fixture", readiness: "ready", capabilities }),
-      resolve: () => ({ config: {} }),
-      createAdapter: adapter,
-    }
-    const target = { workspaceId: "ws-creation-default", directory: root }
-    const host = createWorkspaceHost({
-      target,
-      storeRoot: join(root, "store"),
+    const root = await workspaceRoot("workspace-runtime-creation-default-")
+    const peer = await installFakePiRpc()
+    cleanups.push(() => peer.dispose())
+    const provider = fakeConnectionProvider({ providerKey: "fixture", capabilities, transport: () => new FakeTransport() })
+    const { host, create } = mountedHost(root, "ws-creation-default", {
       connectionProviders: [provider],
+      env: { ...process.env, PI_EXECUTABLE: peer.binary },
       harness: { kind: "connection", connectionId: "fixture-primary" },
-      harnesses: [{ match: (runner) => runner.access === "native", create: ({ runner }) => nativeAdapter(runner.id) }],
     })
-    const app = new Hono()
-    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       await host.apply({
         version: 4,
         mcp: {},
         auth: {},
-        connections: [{ connectionId: "fixture-primary", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
+        connections: [fixtureConnection()],
         defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
       })
       expect(host.detail()).toMatchObject({
@@ -300,17 +227,15 @@ describe("WorkspaceRuntime generic connection selection", () => {
         harness: { kind: "connection", connectionId: "fixture-primary" },
         configApply: { state: "applied" },
       })
-      const created = await withWorkspaceTarget(target, () => app.request(
-        `http://runtime.test/session?directory=${encodeURIComponent(root)}&nativeHarness=codex`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "native-one" }) },
-      ))
+      const created = await create("native-one", "&nativeHarness=pi")
       expect(created.status, await created.clone().text()).toBe(201)
       expect(await created.json()).toMatchObject({ id: "native-one" })
     } finally { await host.dispose() }
   })
 
   test("leaves default selection unresolved when policy omits it", async () => {
-    const host = createWorkspaceHost()
+    const root = await workspaceRoot("workspace-runtime-unselected-")
+    const { host } = mountedHost(root, "ws-unselected", {})
     await host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
     expect(host.detail().harness).toBeUndefined()
     await host.dispose()

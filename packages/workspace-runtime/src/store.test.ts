@@ -7,8 +7,10 @@ import fs from "fs"
 import { createRequire } from "module"
 import os from "os"
 import path from "path"
-import { createSubagentAdmissionBoundary } from "@claxedo/agent-sdk-runtime"
 import { AgentMessagePageError, AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
+import { createRequestBroker } from "@claxedo/harness/broker"
+import { createStoreBrokerPorts } from "./broker-ports/index"
+import type { RuntimeEventPublishers } from "./projection/runtime-event-hub"
 import {
   messagePartUpdated,
   messageUpdated,
@@ -318,20 +320,30 @@ void describe("RuntimeStore", () => {
   void it("durably admits revisioned subagents and rehydrates correlation after reopen", async () => {
     const root = tmp()
     const published: Array<{ parentSessionId: string; revision: number }> = []
-    const store = new RuntimeStore(root)
-    const boundary = createSubagentAdmissionBoundary({
-      store,
-      allocateKey: () => "host-child",
-      publish: (parentSessionId, event) => {
-        published.push({ parentSessionId, revision: event.revision })
+    const publishers: RuntimeEventPublishers = {
+      publishGlobal: () => {},
+      publishRuntime: (event) => {
+        if (event.payload.type === "subagent-updated") published.push({ parentSessionId: event.sessionId, revision: event.payload.revision })
       },
-    })
+    }
+    const subagents = (opened: RuntimeStore) => createRequestBroker(createStoreBrokerPorts(opened, {
+      ownerGeneration: "owner-1",
+      patternEvaluator: async () => {},
+      publishers,
+      reportOwnerFailure: (_sessionId, error) => { throw error },
+    })).subagents
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    const boundary = subagents(store)
+    // The spawn names its child: the broker allocates one for an openable
+    // transcript otherwise, and the later binding could then name no other.
     const spawn = await boundary.admit("parent", {
       observationId: "spawn",
       harnessExecutionId: "run",
       toolCallId: "tool-1",
       toolCallRole: "spawn",
       status: "running",
+      childSessionId: "child-session",
       transcript: { kind: "messages", ref: "handle-1" },
     })
     const bound = await boundary.admit("parent", {
@@ -354,11 +366,7 @@ void describe("RuntimeStore", () => {
     store.close()
 
     const reopened = new RuntimeStore(root)
-    const next = createSubagentAdmissionBoundary({
-      store: reopened,
-      allocateKey: () => "replacement-must-not-be-used",
-      publish: () => {},
-    })
+    const next = subagents(reopened)
     const interaction = await next.admit("parent", {
       observationId: "interaction",
       harnessExecutionId: "run",

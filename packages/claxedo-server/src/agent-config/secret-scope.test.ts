@@ -5,6 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { createWorkspaceHost } from "@claxedo/workspace-runtime/host"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-secret-scope-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
@@ -77,7 +78,7 @@ describe("runtime config secret scoping", () => {
 
     // A descriptor that still names secret references has no source in a v4
     // snapshot, so selecting it fails closed rather than starting unauthenticated.
-    const host = createWorkspaceHost({ target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied") })
+    const host = createWorkspaceHost({ target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied"), placement: loopbackMachineLoginPolicy() })
     try {
       await expect(host.apply({
         ...localSnapshot,

@@ -8,7 +8,16 @@ import {
   permissionModeLevel,
   widestPermissionModeUnder,
 } from "./permission-ceiling"
-import { CLAUDE_PERMISSION_MODES, CODEX_PERMISSION_MODES, CURSOR_PERMISSION_MODES } from "./harnesses/shared/permission-modes"
+const leveled = (id: string, level?: AgentPermissionMode["level"]): AgentPermissionMode => ({ id, name: id, description: id, ...(level ? { level } : {}) })
+
+/** Each harness's mode ladder as its transport declares it: one `ask`, one `auto`, one `full` rung, plus unleveled modes. */
+const CLAUDE_PERMISSION_MODES: readonly AgentPermissionMode[] = [
+  leveled("default", "ask"), leveled("acceptEdits"), leveled("auto", "auto"), leveled("plan"), leveled("dontAsk"), leveled("bypassPermissions", "full"),
+]
+const CURSOR_PERMISSION_MODES: readonly AgentPermissionMode[] = [leveled("review", "ask"), leveled("auto-review", "auto"), leveled("unsandboxed", "full")]
+const CODEX_PERMISSION_MODES: readonly AgentPermissionMode[] = [
+  leveled("read-only", "ask"), leveled("workspace-write", "auto"), leveled("untrusted"), leveled("full-access", "full"),
+]
 
 const mode = (table: readonly AgentPermissionMode[], id: string) => table.find((entry) => entry.id === id)
 

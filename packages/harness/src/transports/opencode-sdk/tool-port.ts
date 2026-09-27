@@ -1,16 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
+import type { SessionTool, SessionToolCall } from "../../contract"
 import type { WorkspaceScope } from "./scope.js"
-
-export type SessionTool = Readonly<{
-  name: string
-  description: string
-  inputSchema: Readonly<Record<string, unknown>>
-  outputSchema?: Readonly<Record<string, unknown>>
-
-}>
-
-export type SessionToolCall = Readonly<{ name: string; toolCallID: string; input: unknown }>
 
 export type SessionToolRegistration = Readonly<{
   scope: WorkspaceScope

@@ -1,184 +1,111 @@
-import type { SessionConfig } from "@claxedo/agent-runtime-contract"
-import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
-import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes, type SessionLifecycleEvent, type SessionRouteContext } from "./session-core"
-import type { ChildSessionHost } from "./session-children"
-import type { AgentHarnessFactory, AgentMessage, AgentPermission, AgentQuestion, AgentRuntime, AgentRuntimeStreamEvent, AgentSession, HarnessCapabilities, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import {
-  AgentMessagePageError,
-  type AgentHarnessAdapter,
-  type AgentMessagePage,
-  type AgentMessagePageInput,
-} from "@claxedo/agent-sdk-runtime/adapters"
-import { AgentHarnessEngineError } from "@claxedo/harness/contract"
-import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
+import { NO_HARNESS_EFFORT, type AgentPermissionModeState, type HarnessInstructionChannel, type SessionHarness } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
+import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
+import { sessionIdle, type CompatEnvelope } from "../compat-events"
+import { AgentRuntimeTurnAdmissionError, type AgentRuntime } from "../host/runtime"
 import {
   managedWorkspaceSessionAccessPolicy,
   type ManagedSessionAuthority,
   type SessionAccessDecision,
   type SessionAccessPolicy,
 } from "../session-access-policy"
+import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import { createSessionRoutes, type SessionLifecycleEvent } from "./session-core"
+import type { ChildSessionHost } from "./session-children"
 
-function adapter(input: {
-  onDirectory?: (directory: RuntimeDirectory) => void
-  events?: AgentRuntimeStreamEvent[]
-  messages?: AgentMessage[]
-  getMessagePage?: (
-    id: string,
-    page: AgentMessagePageInput,
-    directory: RuntimeDirectory,
-  ) => Promise<AgentMessagePage>
-} = {}): AgentHarnessAdapter {
+const CODEX: SessionHarness = { id: "codex", access: "native" }
+const WORKSPACE = "/workspace"
+
+type RouteOptions = Parameters<typeof createSessionRoutes>[0]
+type Harness = HostFixture & { transport: FakeTransport }
+
+const hosts: HostFixture[] = []
+const beforeDispose: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const settle of beforeDispose.splice(0)) await settle()
+  for (const host of hosts.splice(0)) await host.dispose()
+})
+
+/** A real runtime host over one scripted Codex transport and a real store. */
+function harness(options: FakeTransportOptions = {}): Harness {
+  const transport = new FakeTransport({ kind: "codex-app-server", ...options })
+  const host = createHostFixture({ transports: { codex: transport }, workspaceId: "ws_1" })
+  hosts.push(host)
+  return Object.assign(host, { transport })
+}
+
+async function seed(h: Harness, id: string, directory = WORKSPACE) {
+  await h.runtime.sessions.create(sessionCreate({ id, workspaceId: "ws_1", directory, harness: CODEX }))
+}
+
+const unsupportedModes: AgentPermissionModeState = { modes: [], appliesFrom: "next-turn", unsupported: "fixture has no permission modes" }
+
+function configOps(overrides: Partial<ConfigOperations> = {}): ConfigOperations {
   return {
-    instructionChannel: "turn-system-prompt",
-    getSession: async (binding) => {
-      input.onDirectory?.(binding.directory)
-      return { id: binding.sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }
-    },
-    createSession: async () => ({ id: "session_1" }),
-    updateSession: async (binding) => ({ id: binding.sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }),
-    getSessionConfig: async (binding) => {
-      input.onDirectory?.(binding.directory)
-      return {
-        harness: { id: "codex", access: "native" },
-        model: { providerID: "test", modelID: "fixture" },
-        agent: "build",
-        variant: null,
-      } satisfies SessionConfig
-    },
-    updateSessionConfig: async (_binding, patch) => ({
-      harness: patch.harness ?? { id: "codex", access: "native" },
-      ...(patch.model ? { model: patch.model } : {}),
-      agent: patch.agent ?? null,
-      variant: patch.variant ?? null,
-    }),
-    deleteSession: async () => {},
-    readHarnessCapabilities: (directory) => {
-      input.onDirectory?.(directory)
-      return {
-        harness: "codex",
-        abort: true,
-        reconnect: false,
-        replay: true,
-        permissions: true,
-        questions: true,
-        todos: true,
-        commands: true,
-        fork: true,
-        revert: true,
-        unrevert: true,
-        configOptions: false,
-        subagents: true,
-        effortLevels: NO_HARNESS_EFFORT,
-        instructionChannel: "turn-system-prompt",
-        goals: false,
-      }
-    },
-    executeTurn: (binding, _prompt) => (async function* () {
-      input.onDirectory?.(binding.directory)
-      for (const event of input.events ?? []) yield event
-    })(),
-    getMessages: async (binding) => {
-      input.onDirectory?.(binding.directory)
-      return input.messages ?? []
-    },
-    ...(input.getMessagePage ? {
-      getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
-    } : {}),
-    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
-    forkSession: async () => ({ id: "forked" }),
-    executeCommand: async () => {},
-    listCommands: async () => [],
-    listAgents: async () => [],
-    getTodos: async () => [],
-    listPermissions: async () => [],
-    respondPermission: async () => {},
-    listQuestions: async () => [],
-    replyQuestion: async () => {},
-    rejectQuestion: async () => {},
-    applyConfig: async () => {},
-    probeConfigOptions: async () => ({ options: [] }),
-    dispose: () => {},
+    read: async () => { throw new Error("the fixture's config is runtime-owned") },
+    update: async () => { throw new Error("the fixture's config is runtime-owned") },
+    options: async () => ({ options: [] }),
+    permissionModes: async () => unsupportedModes,
+    setPermissionMode: async () => unsupportedModes,
+    ...overrides,
   }
 }
 
-/**
- * Every route fixture needs the binding its host would resolve; a fixture
- * without one fails the prompt routes' permission read long before the
- * behaviour under test runs.
- */
-function fixtureExecutionBinding(workspaceId = "workspace-test") {
-  return (_c: unknown, directory: RuntimeDirectory, sessionId: string): AgentExecutionBinding => ({
-    sessionId,
-    workspaceId,
-    directory: directory ?? "",
-    connectionId: "native:codex",
-    upstreamSessionId: sessionId,
+function refusingRuntime(what: string): () => Promise<AgentRuntime> {
+  return async () => { throw new Error(`${what} must not resolve the runtime`) }
+}
+
+function runtimeDouble(double: unknown): () => Promise<AgentRuntime> {
+  return async () => double as AgentRuntime
+}
+
+/** The session routes over a host, or over a runtime the test must never reach. */
+function sessionRoutes(h: Harness | undefined, options: Partial<RouteOptions> = {}) {
+  return createSessionRoutes({
+    runtime: h ? async () => h.runtime : refusingRuntime("this route"),
+    defaultHarness: () => CODEX,
+    requestedSessionHarness: () => undefined,
+    resolveDirectory: () => WORKSPACE,
+    resolveWorkspaceId: () => "ws_1",
+    publishGlobal: () => {},
+    ...options,
   })
 }
 
-test("session config-options applies the session read policy before reading exact-session state", async () => {
-  const calls: AgentExecutionBinding[] = []
-  const checked: string[] = []
-  const app = managedRoutes({
-    policy: managedPolicy({ authorize: async (input) => {
-      checked.push(`${input.sessionId}:${input.operation}`)
-      return input.sessionId === "owned" ? { allowed: true } : { allowed: false, status: 403, code: "session_access_denied", message: "Private session" }
-    } }),
-    adapter: { ...adapter(), probeConfigOptions: async (_directory, binding) => {
-      if (!binding) throw new Error("Missing session binding")
-      calls.push(binding)
-      return { options: [{ id: "mode", name: "Mode", type: "select", currentValue: binding.sessionId }] }
-    } },
-  })
-  const allowed = await app.request("http://localhost/session/owned/config-options?sessionId=other")
-  expect(allowed.status).toBe(200)
-  expect(await allowed.json()).toMatchObject({ options: [{ currentValue: "owned" }] })
-  const denied = await app.request("http://localhost/session/private/config-options")
-  expect(denied.status).toBe(403)
-  expect(calls.map((binding) => binding.sessionId)).toEqual(["owned"])
-  expect(checked).toEqual(["owned:session_config_read", "private:session_config_read"])
-})
+type RelayClaims = Record<string, string>
 
-function managedRoutes(input: {
-  policy: SessionAccessPolicy
-  adapter: AgentHarnessAdapter
-  listSessions?: () => Promise<AgentSession[]>
-  runtime?: AgentRuntime
-  publishGlobal?: (event: CompatEnvelope) => void
-  afterMessageCheckpoint?: () => void
-  /** False composes the same routes and policy for a caller the exposure stamped nothing for. */
-  stamped?: boolean
-}) {
-  const routes = createSessionRoutes({
-    resolveAdapter: () => input.adapter,
-    resolveDirectory: () => "/workspace",
-    resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-    ...(input.listSessions ? { listSessions: input.listSessions } : {}),
-    ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
-    ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
-    sessionAccessPolicy: input.policy,
-    publishGlobal: input.publishGlobal ?? (() => {}),
-  })
-  if (input.stamped === false) return routes
+const EDITOR_CLAIMS: RelayClaims = {
+  actor_id: "actor_1",
+  actor_kind: "human",
+  org_id: "org_1",
+  workspace_id: "ws_1",
+  host_id: "host_1",
+  role: "editor",
+}
+
+/**
+ * A managed-private policy decides the lifecycle of a RELAY-REPLAYED request,
+ * and the runtime reads that off the verified stamp the exposure sets, so a
+ * test of it has to arrive stamped. Unstamped, the same runtime answers its
+ * own machine's user and reserves nothing.
+ */
+function stamped(routes: ReturnType<typeof createSessionRoutes>, claims: (c: { req: { header(name: string): string | undefined } }) => RelayClaims = () => EDITOR_CLAIMS) {
   const app = new Hono()
   app.use("*", async (context, next) => {
-    ;(context as any).set("relayHostAuth", {
-      actor_id: "actor_1",
-      actor_kind: "human",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      host_id: "host_1",
-      role: "editor",
-    } as never)
+    ;(context as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", claims(context))
     await next()
   })
   return app.route("/", routes)
+}
+
+function managedRoutes(h: Harness | undefined, input: Partial<RouteOptions> & { policy: SessionAccessPolicy; stamped?: boolean }) {
+  const { policy, stamped: stamp, ...options } = input
+  const routes = sessionRoutes(h, { sessionAccessPolicy: policy, ...options })
+  return stamp === false ? routes : stamped(routes)
 }
 
 function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAccessPolicy {
@@ -209,39 +136,80 @@ function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAcc
   }
 }
 
+function registrationPolicy(registerSession: NonNullable<SessionAccessPolicy["registerSession"]>): SessionAccessPolicy {
+  return {
+    sessionAuthority: "managed-private",
+    authorize: async () => ({ allowed: true }),
+    authorizeSessionStart: async () => ({ allowed: true }),
+    authorizeSessionStartStatus: async () => ({ allowed: true }),
+    authorizePrefix: async () => ({ allowed: true }),
+    filterSessions: async (input) => input.sessionIds,
+    registerSession,
+    markRegistrationAmbiguous: async () => ({ allowed: true }),
+    beginRegistrationCompensation: async () => ({ allowed: true }),
+    completeRegistrationCompensation: async () => ({ allowed: true }),
+  }
+}
+
+function promptText(turn: FakeTurn) {
+  return turn.turn.prompt.parts.map((part) => ("text" in part ? part.text : "")).join("")
+}
+
+const post = (app: { request: Hono["request"] }, path: string, body: unknown, headers: Record<string, string> = {}) =>
+  app.request(`http://localhost${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  })
+
+test("session config-options applies the session read policy before reading exact-session state", async () => {
+  const calls: string[] = []
+  const checked: string[] = []
+  const h = harness({
+    config: configOps({
+      options: async (target) => {
+        if (!("session" in target)) throw new Error("Missing session target")
+        calls.push(target.session.binding.sessionId)
+        return { options: [{ id: "mode", name: "Mode", type: "select", currentValue: target.session.binding.sessionId }] }
+      },
+    }),
+  })
+  await seed(h, "owned")
+  const app = managedRoutes(h, {
+    policy: managedPolicy({ authorize: async (input) => {
+      checked.push(`${input.sessionId}:${input.operation}`)
+      return input.sessionId === "owned" ? { allowed: true } : { allowed: false, status: 403, code: "session_access_denied", message: "Private session" }
+    } }),
+  })
+  const allowed = await app.request("http://localhost/session/owned/config-options?sessionId=other")
+  expect(allowed.status).toBe(200)
+  expect(await allowed.json()).toMatchObject({ options: [{ currentValue: "owned" }] })
+  const denied = await app.request("http://localhost/session/private/config-options")
+  expect(denied.status).toBe(403)
+  expect(calls).toEqual(["owned"])
+  expect(checked).toEqual(["owned:session_config_read", "private:session_config_read"])
+})
+
 describe("createSessionRoutes private-session lifecycle", () => {
   test("requires a preassigned session and reservation operation before runtime mutation", async () => {
-    let creates = 0
-    const fixture = { ...adapter(), getSession: async () => null, createSession: async () => {
-      creates += 1
-      return { id: "ses_1" }
-    } }
-    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request("/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const h = harness()
+    const response = await post(managedRoutes(h, { policy: managedPolicy() }), "/session", {})
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "session_reservation_required" } })
-    expect(creates).toBe(0)
+    expect(h.transport.starts).toEqual([])
   })
 
   test("registers the exact reserved operation before returning create success", async () => {
     const calls: unknown[] = []
-    const fixture = { ...adapter(), getSession: async () => null, createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }) }
+    const h = harness()
     const policy = managedPolicy({
       registerSession: async (value) => {
         calls.push(value)
         return { allowed: true }
       },
     })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-session-registration-operation": "op_create_1",
-      },
-      body: JSON.stringify({ id: "ses_1", title: "Private" }),
+    const response = await post(managedRoutes(h, { policy }), "/session", { id: "ses_1", title: "Private" }, {
+      "x-claxedo-session-registration-operation": "op_create_1",
     })
     expect(response.status).toBe(201)
     expect(calls).toHaveLength(1)
@@ -255,81 +223,48 @@ describe("createSessionRoutes private-session lifecycle", () => {
   })
 
   test("marks an unavailable registration ambiguous and preserves runtime state for exact retry", async () => {
-    let existing = false
-    let creates = 0
-    let deletes = 0
     let attempts = 0
     const ambiguous: unknown[] = []
-    const fixture = {
-      ...adapter(),
-      getSession: async (binding: AgentExecutionBinding) => existing ? { id: binding.sessionId, title: "Private", time: { created: 1, updated: 1 } } : null,
-      createSession: async (_directory: string, _title?: string, id?: string) => {
-        creates += 1
-        existing = true
-        return { id: id! }
-      },
-      deleteSession: async () => { deletes += 1; existing = false },
-    }
+    const h = harness()
     const policy = managedPolicy({
       registerSession: async () => ++attempts === 1
         ? { allowed: false, status: 503, code: "authority_unavailable", message: "retry" }
         : { allowed: true },
       markRegistrationAmbiguous: async (value) => { ambiguous.push(value); return { allowed: true } },
     })
-    const request = () => managedRoutes({ policy, adapter: fixture }).request("/session", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-session-registration-operation": "op_create_1",
-      },
-      body: JSON.stringify({ id: "ses_1", title: "Private" }),
+    const request = () => post(managedRoutes(h, { policy }), "/session", { id: "ses_1", title: "Private" }, {
+      "x-claxedo-session-registration-operation": "op_create_1",
     })
 
     expect((await request()).status).toBe(503)
-    expect(creates).toBe(1)
-    expect(deletes).toBe(0)
+    expect(h.transport.starts).toHaveLength(1)
+    expect(h.transport.closed).toEqual([])
     expect(ambiguous).toHaveLength(1)
     expect((await request()).status).toBe(201)
-    expect(creates).toBe(1)
+    expect(h.transport.starts).toHaveLength(1)
   })
 
   test("compensates runtime state after definitive registration denial", async () => {
     const calls: string[] = []
-    const fixture = {
-      ...adapter(),
-      getSession: async () => null,
-      createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
-      deleteSession: async () => { calls.push("delete") },
-    }
+    const h = harness({ onClose: () => { calls.push("delete") } })
     const policy = managedPolicy({
       registerSession: async () => ({ allowed: false, status: 403, code: "session_private", message: "denied" }),
       beginRegistrationCompensation: async () => { calls.push("begin"); return { allowed: true } },
       completeRegistrationCompensation: async () => { calls.push("complete"); return { allowed: true } },
     })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-session-registration-operation": "op_create_1",
-      },
-      body: JSON.stringify({ id: "ses_1" }),
+    const response = await post(managedRoutes(h, { policy }), "/session", { id: "ses_1" }, {
+      "x-claxedo-session-registration-operation": "op_create_1",
     })
     expect(response.status).toBe(403)
     expect(calls).toEqual(["begin", "delete", "complete"])
+    expect(h.store.getSession("ses_1")).toBeNull()
   })
 
   test("requires an exact reservation before a managed fork mutates runtime state", async () => {
     let forks = 0
-    const fixture = {
-      ...adapter(),
-      getSession: async () => null,
-      forkSession: async () => { forks += 1; return { id: "unexpected" } },
-    }
-    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request("/session/ses_parent/fork", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageId: "msg_1" }),
-    })
+    const h = harness({ fork: async () => { forks += 1; return { upstreamSessionId: "unexpected" } } })
+    await seed(h, "ses_parent")
+    const response = await post(managedRoutes(h, { policy: managedPolicy() }), "/session/ses_parent/fork", { messageId: "msg_1" })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "session_reservation_required" } })
     expect(forks).toBe(0)
@@ -337,30 +272,24 @@ describe("createSessionRoutes private-session lifecycle", () => {
 
   test("forks into the reserved child id and registers the exact operation before success", async () => {
     const calls: unknown[] = []
-    const fixture = {
-      ...adapter(),
-      getSession: async () => null,
-      forkSession: async (binding: AgentExecutionBinding, messageId: string, childId?: string) => {
-        calls.push({ parentId: binding.sessionId, messageId, directory: binding.directory, childId })
-        return { id: childId! }
+    const h = harness({
+      fork: async (session, messageId, childId) => {
+        calls.push({ parentId: session.binding.sessionId, messageId, directory: session.directory, childId })
+        return { upstreamSessionId: `upstream-${childId}` }
       },
-    }
+    })
+    await seed(h, "ses_parent")
     const policy = managedPolicy({
       registerSession: async (value) => { calls.push(value); return { allowed: true } },
     })
-    const response = await managedRoutes({ policy, adapter: fixture }).request("/session/ses_parent/fork", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-session-registration-operation": "op_fork_1",
-      },
-      body: JSON.stringify({ id: "ses_child", messageId: "msg_1" }),
+    const response = await post(managedRoutes(h, { policy }), "/session/ses_parent/fork", { id: "ses_child", messageId: "msg_1" }, {
+      "x-claxedo-session-registration-operation": "op_fork_1",
     })
     expect(response.status).toBe(201)
     expect(calls[0]).toEqual({
       parentId: "ses_parent",
       messageId: "msg_1",
-      directory: "/workspace",
+      directory: WORKSPACE,
       childId: "ses_child",
     })
     expect(calls[1]).toMatchObject({
@@ -368,55 +297,37 @@ describe("createSessionRoutes private-session lifecycle", () => {
       registrationOperationId: "op_fork_1",
       actor: { actorId: "actor_1", actorKind: "human" },
     })
-    expect(await response.json()).toEqual({ id: "ses_child" })
+    expect(await response.json()).toMatchObject({ id: "ses_child" })
   })
 
   test("filters list rows through private-session authority", async () => {
     const policy = managedPolicy({ filterSessions: async () => ["ses_visible"] })
-    const response = await managedRoutes({
+    const response = await managedRoutes(undefined, {
       policy,
-      adapter: adapter(),
       listSessions: async () => [
         { id: "ses_visible", title: "Visible", time: { created: 1, updated: 1 } },
         { id: "ses_private", title: "Private", time: { created: 1, updated: 1 } },
-      ],
+      ] as AgentSession[],
     }).request("/session")
     expect((await response.json() as Array<{ id: string }>).map((row) => row.id)).toEqual(["ses_visible"])
   })
 
   test("requires a stable message id before a managed prompt mutates the runtime", async () => {
-    let sends = 0
-    const fixture = {
-      ...adapter(),
-      sendMessage: () => {
-        sends += 1
-        return (async function* () {})()
-      },
-    }
-    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request(
-      "/session/ses_private/message",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
-      },
-    )
+    const h = harness()
+    await seed(h, "ses_private")
+    const response = await post(managedRoutes(h, { policy: managedPolicy() }), "/session/ses_private/message", {
+      parts: [{ type: "text", text: "hello" }],
+    })
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
-    expect(sends).toBe(0)
+    expect(h.transport.turns).toEqual([])
   })
 
   test("returns a durable admission conflict before a managed prompt mutates the runtime", async () => {
-    let sends = 0
-    const fixture = {
-      ...adapter(),
-      sendMessage: () => {
-        sends += 1
-        return (async function* () {})()
-      },
-    }
-    const response = await managedRoutes({
+    const h = harness()
+    await seed(h, "ses_private")
+    const response = await post(managedRoutes(h, {
       policy: managedPolicy({
         acquireTurn: async () => ({
           allowed: false,
@@ -425,50 +336,32 @@ describe("createSessionRoutes private-session lifecycle", () => {
           message: "A durable turn is already active",
         }),
       }),
-      adapter: fixture,
-    }).request("/session/ses_private/message", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageID: "msg_2", parts: [{ type: "text", text: "hello" }] }),
-    })
+    }), "/session/ses_private/message", { messageID: "msg_2", parts: [{ type: "text", text: "hello" }] })
 
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
-    expect(sends).toBe(0)
+    expect(h.transport.turns).toEqual([])
   })
 
   test("holds the durable turn through checkpoint and final message publication", async () => {
     const calls: string[] = []
-    const assistant = {
-      info: { id: "assistant_1", sessionID: "ses_private", role: "assistant" },
-      parts: [],
-    } as AgentMessage
-    const fixture = adapter({
-      events: [
-        messageUpdated(assistant.info),
-        sessionIdle("ses_private"),
-      ],
-      messages: [assistant],
-    })
-    const response = await managedRoutes({
+    const h = harness()
+    await seed(h, "ses_private")
+    h.eventHub.subscribeGlobal((event) => { calls.push(`publish:${event.payload.type}`) })
+    const response = await post(managedRoutes(h, {
       policy: managedPolicy({
         releaseTurn: async () => {
           calls.push("release")
           return { released: true }
         },
       }),
-      adapter: fixture,
       afterMessageCheckpoint: () => {
         calls.push("checkpoint")
       },
       publishGlobal: (event) => {
         calls.push(`publish:${event.payload.type}`)
       },
-    }).request("/session/ses_private/message", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageID: "user_1", parts: [{ type: "text", text: "hello" }] }),
-    })
+    }), "/session/ses_private/message", { messageID: "user_1", parts: [{ type: "text", text: "hello" }] })
 
     expect(response.status).toBe(200)
     const checkpoint = calls.indexOf("checkpoint")
@@ -490,13 +383,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const policy = managedPolicy({
       registerSession: async (value) => { registrations.push(value); return { allowed: true } },
     })
-    const fixture = { ...adapter(), getSession: async () => null }
-
-    const response = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const response = await post(managedRoutes(harness(), { policy, stamped: false }), "/session", {})
 
     expect(response.status).toBe(201)
     expect(registrations).toEqual([])
@@ -504,51 +391,33 @@ describe("createSessionRoutes private-session lifecycle", () => {
 
   test("durable turn admission is the stamped caller's: a prompt with no message id is refused for them and admitted for the machine's own user", async () => {
     const turns: string[] = []
+    const h = harness()
+    await seed(h, "ses_1")
     const policy = managedPolicy({
       acquireTurn: async (input) => { turns.push(input.turnId); return { allowed: false, status: 503, code: "unreachable", message: "unreachable" } },
     })
-    const fixture = adapter()
 
-    const stamped = await managedRoutes({ policy, adapter: fixture }).request("/session/ses_1/message", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
-    })
-    const direct = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session/ses_1/message", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
-    })
+    const refused = await post(managedRoutes(h, { policy }), "/session/ses_1/message", { parts: [{ type: "text", text: "hi" }] })
+    const direct = await post(managedRoutes(h, { policy, stamped: false }), "/session/ses_1/message", { parts: [{ type: "text", text: "hi" }] })
 
-    expect(stamped.status).toBe(400)
-    expect(await stamped.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
     expect(direct.status).toBe(200)
     expect(turns).toEqual([])
   })
 })
 
 describe("createSessionRoutes message paging", () => {
-  const first = { info: { id: "message-1", sessionID: "session-1", role: "user" }, parts: [] } as AgentMessage
-  const second = { info: { id: "message-2", sessionID: "session-1", role: "assistant" }, parts: [] } as AgentMessage
+  const first = { info: { id: "message-1", sessionID: "session-1", role: "user" }, parts: [] } as unknown as AgentMessage
+  const second = { info: { id: "message-2", sessionID: "session-1", role: "assistant" }, parts: [] } as unknown as AgentMessage
 
-  test("uses the route authority before an adapter page and forwards its opaque cursor", async () => {
+  test("uses the route authority's page and forwards its opaque cursor without reaching the runtime", async () => {
     const calls: Array<{ sessionId: string; page: AgentMessagePageInput; directory: RuntimeDirectory }> = []
-    let adapterResolutions = 0
-    const app = createSessionRoutes({
-      resolveAdapter: () => {
-        adapterResolutions += 1
-        return adapter({
-          getMessagePage: async () => {
-            throw new Error("adapter page must not run")
-          },
-        })
-      },
-      resolveDirectory: () => "/workspace",
+    const app = sessionRoutes(undefined, {
       getMessagePage: (_c, directory, sessionId, page) => {
         calls.push({ sessionId, page, directory })
         return { messages: [first, second], nextCursor: "journal:opaque/next" }
       },
-      publishGlobal() {},
     })
 
     const response = await app.request("http://localhost/session/session-1/message?limit=2&before=journal%3Aopaque%2Fbefore")
@@ -560,39 +429,17 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{
       sessionId: "session-1",
       page: { limit: 2, before: "journal:opaque/before" },
-      directory: "/workspace",
+      directory: WORKSPACE,
     }])
-    expect(adapterResolutions).toBe(1)
-  })
-
-  test("uses an optional adapter page when the route authority has no page", async () => {
-    const calls: Array<{ id: string; page: AgentMessagePageInput; directory: RuntimeDirectory }> = []
-    const app = routes({
-      adapter: adapter({
-        getMessagePage: async (id, page, directory) => {
-          calls.push({ id, page, directory })
-          return { messages: [second] }
-        },
-      }),
-    })
-
-    const response = await app.request("http://localhost/session/session-1/message?limit=1")
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual([second])
-    expect(response.headers.get("x-next-cursor")).toBeNull()
-    expect(calls).toEqual([{ id: "session-1", page: { limit: 1 }, directory: "" }])
   })
 
   test("forwards the authoritative latest-turn view without a numeric limit", async () => {
     const calls: AgentMessagePageInput[] = []
-    const app = routes({
-      adapter: adapter({
-        getMessagePage: async (_id, page) => {
-          calls.push(page)
-          return { messages: [first, second], nextCursor: "before-user" }
-        },
-      }),
+    const app = sessionRoutes(undefined, {
+      getMessagePage: (_c, _directory, _sessionId, page) => {
+        calls.push(page)
+        return { messages: [first, second], nextCursor: "before-user" }
+      },
     })
 
     const response = await app.request("http://localhost/session/session-1/message?view=latest-turn")
@@ -605,39 +452,27 @@ describe("createSessionRoutes message paging", () => {
 
   test("returns unsupported instead of violating a bounded request with full history", async () => {
     let routeFullReads = 0
-    let adapterFullReads = 0
-    const fixture = adapter({ messages: [first, second] })
-    fixture.getMessages = async () => {
-      adapterFullReads += 1
-      return [first, second]
-    }
-    const app = createSessionRoutes({
-      resolveAdapter: () => fixture,
-      resolveDirectory: () => "/workspace",
+    const app = sessionRoutes(undefined, {
       getMessages: () => {
         routeFullReads += 1
         return [first, second]
       },
-      publishGlobal() {},
     })
     const response = await app.request("http://localhost/session/session-1/message?limit=1")
 
     expect(response.status).toBe(501)
     expect(response.headers.get("x-next-cursor")).toBeNull()
     expect(routeFullReads).toBe(0)
-    expect(adapterFullReads).toBe(0)
   })
 
   test("preserves full history for legacy requests without paging parameters", async () => {
     let pageReads = 0
-    const response = await routes({
-      adapter: adapter({
-        messages: [first, second],
-        getMessagePage: async () => {
-          pageReads += 1
-          return { messages: [second] }
-        },
-      }),
+    const response = await sessionRoutes(undefined, {
+      getMessages: () => [first, second],
+      getMessagePage: () => {
+        pageReads += 1
+        return { messages: [second] }
+      },
     }).request("http://localhost/session/session-1/message")
 
     expect(response.status).toBe(200)
@@ -649,16 +484,13 @@ describe("createSessionRoutes message paging", () => {
   test("keeps snapshot reads full and ignores paging parameters", async () => {
     let pageCalls = 0
     const snapshot = { messages: [first, second], maxEventOrdinal: 14 }
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveExecutionBinding: fixtureExecutionBinding(),
-      resolveDirectory: () => "/workspace",
+    const app = sessionRoutes(undefined, {
       getMessageSnapshot: () => snapshot,
+      getSession: (_c, _directory, sessionId) => ({ id: sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }) as AgentSession,
       getMessagePage: () => {
         pageCalls += 1
         return { messages: [second], nextCursor: "must-not-leak" }
       },
-      publishGlobal() {},
     })
 
     const response = await app.request("http://localhost/session/session-1/message?snapshot=1&limit=invalid&before=")
@@ -677,14 +509,12 @@ describe("createSessionRoutes message paging", () => {
   })
 
   test("rejects malformed page inputs before resolving a producer", async () => {
-    let adapterResolutions = 0
-    const app = createSessionRoutes({
-      resolveAdapter: () => {
-        adapterResolutions += 1
-        return adapter()
+    let pageReads = 0
+    const app = sessionRoutes(undefined, {
+      getMessagePage: () => {
+        pageReads += 1
+        return { messages: [] }
       },
-      resolveDirectory: () => "/workspace",
-      publishGlobal() {},
     })
 
     for (const query of [
@@ -700,15 +530,13 @@ describe("createSessionRoutes message paging", () => {
       const response = await app.request(`http://localhost/session/session-1/message?${query}`)
       expect(response.status).toBe(400)
     }
-    expect(adapterResolutions).toBe(0)
+    expect(pageReads).toBe(0)
   })
 
   test("names which half of a turn coverage request is wrong and reads neither producer", async () => {
     let coverageReads = 0
     let pageReads = 0
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveDirectory: () => "/workspace",
+    const app = sessionRoutes(undefined, {
       turnCoverage: () => {
         coverageReads += 1
         return undefined
@@ -717,7 +545,6 @@ describe("createSessionRoutes message paging", () => {
         pageReads += 1
         return { messages: [] }
       },
-      publishGlobal() {},
     })
 
     const refusals = await Promise.all(
@@ -750,13 +577,7 @@ describe("createSessionRoutes message paging", () => {
   test("answers a turn coverage read from the journal owner alone", async () => {
     const calls: Array<{ sessionId: string; turnId: string; directory: RuntimeDirectory }> = []
     let pageReads = 0
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter({
-        getMessagePage: async () => {
-          throw new Error("an adapter must not be asked for coverage")
-        },
-      }),
-      resolveDirectory: () => "/workspace",
+    const app = sessionRoutes(undefined, {
       getMessagePage: () => {
         pageReads += 1
         return { messages: [] }
@@ -771,7 +592,6 @@ describe("createSessionRoutes message paging", () => {
           messages: [first, second],
         }
       },
-      publishGlobal() {},
     })
 
     const response = await app.request("http://localhost/session/session-1/message?turn=message-1&coverage=1")
@@ -785,20 +605,12 @@ describe("createSessionRoutes message paging", () => {
       messages: [first, second],
     })
     expect(response.headers.get("x-next-cursor")).toBeNull()
-    expect(calls).toEqual([{ sessionId: "session-1", turnId: "message-1", directory: "/workspace" }])
+    expect(calls).toEqual([{ sessionId: "session-1", turnId: "message-1", directory: WORKSPACE }])
     expect(pageReads).toBe(0)
   })
 
   test("refuses coverage for a turn no journal in this runtime owns", async () => {
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter({
-        getMessagePage: async () => ({ messages: [first, second] }),
-      }),
-      resolveDirectory: () => "/workspace",
-      publishGlobal() {},
-    })
-
-    const response = await app.request("http://localhost/session/session-1/message?turn=message-1&coverage=1")
+    const response = await sessionRoutes(undefined).request("http://localhost/session/session-1/message?turn=message-1&coverage=1")
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
@@ -810,22 +622,12 @@ describe("createSessionRoutes message paging", () => {
     })
   })
 
-  test("maps typed route and adapter page errors to their explicit HTTP status", async () => {
-    const routeErrorApp = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveDirectory: () => "/workspace",
-      getMessagePage: () => { throw new AgentMessagePageError(404, "session was not found") },
-      publishGlobal() {},
-    })
-    const adapterErrorApp = routes({
-      adapter: adapter({
-        getMessagePage: async () => { throw new AgentMessagePageError(400, "cursor is invalid") },
-      }),
-    })
+  test("maps typed page errors to their explicit HTTP status", async () => {
+    const failing = (error: AgentMessagePageError) => sessionRoutes(undefined, { getMessagePage: () => { throw error } })
 
     const [missing, invalid] = await Promise.all([
-      routeErrorApp.request("http://localhost/session/missing/message?limit=1"),
-      adapterErrorApp.request("http://localhost/session/session-1/message?limit=1&before=opaque"),
+      failing(new AgentMessagePageError(404, "session was not found")).request("http://localhost/session/missing/message?limit=1"),
+      failing(new AgentMessagePageError(400, "cursor is invalid")).request("http://localhost/session/session-1/message?limit=1&before=opaque"),
     ])
 
     expect(missing.status).toBe(404)
@@ -834,191 +636,98 @@ describe("createSessionRoutes message paging", () => {
     expect(await invalid.text()).toContain("cursor is invalid")
   })
 
-  test("does not trust an invalid status from an adapter page error", async () => {
-    const app = routes({
-      adapter: adapter({
-        getMessagePage: async () => { throw new AgentMessagePageError(200, "invalid producer status") },
-      }),
+  test("does not trust an invalid status from a page error", async () => {
+    const app = sessionRoutes(undefined, {
+      getMessagePage: () => { throw new AgentMessagePageError(200, "invalid producer status") },
     })
 
     const response = await app.request("http://localhost/session/session-1/message?limit=1")
 
-    expect(response.status).toBe(502)
+    expect(response.status).toBe(500)
   })
 })
 
-function routes(input: {
-  adapter: AgentHarnessAdapter
-  events?: CompatEnvelope[]
-  lifecycle?: SessionLifecycleEvent[]
-  getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
-  getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessage[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessage[]; maxEventOrdinal?: number } | undefined
-  getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
-  sessionAccessPolicy?: SessionAccessPolicy
-  afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
-}) {
-  const created = createSessionRoutes({
-    resolveAdapter: () => input.adapter,
-    resolveExecutionBinding: fixtureExecutionBinding(),
-    resolveDirectory: () => undefined,
-    publishGlobal: (event) => input.events?.push(event),
-    publishSessionLifecycle: (event) => input.lifecycle?.push(event),
-    getMessages: input.getMessages ? (_c, directory, sessionId) => input.getMessages?.(directory, sessionId) : undefined,
-    getMessageSnapshot: input.getMessageSnapshot
-      ? (_c, directory, sessionId) => input.getMessageSnapshot?.(directory, sessionId)
-      : undefined,
-    getSession: input.getSession
-      ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
-      : undefined,
-    sessionAccessPolicy: input.sessionAccessPolicy,
-    afterCreateSession: input.afterCreateSession
-      ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
-      : undefined,
-  })
-  // A managed-private policy decides the lifecycle of a RELAY-REPLAYED
-  // request, and the runtime reads that off the verified stamp the exposure
-  // sets, so a test of it has to arrive stamped. Unstamped, the same runtime
-  // answers its own machine's user and reserves nothing.
-  if (!input.sessionAccessPolicy) return created
-  const app = new Hono()
-  app.use("*", async (context, next) => {
-    ;(context as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
-      principal_kind: "user",
-      actor_id: "actor_1",
-      actor_kind: "human",
-      actor_public_id: "user_1",
-      actor_name: "Actor One",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      role: "editor",
-    })
-    await next()
-  })
-  return app.route("/", created)
-}
-
-function registrationPolicy(
-  registerSession: NonNullable<SessionAccessPolicy["registerSession"]>,
-): SessionAccessPolicy {
-  return {
-    sessionAuthority: "managed-private",
-    authorize: async () => ({ allowed: true }),
-    authorizeSessionStart: async () => ({ allowed: true }),
-    authorizeSessionStartStatus: async () => ({ allowed: true }),
-    authorizePrefix: async () => ({ allowed: true }),
-    filterSessions: async (input) => input.sessionIds,
-    registerSession,
-    markRegistrationAmbiguous: async () => ({ allowed: true }),
-    beginRegistrationCompensation: async () => ({ allowed: true }),
-    completeRegistrationCompensation: async () => ({ allowed: true }),
-  }
-}
-
 describe("createSessionRoutes directory-less sessions", () => {
+  function directoryless(h: Harness | undefined, options: Partial<RouteOptions> = {}) {
+    return sessionRoutes(h, {
+      resolveDirectory: () => undefined,
+      getSession: (_c, _directory, sessionId) => ({ id: sessionId, title: "Held", time: { created: 1, updated: 1 } }) as AgentSession,
+      getSessionConfig: async () => ({ harness: CODEX, agent: null, variant: null }),
+      ...options,
+    })
+  }
+
   test("persists the complete config before publishing a created session", async () => {
-    const calls: string[] = []
+    const h = harness()
     const lifecycle: SessionLifecycleEvent[] = []
-    const item = adapter()
-    const app = routes({
-      lifecycle,
-      adapter: {
-        ...item,
-        createSession: async () => {
-          calls.push("create")
-          return { id: "session_configured" }
-        },
-        updateSessionConfig: async (binding, update) => {
-          calls.push(`config:${binding.sessionId}:${update.model?.providerID}:${update.model?.modelID}`)
-          return {
-            harness: update.harness ?? { id: "claude", access: "native" },
-            ...(update.model ? { model: update.model } : {}),
-            agent: update.agent ?? null,
-            variant: update.variant ?? null,
-          }
-        },
+    const configAtCreated: unknown[] = []
+    const app = sessionRoutes(h, {
+      publishSessionLifecycle: (event) => {
+        lifecycle.push(event)
+        if (event.phase === "created" && event.sessionID) configAtCreated.push(h.store.getSessionConfig(event.sessionID))
       },
     })
 
-    const res = await app.request("http://localhost/session", {
-      method: "POST",
-      body: JSON.stringify({
-        model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
-        agent: "build",
-      }),
+    const res = await post(app, "/session", {
+      model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
+      agent: "build",
     })
 
     expect(res.status).toBe(201)
-    expect(calls).toEqual(["create", "config:session_configured:claude-sdk:sonnet"])
     expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "created"])
+    expect(configAtCreated).toEqual([expect.objectContaining({
+      model: { providerID: "claude-sdk", modelID: "sonnet" },
+      variant: "high",
+      agent: "build",
+    })])
+    expect(h.transport.starts[0]?.config).toMatchObject({ model: { providerID: "claude-sdk", modelID: "sonnet" }, agent: "build" })
   })
 
   test("rolls back a session whose initial config cannot be persisted", async () => {
     const calls: string[] = []
     const lifecycle: SessionLifecycleEvent[] = []
-    const item = adapter()
-    const app = routes({
-      lifecycle,
-      adapter: {
-        ...item,
-        createSession: async () => ({ id: "session_rejected" }),
-        updateSessionConfig: async () => {
+    const h = harness({
+      capabilities: { configOwner: "harness" },
+      config: configOps({
+        update: async () => {
           calls.push("config")
           throw new Error("config unavailable")
         },
-        deleteSession: async (binding) => {
-          calls.push(`delete:${binding.sessionId}`)
-        },
-      },
-    })
-
-    const res = await app.request("http://localhost/session", {
-      method: "POST",
-      body: JSON.stringify({
-        model: { providerID: "claude-sdk", id: "sonnet" },
       }),
+      onClose: (session) => { calls.push(`delete:${session.binding.sessionId}`) },
+    })
+    const app = sessionRoutes(h, { publishSessionLifecycle: (event) => lifecycle.push(event) })
+
+    const res = await post(app, "/session", {
+      id: "session_rejected",
+      harness: CODEX,
+      model: { providerID: "claude-sdk", id: "sonnet" },
     })
 
     expect(res.status).toBe(500)
     expect(calls).toEqual(["config", "delete:session_rejected"])
     expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "failed"])
     expect(await res.json()).toMatchObject({ error: { message: "config unavailable" } })
+    expect(h.store.getSession("session_rejected")).toBeNull()
   })
 
   test("rolls back an explicit registration denial so the same requested id can retry", async () => {
-    const persisted = new Set<string>()
     const calls: string[] = []
     let attempts = 0
-    const item = adapter()
-    const app = routes({
-      adapter: {
-        ...item,
-        createSession: async (_directory, _title, id = "generated") => {
-          if (persisted.has(id)) throw new Error("session already exists")
-          persisted.add(id)
-          calls.push(`create:${id}`)
-          return { id }
-        },
-        deleteSession: async (binding) => {
-          calls.push(`delete:${binding.sessionId}`)
-          persisted.delete(binding.sessionId)
-        },
-      },
+    const h = harness({
+      onStart: (input) => { calls.push(`create:${input.sessionId}`) },
+      onClose: (session) => { calls.push(`delete:${session.binding.sessionId}`) },
+    })
+    const app = stamped(sessionRoutes(h, {
       sessionAccessPolicy: registrationPolicy(async () => {
         attempts += 1
         return attempts === 1
           ? { allowed: false, status: 403, code: "session_private", message: "Registration denied" }
           : { allowed: true }
       }),
-      getSession: (_directory, id) => persisted.has(id)
-        ? { id, title: "Private", time: { created: 1, updated: 1 } }
-        : null,
-    })
+    }))
 
-    const request = () => app.request("http://localhost/session", {
-      method: "POST",
-      headers: { "x-claxedo-session-registration-operation": "op_stable" },
-      body: JSON.stringify({ id: "session_stable" }),
-    })
+    const request = () => post(app, "/session", { id: "session_stable" }, { "x-claxedo-session-registration-operation": "op_stable" })
     expect((await request()).status).toBe(403)
     expect((await request()).status).toBe(201)
     expect(calls).toEqual([
@@ -1029,74 +738,61 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("preserves an ambiguous registration for exact-operation retry", async () => {
-    const calls: string[] = []
     let registrations = 0
-    const item = adapter()
-    const app = routes({
-      adapter: {
-        ...item,
-        createSession: async () => ({ id: "session_committed" }),
-        deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
-      },
+    const h = harness()
+    const app = stamped(sessionRoutes(h, {
       sessionAccessPolicy: registrationPolicy(async () => {
         registrations += 1
         if (registrations === 1) throw new Error("authority response timed out after commit")
         return { allowed: true }
       }),
-    })
+    }))
 
-    const request = () => app.request("http://localhost/session", {
-      method: "POST",
-      headers: { "x-claxedo-session-registration-operation": "op_committed" },
-      body: JSON.stringify({ id: "session_committed" }),
-    })
+    const request = () => post(app, "/session", { id: "session_committed" }, { "x-claxedo-session-registration-operation": "op_committed" })
 
     expect((await request()).status).toBe(503)
     expect((await request()).status).toBe(201)
     expect(registrations).toBe(2)
-    expect(calls).toEqual([])
+    expect(h.transport.closed).toEqual([])
+    expect(h.transport.starts).toHaveLength(1)
   })
 
   test("registers and projects a forked child before returning it", async () => {
     const calls: string[] = []
-    const item = adapter()
-    const app = routes({
-      adapter: {
-        ...item,
-        forkSession: async () => {
-          calls.push("fork")
-          return { id: "session_child" }
-        },
+    const h = harness({
+      fork: async (_session, _messageId, childId) => {
+        calls.push("fork")
+        return { upstreamSessionId: `upstream-${childId}` }
       },
+    })
+    await seed(h, "session_parent")
+    const app = stamped(sessionRoutes(h, {
       sessionAccessPolicy: registrationPolicy(async (input) => {
         calls.push(`register:${input.sessionId}`)
         return { allowed: true }
       }),
-      afterCreateSession: async (_directory, session) => {
+      afterCreateSession: async (_c, _directory, session) => {
         calls.push(`project:${(session as { id: string }).id}`)
       },
-    })
+    }))
 
-    const response = await app.request("http://localhost/session/session_parent/fork", {
-      method: "POST",
-      headers: { "x-claxedo-session-registration-operation": "op_fork_child" },
-      body: JSON.stringify({ id: "session_child", messageId: "message_1" }),
+    const response = await post(app, "/session/session_parent/fork", { id: "session_child", messageId: "message_1" }, {
+      "x-claxedo-session-registration-operation": "op_fork_child",
     })
 
     expect(response.status).toBe(201)
-    expect(await response.json()).toEqual({ id: "session_child" })
+    expect(await response.json()).toMatchObject({ id: "session_child" })
     expect(calls).toEqual(["fork", "register:session_child", "project:session_child"])
   })
 
   test("deletes a forked child when registration is denied", async () => {
     const calls: string[] = []
-    const item = adapter()
-    const app = routes({
-      adapter: {
-        ...item,
-        forkSession: async () => ({ id: "session_child" }),
-        deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
-      },
+    const h = harness({
+      fork: async (_session, _messageId, childId) => ({ upstreamSessionId: `upstream-${childId}` }),
+      onClose: (session) => { calls.push(`delete:${session.binding.sessionId}`) },
+    })
+    await seed(h, "session_parent")
+    const app = stamped(sessionRoutes(h, {
       sessionAccessPolicy: registrationPolicy(async () => ({
         allowed: false,
         status: 403,
@@ -1104,26 +800,22 @@ describe("createSessionRoutes directory-less sessions", () => {
         message: "Registration denied",
       })),
       afterCreateSession: async () => { calls.push("project") },
-    })
+    }))
 
-    const response = await app.request("http://localhost/session/session_parent/fork", {
-      method: "POST",
-      headers: { "x-claxedo-session-registration-operation": "op_fork_denied" },
-      body: JSON.stringify({ id: "session_child" }),
+    const response = await post(app, "/session/session_parent/fork", { id: "session_child" }, {
+      "x-claxedo-session-registration-operation": "op_fork_denied",
     })
 
     expect(response.status).toBe(403)
     expect(calls).toEqual(["delete:session_child"])
+    expect(h.store.getSession("session_child")).toBeNull()
   })
 
   test("keeps a missing backend title empty in the created lifecycle row", async () => {
     const lifecycle: SessionLifecycleEvent[] = []
-    const res = await routes({ adapter: adapter(), lifecycle }).request("http://localhost/session", {
-      method: "POST",
-      body: "{}",
-    })
+    const res = await post(sessionRoutes(harness(), { publishSessionLifecycle: (event) => lifecycle.push(event) }), "/session", {})
 
-    expect(res.status).toBe(201)
+    expect(res.status, await res.clone().text()).toBe(201)
     expect((lifecycle.find((event) => event.phase === "created")?.info as { title?: string } | undefined)?.title).toBe("")
   })
 
@@ -1132,8 +824,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
-    authorizeSessionStart: async () => ({ allowed: true }),
-    authorizeSessionStartStatus: async () => ({ allowed: true }),
+      authorizeSessionStart: async () => ({ allowed: true }),
+      authorizeSessionStartStatus: async () => ({ allowed: true }),
       authorizePrefix: async () => ({ allowed: true }),
       filterSessions: async (input) => {
         calls.push({
@@ -1144,37 +836,33 @@ describe("createSessionRoutes directory-less sessions", () => {
         return input.sessionIds.filter((id) => id === "session_allowed")
       },
     }
-    const routes = createSessionRoutes({
-      resolveAdapter: () => adapter(),
+    const inventory = {
+      permissions: {
+        list: async () => [
+          { id: "perm_allowed", sessionID: "session_allowed" },
+          { id: "perm_hidden", sessionID: "session_hidden" },
+        ] as AgentPermission[],
+      },
+      questions: {
+        list: async () => [
+          { id: "question_allowed", sessionID: "session_allowed", questions: [] },
+          { id: "question_hidden", sessionID: "session_hidden", questions: [] },
+        ] as AgentQuestion[],
+      },
+    }
+    const app = stamped(createSessionRoutes({
+      runtime: runtimeDouble(inventory),
+      defaultHarness: () => CODEX,
+      requestedSessionHarness: () => undefined,
       resolveDirectory: () => undefined,
       listSessions: async () => [
         { id: "session_allowed" },
         { id: "session_hidden" },
       ] as AgentSession[],
       getStatus: () => ({ session_allowed: { type: "idle" }, session_hidden: { type: "busy" } }),
-      listPermissions: async () => [
-        { id: "perm_allowed", sessionID: "session_allowed" },
-        { id: "perm_hidden", sessionID: "session_hidden" },
-      ] as AgentPermission[],
-      listQuestions: async () => [
-        { id: "question_allowed", sessionID: "session_allowed", questions: [] },
-        { id: "question_hidden", sessionID: "session_hidden", questions: [] },
-      ] as AgentQuestion[],
       sessionAccessPolicy: policy,
       publishGlobal: () => {},
-    })
-    const app = new Hono()
-    app.use("*", async (c, next) => {
-      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
-        actor_id: "actor_verified",
-        actor_kind: "human",
-        workspace_id: "ws_1",
-        org_id: "org_1",
-        role: "editor",
-      })
-      await next()
-    })
-    app.route("/", routes)
+    }), () => ({ actor_id: "actor_verified", actor_kind: "human", workspace_id: "ws_1", org_id: "org_1", role: "editor" }))
 
     expect(await (await app.request("http://localhost/session")).json()).toHaveLength(1)
     expect(await (await app.request("http://localhost/session/status")).json()).toEqual({ session_allowed: { type: "idle" } })
@@ -1194,61 +882,50 @@ describe("createSessionRoutes directory-less sessions", () => {
 
   test("threads immutable actor attribution from verified relay claims and ignores body spoofing", async () => {
     const starts: unknown[] = []
-    const routes = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => ({
-        turns: {
-          start: async (input: unknown) => {
-            starts.push(input)
-            return {
-              sessionId: "session_1",
+    const runtime = {
+      turns: {
+        start: async (input: unknown) => {
+          starts.push(input)
+          return {
+            sessionId: "session_1",
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            directory: undefined,
+            prompt: {
+              parts: [],
               userMessageId: "user_1",
               assistantMessageId: "assistant_1",
-              directory: undefined,
-              prompt: {
-                parts: [],
-                userMessageId: "user_1",
-                assistantMessageId: "assistant_1",
-                agent: "build",
-                model: { providerID: "test", modelID: "fixture" },
-              },
-            }
-          },
+              agent: "build",
+              model: { providerID: "test", modelID: "fixture" },
+            },
+            delivery: "start",
+          }
         },
-        events: {
-          subscribe: () => (async function* () {
-            yield { sessionId: "session_1", directory: undefined, payload: sessionIdle("session_1") }
-          })(),
-          list: async () => [],
-        },
-      } as unknown as AgentRuntime),
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-    })
-    const app = new Hono()
-    app.use("*", async (c, next) => {
-      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
-        actor_id: "actor_verified",
-        actor_kind: "human",
-        actor_public_id: "user_public_verified",
-        actor_name: "Verified User",
-        actor_avatar_url: "https://example.invalid/avatar",
-        workspace_id: "ws_1",
-        org_id: "org_1",
-        role: "editor",
-      })
-      await next()
-    })
-    app.route("/", routes)
+      },
+      events: {
+        subscribe: () => (async function* () {
+          yield { sessionId: "session_1", directory: undefined, payload: sessionIdle("session_1") }
+        })(),
+        list: async () => [],
+      },
+      reads: { permissionModes: async () => undefined },
+    }
+    const app = stamped(directoryless(undefined, { runtime: runtimeDouble(runtime) }), () => ({
+      actor_id: "actor_verified",
+      actor_kind: "human",
+      actor_public_id: "user_public_verified",
+      actor_name: "Verified User",
+      actor_avatar_url: "https://example.invalid/avatar",
+      workspace_id: "ws_1",
+      org_id: "org_1",
+      role: "editor",
+    }))
 
-    const response = await app.request("http://localhost/session/session_1/message", {
-      method: "POST",
-      body: JSON.stringify({
-        actorId: "actor_attacker",
-        actorKind: "agent",
-        author: { id: "attacker", name: "Attacker", kind: "agent" },
-        parts: [],
-      }),
+    const response = await post(app, "/session/session_1/message", {
+      actorId: "actor_attacker",
+      actorKind: "agent",
+      author: { id: "attacker", name: "Attacker", kind: "agent" },
+      parts: [],
     })
 
     expect(response.status).toBe(200)
@@ -1265,39 +942,40 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("returns an empty agent list when harness cannot expose live agent options", async () => {
-    const res = await routes({
-      adapter: {
-        ...adapter(),
-        listAgents: async () => {
-          throw new Error("opencode does not expose live agent options")
-        },
-      },
-    }).request("http://localhost/agent")
+    const res = await directoryless(harness({
+      agents: { list: async () => { throw new Error("opencode does not expose live agent options") } },
+    })).request("http://localhost/agent")
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([])
   })
 
   test("passes undefined directory through detail routes", async () => {
-    const directories: RuntimeDirectory[] = []
-    const res = await routes({
-      adapter: adapter({ onDirectory: (directory) => directories.push(directory) }),
+    const targets: unknown[] = []
+    const res = await directoryless(undefined, {
+      runtime: runtimeDouble({
+        reads: {
+          capabilities: async (target: unknown) => {
+            targets.push(target)
+            return { harness: "codex" }
+          },
+        },
+      }),
     }).request("http://localhost/session/session_1/capabilities")
 
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ harness: "codex" })
-    expect(directories).toEqual([undefined])
+    expect(targets).toEqual([{ sessionId: "session_1" }])
   })
 
   test("returns snapshot metadata and the canonical session together", async () => {
-    const messages: AgentMessage[] = [{
+    const messages = [{
       info: { id: "message_1", sessionID: "session_1", role: "assistant" },
       parts: [],
-    }]
-    const res = await routes({
-      adapter: adapter(),
+    }] as unknown as AgentMessage[]
+    const res = await directoryless(undefined, {
       getMessageSnapshot: () => ({ messages, maxEventOrdinal: 7 }),
-      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }),
+      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }) as AgentSession,
     }).request("http://localhost/session/session_1/message?snapshot=1")
 
     expect(res.status).toBe(200)
@@ -1309,14 +987,13 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("wraps replay messages with the canonical session only for snapshot callers", async () => {
-    const messages: AgentMessage[] = [{
+    const messages = [{
       info: { id: "message_1", sessionID: "session_1", role: "assistant" },
       parts: [],
-    }]
-    const app = routes({
-      adapter: adapter(),
+    }] as unknown as AgentMessage[]
+    const app = directoryless(undefined, {
       getMessages: () => messages,
-      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }),
+      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }) as AgentSession,
     })
 
     const snapshot = await app.request("http://localhost/session/session_1/message?snapshot=1")
@@ -1330,8 +1007,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("fails a snapshot when its canonical session no longer exists", async () => {
-    const res = await routes({
-      adapter: adapter(),
+    const res = await directoryless(undefined, {
       getMessageSnapshot: () => ({ messages: [], maxEventOrdinal: 7 }),
       getSession: () => null,
     }).request("http://localhost/session/session_missing/message?snapshot=1")
@@ -1344,16 +1020,12 @@ describe("createSessionRoutes directory-less sessions", () => {
 
   test("reads durable subagent associations without consulting the harness", async () => {
     const calls: Array<{ directory: RuntimeDirectory; parentSessionId: string }> = []
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveDirectory: () => undefined,
+    const res = await directoryless(undefined, {
       listSubagents: (_c, directory, parentSessionId) => {
         calls.push({ directory, parentSessionId })
         return [{ subagentKey: "child_1", revision: 3, status: "running" }]
       },
-      publishGlobal: () => {},
-    })
-    const res = await app.request("http://localhost/session/parent_1/subagents")
+    }).request("http://localhost/session/parent_1/subagents")
 
     expect(res.status).toBe(200)
     expect(res.headers.get("cache-control")).toBe("no-store")
@@ -1361,136 +1033,47 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(calls).toEqual([{ directory: undefined, parentSessionId: "parent_1" }])
   })
 
-  test("rejects a binding without its required machine directory before publishing prompt events", async () => {
+  test("refuses a prompt for a session this runtime does not hold before publishing prompt events", async () => {
     const events: CompatEnvelope[] = []
-    const res = await routes({
-      events,
-      adapter: adapter({
-        events: [
-          messageUpdated({
-            id: "user_1",
-            sessionID: "session_1",
-            role: "user",
-            time: { created: 1 },
-          }),
-          messagePartUpdated({
-            id: "user_1_part_0",
-            sessionID: "session_1",
-            messageID: "user_1",
-            type: "text",
-            text: "hello",
-          }),
-          messageUpdated({
-            id: "assistant_1",
-            sessionID: "session_1",
-            role: "assistant",
-            time: { created: 1 },
-          }),
-          sessionIdle("session_1"),
-        ],
-        messages: [{
-          info: {
-            id: "assistant_1",
-            sessionID: "session_1",
-            role: "assistant",
-          },
-          parts: [],
-        }],
-      }),
-    }).request("http://localhost/session/session_1/message", {
-      method: "POST",
-      body: JSON.stringify({
-        agent: "build",
-        model: { providerID: "test", modelID: "fixture" },
-        variant: "fixture",
-        parts: [{ type: "text", text: "hello" }],
-      }),
-    })
+    const h = harness()
+    const app = sessionRoutes(h, { publishGlobal: (event) => events.push(event) })
+    const prompt = { agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture", parts: [{ type: "text", text: "hello" }] }
 
-    expect(res.status).toBe(500)
+    for (const route of ["message", "prompt_async"]) {
+      const res = await post(app, `/session/session_1/${route}`, prompt)
+      expect(res.status).toBe(404)
+      expect(await res.json()).toMatchObject({ error: { code: "session_not_found" } })
+    }
     expect(events).toEqual([])
+    expect(h.transport.turns).toEqual([])
   })
 
   test("can run message turns through the agent runtime facade", async () => {
     const events: CompatEnvelope[] = []
-    const messages: AgentMessage[] = [{
-      info: {
-        id: "assistant_1",
-        sessionID: "session_1",
-        role: "assistant",
-      },
-      parts: [],
-    }]
-    const turnStarts: unknown[] = []
-    const runtime = {
-      turns: {
-        start: async (input: unknown) => {
-          turnStarts.push(input)
-          return {
-            sessionId: "session_1",
-            userMessageId: "user_1",
-            assistantMessageId: "assistant_1",
-            directory: undefined,
-            prompt: {
-              parts: [{ type: "text", text: "hello" }],
-              userMessageId: "user_1",
-              assistantMessageId: "assistant_1",
-              agent: "build",
-              model: { providerID: "test", modelID: "fixture" },
-            },
-          }
-        },
-      },
-      events: {
-        subscribe: () => (async function*() {
-          yield {
-            sessionId: "session_1",
-            directory: undefined,
-            payload: messageUpdated({
-              id: "assistant_1",
-              sessionID: "session_1",
-              role: "assistant",
-              time: { created: 1 },
-            }),
-          }
-          yield {
-            sessionId: "session_1",
-            directory: undefined,
-            payload: sessionIdle("session_1"),
-          }
-        })(),
-        list: async () => messages,
-      },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => ({
-        ...adapter(),
-        setPermissionMode: async () => {
-          throw new Error("permission mode must be applied by AgentRuntime")
-        },
+    const h = harness({
+      config: configOps({
+        setPermissionMode: async () => { throw new Error("permission mode must be applied by AgentRuntime") },
       }),
-      resolveRuntime: () => runtime,
-      resolveExecutionBinding: fixtureExecutionBinding(),
-      resolveDirectory: () => undefined,
-      publishGlobal: (event) => events.push(event),
     })
+    await seed(h, "session_1")
 
-    const res = await app.request("http://localhost/session/session_1/message", {
-      method: "POST",
-      body: JSON.stringify({
-        agent: "build",
-        model: { providerID: "test", modelID: "fixture" },
-        permissionMode: "winner-mode",
-        parts: [{ type: "text", text: "hello" }],
-      }),
+    const res = await post(sessionRoutes(h, { publishGlobal: (event) => events.push(event) }), "/session/session_1/message", {
+      messageID: "user_1",
+      agent: "build",
+      model: { providerID: "test", modelID: "fixture" },
+      permissionMode: "winner-mode",
+      parts: [{ type: "text", text: "hello" }],
     })
 
     expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual(messages[0])
-    expect(turnStarts).toEqual([{
-      sessionId: "session_1",
-      onAdmitted: expect.any(Function),
-      parts: [{ type: "text", text: "hello" }],
+    expect(await res.json()).toMatchObject({ info: { id: "user_1_r", role: "assistant" } })
+    expect(h.transport.turns.map((turn) => ({
+      text: promptText(turn),
+      agent: turn.turn.prompt.agent,
+      model: turn.turn.model,
+      permissionMode: turn.turn.prompt.permissionMode,
+    }))).toEqual([{
+      text: "hello",
       agent: "build",
       model: { providerID: "test", modelID: "fixture" },
       permissionMode: "winner-mode",
@@ -1510,21 +1093,13 @@ describe("createSessionRoutes directory-less sessions", () => {
         subscribe: () => (async function* () {})(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
-      publishGlobal: (event) => events.push(event),
-    })
+    }
+    const app = directoryless(undefined, { runtime: runtimeDouble(runtime), publishGlobal: (event) => events.push(event) })
 
-    const res = await app.request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({
-        agent: "build",
-        model: { providerID: "test", modelID: "fixture" },
-        parts: [{ type: "text", text: "hello" }],
-      }),
+    const res = await post(app, "/session/session_1/prompt_async", {
+      agent: "build",
+      model: { providerID: "test", modelID: "fixture" },
+      parts: [{ type: "text", text: "hello" }],
     })
 
     expect(res.status).toBe(204)
@@ -1547,60 +1122,36 @@ describe("createSessionRoutes directory-less sessions", () => {
     const runtime = {
       turns: {
         start: async () => {
-          throw new AgentRuntimeTurnConflictError("session_1")
+          throw new AgentRuntimeTurnAdmissionError("session_1")
         },
       },
       events: {
         subscribe: () => (async function* () {})(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveExecutionBinding: fixtureExecutionBinding(),
-      resolveDirectory: () => undefined,
-      publishGlobal: (event) => events.push(event),
-    })
-    const request = () => ({
-      method: "POST",
-      body: JSON.stringify({
-        messageID: "loser",
-        permissionMode: "loser-mode",
-        parts: [{ type: "text", text: "hello" }],
-      }),
-    })
+    }
+    const app = directoryless(undefined, { runtime: runtimeDouble(runtime), publishGlobal: (event) => events.push(event) })
+    const request = { messageID: "loser", permissionMode: "loser-mode", parts: [{ type: "text", text: "hello" }] }
 
-    const message = await app.request("http://localhost/session/session_1/message", request())
-    const promptAsync = await app.request("http://localhost/session/session_1/prompt_async", request())
+    const message = await post(app, "/session/session_1/message", request)
+    const promptAsync = await post(app, "/session/session_1/prompt_async", request)
 
     expect(message.status).toBe(409)
     expect(await message.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
     expect(promptAsync.status).toBe(409)
     expect(await promptAsync.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
     expect(events.some((event) => event.payload.type === "session.error")).toBe(false)
+  })
 
-    const unsupported = await createSessionRoutes({
-      resolveAdapter: () => ({ ...adapter(), executeCommand: undefined }) as unknown as AgentHarnessAdapter,
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-    }).request("http://localhost/session/session_1/command", {
-      method: "POST",
-      body: JSON.stringify({ command: "test" }),
-    })
-    expect(unsupported.status).toBe(409)
-    expect(await unsupported.json()).toMatchObject({ error: { code: "unsupported_operation" } })
+  test("the legacy command route answers 501 without resolving a harness", async () => {
+    const response = await post(directoryless(undefined), "/session/session_1/command", { command: "test" })
+    expect(response.status).toBe(501)
+    expect(await response.json()).toMatchObject({ error: { code: "unsupported_operation" } })
   })
 
   for (const route of ["shell", "summarize", "revert", "unrevert"] as const) {
     test(`${route} answers 501 without resolving a harness`, async () => {
-      const response = await createSessionRoutes({
-        resolveAdapter: () => {
-          throw new Error(`${route} resolved a harness`)
-        },
-        resolveDirectory: () => "/workspace",
-        publishGlobal: () => {},
-      }).request(`http://localhost/session/session_1/${route}`, { method: "POST" })
+      const response = await sessionRoutes(undefined).request(`http://localhost/session/session_1/${route}`, { method: "POST" })
 
       expect(response.status).toBe(501)
       expect(await response.json()).toEqual({
@@ -1616,9 +1167,8 @@ describe("createSessionRoutes directory-less sessions", () => {
   }
 
   test("a denied caller is refused before learning an operation is not implemented", async () => {
-    const response = await managedRoutes({
+    const response = await managedRoutes(undefined, {
       policy: managedPolicy({ authorize: async () => ({ allowed: false, status: 403, code: "session_access_denied", message: "Private session" }) }),
-      adapter: adapter(),
     }).request("http://localhost/session/session_1/revert", { method: "POST" })
 
     expect(response.status).toBe(403)
@@ -1626,67 +1176,51 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("prompt_async falls back to 204 when admission does not settle within the bound", async () => {
-    // turns.start hangs before ever settling admission (a wedged adapter spawn).
-    // Without the timeout the request would hang forever; with it the route
-    // honors prompt_async's fire-and-forget contract.
+    // turns.start hangs before ever settling admission (a wedged harness
+    // spawn). Without the timeout the request would hang forever; with it the
+    // route honors prompt_async's fire-and-forget contract.
     const runtime = {
-      turns: {
-        start: () => new Promise(() => {}),
-      },
+      turns: { start: () => new Promise(() => {}) },
       events: {
         subscribe: () => (async function* () {})(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-      promptAsyncAdmissionAckTimeoutMs: 30,
-    })
+    }
+    const app = directoryless(undefined, { runtime: runtimeDouble(runtime), promptAsyncAdmissionAckTimeoutMs: 30 })
 
-    const res = await app.request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
-    })
+    const res = await post(app, "/session/session_1/prompt_async", { parts: [{ type: "text", text: "hello" }] })
 
     expect(res.status).toBe(204)
   })
 
+  function admittedTurn() {
+    return {
+      sessionId: "session_1",
+      userMessageId: "user_1",
+      assistantMessageId: "assistant_1",
+      directory: undefined,
+      prompt: {
+        parts: [],
+        userMessageId: "user_1",
+        assistantMessageId: "assistant_1",
+        agent: "build",
+        model: { providerID: "test", modelID: "fixture" },
+      },
+      delivery: "start",
+    }
+  }
+
   test("keeps prompt_async success empty and 204", async () => {
     const runtime = {
-      turns: {
-        start: async () => ({
-          sessionId: "session_1",
-          userMessageId: "user_1",
-          assistantMessageId: "assistant_1",
-          directory: undefined,
-          prompt: {
-            parts: [],
-            userMessageId: "user_1",
-            assistantMessageId: "assistant_1",
-            agent: "build",
-            model: { providerID: "test", modelID: "fixture" },
-          },
-        }),
-      },
+      turns: { start: async () => admittedTurn() },
       events: {
         subscribe: () => (async function* () {
           yield { sessionId: "session_1", directory: undefined, payload: sessionIdle("session_1") }
         })(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const response = await createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-    }).request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({ messageID: "winner", parts: [] }),
-    })
+    }
+    const response = await post(directoryless(undefined, { runtime: runtimeDouble(runtime) }), "/session/session_1/prompt_async", { messageID: "winner", parts: [] })
 
     expect(response.status).toBe(204)
     expect(await response.text()).toBe("")
@@ -1705,38 +1239,18 @@ describe("createSessionRoutes directory-less sessions", () => {
           if (starts === 1) {
             started()
             await blocked
-            throw new AgentRuntimeTurnConflictError("session_1")
+            throw new AgentRuntimeTurnAdmissionError("session_1")
           }
-          return {
-            sessionId: "session_1",
-            userMessageId: "user_1",
-            assistantMessageId: "assistant_1",
-            directory: undefined,
-            prompt: {
-              parts: [],
-              userMessageId: "user_1",
-              assistantMessageId: "assistant_1",
-              agent: "build",
-              model: { providerID: "test", modelID: "fixture" },
-            },
-          }
+          return admittedTurn()
         },
       },
       events: {
         subscribe: () => (async function* () {})(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-    })
-    const submit = () => app.request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({ messageID: "raced", parts: [{ type: "text", text: "hello" }] }),
-    })
+    }
+    const app = directoryless(undefined, { runtime: runtimeDouble(runtime) })
+    const submit = () => post(app, "/session/session_1/prompt_async", { messageID: "raced", parts: [{ type: "text", text: "hello" }] })
 
     const first = submit()
     await attempted
@@ -1769,36 +1283,16 @@ describe("createSessionRoutes directory-less sessions", () => {
           starts += 1
           started()
           await blocked
-          return {
-            sessionId: "session_1",
-            userMessageId: "user_1",
-            assistantMessageId: "assistant_1",
-            directory: undefined,
-            prompt: {
-              parts: [],
-              userMessageId: "user_1",
-              assistantMessageId: "assistant_1",
-              agent: "build",
-              model: { providerID: "test", modelID: "fixture" },
-            },
-          }
+          return admittedTurn()
         },
       },
       events: {
         subscribe: () => (async function* () {})(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-    })
-    const submit = () => app.request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({ messageID: "joined", parts: [{ type: "text", text: "hello" }] }),
-    })
+    }
+    const app = directoryless(undefined, { runtime: runtimeDouble(runtime) })
+    const submit = () => post(app, "/session/session_1/prompt_async", { messageID: "joined", parts: [{ type: "text", text: "hello" }] })
 
     const first = submit()
     await attempted
@@ -1817,36 +1311,16 @@ describe("createSessionRoutes directory-less sessions", () => {
       turns: {
         start: async () => {
           starts += 1
-          return {
-            sessionId: "session_1",
-            userMessageId: "user_1",
-            assistantMessageId: "assistant_1",
-            directory: undefined,
-            prompt: {
-              parts: [],
-              userMessageId: "user_1",
-              assistantMessageId: "assistant_1",
-              agent: "build",
-              model: { providerID: "test", modelID: "fixture" },
-            },
-          }
+          return admittedTurn()
         },
       },
       events: {
         subscribe: () => (async function* () {})(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
-      publishGlobal: () => {},
-    })
-    const submit = () => app.request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({ messageID: "settled", parts: [{ type: "text", text: "hello" }] }),
-    })
+    }
+    const app = directoryless(undefined, { runtime: runtimeDouble(runtime) })
+    const submit = () => post(app, "/session/session_1/prompt_async", { messageID: "settled", parts: [{ type: "text", text: "hello" }] })
 
     expect((await submit()).status).toBe(204)
     expect((await submit()).status).toBe(204)
@@ -1864,55 +1338,18 @@ describe("createSessionRoutes directory-less sessions", () => {
     })
     const modes: string[] = []
     let activeScopes = 0
-    const messages: AgentMessage[] = [{
-      info: { id: "winner_r", sessionID: "session_1", role: "assistant" },
-      parts: [],
-    }]
-    const integrationAdapter: AgentHarnessAdapter = {
-      ...adapter({ messages }),
-      async *executeTurn(binding, prompt) {
-        const id = binding.sessionId
-        if (prompt.permissionMode) modes.push(prompt.permissionMode)
+    const h = harness({
+      turn: async function* ({ session, turn }) {
+        if (turn.prompt.permissionMode) modes.push(turn.prompt.permissionMode)
         markStarted?.()
-        yield messageUpdated({
-          id: prompt.userMessageId!,
-          sessionID: id,
-          role: "user",
-          time: { created: 1 },
-        })
-        yield messageUpdated({
-          id: prompt.assistantMessageId,
-          sessionID: id,
-          parentID: prompt.userMessageId,
-          role: "assistant",
-          time: { created: 2 },
-        })
         await blocked
-        yield sessionIdle(id)
+        yield { type: "finish", sessionId: session.binding.sessionId }
       },
-    }
-    const eventHub = createRuntimeEventHub()
-    const runtime = createAgentRuntime({
-      eventHub,
-      store: createMemoryRuntimeStore(),
-      harnesses: [{
-        id: "pi",
-        access: "native",
-        create: () => integrationAdapter,
-      } as unknown as AgentHarnessFactory],
     })
-    await runtime.sessions.create({
-      workspaceId: "workspace-test",
-      id: "session_1",
-      directory: "/work",
-      harness: { id: "pi", access: "native" },
-    })
+    await seed(h, "session_1", "/work")
     const events: CompatEnvelope[] = []
-    eventHub.subscribeGlobal((event) => events.push(event))
-    const app = createSessionRoutes({
-      resolveAdapter: () => integrationAdapter,
-      resolveRuntime: () => runtime,
-      resolveExecutionBinding: fixtureExecutionBinding(),
+    h.eventHub.subscribeGlobal((event) => events.push(event))
+    const app = sessionRoutes(h, {
       resolveDirectory: () => "/work",
       publishGlobal: (event) => events.push(event),
       createActiveTurnScope: () => {
@@ -1920,23 +1357,17 @@ describe("createSessionRoutes directory-less sessions", () => {
         return { dispose: () => {} }
       },
     })
-    const first = app.request("http://localhost/session/session_1/message", {
-      method: "POST",
-      body: JSON.stringify({
-        messageID: "winner",
-        permissionMode: "winner-mode",
-        parts: [{ type: "text", text: "first" }],
-      }),
+    const first = post(app, "/session/session_1/message", {
+      messageID: "winner",
+      permissionMode: "winner-mode",
+      parts: [{ type: "text", text: "first" }],
     })
     await started
 
-    const second = await app.request("http://localhost/session/session_1/prompt_async", {
-      method: "POST",
-      body: JSON.stringify({
-        messageID: "loser",
-        permissionMode: "loser-mode",
-        parts: [{ type: "text", text: "second" }],
-      }),
+    const second = await post(app, "/session/session_1/prompt_async", {
+      messageID: "loser",
+      permissionMode: "loser-mode",
+      parts: [{ type: "text", text: "second" }],
     })
 
     expect(second.status).toBe(409)
@@ -1949,7 +1380,6 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     finish?.()
     expect((await first).status).toBe(200)
-    await runtime.dispose()
   })
 
   test("prompt_async continues after its accepted client request disconnects", async () => {
@@ -1964,19 +1394,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       turns: {
         start: async (input: { onAdmitted?: () => void }) => {
           input.onAdmitted?.()
-          return {
-            sessionId: "session_1",
-            userMessageId: "user_1",
-            assistantMessageId: "assistant_1",
-            directory: undefined,
-            prompt: {
-              parts: [{ type: "text", text: "continue" }],
-              userMessageId: "user_1",
-              assistantMessageId: "assistant_1",
-              agent: "build",
-              model: { providerID: "test", modelID: "fixture" },
-            },
-          }
+          return { ...admittedTurn(), prompt: { ...admittedTurn().prompt, parts: [{ type: "text", text: "continue" }] } }
         },
       },
       events: {
@@ -1991,11 +1409,9 @@ describe("createSessionRoutes directory-less sessions", () => {
         })(),
         list: async () => [],
       },
-    } as unknown as AgentRuntime
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
+    }
+    const app = directoryless(undefined, {
+      runtime: runtimeDouble(runtime),
       createActiveTurnScope: () => ({
         dispose: () => {
           disposed = true
@@ -2024,21 +1440,15 @@ describe("createSessionRoutes directory-less sessions", () => {
 })
 
 for (const operation of ["reply", "reject"] as const) {
-  test(`a stale question ${operation} returns not-found without resolving a default harness`, async () => {
-    let resolved = 0
-    const app = createSessionRoutes({
-      resolveDirectory: () => "/work",
-      listQuestions: async () => [],
-      resolveAdapter: () => { resolved++; throw new Error("No default harness configured") },
-      publishGlobal() {},
-    })
+  test(`a stale question ${operation} returns not-found without starting a harness`, async () => {
+    const h = harness()
+    const app = sessionRoutes(h, { resolveDirectory: () => "/work" })
     app.onError(() => new Response("unexpected harness resolution", { status: 500 }))
-    const response = await app.request(`http://localhost/question/finished-question/${operation}?directory=%2Fwork`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Staging"]] }),
-    })
+    const response = await post(app, `/question/finished-question/${operation}?directory=%2Fwork`, { answers: [["Staging"]] })
     expect(response.status).toBe(404)
     expect(await response.json()).toMatchObject({ error: { code: "interaction_not_found" } })
-    expect(resolved).toBe(0)
+    expect(h.transport.starts).toEqual([])
+    expect(h.transport.attaches).toEqual([])
   })
 }
 
@@ -2046,12 +1456,10 @@ test("question listing filters the authoritative workspace inventory without res
   const rows = [
     { id: "question_first", sessionID: "session_first", questions: [] },
     { id: "question_second", sessionID: "session_second", questions: [] },
-  ]
-  const app = createSessionRoutes({
-    resolveAdapter: () => { throw new Error("must not select a harness from an unverified session query") },
+  ] as AgentQuestion[]
+  const app = sessionRoutes(undefined, {
     resolveDirectory: () => "/repo",
-    listQuestions: async () => rows,
-    publishGlobal: () => {},
+    runtime: runtimeDouble({ questions: { list: async () => rows } }),
   })
   const selected = await app.request("http://localhost/question?sessionId=session_first")
   expect(selected.status).toBe(200)
@@ -2060,9 +1468,7 @@ test("question listing filters the authoritative workspace inventory without res
   expect(unknown.status).toBe(200)
   expect(await unknown.json()).toEqual([])
   for (const operation of ["reply", "reject"]) {
-    const response = await app.request(`http://localhost/question/question_first/${operation}?sessionId=another_workspace_session`, {
-      method: "POST", body: JSON.stringify({ answers: [["Staging"]] }),
-    })
+    const response = await post(app, `/question/question_first/${operation}?sessionId=another_workspace_session`, { answers: [["Staging"]] })
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ error: { code: "interaction_session_mismatch" } })
   }
@@ -2072,72 +1478,50 @@ test("delete publishes the removed identity only after durable deletion succeeds
   for (const fail of [false, true]) {
     const events: CompatEnvelope[] = []
     const order: string[] = []
-    const a = adapter()
-    a.deleteSession = async () => { order.push("adapter") }
-    const app = createSessionRoutes({
-      resolveAdapter: () => a,
-      resolveDirectory: () => "/workspace",
-      resolveExecutionBinding: fixtureExecutionBinding("ws"),
+    const h = harness({ onClose: () => { order.push("harness") } })
+    await seed(h, "deleted")
+    const app = sessionRoutes(h, {
       afterDeleteSession: () => { order.push("store"); if (fail) throw new Error("store deletion failed") },
       publishGlobal: (event) => { order.push("event"); events.push(event) },
     })
     const result = await app.request("http://localhost/session/deleted", { method: "DELETE" })
     expect(result.status).toBe(fail ? 500 : 200)
-    expect(order).toEqual(fail ? ["adapter", "store"] : ["adapter", "store", "event"])
-    expect(events).toEqual(fail ? [] : [{ directory: "/workspace", payload: { type: "session.deleted", properties: { info: { id: "deleted", directory: "/workspace" } } } }])
+    expect(order).toEqual(fail ? ["harness", "store"] : ["harness", "store", "event"])
+    expect(events).toEqual(fail ? [] : [{ directory: WORKSPACE, payload: { type: "session.deleted", properties: { info: { id: "deleted", directory: WORKSPACE } } } }])
   }
 })
 
-test("late approval is not found without resolving a retired harness", async () => {
-  let resolved = false
-  const app = createSessionRoutes({
-    resolveAdapter: () => { resolved = true; throw new Error("retired harness") },
-    resolveDirectory: () => "/workspace",
-    listPermissions: async () => [],
-    publishGlobal() {},
-  })
-  const result = await app.request("http://localhost/session/deleted/permissions/expired", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "always" }),
-  })
+test("late approval is not found without starting a retired harness", async () => {
+  const h = harness()
+  const result = await post(sessionRoutes(h), "/session/deleted/permissions/expired", { response: "always" })
   expect(result.status).toBe(404)
-  expect(resolved).toBe(false)
+  expect(h.transport.starts).toEqual([])
+  expect(h.transport.attaches).toEqual([])
 })
 
 describe("createSessionRoutes session instructions", () => {
   function instructionRoutes(input: { instructionChannel: HarnessInstructionChannel }) {
-    const creates: Array<{ id?: string; options?: { instructions?: string } }> = []
     const turns: Array<string | undefined> = []
-    let stored: string | undefined
-    const configRead = { fails: false }
-    const fixture: AgentHarnessAdapter = {
-      ...adapter(),
-      instructionChannel: input.instructionChannel,
-      getSession: async () => null,
-      createSession: async (_directory, _title, id, options) => {
-        creates.push({ id, options })
-        stored = options?.instructions
-        return { id: id ?? "ses_instructions" }
-      },
-      getSessionConfig: async () => {
-        if (configRead.fails) throw new Error("session config store unreachable")
-        return {
-          harness: { id: "codex", access: "native" },
-          variant: null,
-          agent: null,
-          ...(stored ? { instructions: stored } : {}),
-        }
-      },
-      executeTurn: (_binding, prompt) => (async function* () {
-        entered.push(prompt.system)
-        notify()
-        if (held) await held
-        turns.push(prompt.system)
-        notify()
-      })(),
-    }
     const entered: Array<string | undefined> = []
     let held: Promise<void> | undefined
     let release: (() => void) | undefined
+    const configRead = { fails: false }
+    const events: CompatEnvelope[] = []
+    const watchers = new Set<() => void>()
+    function notify() {
+      for (const watcher of watchers) watcher()
+    }
+    const h = harness({
+      capabilities: { instructionChannel: input.instructionChannel },
+      turn: async function* ({ session, turn }) {
+        entered.push(turn.system)
+        notify()
+        if (held) await held
+        turns.push(turn.system)
+        notify()
+        yield { type: "finish", sessionId: session.binding.sessionId }
+      },
+    })
     const model = {
       hold() {
         held = new Promise<void>((resolve) => {
@@ -2147,11 +1531,6 @@ describe("createSessionRoutes session instructions", () => {
       release() {
         release?.()
       },
-    }
-    const events: CompatEnvelope[] = []
-    const watchers = new Set<() => void>()
-    function notify() {
-      for (const watcher of watchers) watcher()
     }
     // prompt_async answers before its turn runs, so every assertion about what
     // the detached turn did has to wait for the turn itself rather than a timer.
@@ -2171,155 +1550,119 @@ describe("createSessionRoutes session instructions", () => {
         check()
       })
     }
-    const app = createSessionRoutes({
-      resolveAdapter: () => fixture,
-      resolveDirectory: () => "/workspace",
-      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+    const app = sessionRoutes(h, {
+      getSessionConfig: async (_c, _directory, sessionId) => {
+        if (configRead.fails) throw new Error("session config store unreachable")
+        const config = h.store.getSessionConfig(sessionId)
+        if (!config) throw new Error(`Session ${sessionId} has no config`)
+        return config
+      },
       publishGlobal(event) {
         events.push(event)
         notify()
       },
     })
-    return { app, creates, turns, entered, model, configRead, events, settled }
+    return { app, h, turns, entered, model, configRead, events, settled }
   }
 
   function sessionErrors(events: CompatEnvelope[]) {
     return events.filter((event) => event.payload.type === "session.error")
   }
 
-  function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
-    return app.request("http://localhost/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    })
-  }
-
-  function promptTurn(app: ReturnType<typeof createSessionRoutes>, id: string) {
-    return app.request(`http://localhost/session/${id}/message`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        parts: [{ type: "text", text: "go" }],
-        agent: "build",
-        model: { providerID: "test", modelID: "fixture" },
-        variant: "fixture",
-      }),
-    })
-  }
-
-  function promptAsync(app: ReturnType<typeof createSessionRoutes>, id: string, messageID: string) {
-    return app.request(`http://localhost/session/${id}/prompt_async`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        parts: [{ type: "text", text: "go" }],
-        messageID,
-        agent: "build",
-        model: { providerID: "test", modelID: "fixture" },
-        variant: "fixture",
-      }),
-    })
-  }
+  const prompt = { parts: [{ type: "text", text: "go" }], agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture" }
 
   test("carries the block to session creation and reads it back on the config", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    const created = await create(app, { id: "ses_instructions", instructions: "Answer only in haiku." })
+    const { app, h } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    const created = await post(app, "/session", { id: "ses_instructions", instructions: "Answer only in haiku." })
     expect(created.status).toBe(201)
-    expect(creates).toEqual([{ id: "ses_instructions", options: { instructions: "Answer only in haiku." } }])
+    expect(h.transport.starts.map((start) => ({ id: start.sessionId, instructions: start.instructions }))).toEqual([
+      { id: "ses_instructions", instructions: "Answer only in haiku." },
+    ])
 
     const config = await app.request("http://localhost/session/ses_instructions/config")
     expect(await config.json()).toMatchObject({ instructions: "Answer only in haiku." })
   })
 
-  test("leaves the create options empty when no block was sent", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
-    expect(creates).toEqual([{ id: "ses_plain", options: {} }])
+  test("leaves the start without instructions when no block was sent", async () => {
+    const { app, h } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await post(app, "/session", { id: "ses_plain" })).status).toBe(201)
+    expect(h.transport.starts.map((start) => ({ id: start.sessionId, instructions: start.instructions }))).toEqual([
+      { id: "ses_plain", instructions: undefined },
+    ])
   })
 
   test("refuses a block over the cap before the harness is asked to create anything", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    const response = await create(app, { id: "ses_big", instructions: "x".repeat(65_537) })
+    const { app, h } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    const response = await post(app, "/session", { id: "ses_big", instructions: "x".repeat(65_537) })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "session_instructions_too_large" } })
-    expect(creates).toEqual([])
+    expect(h.transport.starts).toEqual([])
   })
 
   test("measures the cap in UTF-8 bytes rather than code units", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    const response = await create(app, { id: "ses_utf8", instructions: "🙂".repeat(16_385) })
+    const { app, h } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    const response = await post(app, "/session", { id: "ses_utf8", instructions: "🙂".repeat(16_385) })
     expect(response.status).toBe(400)
-    expect(creates).toEqual([])
+    expect(h.transport.starts).toEqual([])
   })
 
   test("refuses a harness with no instruction channel instead of dropping the block", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: "none" })
-    const response = await create(app, { id: "ses_unsupported", instructions: "Answer only in haiku." })
+    const { app, h } = instructionRoutes({ instructionChannel: "none" })
+    const response = await post(app, "/session", { id: "ses_unsupported", instructions: "Answer only in haiku." })
     expect(response.status).toBe(501)
     expect(await response.json()).toMatchObject({ error: { code: "session_instructions_unsupported" } })
-    expect(creates).toEqual([])
+    expect(h.transport.starts).toEqual([])
   })
 
   // Naming agent, model and variant is the one prompt shape that could skip
   // the config read, and the retained block arrives through that read.
   test("a later turn carries the retained block even when the caller named agent, model and variant", async () => {
     const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    expect((await create(app, { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)
+    expect((await post(app, "/session", { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)
 
-    expect((await promptTurn(app, "ses_resume")).status).toBe(200)
+    expect((await post(app, "/session/ses_resume/message", prompt)).status).toBe(200)
     expect(turns).toEqual(["Answer only in haiku."])
   })
 
   test("a session that retained nothing still prompts, with no instruction channel used", async () => {
     const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+    expect((await post(app, "/session", { id: "ses_plain" })).status).toBe(201)
 
-    expect((await promptTurn(app, "ses_plain")).status).toBe(200)
+    expect((await post(app, "/session/ses_plain/message", prompt)).status).toBe(200)
     expect(turns).toEqual([undefined])
   })
 
-  test("refuses the turn when the config read fails, with the same coded answer prompt_async gives", async () => {
+  // The host reads the retained block from the store it admits the turn in,
+  // so a route-level config read that fails is never the source of it.
+  test("a turn runs under the block the host store retained, never under a route-level config read", async () => {
     const { app, turns, configRead } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    expect((await create(app, { id: "ses_unreadable", instructions: "Answer only in haiku." })).status).toBe(201)
+    expect((await post(app, "/session", { id: "ses_unreadable", instructions: "Answer only in haiku." })).status).toBe(201)
 
     configRead.fails = true
-    const refused = await promptTurn(app, "ses_unreadable")
-    expect(refused.status).toBe(503)
-    expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
-    expect(turns).toEqual([])
+    expect((await post(app, "/session/ses_unreadable/message", prompt)).status).toBe(200)
+    expect(turns).toEqual(["Answer only in haiku."])
   })
 
-  // prompt_async's 204 is a delivery receipt — the Tasks bridge records the turn
-  // as handed off on it — so a turn refused before anything ran has to be the
-  // response, and the refused message id has to submit again.
-  test("answers the config-read refusal, and the same id then runs once with the retained block", async () => {
-    const { app, turns, configRead, events, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    expect((await create(app, { id: "ses_recover", instructions: "Answer only in haiku." })).status).toBe(201)
+  test("a prompt_async id runs once with the retained block, and its resubmission joins it", async () => {
+    const { app, turns, events, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await post(app, "/session", { id: "ses_recover", instructions: "Answer only in haiku." })).status).toBe(201)
 
-    configRead.fails = true
-    const refused = await promptAsync(app, "ses_recover", "msg_recover")
-    expect(refused.status).toBe(503)
-    expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
-    expect(turns).toEqual([])
-    expect(sessionErrors(events)).toEqual([])
-
-    configRead.fails = false
-    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    expect((await post(app, "/session/ses_recover/prompt_async", { ...prompt, messageID: "msg_recover" })).status).toBe(204)
     await settled(() => turns.length > 0)
     expect(turns).toEqual(["Answer only in haiku."])
 
-    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    expect((await post(app, "/session/ses_recover/prompt_async", { ...prompt, messageID: "msg_recover" })).status).toBe(204)
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(turns).toEqual(["Answer only in haiku."])
+    expect(sessionErrors(events)).toEqual([])
   })
 
   test("answers 204 while the model is still running the turn", async () => {
     const { app, turns, entered, model, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
-    expect((await create(app, { id: "ses_slow" })).status).toBe(201)
+    expect((await post(app, "/session", { id: "ses_slow" })).status).toBe(201)
 
     model.hold()
-    expect((await promptAsync(app, "ses_slow", "msg_slow")).status).toBe(204)
+    expect((await post(app, "/session/ses_slow/prompt_async", { ...prompt, messageID: "msg_slow" })).status).toBe(204)
     await settled(() => entered.length > 0)
     expect(turns).toEqual([])
 
@@ -2336,79 +1679,42 @@ describe("createSessionRoutes session model group", () => {
   }
 
   function groupRoutes() {
-    const creates: Array<{ id?: string; options?: { group?: unknown } }> = []
-    let stored: SessionConfig["group"]
-    const fixture: AgentHarnessAdapter = {
-      ...adapter(),
-      instructionChannel: "turn-system-prompt",
-      getSession: async () => null,
-      createSession: async (_directory, _title, id, options) => {
-        creates.push({ id, options })
-        stored = options?.group
-        return { id: id ?? "ses_group" }
-      },
-      getSessionConfig: async () => ({
-        harness: { id: "codex", access: "native" },
-        variant: null,
-        agent: null,
-        ...(stored ? { group: stored } : {}),
-      }),
-    }
-    const app = createSessionRoutes({
-      resolveAdapter: () => fixture,
-      resolveDirectory: () => "/workspace",
-      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-      publishGlobal() {},
-    })
-    return { app, creates }
-  }
-
-  function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
-    return app.request("http://localhost/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    })
+    const h = harness()
+    return { h, app: sessionRoutes(h) }
   }
 
   test("retains the group at create and reads it back on the session config", async () => {
-    const { app, creates } = groupRoutes()
-    expect((await create(app, { id: "ses_group", group: GROUP })).status).toBe(201)
-    expect(creates).toEqual([{ id: "ses_group", options: { group: GROUP } }])
+    const { app, h } = groupRoutes()
+    expect((await post(app, "/session", { id: "ses_group", group: GROUP })).status).toBe(201)
+    expect(h.transport.starts.map((start) => start.sessionId)).toEqual(["ses_group"])
 
     const config = await app.request("http://localhost/session/ses_group/config")
     expect(await config.json()).toMatchObject({ group: GROUP })
   })
 
-  test("leaves the create options empty when no group was sent", async () => {
-    const { app, creates } = groupRoutes()
-    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
-    expect(creates).toEqual([{ id: "ses_plain", options: {} }])
-  })
-
   test("refuses a malformed group by field before the harness is asked to create anything", async () => {
-    const { app, creates } = groupRoutes()
-    const response = await create(app, { id: "ses_bad", group: { archivist: GROUP.primary } })
+    const { app, h } = groupRoutes()
+    const response = await post(app, "/session", { id: "ses_bad", group: { archivist: GROUP.primary } })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({
       error: { code: "session_group_invalid", message: expect.stringContaining("group.archivist") },
     })
-    expect(creates).toEqual([])
+    expect(h.transport.starts).toEqual([])
   })
 
   test("names the slot field a caller got wrong rather than dropping the slot", async () => {
-    const { app, creates } = groupRoutes()
-    const response = await create(app, { id: "ses_bad", group: { primary: { harness: "claude" } } })
+    const { app, h } = groupRoutes()
+    const response = await post(app, "/session", { id: "ses_bad", group: { primary: { harness: "claude" } } })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({
       error: { message: expect.stringContaining("group.primary.model") },
     })
-    expect(creates).toEqual([])
+    expect(h.transport.starts).toEqual([])
   })
 
   test("refuses a PATCH that carries a group instead of changing what the session was created under", async () => {
     const { app } = groupRoutes()
-    expect((await create(app, { id: "ses_group", group: GROUP })).status).toBe(201)
+    expect((await post(app, "/session", { id: "ses_group", group: GROUP })).status).toBe(201)
 
     const patched = await app.request("http://localhost/session/ses_group/config", {
       method: "PATCH",
@@ -2424,7 +1730,7 @@ describe("createSessionRoutes session model group", () => {
 
   test("refuses a PATCH that carries instructions the same way, instead of answering 200 and dropping it", async () => {
     const { app } = groupRoutes()
-    expect((await create(app, { id: "ses_fixed", group: GROUP })).status).toBe(201)
+    expect((await post(app, "/session", { id: "ses_fixed", group: GROUP })).status).toBe(201)
 
     const patched = await app.request("http://localhost/session/ses_fixed/config", {
       method: "PATCH",
@@ -2437,39 +1743,15 @@ describe("createSessionRoutes session model group", () => {
 })
 
 describe("GET /session/capabilities effort levels", () => {
-  function capabilityRoutes(effortLevels: HarnessCapabilities["effortLevels"]) {
-    const fixture: AgentHarnessAdapter = {
-      ...adapter(),
-      readHarnessCapabilities: () => ({
-        harness: "codex",
-        abort: true,
-        reconnect: false,
-        replay: true,
-        permissions: true,
-        questions: true,
-        todos: true,
-        commands: true,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: false,
-        subagents: true,
-        goals: false,
-        effortLevels,
-        instructionChannel: "turn-system-prompt",
-      }),
-    }
-    return createSessionRoutes({
-      resolveAdapter: () => fixture,
-      resolveDirectory: () => "/workspace",
-      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-      publishGlobal() {},
-    })
+  function capabilityRoutes(effortLevels: TransportCapabilities["effortLevels"]) {
+    const h = harness({ capabilities: { effortLevels } })
+    return { h, app: sessionRoutes(h) }
   }
 
   test("reports each harness's own effort catalog on the global and per-session reads", async () => {
     const resolved = { status: "resolved", models: [{ modelID: "gpt-5-codex", levels: ["low", "high"], default: "high" }] } as const
-    const app = capabilityRoutes(resolved)
+    const { h, app } = capabilityRoutes(resolved)
+    await seed(h, "ses_1")
     expect(await (await app.request("http://localhost/session/capabilities")).json())
       .toMatchObject({ harness: "codex", effortLevels: resolved })
     expect(await (await app.request("http://localhost/session/ses_1/capabilities")).json())
@@ -2477,7 +1759,7 @@ describe("GET /session/capabilities effort levels", () => {
   })
 
   test("carries an unsupported catalog through rather than omitting the field", async () => {
-    const app = capabilityRoutes(NO_HARNESS_EFFORT)
+    const { app } = capabilityRoutes(NO_HARNESS_EFFORT)
     expect(await (await app.request("http://localhost/session/capabilities")).json())
       .toMatchObject({ effortLevels: { status: "unsupported", models: [] } })
   })
@@ -2487,13 +1769,13 @@ describe("createSessionRoutes engine refusals", () => {
   const engineRefusal = new AgentHarnessEngineError({
     harness: "opencode",
     operation: "permission.request.list",
-    directory: "/workspace",
+    directory: WORKSPACE,
     status: 500,
   })
-  const refusingRoutes = (listPermissions: () => Promise<never>) =>
-    managedRoutes({
+  const refusingRoutes = (list: () => Promise<never>) =>
+    managedRoutes(undefined, {
       policy: managedPolicy(),
-      adapter: { ...adapter(), listPermissions, listQuestions: listPermissions },
+      runtime: runtimeDouble({ permissions: { list }, questions: { list } }),
     })
 
   test("an engine that refuses a pending-interaction read answers 502 with the call and workspace named", async () => {
@@ -2510,8 +1792,8 @@ describe("createSessionRoutes engine refusals", () => {
     }
   })
 
-  test("any other adapter failure keeps propagating to the host's error handler", async () => {
-    const app = refusingRoutes(async () => { throw new Error("adapter exploded") })
+  test("any other runtime failure keeps propagating to the host's error handler", async () => {
+    const app = refusingRoutes(async () => { throw new Error("runtime exploded") })
     const response = await app.request("http://localhost/permission")
     expect(response.status).toBe(500)
     expect(await response.text()).toBe("Internal Server Error")
@@ -2519,31 +1801,43 @@ describe("createSessionRoutes engine refusals", () => {
 })
 
 describe("a share level reaches the runtime as the authority's answer to a write", () => {
+  const permissionRequest = (sessionID: string): TurnRequest => ({
+    kind: "permission", requestId: "perm_1",
+    permission: { id: "perm_1", sessionID, permission: "execute", patterns: [], always: [], metadata: {} },
+  })
+  const questionRequest = (sessionID: string): TurnRequest => ({
+    kind: "question", requestId: "question_1",
+    question: { id: "question_1", sessionID, questions: [{ question: "Continue?", header: "Continue?", options: [{ label: "yes", description: "go" }] }] },
+  })
+
   /**
    * The routes a `send` grant exists for. A follow grantee must be refused all
    * three, and the refusal has to come from the same `write` question the
    * prompt already asked — not from a fourth place that could drift from it.
+   * The machine's owner starts a turn that asks one permission and one
+   * question, so the grantee has a live request of each kind to answer.
    */
-  function sharedRoutes(input: { authorizeWrite: () => Promise<SessionAccessDecision> }) {
+  async function sharedRoutes(input: { authorizeWrite: () => Promise<SessionAccessDecision> }) {
     const actions: Array<{ operation: string; write: boolean }> = []
     const prompted: string[] = []
-    const responded: string[] = []
-    const replied: string[] = []
-    const item = adapter()
-    const routes = createSessionRoutes({
-      resolveAdapter: () => ({
-        ...item,
-        executeTurn: (binding, _prompt) => (async function* () {
-          prompted.push(binding.sessionId)
-        })(),
-        respondPermission: async (_binding, permId) => { responded.push(permId); return undefined },
-        replyQuestion: async (_binding, questionId) => { replied.push(questionId); return undefined },
-      }) as AgentHarnessAdapter,
-      resolveExecutionBinding: fixtureExecutionBinding(),
-      resolveDirectory: () => "/workspace",
-      getMessages: () => [],
-      listPermissions: async () => [{ id: "perm_1", sessionID: "session_shared" }] as AgentPermission[],
-      listQuestions: async () => [{ id: "question_1", sessionID: "session_shared", questions: [] }] as AgentQuestion[],
+    const answered: string[] = []
+    const h = harness({
+      capabilities: { requests: { permissions: true, questions: true, elicitation: false } },
+      turn: async function* ({ session, turn, broker }) {
+        const sessionId = session.binding.sessionId
+        if (promptText({ session, turn, broker }) === "ask") {
+          const answers = await Promise.all([broker.ask(permissionRequest(sessionId)), broker.ask(questionRequest(sessionId))])
+          answered.push(...answers.map((answer) => answer.kind))
+        } else {
+          prompted.push(sessionId)
+        }
+        yield { type: "finish", sessionId }
+      },
+    })
+    await seed(h, "session_shared")
+    await h.runtime.turns.start({ sessionId: "session_shared", parts: [{ type: "text", text: "ask" }], origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false } })
+    for (let attempt = 0; attempt < 200 && h.store.listQuestions(WORKSPACE).length === 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    const routes = sessionRoutes(h, {
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         requireActor: true,
         authority: {
@@ -2578,31 +1872,18 @@ describe("a share level reaches the runtime as the authority's answer to a write
           releaseTurn: async () => ({ released: true }),
         },
       }),
-      publishGlobal: () => {},
     })
-    const app = new Hono()
-    app.use("*", async (c, next) => {
-      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
-        actor_id: "actor_grantee",
-        actor_kind: "human",
-        workspace_id: "ws_1",
-        org_id: "org_1",
-        role: "editor",
-      })
-      await next()
+    const app = stamped(routes, () => ({ actor_id: "actor_grantee", actor_kind: "human", workspace_id: "ws_1", org_id: "org_1", role: "editor" }))
+    beforeDispose.push(async () => {
+      if (h.store.listPermissions(WORKSPACE).length > 0) await h.runtime.permissions.respond("perm_1", "deny", WORKSPACE)
+      if (h.store.listQuestions(WORKSPACE).length > 0) await h.runtime.questions.reject("question_1", "session_shared")
+      await h.runtime.turns.whenIdle("session_shared")
     })
-    app.route("/", routes)
-    return { actions, app, prompted, replied, responded }
+    return { actions, app, h, prompted, answered }
   }
 
-  const post = (app: Hono, path: string, body: unknown) => app.request(`http://localhost${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
-
-  test("a follow grantee is refused the prompt, the permission answer and the question answer, and still reads", async () => {
-    const { actions, app, prompted, replied, responded } = sharedRoutes({
+  test("a follow grantee is refused the permission answer, the question answer and the prompt, and still reads", async () => {
+    const { actions, app, h, prompted, answered } = await sharedRoutes({
       authorizeWrite: async () => ({
         allowed: false,
         status: 403,
@@ -2611,51 +1892,45 @@ describe("a share level reaches the runtime as the authority's answer to a write
       }),
     })
 
-    const prompt = await post(app, "/session/session_shared/message", {
-      messageID: "msg_1",
-      parts: [{ type: "text", text: "hi" }],
-    })
     const permission = await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
     const question = await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+    const prompt = await post(app, "/session/session_shared/message", { messageID: "msg_1", parts: [{ type: "text", text: "hi" }] })
     const read = await app.request("http://localhost/session/session_shared/message")
 
-    expect(prompt.status).toBe(403)
     expect(permission.status).toBe(403)
     expect(question.status).toBe(403)
+    expect(prompt.status).toBe(403)
     expect(read.status).toBe(200)
     expect(prompted).toEqual([])
-    expect(responded).toEqual([])
-    expect(replied).toEqual([])
+    expect(answered).toEqual([])
+    expect(h.store.listPermissions(WORKSPACE).map((row) => row.id)).toEqual(["perm_1"])
     expect(actions).toEqual([
-      { operation: "prompt", write: true },
       { operation: "permission_response", write: true },
       { operation: "question_response", write: true },
+      { operation: "prompt", write: true },
       { operation: "message_read", write: false },
     ])
   })
 
   test("a send grantee reaches the harness on all three", async () => {
-    const { app, prompted, replied, responded } = sharedRoutes({
+    const { app, h, prompted, answered } = await sharedRoutes({
       authorizeWrite: async () => ({ allowed: true }),
     })
 
-    const prompt = await post(app, "/session/session_shared/message", {
-      messageID: "msg_1",
-      parts: [{ type: "text", text: "hi" }],
-    })
     const permission = await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
     const question = await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+    await h.runtime.turns.whenIdle("session_shared")
+    const prompt = await post(app, "/session/session_shared/message", { messageID: "msg_1", parts: [{ type: "text", text: "hi" }] })
 
-    expect(prompt.status).toBe(200)
     expect(permission.status).toBe(200)
     expect(question.status).toBe(200)
+    expect(prompt.status).toBe(200)
+    expect(answered).toEqual(["permission", "answers"])
     expect(prompted).toEqual(["session_shared"])
-    expect(responded).toEqual(["perm_1"])
-    expect(replied).toEqual(["question_1"])
   })
 
   test("the session's capabilities carry the same prompt answer the prompt route gets", async () => {
-    const refusing = sharedRoutes({
+    const refusing = await sharedRoutes({
       authorizeWrite: async () => ({
         allowed: false,
         status: 403,
@@ -2663,7 +1938,7 @@ describe("a share level reaches the runtime as the authority's answer to a write
         message: "denied",
       }),
     })
-    const admitting = sharedRoutes({ authorizeWrite: async () => ({ allowed: true }) })
+    const admitting = await sharedRoutes({ authorizeWrite: async () => ({ allowed: true }) })
 
     const refused = await refusing.app.request("http://localhost/session/session_shared/capabilities")
     const admitted = await admitting.app.request("http://localhost/session/session_shared/capabilities")
@@ -2697,16 +1972,20 @@ function startupChildHost(children: Map<string, string[]>): ChildSessionHost {
   }
 }
 
+/**
+ * A harness whose start asks the creator one question and binds only once it
+ * is answered, behind a policy under which only the creator holding the
+ * reservation may see or answer anything about the creation.
+ */
 function startupRouteFixture(options: {
-  updateConfig?: AgentHarnessAdapter["updateSessionConfig"]
+  configUpdate?: ConfigOperations["update"]
   refuseDelete?: () => boolean
   beforeProviderDelete?: () => Promise<void>
   children?: Map<string, string[]>
 } = {}) {
-  const store = createMemoryRuntimeStore()
   const lifecycle: SessionLifecycleEvent[] = []
   const replies: string[] = []
-  const waiting = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+  const waiting = new Map<string, { reject: (error: Error) => void }>()
   const ready = new Map<string, () => void>()
   const deny = { allowed: false as const, status: 403 as const, code: "private_start", message: "Another creator" }
   const owner = (input: Parameters<SessionAccessPolicy["authorizeSessionStart"]>[0]) =>
@@ -2716,61 +1995,50 @@ function startupRouteFixture(options: {
     authorizeSessionStartStatus: owner,
     filterSessions: async () => [],
   })
-  const fixture: AgentHarnessAdapter = {
-    ...adapter(),
-    createSession: async (directory, _title, id, options) => {
-      if (!id || !options?.start) throw new Error("Missing authoritative startup owner")
-      expect(store.sessionStarts!.get(id)?.binding).toEqual(options.start)
-      expect(store.getExecutionBinding(id)).toBeNull()
-      store.appendEvent({ sessionId: id, payload: { id: `event-${id}`, type: "question.asked", properties: { id: `question-${id}`, sessionID: id, questions: [{ header: "Setup", question: "Continue?", options: [] }] } } })
-      await new Promise<void>((resolve, reject) => { waiting.set(id, { resolve, reject }); ready.get(id)?.() })
-      store.bindSession({ ...options.start, upstreamSessionId: `upstream-${id}`, agentSessionId: `upstream-${id}` })
-      return { id }
+  const h = harness({
+    capabilities: {
+      requests: { permissions: false, questions: true, elicitation: false },
+      ...(options.configUpdate ? { configOwner: "harness" as const } : {}),
     },
-    ...(options.updateConfig ? { updateSessionConfig: options.updateConfig } : {}),
-    deleteSession: async (binding) => {
+    ...(options.configUpdate ? { config: configOps({ update: options.configUpdate }) } : {}),
+    upstreamSessionId: (input) => `upstream-${input.sessionId}`,
+    beforeStart: async (input, broker) => {
+      expect(h.store.sessionStarts.get(input.sessionId)?.status).toBe("starting")
+      const failed = new Promise<never>((_resolve, reject) => { waiting.set(input.sessionId, { reject }) })
+      const asked = broker.ask({
+        kind: "question",
+        requestId: `question-${input.sessionId}`,
+        question: { id: `question-${input.sessionId}`, sessionID: input.sessionId, questions: [{ header: "Setup", question: "Continue?", options: [] }] },
+      })
+      ready.get(input.sessionId)?.()
+      await Promise.race([asked, failed])
+      replies.push(input.sessionId)
+    },
+    onClose: () => {
       if (options.refuseDelete?.()) throw new Error("provider refused the delete")
-      await options.beforeProviderDelete?.()
-      store.deleteSession(binding.sessionId)
     },
-    replySessionStartQuestion: async (start, id) => {
-      expect(id).toBe(`question-${start.sessionId}`)
-      expect(store.getExecutionBinding(start.sessionId)).toBeNull()
-      replies.push(start.sessionId)
-      waiting.get(start.sessionId)!.resolve()
-    },
-  }
-  const make = () => {
-    const app = new Hono()
-    app.use("*", async (c, next) => {
-      ;(c as any).set("relayHostAuth", { actor_id: c.req.header("x-test-actor") ?? "creator", actor_kind: "human", org_id: "org", workspace_id: "workspace", host_id: "host", role: "editor" })
-      await next()
-    })
-    app.route("/", createSessionRoutes({
-      resolveAdapter: () => fixture,
-      resolveDirectory: (c) => c.req.query("directory") ?? "/workspace",
-      resolveWorkspaceId: () => "workspace",
-      resolveExecutionBinding: (_c, _directory, id) => store.getExecutionBinding(id) ?? undefined,
-      getSession: (_c, _directory, id) => store.getSession(id) ?? null,
-      listSessions: async () => store.listSessions("/workspace"),
-      listQuestions: async () => store.listQuestions("/workspace"),
-      sessionStarts: store.sessionStarts,
-      resolveSessionStartBinding: (_c, directory, sessionId, operationId) => ({ sessionId, directory: directory!, workspaceId: "workspace", connectionId: "connection:fixture", operationId }),
-      ...(options.children ? { childSessions: startupChildHost(options.children) } : {}),
-      sessionAccessPolicy: policy,
-      publishGlobal: () => {},
-      publishSessionLifecycle: event => lifecycle.push(event),
-    }))
-    return app
-  }
+  })
+  const make = () => stamped(sessionRoutes(h, {
+    resolveDirectory: (c) => c.req.query("directory") ?? WORKSPACE,
+    resolveWorkspaceId: () => "ws_1",
+    getSession: (_c, _directory, id) => h.store.getSession(id) ?? null,
+    listSessions: async () => h.store.listSessions(WORKSPACE),
+    sessionStarts: h.store.sessionStarts,
+    ...(options.children ? { childSessions: startupChildHost(options.children) } : {}),
+    ...(options.beforeProviderDelete ? { beforeDeleteSession: options.beforeProviderDelete } : {}),
+    sessionAccessPolicy: policy,
+    publishSessionLifecycle: event => lifecycle.push(event),
+  }), (c) => ({ actor_id: c.req.header("x-test-actor") ?? "creator", actor_kind: "human", org_id: "org", workspace_id: "workspace", host_id: "host", role: "editor" }))
   const app = make()
   const launch = (id: string, config: Record<string, unknown> = {}) => {
     const started = new Promise<void>(resolve => ready.set(id, resolve))
-    const response = app.request("/session", { method: "POST", headers: { "content-type": "application/json", "x-claxedo-session-registration-operation": `op-${id}` }, body: JSON.stringify({ id, ...config }) })
+    const response = post(app, "/session", { id, ...config }, { "x-claxedo-session-registration-operation": `op-${id}` })
     return { started, response }
   }
-  return { app, make, launch, waiting, store, lifecycle, replies }
+  return { app, make, launch, waiting, h, store: h.store, lifecycle, replies }
 }
+
+const answer = (body: unknown = { answers: [["yes"]] }) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
 
 describe("public startup question lifecycle", () => {
   test("authorizes the creator before binding and keeps concurrent creations isolated", async () => {
@@ -2784,15 +2052,14 @@ describe("public startup question lifecycle", () => {
     expect((await f.app.request("/session-start/first", { headers: { "x-test-actor": "other" } })).status).toBe(403)
     expect(await (await f.app.request("/question", { headers: { "x-test-actor": "other" } })).json()).toEqual([])
     expect(await (await f.app.request("/question?sessionId=first")).json()).toMatchObject([{ id: "question-first" }])
-    const answer = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["yes"]] }) }
-    expect((await f.app.request("/question/question-first/reply?sessionId=second", answer)).status).toBe(409)
-    expect((await f.app.request("/question/question-first/reply", { ...answer, headers: { ...answer.headers, "x-test-actor": "other" } })).status).toBe(403)
+    expect((await f.app.request("/question/question-first/reply?sessionId=second", answer())).status).toBe(409)
+    expect((await f.app.request("/question/question-first/reply", { ...answer(), headers: { "content-type": "application/json", "x-test-actor": "other" } })).status).toBe(403)
     expect(f.replies).toEqual([])
-    expect((await f.app.request("/question/question-first/reply", answer)).status).toBe(200)
+    expect((await f.app.request("/question/question-first/reply", answer())).status).toBe(200)
     expect((await first.response).status).toBe(201)
-    expect(f.store.sessionStarts!.get("first")).toMatchObject({ status: "created", upstreamSessionId: "upstream-first" })
-    expect(f.store.sessionStarts!.get("second")?.status).toBe("starting")
-    expect((await f.app.request("/question/question-second/reply", answer)).status).toBe(200)
+    expect(f.store.sessionStarts.get("first")).toMatchObject({ status: "created", upstreamSessionId: "upstream-first" })
+    expect(f.store.sessionStarts.get("second")?.status).toBe("starting")
+    expect((await f.app.request("/question/question-second/reply", answer())).status).toBe(200)
     expect((await second.response).status).toBe(201)
   })
 
@@ -2800,31 +2067,31 @@ describe("public startup question lifecycle", () => {
     let entered!: () => void, release!: () => void
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
-    const f = startupRouteFixture({ updateConfig: async () => {
+    const f = startupRouteFixture({ configUpdate: async (_session, update) => {
       entered(); await held
-      return { harness: { id: "fixture", access: "connection" }, agent: "build", variant: null }
+      return { harness: CODEX, agent: update.agent ?? null, variant: null }
     } })
-    const first = f.launch("retry", { agent: "build" })
+    const first = f.launch("retry", { harness: CODEX })
     await first.started
-    await f.app.request("/question/question-retry/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await f.app.request("/question/question-retry/reply", answer())
     await configuring
-    const duplicate = await f.app.request("/session", { method: "POST", headers: { "x-claxedo-session-registration-operation": "op-retry" }, body: JSON.stringify({ id: "retry" }) })
+    const duplicate = await post(f.app, "/session", { id: "retry" }, { "x-claxedo-session-registration-operation": "op-retry" })
     expect(duplicate.status).toBe(409)
     expect(f.lifecycle.some(event => event.phase === "failed")).toBe(false)
     expect(await (await f.app.request("/session-start/retry")).json()).toMatchObject({ status: "starting" })
     release()
     expect((await first.response).status).toBe(201)
-    expect(f.store.sessionStarts!.get("retry")?.status).toBe("created")
+    expect(f.store.sessionStarts.get("retry")?.status).toBe("created")
   })
 
-  test("failure is durable and stale replies cannot reach the adapter", async () => {
+  test("failure is durable and stale replies cannot reach the harness", async () => {
     const f = startupRouteFixture()
     const creation = f.launch("failed")
     await creation.started
     f.waiting.get("failed")!.reject(new Error("provider disconnected"))
     expect((await creation.response).status).toBe(500)
     expect(await (await f.make().request("/session-start/failed")).json()).toMatchObject({ status: "failed", error: "provider disconnected" })
-    expect((await f.app.request("/question/question-failed/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })).status).toBe(404)
+    expect((await f.app.request("/question/question-failed/reply", answer())).status).toBe(404)
     expect(f.replies).toEqual([])
     expect(await (await f.app.request("/question")).json()).toEqual([])
   })
@@ -2833,13 +2100,13 @@ describe("public startup question lifecycle", () => {
     let entered!: () => void, release!: () => void
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
-    const f = startupRouteFixture({ updateConfig: async () => {
+    const f = startupRouteFixture({ configUpdate: async () => {
       entered(); await held
-      return { harness: { id: "fixture", access: "connection" }, agent: "build", variant: null }
+      return { harness: CODEX, agent: null, variant: null }
     } })
-    const creation = f.launch("creating-delete", { agent: "build" })
+    const creation = f.launch("creating-delete", { harness: CODEX })
     await creation.started
-    await f.app.request("/question/question-creating-delete/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await f.app.request("/question/question-creating-delete/reply", answer())
     await configuring
     let status: number
     try {
@@ -2850,7 +2117,7 @@ describe("public startup question lifecycle", () => {
     const completed = await creation.response
     expect(status).toBe(409)
     expect(completed.status).toBe(201)
-    expect(f.store.sessionStarts!.get("creating-delete")?.status).toBe("created")
+    expect(f.store.sessionStarts.get("creating-delete")?.status).toBe("created")
     expect(f.store.getSession("creating-delete")).not.toBeNull()
   })
 
@@ -2863,13 +2130,13 @@ describe("public startup question lifecycle", () => {
     } })
     const creation = f.launch("deleting")
     await creation.started
-    await f.app.request("/question/question-deleting/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await f.app.request("/question/question-deleting/reply", answer())
     expect((await creation.response).status).toBe(201)
     const removal = f.app.request("/session/deleting", { method: "DELETE" })
     await deleting
     let createStatus: number, deleteStatus: number
     try {
-      createStatus = (await f.app.request("/session", { method: "POST", headers: { "x-claxedo-session-registration-operation": "op-deleting" }, body: JSON.stringify({ id: "deleting" }) })).status
+      createStatus = (await post(f.app, "/session", { id: "deleting" }, { "x-claxedo-session-registration-operation": "op-deleting" })).status
       deleteStatus = (await f.app.request("/session/deleting", { method: "DELETE" })).status
     } finally {
       release()
@@ -2877,7 +2144,7 @@ describe("public startup question lifecycle", () => {
     expect((await removal).status).toBe(200)
     expect([createStatus, deleteStatus]).toEqual([409, 409])
     expect(calls).toBe(1)
-    expect(f.store.sessionStarts!.get("deleting")).toBeUndefined()
+    expect(f.store.sessionStarts.get("deleting")).toBeUndefined()
   })
 
   test("parent deletion cannot bypass the creation claim of a child in its cascade", async () => {
@@ -2886,19 +2153,18 @@ describe("public startup question lifecycle", () => {
     const held = new Promise<void>(resolve => { release = resolve })
     const f = startupRouteFixture({
       children: new Map([["parent", ["child"]]]),
-      updateConfig: async () => {
+      configUpdate: async () => {
         entered(); await held
-        return { harness: { id: "fixture", access: "connection" }, agent: "build", variant: null }
+        return { harness: CODEX, agent: null, variant: null }
       },
     })
-    const answer = { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) }
     const parent = f.launch("parent")
     await parent.started
-    await f.app.request("/question/question-parent/reply", answer)
+    await f.app.request("/question/question-parent/reply", answer())
     expect((await parent.response).status).toBe(201)
-    const child = f.launch("child", { agent: "build" })
+    const child = f.launch("child", { harness: CODEX })
     await child.started
-    await f.app.request("/question/question-child/reply", answer)
+    await f.app.request("/question/question-child/reply", answer())
     await configuring
     let status: number
     try {
@@ -2909,76 +2175,74 @@ describe("public startup question lifecycle", () => {
     expect((await child.response).status).toBe(201)
     expect(status).toBe(409)
     expect(f.store.getSession("parent")).not.toBeNull()
-    expect(f.store.sessionStarts!.get("child")?.status).toBe("created")
+    expect(f.store.sessionStarts.get("child")?.status).toBe("created")
     expect((await f.app.request("/session/parent", { method: "DELETE" })).status).toBe(200)
-    expect(f.store.sessionStarts!.get("parent")).toBeUndefined()
-    expect(f.store.sessionStarts!.get("child")).toBeUndefined()
+    expect(f.store.sessionStarts.get("parent")).toBeUndefined()
+    expect(f.store.sessionStarts.get("child")).toBeUndefined()
   })
 
   test("an authorized delete hands the creation id back; a refused one keeps the owner", async () => {
     let refuse = true
     const f = startupRouteFixture({ refuseDelete: () => refuse })
-    const answer = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["yes"]] }) }
 
     const first = f.launch("reused")
     await first.started
-    await f.app.request("/question/question-reused/reply", answer)
+    await f.app.request("/question/question-reused/reply", answer())
     expect((await first.response).status).toBe(201)
-    expect(f.store.sessionStarts!.get("reused")).toMatchObject({ status: "created", binding: { operationId: "op-reused" } })
+    expect(f.store.sessionStarts.get("reused")).toMatchObject({ status: "created", binding: { operationId: "op-reused" } })
 
     const refused = await Promise.resolve(f.app.request("/session/reused", { method: "DELETE" })).then(response => response.status, () => "threw")
     expect(refused).toBe(500)
-    expect(f.store.sessionStarts!.get("reused")).toMatchObject({ status: "created", binding: { operationId: "op-reused" } })
+    expect(f.store.sessionStarts.get("reused")).toMatchObject({ status: "created", binding: { operationId: "op-reused" } })
     expect(f.store.getSession("reused")).not.toBeNull()
 
     refuse = false
     expect((await f.app.request("/session/reused", { method: "DELETE" })).status).toBe(200)
-    expect(f.store.sessionStarts!.get("reused")).toBeUndefined()
+    expect(f.store.sessionStarts.get("reused")).toBeUndefined()
     expect(f.store.getSession("reused")).toBeNull()
 
     const second = f.launch("reused")
     await second.started
-    expect(f.store.sessionStarts!.get("reused")?.status).toBe("starting")
-    await f.app.request("/question/question-reused/reply", answer)
+    expect(f.store.sessionStarts.get("reused")?.status).toBe("starting")
+    await f.app.request("/question/question-reused/reply", answer())
     expect((await second.response).status).toBe(201)
-    expect(f.store.sessionStarts!.get("reused")).toMatchObject({ status: "created", upstreamSessionId: "upstream-reused" })
+    expect(f.store.sessionStarts.get("reused")).toMatchObject({ status: "created", upstreamSessionId: "upstream-reused" })
   })
 
   test("deleting a parent gives back the creation id of every child it cascades to", async () => {
     const f = startupRouteFixture({ children: new Map([["parent", ["child"]]]) })
-    const childStart = { sessionId: "child", directory: "/workspace", workspaceId: "workspace", connectionId: "connection:fixture", operationId: "op-child" }
-    f.store.sessionStarts!.begin(childStart)
-    f.store.bindSession({ ...childStart, parentSessionId: "parent", upstreamSessionId: "upstream-child", agentSessionId: "upstream-child" })
-    f.store.sessionStarts!.finish(childStart, { status: "created", upstreamSessionId: "upstream-child" })
-
     const parent = f.launch("parent")
     await parent.started
-    await f.app.request("/question/question-parent/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await f.app.request("/question/question-parent/reply", answer())
     expect((await parent.response).status).toBe(201)
+    const child = f.launch("child")
+    await child.started
+    await f.app.request("/question/question-child/reply", answer())
+    expect((await child.response).status).toBe(201)
 
     expect((await f.app.request("/session/parent", { method: "DELETE" })).status).toBe(200)
     expect(f.store.getSession("child")).toBeNull()
-    expect(f.store.sessionStarts!.get("child")).toBeUndefined()
-    expect(f.store.sessionStarts!.get("parent")).toBeUndefined()
+    expect(f.store.sessionStarts.get("child")).toBeUndefined()
+    expect(f.store.sessionStarts.get("parent")).toBeUndefined()
   })
 
   test("a rolled-back creation keeps its failure readable instead of releasing the id", async () => {
-    const f = startupRouteFixture({ updateConfig: async () => { throw new Error("configuration refused") } })
-    const creation = f.launch("rolled-back", { agent: "build" })
+    const f = startupRouteFixture({ configUpdate: async () => { throw new Error("configuration refused") } })
+    const creation = f.launch("rolled-back", { harness: CODEX })
     await creation.started
-    await f.app.request("/question/question-rolled-back/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await f.app.request("/question/question-rolled-back/reply", answer())
     expect((await creation.response).status).toBe(500)
     expect(f.store.getSession("rolled-back")).toBeNull()
     expect(await (await f.app.request("/session-start/rolled-back")).json()).toMatchObject({ status: "failed", error: expect.stringContaining("configuration refused") })
-    const retry = await f.app.request("/session", { method: "POST", headers: { "x-claxedo-session-registration-operation": "op-rolled-back" }, body: JSON.stringify({ id: "rolled-back" }) })
+    const retry = await post(f.app, "/session", { id: "rolled-back" }, { "x-claxedo-session-registration-operation": "op-rolled-back" })
     expect(retry.status).toBe(409)
   })
 
   test("lost creation owner is terminal after restart without inventing a provider binding", async () => {
     const f = startupRouteFixture()
-    f.store.sessionStarts!.begin({ sessionId: "interrupted", directory: "/workspace", workspaceId: "workspace", connectionId: "connection:fixture", operationId: "op-interrupted" })
+    f.store.sessionStarts.begin({ sessionId: "interrupted", directory: WORKSPACE, workspaceId: "ws_1", connectionId: "native:codex", operationId: "op-interrupted" })
     expect((await f.app.request("/session-start/interrupted", { headers: { "x-test-actor": "other" } })).status).toBe(403)
-    expect(f.store.sessionStarts!.get("interrupted")?.status).toBe("starting")
+    expect(f.store.sessionStarts.get("interrupted")?.status).toBe("starting")
     expect(await (await f.app.request("/session-start/interrupted")).json()).toMatchObject({ status: "failed" })
     expect(f.store.getExecutionBinding("interrupted")).toBeNull()
   })
@@ -2988,7 +2252,7 @@ describe("public startup question lifecycle", () => {
  * Two people on one managed runtime, with the real policy between the route
  * and a plane that knows the only two facts a create turns on: which
  * reservation holds which id, and who created which stored session. The
- * runtime store behind the adapter is the real one, so "the session was left
+ * runtime store behind the host is the real one, so "the session was left
  * alone" is read back off the session rather than off a spy.
  */
 function privateSessionFixture(input: {
@@ -2996,10 +2260,8 @@ function privateSessionFixture(input: {
   /** False composes the same route on a host that keeps no durable creation owner. */
   starts?: boolean
 } = {}) {
-  const store = createMemoryRuntimeStore()
   const reservations = new Map<string, { sessionId: string; actorId: string; spent: boolean }>()
   const creators = new Map<string, string>()
-  const deleted: string[] = []
   const compensated: string[] = []
   let registrations = 0
   let holdCreate: Promise<void> | undefined
@@ -3038,65 +2300,34 @@ function privateSessionFixture(input: {
   }
   policy.completeRegistrationCompensation = async () => ({ allowed: true })
 
-  const harness = { id: "codex", access: "native" } as const
   const created: string[] = []
-  const fixture: AgentHarnessAdapter = {
-    ...adapter(),
-    getSession: async (binding) => store.getSession(binding.sessionId) ?? null,
-    createSession: async (directory, title, id) => {
-      const sessionId = id ?? `ses_generated_${created.length + 1}`
+  const deleted: string[] = []
+  const h = harness({
+    capabilities: { configOwner: "harness" },
+    beforeStart: async (start) => {
       await holdCreate
-      created.push(sessionId)
-      store.bindSession({ sessionId, directory: directory ?? "", workspaceId: "ws_1", connectionId: "native:codex", upstreamSessionId: sessionId, agentSessionId: sessionId, ...(title ? { title } : {}) })
-      store.updateSessionConfig(sessionId, { harness, agent: null, variant: null })
-      return { id: sessionId }
+      created.push(start.sessionId)
     },
-    getSessionConfig: async (binding) => store.getSessionConfig(binding.sessionId) ?? { harness, agent: null, variant: null },
-    updateSessionConfig: async (binding, patch) => {
-      if (failConfig === binding.sessionId) throw new Error("harness refused the configuration")
-      return store.updateSessionConfig(binding.sessionId, patch)!
-    },
-    deleteSession: async (binding) => {
-      deleted.push(binding.sessionId)
-      store.deleteSession(binding.sessionId)
-    },
-  }
-
-  const app = new Hono()
-  app.use("*", async (context, next) => {
-    ;(context as any).set("relayHostAuth", {
-      actor_id: context.req.header("x-test-actor") ?? "alice",
-      actor_kind: "human",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      host_id: "host_1",
-      role: "editor",
-    } as never)
-    await next()
-  })
-  app.route("/", createSessionRoutes({
-    resolveAdapter: () => fixture,
-    resolveDirectory: () => "/workspace",
-    resolveWorkspaceId: () => "ws_1",
-    resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-    getSession: (_c, _directory, sessionId) => store.getSession(sessionId) ?? null,
-    listSessions: async () => store.listSessions("/workspace"),
-    ...(input.starts === false ? {} : {
-      sessionStarts: store.sessionStarts,
-      resolveSessionStartBinding: (_c: SessionRouteContext, directory: RuntimeDirectory, sessionId: string, operationId: string) => ({
-        sessionId,
-        directory: directory ?? "",
-        workspaceId: "ws_1",
-        connectionId: "native:codex",
-        operationId,
-      }),
+    config: configOps({
+      read: async (session) => h.store.getSessionConfig(session.binding.sessionId)!,
+      update: async (session, patch) => {
+        if (failConfig === session.binding.sessionId) throw new Error("harness refused the configuration")
+        return applySessionConfigUpdate(h.store.getSessionConfig(session.binding.sessionId)!, patch)
+      },
     }),
+    onClose: (session) => { deleted.push(session.binding.sessionId) },
+  })
+
+  const app = stamped(sessionRoutes(h, {
+    resolveWorkspaceId: () => "ws_1",
+    getSession: (_c, _directory, sessionId) => h.store.getSession(sessionId) ?? null,
+    listSessions: async () => h.store.listSessions(WORKSPACE),
+    ...(input.starts === false ? {} : { sessionStarts: h.store.sessionStarts }),
     sessionAccessPolicy: policy,
-    publishGlobal: () => {},
-  }))
+  }), (c) => ({ actor_id: c.req.header("x-test-actor") ?? "alice", actor_kind: "human", org_id: "org_1", workspace_id: "ws_1", host_id: "host_1", role: "editor" }))
 
   return {
-    store,
+    store: h.store,
     created,
     deleted,
     compensated,
@@ -3112,14 +2343,9 @@ function privateSessionFixture(input: {
       failConfig = sessionId
     },
     create(actorId: string, body: Record<string, unknown>, operationId?: string) {
-      return app.request("/session", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-test-actor": actorId,
-          ...(operationId ? { "x-claxedo-session-registration-operation": operationId } : {}),
-        },
-        body: JSON.stringify(body),
+      return post(app, "/session", body, {
+        "x-test-actor": actorId,
+        ...(operationId ? { "x-claxedo-session-registration-operation": operationId } : {}),
       })
     },
   }
@@ -3184,7 +2410,7 @@ describe("create against an id that already exists", () => {
     const retry = await f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
     expect(retry.status).toBe(201)
     expect(f.created).toEqual(["ses_alice"])
-    expect(f.store.listSessions("/workspace").map((session) => session.id)).toEqual(["ses_alice"])
+    expect(f.store.listSessions(WORKSPACE).map((session) => session.id)).toEqual(["ses_alice"])
     expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "plan" })
   })
 
@@ -3238,6 +2464,6 @@ describe("create against an id that already exists", () => {
 
     expect(statuses).toEqual([201, 409])
     expect(f.created).toEqual(["ses_alice"])
-    expect(f.store.listSessions("/workspace").map((session) => session.id)).toEqual(["ses_alice"])
+    expect(f.store.listSessions(WORKSPACE).map((session) => session.id)).toEqual(["ses_alice"])
   })
 })

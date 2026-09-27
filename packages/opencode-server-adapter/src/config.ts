@@ -1,4 +1,4 @@
-import type { HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
 import { isLoopbackHostname, isRecord } from "@claxedo/helpers"
 import { OpenCodeServerAdapterError } from "./errors"
 
@@ -17,15 +17,6 @@ export type OpenCodeServerConnectionConfig = {
   tenant?: { header: string; value: string }
   reconnect: { maxAttempts: number; delayMs: number }
   deadlines: { requestMs: number; streamIdleMs: number }
-}
-
-export type ResolvedOpenCodeServerConnection = Omit<OpenCodeServerConnectionConfig, "auth" | "trustedHeaders"> & {
-  connectionId: string
-  sourceDirectory: string
-  targetDirectory: string
-  auth?: { type: "basic"; username: string; password: string } | { type: "header"; name: string; value: string }
-  trustedHeaders: Record<string, string>
-  redactions: string[]
 }
 
 export const OPENCODE_SERVER_CONNECTION_CAPABILITIES: HarnessConnectionCapabilities = {
@@ -100,59 +91,6 @@ export function connectionIdentityFingerprint(config: OpenCodeServerConnectionCo
         : null,
     trustedHeaderNames: Object.keys(config.trustedHeaders ?? {}).map((name) => name.toLowerCase()).sort(),
   })
-}
-
-export function configuredSecretNames(config: OpenCodeServerConnectionConfig) {
-  const names = new Set<string>()
-  if (config.auth?.type === "basic") names.add(config.auth.passwordSecret)
-  if (config.auth?.type === "header") names.add(config.auth.valueSecret)
-  for (const name of Object.values(config.trustedHeaders ?? {})) names.add(name)
-  return [...names].sort()
-}
-
-export function resolveOpenCodeServerConnection(input: {
-  connectionId: string
-  config: OpenCodeServerConnectionConfig
-  sourceDirectory: string
-  secrets: Readonly<Record<string, string>>
-}): ResolvedOpenCodeServerConnection {
-  const mapping = input.config.workspacePaths.find((item) => item.sourceDirectory === input.sourceDirectory)
-  if (!mapping) throw new OpenCodeServerAdapterError("invalid_directory", "Workspace directory has no configured OpenCode path mapping")
-  const required = new Set(configuredSecretNames(input.config))
-  const received = Object.keys(input.secrets)
-  if (received.length !== required.size || received.some((name) => !required.has(name))) {
-    throw invalid("Resolved secret names do not match configured secret references")
-  }
-  for (const name of required) {
-    if (typeof input.secrets[name] !== "string" || input.secrets[name].length === 0) throw invalid(`Resolved secret ${name} is missing`)
-  }
-  const auth = input.config.auth?.type === "basic"
-    ? { type: "basic" as const, username: input.config.auth.username ?? "opencode", password: input.secrets[input.config.auth.passwordSecret]! }
-    : input.config.auth
-      ? { type: "header" as const, name: input.config.auth.name, value: resolvedHeaderValue(input.secrets[input.config.auth.valueSecret]!, "auth.valueSecret") }
-      : undefined
-  const trustedHeaders: Record<string, string> = {}
-  for (const [name, secret] of Object.entries(input.config.trustedHeaders ?? {})) {
-    trustedHeaders[name] = resolvedHeaderValue(input.secrets[secret]!, `trustedHeaders.${name}`)
-  }
-  const { auth: _auth, trustedHeaders: _trustedHeaders, ...publicConfig } = input.config
-  const basicAuthorization = auth?.type === "basic"
-    ? `Basic ${Buffer.from(`${auth.username}:${auth.password}`, "utf8").toString("base64")}`
-    : undefined
-  return {
-    ...publicConfig,
-    connectionId: input.connectionId,
-    sourceDirectory: mapping.sourceDirectory,
-    targetDirectory: mapping.targetDirectory,
-    ...(auth ? { auth } : {}),
-    trustedHeaders,
-    redactions: [...new Set([
-      ...Object.values(input.secrets).flatMap((secret) => [secret, encodeURIComponent(secret)]),
-      ...(basicAuthorization
-        ? [basicAuthorization, basicAuthorization.slice("Basic ".length), encodeURIComponent(basicAuthorization)]
-        : []),
-    ])],
-  }
 }
 
 function parseServerUrl(value: string) {
@@ -277,13 +215,6 @@ function headerName(input: unknown, field: string) {
 function headerValue(input: unknown, field: string) {
   const value = text(input, field)
   try { new Headers({ "x-claxedo-check": value }) } catch { throw invalid(`${field} must be a valid header value`) }
-  return value
-}
-
-// Resolved secret material is validated without trimming so the header sent
-// matches the vault value byte for byte; the value itself never enters errors.
-function resolvedHeaderValue(value: string, field: string) {
-  try { new Headers({ "x-claxedo-check": value }) } catch { throw invalid(`${field} resolved to an invalid header value`) }
   return value
 }
 

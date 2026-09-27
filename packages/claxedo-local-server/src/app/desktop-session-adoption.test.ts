@@ -11,7 +11,7 @@ import {
   disposeAgentConfig,
   saveUserConfig,
 } from "@claxedo/server-core/agent-config/index"
-import { NO_HARNESS_EFFORT, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import { testDaemon } from "./test-support/daemon"
 import {
@@ -71,32 +71,12 @@ const capabilities = {
 }
 
 /** Enough of a harness for the runtime to record a transcript; it is never prompted. */
-const provider: ConnectionProvider<Record<string, never>> = {
+const provider = fakeConnectionProvider({
   providerKey: "adoption-fixture-provider",
-  validateConfig: () => ({}),
-  project: () => ({ label: "Adoption fixture", readiness: "ready", capabilities }),
-  resolve: () => ({ config: {} }),
-  createAdapter: () => ({
-    sessionConfigOwner: "runtime",
-    instructionChannel: "none" as const,
-    async createSession(_directory, _title, id) { return { id: id!, agentSessionId: "adoption-fixture" } },
-    async getSession() { return null },
-    async getMessages() { return [] },
-    async updateSession() { return null },
-    async deleteSession() {},
-    async getSessionConfig() { throw new Error("runtime-owned config") },
-    async updateSessionConfig() { throw new Error("runtime-owned config") },
-    readHarnessCapabilities: () => ({
-      ...capabilities,
-      goals: false,
-      harness: "adoption-fixture",
-      effortLevels: NO_HARNESS_EFFORT,
-      instructionChannel: "none" as const,
-    }),
-    async *executeTurn() {},
-    dispose() {},
-  }),
-}
+  label: "Adoption fixture",
+  capabilities,
+  transport: () => new FakeTransport({ capabilities: { instructionChannel: "none" }, upstreamSessionId: () => "adoption-fixture" }),
+})
 
 /**
  * The control plane reduced to its session rows: a read needs one naming the

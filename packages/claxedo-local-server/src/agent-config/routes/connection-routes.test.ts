@@ -4,10 +4,8 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import type {
-  AcpConnectionProviderConfig,
-  HarnessConnectionDescriptor,
-} from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
+import type { AcpProviderConfig as AcpConnectionProviderConfig } from "@claxedo/harness/providers"
 
 const root = path.join(os.tmpdir(), `agent-config-connections-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR

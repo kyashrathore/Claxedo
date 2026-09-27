@@ -16,21 +16,10 @@ export class BrokerSessionEvents {
     if (routed.route?.kind === "child") {
       const correlationKey = routed.route.correlationKey
       if (!correlationKey) throw new Error("Child event routing requires a correlation key")
-      const child = this.store.brokerDatabase().prepare<{
-        child_session_id: string
-        assistant_message_id: string
-      }>(`
-        SELECT subagent.child_session_id, subagent.assistant_message_id FROM session_subagent subagent
-        LEFT JOIN session_subagent_correlation correlation
-          ON correlation.parent_session_id = subagent.parent_session_id
-          AND correlation.subagent_key = subagent.subagent_key
-        WHERE subagent.parent_session_id = ? AND (subagent.subagent_key = ? OR subagent.provider_id = ?
-          OR correlation.correlation_key = ?)
-          AND child_session_id IS NOT NULL AND assistant_message_id IS NOT NULL
-      `).get(sessionId, correlationKey, correlationKey, `route:${correlationKey}`)
+      const child = this.store.childRouteBinding(sessionId, correlationKey)
       if (!child) throw new Error(`Child event routing has no binding for ${correlationKey}`)
-      targetSessionId = child.child_session_id
-      targetTurnId = child.assistant_message_id
+      targetSessionId = child.childSessionId
+      targetTurnId = child.assistantMessageId
     }
     const session = this.store.getSession(targetSessionId) as { directory?: string } | null
     if (!session) throw new Error(`Unknown session ${targetSessionId}`)

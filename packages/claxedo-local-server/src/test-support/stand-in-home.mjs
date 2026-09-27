@@ -3,7 +3,7 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { HARNESS_STATE_ENV } from "../../../agent-sdk-runtime/src/test-utils/harness-state-env.mjs"
+import { HARNESS_STATE_ENV } from "../../../workspace-runtime/src/test-support/home/harness-state-env.mjs"
 
 const packageDir = path.resolve(import.meta.dirname, "../..")
 const standIn = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "local-server-stand-in-home-"))

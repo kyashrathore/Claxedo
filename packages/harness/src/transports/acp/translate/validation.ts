@@ -96,11 +96,7 @@ export function safeContent(value: unknown, ctx: ValidationContext) {
   })
 }
 
-// ---------------------------------------------------------------------------
-// Wire-shape guards. The only place ACP payloads earn their SDK types.
-// ---------------------------------------------------------------------------
 
-/** Exhaustive over ContentBlock: a new SDK variant must be listed or this stops compiling. */
 const CONTENT_BLOCK_TYPES = {
   text: true,
   image: true,
@@ -146,7 +142,6 @@ export type ContentBlockCheck =
   | { ok: true; block: ContentBlock }
   | { ok: false; reason: "content_missing_type" | "content_missing_required_fields" | "unknown_content_block" }
 
-/** Splits "not a content block at all" from "known type, bad fields" from "type this SDK does not model". */
 export function checkContentBlock(value: unknown): ContentBlockCheck {
   const row = object(value)
   if (!row || typeof row.type !== "string") return { ok: false, reason: "content_missing_type" }
@@ -155,11 +150,6 @@ export function checkContentBlock(value: unknown): ContentBlockCheck {
   return { ok: true, block: value }
 }
 
-/**
- * Exhaustive over SessionUpdate: a new SDK variant must be listed or this stops compiling.
- * The value records the required fields `translateSessionUpdate` reads without re-validating;
- * every other field of every variant is validated inside the translator itself.
- */
 type RequiredField = readonly [field: string, kind: "string" | "number"]
 
 const SESSION_UPDATE_REQUIRED_FIELDS = new Map<string, readonly RequiredField[]>(Object.entries({
@@ -178,7 +168,6 @@ const SESSION_UPDATE_REQUIRED_FIELDS = new Map<string, readonly RequiredField[]>
   usage_update: [["size", "number"], ["used", "number"]],
 } satisfies Record<SessionUpdate["sessionUpdate"], readonly RequiredField[]>))
 
-/** Boundary parse for `session/update` notification payloads arriving as `unknown`. */
 export function isSessionUpdate(value: unknown): value is SessionUpdate {
   const row = object(value)
   if (!row || typeof row.sessionUpdate !== "string") return false

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { runUnderStandInHome } from "../../../agent-sdk-runtime/src/test-utils/stand-in-home.mjs"
+import { runUnderStandInHome } from "./home/stand-in-home.mjs"
 
 const packageDir = path.resolve(import.meta.dirname, "../..")
 

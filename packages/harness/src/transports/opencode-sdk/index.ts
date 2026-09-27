@@ -44,7 +44,6 @@ export {
 export {
   createToolPort,
   type OpenCodeToolPort,
-  type SessionTool,
   type SessionToolRegistration,
 } from "./tool-port.js"
 export { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"

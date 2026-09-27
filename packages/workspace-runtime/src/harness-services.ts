@@ -6,23 +6,32 @@ import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 
 type ServiceInputs = {
   ownership: LaunchOwnershipStore
-  transcripts: WorkspaceTranscriptRoutesOptions
+  transcripts?: WorkspaceTranscriptRoutesOptions
   firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
   log: HarnessServices["log"]
   clock: HarnessServices["clock"]
   patternEvaluator: HarnessServices["patternEvaluator"]
 }
 
-export function createHarnessServices(input: ServiceInputs): HarnessServices {
-  const { workspaceId, resolver } = input.transcripts
+function transcriptRegistrar(transcripts: WorkspaceTranscriptRoutesOptions | undefined): HarnessServices["transcripts"] {
+  if (!transcripts) {
+    return {
+      register: async (request) => { throw new Error(`Transcript registration is unavailable on this host (${request.providerKind} session ${request.parentSessionId})`) },
+    }
+  }
+  const { workspaceId, resolver } = transcripts
   if (!resolver.register) throw new Error("Transcript resolver must support registration")
   const register = resolver.register.bind(resolver)
   return {
+    register: (request) => register({ workspaceId, ...request }),
+    open: (request) => resolver.open({ workspaceId, ...request }),
+  }
+}
+
+export function createHarnessServices(input: ServiceInputs): HarnessServices {
+  return {
     spawn: createSpawnService(input.ownership),
-    transcripts: {
-      register: (request) => register({ workspaceId, ...request }),
-      open: (request) => resolver.open({ workspaceId, ...request }),
-    },
+    transcripts: transcriptRegistrar(input.transcripts),
     firstPartyMcp(sessionId, locality) {
       if (locality !== "local" || !input.firstPartyMcpLaunch) return undefined
       const server = firstPartyMcpServerFor(input.firstPartyMcpLaunch, sessionId)

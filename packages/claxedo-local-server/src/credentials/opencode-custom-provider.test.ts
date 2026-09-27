@@ -1,9 +1,10 @@
 /**
  * A custom OpenCode provider from its stored row to a turn's request: the real
- * registry, the real loopback broker, the process's own engine and the served
- * catalog, with only the vendor replaced by a recording endpoint.
+ * registry, the real loopback broker, the embedded workspace runtime's own
+ * engine and the served catalog, with only the vendor replaced by a recording
+ * endpoint.
  */
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { createServer, type Server } from "node:http"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -19,9 +20,8 @@ const [
   { createTestBackend, setBackendOverride },
   { configureAgentConfig, disposeAgentConfig },
   { opencodeProviderCatalog },
-  { openCodeEngineModels, openCodeSdkRuntime, drainOpenCodeSdkRuntime },
-  { WorkspaceScope },
-  { OpenCodeSdkHarnessAdapter },
+  { openCodeEngineModels, drainOpenCodeSdkRuntime },
+  { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes },
   { createLocalCredentialBroker },
   { ClaxedoDB },
 ] = await Promise.all([
@@ -31,8 +31,7 @@ const [
   import("@claxedo/server-core/agent-config/index"),
   import("@claxedo/server-core/credentials/opencode-provider-catalog"),
   import("@claxedo/server-core/opencode/sdk-runtime"),
-  import("@claxedo/harness/opencode-sdk"),
-  import("@claxedo/workspace-runtime/testing"),
+  import("../deployments/local/embedded-workspace-runtime"),
   import("./broker"),
   import("@claxedo/server-core/platform/db/index"),
 ])
@@ -86,6 +85,7 @@ beforeAll(async () => {
   const broker = createLocalCredentialBroker({ dataDir, brokerOrigin })
   handler = broker.handler
   configureAgentConfig({ projectAuth: (input) => broker.projectAuth(input) })
+  configureEmbeddedWorkspaceRuntime({})
 
   setBackendOverride(createTestBackend())
   putCustomProvider({
@@ -100,6 +100,7 @@ beforeAll(async () => {
 }, 60_000)
 
 afterAll(async () => {
+  await shutdownEmbeddedWorkspaceRuntimes()
   await drainOpenCodeSdkRuntime()
   disposeAgentConfig()
   setBackendOverride(undefined)
@@ -127,24 +128,25 @@ test("a custom provider with a stored key is one the engine runs, and the catalo
 }, 60_000)
 
 test("a turn on it reaches the endpoint through the broker, which alone puts the stored key on it", async () => {
-  const runtime = openCodeSdkRuntime()
   const directory = mkdtempSync(path.join(dataDir, "work-"))
-  const session = await runtime.sessions.create(WorkspaceScope.authorize({ workspaceID: "w", directory }), { title: "custom provider" })
-  const adapter = new OpenCodeSdkHarnessAdapter({ runtime, workspaceID: "w", directory, reportOwnerFailure: () => {} })
-  const turn = adapter.executeTurn(
-    { workspaceId: "w", directory, sessionId: session.id, connectionId: "native:opencode", upstreamSessionId: session.id },
-    {
-      parts: [{ type: "text", text: "say hello" }],
-      userMessageId: "msg_user_1",
-      assistantMessageId: "msg_assistant_1",
-      agent: "build",
-      model: { providerID: "acme", modelID: "acme-1" },
-    },
-  )
-  const events: { type: string }[] = []
-  for await (const event of turn) events.push(event)
-
-  expect(events.filter((event) => event.type === "error")).toEqual([])
+  mkdirSync(path.join(directory, ".git"))
+  const runtime = await ensureEmbeddedWorkspaceRuntime({ id: "ws_custom_provider", directory, kind: "local", created_at: 1, updated_at: 1 })
+  const created = await runtime.app.request(`http://runtime.test/session?directory=${encodeURIComponent(directory)}&nativeHarness=opencode`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "custom provider", model: { providerID: "acme", modelID: "acme-1" } }),
+  })
+  expect(created.status, await created.clone().text()).toBe(201)
+  const session = await created.json() as { id: string }
+  const prompted = await runtime.app.request(`http://runtime.test/session/${session.id}/message?directory=${encodeURIComponent(directory)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messageID: "msg_user_1", parts: [{ type: "text", text: "say hello" }], model: { providerID: "acme", modelID: "acme-1" } }),
+  })
+  expect(prompted.status, await prompted.clone().text()).toBe(200)
+  const reply = await prompted.json() as { info: { role: string; error?: unknown } }
+  expect(reply.info).toMatchObject({ role: "assistant" })
+  expect(reply.info.error).toBeUndefined()
 
   expect(upstreamRequests[0]).toMatchObject({ path: "/v1/chat/completions", authorization: "Bearer sk-acme-stored", tenant: "prod" })
 }, 60_000)

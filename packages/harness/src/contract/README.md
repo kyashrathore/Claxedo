@@ -28,6 +28,8 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 
 - **`TurnInput` carries resolved values.** The host resolves `model`, `effort` and `system` once, from the turn's own choices and the session's stored config, before `send`. A transport reads only those fields; `prompt` carries the parts, agent, attachments and delivery, never a second model, variant or system block. A turn with no `model` runs the harness's own current model.
 - **A turn the transport cannot run or finish throws from `send`'s iterator.** A refused launch, an undeliverable prompt, a dead process, a protocol failure or an engine error rejects the iteration with the transport's typed error. It is never yielded as an `error` event. An `error` event is only the harness's own reported outcome, translated from its protocol by the corpus-proven translator.
+- **A thrown `TransportError` may carry `detail`:** facts the transport established about the failure, which the host puts on the turn's error record beside the message.
+- **`sessionTools` is optional.** A transport that dispatches host-scoped tools inside its engine implements it; the host hands every other harness the tools as a prompt.
 - **`services.spawn` takes the caller's `signal`.** A spawn whose signal is already aborted, or aborts before the process is handed back, rejects and leaves nothing running. A process that was handed back is the caller's to retire; the signal does not retire it.
 
 ## Configuration

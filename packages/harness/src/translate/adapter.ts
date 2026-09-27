@@ -19,11 +19,6 @@ export type HarnessEventAdapterResult<State = unknown> = {
 export type HarnessEventAdapter<State = unknown> = {
   name: string
   createInitialState?: () => State
-  /**
-   * Adapters may return a full result when they update adapter state or emit
-   * diagnostics. They may return a bare event array for stateless happy paths.
-   * The runtime normalizes both conventions and stamps harness/thread/raw data.
-   */
   translate: (input: {
     state: State
     event: RawHarnessEvent

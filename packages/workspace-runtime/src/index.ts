@@ -77,7 +77,6 @@ export type { WorkspaceEventFramesTap, WorkspaceEventStreamFrame }
  * does — instead of re-implementing the trim/blank rules.
  */
 export { runtimeEnvText } from "./env"
-export { createWorkspaceOpenCodeRuntime } from "./opencode-runtime"
 export { createWorkspaceHost } from "./workspace"
 export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 export {
@@ -122,11 +121,7 @@ export type {
   PtyStreamSocket,
 } from "./pty/authorized-connection"
 export type { EmbeddedRelayHostIdentity } from "./workspace-host-service-auth"
-export { defaultWorkspaceHarnessRegistry } from "./workspace/runtime"
 export type {
-  WorkspaceHarnessAdapterInput,
-  WorkspaceHarnessRegistry,
-  WorkspaceHarnessRegistryEntry,
   WorkspaceRuntimeStore,
   WorkspaceRuntimeStoreFactory,
 } from "./workspace/runtime"

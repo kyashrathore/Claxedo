@@ -5,6 +5,7 @@ import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposu
 import type { OwnerGrantIdentity } from "@claxedo/workspace-runtime"
 import type { TasksGrant } from "@claxedo/mcp"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const relayAuth = { key: new Uint8Array([1]), workspaceId: "ws_1", hostId: "host_1" }
 
@@ -19,6 +20,7 @@ function runtime(options: {
   const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
   const app = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure(relayAuth),
+    placement: loopbackMachineLoginPolicy(),
     target: { workspaceId: "ws_1", directory: process.cwd() },
     firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:3002", issuer, enabledToolGroups: () => enabledToolGroups },
     ...(options.ownerGrantIdentity ? { ownerGrantIdentity: options.ownerGrantIdentity } : {}),

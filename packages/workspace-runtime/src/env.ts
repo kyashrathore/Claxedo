@@ -1,9 +1,31 @@
 import path from "node:path"
 import { envText } from "@claxedo/helpers"
 import { userHomeDir } from "@claxedo/helpers/path"
+import type { MachineLoginPolicy, RuntimePlacement } from "@claxedo/harness/contract"
 
 export function runtimeEnvText(env: NodeJS.ProcessEnv, key: string) {
   return envText(env, key)
+}
+
+const RUNTIME_PLACEMENTS: readonly RuntimePlacement[] = ["desktop", "loopback", "self-hosted", "cloud"]
+
+/**
+ * Where a standalone runtime process runs, for every transport's own-login
+ * decision. `WORKSPACE_RUNTIME_PLACEMENT` names it; absent, a relay-exposed
+ * process is a self-hosted node and any other is the machine's own loopback.
+ * `WORKSPACE_RUNTIME_MACHINE_OWNER_USER_ID` names the person whose machine
+ * logins the process may spend; absent, only a machine-owner actor may.
+ */
+export function workspaceRuntimePlacementFromEnv(env: NodeJS.ProcessEnv, input: { relay: boolean }): MachineLoginPolicy {
+  const named = runtimeEnvText(env, "WORKSPACE_RUNTIME_PLACEMENT")
+  const placement = RUNTIME_PLACEMENTS.find((candidate) => candidate === named)
+  if (named && !placement) throw new Error(`Unsupported WORKSPACE_RUNTIME_PLACEMENT: ${named}`)
+  const resolved = placement ?? (input.relay ? "self-hosted" : "loopback")
+  return {
+    placement: resolved,
+    machineOwnerUserId: runtimeEnvText(env, "WORKSPACE_RUNTIME_MACHINE_OWNER_USER_ID") ?? "",
+    canUseOwnLogin: resolved === "desktop" || resolved === "loopback",
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -10,7 +10,9 @@ import { JSON_BODY_LIMIT_BYTES, boundedJson, boundedTextBody, errorBody, isReque
 import { WorktreeRoutes } from "./worktree"
 import { createSessionRoutes } from "./session-core"
 import type { WorkspaceWorktreeManager } from "../worktree"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 const tooLarge = errorBody("request_body_too_large", "Request body is too large")
 
@@ -61,6 +63,7 @@ async function withRuntimeApp(
   const previous = process.env.WORKSPACE_RUNTIME_DIRECTORY
   process.env.WORKSPACE_RUNTIME_DIRECTORY = directory
   const runtime = createWorkspaceRuntimeApp({
+    placement: loopbackMachineLoginPolicy(),
     exposure: loopbackWorkspaceRuntimeExposure(),
     target: { workspaceId: "ws_body_limit", directory },
     storeRoot: path.join(directory, "state"),
@@ -318,61 +321,63 @@ describe("worktree create rejects oversized bodies before the manager runs", () 
 })
 
 describe("session routes reject oversized bodies before the provider runs", () => {
+  const hosts: HostFixture[] = []
+  afterEach(async () => {
+    for (const host of hosts.splice(0)) await host.dispose()
+  })
+
   function mounted() {
-    const createSession = mock(async () => ({ id: "session_new" }))
-    const adapter = {
-      instructionChannel: "turn-system-prompt",
-      createSession,
-      getSession: async () => ({ id: "session_1", title: "T", time: { created: 1, updated: 1 } }),
-      readHarnessCapabilities: () => ({ harness: "codex", abort: true }),
-    } as unknown as AgentHarnessAdapter
+    const transport = new FakeTransport({ kind: "codex-app-server" })
+    const host = createHostFixture({ transports: { codex: transport }, workspaceId: "ws_body_limit" })
+    hosts.push(host)
+    const directory = "/tmp/workspace-runtime-body-limit-session"
     const app = new Hono()
     app.route("/", createSessionRoutes({
-      resolveAdapter: () => adapter,
-      resolveDirectory: () => "/tmp/workspace-runtime-body-limit-session",
-      resolveExecutionBinding: (_c, directory, sessionId) => ({
-        sessionId,
-        workspaceId: "ws_body_limit",
-        directory: directory ?? "",
-        connectionId: "native:codex",
-        upstreamSessionId: sessionId,
-      }),
+      runtime: async () => host.runtime,
+      defaultHarness: () => ({ id: "codex", access: "native" }),
+      requestedSessionHarness: () => undefined,
+      resolveDirectory: () => directory,
+      resolveWorkspaceId: () => "ws_body_limit",
       publishGlobal: () => {},
     }))
-    return { app, createSession }
+    const seeded = host.runtime.sessions.create(sessionCreate({ id: "session_1", workspaceId: "ws_body_limit", directory, harness: { id: "codex", access: "native" } }))
+    return { app, transport, seeded }
   }
 
   test("create refuses a declared-oversize body before the provider is asked", async () => {
-    const { app, createSession } = mounted()
+    const { app, transport, seeded } = mounted()
+    await seeded
 
     const response = await app.request("/session", declaredOversize({ title: "new" }))
 
     expect(response.status).toBe(413)
     await expect(response.json()).resolves.toEqual(tooLarge)
-    expect(createSession).not.toHaveBeenCalled()
+    expect(transport.starts.map((start) => start.sessionId)).toEqual(["session_1"])
   })
 
   test("create refuses a chunked-oversize body before the provider is asked", async () => {
-    const { app, createSession } = mounted()
+    const { app, transport, seeded } = mounted()
+    await seeded
 
     const response = await app.request("/session", chunkedOversize())
 
     expect(response.status).toBe(413)
-    expect(createSession).not.toHaveBeenCalled()
+    expect(transport.starts.map((start) => start.sessionId)).toEqual(["session_1"])
   })
 
   test("a valid create still reaches the provider", async () => {
-    const { app, createSession } = mounted()
+    const { app, transport, seeded } = mounted()
+    await seeded
 
     const response = await app.request("/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "new" }),
+      body: JSON.stringify({ id: "session_new", title: "new" }),
     })
 
     expect(response.status).toBe(201)
     await expect(response.json()).resolves.toMatchObject({ id: "session_new" })
-    expect(createSession).toHaveBeenCalled()
+    expect(transport.starts.map((start) => start.sessionId)).toEqual(["session_1", "session_new"])
   })
 
   // These three answer a request that got past their own guards with a status
@@ -383,7 +388,8 @@ describe("session routes reject oversized bodies before the provider runs", () =
     ["/session/session_1/prompt_async", { parts: [{ type: "text", text: "hi" }] }],
     ["/session/session_1/queue/1/steer", {}],
   ])("%s refuses an oversized body", async (path, payload) => {
-    const { app } = mounted()
+    const { app, seeded } = mounted()
+    await seeded
 
     const declared = await app.request(path, declaredOversize(payload))
     expect(declared.status).toBe(413)

@@ -1,4 +1,4 @@
-import type { SessionConfig, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import {
   buildAssistantMessage,
   messageUpdated,
@@ -24,7 +24,6 @@ import { sameSessionStartBinding, SessionStartStore } from "./session-start"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome } from "../index"
-import type { AgentRuntimeStore } from "../runtime"
 import type {
   AgentRuntimeAppendEventInput,
   AgentRuntimeCommittedCompatOutput,
@@ -35,9 +34,8 @@ import type {
   AgentRuntimeSessionBinding,
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnStartOutput,
-} from "../harnesses/shared/runtime-store"
-import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
-import { createMemorySubagentAdmissionStore, type AdmittedSubagentObservation } from "../subagent-admission"
+} from "../runtime-store"
+import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../runtime-store"
 
 export type SessionRow = {
   scope?: "workspace"
@@ -91,11 +89,6 @@ export type MemoryRuntimeStoreSnapshot = {
    * a snapshot whose restore silently releases every one of them.
    */
   turnLeases: Array<{ sessionId: string; leaseId: string; acquiredAt: number }>
-  subagents: Array<{
-    parentSessionId: string
-    observation: SubagentObservation
-    published: boolean
-  }>
 }
 
 /** Targeted state used by durable stores without serializing unrelated sessions. */
@@ -106,7 +99,6 @@ export type MemoryRuntimeSessionPersistenceState = {
   todos: AgentTodo[]
   recoveryError: string | null
   seq: number | null
-  subagents: MemoryRuntimeStoreSnapshot["subagents"]
 }
 
 /** @internal */
@@ -134,8 +126,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   protected todos = new Map<string, AgentTodo[]>()
   protected recoveryErrors = new Map<string, string>()
   protected seq = new Map<string, number>()
-  private subagentAdmission = createMemorySubagentAdmissionStore()
-  protected subagents: MemoryRuntimeStoreSnapshot["subagents"] = []
   private turnLeases = new Map<string, { leaseId: string; acquiredAt: number }>()
   private nextTurnLease = 0
   private recoveryOperations = new Map<string, RecoveryOperation>()
@@ -227,9 +217,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         ...(updates.time?.archived !== undefined ? { archived: updates.time.archived } : {}),
       },
     })
-    if (updates.time?.archived !== undefined) {
-      this.interruptSubagents(id, "archive", updates.time.archived)
-    }
     this.afterChange()
     return this.getSession(id)
   }
@@ -248,8 +235,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.todos.delete(id)
     this.recoveryErrors.delete(id)
     this.seq.delete(id)
-    this.subagents = this.subagents.filter((row) => row.parentSessionId !== id)
-    this.hydrateSubagents()
     this.turnLeases.delete(id)
     this.deleteSessionInteractions(id)
     this.afterChange()
@@ -520,104 +505,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.afterChange()
   }
 
-  admit(input: {
-    parentSessionId: string
-    observation: SubagentObservation
-    allocateKey: () => string
-    allocateChildSessionId?: () => string
-  }): AdmittedSubagentObservation {
-    const existing = this.subagents.find((row) =>
-      row.parentSessionId === input.parentSessionId &&
-      row.observation.observationId === input.observation.observationId
-    )
-    const admitted = this.subagentAdmission.admit(input)
-    if (!existing) {
-      this.subagents.push({
-        parentSessionId: input.parentSessionId,
-        // Record the EFFECTIVE observation — subagent key and any child
-        // session the admission layer resolved or allocated — so
-        // hydrateSubagents replays the same bindings this admit produced.
-        observation: {
-          ...input.observation,
-          subagentKey: admitted.event.subagentKey,
-          ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
-        },
-        published: false,
-      })
-      this.afterChange()
-    }
-    return admitted
-  }
-
-  markPublished(parentSessionId: string, observationId: string) {
-    this.subagentAdmission.markPublished(parentSessionId, observationId)
-    const row = this.subagents.find((item) =>
-      item.parentSessionId === parentSessionId && item.observation.observationId === observationId
-    )
-    if (!row) throw new Error(`unknown subagent observation ${observationId}`)
-    row.published = true
-    this.afterChange()
-  }
-
-  listSubagentEvents(parentSessionId: string) {
-    return this.subagentAdmission.records()
-      .filter((row) => row.parentSessionId === parentSessionId)
-      .map((row) => row.event)
-  }
-
-  listSubagents(parentSessionId: string) {
-    const statusRevisions = new Map<string, number>()
-    const states = new Map<string, {
-      parentSessionId: string
-      subagentKey: string
-      revision: number
-      mode?: string
-      status?: string
-      label?: string
-      subagentType?: string
-      description?: string
-      providerId?: string
-      providerKind?: string
-      childSessionId?: string
-      attention?: number
-      wake?: string
-      transcript: { kind: string; ref?: string }
-      toolCallEdges: Array<{ toolCallId: string; role: string; revision: number }>
-    }>()
-    for (const event of this.listSubagentEvents(parentSessionId)) {
-      const state = states.get(event.subagentKey) ?? {
-        parentSessionId,
-        subagentKey: event.subagentKey,
-        revision: 0,
-        status: "pending",
-        transcript: { kind: "none" },
-        toolCallEdges: [],
-      }
-      state.revision = Math.max(state.revision, event.revision)
-      for (const field of ["mode", "label", "subagentType", "description", "wake"] as const) {
-        if (event[field] !== undefined) state[field] = event[field]
-      }
-      if (event.attention !== undefined) state.attention = event.attention
-      if (event.status !== undefined) {
-        const currentRevision = statusRevisions.get(event.subagentKey) ?? 0
-        if ((!terminalSubagentStatus(state.status) && terminalSubagentStatus(event.status)) ||
-          (terminalSubagentStatus(state.status) === terminalSubagentStatus(event.status) && event.revision > currentRevision)) {
-          state.status = event.status
-        }
-        statusRevisions.set(event.subagentKey, Math.max(currentRevision, event.revision))
-      }
-      for (const field of ["providerId", "providerKind", "childSessionId"] as const) {
-        if (state[field] === undefined && event[field] !== undefined) state[field] = event[field]
-      }
-      if (event.transcript) state.transcript = event.transcript
-      if (event.toolCallId && event.toolCallRole && !state.toolCallEdges.some((edge) => edge.toolCallId === event.toolCallId)) {
-        state.toolCallEdges.push({ toolCallId: event.toolCallId, role: event.toolCallRole, revision: event.revision })
-      }
-      states.set(event.subagentKey, state)
-    }
-    return [...states.values()]
-  }
-
   markRecovering(sessionId: string, message = "Agent session is recovering") {
     this.recoveryErrors.set(sessionId, message)
     this.touch(sessionId, "recovering", message)
@@ -663,7 +550,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       todos: this.todos.get(sessionId) ?? [],
       recoveryError: this.recoveryErrors.get(sessionId) ?? null,
       seq: this.seq.get(sessionId) ?? null,
-      subagents: this.subagents.filter((row) => row.parentSessionId === sessionId),
     }
   }
 
@@ -694,11 +580,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       recoveryErrors: [...this.recoveryErrors.entries()].map(([sessionId, message]) => ({ sessionId, message })),
       seq: [...this.seq.entries()].map(([sessionId, seq]) => ({ sessionId, seq })),
       turnLeases: [...this.turnLeases.entries()].map(([sessionId, held]) => ({ sessionId, ...held })),
-      subagents: this.subagents.map((row) => ({
-        parentSessionId: row.parentSessionId,
-        observation: { ...row.observation },
-        published: row.published,
-      })),
     }
   }
 
@@ -726,42 +607,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       row.sessionId,
       { leaseId: row.leaseId, acquiredAt: row.acquiredAt },
     ]))
-    this.subagents = (snapshot.subagents ?? []).map((row) => ({
-      parentSessionId: row.parentSessionId,
-      observation: { ...row.observation },
-      published: row.published,
-    }))
-    this.hydrateSubagents()
   }
 
   protected afterChange() {}
-
-  private hydrateSubagents() {
-    this.subagentAdmission = createMemorySubagentAdmissionStore()
-    for (const row of this.subagents) {
-      this.subagentAdmission.admit({
-        parentSessionId: row.parentSessionId,
-        observation: row.observation,
-        allocateKey: () => row.observation.subagentKey!,
-      })
-      if (row.published) {
-        this.subagentAdmission.markPublished(row.parentSessionId, row.observation.observationId)
-      }
-    }
-  }
-
-  private interruptSubagents(parentSessionId: string, reason: "archive", occurrence: number) {
-    for (const child of this.listSubagents(parentSessionId)) {
-      if (!["pending", "running", "paused"].includes(child.status ?? "")) continue
-      const observationId = `host:${reason}:${occurrence}:${child.subagentKey}:${child.revision}`
-      this.admit({
-        parentSessionId,
-        observation: { observationId, subagentKey: child.subagentKey, status: "interrupted" },
-        allocateKey: () => child.subagentKey,
-      })
-      this.markPublished(parentSessionId, observationId)
-    }
-  }
 
   private sessionRow(session: SessionRow) {
     return {
@@ -959,10 +807,6 @@ function harnessScopedField<T>(update: T | null | undefined, prev: T | undefined
   return sameHarness ? prev : undefined
 }
 
-function terminalSubagentStatus(status: string | undefined) {
-  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
-}
-
 /** A re-sent user message keeps the author the first copy carried. */
 function preserveClaxedoAuthorOnInfo(
   previous: AgentMessageInfo | undefined,
@@ -986,7 +830,7 @@ function errorMessage(input: unknown) {
     : "session error"
 }
 
-export function createMemoryRuntimeStore(): AgentRuntimeStore {
+export function createMemoryRuntimeStore(): AgentRuntimeStoreWithRecovery {
   return new MemoryRuntimeStore()
 }
 

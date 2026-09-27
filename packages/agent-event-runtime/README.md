@@ -28,10 +28,10 @@ const event: AgentRuntimeEvent = agentRuntimeEvent.textDelta({ delta: "hello" })
 for (const frame of projection.ingest(event)) console.log(frame.payload.type)
 ```
 
-The harness translators and the translation runner (`createAgentEventRuntime`)
-live in `@claxedo/harness`: each transport's `translate/` folder and
-`@claxedo/harness/translate`. This package keeps the event contracts, the
-snapshot helpers and the projections.
+The harness translators and the translation runner live inside
+`@claxedo/harness`, each transport's in its own `translate/` folder, and are
+not exported. This package keeps the event contracts, the snapshot helpers and
+the projections.
 
 ## Agent-First Public Docs
 

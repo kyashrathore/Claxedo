@@ -35,12 +35,6 @@ export const RETAINED_TOOLS_MAX = 256
 export const RETAINED_MESSAGE_TEXTS_MAX = 256
 export const RETAINED_TOOL_ITEMS_MAX = 256
 
-/**
- * Wire identifiers (`toolCallId`, `messageId`) key these maps, so they must be
- * `Map`s: a `Record` would let a `"__proto__"` id read inherited members or
- * rewrite the container's prototype. The bounds cap what a hostile or buggy
- * peer can retain per session; eviction drops the oldest entries.
- */
 export type SessionState = {
   client: AcpClient
   lastMessageId: string | null
@@ -51,18 +45,10 @@ export type SessionState = {
   tools: Map<string, ToolState>
 }
 
-/**
- * Snapshots restore these fields as whatever shape was persisted — a live
- * `Map` passes through, a record from an older snapshot is adopted.
- */
 export function toKeyedMap<V>(value: Map<string, V> | Record<string, V> | undefined): Map<string, V> {
   return value instanceof Map ? value : new Map(Object.entries(value ?? {}))
 }
 
-/**
- * `pick()` always stamps `acp.intent`; classification reads it back without re-deriving.
- * The open records keep the rest of the bag free-form, as harness metadata is.
- */
 export type AcpToolMetadata = Record<string, unknown> & {
   acp: Record<string, unknown> & { intent: AcpIntent }
 }

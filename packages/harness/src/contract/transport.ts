@@ -92,6 +92,22 @@ export interface ForkOperations {
   fork(session: HarnessSession, messageId: string, childSessionId?: string): Promise<{ upstreamSessionId: string }>
 }
 
+export type SessionTool = Readonly<{
+  name: string
+  description: string
+  inputSchema: Readonly<Record<string, unknown>>
+  outputSchema?: Readonly<Record<string, unknown>>
+}>
+
+export type SessionToolCall = Readonly<{ name: string; toolCallID: string; input: unknown }>
+
+export type ScopedSessionTools = { tools: readonly SessionTool[]; execute(call: SessionToolCall): Promise<unknown> }
+
+export interface SessionToolOperations {
+  register(session: HarnessSession, tools: ScopedSessionTools): Promise<void>
+  unregister(session: HarnessSession): Promise<void>
+}
+
 export interface HealthOperations {
   connection(directory: string, sessionId?: string): ConnectionRuntimeStatus
   runtime(directory: string, sessionId?: string): TransportHealth
@@ -116,4 +132,5 @@ export interface HarnessTransport {
   readonly agents?: AgentListOperations
   readonly fork?: ForkOperations
   readonly health?: HealthOperations
+  readonly sessionTools?: SessionToolOperations
 }

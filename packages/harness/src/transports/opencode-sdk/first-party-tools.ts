@@ -1,6 +1,6 @@
 import type { McpServerSpec } from "../../contract"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { SessionTool, SessionToolCall } from "./tool-port.js"
+import type { SessionTool, SessionToolCall } from "../../contract"
 import { TransportError } from "../../contract/errors.js"
 
 function mcpRecord(value: unknown): Record<string, unknown> {

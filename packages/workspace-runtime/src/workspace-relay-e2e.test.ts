@@ -10,6 +10,7 @@ import type { RelayHostAuthAuditEvent } from "./workspace-host-service-auth"
 import { startServer, waitForWorkspaceRuntimeServerPort } from "./server"
 import { relayWorkspaceRuntimeExposure } from "./exposure"
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "./remote-session-authority"
+import { loopbackMachineLoginPolicy } from "./testing"
 
 const NativeResponse = globalThis.Response
 
@@ -237,6 +238,7 @@ async function relayHarness() {
       },
     }
   const runtimeServer = startServer(0, {
+    placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     relayHostAuth,
   })

@@ -16,6 +16,7 @@ import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
 import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { fetchUrl, fetchBodyText } from "../../../test-support/fetch-calls"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {
@@ -37,6 +38,7 @@ async function relayedRuntime() {
   const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
   const runtime = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, workspaceId: "ws_1", hostId: "host_1" }),
+    placement: loopbackMachineLoginPolicy(),
     sessionAccessPolicy: {
       ...managedWorkspaceSessionAccessPolicy({ requireActor: true }),
       sessionAuthority: "managed-private",

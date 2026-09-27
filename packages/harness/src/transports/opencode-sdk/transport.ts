@@ -1,6 +1,6 @@
-import type { AgentAgent, AgentCommand, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
-import type { AttachInput, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, HarnessServices, HarnessSession,
-  HarnessTransport, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline, MachineLoginPolicy } from "../../contract"
+import type { AgentAgent, AgentCommand } from "@claxedo/agent-runtime-contract"
+import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession,
+  HarnessTransport, ScopedSessionTools, SessionBroker, SessionToolOperations, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline, MachineLoginPolicy } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
@@ -8,6 +8,8 @@ import { engineProviderBinding, engineProviderBindingKey } from "./credentials.j
 import { OpenCodeOwnerMismatchError } from "./errors.js"
 import { TransportError } from "../../contract/errors.js"
 import { firstPartyTools } from "./first-party-tools.js"
+import { openCodeConfigOperations } from "./session-config.js"
+import type { Entry } from "./entry.js"
 import { eventAssistantMessageID, eventSessionID, terminal } from "./translate/event.js"
 import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 
@@ -15,11 +17,7 @@ export type OpenCodeSdkTransportOptions = OpenCodeRuntimeOptions & { login: Mach
 import { WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
 import { createKeyedSerializer, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
-import { attachedSessionEntry, configOptionsPreview, mergeStartInput, modelAndEffortOptions, sessionConnectionHealth,
-  sessionMcpServers } from "../../contract"
-
-type Entry = { session: HarnessSession; start: StartInput; broker: SessionBroker; scope: WorkspaceScope;
-  upstream: string; active: boolean; assistantMessageID?: string }
+import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
 
 export class OpenCodeSdkTransport implements HarnessTransport {
   readonly kind = "opencode-sdk" as const
@@ -97,15 +95,17 @@ export class OpenCodeSdkTransport implements HarnessTransport {
         : await this.runtime.sessions.create(scope, input.title ? { title: input.title } : {})
       if (upstream && row.id !== upstream) throw new TransportError("opencode", "session", "OpenCode attached a different session")
       const firstParty = this.services.firstPartyMcp(input.sessionId, input.locality)
+      let firstPartyTools_: ScopedSessionTools | undefined
       if (firstParty) {
-        const registration = await firstPartyTools(firstParty, input.sessionId)
-        await this.runtime.tools.registerSession({ scope, sessionID: row.id, ...registration })
+        firstPartyTools_ = await firstPartyTools(firstParty, input.sessionId)
+        await this.runtime.tools.registerSession({ scope, sessionID: row.id, ...firstPartyTools_ })
         registered = true
       }
       const binding = await broker.rebind(row.id)
       this.owner = this.ownerKey(input.owner)
       const session: HarnessSession = { directory: scope.directory, locality: input.locality, binding }
-      this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false })
+      this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false,
+        ...(firstPartyTools_ ? { firstParty: firstPartyTools_ } : {}) })
       return session
     } catch (error) {
       const failures = await rollbackOpenCodeSession({ runtime: this.runtime, scope, upstream, rowID: row?.id,
@@ -214,6 +214,35 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     this.documents.clear()
   }
 
+  private async registerTools(entry: Entry): Promise<void> {
+    const groups = [entry.firstParty, entry.scoped].filter((group): group is ScopedSessionTools => group !== undefined)
+    if (!groups.length) { await this.runtime.tools.unregisterSession(entry.upstream); return }
+    await this.runtime.tools.registerSession({
+      scope: entry.scope, sessionID: entry.upstream,
+      tools: groups.flatMap((group) => group.tools),
+      execute: (call) => {
+        const group = groups.find((candidate) => candidate.tools.some((tool) => tool.name === call.name))
+        if (!group) throw new TransportError("opencode", "configuration", `OpenCode Session tool ${call.name} is unregistered`)
+        return group.execute(call)
+      },
+    })
+  }
+
+  /** Tools the host scopes to one session, dispatched inside the engine beside the first-party ones. */
+  readonly sessionTools: SessionToolOperations = {
+    register: async (session: HarnessSession, scoped: ScopedSessionTools): Promise<void> => {
+      const entry = this.entry(session)
+      entry.scoped = scoped
+      await this.registerTools(entry)
+    },
+    unregister: async (session: HarnessSession): Promise<void> => {
+      const entry = this.entry(session)
+      if (!entry.scoped) return
+      entry.scoped = undefined
+      await this.registerTools(entry)
+    },
+  }
+
   readonly naming = { rename: async (session: HarnessSession, title: string) => {
     const entry = this.entry(session)
     await this.runtime.sessions.rename(entry.scope, session.binding.upstreamSessionId, title)
@@ -244,38 +273,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     return this.scope(target.draft)
   }
 
-  readonly config = {
-    read: async (session: HarnessSession): Promise<SessionConfig> => this.entry(session).start.config,
-    update: async (session: HarnessSession, update: SessionConfigUpdate): Promise<SessionConfig> => {
-      const entry = this.entry(session)
-      const previous = entry.start.config
-      const next: SessionConfig = {
-        ...previous,
-        ...(update.harness !== undefined ? { harness: update.harness } : {}),
-        ...(update.permissionCeiling !== undefined ? { permissionCeiling: update.permissionCeiling } : {}),
-        ...(update.permissionMode !== undefined ? { permissionMode: update.permissionMode ?? undefined } : {}),
-        ...(update.permissionState !== undefined ? { permissionState: update.permissionState ?? undefined } : {}),
-        ...(update.model !== undefined ? { model: update.model ?? undefined } : {}),
-        ...(update.variant !== undefined ? { variant: update.variant ?? undefined } : {}),
-        ...(update.agent !== undefined ? { agent: update.agent ?? undefined } : {}),
-        ...(update.instructions !== undefined ? { instructions: update.instructions ?? undefined } : {}),
-        ...(update.group !== undefined ? { group: update.group ?? undefined } : {}),
-        ...(update.handoff !== undefined ? { handoff: update.handoff ?? undefined } : {}),
-      }
-      entry.start = { ...entry.start, config: next }
-      return next
-    },
-    options: async (target: ConfigPreviewTarget): Promise<ConfigOptionsPreview> => {
-      const models = await this.runtime.catalog.models(this.targetScope(target))
-      const current = "session" in target ? target.model ?? this.entry(target.session).start.config.model : target.draft.config.model
-      return configOptionsPreview(modelAndEffortOptions({
-        models: models.map((model) => ({ id: `${model.providerID}/${model.id}`, name: model.name ?? model.id })),
-        ...(current ? { selected: `${current.providerID}/${current.modelID}` } : {}),
-      }))
-    },
-    permissionModes: async () => ({ modes: [], unsupported: "OpenCode does not expose a session permission mode", appliesFrom: "next-turn" as const }),
-    setPermissionMode: async () => { throw new TransportError("opencode", "configuration", "OpenCode does not expose a session permission mode") },
-  }
+  readonly config = openCodeConfigOperations({
+    entry: (session) => this.entry(session),
+    targetScope: (target) => this.targetScope(target),
+    models: (scope) => this.runtime.catalog.models(scope),
+  })
 
   readonly health = {
     connection: (_directory: string, sessionId?: string) => sessionConnectionHealth(sessionId, (id) => this.entries.has(id), "configured"),

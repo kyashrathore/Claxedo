@@ -2,10 +2,6 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { text } from "@claxedo/agent-event-runtime/value"
 import type { McpServerElicitationRequestResponse } from "./protocol/v2/McpServerElicitationRequestResponse"
 
-/** Decode the provider's approval marker and advertised persistence scopes.
- * https://github.com/openai/codex/blob/main/codex-rs/protocol/src/mcp_approval_meta.rs
- * Accept/decline/cancel are MCP response actions, not tool-specific choices.
- */
 export function codexMcpApproval(params: Record<string, unknown>) {
   const tool = text(params.serverName)
   const meta = asRecord(params._meta)

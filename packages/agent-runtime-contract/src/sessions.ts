@@ -134,7 +134,8 @@ export type AgentPresentationSession = AgentSession & {
 
 export type AgentTurnOutcome = (
   | { status: "completed"; completedAt: number; reason?: string }
-  | { status: "failed"; completedAt: number; error: string }
+  /** `detail` is what the harness's transport established about the failure, carried onto the turn's error record. */
+  | { status: "failed"; completedAt: number; error: string; detail?: Readonly<Record<string, string>> }
   | { status: "cancelled"; completedAt: number; reason?: string }
 ) & { assistantMessageId?: string }
 

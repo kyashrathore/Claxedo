@@ -1,8 +1,9 @@
-import type { AgentConfigOption, AgentConfigOptions } from "../../../../agent-sdk-runtime/src"
+import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
+import type { ConfigOptionsPreview } from "@claxedo/harness/contract"
 
 export type BoundHarnessConfigOption = AgentConfigOption
 
 // The local control route forwards the workspace runtime response unchanged.
-export function runtimeHarnessOptionsResponse(options: BoundHarnessConfigOption[]): AgentConfigOptions {
+export function runtimeHarnessOptionsResponse(options: BoundHarnessConfigOption[]): ConfigOptionsPreview {
   return { options }
 }

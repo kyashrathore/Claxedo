@@ -16,7 +16,7 @@ import type { SessionMeta } from "../../../claxedo-server-core/src/session/meta/
 import {
   runtimeEventEnvelope,
   type RuntimeEventEnvelopeInput,
-} from "../../../agent-sdk-runtime/src/runtime-event-hub"
+} from "../../../workspace-runtime/src/projection/runtime-event-hub"
 import {
   createClientPresentationProjection,
   presentationEventsFromRuntimeEnvelope,

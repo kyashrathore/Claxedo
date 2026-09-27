@@ -11,11 +11,23 @@
       "types": "./dist/registry/providers/index.d.ts",
       "import": "./dist/registry/providers/index.js"
     },
+    "./registry": {
+      "development": "./src/registry/index.ts",
+      "bun": "./src/registry/index.ts",
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js"
+    },
     "./compose": {
       "development": "./src/compose.ts",
       "bun": "./src/compose.ts",
       "types": "./dist/compose.d.ts",
       "import": "./dist/compose.js"
+    },
+    "./capabilities": {
+      "development": "./src/capabilities/index.ts",
+      "bun": "./src/capabilities/index.ts",
+      "types": "./dist/capabilities/index.d.ts",
+      "import": "./dist/capabilities/index.js"
     },
     "./broker": {
       "development": "./src/broker/index.ts",
@@ -35,53 +47,17 @@
       "types": "./dist/contract/index.d.ts",
       "import": "./dist/contract/index.js"
     },
-    "./translate": {
-      "development": "./src/translate/index.ts",
-      "bun": "./src/translate/index.ts",
-      "types": "./dist/translate/index.d.ts",
-      "import": "./dist/translate/index.js"
-    },
-    "./acp/translate": {
-      "development": "./src/transports/acp/translate/index.ts",
-      "bun": "./src/transports/acp/translate/index.ts",
-      "types": "./dist/transports/acp/translate/index.d.ts",
-      "import": "./dist/transports/acp/translate/index.js"
-    },
-    "./claude-sdk/translate": {
-      "development": "./src/transports/claude-sdk/translate/index.ts",
-      "bun": "./src/transports/claude-sdk/translate/index.ts",
-      "types": "./dist/transports/claude-sdk/translate/index.d.ts",
-      "import": "./dist/transports/claude-sdk/translate/index.js"
-    },
-    "./codex-app-server/translate": {
-      "development": "./src/transports/codex-app-server/translate/index.ts",
-      "bun": "./src/transports/codex-app-server/translate/index.ts",
-      "types": "./dist/transports/codex-app-server/translate/index.d.ts",
-      "import": "./dist/transports/codex-app-server/translate/index.js"
-    },
-    "./cursor-sdk/translate": {
-      "development": "./src/transports/cursor-sdk/translate/index.ts",
-      "bun": "./src/transports/cursor-sdk/translate/index.ts",
-      "types": "./dist/transports/cursor-sdk/translate/index.d.ts",
-      "import": "./dist/transports/cursor-sdk/translate/index.js"
-    },
-    "./pi-rpc/translate": {
-      "development": "./src/transports/pi-rpc/translate/index.ts",
-      "bun": "./src/transports/pi-rpc/translate/index.ts",
-      "types": "./dist/transports/pi-rpc/translate/index.d.ts",
-      "import": "./dist/transports/pi-rpc/translate/index.js"
-    },
     "./opencode-sdk": {
       "development": "./src/transports/opencode-sdk/index.ts",
       "bun": "./src/transports/opencode-sdk/index.ts",
       "types": "./dist/transports/opencode-sdk/index.d.ts",
       "import": "./dist/transports/opencode-sdk/index.js"
     },
-    "./opencode-sdk/*": {
-      "development": "./src/transports/opencode-sdk/*.ts",
-      "bun": "./src/transports/opencode-sdk/*.ts",
-      "types": "./dist/transports/opencode-sdk/*.d.ts",
-      "import": "./dist/transports/opencode-sdk/*.js"
+    "./testing/opencode": {
+      "development": "./src/test-support/opencode.ts",
+      "bun": "./src/test-support/opencode.ts",
+      "types": "./dist/test-support/opencode.d.ts",
+      "import": "./dist/test-support/opencode.js"
     }
   },
   "files": [

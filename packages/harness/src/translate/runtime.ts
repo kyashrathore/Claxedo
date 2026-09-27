@@ -20,8 +20,6 @@ export type TranslateRawHarnessEventResult<State = unknown> = {
   events: AgentRuntimeEvent[]
 }
 
-// The raw provider frame is sensitive and identical on every event a payload
-// produces; only the diagnostic-surface records that forward it keep it.
 const DIAGNOSTIC_SURFACE_TYPES: ReadonlySet<AgentRuntimeEvent["type"]> = new Set([
   "auth-status",
   "diagnostic",

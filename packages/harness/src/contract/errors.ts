@@ -2,10 +2,12 @@ export type TransportErrorKind = "acp" | "claude" | "cursor" | "pi" | "codex" | 
 
 export class TransportError extends Error {
   readonly retryable: boolean
+  readonly detail: Readonly<Record<string, string>> | undefined
 
   constructor(readonly transport: TransportErrorKind, readonly code: string, message: string,
-    options?: { cause?: unknown; retryable?: boolean }) {
+    options?: { cause?: unknown; retryable?: boolean; detail?: Readonly<Record<string, string>> }) {
     super(message, { cause: options?.cause })
+    this.detail = options?.detail
     this.name = transport === "provider" ? "HarnessProviderError" : `${transport === "acp" ? "Acp" :
       transport === "pi" ? "Pi" : transport === "codex" ? "Codex" :
       transport === "opencode" ? "OpenCode" : transport === "claude" ? "Claude" : "Cursor"}TransportError`

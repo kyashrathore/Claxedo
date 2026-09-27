@@ -84,12 +84,6 @@ function isGeneratedProtocol(path: string): boolean {
   return /^src\/transports\/codex-app-server\/(?:.*\/)?(?:generated|generated-protocol|protocol)\//.test(path)
 }
 
-const movedTranslators = /^src\/(?:transports\/(?:acp|claude-sdk|codex-app-server|cursor-sdk|pi-rpc)\/translate\/|conformance\/translate\/|translate\/(?:runtime|adapter|tool-attachments|tool-display|host-subagent)(?:\.test)?\.ts$)/
-
-function isMovedTranslator(path: string): boolean {
-  return movedTranslators.test(path)
-}
-
 function isTypeContext(node: ts.Node): boolean {
   for (let parent = node.parent; parent; parent = parent.parent) {
     if (ts.isTypeNode(parent)) return true
@@ -185,17 +179,16 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
       if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) continue
       if (templateFragments.some(fragment => fragment.start <= scanner.getTokenPos() && scanner.getTokenPos() < fragment.end)) continue
       const comment = scanner.getTokenText()
-      if (!isDirective(comment) && !isMovedTranslator(path)) add(path, lineAt(source, scanner.getTokenPos()), "no-comments", "Remove the comment or use a listed tool directive")
+      if (!isDirective(comment)) add(path, lineAt(source, scanner.getTokenPos()), "no-comments", "Remove the comment or use a listed tool directive")
     }
-    const sized = production && !isMovedTranslator(path)
-    if (sized && lines(text) > 300) add(path, 301, "size", "Split the file along responsibilities to stay at 300 lines or fewer")
+    if (production && lines(text) > 300) add(path, 301, "size", "Split the file along responsibilities to stay at 300 lines or fewer")
 
     walk(source, node => {
       const line = lineAt(source, node.getStart(source))
       const local = coreParts.has(parts[1])
       const transport = parts[1] === "transports" ? parts[2] : undefined
 
-      if (sized && ts.isFunctionLike(node) && "body" in node && node.body && lineAt(source, node.body.end - 1) - lineAt(source, node.body.getStart(source)) + 1 > 40) {
+      if (production && ts.isFunctionLike(node) && "body" in node && node.body && lineAt(source, node.body.end - 1) - lineAt(source, node.body.getStart(source)) + 1 > 40) {
         add(path, line, "size", "Split the function body into functions of 40 lines or fewer")
       }
 
@@ -223,7 +216,7 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
         }
       }
 
-      if (transport && production && !isMovedTranslator(path)) {
+      if (transport && production) {
         if (ts.isStringLiteral(node) && decisions.has(node.text) && !isTypeContext(node) && !isProtocolMapping(node)) add(path, line, "no-policy-in-transports", "Move the request decision to the broker; keep protocol mappings in a named protocol map")
         if (ts.isCallExpression(node) && /^(?:(?:evaluate|run|start|resume)Goals?(?:Loop)?|goalLoop)$/.test(nameOf(node.expression))) add(path, line, "no-policy-in-transports", "Move goal evaluation to the runtime host")
         if (isTitleDecision(node) && !inNamingOperation(node)) add(path, line, "no-policy-in-transports", "Make title decisions in the naming operation")

@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { test } from "vitest"
-import { HARNESS_STATE_ENV } from "../../../agent-sdk-runtime/src/test-utils/harness-state-env.mjs"
+import { HARNESS_STATE_ENV } from "../../../workspace-runtime/src/test-support/home/harness-state-env.mjs"
 
 const root = path.resolve(import.meta.dirname, "../..")
 

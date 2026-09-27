@@ -6,6 +6,7 @@ import { Hono } from "hono"
 import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 test("public remote ACP disconnect preserves received output and never replays the uncertain prompt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "workspace-acp-websocket-"))
@@ -22,7 +23,7 @@ test("public remote ACP disconnect preserves received output and never replays t
         const message = JSON.parse(String(data))
         log.push(message)
         const send = (body: unknown) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...body as object }))
-        if (message.method === "initialize") send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } } } })
+        if (message.method === "initialize") send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } }, _meta: { claxedo: { version: 1, health: true } } } })
         else if (message.method === "session/new") send({ id: message.id, result: { sessionId: "remote-persistent-session" } })
         else if (message.method === "session/resume") send({ id: message.id, result: {} })
         else if (message.method === "session/prompt") {
@@ -34,7 +35,7 @@ test("public remote ACP disconnect preserves received output and never replays t
       },
     },
   })
-  const host = createWorkspaceHost({ target, storeRoot: join(directory, "store") })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(
@@ -52,7 +53,7 @@ test("public remote ACP disconnect preserves received output and never replays t
     expect(history).toContain("uncertain")
     expect(prompts).toBe(1)
     expect(connections).toBe(1)
-    expect(host.detail().connectionState?.state).toBe("disconnected")
+    expect(host.readConnectionState({ sessionId: "remote-local", directory })?.state).toBe("disconnected")
     const continued = await request("/session/remote-local/message", "POST", { parts: [{ type: "text", text: "Inspect state and continue explicitly." }] })
     await continued.text()
     expect(prompts).toBe(2)
@@ -100,7 +101,7 @@ for (const imageSupport of [true, false]) test(`public remote ACP image delivery
       } else if (message.method && message.id !== undefined) send({ id: message.id, result: {} })
     } },
   })
-  const host = createWorkspaceHost({ target, storeRoot: join(directory, "store") })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(

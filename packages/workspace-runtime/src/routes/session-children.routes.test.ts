@@ -1,12 +1,11 @@
-import type { AgentPermissionMode, AgentPermissionModeState, SessionConfig } from "@claxedo/agent-runtime-contract"
-import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT, type RecoveryFacts } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage, AgentSession } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
-import { buildSession } from "../compat-events"
-import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../runtime-event-hub"
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime"
+import type { AgentPermissionMode, AgentPermissionModeState, SessionHarness } from "@claxedo/agent-runtime-contract"
+import type { AgentSession } from "@claxedo/agent-sdk-runtime"
+import type { ConfigOperations } from "@claxedo/harness/contract"
+import type { AgentRuntime } from "../host/runtime"
+import type { RuntimeEventEnvelope } from "../projection/runtime-event-hub"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessPolicy,
@@ -15,10 +14,13 @@ import {
   type SessionTurnGrantDecision,
   type SessionTurnOrigin,
 } from "../session-access-policy"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 import type { EmbeddedRelayHostIdentity } from "../workspace-host-service-auth"
 import { SessionRoutes } from "./session"
 
 const DIRECTORY = process.cwd()
+const CODEX: SessionHarness = { id: "codex", access: "native" }
 const MODES: readonly AgentPermissionMode[] = [
   { id: "read-only", name: "Read only", level: "ask" },
   { id: "workspace-write", name: "Workspace write", level: "auto" },
@@ -28,199 +30,112 @@ const MODES: readonly AgentPermissionMode[] = [
 
 const NO_MODE_SURFACE: AgentPermissionModeState = { modes: [], unsupported: "codex exposes no permission modes", appliesFrom: "next-turn" }
 
+const hosts: HostFixture[] = []
+const cleanups: Array<() => Promise<void> | void> = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  for (const host of hosts.splice(0)) await host.dispose()
+})
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+
+type ModeSurface = {
+  draft: () => Promise<AgentPermissionModeState>
+  session: (sessionId: string) => Promise<AgentPermissionModeState>
+}
+
+/**
+ * The permission-mode surface of the scripted harness. `none` composes a
+ * transport with no config operations at all, the shape of a harness that
+ * cannot be told about modes.
+ */
+function modeOperations(surface: ModeSurface, calls: { modes: Array<{ sessionId: string; modeId: string }> }): ConfigOperations {
+  return {
+    read: async () => { throw new Error("the fixture's config is runtime-owned") },
+    update: async () => { throw new Error("the fixture's config is runtime-owned") },
+    options: async () => ({ options: [] }),
+    permissionModes: (target) => "draft" in target ? surface.draft() : surface.session(target.session.binding.sessionId),
+    setPermissionMode: async (session, modeId) => {
+      calls.modes.push({ sessionId: session.binding.sessionId, modeId })
+      return { modes: [...MODES], currentModeId: modeId, appliesFrom: "next-turn" }
+    },
+  }
+}
+
+/**
+ * A real runtime host over one scripted Codex harness, with the session
+ * routes composed over it the way the workspace host composes them: the
+ * store's sessions, messages and subagent rows, and the runtime's subagent
+ * admission for host-owned children.
+ */
 function fixture(input: {
   parentMode?: string
   policy?: SessionAccessPolicy
   identity?: EmbeddedRelayHostIdentity
-  /**
-   * Compose the host the way the workspace runtime does, over an agent
-   * runtime. Only that shape can be fenced, so it is the only one a managed
-   * policy admits a background turn on.
-   */
-  withRuntime?: boolean
+  modes?: "none"
 } = {}) {
-  const store = new MemoryRuntimeStore()
   const origins = new Map<string, SessionTurnOrigin>()
+  const seeded = new Set<string>()
   const calls = {
     created: [] as string[],
-    models: [] as string[],
     projected: [] as unknown[],
     modes: [] as Array<{ sessionId: string; modeId: string }>,
     aborted: [] as string[],
-    archived: [] as string[],
     deleted: [] as string[],
     prompts: [] as Array<{ sessionId: string; messageID?: string; text: string; author?: unknown }>,
   }
-  const messages = new Map<string, AgentMessage[]>()
-  const config: SessionConfig = { harness: { id: "codex", access: "native" }, variant: null, agent: null }
-  let counter = 0
-  const adapter: AgentHarnessAdapter & { adapterCapabilities: readonly ["runtime-config"]; setModel(model: string): void } = {
-    adapterCapabilities: ["runtime-config"],
-    setModel(model) { calls.models.push(model) },
-    instructionChannel: "turn-system-prompt",
-    getSession: async (binding) => store.getSession(binding.sessionId) ?? null,
-    createSession: async (_directory, _title, id) => {
-      const sessionId = id ?? `ses_created_${++counter}`
-      calls.created.push(sessionId)
-      return { id: sessionId }
-    },
-    updateSession: async (binding, updates) => {
-      if (updates.time?.archived !== undefined) calls.archived.push(binding.sessionId)
-      return store.updateSession(binding.sessionId, updates)
-    },
-    getSessionConfig: async (binding) => store.getSessionConfig(binding.sessionId) ?? config,
-    updateSessionConfig: async (binding, patch) => store.updateSessionConfig(binding.sessionId, patch) ?? config,
-    deleteSession: async (binding) => {
-      calls.deleted.push(binding.sessionId)
-      store.deleteSession(binding.sessionId)
-    },
-    readHarnessCapabilities: () => ({
-      harness: "codex",
-      abort: true,
-      reconnect: false,
-      replay: true,
-      permissions: true,
-      questions: true,
-      todos: true,
-      commands: true,
-      fork: false,
-      revert: false,
-      unrevert: false,
-      configOptions: false,
-      subagents: true,
-      effortLevels: NO_HARNESS_EFFORT,
-      instructionChannel: "turn-system-prompt",
-      goals: false,
-    }),
-    executeTurn: (binding, prompt) => {
+  const surface: ModeSurface = {
+    draft: async () => ({ modes: [...MODES], appliesFrom: "next-turn" }),
+    session: async () => ({ modes: [...MODES], currentModeId: input.parentMode ?? "read-only", appliesFrom: "next-turn" }),
+  }
+  const replies = new Map<string, string>()
+  const held = new Map<string, () => void>()
+  const holding = new Set<string>()
+  const transport = new FakeTransport({
+    kind: "codex-app-server",
+    onStart: (start) => { if (!seeded.has(start.sessionId)) calls.created.push(start.sessionId) },
+    onClose: (session) => { calls.deleted.push(session.binding.sessionId) },
+    ...(input.modes === "none" ? {} : { config: modeOperations(surface, calls) }),
+    turn: async function* ({ session, turn }) {
+      const sessionId = session.binding.sessionId
       calls.prompts.push({
-        sessionId: binding.sessionId,
-        messageID: prompt.userMessageId,
-        text: prompt.parts.map((part) => (part.type === "text" ? part.text : "")).join(""),
-        author: prompt.author,
+        sessionId,
+        messageID: turn.prompt.userMessageId,
+        text: turn.prompt.parts.map((part) => (part.type === "text" ? part.text : "")).join(""),
+        ...(turn.prompt.author ? { author: turn.prompt.author } : {}),
       })
-      return (async function* () {})()
+      if (holding.has(sessionId)) await new Promise<void>((resolve) => { held.set(sessionId, resolve) })
+      const reply = replies.get(sessionId)
+      if (reply) yield { type: "text-delta", delta: reply }
+      yield { type: "finish", sessionId }
     },
-    getMessages: async (binding) => messages.get(binding.sessionId) ?? [],
-    executeCommand: async () => {},
-    listCommands: async () => [],
-    listAgents: async () => [],
-    getTodos: async () => [],
-    listPermissions: async () => [],
-    respondPermission: async () => {},
-    listQuestions: async () => [],
-    replyQuestion: async () => {},
-    rejectQuestion: async () => {},
-    applyConfig: async () => {},
-    probeConfigOptions: async () => ({ options: [] }),
-    listDraftPermissionModes: async () => ({ modes: [...MODES], appliesFrom: "next-turn" }),
-    listPermissionModes: async () => ({ modes: [...MODES], currentModeId: input.parentMode ?? "read-only", appliesFrom: "next-turn" }),
-    setPermissionMode: async (binding, modeId) => {
-      calls.modes.push({ sessionId: binding.sessionId, modeId })
-      return { modes: [...MODES], currentModeId: modeId, appliesFrom: "next-turn" }
+    cancel: async ({ session }) => {
+      calls.aborted.push(session.binding.sessionId)
+      held.get(session.binding.sessionId)?.()
+      return { execution: "terminal", cleanup: "verified_clear" }
     },
-    dispose: () => {},
-  }
-  const eventHub = createRuntimeEventHub()
-  const runtimeEvents: RuntimeEventEnvelope[] = []
-  eventHub.subscribeRuntime((event) => {
-    runtimeEvents.push(event)
   })
-  const admissions: Array<{ sessionId: string; fencingToken?: number }> = []
-  const recoveryFacts: RecoveryFacts = {
-    execution: { value: "terminal", source: "fixture", observedAt: 1, generation: "lease_1" },
-    cleanup: { value: "verified_clear", source: "fixture", observedAt: 1, generation: "lease_1" },
-    persistence: { value: "committed", source: "fixture", observedAt: 1, generation: "lease_1" },
-  }
-  const recovery = {
-    inspect: (sessionId: string) => ({
-      sessionId,
-      target: { scope: "turn" as const, workspaceId: "workspace-test", sessionId, turnId: "msg_active", ownerGeneration: "lease_1" },
-      facts: recoveryFacts,
-      health: { status: "ok" as const },
-      failures: [],
-      operations: [],
-      queued: 0,
-    }),
-    submit: async (request: { requestId: string; target: { sessionId: string } }) => {
-      calls.aborted.push(request.target.sessionId)
-      return {
-        kind: "operation" as const,
-        operation: {
-          operationId: `op_${calls.aborted.length}`, requestId: request.requestId, target: request.target as never,
-          action: "cancel_turn" as const, scopeRevision: "lease_1", attempt: 1, state: "succeeded" as const,
-          phase: "graceful_cancel" as const, phaseDeadlineAt: 2, facts: recoveryFacts, cleanupErrors: [],
-          nextActions: [], receipt: "durable" as const, createdAt: 1, updatedAt: 1,
-        },
-      }
-    },
-    read: () => undefined,
-    reportContainmentFailure: () => {},
-  }
-  const runtime = {
-    recovery,
-    turns: {
-      whenIdle: async () => ({ abandon() {} }),
-      start: async (turn: { sessionId: string; messageId: string; parts: unknown[]; admission?: { fencingToken(): number }; onAdmitted?: () => void }) => {
-        calls.prompts.push({
-          sessionId: turn.sessionId,
-          messageID: turn.messageId,
-          text: (turn.parts as Array<{ type: string; text?: string }>).map((part) => (part.type === "text" ? part.text ?? "" : "")).join(""),
-        })
-        admissions.push({ sessionId: turn.sessionId, ...(turn.admission ? { fencingToken: turn.admission.fencingToken() } : {}) })
-        turn.onAdmitted?.()
-        return {
-          sessionId: turn.sessionId,
-          userMessageId: turn.messageId,
-          assistantMessageId: "reply",
-          delivery: "start",
-          prompt: { userMessageId: turn.messageId, assistantMessageId: "reply", parts: turn.parts, agent: "build", model: { providerID: "test", modelID: "fixture" } },
-        }
-      },
-    },
-    events: { list: async () => [], subscribe: () => (async function* () {})() },
-  }
-  const { routes: sessionRoutes } = SessionRoutes(() => adapter, {
-    eventHub,
+  const host = createHostFixture({ transports: { codex: transport }, workspaceId: "workspace-test" })
+  hosts.push(host)
+  const { store, runtime } = host
+  const runtimeEvents: RuntimeEventEnvelope[] = []
+  host.eventHub.subscribeRuntime((event) => { runtimeEvents.push(event) })
+  const routes = SessionRoutes(async () => runtime, {
+    eventHub: host.eventHub,
     ...(input.policy ? { sessionAccessPolicy: input.policy } : {}),
-    ...(input.withRuntime ? { resolveRuntime: () => runtime as never } : {}),
-    resolveRecoveryOwner: () => recovery as never,
+    requestedSessionHarness: (requested) => requested ?? CODEX,
+    resolveRecoveryOwner: () => runtime.recovery,
+    resolveWorkspaceId: () => "workspace-test",
     afterCreateSession: ({ session }) => { calls.projected.push(session) },
-    resolveExecutionBinding: ({ directory, sessionId }) => ({
-      sessionId,
-      workspaceId: "workspace-test",
-      directory,
-      connectionId: "native:codex",
-      upstreamSessionId: sessionId,
-    }),
-    createSession: async (_c, directory, title, id, create) => {
-      const session = await adapter.createSession(directory, title, id)
-      store.bindSession({
-        sessionId: session.id,
-        directory,
-        ...(title ? { title } : {}),
-        ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
-        agentSessionId: session.id,
-      })
-      store.updateSessionConfig(session.id, {
-        ...config,
-        ...(create?.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
-        ...(create?.instructions ? { instructions: create.instructions } : {}),
-        ...(create?.group ? { group: create.group } : {}),
-      })
-      return session
-    },
     listSessions: async (_c, directory) => store.listSessions(directory),
     getSession: ({ sessionId }) => store.getSession(sessionId) ?? null,
-    getMessages: ({ sessionId }) => messages.get(sessionId) ?? [],
+    getMessages: ({ sessionId }) => store.getMessages(sessionId),
     listSubagents: ({ parentSessionId }) => store.listSubagents(parentSessionId),
-    afterDeleteSession: ({ sessionId }) => {
-      store.deleteSession(sessionId)
-    },
+    afterUpdateSession: ({ sessionId, updates }) => { store.updateSession(sessionId, updates) },
     childSessions: {
-      admission: { admit: (row) => store.admit(row), markPublished: (parent, id) => store.markPublished(parent, id) },
+      admit: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
       secret: () => "route-test-secret",
-      pendingWakes: () => [],
+      pendingWakes: () => store.listPendingSubagentWakes(),
       origins: {
         record: (parent, key, origin) => {
           if (!origins.has(`${parent}\0${key}`)) origins.set(`${parent}\0${key}`, origin)
@@ -229,6 +144,7 @@ function fixture(input: {
       },
     },
   })
+  cleanups.push(() => routes.dispose())
   const app = new Hono()
   if (input.identity) {
     const identity = input.identity
@@ -239,23 +155,33 @@ function fixture(input: {
       await next()
     })
   }
-  app.route("/", sessionRoutes)
-  const seedParent = (id: string, session: Partial<AgentSession> = {}) => {
-    store.bindSession({ sessionId: id, directory: DIRECTORY, agentSessionId: id, title: "Parent", ...(session.parentID ? { parentSessionId: session.parentID } : {}) })
-    store.updateSessionConfig(id, config)
+  app.route("/", routes.routes)
+  const seedParent = async (id: string) => {
+    seeded.add(id)
+    await runtime.sessions.create({ ...sessionCreate({ id, workspaceId: "workspace-test", directory: DIRECTORY, harness: CODEX }), title: "Parent" })
   }
   const create = (body: Record<string, unknown>, headers: Record<string, string> = {}) => app.request(`http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer owner-grant", ...headers },
     body: JSON.stringify(body),
   })
-  return { app, store, origins, calls, admissions, runtimeEvents, seedParent, create, messages, adapter }
+  const prompt = (sessionId: string, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    app.request(`http://localhost/session/${sessionId}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    })
+  const hold = (sessionId: string) => { holding.add(sessionId) }
+  return { app, store, runtime, origins, calls, runtimeEvents, seedParent, create, prompt, replies, surface, hold }
 }
+
+/** The id the parent's completion wake carries: the child's turn's assistant message names it. */
+const wakeTurnFor = (childId: string, childTurn: string) => `msg_wake_${childId}_${assistantMessageIdForTurn(childTurn)}`
 
 describe("POST /session with parentID", () => {
   test("publishes the persisted child relationship to the control-plane projection", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const response = await item.create({ parentID: "parent", title: "Child" })
     expect(response.status).toBe(201)
     expect(item.calls.projected).toEqual([expect.objectContaining({ parentID: "parent", title: "Child", time: expect.any(Object) })])
@@ -263,7 +189,7 @@ describe("POST /session with parentID", () => {
 
   test("a child starts under the variant, instructions and group its create named", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const group = {
       implementation: {
         harness: { id: "codex", access: "native" },
@@ -298,7 +224,7 @@ describe("POST /session with parentID", () => {
 
   test("refuses a child whose group names a slot the contract does not have", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const response = await item.create({ parentID: "parent", group: { archivist: {} } })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "session_group_invalid" } })
@@ -307,30 +233,19 @@ describe("POST /session with parentID", () => {
 
   test("refuses a ceiling when the target cannot enforce permission modes", async () => {
     const item = fixture()
-    item.seedParent("parent")
-    item.adapter.setPermissionMode = undefined
+    await item.seedParent("parent")
+    item.surface.draft = async () => NO_MODE_SURFACE
     const response = await item.create({ parentID: "parent" })
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ error: { code: "permission_ceiling_unsupported" } })
     expect(item.calls.created).toEqual([])
   })
 
-  for (
-    const [surface, hideModeSurface] of [
-      ["no permission-mode methods at all", (adapter: AgentHarnessAdapter) => {
-        adapter.listPermissionModes = undefined
-        adapter.listDraftPermissionModes = undefined
-        adapter.setPermissionMode = undefined
-      }],
-      ["a state that says it has no mode surface", (adapter: AgentHarnessAdapter) => {
-        adapter.listPermissionModes = async () => NO_MODE_SURFACE
-      }],
-    ] as const
-  ) {
+  for (const surface of ["no permission-mode operations at all", "a state that says it has no mode surface"] as const) {
     test(`a parent whose harness reports ${surface} restricts its child to nothing`, async () => {
-      const item = fixture()
-      item.seedParent("parent")
-      hideModeSurface(item.adapter)
+      const item = surface === "no permission-mode operations at all" ? fixture({ modes: "none" }) : fixture()
+      if (surface === "a state that says it has no mode surface") item.surface.session = async () => NO_MODE_SURFACE
+      await item.seedParent("parent")
 
       const response = await item.create({ parentID: "parent" })
       expect(response.status).toBe(201)
@@ -343,8 +258,9 @@ describe("POST /session with parentID", () => {
 
   test("a declared ceiling still caps a child under a parent whose harness has no mode surface", async () => {
     const item = fixture()
-    item.seedParent("parent")
-    item.adapter.listPermissionModes = async () => NO_MODE_SURFACE
+    await item.seedParent("parent")
+    const sessionModes = item.surface.session
+    item.surface.session = async (sessionId) => sessionId === "parent" ? NO_MODE_SURFACE : await sessionModes(sessionId)
 
     const child = await (await item.create({ parentID: "parent", permissionCeiling: "ask" })).json() as { id: string; permissionMode?: string }
     expect(child.permissionMode).toBe("read-only")
@@ -361,8 +277,8 @@ describe("POST /session with parentID", () => {
 
   test("refuses a ceiling when no target mode fits instead of using the harness default", async () => {
     const item = fixture()
-    item.seedParent("parent")
-    item.adapter.listDraftPermissionModes = async () => ({ modes: [MODES[3]], appliesFrom: "next-turn" })
+    await item.seedParent("parent")
+    item.surface.draft = async () => ({ modes: [MODES[3]], appliesFrom: "next-turn" })
     const response = await item.create({ parentID: "parent" })
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ error: { code: "permission_ceiling_unsupported" } })
@@ -371,7 +287,7 @@ describe("POST /session with parentID", () => {
 
   test("creates a host-owned child under the parent, admits it pending, and keeps it out of the root list", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const response = await item.create({ parentID: "parent", title: "Consult on the plan", role: "reviewer" })
     expect(response.status).toBe(201)
@@ -389,7 +305,8 @@ describe("POST /session with parentID", () => {
       label: "Consult on the plan",
       subagentType: "reviewer",
     }])
-    expect(item.runtimeEvents).toMatchObject([{ sessionId: "parent", payload: { type: "subagent-updated", subagentKey: created.subagentKey, status: "pending" } }])
+    expect(item.runtimeEvents.filter((event) => event.payload.type === "subagent-updated"))
+      .toMatchObject([{ sessionId: "parent", payload: { type: "subagent-updated", subagentKey: created.subagentKey, status: "pending" } }])
 
     for (const route of ["/session", "/experimental/session"]) {
       const roots = await (await item.app.request(`http://localhost${route}?directory=${encodeURIComponent(DIRECTORY)}&roots=true`)).json() as Array<{ id: string }>
@@ -401,7 +318,7 @@ describe("POST /session with parentID", () => {
 
   test("refuses a child of a child and a fifth active child", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent" })).json() as { id: string }
 
     const recursion = await item.create({ parentID: child.id })
@@ -417,7 +334,7 @@ describe("POST /session with parentID", () => {
 
   test("a retried clientRequestId returns the same child instead of creating another", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const first = await (await item.create({ parentID: "parent", clientRequestId: "req-1" })).json() as { id: string; subagentKey: string }
     const retry = await item.create({ parentID: "parent", clientRequestId: "req-1" })
     expect(retry.status).toBe(200)
@@ -425,7 +342,7 @@ describe("POST /session with parentID", () => {
     expect(item.calls.created).toEqual([first.id])
     expect(first.id).toMatch(/^ses_[0-9a-f]{32}$/)
 
-    item.seedParent("other")
+    await item.seedParent("other")
     const foreign = await item.create({ parentID: "other", clientRequestId: "req-1" })
     expect(foreign.status).toBe(201)
     expect(((await foreign.json()) as { id: string }).id).not.toBe(first.id)
@@ -433,7 +350,7 @@ describe("POST /session with parentID", () => {
 
   test("a retry still returns its child when all four child slots are occupied", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const first = await (await item.create({ parentID: "parent", clientRequestId: "retry-at-cap" })).json() as { id: string }
     for (let i = 0; i < 3; i++) expect((await item.create({ parentID: "parent" })).status).toBe(201)
     const retry = await item.create({ parentID: "parent", clientRequestId: "retry-at-cap" })
@@ -444,7 +361,7 @@ describe("POST /session with parentID", () => {
 
   test("concurrent creates respect the four-child cap and deduplicate retries", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const retries = await Promise.all(Array.from({ length: 3 }, () => item.create({ parentID: "parent", clientRequestId: "same" })))
     expect(retries.map((response) => response.status).sort((a, b) => a - b)).toEqual([200, 200, 201])
     expect(item.calls.created).toHaveLength(1)
@@ -455,7 +372,7 @@ describe("POST /session with parentID", () => {
 
   test("a child may equal or narrow the parent's permission mode, never widen it", async () => {
     const item = fixture({ parentMode: "read-only" })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const widened = await item.create({ parentID: "parent", permissionMode: "workspace-write" })
     expect(widened.status).toBe(403)
@@ -490,8 +407,11 @@ describe("POST /session with parentID", () => {
 
   test("archiving or deleting the parent cancels each child's turn through its own recovery owner", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent" })).json() as { id: string }
+    item.hold(child.id)
+    await item.runtime.turns.start({ sessionId: child.id, parts: [{ type: "text", text: "work" }], origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false } })
+    for (let attempt = 0; attempt < 200 && item.calls.prompts.length === 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
 
     const archived = await item.app.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`, {
       method: "PATCH",
@@ -500,7 +420,7 @@ describe("POST /session with parentID", () => {
     })
     expect(archived.status).toBe(200)
     expect(item.calls.aborted).toEqual([child.id])
-    expect(item.calls.archived).toEqual(["parent", child.id])
+    expect(item.store.getSession("parent")?.time?.archived).toBe(42)
     expect(item.store.getSession(child.id)?.time?.archived).toBe(42)
 
     const deleted = await item.app.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`, { method: "DELETE" })
@@ -511,31 +431,23 @@ describe("POST /session with parentID", () => {
 
   test("a child's finished turn wakes the idle parent through the prompt path with the child's summary", async () => {
     const item = fixture()
-    item.seedParent("parent")
+    await item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
-    item.messages.set(child.id, [{
-      info: { id: "child-reply", role: "assistant", sessionID: child.id },
-      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
-    }])
+    item.replies.set(child.id, "Ship it.")
 
-    const prompted = await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
-    })
-    expect(prompted.status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] })).status).toBe(200)
+    await settle()
 
     expect(item.calls.prompts).toMatchObject([
       { sessionId: child.id, messageID: "child-turn", text: "Review the plan" },
       {
         sessionId: "parent",
-        messageID: "msg_wake_" + child.id + "_child-reply",
+        messageID: wakeTurnFor(child.id, "child-turn"),
         text: 'Subagent "Consult" (codex) completed.\n\nShip it.',
       },
     ])
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey: child.subagentKey, status: "completed", wake: "delivered" }])
-    expect(item.runtimeEvents.map((event) => event.payload).filter((payload) => payload.type === "subagent-updated").map((payload) => payload.status ?? payload.wake))
+    expect(item.runtimeEvents.map((event) => event.payload).flatMap((payload) => payload.type === "subagent-updated" ? [payload.status ?? payload.wake] : []))
       .toEqual(["pending", "running", "completed", "delivered"])
   })
 
@@ -545,8 +457,9 @@ describe("POST /session with parentID", () => {
     expect(missing.status).toBe(404)
     expect(await missing.json()).toMatchObject({ error: { code: "parent_session_not_found" } })
 
-    const { routes: bare } = SessionRoutes(() => ({ ...({} as AgentHarnessAdapter) }), {})
-    const unsupported = await bare.request(`http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`, {
+    const bare = SessionRoutes(async () => item.runtime, { requestedSessionHarness: (requested) => requested ?? CODEX })
+    cleanups.push(() => bare.dispose())
+    const unsupported = await bare.routes.request(`http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parentID: "parent" }),
@@ -555,8 +468,6 @@ describe("POST /session with parentID", () => {
     expect(await unsupported.json()).toMatchObject({ error: { code: "child_sessions_unsupported" } })
   })
 })
-
-export { buildSession }
 
 const OWNER: EmbeddedRelayHostIdentity = {
   principal_kind: "user",
@@ -653,19 +564,17 @@ function managedPolicy(input: {
 }
 
 const CHILD_GRANT = "eyJ.child-completion-grant.sig"
-
 describe("a child created in-process under managed registration", () => {
   test("a readable parent cannot create a completion wake without current turn authority", async () => {
     let writable = false
     const { policy, calls } = managedPolicy({ parentWriteAllowed: () => writable })
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     expect((await item.create({ parentID: "parent", title: "Reader's child" })).status).toBe(403)
     expect(calls.reserved).toEqual([])
     expect(calls.registered).toEqual([])
     expect(item.calls.created).toEqual([])
-    expect(item.calls.models).toEqual([])
 
     writable = true
     expect((await item.create({ parentID: "parent", title: "Writer's child" })).status).toBe(201)
@@ -674,57 +583,38 @@ describe("a child created in-process under managed registration", () => {
 
   test("a completion wake runs as the actor that created the child and is admitted as that actor's turn", async () => {
     const { policy, calls } = managedPolicy({ turnAllowed: () => true })
-    const item = fixture({ policy, identity: OWNER, withRuntime: true })
-    item.seedParent("parent")
+    const item = fixture({ policy, identity: OWNER })
+    await item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
     expect(item.origins.get(`parent\0${child.subagentKey}`)).toEqual({
       provenance: "relay-replayed",
       actor: { actorId: "actor_owner", actorKind: "human" },
       authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
     })
-    item.messages.set(child.id, [{
-      info: { id: "child-reply", role: "assistant", sessionID: child.id },
-      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
-    }])
+    item.replies.set(child.id, "Ship it.")
 
-    expect((await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer owner-grant" },
-      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
-    })).status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }, { authorization: "Bearer owner-grant" })).status).toBe(200)
+    await settle()
 
-    const wakeTurnId = `msg_wake_${child.id}_child-reply`
+    const wakeTurnId = wakeTurnFor(child.id, "child-turn")
     expect(item.calls.prompts.map((prompt) => prompt.messageID)).toContain(wakeTurnId)
-    const producer = { sessionId: "parent", turnId: wakeTurnId, actorId: "actor_owner" }
-    expect(calls.producers).toContainEqual(expect.objectContaining(producer))
+    const producer = calls.producers.find((entry) => entry.turnId === wakeTurnId)
+    expect(producer).toMatchObject({ sessionId: "parent", actorId: "actor_owner" })
     // The turn runs behind the fence it was admitted under, not merely after it.
-    expect(item.admissions).toContainEqual({
-      sessionId: "parent",
-      fencingToken: calls.producers.find((entry) => entry.turnId === wakeTurnId)!.fencingToken,
-    })
+    expect(item.store.getSessionFencingToken("parent")).toBe(producer!.fencingToken)
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey: child.subagentKey, wake: "delivered" }])
   })
 
-  test("a child row from before origins were recorded gets no wake: nothing names who it would run as", async () => {
+  test("a child row with no recorded origin gets no wake: nothing names who it would run as", async () => {
     const { policy, calls } = managedPolicy({ turnAllowed: () => true })
-    const item = fixture({ policy, identity: OWNER, withRuntime: true })
-    item.seedParent("parent")
+    const item = fixture({ policy, identity: OWNER })
+    await item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
-    item.messages.set(child.id, [{
-      info: { id: "child-reply", role: "assistant", sessionID: child.id },
-      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
-    }])
-    // A row admitted by an earlier build: the child and its parent link are
-    // durable, the identity behind them was never written.
+    item.replies.set(child.id, "Ship it.")
     item.origins.clear()
 
-    expect((await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer owner-grant" },
-      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
-    })).status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }, { authorization: "Bearer owner-grant" })).status).toBe(200)
+    await settle()
 
     expect(item.calls.prompts.map((prompt) => prompt.sessionId)).toEqual([child.id])
     expect(calls.producers.map((producer) => producer.sessionId)).toEqual([child.id])
@@ -740,8 +630,8 @@ describe("a child created in-process under managed registration", () => {
         return { allowed: true, grant: CHILD_GRANT, expiresAt: Date.now() + 60_000 }
       },
     })
-    const item = fixture({ policy, identity: OWNER, withRuntime: true })
-    item.seedParent("parent")
+    const item = fixture({ policy, identity: OWNER })
+    await item.seedParent("parent")
 
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
     expect(calls.granted).toEqual([expect.objectContaining({
@@ -763,18 +653,11 @@ describe("a child created in-process under managed registration", () => {
     })
     expect(JSON.stringify(item.store.listSubagents("parent"))).not.toContain(CHILD_GRANT)
 
-    item.messages.set(child.id, [{
-      info: { id: "child-reply", role: "assistant", sessionID: child.id },
-      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
-    }])
-    expect((await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer owner-grant" },
-      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
-    })).status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    item.replies.set(child.id, "Ship it.")
+    expect((await item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }, { authorization: "Bearer owner-grant" })).status).toBe(200)
+    await settle()
 
-    const wakeTurnId = `msg_wake_${child.id}_child-reply`
+    const wakeTurnId = wakeTurnFor(child.id, "child-turn")
     const wake = calls.acquired.find((turn) => turn.turnId === wakeTurnId)
     expect(wake).toMatchObject({ sessionId: "parent", grant: CHILD_GRANT, actor: { actorId: "actor_owner", actorKind: "human" } })
     expect(wake).not.toHaveProperty("credential")
@@ -790,8 +673,8 @@ describe("a child created in-process under managed registration", () => {
     ]
     for (const grant of refusals) {
       const { policy, calls } = managedPolicy({ turnAllowed: () => true, grant })
-      const item = fixture({ policy, identity: OWNER, withRuntime: true })
-      item.seedParent("parent")
+      const item = fixture({ policy, identity: OWNER })
+      await item.seedParent("parent")
 
       const response = await item.create({ parentID: "parent", title: "Consult" })
       expect(response.status).toBe(503)
@@ -817,24 +700,17 @@ describe("a child created in-process under managed registration", () => {
       requireActor: false,
       grant: () => { throw new Error("a loopback create has no actor to mint for") },
     })
-    const item = fixture({ policy, withRuntime: true })
-    item.seedParent("parent")
+    const item = fixture({ policy })
+    await item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
     expect(item.origins.get(`parent\0${child.subagentKey}`)).toEqual({ provenance: "loopback-direct" })
     expect(calls.granted).toEqual([])
-    item.messages.set(child.id, [{
-      info: { id: "child-reply", role: "assistant", sessionID: child.id },
-      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
-    }])
+    item.replies.set(child.id, "Ship it.")
 
-    expect((await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
-    })).status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] })).status).toBe(200)
+    await settle()
 
-    expect(item.calls.prompts.map((prompt) => prompt.messageID)).toContain(`msg_wake_${child.id}_child-reply`)
+    expect(item.calls.prompts.map((prompt) => prompt.messageID)).toContain(wakeTurnFor(child.id, "child-turn"))
     // No actor means no lease and no producer row, which is what this machine's
     // own prompts do on this same runtime.
     expect(calls.producers).toEqual([])
@@ -844,7 +720,7 @@ describe("a child created in-process under managed registration", () => {
   test("reserves itself as the stamped owner, registers under the operation the authority minted, and answers the reserved id", async () => {
     const { policy, calls } = managedPolicy()
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const response = await item.create({ parentID: "parent", title: "Reviewer", role: "reviewer" })
     expect(response.status).toBe(201)
@@ -868,7 +744,7 @@ describe("a child created in-process under managed registration", () => {
   test("a retried clientRequestId reserves the derived id, so the retry finds the same child", async () => {
     const { policy, calls } = managedPolicy()
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const first = await (await item.create({ parentID: "parent", clientRequestId: "req-1" })).json() as { id: string }
     expect(first.id).toMatch(/^ses_[0-9a-f]{32}$/)
@@ -883,15 +759,14 @@ describe("a child created in-process under managed registration", () => {
   test("another member deriving the same child id from the shared parent is refused the child", async () => {
     const { policy, calls } = managedPolicy()
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const first = await (await item.create({ parentID: "parent", clientRequestId: "req-1" })).json() as { id: string; subagentKey: string }
     const other = await item.create({ parentID: "parent", clientRequestId: "req-1", model: { providerID: "openai", modelID: "foreign-model" } }, { "x-test-actor": "actor_other" })
 
     expect(other.status).toBe(403)
     expect(await other.text()).not.toContain(first.subagentKey)
-    // Only the admitted create reached the adapter, clearing the model it names none of.
-    expect(item.calls.models).toEqual([""])
+    expect(item.store.getSessionConfig(first.id)?.model).toBeUndefined()
     expect(calls.reserved).toHaveLength(1)
     expect(item.calls.created).toEqual([first.id])
   })
@@ -899,7 +774,7 @@ describe("a child created in-process under managed registration", () => {
   test("a child create that brings its own reservation is registered under it and reserves nothing", async () => {
     const { policy, calls } = managedPolicy({ held: { op_caller_1: "ses_reserved_by_caller" } })
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const response = await item.create(
       { parentID: "parent", id: "ses_reserved_by_caller" },
@@ -913,7 +788,7 @@ describe("a child created in-process under managed registration", () => {
   test("without a verified actor the create is refused before anything is reserved", async () => {
     const { policy, calls } = managedPolicy()
     const item = fixture({ policy })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const response = await item.create({ parentID: "parent" })
     expect(response.status).toBe(403)
@@ -938,7 +813,7 @@ describe("a child created in-process under managed registration", () => {
       reserve: async () => ({ allowed: false, status: 403, code: "session_private", message: "The owner cannot open the parent" }),
     })
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const response = await item.create({ parentID: "parent" })
     expect(response.status).toBe(403)
@@ -952,7 +827,7 @@ describe("a child created in-process under managed registration", () => {
     const { policy, calls } = managedPolicy()
     delete policy.reserveSession
     const item = fixture({ policy, identity: OWNER })
-    item.seedParent("parent")
+    await item.seedParent("parent")
 
     const response = await item.create({ parentID: "parent" })
     expect(response.status).toBe(400)
@@ -962,12 +837,11 @@ describe("a child created in-process under managed registration", () => {
   })
 })
 
-
 describe("permission mode changes retain session ceilings", () => {
   for (const child of [false, true]) {
     test(`${child ? "child" : "parentless"} session rejects widening after creation`, async () => {
       const item = fixture()
-      item.seedParent("parent")
+      await item.seedParent("parent")
       const response = await item.create(child ? { parentID: "parent" } : { permissionCeiling: "ask" })
       expect(response.status).toBe(201)
       const session = await response.json() as { id: string }
@@ -985,12 +859,11 @@ describe("permission mode changes retain session ceilings", () => {
   }
 })
 
-
 describe("prompt permission overrides respect child ceilings", () => {
   for (const endpoint of ["message", "prompt_async"]) {
     test(endpoint, async () => {
       const item = fixture()
-      item.seedParent("parent")
+      await item.seedParent("parent")
       const child = await (await item.create({ parentID: "parent" })).json() as { id: string }
       const response = await item.app.request(`http://localhost/session/${child.id}/${endpoint}?directory=${encodeURIComponent(DIRECTORY)}`, {
         method: "POST", headers: { "content-type": "application/json" },
@@ -1004,15 +877,14 @@ describe("prompt permission overrides respect child ceilings", () => {
 })
 
 /**
- * What a refused background turn must not have done. Both cases reach
+ * What a refused background turn must not have done. Every case reaches
  * `startHostTurn` through recovery, which is the path that runs with no
  * request behind it.
  */
 describe("a background turn a managed host refuses", () => {
-  function wakeOnlyHost(input: {
+  async function wakeOnlyHost(input: {
     origin?: SessionTurnOrigin
-    runtime?: unknown
-    failResolution?: "adapter" | "runtime"
+    failResolution?: boolean
     requireActor?: boolean
     /** A policy that mints deferred grants, so a relayed wake is expected to carry one. */
     grantCapable?: boolean
@@ -1020,29 +892,33 @@ describe("a background turn a managed host refuses", () => {
     beforeOrigin?: () => Promise<void>
     beforeAcquire?: () => Promise<void>
   }) {
-    const store = new MemoryRuntimeStore()
-    store.bindSession({ sessionId: "parent", directory: DIRECTORY, agentSessionId: "parent" })
-    for (const [observationId, observation] of [
-      ["create", { status: "pending", providerKind: "claxedo", providerId: "child", childSessionId: "child", transcript: { kind: "live" } }],
-      ["finished", { status: "completed", wake: "pending" }],
-    ] as const) {
-      store.admit({ parentSessionId: "parent", observation: { observationId, subagentKey: "subagent_wake", ...observation }, allocateKey: () => "unused" })
-      store.markPublished("parent", observationId)
-    }
+    const transport = new FakeTransport({ kind: "codex-app-server" })
+    const fixtureHost = createHostFixture({ transports: { codex: transport }, workspaceId: "workspace-test" })
+    hosts.push(fixtureHost)
+    const { store, runtime } = fixtureHost
+    await runtime.sessions.create(sessionCreate({ id: "parent", workspaceId: "workspace-test", directory: DIRECTORY, harness: CODEX }))
+    await runtime.subagents.admit("parent", {
+      observationId: "create", subagentKey: "subagent_wake", status: "pending", providerKind: "claxedo",
+      providerId: "child", childSessionId: "child", transcript: { kind: "live" },
+    })
+    await runtime.subagents.admit("parent", { observationId: "finished", subagentKey: "subagent_wake", status: "completed", wake: "pending" })
     const { policy, calls } = managedPolicy({
       turnAllowed: () => true,
       ...(input.requireActor === false ? { requireActor: false } : {}),
       ...(input.grantCapable ? { grant: () => { throw new Error("a wake redeems a grant; it never mints one") } } : {}),
     })
-    const resolved = { adapters: 0, runtimes: 0 }
+    const resolved = { runtimes: 0 }
     const released: boolean[] = []
+    const child = { id: "child", parentID: "parent", directory: DIRECTORY, time: { created: 1, updated: 1 } } as AgentSession
     const host = SessionRoutes(
-      () => {
-        resolved.adapters += 1
-        if (input.failResolution === "adapter") throw new Error("adapter setup failed")
-        return {} as never
+      async (): Promise<AgentRuntime> => {
+        resolved.runtimes += 1
+        if (input.failResolution) throw new Error("runtime setup failed")
+        return runtime
       },
       {
+        eventHub: fixtureHost.eventHub,
+        requestedSessionHarness: (requested) => requested ?? CODEX,
         sessionAccessPolicy: {
           ...policy,
           acquireTurn: async (turn) => {
@@ -1054,16 +930,13 @@ describe("a background turn a managed host refuses", () => {
             return policy.releaseTurn!(turn)
           },
         },
-        resolveRuntime: () => {
-          resolved.runtimes += 1
-          if (input.failResolution === "runtime") throw new Error("runtime setup failed")
-          return input.runtime as never
-        },
         listSubagents: ({ parentSessionId }) => store.listSubagents(parentSessionId),
-        getSession: ({ sessionId }) => (sessionId === "parent" ? store.getSession("parent") : { id: "child", parentID: "parent", directory: DIRECTORY, time: { created: 1, updated: 1 } }),
-        getMessages: () => [{ info: { id: "child-reply", role: "assistant" as const, sessionID: "child" }, parts: [] }],
+        getSession: ({ sessionId }) => (sessionId === "parent" ? store.getSession("parent") ?? null : child),
+        getMessages: ({ sessionId }) => sessionId === "child"
+          ? [{ info: { id: "child-reply", role: "assistant" as const, sessionID: "child" }, parts: [] }] as never
+          : store.getMessages(sessionId),
         childSessions: {
-          admission: { admit: (row) => store.admit(row), markPublished: (parent, id) => store.markPublished(parent, id) },
+          admit: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
           secret: () => "wake-only-secret",
           pendingWakes: () => [{ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY }],
           origins: {
@@ -1076,8 +949,11 @@ describe("a background turn a managed host refuses", () => {
         },
       },
     )
-    return { host, store, calls, resolved, released }
+    return { host, store, calls, resolved, released, transport }
   }
+
+  const offer = (host: { routes: { request: Hono["request"] } }) =>
+    host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
 
   test("disposal stops wake admission and waits for the offer already choosing one", async () => {
     // The teardown shape: a child settles as the workspace begins closing. The
@@ -1085,32 +961,27 @@ describe("a background turn a managed host refuses", () => {
     // provider after that nor still be running when dispose returns.
     let releaseRead = () => {}
     const reading = new Promise<void>((resolve) => { releaseRead = resolve })
-    const item = wakeOnlyHost({
-      origin: { provenance: "loopback-direct" },
-      runtime: { turns: {} },
-      requireActor: false,
-      beforeOrigin: () => reading,
-    })
+    const item = await wakeOnlyHost({ origin: { provenance: "loopback-direct" }, requireActor: false, beforeOrigin: () => reading })
 
-    const offered = item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
+    const offered = offer(item.host)
     await new Promise((resolve) => setTimeout(resolve, 5))
     const disposed = item.host.dispose()
     releaseRead()
     await Promise.all([offered, disposed])
 
-    expect(item.resolved).toEqual({ adapters: 0, runtimes: 0 })
+    expect(item.resolved).toEqual({ runtimes: 0 })
     expect(item.calls.producers).toEqual([])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
   })
 
   test("a wake offered after disposal is refused before it asks for a provider", async () => {
-    const item = wakeOnlyHost({ origin: { provenance: "loopback-direct" }, runtime: { turns: {} }, requireActor: false })
+    const item = await wakeOnlyHost({ origin: { provenance: "loopback-direct" }, requireActor: false })
     await item.host.dispose()
 
-    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await offer(item.host)
+    await settle()
 
-    expect(item.resolved).toEqual({ adapters: 0, runtimes: 0 })
+    expect(item.resolved).toEqual({ runtimes: 0 })
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
   })
 
@@ -1118,7 +989,7 @@ describe("a background turn a managed host refuses", () => {
     let entered!: () => void, release!: () => void
     const acquiring = new Promise<void>(resolve => { entered = resolve })
     const waiting = new Promise<void>(resolve => { release = resolve })
-    const item = wakeOnlyHost({
+    const item = await wakeOnlyHost({
       origin: {
         provenance: "relay-replayed",
         actor: { actorId: "owner", actorKind: "human" },
@@ -1126,26 +997,26 @@ describe("a background turn a managed host refuses", () => {
       },
       beforeAcquire: async () => { entered(); await waiting },
     })
-    const offered = item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
+    const offered = offer(item.host)
     await acquiring
     let finished = false
     const closing = item.host.dispose().then(() => { finished = true })
     expect(finished).toBe(false)
     release()
     await Promise.all([offered, closing])
-    expect(item.resolved).toEqual({ adapters: 0, runtimes: 0 })
+    expect(item.resolved).toEqual({ runtimes: 0 })
     expect(item.calls.producers).toHaveLength(1)
     expect(item.released).toEqual([true])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
   })
 
-  test("a wake with no identity resolves no adapter and no runtime, so nothing is created for a turn that will not run", async () => {
-    const item = wakeOnlyHost({ runtime: { turns: {} } })
+  test("a wake with no identity resolves no runtime, so nothing is created for a turn that will not run", async () => {
+    const item = await wakeOnlyHost({})
 
-    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await offer(item.host)
+    await settle()
 
-    expect(item.resolved).toEqual({ adapters: 0, runtimes: 0 })
+    expect(item.resolved).toEqual({ runtimes: 0 })
     expect(item.calls.producers).toEqual([])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
     await item.host.dispose()
@@ -1155,19 +1026,19 @@ describe("a background turn a managed host refuses", () => {
     // The row remembers a machine-user admission. That is not a standing
     // permission: the policy in front of the runtime now is what decides, and
     // one that admits only verified actors has nobody to attribute this to.
-    const strict = wakeOnlyHost({ origin: { provenance: "loopback-direct" }, runtime: { turns: {} } })
+    const strict = await wakeOnlyHost({ origin: { provenance: "loopback-direct" } })
 
-    await strict.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await offer(strict.host)
+    await settle()
 
     expect(strict.calls.producers).toEqual([])
     expect(strict.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
     await strict.host.dispose()
 
     // The same row on the daemon shape it was recorded under is admitted.
-    const daemon = wakeOnlyHost({ origin: { provenance: "loopback-direct" }, runtime: { turns: {} }, requireActor: false })
-    await daemon.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    const daemon = await wakeOnlyHost({ origin: { provenance: "loopback-direct" }, requireActor: false })
+    await offer(daemon.host)
+    await settle()
 
     expect(daemon.resolved.runtimes).toBeGreaterThan(0)
     expect(daemon.calls.producers).toEqual([])
@@ -1178,31 +1049,29 @@ describe("a background turn a managed host refuses", () => {
     // A row from before grants were recorded, or one whose mint was skipped.
     // The stored actor string is not proof; on a plane that hands out grants,
     // the grant is the only thing a background turn may present.
-    const item = wakeOnlyHost({
+    const item = await wakeOnlyHost({
       origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
-      runtime: { turns: {} },
       grantCapable: true,
     })
 
-    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await offer(item.host)
+    await settle()
 
     expect(item.calls.acquired).toEqual([])
     expect(item.calls.producers).toEqual([])
-    expect(item.resolved).toEqual({ adapters: 0, runtimes: 0 })
+    expect(item.resolved).toEqual({ runtimes: 0 })
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
     await item.host.dispose()
   })
 
   test("a relayed origin that carries a grant presents it to the authority in place of the credential it no longer has", async () => {
-    const item = wakeOnlyHost({
+    const item = await wakeOnlyHost({
       origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" }, grant: CHILD_GRANT },
-      runtime: undefined,
       grantCapable: true,
     })
 
-    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await offer(item.host)
+    await settle()
 
     expect(item.calls.acquired).toEqual([expect.objectContaining({ sessionId: "parent", turnId: "msg_wake_child_child-reply", grant: CHILD_GRANT })])
     expect(item.calls.acquired[0]).not.toHaveProperty("credential")
@@ -1210,38 +1079,19 @@ describe("a background turn a managed host refuses", () => {
     await item.host.dispose()
   })
 
-  test("an identified wake on a host with no runtime releases its lease instead of running unfenced", async () => {
-    const item = wakeOnlyHost({
-      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
-      runtime: undefined,
-    })
-
-    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    // The authority admitted the turn, so the fence exists; with nothing to
-    // fence it is handed back rather than left open behind an adapter-only run.
-    expect(item.calls.producers).toMatchObject([{ sessionId: "parent" }])
-    expect(item.released).toEqual([true])
-    expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
-    await item.host.dispose()
-  })
-
   test("provider setup failure returns the acquired wake lease to the authority", async () => {
-    for (const failResolution of ["adapter", "runtime"] as const) {
-      const item = wakeOnlyHost({
-        origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
-        failResolution,
-      })
-      try {
-        await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
-        await new Promise((resolve) => setTimeout(resolve, 20))
-        expect(item.calls.producers).toHaveLength(1)
-        expect(item.released).toEqual([true])
-        expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
-      } finally {
-        await item.host.dispose()
-      }
+    const item = await wakeOnlyHost({
+      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
+      failResolution: true,
+    })
+    try {
+      await offer(item.host)
+      await settle()
+      expect(item.calls.producers).toHaveLength(1)
+      expect(item.released).toEqual([true])
+      expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
+    } finally {
+      await item.host.dispose()
     }
   })
 })

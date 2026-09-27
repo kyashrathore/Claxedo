@@ -4,7 +4,8 @@ import os from "os"
 import path from "path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
-import { NO_HARNESS_EFFORT, type ConnectionProvider, type HarnessEffortLevels } from "@claxedo/agent-sdk-runtime"
+import type { HarnessEffortLevels } from "@claxedo/agent-sdk-runtime"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -49,45 +50,27 @@ function fixtureProvider(input: { offeredModelId: string; effortLevels?: Harness
   const created: Created[] = []
   const turns: string[] = []
   const prompts: (readonly unknown[])[] = []
-  const provider: ConnectionProvider<Record<string, never>> = {
+  const provider = fakeConnectionProvider({
     providerKey: "tasks-fixture-provider",
-    validateConfig: () => ({}),
-    project: () => ({ label: "Tasks fixture", readiness: "ready", capabilities }),
-    resolve: () => ({ config: {} }),
-    createAdapter: () => ({
-      sessionConfigOwner: "runtime",
-      instructionChannel: "turn-system-prompt" as const,
-      async createSession(_directory, _title, id, options) {
-        created.push({ id: id!, ...(options?.instructions ? { instructions: options.instructions } : {}) })
-        return { id: id!, agentSessionId: `upstream-${id}` }
-      },
-      async getSession() { return null },
-      async getMessages() { return [] },
-      async updateSession() { return null },
-      async deleteSession() {},
-      async getSessionConfig() { throw new Error("runtime-owned config") },
-      async updateSessionConfig() { throw new Error("runtime-owned config") },
-      readHarnessCapabilities: () => ({
-        ...capabilities,
-        goals: false,
-        harness: "tasks-fixture",
-        effortLevels: NO_HARNESS_EFFORT,
-        instructionChannel: "turn-system-prompt" as const,
-        modelSelection: {
-          status: "optional" as const,
-          models: [{ providerId: MODEL.providerID, modelId: input.offeredModelId, name: "Fixture" }],
-        },
+    label: "Tasks fixture",
+    capabilities,
+    transport: () => new FakeTransport({
+      capabilities: {
+        instructionChannel: "turn-system-prompt",
+        modelSelection: { status: "optional", models: [{ providerId: MODEL.providerID, modelId: input.offeredModelId, name: "Fixture" }] },
         ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
-      }),
-      async *executeTurn(binding, prompt) {
-        if (prompt.userMessageId) turns.push(prompt.userMessageId)
-        prompts.push(prompt.parts)
-        yield { type: "text-delta" as const, delta: "ack" }
-        yield { type: "finish" as const, sessionId: binding.sessionId }
       },
-      dispose() {},
+      onStart: (start) => {
+        created.push({ id: start.sessionId, ...(start.instructions ? { instructions: start.instructions } : {}) })
+      },
+      turn: async function* ({ session, turn }) {
+        turns.push(turn.userMessageId)
+        prompts.push(turn.prompt.parts)
+        yield { type: "text-delta", delta: "ack" }
+        yield { type: "finish", sessionId: session.binding.sessionId }
+      },
     }),
-  }
+  })
   return { provider, created, turns, prompts }
 }
 

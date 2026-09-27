@@ -4,6 +4,7 @@ import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
 import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 import { createWorkspaceRuntimeJwtManagementAuth, WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 const target = { workspaceId: "ws_checkpoint", hostId: "host_checkpoint" }
 const issuer = "checkpoint-test-supervisor"
@@ -16,6 +17,7 @@ async function fixture() {
   let currentRole: "viewer" | "editor" | "admin" | "owner" | undefined = "admin"
   const asked: string[] = []
   const runtime = createWorkspaceRuntimeApp({
+    placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     managementTarget: target,
     managementAuth: createWorkspaceRuntimeJwtManagementAuth({ key: pair.publicKey, issuer, audience }),

@@ -18,6 +18,17 @@ export type ConnectionRuntimeStatus = {
 
 export type HarnessConnectionCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection">
 
+/** An operator-configured connection as the control plane stores it; `config` is readable only by its provider. */
+export type HarnessConnectionDescriptor<TConfig = unknown> = {
+  connectionId: string
+  providerKey: string
+  configRevision: number
+  enabled: boolean
+  config: TConfig
+  /** Opaque host-persistence references. Raw secret values never enter config. */
+  secretRefs?: Readonly<Record<string, string>>
+}
+
 /** Public discovery metadata. Provider configuration and credentials stay on the host. */
 export type HarnessConnectionRef = {
   connectionId: string

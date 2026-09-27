@@ -37,4 +37,4 @@ export {
   resolveEffectiveMcp,
   resolveUserMcp,
   type ResolvedMcpServer,
-} from "./mcp-resolver"
+} from "./mcp/resolver"

@@ -11,7 +11,6 @@ function task(value: unknown): ClaudeTrackedTask | undefined {
   return id && description && status ? { id, description, status } : undefined
 }
 
-/** Apply successful native results, never proposed tool input or model prose. */
 export function applyClaudeTaskResult(
   current: Record<string, ClaudeTrackedTask>,
   name: string,
@@ -23,7 +22,6 @@ export function applyClaudeTaskResult(
     const created = asRecord(result.task)
     const id = text(created?.id)
     const description = text(created?.subject)
-    // Native TaskCreate always creates a pending task; its output assigns the ID.
     if (id && description) return { ...current, [id]: { id, description, status: "pending" } }
   }
   if (name === "TaskList" && Array.isArray(result.tasks)) {

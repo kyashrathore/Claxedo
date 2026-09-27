@@ -2,151 +2,135 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import type { StartInput, TransportConfigUpdate } from "@claxedo/harness/contract"
 import { createWorkspaceRuntimeApp } from "../server"
-import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import type { RuntimeSnapshot } from "../routes/config"
+import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { withWorkspaceTarget } from "../target"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 /**
- * What a config push leaves the harness holding.
+ * What a config push leaves a live session holding.
  *
  * The snapshot keys its projections by registry provider id (`cursor-sdk`,
- * `claude-sdk`, `codex-app-server`) and every driver's `applyConfig` reads them
- * that way. A second, slot-shaped path beside it can only disagree, and when it
- * disagrees the harness runs on whatever login the machine holds — which is the
- * one outcome the operator's account selection exists to prevent.
- *
- * Cursor is the readable one: its backend URL is a process environment
- * variable the driver writes when the config is applied.
+ * `claude-sdk`, `codex-app-server`) and every transport reads them that way. A
+ * second, slot-shaped path beside it can only disagree, and when it disagrees
+ * the harness runs on whatever login the machine holds — which is the one
+ * outcome the operator's account selection exists to prevent.
  */
-const BACKEND_URL = "CURSOR_BACKEND_URL"
-const previousBackendUrl = process.env[BACKEND_URL]
 let directory = ""
+/** Fixed so two snapshots differ by exactly what a test changed. */
+const EXPIRES_AT = Date.now() + 60 * 60 * 1000
 
-function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
+function snapshot(overrides: Partial<RuntimeSnapshot> = {}, baseUrl = "http://127.0.0.1:2595/bindings/cursor1"): RuntimeSnapshot {
   return {
     version: 4,
     mcp: {},
-    connections: [],
+    connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
     auth: {
       "cursor-sdk": {
-        baseUrl: "http://127.0.0.1:2595/bindings/cursor1",
+        baseUrl,
         placeholder: "cursor-placeholder",
         authMode: "bearer",
-        expiresAt: Date.now() + 60 * 60 * 1000,
+        expiresAt: EXPIRES_AT,
       },
     },
     ...overrides,
   }
 }
 
+const selected = { defaultHarness: { kind: "connection", connectionId: "fixture" } } as const
+
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-projection-"))
-  delete process.env[BACKEND_URL]
 })
 
 afterEach(async () => {
   await fs.rm(directory, { recursive: true, force: true })
-  if (previousBackendUrl === undefined) delete process.env[BACKEND_URL]
-  else process.env[BACKEND_URL] = previousBackendUrl
 })
 
-test("a push that selects no harness leaves the live adapter's binding alone", async () => {
-  const runtime = createWorkspaceRuntimeApp({
-    target: { workspaceId: "ws_1", directory },
-    storeRoot: directory,
-    exposure: loopbackWorkspaceRuntimeExposure(),
+function runtimeApp() {
+  const starts: StartInput[] = []
+  const configures: TransportConfigUpdate[] = []
+  const transport = new FakeTransport({
+    onStart: (start) => { starts.push(start) },
+    configure: (update) => { configures.push(update); return { state: "applied" } },
   })
+  const target = { workspaceId: "ws_1", directory }
+  const runtime = createWorkspaceRuntimeApp({
+    placement: loopbackMachineLoginPolicy(),
+    target,
+    storeRoot: directory,
+    harnessStateRoot: path.join(directory, "harness"),
+    exposure: loopbackWorkspaceRuntimeExposure(),
+    connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => transport })],
+  })
+  const createSession = (id: string) => withWorkspaceTarget(target, () => runtime.app.request(
+    `http://runtime.test/session?directory=${encodeURIComponent(directory)}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) },
+  ))
+  return { runtime, starts, configures, createSession }
+}
+
+test("a session starts on the projection under its registry id", async () => {
+  const f = runtimeApp()
   try {
-    await runtime.host.apply(snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }))
-    expect(process.env[BACKEND_URL]).toBe("http://127.0.0.1:2595/bindings/cursor1")
-
-    // Same projections, no harness named. The adapter is still live and still
-    // bound; nothing here says otherwise.
-    await runtime.host.apply(snapshot())
-
-    expect(process.env[BACKEND_URL]).toBe("http://127.0.0.1:2595/bindings/cursor1")
+    await f.runtime.host.apply(snapshot(selected))
+    expect((await f.createSession("s1")).status).toBe(201)
+    expect(f.starts[0]?.credentials.providers).toEqual({ "cursor-sdk": expect.objectContaining({ baseUrl: "http://127.0.0.1:2595/bindings/cursor1" }) })
   } finally {
-    await runtime.host.dispose()
+    await f.runtime.host.dispose()
+  }
+})
+
+test("a push that selects no harness leaves the live session's binding alone", async () => {
+  const f = runtimeApp()
+  try {
+    await f.runtime.host.apply(snapshot(selected))
+    expect((await f.createSession("s1")).status).toBe(201)
+
+    // Same projections, no harness named. The session is still live and still
+    // bound; nothing here says otherwise.
+    await f.runtime.host.apply(snapshot())
+
+    expect(f.configures).toEqual([])
+  } finally {
+    await f.runtime.host.dispose()
   }
 })
 
 test("a snapshot carrying an unreadable projection leaves the binding already in force", async () => {
-  const runtime = createWorkspaceRuntimeApp({
-    target: { workspaceId: "ws_1", directory },
-    storeRoot: directory,
-    exposure: loopbackWorkspaceRuntimeExposure(),
-  })
+  const f = runtimeApp()
   try {
-    await runtime.host.apply(snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }))
-    expect(process.env[BACKEND_URL]).toBe("http://127.0.0.1:2595/bindings/cursor1")
+    await f.runtime.host.apply(snapshot(selected))
+    expect((await f.createSession("s1")).status).toBe(201)
 
     const rejected = {
-      ...snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }),
+      ...snapshot(selected),
       auth: { "cursor-sdk": { baseUrl: "", placeholder: "", authMode: "bearer", expiresAt: 0 } },
     } as unknown as RuntimeSnapshot
-    await expect(runtime.host.apply(rejected)).rejects.toThrow("Invalid runtime config snapshot")
+    await expect(f.runtime.host.apply(rejected)).rejects.toThrow("Invalid runtime config snapshot")
 
-    expect(process.env[BACKEND_URL]).toBe("http://127.0.0.1:2595/bindings/cursor1")
+    expect(f.configures).toEqual([])
   } finally {
-    await runtime.host.dispose()
+    await f.runtime.host.dispose()
   }
 })
 
-test("a push that selects the harness gives it the projection under its registry id", async () => {
-  const runtime = createWorkspaceRuntimeApp({
-    target: { workspaceId: "ws_1", directory },
-    storeRoot: directory,
-    exposure: loopbackWorkspaceRuntimeExposure(),
-  })
+test("a changed projection reaches each live session once, under its registry id", async () => {
+  const f = runtimeApp()
   try {
-    await runtime.host.apply(snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }))
+    await f.runtime.host.apply(snapshot(selected))
+    expect((await f.createSession("s1")).status).toBe(201)
 
-    expect(process.env[BACKEND_URL]).toBe("http://127.0.0.1:2595/bindings/cursor1")
-  } finally {
-    await runtime.host.dispose()
-  }
-})
-
-test("a configurable adapter is given its projections once, through applyConfig alone", async () => {
-  const applied: unknown[] = []
-  const host = createWorkspaceHost({
-    target: { workspaceId: "ws_1", directory },
-    storeRoot: directory,
-    harnesses: [{
-      match: (harness: { id: string }) => harness.id === "cursor",
-      create: () => ({
-        adapterCapabilities: ["runtime-config"] as const,
-        setModel() {},
-        async applyConfig(config: unknown) { applied.push(config) },
-        sessionConfigOwner: "runtime" as const,
-        async createSession(_d: string, _t: string | undefined, id?: string) {
-          return { id: id ?? "s1", agentSessionId: "upstream-1" }
-        },
-        async getSession() { return null },
-        async getMessages() { return [] },
-        async updateSession() { return null },
-        async deleteSession() {},
-        async getSessionConfig() { throw new Error("runtime-owned config") },
-        async updateSessionConfig() { throw new Error("runtime-owned config") },
-        readHarnessCapabilities: () => ({
-          abort: false, reconnect: false, replay: true, permissions: false, questions: false,
-          todos: false, commands: false, fork: false, revert: false, unrevert: false,
-          configOptions: false, subagents: false, goals: false, harness: "cursor",
-        }),
-        async *executeTurn() {},
-        dispose() {},
-      }),
-    }] as never,
-  })
-  try {
-    await host.apply(snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }))
+    await f.runtime.host.apply(snapshot(selected, "http://127.0.0.1:2595/bindings/cursor2"))
 
     // Once, and by registry provider id: a second delivery path keyed by
     // harness slot would disagree with this one about every brokered account.
-    expect(applied).toHaveLength(1)
-    expect((applied[0] as { auth: Record<string, unknown> }).auth).toHaveProperty("cursor-sdk")
+    expect(f.configures).toHaveLength(1)
+    expect(f.configures[0]?.credentials?.providers).toEqual({ "cursor-sdk": expect.objectContaining({ baseUrl: "http://127.0.0.1:2595/bindings/cursor2" }) })
   } finally {
-    await host.dispose()
+    await f.runtime.host.dispose()
   }
 })

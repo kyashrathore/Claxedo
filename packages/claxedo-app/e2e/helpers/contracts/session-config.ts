@@ -234,12 +234,10 @@ export function parseSessionConfigPatch(rawBody: unknown, url: string): SessionC
 export const SESSION_CONFIG_PATCH_SUCCESS_STATUS = 200
 
 /**
- * The success BODY is a full `SessionConfig`, not an acknowledgement. It is whatever
- * `opts.updateSessionConfig(...)` / `adapter.updateSessionConfig(...)` returns
- * (`session-core.ts:568-570`), and both are typed `Promise<SessionConfig>`
- * (`session-core.ts:133-139`, `agent-sdk-runtime/src/adapter-contract.ts:55`).
+ * The success BODY is a full `SessionConfig`, not an acknowledgement: whatever the
+ * runtime host's `sessions.updateConfig` persisted.
  *
- * `SessionConfig` (`agent-sdk-runtime/src/index.ts:143-148`) is:
+ * `SessionConfig` (`agent-runtime-contract`) is:
  *   { harness: { id, access, connection? }; model?: PromptModel; variant?: string | null; agent?: string | null }
  *
  * Note `harness` is REQUIRED on the response even though it is optional on the update —

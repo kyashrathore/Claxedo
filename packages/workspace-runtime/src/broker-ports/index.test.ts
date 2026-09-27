@@ -7,7 +7,7 @@ import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases } fro
 import type { PendingRequest } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
 import { RuntimeStore } from "../store"
-import { createRuntimeEventHub } from "../runtime-event-hub"
+import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { createStoreBrokerPorts, type StoreBrokerPortOptions } from "./index"
 
 const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }

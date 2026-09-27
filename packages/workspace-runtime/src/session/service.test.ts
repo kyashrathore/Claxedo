@@ -1,254 +1,221 @@
-import { describe, expect, it } from "bun:test"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { AgentRuntimeContractError, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { afterEach, describe, expect, it } from "bun:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import type { SessionHarness } from "@claxedo/agent-runtime-contract"
+import type { TurnOrigin } from "@claxedo/harness/contract"
+import type { CompatEnvelope } from "../compat-events"
+import { createStoreBrokerPorts } from "../broker-ports/index"
+import { createAgentRuntime, type AgentRuntime, type HarnessHandle, type LaunchComposer } from "../host/runtime"
+import { createRuntimeEventHub } from "../projection/runtime-event-hub"
+import { RuntimeStore } from "../store"
+import { FakeTransport, type FakeTransportOptions } from "../test-support/fake-transport"
 import {
-  buildAssistantMessage,
-  buildUserMessage,
-  messagePartUpdated,
-  messageUpdated,
-  type CompatEnvelope,
-} from "../compat-events"
-import {
-  admitSessionPromptTurn,
   parseSessionPromptBody,
   runRuntimePromptTurn,
-  runSessionPromptTurn,
   sessionPromptReply,
-  sessionTurnRefusal,
-  type SessionPromptTurnInput,
 } from "./service"
 
-function adapter(input: {
-  executeTurn?: NonNullable<AgentHarnessAdapter["executeTurn"]>
-  getMessages?: AgentHarnessAdapter["getMessages"]
-  getSessionConfig?: AgentHarnessAdapter["getSessionConfig"]
-}) {
-  return {
-    instructionChannel: "turn-system-prompt",
-    executeTurn: input.executeTurn ?? (async function* () {}) as NonNullable<AgentHarnessAdapter["executeTurn"]>,
-    getMessages: input.getMessages ?? (async () => []),
-    getSessionConfig: input.getSessionConfig ?? (async () => ({
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
-      variant: "default",
-      agent: "build",
-    })),
-  } as unknown as AgentHarnessAdapter
+const WORKSPACE = "workspace-test"
+const DIRECTORY = "/work"
+const HARNESS: SessionHarness = { id: "fake", access: "connection" }
+const ORIGIN: TurnOrigin = { actor: { kind: "machine-owner" }, via: "loopback", reissued: false }
+
+type Host = {
+  store: RuntimeStore
+  runtime: AgentRuntime
+  transport: FakeTransport
+  eventHub: ReturnType<typeof createRuntimeEventHub>
 }
 
-const executionBinding: AgentExecutionBinding = {
-  sessionId: "s1",
-  workspaceId: "workspace-test",
-  directory: "/work",
-  connectionId: "native:codex",
-  upstreamSessionId: "s1",
-}
+const hosts: Array<{ host: Host; root: string }> = []
 
-/** The order every route uses: admit the turn, then run what admission produced. */
-async function promptTurn(
-  input: Omit<SessionPromptTurnInput, "admitted"> & { binding?: AgentExecutionBinding },
-) {
-  const { binding = executionBinding, ...rest } = input
-  const admitted = await admitSessionPromptTurn({
-    adapter: rest.adapter,
-    binding,
-    sessionId: rest.sessionId,
-    directory: rest.directory,
-    body: rest.body,
+/** The real runtime host over a durable store, with the scripted transport behind it. */
+function host(options: FakeTransportOptions = {}): Host {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-service-"))
+  const store = new RuntimeStore(root)
+  const eventHub = createRuntimeEventHub()
+  const transport = new FakeTransport(options)
+  const ownerGeneration = "owner-1"
+  const handle: HarnessHandle = { key: "fake", runner: HARNESS, kind: transport.kind, transport, locality: "local", retired: () => false, pin: () => () => {} }
+  const launch: LaunchComposer = {
+    workspaceId: WORKSPACE,
+    projection: () => ({ generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }),
+    credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "g1" }),
+  }
+  const ports = createStoreBrokerPorts(store, {
+    ownerGeneration,
+    patternEvaluator: async () => {},
+    publishers: eventHub,
+    reportOwnerFailure: (sessionId, error) => runtime.recovery.reportOwnerFailure(sessionId, error),
   })
-  return runSessionPromptTurn({ ...rest, admitted })
+  const runtime = createAgentRuntime({
+    store, eventHub, ports, ownerGeneration, launch,
+    transports: { forHarness: async () => handle, composed: () => [handle] },
+    identity: { workspaceId: WORKSPACE },
+  })
+  const created = { store, runtime, transport, eventHub }
+  hosts.push({ host: created, root })
+  return created
 }
+
+function createSession(fixture: Host, id: string, config: { variant?: string | null } = {}) {
+  return fixture.runtime.sessions.create({
+    id, workspaceId: WORKSPACE, directory: DIRECTORY, harness: HARNESS, owner: ORIGIN.actor, origin: ORIGIN, ...config,
+  })
+}
+
+afterEach(async () => {
+  for (const { host: fixture, root } of hosts.splice(0)) {
+    await fixture.runtime.dispose()
+    fixture.store.close()
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
 
 describe("session service", () => {
-  it("rejects a binding for another session before adapter execution", async () => {
-    let executed = false
-    const fixture = adapter({
-      async *executeTurn() {
-        executed = true
-      },
+  it("refuses the turn before the transport runs when the session config cannot be read", async () => {
+    const fixture = host()
+    // A session row without its config row: the shape a create leaves behind
+    // when it fails between binding the session and recording its config.
+    fixture.store.bindSession({
+      sessionId: "s1", workspaceId: WORKSPACE, directory: DIRECTORY, connectionId: "connection:fake",
+      upstreamSessionId: "s1", agentSessionId: "s1", createdAt: 1,
     })
+    const events: CompatEnvelope[] = []
 
-    await expect(promptTurn({
-      adapter: fixture,
-      binding: { ...executionBinding, sessionId: "another-session" },
+    await expect(runRuntimePromptTurn({
+      runtime: fixture.runtime,
       sessionId: "s1",
-      directory: "/work",
-      body: { parts: [] },
-      publishGlobal: () => {},
-    })).rejects.toThrow("execution binding sessionId mismatch")
-    expect(executed).toBe(false)
-  })
-
-  it("refuses the turn with an upstream error when the session config cannot be read", async () => {
-    let executed = false
-    const fixture = adapter({
-      getSessionConfig: async () => {
-        throw new Error("session config store unreachable")
-      },
-      async *executeTurn() {
-        executed = true
-      },
-    })
-
-    const refusal = await promptTurn({
-      adapter: fixture,
-      binding: executionBinding,
-      sessionId: "s1",
-      directory: "/work",
+      directory: DIRECTORY,
       body: { parts: [], agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture" },
-      publishGlobal: () => {},
-    }).then(() => undefined, (error: unknown) => error)
+      origin: ORIGIN,
+      publishGlobal: (event) => events.push(event),
+    })).rejects.toThrow("Session s1 has no runtime config")
 
-    expect(refusal).toBeInstanceOf(AgentRuntimeContractError)
-    expect((refusal as AgentRuntimeContractError).detail).toEqual({
-      code: "upstream_error",
-      connectionId: "native:codex",
-      message: "Session s1 configuration is unavailable, so its instructions cannot be applied: session config store unreachable",
-    })
-    // The refusal code is what frees the message id for a retry: without it the
-    // failure is indistinguishable from one raised while the harness was running.
-    expect(sessionTurnRefusal(refusal)).toBe("session_configuration_unavailable")
-    expect(executed).toBe(false)
+    expect(fixture.transport.starts).toEqual([])
+    expect(fixture.transport.turns).toEqual([])
+    // The refusal reaches the stream as the session's error, so a client
+    // waiting on the turn learns why nothing followed its prompt.
+    expect(events).toMatchObject([
+      { directory: DIRECTORY, payload: { type: "session.error", properties: { sessionID: "s1" } } },
+    ])
   })
 
   it("runs a prompt turn without a Hono route", async () => {
-    const events: CompatEnvelope[] = []
-    const turn = await promptTurn({
-      binding: executionBinding,
-      adapter: adapter({
-        async *executeTurn(binding, input) {
-          const id = binding.sessionId
-          const directory = binding.directory
-          yield messageUpdated(buildUserMessage({
-            id: input.userMessageId!,
-            sessionID: id,
-            agent: input.agent,
-            model: input.model,
-          }))
-          yield messagePartUpdated({
-            id: "msg-user-part-0",
-            sessionID: id,
-            messageID: input.userMessageId!,
-            type: "text",
-            text: "hello",
-          })
-          yield messageUpdated(buildAssistantMessage({
-            id: input.assistantMessageId,
-            sessionID: id,
-            parentID: input.userMessageId ?? id,
-            agent: input.agent,
-            model: input.model,
-            directory: directory ?? "",
-          }))
-        },
-        getMessages: async () => [{
-          info: { id: "msg-user_r", sessionID: "s1", role: "assistant" },
-          parts: [],
-        }],
-      }),
-      sessionId: "s1",
-      directory: "/work",
-      body: {
-        messageID: "msg-user",
-        parts: [{ type: "text", text: "hello" }],
+    const fixture = host({
+      async *turn({ session }) {
+        yield { type: "text-delta", delta: "hello" }
+        yield { type: "finish", sessionId: session.binding.sessionId }
       },
-      publishGlobal: (event) => events.push(event),
     })
+    await createSession(fixture, "s1")
+    const stream: CompatEnvelope[] = []
+    const unsubscribe = fixture.eventHub.subscribeGlobal((event) => stream.push(event))
+    const events: CompatEnvelope[] = []
+    try {
+      const turn = await runRuntimePromptTurn({
+        runtime: fixture.runtime,
+        sessionId: "s1",
+        directory: DIRECTORY,
+        body: { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] },
+        origin: ORIGIN,
+        publishGlobal: (event) => events.push(event),
+      })
+      const output = sessionPromptReply(turn)
 
-    const output = sessionPromptReply(turn)
-
-    expect(events.map((event) => event.payload.type)).toEqual([
-      "message.updated",
-      "message.part.updated",
-      "message.updated",
-    ])
-    expect(output.body).toEqual({
-      info: { id: "msg-user_r", sessionID: "s1", role: "assistant" },
-      parts: [],
-    })
-    expect(output.assistantMessage).toBeUndefined()
+      // The runtime hub carries the turn's rows; the service republishes none of them.
+      expect(events).toEqual([])
+      const rows = stream.map((event) => event.payload).filter((payload) => payload.type === "message.updated")
+      expect(rows.map((payload) => [payload.properties.info.role, payload.properties.info.id])).toEqual(expect.arrayContaining([
+        ["user", "msg-user"],
+        ["assistant", "msg-user_r"],
+      ]))
+      // The reply text streams as a delta against the assistant row named before it.
+      expect(stream.some((event) => event.payload.type === "message.part.delta"
+        && event.payload.properties.messageID === "msg-user_r"
+        && event.payload.properties.field === "text"
+        && event.payload.properties.delta === "hello")).toBe(true)
+      expect(stream.every((event) => event.directory === DIRECTORY)).toBe(true)
+      expect(output.body).toMatchObject({
+        info: { id: "msg-user_r", sessionID: "s1", role: "assistant" },
+        parts: [{ type: "text", text: "hello" }],
+      })
+      expect(turn.assistantMessagePublished).toBe(true)
+      expect(output.assistantMessage).toBeUndefined()
+    } finally {
+      unsubscribe()
+    }
   })
 
-  it("carries the requested permission mode into the adapter turn", async () => {
-    const modes: Array<string | undefined> = []
-    await promptTurn({
-      binding: executionBinding,
-      adapter: adapter({
-        async *executeTurn(_binding, input) {
-          modes.push(input.permissionMode)
-        },
-      }),
+  it("carries the requested permission mode into the transport turn", async () => {
+    const fixture = host()
+    await createSession(fixture, "s1")
+
+    await runRuntimePromptTurn({
+      runtime: fixture.runtime,
       sessionId: "s1",
-      directory: "/work",
+      directory: DIRECTORY,
       body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
+      origin: ORIGIN,
       publishGlobal: () => {},
     })
 
-    expect(modes).toEqual(["agent-full-access"])
+    expect(fixture.transport.turns.map((turn) => turn.turn.prompt.permissionMode)).toEqual(["agent-full-access"])
   })
 
   it("runs the turn's own effort, none when it asks for none, and the saved one only when it names nothing", async () => {
-    const variants: Array<string | undefined> = []
-    for (const wire of [{ variant: "low" }, { variant: null }, {}]) {
-      await promptTurn({
-        binding: executionBinding,
-        adapter: adapter({
-          getSessionConfig: async () => ({ harness: { id: "codex", access: "native" }, variant: "high", agent: null }),
-          async *executeTurn(_binding, input) {
-            variants.push(input.variant)
-          },
-        }),
-        sessionId: "s1",
-        directory: "/work",
+    const fixture = host()
+    const wires = [{ variant: "low" }, { variant: null }, {}]
+    for (const [index, wire] of wires.entries()) {
+      const sessionId = `s${index}`
+      await createSession(fixture, sessionId, { variant: "high" })
+      await runRuntimePromptTurn({
+        runtime: fixture.runtime,
+        sessionId,
+        directory: DIRECTORY,
         body: parseSessionPromptBody({ parts: [{ type: "text", text: "hello" }], ...wire }),
+        origin: ORIGIN,
         publishGlobal: () => {},
       })
     }
 
-    expect(variants).toEqual(["low", undefined, "high"])
+    expect(fixture.transport.turns.map((turn) => turn.turn.effort)).toEqual(["low", undefined, "high"])
   })
 
-  it("carries a requested service tier from the wire body into the adapter turn", async () => {
-    const tiers: Array<string | undefined> = []
-    for (const wire of [{ serviceTier: "priority" }, {}, { serviceTier: 7 }]) {
-      await promptTurn({
-        binding: executionBinding,
-        adapter: adapter({
-          async *executeTurn(_binding, input) {
-            tiers.push(input.serviceTier)
-          },
-        }),
-        sessionId: "s1",
-        directory: "/work",
+  it("carries a requested service tier from the wire body into the transport turn", async () => {
+    const fixture = host()
+    const wires = [{ serviceTier: "priority" }, {}, { serviceTier: 7 }]
+    for (const [index, wire] of wires.entries()) {
+      const sessionId = `s${index}`
+      await createSession(fixture, sessionId)
+      await runRuntimePromptTurn({
+        runtime: fixture.runtime,
+        sessionId,
+        directory: DIRECTORY,
         body: parseSessionPromptBody({ parts: [{ type: "text", text: "hello" }], ...wire }),
+        origin: ORIGIN,
         publishGlobal: () => {},
       })
     }
 
-    expect(tiers).toEqual(["priority", undefined, undefined])
+    expect(fixture.transport.turns.map((turn) => turn.turn.prompt.serviceTier)).toEqual(["priority", undefined, undefined])
   })
 
-  it("uses the agent-owned default model when an ACP session has no selected model", async () => {
-    const models: unknown[] = []
-    await promptTurn({
-      binding: executionBinding,
-      adapter: adapter({
-        getSessionConfig: async () => ({
-          harness: { id: "openclaw", access: "connection" },
-          variant: null,
-          agent: null,
-        }),
-        async *executeTurn(_binding, input) {
-          models.push(input.model)
-        },
-      }),
+  it("uses the agent-owned default model when a connection session has no selected model", async () => {
+    const fixture = host()
+    await createSession(fixture, "s1")
+
+    await runRuntimePromptTurn({
+      runtime: fixture.runtime,
       sessionId: "s1",
-      directory: "/work",
+      directory: DIRECTORY,
       body: { parts: [{ type: "text" as const, text: "hello" }] },
+      origin: ORIGIN,
       publishGlobal: () => {},
     })
 
-    expect(models).toEqual([undefined])
+    expect(fixture.transport.turns.map((turn) => turn.turn.model)).toEqual([undefined])
   })
 
   it("observes the reply without republishing the runtime-owned event stream", async () => {
@@ -278,6 +245,7 @@ describe("session service", () => {
       sessionId: "s1",
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
+      origin: ORIGIN,
       publishGlobal: (event) => events.push(event),
     })
 
@@ -312,6 +280,7 @@ describe("session service", () => {
       sessionId: "s1",
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
+      origin: ORIGIN,
       publishGlobal: () => {},
     })
 
@@ -343,6 +312,7 @@ describe("session service", () => {
       sessionId: "s1",
       directory: "/work" as const,
       body: { parts: [{ type: "text" as const, text: "hello" }] },
+      origin: ORIGIN,
       publishGlobal: () => {},
     }
 
@@ -354,23 +324,24 @@ describe("session service", () => {
     expect(starts[1]).not.toHaveProperty("actorKind")
   })
 
-  it("does not synthesize prompt events when the adapter yields none", async () => {
+  it("does not synthesize prompt events when the transport yields none", async () => {
+    const fixture = host({ async *turn() {} })
+    await createSession(fixture, "s1")
     const events: CompatEnvelope[] = []
 
-    await promptTurn({
-      binding: executionBinding,
-      adapter: adapter({}),
+    const turn = await runRuntimePromptTurn({
+      runtime: fixture.runtime,
       sessionId: "s1",
-      directory: "/work",
-      body: {
-        messageID: "msg-user",
-        parts: [{ type: "text", text: "hello" }],
-      },
+      directory: DIRECTORY,
+      body: { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] },
+      origin: ORIGIN,
       publishGlobal: (event) => events.push(event),
-      publishUserMessage: false,
     })
 
+    expect(fixture.transport.turns).toHaveLength(1)
     expect(events).toEqual([])
+    expect(turn.assistantId).toBe("msg-user_r")
+    expect(turn.error).toBeUndefined()
   })
 
   it("closes runtime event streams when starting a turn fails", async () => {
@@ -400,6 +371,7 @@ describe("session service", () => {
       sessionId: "missing",
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
+      origin: ORIGIN,
       publishGlobal: (event) => events.push(event),
     })).rejects.toThrow("missing session")
 

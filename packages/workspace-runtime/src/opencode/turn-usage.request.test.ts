@@ -1,20 +1,26 @@
 /**
- * A real engine turn metered through the adapter: a two-step turn against an
- * OpenAI-compatible endpoint that reports usage on the wire, read back as the
- * runtime usage events the turn meter consumes.
+ * A real engine turn metered through the OpenCode transport: a two-step turn
+ * against an OpenAI-compatible endpoint that reports usage on the wire, read
+ * back as the runtime usage events the turn meter consumes.
  */
 import { expect, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createServer } from "node:http"
-import type { AgentRuntimeStreamEvent } from "@claxedo/agent-sdk-runtime"
-import { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
-import { createOpenCodeRuntime } from "@claxedo/harness/opencode-sdk/runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
+import type { HarnessServices, StartInput, TurnInput } from "@claxedo/harness/contract"
+import { OpenCodeSdkTransport } from "@claxedo/harness/opencode-sdk"
+import { MemoryPorts, authority, origin } from "@claxedo/harness/testing"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 type ChatRequest = { messages?: Array<{ role?: string }> }
-type UsageEvent = Extract<AgentRuntimeStreamEvent, { type: "usage" }>
+type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>
 type Tokens = NonNullable<UsageEvent["observation"]>["tokens"]
+
+const WORKSPACE = "ws_1"
+const MODEL = { providerID: "proof", modelID: "proof" }
 
 /**
  * Answers the first step with a tool call and the step after the tool result
@@ -65,6 +71,22 @@ function scriptedEndpoint(readme: string) {
   }
 }
 
+/** The embedded engine runs in this process, so nothing here spawns, registers transcripts or asks a pattern evaluator. */
+function services(): HarnessServices {
+  return {
+    spawn: async (_command, options) => { throw new Error(`The embedded engine spawns nothing (${options.label})`) },
+    firstPartyMcp: () => undefined,
+    transcripts: { register: async () => ({ state: "unavailable", reason: "no transcripts in this test" }) },
+    patternEvaluator: async () => {},
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+    clock: {
+      now: () => Date.now(),
+      setTimeout: (callback, ms) => setTimeout(callback, ms),
+      clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    },
+  }
+}
+
 test("a two-step turn meters each step in disjoint categories and closes on their sum", async () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-turn-usage-")))
   const directory = path.join(root, "work")
@@ -72,7 +94,8 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
   fs.writeFileSync(path.join(directory, "README.md"), "# usage\n")
   const endpoint = scriptedEndpoint(path.join(directory, "README.md"))
   const baseURL = await endpoint.listen()
-  const runtime = createOpenCodeRuntime({
+  const transport = new OpenCodeSdkTransport(services(), {
+    login: loopbackMachineLoginPolicy(),
     databasePath: path.join(root, "opencode.db"),
     configContent: JSON.stringify({
       model: "proof/proof",
@@ -83,25 +106,47 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
           npm: "@ai-sdk/openai-compatible",
           name: "Proof",
           models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } },
-          options: { baseURL, apiKey: "proof-key" },
         },
       },
     }),
   })
-  const adapter = new OpenCodeSdkHarnessAdapter({ runtime, workspaceID: "ws_1", directory, reportOwnerFailure: () => {} })
-  try {
+  const ports = new MemoryPorts()
+  ports.directories.set("s1", directory)
+  ports.current.set("s1", { ...authority, workspaceId: WORKSPACE, directory })
+  const owner = createRequestBroker(ports)
+  const sessionBroker = createSessionBroker(owner, { sessionId: "s1", directory, workspaceId: WORKSPACE, origin })
+  const start: StartInput = {
+    sessionId: "s1",
+    workspaceId: WORKSPACE,
+    directory,
+    locality: "local",
     // Titled, so the engine spends nothing generating one.
-    const { id } = await adapter.createSession(directory, "usage")
-    const events: AgentRuntimeStreamEvent[] = []
-    for await (const event of adapter.executeTurn(
-      { workspaceId: "ws_1", directory, sessionId: id, connectionId: "native:opencode", upstreamSessionId: id },
-      {
-        parts: [{ type: "text", text: "read the readme" }],
-        assistantMessageId: "caller-assistant-1",
-        agent: "build",
-        model: { providerID: "proof", modelID: "proof" },
-      },
-    )) events.push(event)
+    title: "usage",
+    owner: { kind: "machine-owner" },
+    model: MODEL,
+    config: { harness: { id: "opencode", access: "native" }, model: MODEL },
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
+    credentials: { providers: { proof: { baseUrl: baseURL, placeholder: "proof-key", authMode: "api-key" } }, secrets: {}, leaseGeneration: "one" },
+  }
+  try {
+    const session = await transport.start(start, sessionBroker)
+    const id = session.binding.upstreamSessionId
+    const turn: TurnInput = {
+      turnId: "caller-assistant-1",
+      userMessageId: "caller-user-1",
+      assistantMessageId: "caller-assistant-1",
+      origin,
+      model: MODEL,
+      prompt: { agent: "build", assistantMessageId: "caller-assistant-1", parts: [{ type: "text", text: "read the readme" }] },
+      todos: [],
+    }
+    const broker = createTurnBroker(owner, {
+      authority: { ...authority, workspaceId: WORKSPACE, directory, upstreamSessionId: id },
+      origin,
+      signal: new AbortController().signal,
+    })
+    const events: AgentRuntimeEvent[] = []
+    for await (const routed of transport.send(session, turn, broker)) events.push(routed.event)
 
     const usage = events.filter((event): event is UsageEvent => event.type === "usage")
     const ids = usage.map((event) => event.observation?.providerObservationId)
@@ -133,8 +178,9 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
       },
     ])
     expect(events.at(-1)).toEqual({ type: "finish", sessionId: id, harness: "opencode" })
+    await transport.close(session)
   } finally {
-    await runtime.close()
+    await transport.dispose()
     await endpoint.close()
     fs.rmSync(root, { recursive: true, force: true })
   }

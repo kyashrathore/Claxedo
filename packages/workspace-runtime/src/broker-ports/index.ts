@@ -2,7 +2,7 @@ import type { ElicitationPatternEvaluator } from "@claxedo/agent-runtime-contrac
 import type { BrokerPorts } from "@claxedo/harness/broker"
 import type { Clock } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
-import type { RuntimeEventPublishers } from "../runtime-event-hub"
+import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
 import { BrokerAuthority } from "./authority"
 import { admitChildSession, bindChildCorrelation } from "./child-sessions"
 import { BrokerEventDelivery } from "./delivery"

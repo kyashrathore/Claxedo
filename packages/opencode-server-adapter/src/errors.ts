@@ -1,19 +1,4 @@
-export type OpenCodeServerAdapterErrorCode =
-  | "invalid_config"
-  | "invalid_directory"
-  | "invalid_binding"
-  | "immutable_connection_identity"
-  | "transport_error"
-  | "deadline_exceeded"
-  | "http_error"
-  | "compatibility_probe_failed"
-  | "invalid_response"
-  | "invalid_event"
-  | "frame_too_large"
-  | "reconciliation_gap"
-  | "unsupported_interaction"
-  | "unsupported_operation"
-  | "disposed"
+export type OpenCodeServerAdapterErrorCode = "invalid_config"
 
 export class OpenCodeServerAdapterError extends Error {
   constructor(

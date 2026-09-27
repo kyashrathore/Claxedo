@@ -24,7 +24,8 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk"
+import type { MachineLoginPolicy } from "@claxedo/harness/contract"
+import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
@@ -35,15 +36,12 @@ import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import {
-  createAcpConnectionProvider,
   projectionRenewalDue,
   projectionRenewalDueAt,
   type AgentTurnOutcome,
   type CompatEnvelope,
-  type ConnectionProvider,
   type ConnectionSecretResolver,
 } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
@@ -221,12 +219,14 @@ export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionI
   return config
 }
 
-/** The process-owned public embedded-SDK runtime every embedded host shares (the native `opencode` harness). */
-let configuredOpenCodeRuntime: OpenCodeRuntime | undefined
-let configuredConnectionProviders: readonly ConnectionProvider<unknown, unknown>[] = [
-  createAcpConnectionProvider(),
-  createOpenCodeServerConnectionProvider(),
-]
+/**
+ * This process is the machine's own desktop: whoever reaches it over loopback
+ * is the machine owner and may spend its logins. A signed-in user reaching
+ * their own machine through the relay is a person to the runtime, and no
+ * user id is known at composition time, so that caller is brokered instead.
+ */
+const DESKTOP_PLACEMENT: MachineLoginPolicy = { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true }
+let configuredConnectionProviders: readonly CustomHarnessProvider<unknown>[] = []
 let configuredConnectionSecretResolver: ConnectionSecretResolver = createLocalConnectionSecretResolver({
   async resolveReference({ reference }) {
     const credential = credentialById(reference, { onOutage: "empty" })
@@ -317,8 +317,8 @@ export function embeddedWorkspaceRuntimeLoopbackSessionAuthority() {
 }
 
 export function configureEmbeddedWorkspaceRuntime(input: {
-  opencodeRuntime?: OpenCodeRuntime
-  connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
+  /** Connection providers beside the built-in ones; a call that names none keeps the built-ins only. */
+  connectionProviders?: readonly CustomHarnessProvider<unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
@@ -333,9 +333,8 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   /** Absent, no embedded runtime injects the first-party MCP entry into its sessions. */
   firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
 }) {
-  configuredOpenCodeRuntime = input.opencodeRuntime
+  configuredConnectionProviders = input.connectionProviders ?? []
   configuredFirstPartyMcpLaunch = input.firstPartyMcpLaunch
-  configuredConnectionProviders = input.connectionProviders ?? configuredConnectionProviders
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
@@ -373,7 +372,7 @@ function options(
 } {
   return {
     ...(harness ? { harness } : {}),
-    ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
+    placement: DESKTOP_PLACEMENT,
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
@@ -589,7 +588,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
       exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
       parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
     }, harness),
-    beforeAdapterAcquire: async () => {
+    beforeHarnessAcquire: async () => {
       // Fan-out and mutation admission refresh accepted snapshots. Read-side
       // acquisition only supplies the missing initial snapshot (or retries a
       // failed apply), and shares configure's in-flight promise.

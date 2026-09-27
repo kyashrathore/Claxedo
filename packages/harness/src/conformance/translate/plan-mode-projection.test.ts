@@ -8,14 +8,6 @@ import { codexAppServerAdapter } from "../../transports/codex-app-server/transla
 import { cursorSdkAdapter } from "../../transports/cursor-sdk/translate/adapter"
 import { createAcpEventTranslator } from "../../transports/acp/translate/event-translator"
 
-/**
- * The transcript draws a proposed plan as a "Planned …" row that opens a Plan tab only
- * for a tool part named `exitplanmode` carrying markdown in `input.plan`. Each case
- * drives a harness's own plan events through the real adapter and projection and pins
- * what that plan becomes, so a harness that starts (or stops) reaching the plan row is
- * a visible diff here. Pi and the embedded OpenCode engine emit no plan events at all:
- * Pi has no plan mode, and OpenCode's plan is an agent that writes ordinary files.
- */
 type Runtime = { ingest: (event: never) => { events: AgentRuntimeEvent[] } }
 
 type Settled = {

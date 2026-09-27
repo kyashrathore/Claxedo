@@ -6,7 +6,7 @@ import type { QueuedPromptRecord, QueuedPromptAttempt } from "../store"
 
 export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release" | { replace: NonNullable<QueuedPromptRecord["parts"]> }
 
-type SteeringResult = NonNullable<Awaited<ReturnType<import("@claxedo/agent-sdk-runtime").AgentRuntime["turns"]["start"]>>["steering"]>
+type SteeringResult = NonNullable<Awaited<ReturnType<import("../host/runtime").AgentRuntime["turns"]["start"]>>["steering"]>
 export type QueuedControlResult = { ok: true } | { ok: false; status: "pending" | "rejected" | "unknown" | "conflict" | "provider_owned"; message: string; operationId?: string }
 export type QueuedPromptRequester = Pick<QueuedPromptRecord, "actor" | "author" | "authority" | "provenance" | "grant">
 export type SessionDeliveryStore = {

@@ -18,7 +18,6 @@ import {
   installHostProviderConfigAuthority,
   setHostProviderConfig,
   type HostRuntimeListener,
-  type HostWorkspaceRuntimeOptions,
 } from "@claxedo/host-serving/runtime"
 import {
   setHostServing,
@@ -26,19 +25,14 @@ import {
   hostServingState,
   type HostServingCredential,
 } from "@claxedo/host-serving/serving"
-import { createWorkspaceOpenCodeRuntime } from "@claxedo/workspace-runtime"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { errorMessage } from "../json"
 import { DRAIN_TIMEOUT_MS, LEASE_TTL_MS, RUNTIME_CLOSE_TIMEOUT_MS } from "./paths"
 
-/** A runtime's private SDK owner; the listener disposes the runtime, this process closes the owner. */
-export type OwnedOpenCodeRuntime = NonNullable<HostWorkspaceRuntimeOptions["opencodeRuntime"]>
-
 export type HostDeps = {
   fetch: FetchLike
   createListener: () => Promise<HostRuntimeListener>
-  openCodeRuntime: (directory: string) => OwnedOpenCodeRuntime | undefined
   setServing: typeof setHostServing
   servingState: typeof hostServingState
   stopServing: typeof stopHostServing
@@ -60,7 +54,6 @@ export function defaultHostDeps(): HostDeps {
   return {
     fetch: (input, init) => fetch(input, init),
     createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
-    openCodeRuntime: (directory) => createWorkspaceOpenCodeRuntime(directory),
     setServing: setHostServing,
     servingState: hostServingState,
     stopServing: stopHostServing,
@@ -267,7 +260,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const startedAt = deps.now()
   const listener = await deps.createListener()
   const composition = { localBaseUrl: listener.url, sessionAuthority: () => "managed-private" as const }
-  const owned = new Map<string, { directory: string; runtime: OwnedOpenCodeRuntime | undefined }>()
+  const owned = new Map<string, { directory: string }>()
   let credential: HostServingCredential | null = null
 
   const serve = async (next: HostServingCredential | null) => {
@@ -282,11 +275,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const retire = async (workspaceId: string) => {
     await serve(credentialWithout(credential, workspaceId))
     await listener.dispose(workspaceId)
-    const entry = owned.get(workspaceId)
     owned.delete(workspaceId)
-    await entry?.runtime?.close().catch((error: unknown) => {
-      deps.log(`workspace ${workspaceId}: SDK runtime close failed: ${errorMessage(error)}`)
-    })
   }
 
   // Each root's canonical form is recorded the first time it resolves and
@@ -326,8 +315,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     const current = owned.get(workspaceId)
     if (current && current.directory !== directory) await retire(workspaceId)
     else if (current) await serve(credentialWithout(credential, workspaceId))
-    const runtime = current?.directory === directory ? current.runtime : deps.openCodeRuntime(directory)
-    owned.set(workspaceId, { directory, runtime })
+    owned.set(workspaceId, { directory })
     await listener.ensure({
       workspaceId,
       directory,
@@ -335,7 +323,6 @@ export async function runHost(input: HostRunInput): Promise<number> {
       relay: { jwksUrl: relay.jwksUrl },
       sessionAuthorityUrl: authority.sessionAuthorityUrl,
       storeRoot: path.join(state.storage_root, workspaceId),
-      ...(runtime ? { opencodeRuntime: runtime } : {}),
     })
   }
 
@@ -482,11 +469,6 @@ export async function runHost(input: HostRunInput): Promise<number> {
   connector.close()
   deps.stopServing()
   await listener.close()
-  for (const [workspaceId, entry] of owned) {
-    await entry.runtime?.close().catch((error: unknown) => {
-      deps.log(`workspace ${workspaceId}: SDK runtime close failed: ${errorMessage(error)}`)
-    })
-  }
   owned.clear()
   const { run: _run, ...rest } = state
   await persist(rest)

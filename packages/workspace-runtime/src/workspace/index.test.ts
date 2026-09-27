@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { workspaceRuntimeBus } from "../bus"
-import { createRuntimeEventHub } from "../runtime-event-hub"
+import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { sessionIdle, withDir } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import {
@@ -12,6 +12,7 @@ import {
   mountWorkspaceProcess,
   mountWorkspacePty,
 } from "./index"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 function paths(app: Hono) {
   return ((app as { routes?: Array<{ path: string }> }).routes ?? []).map((route) => route.path)
@@ -75,7 +76,7 @@ describe("workspace module wiring", () => {
         ? { allowed: true, lease: "lease_initial", expiresAt: Date.now() + 40 }
         : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
     }
-    const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: accessPolicy })
+    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), eventHub, sessionAccessPolicy: accessPolicy })
     const app = new Hono()
     verifiedRelay(app)
     host.mount(app, { exposure: loopbackExposure, renewalIntervalMs: 50 })
@@ -99,7 +100,7 @@ describe("workspace module wiring", () => {
 
   test("a managed runtime without workspace authority requires a session, and scopes replay by it", async () => {
     const eventHub = createRuntimeEventHub()
-    const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: managedPolicy() })
+    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), eventHub, sessionAccessPolicy: managedPolicy() })
     const app = new Hono()
     verifiedRelay(app)
     host.mount(app, { exposure: loopbackExposure })
@@ -175,7 +176,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host mounts runtime routes", async () => {
-    const host = createWorkspaceHost()
+    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, { exposure: loopbackExposure })
 
@@ -194,7 +195,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host mounts core routes when core option is supplied", () => {
-    const host = createWorkspaceHost()
+    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, { exposure: loopbackExposure, core: { upgradeWebSocket: (() => () => ({})) as never } })
 
@@ -212,7 +213,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host can mount PTY, process, and agent hooks separately", () => {
-    const host = createWorkspaceHost()
+    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, {
       exposure: loopbackExposure,
@@ -229,7 +230,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host omits core routes when core option is absent", () => {
-    const host = createWorkspaceHost()
+    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, { exposure: loopbackExposure })
 

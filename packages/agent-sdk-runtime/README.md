@@ -1,8 +1,12 @@
 # Agent SDK Runtime
 
-`@claxedo/agent-sdk-runtime` is the embeddable SDK for running agent harnesses
-behind one host-owned runtime API. Register harnesses, choose a store, create a
-session, start a turn, and subscribe to events.
+`@claxedo/agent-sdk-runtime` carries the shared runtime types and helpers that
+Claxedo's hosts, clients and workspace runtime agree on: session and prompt
+shapes, the client-presentation (compat) event bridge, provider credential
+projections, session config helpers, and the durable store contract. Harness
+transports and the runtime host that drives them live in `@claxedo/harness` and
+`@claxedo/workspace-runtime`; this package no longer starts, attaches to or
+prompts any harness.
 
 ## Install
 
@@ -11,419 +15,44 @@ npm install @claxedo/agent-sdk-runtime
 ```
 
 ```ts
-import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { ClaudeHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { admitSessionInstructions, resolveSessionModel, type SessionConfig } from "@claxedo/agent-sdk-runtime"
+import { messageUpdated, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import { providerProjectionRecord } from "@claxedo/agent-sdk-runtime/provider-projection"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
-
-const runtime = createAgentRuntime({
-  store: createSqliteRuntimeStore({ root: ".agent-runtime" }),
-  harnesses: [
-    { id: "claude", access: "native", create: (context) => new ClaudeHarnessAdapter(context) },
-    { id: "pi", access: "native", create: (context) => new PiHarnessAdapter(context) },
-  ],
-})
-
-const session = await runtime.sessions.create({
-  directory: "/repo",
-  harness: { id: "claude", access: "native" },
-  model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
-  title: "Review",
-})
-
-const events = runtime.events.subscribe({ sessionId: session.id })
-
-await runtime.turns.start({
-  sessionId: session.id,
-  text: "review this repo",
-})
 ```
 
-The package owns harness process/session orchestration, adapter lifecycle,
-runtime configuration, model catalogs, MCP resolution, event fan-out, and
-first-party stores. Hosts still own auth policy, workspace routing, project
-inventory, HTTP route shape, and UI state.
-
-## Agent-First Public Docs
-
-Coding agents and host integrators should start with
-[docs/agent.md](./docs/agent.md), then read
-[docs/concepts.md](./docs/concepts.md) and
-[docs/architecture.md](./docs/architecture.md). Together they define the package job,
-mental model, blessed imports, stability labels, boundaries, recipes, and
-public API surface.
-
-## Flow
-
-```text
-host app
-  -> AgentRuntime
-  -> registered adapter
-  -> adapter driver
-  -> harness access (ACP / native)
-  -> runtime events
-  -> runtime.events.subscribe()
-```
-
-The canonical event contract comes from `@claxedo/agent-event-runtime`.
-Adapters either emit canonical `AgentRuntimeEvent` values directly or emit
-Claxedo client-presentation `CompatEvent` values when bridging an existing OpenCode
-surface.
-
-## Session Liveness And Turn Outcome
-
-`session.status` is the current runtime liveness state. It is `busy` while a
-turn is running, `recovering` when a harness is being rebound, `error` when the
-session is in an error state, and `null` or absent when it is idle. It is never
-`done`.
-
-The durable result of the most recent turn is `session.lastTurn`:
-
-```ts
-session.lastTurn?.status // "completed" | "failed" | "cancelled"
-session.lastTurn?.assistantMessageId // assistant row for that completed turn
-```
-
-Render turn-level "Done", "Failed", or "Cancelled" from `lastTurn`, not from
-`message.time.completed`. Message completion is row-level metadata; turn
-outcome is recorded by the runtime after the harness stream settles. When a UI
-needs to reconcile an in-flight prompt, compare `lastTurn.assistantMessageId`
-with the assistant message id for that prompt; `lastTurn.status` alone only
-describes the most recent settled turn. If the host has a higher-level lifecycle
-such as a Goal or long-running task, use that lifecycle for session-level
-"working" and "done" badges. Claude SDK, Codex app-server, ACP, OpenCode, and Pi
-terminal signals all normalize through this runtime/store path. Shell hook
-integrations remain useful for terminal presence, but they are not the canonical
-SDK turn outcome source.
-
-## Goals
-
-A Goal is a session-level completion condition that may span multiple harness
-turns. It is a dedicated runtime resource, not a prompt mode: callers use
-`runtime.goals`, and adapters must never repair missing support by sending the
-objective through `runtime.turns.start()`.
-
-```ts
-const capabilities = await runtime.goals.capabilities(session.id, directory)
-if (!capabilities.available) throw new Error(capabilities.unavailableReason)
-
-const started = await runtime.goals.start({
-  sessionId: session.id,
-  objective: "Ship when verification passes",
-}, directory)
-
-const current = await runtime.goals.read(session.id, directory)
-```
-
-`HarnessCapabilities.goals` is only coarse runtime availability. Always read
-the detailed Goal capabilities for the materialized session before rendering
-actions. Pause and Resume form one reversible pair; do not expose either unless
-both are advertised. Delete is independent. Stop is part of the common Goal
-lifecycle and disables continuation before interrupting active work.
-
-| Harness | Start authority | Actions | Recovery |
-| --- | --- | --- | --- |
-| Codex native | structured app-server Goal RPC | Pause, Resume, Delete | reconcile durable thread state |
-| Claude native | SDK `/goal` plus `active_goal` messages | none | blocked if provider state is lost |
-| Cursor native | `Agent.send("/goal …")` plus durable Run state | none | blocked if provider state is lost |
-| OpenCode native | first-party Session Goal aggregate | Pause, Resume, Delete | reconcile; orphaned execution becomes blocked |
-| Pi native | owned evaluator and follow-up controller | Pause, Resume, Delete | blocked after non-durable process loss |
-| ACP | negotiated `_meta.goal` extension | negotiated subset | negotiated reconciliation |
-
-Goal snapshots report only provider- or controller-owned fields. Optional
-budgets, usage, iteration, and diagnostic reason fields are not synthesized.
-After reconnect, refetch `runtime.goals.read()`; `recovery: "blocked"` means an
-active persisted snapshot must become visibly blocked rather than complete.
-
-## Layers
-
-### Core Runtime
-
-`src/index.ts` defines the public runtime surface.
-
-- `createAgentRuntime()` is the main public entrypoint.
-- `runtime.sessions`, `runtime.turns`, `runtime.goals`, `runtime.events`, `runtime.permissions`,
-  `runtime.questions`, `runtime.todos`, `runtime.commands`, `runtime.config`,
-  and `runtime.health` are the user-facing resource namespaces.
-- `PromptInput` is the normalized message submission shape used across
-  transports internally.
-- `SessionConfig` and `SessionConfigUpdate` from `@claxedo/agent-runtime-contract`
-  describe harness/model/agent selection as host-visible state.
-
-Adapter classes are implementation plumbing behind harness factories. Public
-host code should use the runtime facade first.
-
-### Stores
-
-First-party stores live on explicit subpaths:
-
-- `@claxedo/agent-sdk-runtime/stores/memory`
-- `@claxedo/agent-sdk-runtime/stores/sqlite`
-
-The root import does not load SQLite.
-
-### Harness Registration
-
-`createAgentRuntime()` accepts `AgentHarnessFactory` records with an id, access
-mode, and a `create(context)` function. The host constructs concrete adapters
-from `@claxedo/agent-sdk-runtime/adapters`; the runtime provides the store,
-event hub, and owner failure sink through the factory context.
-
-The browser-safe Pi provider/model catalog is available separately at
-`@claxedo/agent-sdk-runtime/pi-catalog`.
-
-### Harness Metadata
-
-`src/harness-types.ts` is the source of truth for supported harness ids and
-access modes.
-
-- ACP connections use an `AcpHarnessAdapter` with `access: "connection"`.
-- Native harnesses: Claude, Codex, Cursor, OpenCode, and Pi with
-  `access: "native"`.
-- Configured providers, including ACP, use an opaque connection id with
-  `access: "connection"`; they are not added to the native id catalog.
-
-`harnessDefinition()`, `harnessKey()`, `isAgentHarnessId()`, and
-`isAgentHarnessAccess()` centralize harness classification so callers do not
-infer behavior from strings.
-
-Runtime model options come from live, directory-scoped harness queries. Query
-errors are returned to the caller and an empty result remains empty. The
-exported SDK model catalog is an explicit reference/validation API; it is not
-substituted for a failed live query.
-
-### Subagent support matrix
-
-Subagent discovery is normalized into durable, parent-scoped host rows. A spawn
-tool is associated with its row by an explicit `toolCallId` edge. The host mints
-`childSessionId` when it can materialize a readable child Session; provider ids
-and transcript refs stay opaque and are never treated as Session ids or file
-paths by the UI.
-
-| Harness | Discovery | Transcript | Child Session |
-| --- | --- | --- | --- |
-| Claude native | `Agent` tool lifecycle | messages | openable after host materialization |
-| Codex native | collab thread lifecycle | live | openable |
-| Cursor native | `Task` result carrying a valid transcript reference | file | conditionally openable after host materialization |
-| Configured ACP | negotiated ACP lifecycle | provider-dependent | capability-dependent |
-| Pi model-backed | foreground or background child lifecycle | live | openable |
-| Pi bare adapter | no subagent capability | none | no subagent row |
-
-Foreground children participate in parent interruption; background children
-continue independently and remain visible as background work. Child transcripts
-are read-only conversation surfaces: opening one preserves the parent Session,
-and repeated activation focuses the existing child surface. Rows with no
-supported transcript render an explicit unavailable state with no navigation
-control.
-
-Runtime event streams that expose these rows are scoped and authorized by parent
-Session. A denied parent subscription returns `403` before replay or live events
-are attached, so one parent cannot observe another parent's child lifecycle.
-
-### Capabilities
-
-`src/capabilities.ts` describes runtime feature support.
-
-- `HarnessCapabilities` is the per-harness session feature matrix returned to
-  hosts and UI.
-- `AdapterCapability` marks implementation abilities that are not part of the
-  normal session contract, currently `runtime-config`.
-- `hasAdapterCapability()` is the safe narrowing helper for optional adapter
-  extensions.
-
-Capability data is explicit. Unsupported operations fail rather than returning
-synthetic data or events.
-
-### Events And SSE
-
-`src/runtime-event-hub.ts` provides in-process fan-out. SSE helpers live in
-`@claxedo/workspace-runtime/projection`.
-
-- `RuntimeEventHub` is a lightweight pub/sub boundary for runtime events.
-- `createAgentRuntime({ subscriberBufferSize, eventDelivery })` bounds each
-  subscriber while allowing the host to authorize every delivered event.
-- `createSseReplayBuffer()` keeps bounded replay for reconnecting clients.
-- `attachSseFanout()` bridges a subscribe function into a streaming response
-  with lifecycle cleanup.
-
-These primitives are production-appropriate when each session is pinned to one
-owner machine and that machine's durable session/message log is the source of
-truth. Hosts only need external pub/sub when they serve the same session live
-from multiple processes or machines.
-
-### Native Pi
-
-Pi runs as a child process in the session's machine directory, using the pinned
-0.85.0 RPC protocol. The shared adapter owns product session lifecycle; Pi owns
-its native session file, tools, extensions, compaction and context. Each active
-session has a separate process. Idle processes resume from the same native file.
-A missing native file is an error, never a replacement conversation.
-
-Pass `binary` and `agentDir` to `PiHarnessAdapter` to select the executable and isolated Pi profile.
-`PI_EXECUTABLE` also selects the executable. The host projects credentials into
-that profile and removes its auth file on disposal. It does not modify the
-user's own Pi profile. Model options come from `get_available_models` in Pi.
-Every session requires a real directory and workspace identity.
-
-Pi's extension questions use the shared question API. Extensions and native
-tools execute with the machine process's permissions, and project extensions
-remain subject to Pi's project trust policy. Pi does not provide a permission
-prompt or native subagent API. Host-provided MCP servers are not automatically
-loaded by upstream Pi; use a trusted Pi extension when that capability is needed.
-
-### MCP Resolution
-
-`src/mcp-resolver.ts` merges managed MCP state with user-defined MCP servers
-and converts the result into harness-specific shapes.
-
-- `resolveEffectiveMcp()` returns the effective server map plus managed status.
-- `toOpencodeConfig()` writes the OpenCode config shape.
-- `toAcpMcpServers()` writes ACP `McpServer` values.
-
-Managed MCP defaults are intentionally empty today. User MCP config still
-resolves normally, while managed loops remain explicit no-ops until real managed
-servers exist.
-
-### Command Discovery
-
-`src/command-discovery.ts` reads command files from configured directories and
-normalizes them into `AgentCommandRow` values. Adapters and hosts use it to
-serve slash-command surfaces without making command parsing part of the core
-runtime facade.
-
-## Adapters
-
-### ACP
-
-`src/harnesses/acp` owns Agent Client Protocol process integration.
-
-- `index.ts` implements the ACP harness driver.
-- `process.ts` manages ACP process lifecycle, prompts, config option probing,
-  permissions, and restart behavior.
-- `session.ts` translates session load/resume state, mode/model sync, and
-  prompt parts into ACP request content.
-- `transport.ts` abstracts stdio/http process creation.
-- `recovery.ts` and `title.ts` handle recovery metadata and title generation.
-
-ACP adapters should prefer live session config options and only call ACP
-session-mode APIs when the advertised mode list supports the requested value.
-
-### Shared SDK Adapter
-
-`src/harnesses/shared` contains reusable lifecycle and projection code for
-SDK-backed transports.
-
-- `sdk-runtime-adapter.ts` implements common session storage and adapter
-  behavior.
-- `turn-lifecycle.ts` owns active-turn cancellation and cleanup rules.
-- `turn-projection.ts` bridges harness events into runtime/compat output.
-
-SDK adapters should put harness-specific code in their driver and keep shared
-session semantics in this layer.
-
-### Claude SDK, Codex App Server, Cursor SDK
-
-`src/harnesses/claude`, `src/harnesses/codex`, and
-`src/harnesses/cursor` adapt native SDK or app-server streams into the
-shared runtime contract through the shared SDK adapter.
-
-These transports query their native SDK or app-server for model options and
-cache successful results per workspace directory.
-
-### Configured connections
-
-External agents are installed through `ConnectionProvider` implementations.
-The runtime resolves an explicit connection identity to a trusted descriptor,
-materializes host-owned secret leases at execution time, and persists only the
-full `AgentExecutionBinding` needed to address the session. Unknown, disabled,
-or stale connections fail closed; there is no built-in external-server default.
-
-ACP is one connection provider. The external OpenCode server protocol lives in
-the separate `@claxedo/opencode-server-adapter` package and is composed by host
-applications like any other installed provider.
-
-### Pi
-
-`src/harnesses/pi` is a built-in native harness. It is useful for placeholder or
-host-controlled flows where no external agent process owns a real model/config
-surface.
-
-## Host Boundaries
-
-Host packages are responsible for:
-
-- choosing and constructing adapters
-- resolving directories and workspace ids
-- enforcing auth and operation guards
-- owning HTTP/RPC route shape and status codes
-- persisting sessions, config, and event history
-- publishing global/session events beyond the current process
-- exposing product-specific HTTP routes
-- materializing Agent Plugins, skills, and MCP config outside this package
-
-This package should stay focused on runtime contracts and transport execution.
-
-## Adding A Harness
-
-1. Add the harness to `AGENT_HARNESS_DEFINITIONS` in `src/harness-types.ts`.
-2. Decide whether it supports `access: "acp"`, `access: "native"`, or both.
-3. Implement an adapter under `src/harnesses/<harness>`.
-4. Expose explicit `HarnessCapabilities`; unsupported operations must be errors.
-5. Implement live model discovery when the harness exposes configurable models.
-6. Add focused adapter tests around session lifecycle, submit, abort, config,
-   and event projection.
-7. Register the adapter through the host's `AgentHarnessFactory` record.
-
-## Public Entry Points
-
-The package ships public docs under `docs/`. Use
-[docs/recipes.md](./docs/recipes.md) for import examples and
-[docs/api.md](./docs/api.md) for the stable root API.
-
-Entry point status:
-
-- Integration: `@claxedo/agent-sdk-runtime/stores/session-start` supplies durable
-  creation ownership for a host-owned SQLite database.
-
-- Process ownership: `@claxedo/process-ownership` supplies the launch gate,
-  process observation and lifecycle utilities through direct subpath imports.
-
-- Stable: `@claxedo/agent-sdk-runtime`,
-  `@claxedo/agent-sdk-runtime/capabilities`
-- Stable: `@claxedo/agent-sdk-runtime/stores/memory`,
-  `@claxedo/agent-sdk-runtime/stores/sqlite`
-- Advanced: `@claxedo/agent-sdk-runtime/adapters`,
-  `@claxedo/agent-sdk-runtime/subagent-admission`,
-  `@claxedo/agent-sdk-runtime/message-page`
-  `@claxedo/agent-sdk-runtime/runtime-event-hub`,
-  `@claxedo/agent-sdk-runtime/provider-projection`,
-  `@claxedo/agent-sdk-runtime/mcp-resolver`
-- Compatibility: `@claxedo/agent-sdk-runtime/compat-events`,
-  `@claxedo/agent-sdk-runtime/status`
-
-`@claxedo/agent-sdk-runtime/adapters` is public but advanced. Most hosts should
-use `createAgentRuntime()` plus harness factories. Use the adapter subpath only
-when building a workspace host, custom HTTP compatibility layer, or harness
-integration that needs direct driver lifecycle control.
-
-Handoff-capable custom adapters return an `AgentPreparedHandoffSession` with an
-idempotent `rollback()` and may implement `releaseHandoffSource` to clean up the
-old native session only after the target binding commits.
-
-The package publishes built ESM and declaration files from `dist`. Publish
-verification hashes the complete reachable declaration closure for every
-export-map entrypoint, so reviewed type-contract changes must update the API
-manifest explicitly.
-
-## Verification
-
-Run package checks from the package directory:
-
-```sh
-cd packages/agent-sdk-runtime
-bun test src
-bun typecheck
-bun run build
-```
-
-Do not run tests from the repository root. This workspace guards against root
-test execution.
+## Entrypoints
+
+| Entrypoint | Holds |
+| --- | --- |
+| `@claxedo/agent-sdk-runtime` | Harness identity tables, `SessionConfig`/`PromptInput` helpers (`resolveSessionModel`, `resolveTurnSystem`, `admitSessionInstructions`, session title bounds), permission ceilings, provider projections, first-turn error classes, and the shared host-visible types re-exported from `@claxedo/agent-runtime-contract`. |
+| `./compat-events` | The client-presentation event shapes (`message.updated`, `session.idle`, …) and the builders that turn canonical runtime events into them. |
+| `./status` | Session status normalisation (`live`, `chunk`, `recovering`). |
+| `./provider-projection` | Provider credential projections and the record validator applied to pushed rows. |
+| `./message-page` | Bounded transcript-page contracts and `projectLatestSurfaceMessages`. |
+| `./adapters` | The durable store contract (`AgentRuntimeStoreWithRecovery` and its row types), recovery scope helpers, `AgentRuntimeStaleTurnError`, goal capability helpers and `AgentMessagePageError`. |
+| `./stores/memory`, `./stores/sqlite`, `./stores/session-start` | Store implementations for tests and ephemeral hosts; the workspace runtime's own `RuntimeStore` is the durable production store. |
+
+## Store contract
+
+`AgentRuntimeStoreWithRecovery` (`./adapters`) is what the workspace runtime's
+host reads and writes: sessions, execution bindings, session config, turn
+leases and fencing tokens, committed compat events, recovery operations, todos
+and pending requests. `MemoryRuntimeStore` and `SqliteRuntimeStore` implement
+it for tests; both refuse a turn finalisation whose lease is not the one the
+session holds (`AgentRuntimeStaleTurnError`).
+
+## Session config helpers
+
+- `resolveSessionModel(config)` and `resolveTurnSystem(config, channel, turnSystem)` decide the model and system block one turn runs with.
+- `admitSessionInstructions({ channel, instructions, harness })` refuses a retained instruction block a harness cannot carry or that exceeds `SESSION_INSTRUCTIONS_MAX_BYTES`.
+- `acceptsSessionTitle` / `boundSessionTitleSource` say when a writer may replace a session's title.
+- Permission ceilings: `permissionModeLevel`, `permissionCeilingAdmits`, `narrowerPermissionLevel`, `widestPermissionModeUnder`.
+
+## Docs
+
+`docs/agent.md` is the entry for a coding agent; `docs/concepts.md`,
+`docs/architecture.md`, `docs/boundaries.md`, `docs/api.md` and
+`docs/recipes.md` follow from it. `docs/api-manifest.json` is the reviewed
+public API; `bun run check:api-manifest` verifies it and `bun run verify:publish`
+builds `dist/` and checks declaration hashes before a publish.

@@ -1,13 +1,33 @@
-import { describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { randomUUID } from "node:crypto"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentMessage, AgentSession } from "@claxedo/agent-sdk-runtime"
-import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-import type { RuntimeEventEnvelopeInput } from "../runtime-event-hub"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import type { CompatEnvelope } from "../compat-events"
 import { permissionAsked, permissionReplied, questionAsked, questionRejected } from "../compat-events"
 import type { SessionTurnOrigin } from "../session-access-policy"
+import { RuntimeStore } from "../store"
 import { HOST_CHILD_PROVIDER_KIND, childSummary, createChildSessionHost, hostChildRow, wakeMessageId, type ChildSessionHostInput } from "./session-children"
 
 const DIRECTORY = "/workspace"
+
+const opened: Array<{ store: RuntimeStore; root: string }> = []
+
+afterEach(() => {
+  for (const entry of opened.splice(0)) {
+    entry.store.close()
+    rmSync(entry.root, { recursive: true, force: true })
+  }
+})
+
+function openStore() {
+  const root = mkdtempSync(join(tmpdir(), "wr-child-host-"))
+  const store = new RuntimeStore(root)
+  opened.push({ store, root })
+  return store
+}
 
 function assistant(id: string, text: string, error?: { name: string; data: { message?: string } }): AgentMessage {
   return {
@@ -22,19 +42,20 @@ function harness(input: {
   startTurn?: ChildSessionHostInput["startTurn"]
   subscribe?: (fn: (event: CompatEnvelope) => void) => () => void
   /** Durable state a "restart" keeps: pass both to rebuild a host over them. */
-  store?: MemoryRuntimeStore
+  store?: RuntimeStore
   origins?: Map<string, SessionTurnOrigin>
   /** Runs inside the origin write, where a racing caller would land. */
   onRecord?: () => Promise<void>
   getSession?: ChildSessionHostInput["getSession"]
 } = {}) {
-  const store = input.store ?? new MemoryRuntimeStore()
+  const store = input.store ?? openStore()
   const origins = input.origins ?? new Map<string, SessionTurnOrigin>()
   const sessions = new Map<string, AgentSession>()
   for (const [id, session] of Object.entries(input.sessions ?? {})) {
     sessions.set(id, { id, directory: DIRECTORY, time: { created: 1, updated: 1 }, ...session })
   }
-  const published: RuntimeEventEnvelopeInput[] = []
+  /** Every observation the host asked the broker to admit, in order; the broker publishes what it admits. */
+  const admitted: Array<{ parentSessionId: string; event: SubagentUpdatedEvent }> = []
   const turns: Array<{
     parentSessionId: string
     messageID?: string
@@ -45,7 +66,12 @@ function harness(input: {
   const settle: Array<() => void> = []
   const originKey = (parentSessionId: string, subagentKey: string) => `${parentSessionId}\0${subagentKey}`
   const host = createChildSessionHost({
-    admission: { admit: (row) => store.admit(row), markPublished: (parent, id) => store.markPublished(parent, id) },
+    admit: async (parentSessionId, observation) => {
+      const row = store.admit({ parentSessionId, observation, allocateKey: () => `subagent_${randomUUID()}` })
+      if (!row.published) store.markPublished(parentSessionId, row.observationId)
+      admitted.push({ parentSessionId, event: row.event })
+      return row.event
+    },
     secret: () => "test-secret",
     origins: {
       record: async (parentSessionId, subagentKey, origin) => {
@@ -60,9 +86,6 @@ function harness(input: {
       .map((row) => ({ parentSessionId: "parent", childSessionId: row.childSessionId!, directory: DIRECTORY })),
     getSession: input.getSession ?? ((sessionId) => sessions.get(sessionId) ?? null),
     getMessages: (sessionId) => input.messages?.[sessionId] ?? [],
-    publishRuntime: (event) => {
-      published.push(event)
-    },
     ...(input.subscribe ? { subscribeGlobal: input.subscribe } : {}),
     startTurn: input.startTurn ?? (async (turn) => {
       turns.push({
@@ -76,7 +99,7 @@ function harness(input: {
       return "started"
     }),
   })
-  return { host, store, origins, sessions, published, turns, settle }
+  return { host, store, origins, sessions, admitted, turns, settle }
 }
 
 const ORIGIN: SessionTurnOrigin = {
@@ -92,7 +115,7 @@ describe("host-owned child sessions", () => {
     await item.host.onTurnStarted("child", DIRECTORY)
     await item.host.onTurnSettled("child", DIRECTORY)
     expect(item.turns).toEqual([])
-    expect(item.published).toEqual([])
+    expect(item.admitted).toEqual([])
   })
 
   test("derives idempotent child ids from the secret, caller identity and request id", () => {
@@ -105,7 +128,7 @@ describe("host-owned child sessions", () => {
   })
 
   test("admits the created child as a pending host row the parent can list", async () => {
-    const { host, store, published } = harness({ sessions: { parent: {}, child: { parentID: "parent" } } })
+    const { host, store, admitted } = harness({ sessions: { parent: {}, child: { parentID: "parent" } } })
     const { subagentKey } = await host.admitCreated({
       parentSessionId: "parent",
       childSessionId: "child",
@@ -127,7 +150,7 @@ describe("host-owned child sessions", () => {
       childSessionId: "child",
       transcript: { kind: "live" },
     }])
-    expect(published).toMatchObject([{ directory: DIRECTORY, sessionId: "parent", payload: { type: "subagent-updated", subagentKey, status: "pending" } }])
+    expect(admitted).toMatchObject([{ parentSessionId: "parent", event: { type: "subagent-updated", subagentKey, status: "pending" } }])
     expect(await host.children("parent", DIRECTORY)).toMatchObject([{ subagentKey, childSessionId: "child", status: "pending" }])
     expect(await host.childOf("child", DIRECTORY)).toMatchObject({ subagentKey })
     expect(await host.activeChildren("parent", DIRECTORY)).toHaveLength(1)
@@ -333,7 +356,7 @@ describe("host-owned child sessions", () => {
     deliver!({ directory: DIRECTORY, payload: questionAsked({ id: "q-1", sessionID: "child", questions: [] } as never) })
     await settled()
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey, attention: 2 }])
-    expect(item.published.at(-1)).toMatchObject({ sessionId: "parent", payload: { type: "subagent-updated", attention: 2 } })
+    expect(item.admitted.at(-1)).toMatchObject({ parentSessionId: "parent", event: { type: "subagent-updated", attention: 2 } })
 
     deliver!({ directory: DIRECTORY, payload: permissionReplied("child", "perm-1", "once") })
     await settled()

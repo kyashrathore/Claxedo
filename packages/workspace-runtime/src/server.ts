@@ -9,7 +9,6 @@ import { Pty } from "./pty/index"
 import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
-import type { OpenCodeRuntime } from "@claxedo/harness/opencode-sdk"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
@@ -82,12 +81,11 @@ export type WorkspaceRuntimeServerOptions = {
    * requires an actor, and the contribution seam supplies none of its own.
    */
   ownerGrantIdentity?: OwnerGrantIdentity
-  /** The process-owned public embedded-SDK runtime behind the native `opencode` harness. */
-  opencodeRuntime?: OpenCodeRuntime
-  /** Standalone hosts close their injected SDK owner during process drain. */
-  ownsOpenCodeRuntime?: boolean
   harness?: WorkspaceHostOptions["harness"]
+  placement: WorkspaceHostOptions["placement"]
   connectionProviders?: WorkspaceHostOptions["connectionProviders"]
+  harnessStateRoot?: WorkspaceHostOptions["harnessStateRoot"]
+  env?: WorkspaceHostOptions["env"]
   resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
@@ -97,7 +95,9 @@ export type WorkspaceRuntimeServerOptions = {
   storeRoot?: string
   /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
   configApplyReceiptDir?: string
-  beforeAdapterAcquire?: WorkspaceHostOptions["beforeAdapterAcquire"]
+  beforeHarnessAcquire?: WorkspaceHostOptions["beforeHarnessAcquire"]
+  /** The event stream's lease renewal cadence; a test shortens it to watch a revocation land. */
+  renewalIntervalMs?: number
   serviceExposure?: WorkspaceRuntimeServiceExposure
   exposure?: WorkspaceRuntimeExposure
   /**
@@ -307,7 +307,6 @@ type WorkspaceRuntimeDrainOptions = {
   hostTunnel?: { close(): unknown }
   processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
-  openCodeDispose?: () => Promise<void>
   hostDrain?: () => Promise<void> | void
 }
 
@@ -333,7 +332,6 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
         await drainStep(errors, () => (options.processDispose ?? ProcessManager.dispose)(options.directory))
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
-        await drainStep(errors, () => options.openCodeDispose?.())
         await drainStep(errors, () => options.hostDrain?.())
         if (errors.length) {
           throw new AggregateError(errors, "Workspace runtime drain failed")
@@ -432,7 +430,7 @@ function trustedAgentHookCallback(input: { token: string; path: string; method: 
   return Pty.agentHookAccessForToken(input.token)?.context.authority.workspaceId === workspaceId
 }
 
-export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions = {}): WorkspaceRuntimeApp {
+export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions): WorkspaceRuntimeApp {
   const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
@@ -450,15 +448,17 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ? managedWorkspaceSessionAccessPolicy()
       : remoteWorkspaceSessionAccessPolicyFromEnv())
   const host = createWorkspaceHost({
-    ...(options.opencodeRuntime ? { opencodeRuntime: options.opencodeRuntime } : {}),
+    placement: options.placement,
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
+    ...(options.harnessStateRoot ? { harnessStateRoot: options.harnessStateRoot } : {}),
+    ...(options.env ? { env: options.env } : {}),
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
-    ...(options.beforeAdapterAcquire ? { beforeAdapterAcquire: options.beforeAdapterAcquire } : {}),
+    ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
@@ -682,7 +682,11 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   })
 
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
-  host.mount(app, { core: { upgradeWebSocket: nodeWebSocket.upgradeWebSocket }, exposure: options.exposure! })
+  host.mount(app, {
+    core: { upgradeWebSocket: nodeWebSocket.upgradeWebSocket },
+    exposure: options.exposure!,
+    ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
+  })
 
   let disposal: Promise<void> | undefined
   const dispose = () => {
@@ -723,8 +727,8 @@ export type WorkspaceRuntimeLifecycleOptions = {
 }
 
 export function startServer(
-  port = 3002,
-  options: WorkspaceRuntimeServerOptions = {},
+  port: number,
+  options: WorkspaceRuntimeServerOptions,
   lifecycle: WorkspaceRuntimeLifecycleOptions = {},
 ) {
   const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
@@ -765,9 +769,6 @@ export function startServer(
         directory: options.target?.directory ?? workspaceDir(),
         drainTimeoutMs,
         ...(hostTunnel ? { hostTunnel } : {}),
-        ...(options.ownsOpenCodeRuntime && options.opencodeRuntime
-          ? { openCodeDispose: () => options.opencodeRuntime!.close() }
-          : {}),
         ...(options.onDrain ? { hostDrain: options.onDrain } : {}),
       }),
     exit: (code) => process.exit(code),

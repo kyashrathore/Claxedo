@@ -132,10 +132,7 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.hostname).toBe("127.0.0.1")
     expect(boot.options.exposure?.kind).toBe("loopback")
     expect(boot.options.harness).toBeUndefined()
-    expect(boot.options.connectionProviders?.map((provider) => provider.providerKey)).toEqual([
-      "acp",
-      "opencode-server",
-    ])
+    expect(boot.options.placement).toEqual({ placement: "cloud", machineOwnerUserId: "", canUseOwnLogin: false })
     expect(boot.options.target).toEqual({ workspaceId: "ws-env", directory: process.cwd() })
     expect(boot.options.relayHostAuth).toBeUndefined()
     expect(boot.options.hostTunnel).toBeUndefined()
@@ -150,19 +147,6 @@ describe("claxedo workspace-runtime boot policy", () => {
     const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
     expect(plain.options.routeContributions?.map((entry) => entry.id))
       .toEqual([FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
-  })
-
-  test("owns a public embedded-SDK runtime only when the native OpenCode harness is selected", async () => {
-    const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() }
-    const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
-    expect(plain.options.opencodeRuntime).toBeUndefined()
-    expect(plain.options.ownsOpenCodeRuntime).toBeUndefined()
-    const pi = await claxedoWorkspaceRuntimeBootFromEnv({ ...env, WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi" })
-    expect(pi.options.opencodeRuntime).toBeUndefined()
-    const opencode = await claxedoWorkspaceRuntimeBootFromEnv({ ...env, WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode" })
-    expect(opencode.options.opencodeRuntime).toBeDefined()
-    expect(opencode.options.ownsOpenCodeRuntime).toBe(true)
-    await opencode.options.opencodeRuntime!.close()
   })
 
   test("selects either an explicit native harness or a configured connection", () => {

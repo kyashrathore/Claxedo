@@ -15,6 +15,7 @@ import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-st
 import { documentRelayJobTokenAudience, mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../../../workspace-runtime/src/internal-secrets"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 describe("hosted local document relay", () => {
   const originalFetch = globalThis.fetch
@@ -115,10 +116,12 @@ describe("hosted local document relay", () => {
     }) as typeof fetch
     const untrusted = createWorkspaceRuntimeApp({
       exposure: { kind: "loopback" },
+      placement: loopbackMachineLoginPolicy(),
       internalSecrets,
     })
     expect((await untrusted.app.request("/api/wr/local-documents/broker", { method: "POST" })).status).toBe(404)
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       exposure: relayWorkspaceRuntimeExposure({
         key: key.publicKey,
         workspaceId: "local_ws",

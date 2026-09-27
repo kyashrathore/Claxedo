@@ -8,10 +8,6 @@ export type AcpEventTranslatorState = SessionState
 
 export type AcpEventTranslatorOptions = {
   client: string
-  /**
-   * ACP clients usually already own user prompt rendering upstream, so replaying
-   * user_message_chunk would duplicate the message in live projections.
-   */
   preserveUserMessageChunks?: boolean
 }
 

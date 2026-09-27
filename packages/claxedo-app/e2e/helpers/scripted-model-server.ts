@@ -42,7 +42,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { asRecord } from "@claxedo/helpers/guards"
-import { SESSION_TITLE_SYSTEM_PROMPT } from "../../../agent-sdk-runtime/src/title-generation"
+import { SESSION_TITLE_SYSTEM_PROMPT } from "../../../workspace-runtime/src/host/title-generation"
 import { frame, textDeltaChunks } from "../../../harness/e2e/harness/scripted-model-replies"
 import type {
   ContentBlock,

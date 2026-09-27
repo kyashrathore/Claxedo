@@ -40,17 +40,17 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
   const services = createHarnessServices({ ownership: volatileLaunchOwnership(), log, clock, patternEvaluator: async () => {},
     transcripts: { workspaceId: "w1", resolver: { register: async () => ({ state: "ready", handle: "h1" }),
       open: async () => ({ state: "ready", messages: [] }) } } })
-  const composer = createHarnessComposer(services, { acp: { missingContext: async () => { throw new Error("No saved context") } },
-    pi: { binary: peer, runtime: process.execPath, env: { ...process.env, COMPOSE_PEER_KIND: "pi" },
+  const composer = createHarnessComposer(services, { acp: () => ({ missingContext: async () => { throw new Error("No saved context") } }),
+    pi: () => ({ binary: peer, runtime: process.execPath, env: { ...process.env, COMPOSE_PEER_KIND: "pi" },
       placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
-      stateRoot: path.join(root, "pi-state"), ownerAgentDir: path.join(root, "pi-agent") },
-    codex: { binary: peer, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
-      env: { ...process.env, COMPOSE_PEER_KIND: "codex" } },
-    claude: { executable: "claude", configRoot: path.join(root, "claude-homes"),
-      userConfigRoot: path.join(root, "claude-owner"), env: process.env },
-    cursor: { env: process.env, homeRoot: path.join(root, "cursor-homes"), placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true },
-    opencode: { login: { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }, databasePath: path.join(root, "opencode.db"), configContent: JSON.stringify({ model: "proof/proof",
-      provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof", models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } } }) } })
+      stateRoot: path.join(root, "pi-state"), ownerAgentDir: path.join(root, "pi-agent") }),
+    codex: () => ({ binary: peer, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
+      env: { ...process.env, COMPOSE_PEER_KIND: "codex" } }),
+    claude: () => ({ executable: "claude", configRoot: path.join(root, "claude-homes"),
+      userConfigRoot: path.join(root, "claude-owner"), env: process.env }),
+    cursor: () => ({ env: process.env, homeRoot: path.join(root, "cursor-homes"), placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }),
+    opencode: () => ({ login: { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }, databasePath: path.join(root, "opencode.db"), configContent: JSON.stringify({ model: "proof/proof",
+      provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof", models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } } }) }) })
   const brokerFor = (connectionId: string) => ({ rebind: committed(root, connectionId) }) as unknown as SessionBroker
   try {
     const acpDescriptor = { connectionId: "acp-1", providerKey: "acp", configRevision: 1, enabled: true,

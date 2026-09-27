@@ -1,4 +1,4 @@
-import type { SessionConfig, SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import type {
   AgentContentPart,
   AgentQuestionInfo,
@@ -101,15 +101,6 @@ export function persistedTodoRow(value: unknown): AgentTodo | undefined {
     status: typeof row.status === "string" ? row.status : "",
     priority: typeof row.priority === "string" ? row.priority : "",
   }
-}
-
-export function persistedSubagentObservation(value: unknown): SubagentObservation | undefined {
-  return isPersistedSubagentObservation(value) ? value : undefined
-}
-
-/** A stored observation keeps the id the admission ledger dedupes on. */
-function isPersistedSubagentObservation(value: unknown): value is SubagentObservation {
-  return isRecord(value) && typeof value.observationId === "string"
 }
 
 function stringList(value: unknown): string[] {

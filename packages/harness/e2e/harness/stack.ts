@@ -89,8 +89,8 @@ export async function startStack(input: StackInput): Promise<Stack> {
       resistantChild: input.resistantChild,
       retirementFault: input.retirementFault,
       ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
-      ...(input.steerReplyFault === "codex" ? { codexExecutable: steerFault!.executable } : {}),
-      ...(inventoryFault ? { codexExecutable: inventoryFault.executable } : {}),
+      ...(input.steerReplyFault === "codex" ? { pathPrefix: steerFault!.bin } : {}),
+      ...(inventoryFault ? { pathPrefix: inventoryFault.bin } : {}),
       ...(rpcFault ? { piExecutable: rpcFault.executable } : {}),
       ...(claudeFault ? { claudeExecutable: claudeFault.executable } : {}),
     })

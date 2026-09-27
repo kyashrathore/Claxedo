@@ -2,10 +2,6 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeToolAttachment } from "@claxedo/agent-event-runtime/contracts"
 import { text } from "@claxedo/agent-event-runtime/value"
 
-/**
- * Maximum encoded image characters carried in one canonical attachment. Oversized
- * results are explicit unavailable attachments, never replaced with a path.
- */
 export const TOOL_ATTACHMENT_INLINE_MAX_BYTES = 128 * 1024
 
 export function attachmentUrl(mime: string, data: string) {

@@ -1,10 +1,4 @@
-import type { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
-
-type SessionRouteOpts = Parameters<typeof createSessionRoutes>[0]
-type ServerAdapter = Awaited<ReturnType<SessionRouteOpts["resolveAdapter"]>>
-type ServerExecuteCommand = NonNullable<ServerAdapter["executeCommand"]>
-type ServerCommandArgument = Parameters<ServerExecuteCommand>[1]
-type SessionCommandBody = { command?: ServerCommandArgument }
+type SessionCommandBody = { command?: string }
 
 class SessionCommandContractError extends Error {
   constructor(url: string, problems: string[]) {
@@ -13,8 +7,8 @@ class SessionCommandContractError extends Error {
   }
 }
 
-// The route has no named request schema. Bind its command value to the adapter
-// contract; reject extra fixture fields so tests cannot hide discarded user input.
+// The route has no named request schema. Reject extra fixture fields so tests
+// cannot hide discarded user input.
 export function parseSessionCommandRequest(rawBody: unknown, url: string): SessionCommandBody {
   if (rawBody === undefined || rawBody === null) return {}
   if (typeof rawBody !== "object" || Array.isArray(rawBody)) {

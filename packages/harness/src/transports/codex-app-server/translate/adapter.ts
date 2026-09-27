@@ -18,16 +18,11 @@ import { codexMcpApproval } from "./mcp-elicitation"
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
 export type CodexTurnUsageState = {
-  /** The Codex turn the accumulator sums; a thread's next turn starts its own. */
   turnId?: string
-  /** The model the accumulator's requests ran on; a turn moved to another model starts another. */
   model?: string
-  /** The usage stream the accumulator reports under. */
   scope?: string
-  /** The thread's lifetime totals at its previous tokenUsage event, for in-turn delta recovery. */
   previousTotals?: Record<string, unknown>
   previousTotalsSignature?: string
-  /** Raw token fields accumulated across every request of the current turn. */
   accumulated: {
     inputTokens: number | null
     cachedInputTokens: number | null
@@ -44,21 +39,8 @@ export type CodexAppServerAdapterState = {
     input?: Record<string, unknown>
     itemType?: string
   }>
-  /**
-   * Keyed by thread: one app-server reports every thread it runs, and a
-   * thread's `total` only differences against that same thread's.
-   */
   turnUsageByThread?: Record<string, CodexTurnUsageState>
-  /**
-   * The models this turn's own frames reported, in the order they arrived:
-   * a thread's settings by thread id, a rerouted turn by thread and turn id.
-   */
   reportedModels?: Record<string, string>
-  /**
-   * Last account-level limit that actually fired (`rateLimitReachedType` set).
-   * Thread `systemError` and failed turns do not carry that sentence, so the
-   * adapter keeps it across turn pruning and stamps it onto the terminal error.
-   */
   lastLimitedRateLimitMessage?: string
 }
 

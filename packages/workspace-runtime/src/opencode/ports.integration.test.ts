@@ -11,11 +11,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { createOpenCodeHost, type OpenCodeHost } from "@claxedo/harness/opencode-sdk/host"
-import { createCatalogPort, type OpenCodeCatalogPort } from "@claxedo/harness/opencode-sdk/catalog-port"
-import { createInteractionPort, type OpenCodeInteractionPort } from "@claxedo/harness/opencode-sdk/interaction-port"
-import { createSessionPort, type OpenCodeSessionPort } from "@claxedo/harness/opencode-sdk/session-port"
-import { WorkspaceScope, WorkspaceScopeError } from "@claxedo/harness/opencode-sdk/scope"
+import {
+  createCatalogPort,
+  createInteractionPort,
+  createOpenCodeHost,
+  createSessionPort,
+  WorkspaceScope,
+  WorkspaceScopeError,
+  type OpenCodeCatalogPort,
+  type OpenCodeHost,
+  type OpenCodeInteractionPort,
+  type OpenCodeSessionPort,
+} from "@claxedo/harness/opencode-sdk"
 import { wakeMessageId } from "../routes/session-children"
 
 let root: string

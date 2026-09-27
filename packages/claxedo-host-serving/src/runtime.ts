@@ -83,7 +83,6 @@ export type HostWorkspaceRuntimeOptions = {
   sessionAuthorityUrl: string
   /** Per-workspace state root from the persisted host state's `storage_root`. */
   storeRoot: string
-  opencodeRuntime?: WorkspaceRuntimeServerOptions["opencodeRuntime"]
   harness?: WorkspaceRuntimeServerOptions["harness"]
   routeContributions?: WorkspaceRuntimeServerOptions["routeContributions"]
 }
@@ -104,7 +103,9 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({ url: options.sessionAuthorityUrl }),
     storeRoot: options.storeRoot,
-    ...(options.opencodeRuntime ? { opencodeRuntime: options.opencodeRuntime } : {}),
+    // A connected host is the enrolling person's own machine: loopback callers
+    // are its owner, and relayed members are brokered.
+    placement: { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true },
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })

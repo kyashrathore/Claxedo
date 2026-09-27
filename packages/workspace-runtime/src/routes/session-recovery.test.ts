@@ -8,11 +8,9 @@ import {
   type RecoveryRequest,
   type RecoveryTurnTarget,
   recoveryTargetsMatch,
-  type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeRecovery, AgentRuntimeRecoveryInspection } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import type { AgentRuntime } from "@claxedo/agent-sdk-runtime"
+import type { TurnOrigin } from "@claxedo/harness/contract"
+import type { AgentRuntime, AgentRuntimeRecovery, AgentRuntimeRecoveryInspection } from "../host/runtime"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { runRuntimePromptTurn } from "../session/service"
 import { JSON_BODY_LIMIT_BYTES } from "./http"
@@ -20,6 +18,8 @@ import { acquireSessionTurnLease } from "./session-turn-lease"
 import { captureTurnTarget, containLostTurn, createSessionRoutes } from "./session-core"
 
 const SESSION = "session_1"
+
+const ORIGIN: TurnOrigin = { actor: { kind: "machine-owner" }, via: "loopback", reissued: false }
 
 const TARGET: RecoveryTurnTarget = {
   scope: "turn",
@@ -70,27 +70,6 @@ function inspection(target?: RecoveryTurnTarget): AgentRuntimeRecoveryInspection
   }
 }
 
-function adapter(): AgentHarnessAdapter {
-  return {
-    instructionChannel: "none",
-    getSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId }),
-    createSession: async () => ({ id: SESSION }),
-    updateSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId }),
-    getSessionConfig: async () => ({
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "test", modelID: "fixture" },
-      agent: "build",
-      variant: null,
-    }),
-    updateSessionConfig: async () => ({ harness: { id: "codex", access: "native" }, agent: null, variant: null }),
-    deleteSession: async () => {},
-    readHarnessCapabilities: () => ({ harness: "codex" }) as never,
-    executeTurn: () => (async function* () {})(),
-    getMessages: async () => [],
-    dispose: () => {},
-  } as unknown as AgentHarnessAdapter
-}
-
 type RecoveryDouble = {
   owner: AgentRuntimeRecovery
   submitted: Array<{ request: RecoveryRequest; callerId: string; authority: string }>
@@ -129,13 +108,27 @@ function recoveryDouble(input: {
   }
 }
 
-function routes(owner?: AgentRuntimeRecovery) {
-  return createSessionRoutes({
-    resolveAdapter: () => adapter(),
-    resolveDirectory: () => undefined,
+/**
+ * Recovery answers from the owner that already holds the session and never
+ * builds the runtime host: building it starts the very compute a caller is
+ * trying to contain. A recovery route that reaches for the host fails here.
+ */
+const noRuntime = async (): Promise<AgentRuntime> => {
+  throw new Error("recovery routes must not build the runtime host")
+}
+
+function routeOptions(owner?: AgentRuntimeRecovery) {
+  return {
+    runtime: noRuntime,
+    defaultHarness: () => ({ id: "codex", access: "native" }) as const,
+    requestedSessionHarness: () => undefined,
     publishGlobal: () => {},
     ...(owner ? { resolveRecoveryOwner: () => owner } : {}),
-  })
+  }
+}
+
+function routes(owner?: AgentRuntimeRecovery) {
+  return createSessionRoutes({ ...routeOptions(owner), resolveDirectory: () => undefined })
 }
 
 function submitRequest(overrides: Partial<RecoveryRequest> = {}): RecoveryRequest {
@@ -316,9 +309,8 @@ describe("session recovery routes", () => {
     const directories: Array<string | undefined> = []
     const owner = recoveryDouble({ target: TARGET })
     const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
+      ...routeOptions(),
       resolveDirectory: () => "/repo/main",
-      publishGlobal: () => {},
       resolveRecoveryOwner: () => ({
         ...owner.owner,
         inspect: (sessionId, directory) => { directories.push(directory); return owner.owner.inspect(sessionId) },
@@ -470,6 +462,7 @@ describe("containing a turn whose lease was revoked", () => {
         sessionId: SESSION,
         directory: undefined,
         body: { messageID: "msg_1", parts: [{ type: "text", text: "go" }], delivery: delivery === "queue" ? "queue" : undefined },
+        origin: ORIGIN,
         publishGlobal: () => {},
         onTurnTarget: lostTurn.set,
       })

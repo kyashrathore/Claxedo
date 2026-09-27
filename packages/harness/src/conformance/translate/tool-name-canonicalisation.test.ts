@@ -10,19 +10,10 @@ import { cursorSdkAdapter } from "../../transports/cursor-sdk/translate/adapter"
 import { piRpcAdapter } from "../../transports/pi-rpc/translate/adapter"
 import { createAcpEventTranslator } from "../../transports/acp/translate/event-translator"
 
-/**
- * Every harness spells its tools differently. The client-presentation projection is the
- * one place that mints a part, so it is the one place that can guarantee a spelling the
- * grouping vocabularies, the renderer registry and the subagent predicate all match.
- *
- * These cases drive the real adapter and the real projection, so a harness whose names
- * arrive uncanonicalised fails here rather than silently rendering ungrouped rows.
- */
 type Case = { harness: string; runtime: () => Runtime; events: unknown[]; expected: string[] }
 
 type Runtime = { ingest: (event: never) => { events: AgentRuntimeEvent[] } }
 
-/** Each case builds its own runtime so the five adapter state types never have to unify. */
 function harnessRuntime<S>(harness: string, adapter: HarnessEventAdapter<S>): Runtime {
   return createAgentEventRuntime({
     harness,

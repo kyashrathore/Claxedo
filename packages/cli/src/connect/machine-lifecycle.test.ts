@@ -387,7 +387,6 @@ async function inProcessHost() {
         listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 })
         return listener
       },
-      openCodeRuntime: () => undefined,
       setServing: setHostServing,
       servingState: hostServingState,
       stopServing: stopHostServing,

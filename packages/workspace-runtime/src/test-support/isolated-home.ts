@@ -1,4 +1,4 @@
-import "../../../agent-sdk-runtime/src/test-utils/isolated-home.mjs"
+import "./home/isolated-home.mjs"
 
 /** The runtime's data roots derive from the isolated home only when no inherited override names one. */
 for (const key of [

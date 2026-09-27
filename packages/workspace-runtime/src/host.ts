@@ -14,13 +14,13 @@ export type {
   EventDeliveryPrincipal,
   IdentityAwareEventSource,
 } from "./event-delivery"
-export { createRuntimeEventHub } from "./runtime-event-hub"
+export { createRuntimeEventHub } from "./projection/runtime-event-hub"
 export type {
   RuntimeEventEnvelope,
   RuntimeEventEnvelopeInput,
   RuntimeEventHub,
   RuntimeEventPublishers,
-} from "./runtime-event-hub"
+} from "./projection/runtime-event-hub"
 export {
   createWorkspaceHost,
   mountWorkspaceAgentHooks,
@@ -54,4 +54,3 @@ export type { GitHttpCredential, GitRunOptions } from "./git"
 export type { WorkspaceWorktreeRecord } from "./store"
 export type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 export type { AgentRuntimeStreamEvent, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
-export type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"

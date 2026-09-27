@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { prefixedRandomId } from "@claxedo/helpers"
 import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime/contracts"
 import type { ChildSessionRef } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 
@@ -21,22 +22,27 @@ export class SubagentBroker {
     this.ports.bindChildCorrelation(sessionId, correlationKey, child.sessionId)
   }
 
+  /** Admits and publishes one observation; the host's own child sessions arrive here without a turn. */
+  async admit(sessionId: string, observation: SubagentObservation): Promise<SubagentUpdatedEvent> {
+    const transcript = observation.transcript?.kind
+    const openable = transcript === "live" || transcript === "messages" || transcript === "file"
+    const admitted = this.ports.subagentAdmissionStore.admit({
+      parentSessionId: sessionId,
+      observation,
+      allocateKey: () => prefixedRandomId("subagent", "_"),
+      ...(openable ? { allocateChildSessionId: () => randomUUID() } : {}),
+    })
+    if (!admitted.published) {
+      await this.ports.publishSubagent(sessionId, admitted.event)
+      this.ports.subagentAdmissionStore.markPublished(sessionId, observation.observationId)
+    }
+    return admitted.event
+  }
+
   async observe(sessionId: string, observation: SubagentObservation): Promise<ChildSessionRef | undefined> {
     let event
     try {
-      const transcript = observation.transcript?.kind
-      const openable = transcript === "live" || transcript === "messages" || transcript === "file"
-      const admitted = this.ports.subagentAdmissionStore.admit({
-        parentSessionId: sessionId,
-        observation,
-        allocateKey: () => prefixedRandomId("subagent", "_"),
-        ...(openable ? { allocateChildSessionId: () => randomUUID() } : {}),
-      })
-      event = admitted.event
-      if (!admitted.published) {
-        await this.ports.publishSubagent(sessionId, event)
-        this.ports.subagentAdmissionStore.markPublished(sessionId, observation.observationId)
-      }
+      event = await this.admit(sessionId, observation)
     } catch (error) {
       if (!(error instanceof UnknownHostSubagentKeyError)) throw error
       await this.ports.publishSubagentDiagnostic(sessionId, {

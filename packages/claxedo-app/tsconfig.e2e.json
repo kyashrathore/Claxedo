@@ -49,13 +49,18 @@
       "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"],
       "@claxedo/workspace-runtime/relay": ["../workspace-runtime/src/relay.ts"],
       "@claxedo/sandbox-contract": ["../sandbox-contract/src/index.ts"],
-      // `e2e/fixtures/generate-harness-fixtures.ts` replays the harness translators;
-      // same source-alias convention as the workspace-runtime entries above.
-      "@claxedo/harness/translate": ["../harness/src/translate/index.ts"],
-      "@claxedo/harness/acp/translate": ["../harness/src/transports/acp/translate/index.ts"],
-      "@claxedo/harness/claude-sdk/translate": ["../harness/src/transports/claude-sdk/translate/index.ts"],
-      "@claxedo/harness/codex-app-server/translate": ["../harness/src/transports/codex-app-server/translate/index.ts"],
-      "@claxedo/harness/cursor-sdk/translate": ["../harness/src/transports/cursor-sdk/translate/index.ts"]
+      // Every `@claxedo/harness` export, by its source entry. The workspace-runtime
+      // source above imports these, and through the package exports they would
+      // otherwise resolve to `harness/dist`, which a changed transport leaves stale.
+      "@claxedo/harness/providers": ["../harness/src/registry/providers/index.ts"],
+      "@claxedo/harness/registry": ["../harness/src/registry/index.ts"],
+      "@claxedo/harness/compose": ["../harness/src/compose.ts"],
+      "@claxedo/harness/capabilities": ["../harness/src/capabilities/index.ts"],
+      "@claxedo/harness/broker": ["../harness/src/broker/index.ts"],
+      "@claxedo/harness/testing": ["../harness/src/test-support/index.ts"],
+      "@claxedo/harness/contract": ["../harness/src/contract/index.ts"],
+      "@claxedo/harness/opencode-sdk": ["../harness/src/transports/opencode-sdk/index.ts"],
+      "@claxedo/harness/testing/opencode": ["../harness/src/test-support/opencode.ts"]
     }
   },
   // No source exclusions: every authored file under e2e/ is typechecked.

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 const body = (value: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) })
 async function until<T>(read: () => Promise<T>, accepts: (value: T) => boolean): Promise<T> {
@@ -16,7 +17,7 @@ async function until<T>(read: () => Promise<T>, accepts: (value: T) => boolean):
 
 test.each(["accept", "decline"] as const)("draft initialization uses ordinary durable question routes (%s)", async (action) => {
   const directory = await mkdtemp(join(tmpdir(), "draft-connection-wire-"))
-  const host = createWorkspaceHost({ target: { workspaceId: "ws", directory }, storeRoot: join(directory, "state") })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target: { workspaceId: "ws", directory }, storeRoot: join(directory, "state") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (path: string, init?: RequestInit) => withWorkspaceTarget({ workspaceId: "ws", directory }, () => app.request(path, init))

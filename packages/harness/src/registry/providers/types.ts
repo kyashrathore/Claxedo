@@ -1,16 +1,9 @@
-import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
+import type { HarnessConnectionDescriptor, HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { HarnessServices } from "../../contract/services"
 import type { HarnessTransport } from "../../contract/transport"
 import { TransportError } from "../../contract/errors"
 
-export type HarnessConnectionDescriptor<TConfig = unknown> = {
-  connectionId: string
-  providerKey: string
-  configRevision: number
-  enabled: boolean
-  config: TConfig
-  secretRefs?: Readonly<Record<string, string>>
-}
+export type { HarnessConnectionDescriptor } from "@claxedo/agent-runtime-contract"
 
 export type ConnectionProviderProjection = Omit<HarnessConnectionRef, "connectionId" | "enabled">
 

@@ -30,8 +30,7 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
-import { createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
+import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -159,13 +158,9 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services ?? createLocalControlPlaneServices()
-  const connectionProviders = [
-    createAcpConnectionProvider(),
-    createOpenCodeServerConnectionProvider(),
-  ] as const
-  // One process-owned public embedded-SDK runtime, shared by every embedded
-  // workspace runtime this server creates; it is the native `opencode` harness.
-  const opencodeRuntime = openCodeSdkRuntime()
+  // The process-owned public embedded-SDK runtime behind the provider and
+  // credential routes; every embedded workspace host composes its own engine.
+  openCodeSdkRuntime()
 
   type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
   let settleTurnOutcome: TurnOutcomeHandler = () => undefined
@@ -183,8 +178,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // same machine-wide activation rows.
   const builtinToolGroups = localBuiltinToolGroupsReader()
   configureEmbeddedWorkspaceRuntime({
-    connectionProviders,
-    opencodeRuntime,
     // One policy for both kinds of caller: the machine's own user reaches
     // these runtimes over loopback and owns every session on them, while a
     // relayed org member is admitted only by the control plane's session
@@ -218,7 +211,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     brokerOrigin: firstPartyMcpBaseUrl,
   })
   configureAgentConfig({
-    connectionConfigs: [...defaultConnectionConfigs(), createOpenCodeServerConnectionProvider()],
+    connectionConfigs: defaultConnectionConfigs(),
     // The owner's pushed rows are written over the broker's answer: a
     // provider the owner named resolves to the owner's account, every other
     // one to whatever this machine holds.

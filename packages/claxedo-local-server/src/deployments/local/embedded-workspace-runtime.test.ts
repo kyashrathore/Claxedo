@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, afterEach, describe, expect, test } from "vitest"
-import { installFakePiRpc } from "../../../../agent-sdk-runtime/src/test-utils/fake-pi-rpc.mjs"
+import { installFakePiRpc } from "../../../../workspace-runtime/src/test-support/home/fake-pi-rpc.mjs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -30,8 +30,7 @@ import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters
 import { managedWorkspaceSessionAccessPolicy, Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
-import { createAcpConnectionProvider, NO_HARNESS_EFFORT, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
 
 /**
  * Delete workspace roots AFTER releasing the module-scoped sqlite handles:
@@ -118,48 +117,33 @@ describe("embedded workspace runtime", () => {
       todos: false, commands: false, fork: false, revert: false, unrevert: false,
       configOptions: false, subagents: false,
     }
-    const provider: ConnectionProvider<Record<string, never>> = {
+    const provider = fakeConnectionProvider({
       providerKey: "held-producer",
-      validateConfig: () => ({}),
-      project: () => ({ label: "Held producer", readiness: "ready", capabilities }),
-      resolve: () => ({ config: {} }),
-      createAdapter: () => {
+      label: "Held producer",
+      capabilities,
+      transport: () => {
         let ownsProducer = false
-        return {
-          sessionConfigOwner: "runtime",
-          instructionChannel: "none" as const,
-          async createSession(_directory, _title, id) { return { id: id!, agentSessionId: "upstream-held" } },
-          async getSession() { return null },
-          async getMessages() { return [] },
-          async updateSession() { return null },
-          async deleteSession() {},
-          async getSessionConfig() { throw new Error("runtime-owned config") },
-          async updateSessionConfig() { throw new Error("runtime-owned config") },
-          readHarnessCapabilities: () => ({
-            ...capabilities,
-            goals: false,
-            harness: "held",
-            effortLevels: NO_HARNESS_EFFORT,
-            instructionChannel: "none" as const,
-          }),
-          async *executeTurn(binding) {
+        return new FakeTransport({
+          capabilities: { instructionChannel: "none" },
+          upstreamSessionId: () => "upstream-held",
+          turn: async function* ({ session }) {
             ownsProducer = true
             started.resolve()
             try {
               await stopped.promise
               await tail.promise
               yield { type: "text-delta", delta: "final producer text" }
-              yield { type: "finish", sessionId: binding.sessionId }
+              yield { type: "finish", sessionId: session.binding.sessionId }
             } finally { producerDone.resolve() }
           },
-          dispose() {
-            if (!ownsProducer) return undefined
+          onDispose: async () => {
+            if (!ownsProducer) return
             stopped.resolve()
-            return producerDone.promise
+            await producerDone.promise
           },
-        }
+        })
       },
-    }
+    })
     configureEmbeddedWorkspaceRuntime({ connectionProviders: [provider] })
     let prompt: Promise<Response> | undefined
     try {
@@ -218,7 +202,7 @@ describe("embedded workspace runtime", () => {
       tail.resolve()
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
-      configureEmbeddedWorkspaceRuntime({ connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()] })
+      configureEmbeddedWorkspaceRuntime({})
       await removeWorkspaceRoot(root)
     }
   })

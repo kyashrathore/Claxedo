@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { request as httpRequest } from "node:http"
-import { sessionTitleRequest } from "../../../agent-sdk-runtime/src/title-generation"
+import { sessionTitleRequest } from "../../../workspace-runtime/src/host/title-generation"
 import { startScriptedModelServer } from "./scripted-model-server"
 
 type ObservedStreamFrame = {

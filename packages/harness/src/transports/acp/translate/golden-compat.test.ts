@@ -95,8 +95,6 @@ describe("ACP frozen compat output", () => {
       "tool-content",
       "thinking-audio-delta",
     ])
-    // A named text prompt chunk is representable: the compat projection files
-    // it as the turn's own user row and that row's text.
     expect(payloads.filter((payload) => payload.type === "message.updated")).toMatchObject([
       { properties: { info: { id: "user-message-1", role: "user" } } },
     ])

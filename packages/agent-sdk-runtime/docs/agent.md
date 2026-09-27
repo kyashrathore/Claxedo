@@ -5,27 +5,25 @@ This is the first file a coding agent should read when using
 
 ## Package Job
 
-Use this package to talk to agent harnesses through one host-facing
-`AgentRuntime` facade.
+Use this package for the shapes and helpers that every Claxedo runtime host and
+client share: sessions, prompts, session config, harness identity, permission
+ceilings, provider projections, the client-presentation event bridge, and the
+durable store contract.
 
-It normalizes sessions, messages, prompts, harness config, capabilities,
-permissions, questions, todos, and runtime event streams across supported
-transports.
-
-Do not use this package for product auth, database sync, workspace sharing,
-channel idempotency, billing, HTTP route policy, or gateway resolution. Hosts
-own those concerns.
+Do not use this package to start or prompt a harness: that is the runtime host
+in `@claxedo/workspace-runtime` over the transports in `@claxedo/harness`. Do
+not use it for product auth, database sync, workspace sharing, billing, HTTP
+route policy, or gateway resolution. Hosts own those concerns.
 
 ## Decision Table
 
 | Need | Read | Import from |
 | --- | --- | --- |
 | Mental model | [concepts.md](./concepts.md) | no import |
-| Stable runtime facade | [api.md](./api.md) | `@claxedo/agent-sdk-runtime` |
+| Stable types and helpers | [api.md](./api.md) | `@claxedo/agent-sdk-runtime` |
 | Host/runtime boundary | [boundaries.md](./boundaries.md) | no import |
-| Harness adapters | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/adapters` |
-| In-memory or virtual session environment | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/virtual-session-env` |
-| Claxedo client-presentation events | [api.md](./api.md) | `@claxedo/agent-sdk-runtime/compat-events` |
+| Client-presentation events | [api.md](./api.md) | `@claxedo/agent-sdk-runtime/compat-events` |
+| Store contract and test stores | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/adapters`, `./stores/*` |
 | Copy-paste examples | [recipes.md](./recipes.md) | depends on recipe |
 
 ## Stability Labels
@@ -33,30 +31,23 @@ own those concerns.
 | Label | Meaning |
 | --- | --- |
 | Stable | Intended public API for external hosts. |
-| Integration | Public harness/transport adapter API. Import from explicit subpaths. |
+| Integration | Public contract surfaces imported from explicit subpaths. |
 | Compatibility | Bridge for OpenCode or legacy Claxedo shapes. Do not build new systems around it. |
-| Experimental | Public but may change before 1.0. |
-| Internal | Not a supported public import. |
-| Deprecated | Kept temporarily to avoid abrupt ecosystem breaks. |
+| Advanced | Lower-level surfaces (the store contract) for host integrations. |
 
 ## Default Import Rules
 
-Use root imports for the runtime facade and shared host-visible types:
+Use root imports for shared types and config helpers:
 
 ```ts
-import {
-  createAgentRuntime,
-  type AgentSession,
-  type SessionConfig,
-} from "@claxedo/agent-sdk-runtime"
+import { admitSessionInstructions, resolveSessionModel, type AgentSession, type SessionConfig } from "@claxedo/agent-sdk-runtime"
 ```
 
-Use subpaths for adapters and stores:
+Use subpaths for the event bridge, provider projections, the store contract and stores:
 
 ```ts
-import { ClaudeHarnessAdapter, CodexHarnessAdapter, PiHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
+import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import { providerProjectionRecord } from "@claxedo/agent-sdk-runtime/provider-projection"
+import type { AgentRuntimeStoreWithRecovery } from "@claxedo/agent-sdk-runtime/adapters"
+import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 ```
-
-Register concrete adapters through `AgentHarnessFactory` records so the runtime
-provides their store, event hub, and failure sink.

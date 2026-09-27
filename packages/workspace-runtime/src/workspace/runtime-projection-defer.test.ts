@@ -2,19 +2,20 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import type { ResolvedCredentials, TransportConfigUpdate } from "@claxedo/harness/contract"
 import { Hono } from "hono"
-import type { AgentSession } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
 
 /**
- * Pi refuses to rotate its placeholder while a turn is running — the profile
- * file the placeholder lives in is read by the process the turn is talking to.
- * A renewal push is one every half-lifetime, so a session longer than that met
- * the refusal on every single one, and each failed the whole config apply.
+ * A harness may hold a credential rotation until its running turn ends, as Pi
+ * does: the placeholder lives in a profile file the running process reads. A
+ * renewal push is one every half-lifetime, so a session longer than that meets
+ * the hold on every one, and none of them may fail the whole config apply.
  */
 const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []
@@ -31,12 +32,8 @@ function snapshot(placeholder: string, mcp: Record<string, unknown> = {}): Runti
   return {
     version: 4,
     mcp,
-    connections: [],
-    defaultHarness: { kind: "native", harnessId: "pi" },
-    // Non-empty and unchanged across renewals: an empty launch map compares
-    // equal to the whole map as well as to this harness's own entry, and hides
-    // a comparison reading the wrong one of the two.
-    harnessLaunch: { pi: { agentDir: "/profiles/pi" } },
+    connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
+    defaultHarness: { kind: "connection", connectionId: "fixture" },
     auth: {
       pi: {
         baseUrl: "http://127.0.0.1:2595/bindings/pi1",
@@ -48,85 +45,68 @@ function snapshot(placeholder: string, mcp: Record<string, unknown> = {}): Runti
   }
 }
 
+function placeholderOf(credentials: ResolvedCredentials | undefined) {
+  const projection = credentials?.providers.pi
+  return projection && "placeholder" in projection ? projection.placeholder : undefined
+}
+
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "projection-defer-"))
   roots.push(directory)
   const target = { workspaceId: "ws_defer", directory }
-
-  const upstream = new Map<string, AgentSession>()
-  const applied: Array<Record<string, unknown>> = []
-  let projected: string | undefined
-  let turns = 0
+  const applied: TransportConfigUpdate[] = []
+  const placeholders: string[] = []
   let started = () => {}
   const startedTurn = new Promise<void>((resolve) => { started = resolve })
   let release = () => {}
   const heldTurn = new Promise<void>((resolve) => { release = resolve })
-
-  let refuseHeldApply = false
-  const adapter: AgentHarnessAdapter = {
-    adapterCapabilities: ["runtime-config"] as const,
-    setModel() {},
-    async applyConfig(config: Record<string, unknown>) {
-      // What the real Pi driver refuses: the placeholder lives in a profile
-      // file the running process reads, so only a projection that actually
-      // changes is a rotation. Everything else applies mid-turn.
-      const next = JSON.stringify(config.auth)
-      if (turns > 0 && next !== projected) throw new Error("Cannot rotate Pi credentials during an active turn")
-      if (refuseHeldApply && next !== projected) throw new Error("the profile could not be written")
-      projected = next
-      applied.push(config)
-    },
-    sessionConfigOwner: "runtime" as const,
-    async createSession(_directory: string, title: string | undefined, id?: string) {
-      const sessionId = id ?? "generated"
-      upstream.set(sessionId, { id: sessionId, title, directory, time: { created: 10, updated: 10 } })
-      return { id: sessionId, agentSessionId: `upstream-${sessionId}` }
-    },
-    async getSession() { return null },
-    async getMessages() { return [] },
-    async updateSession() { return null },
-    async deleteSession() {},
-    async getSessionConfig() { throw new Error("runtime-owned config") },
-    async updateSessionConfig() { throw new Error("runtime-owned config") },
-    readHarnessCapabilities: () => ({
-      abort: false, reconnect: false, replay: true, permissions: false, questions: false,
-      todos: false, commands: false, fork: false, revert: false, unrevert: false,
-      configOptions: false, subagents: false, goals: false, harness: "pi",
-    }),
-    async *executeTurn(binding: { sessionId: string }) {
-      turns++
-      started()
-      try {
-        await heldTurn
-        yield { type: "text-delta", delta: "answer" }
-        yield { type: "finish", sessionId: binding.sessionId }
-      } finally {
-        turns--
+  let refuseHeld = false
+  const transport = new FakeTransport({
+    onStart: (start) => { const placeholder = placeholderOf(start.credentials); if (placeholder) placeholders.push(placeholder) },
+    // A credential push during a turn is held; one that also moves the
+    // projection cannot be held back and is refused while the process runs.
+    configure: (update, self) => {
+      if (self.activeTurns > 0 && update.credentials) {
+        return update.projection
+          ? { state: "refused", reason: "Cannot rotate Pi credentials during an active turn" }
+          : { state: "deferred", until: "after-active-turns" }
       }
+      if (refuseHeld && update.credentials) return { state: "refused", reason: "the profile could not be written" }
+      applied.push(update)
+      const placeholder = placeholderOf(update.credentials)
+      if (placeholder && !placeholders.includes(placeholder)) placeholders.push(placeholder)
+      return { state: "applied" }
     },
-    dispose() {},
-  } as unknown as AgentHarnessAdapter
-
+    turn: async function* ({ session }) {
+      started()
+      await heldTurn
+      yield { type: "text-delta", delta: "answer" }
+      yield { type: "finish", sessionId: session.binding.sessionId }
+    },
+  })
   const host = createWorkspaceHost({
+    placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: join(directory, "state"),
-    harnesses: [{ match: (runner: { id: string }) => runner.id === "pi", create: () => adapter }],
-  } as never)
+    harnessStateRoot: join(directory, "harness"),
+    connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => transport })],
+  })
   cleanups.push(() => host.dispose())
+  cleanups.push(release)
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(
     `http://runtime.test${pathname}?directory=${encodeURIComponent(directory)}`,
     { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
-  return { host, request, applied, startedTurn, release, refuseHeld: () => { refuseHeldApply = true }, placeholders: () => [...new Set(applied.map((config) => (config.auth as Record<string, { placeholder?: string }>).pi?.placeholder))] }
+  return { host, request, applied, startedTurn, release, refuseHeld: () => { refuseHeld = true }, placeholders: () => [...placeholders] }
 }
 
-test("a renewal pushed into a running native turn is held, not failed, and lands when the turn ends", async () => {
+test("a renewal pushed into a running turn is held, not failed, and lands when the turn ends", async () => {
   const f = await fixture()
   await f.host.apply(snapshot("first"))
-  expect(f.placeholders()).toEqual(["first"])
   expect((await f.request("/session", "POST", { id: "held" })).status).toBe(201)
+  expect(f.placeholders()).toEqual(["first"])
 
   const prompt = f.request("/session/held/message", "POST", { parts: [{ type: "text", text: "go" }] })
   await f.startedTurn
@@ -152,11 +132,11 @@ test("a change the running turn's harness also reads is applied rather than held
 
   // Not projection-only: the MCP map changed too, and holding that back would
   // leave the apply claiming a server the runtime never handed over.
-  const mcp = { docs: { type: "local", command: ["docs"] } }
+  const mcp = { docs: { name: "docs", transport: "stdio", command: "docs", args: [], env: {} } }
   await f.host.apply(snapshot("first", mcp))
 
   expect(f.host.detail().configApply?.state).toBe("applied")
-  expect(f.applied.at(-1)!.mcp).toEqual(mcp)
+  expect(f.applied.at(-1)?.projection?.mcpServers).toMatchObject([{ kind: "stdio", name: "docs", command: "docs" }])
 
   f.release()
   await prompt
@@ -171,9 +151,9 @@ test("a rotation the harness refuses mid-turn fails the apply rather than being 
   await f.startedTurn
 
   // The placeholder AND the MCP map move together, so nothing can be held back
-  // and the adapter is asked to rotate while it is talking to the process.
-  await expect(f.host.apply(snapshot("renewed", { docs: { type: "local", command: ["docs"] } }))).rejects.toThrow()
-  expect(f.host.detail().configApply?.state).toBe("failed")
+  // and the harness is asked to rotate while it is talking to the process.
+  await expect(f.host.apply(snapshot("renewed", { docs: { name: "docs", transport: "stdio", command: "docs", args: [], env: {} } }))).rejects.toThrow("refused")
+  expect(f.host.detail().configApply).toMatchObject({ state: "failed", error: { code: "runtime_config_refused" } })
 
   f.release()
   await prompt
@@ -198,6 +178,6 @@ test("a held config that fails when the turn ends is reported, not swallowed", a
     await new Promise((resolve) => setTimeout(resolve, 1))
   }
 
-  expect(f.host.detail().configApply?.state).toBe("failed")
+  expect(f.host.detail().configApply).toMatchObject({ state: "failed", error: { code: "runtime_config_refused" } })
   expect(f.placeholders()).toEqual(["first"])
 })

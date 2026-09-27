@@ -1,7 +1,7 @@
 {
   "package": "@claxedo/agent-sdk-runtime",
   "version": "0.10.0",
-  "rootPolicy": "stable AgentRuntime facade and shared runtime types",
+  "rootPolicy": "stable shared runtime types, session config helpers and the store contract",
   "stabilityLabels": {
     "stable": "Intended public API for external hosts.",
     "integration": "Public harness/transport adapter API. Import from explicit subpaths.",
@@ -11,7 +11,7 @@
   "entrypoints": {
     "@claxedo/agent-sdk-runtime": {
       "status": "stable",
-      "purpose": "AgentRuntime facade and shared runtime types."
+      "purpose": "Shared runtime types, session config helpers and the durable store contract."
     },
     "@claxedo/agent-sdk-runtime/compat-events": {
       "status": "compatibility",
@@ -21,29 +21,13 @@
       "status": "compatibility",
       "purpose": "Session status normalization helpers."
     },
-    "@claxedo/agent-sdk-runtime/capabilities": {
-      "status": "stable",
-      "purpose": "Harness and adapter capability types and helpers."
-    },
-    "@claxedo/agent-sdk-runtime/runtime-event-hub": {
-      "status": "integration",
-      "purpose": "In-process runtime event fanout."
-    },
     "@claxedo/agent-sdk-runtime/provider-projection": {
       "status": "integration",
       "purpose": "Provider credential projection contracts and the record validator applied to pushed provider rows."
     },
-    "@claxedo/agent-sdk-runtime/mcp-resolver": {
-      "status": "integration",
-      "purpose": "MCP config resolution helpers."
-    },
-    "@claxedo/agent-sdk-runtime/subagent-admission": {
-      "status": "integration",
-      "purpose": "Parent-scoped subagent observation admission."
-    },
     "@claxedo/agent-sdk-runtime/adapters": {
       "status": "advanced",
-      "purpose": "Public advanced adapter contracts and adapter helper types."
+      "purpose": "Store contract types, recovery scope helpers and goal capability helpers."
     },
     "@claxedo/agent-sdk-runtime/message-page": {
       "status": "integration",
@@ -71,18 +55,14 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "0414ddd55816f381d4ef82d909b3af573130c2d4762f1d80ab1a6eaeefef7901",
+    "@claxedo/agent-sdk-runtime": "26515973fee3e13a3f84e8cf29204f096a51d95a8cc88357bb79188bff6105d9",
     "@claxedo/agent-sdk-runtime/compat-events": "65a84e13c8047078d51a4246884964de0feba488c4f69f991a31d812401f50f7",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
-    "@claxedo/agent-sdk-runtime/capabilities": "4330325eca22966c3b63d6312cdac4f8b618daef0ba82c0326cca0a56e8b87da",
-    "@claxedo/agent-sdk-runtime/runtime-event-hub": "f5d1bbec95d9c8dd7e98a2009c63f548a3361248a5198065c65c8138514f618a",
-    "@claxedo/agent-sdk-runtime/provider-projection": "782d8969102fba96a662f3b7800572b884ac38179b49ab7c5d9a761c8053ec44",
-    "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
-    "@claxedo/agent-sdk-runtime/subagent-admission": "c33ecd9674431994aa419dd5459a0ce6d38893754a900d0dd1b5ec5a8b70cc24",
-    "@claxedo/agent-sdk-runtime/adapters": "3b9646469b48a0ffd2b6aa545057023aa7e25013f06ba819bdade9bcd4f515c5",
-    "@claxedo/agent-sdk-runtime/message-page": "0414ddd55816f381d4ef82d909b3af573130c2d4762f1d80ab1a6eaeefef7901",
-    "@claxedo/agent-sdk-runtime/stores/memory": "fba97aa6164d898369f734bb9b5fbeb54f30e7188d0b1b486bed801094ae94d4",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "fa6fb282cc79a539aa33d92151d4e4a2689e55349d03e583cd57e6ea28fbff61",
+    "@claxedo/agent-sdk-runtime/provider-projection": "11afd299eb610f71799cfe4466341be7a1a20e86a8b9763c078e89ef7cce6b52",
+    "@claxedo/agent-sdk-runtime/adapters": "592044d4de45dc2d980a5fee23c25c007df0569a687551f8361a0723456898b0",
+    "@claxedo/agent-sdk-runtime/message-page": "eb135029b11ccd077977389656c8804efadcef98c8a76295c0eb5f34ade142bf",
+    "@claxedo/agent-sdk-runtime/stores/memory": "7fea62bb1ae35bd706e3201ddf427ee4138773a66ababc0d29b26f707c28c8af",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "9f4469c42688db29ab43fa41d333978494c2837035ded3cd695ee12710980a9d",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
   },
   "valueExports": {
@@ -91,12 +71,7 @@
       "AGENT_HARNESS_DEFINITIONS",
       "AGENT_HARNESS_IDS",
       "AGENT_HARNESS_KEYS",
-      "AGENT_RUNTIME_TURN_CONFLICT_CODE",
       "AUTO_LEVEL_ORDER",
-      "AgentRuntimeGoalError",
-      "AgentRuntimeTurnAdmissionError",
-      "AgentRuntimeTurnConflictError",
-      "ConnectionProviderError",
       "FIRST_TURN_ERROR_CLASSES",
       "GOAL_ACTIONS",
       "GOAL_OPTIONAL_FIELDS",
@@ -117,36 +92,27 @@
       "classifyFirstTurnError",
       "comparePermissionLevels",
       "connectionIdForHarness",
-      "createAcpConnectionProvider",
-      "createAgentRuntime",
-      "createConnectionProviderRegistry",
-      "createLiveModelSource",
-      "createMemorySubagentAdmissionStore",
-      "createSubagentAdmissionBoundary",
       "defaultSessionModel",
+      "deriveSessionTitle",
+      "extractPromptTitleText",
       "firstTurnErrorData",
       "goalActionAvailable",
       "goalCapabilities",
-      "harnessCapabilities",
       "harnessDefinition",
-      "harnessEffortLevels",
       "harnessEffortVerdict",
       "harnessKey",
       "isAcpConnectionId",
       "isAgentHarnessAccess",
       "isAgentHarnessId",
       "isAgentMessage",
-      "isAgentRuntimeGoalError",
-      "isAgentRuntimeTurnAdmissionError",
-      "isAgentRuntimeTurnConflictError",
       "isAutoLevel",
       "isHarnessEffortLevel",
       "isPermissionCeilingError",
+      "isPlaceholderTitle",
       "isProviderUnavailable",
       "isRuntimeGoalStatus",
       "live",
       "liveProviderBinding",
-      "modelConfigOption",
       "narrowerPermissionLevel",
       "normalizeAgentHarnessTransport",
       "normalizeHarnessIdentity",
@@ -162,8 +128,8 @@
       "providerProjectionRecord",
       "recovering",
       "renderSessionHandoff",
+      "renderSessionTranscript",
       "requireGoalAction",
-      "requireGoalResource",
       "resolveSessionModel",
       "resolveTurnSystem",
       "sessionInstructionsByteLength",
@@ -231,12 +197,6 @@
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "type",
       "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
-    },
-    "createAgentRuntime": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "function",
-      "purpose": "Create the public resource-namespace runtime facade."
     },
     "createMemoryRuntimeStore": {
       "status": "stable",

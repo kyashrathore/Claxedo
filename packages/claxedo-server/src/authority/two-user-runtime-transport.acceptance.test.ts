@@ -3,26 +3,14 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "../../../workspace-relay/src/auth"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-sdk-runtime"
-import { createAgentRuntime } from "../../../agent-sdk-runtime/src/runtime"
-import type { AgentHarnessAdapter } from "../../../agent-sdk-runtime/src/adapter-contract"
-import { createMemoryRuntimeStore } from "../../../agent-sdk-runtime/src/stores/memory"
-import {
-  buildAssistantMessage,
-  buildUserMessage,
-  messagePartUpdated,
-  messageUpdated,
-  sessionIdle,
-} from "../../../agent-sdk-runtime/src/compat-events"
-import { createSessionRoutes } from "../../../workspace-runtime/src/routes/session-core"
-import { workspaceEventsHandler } from "../../../workspace-runtime/src/routes/events"
-import { createRuntimeEventHub } from "../../../workspace-runtime/src/runtime-event-hub"
-import { sessionEventDeliveryPolicy } from "../../../workspace-runtime/src/event-delivery"
+import { createWorkspaceRuntimeApp } from "../../../workspace-runtime/src/server"
+import { relayWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/exposure"
+import { workspaceRuntimeBus } from "../../../workspace-runtime/src/bus"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
-import { createRelayHostAuthMiddleware } from "../../../workspace-runtime/src/workspace-host-service-auth"
+import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "../../../workspace-runtime/src/testing"
 import { WorkspaceCheckpointRoutes } from "../workspace/routes/checkpoints"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
 import { fetchUrl } from "../test-support/fetch-calls"
@@ -214,112 +202,22 @@ async function connect(app: Hono, token: string, lastEventId?: string, scope: "s
   }
 }
 
-function runtimeAdapter() {
-  const sessions = new Map<string, { id: string; title: string; time: { created: number; updated: number } }>()
-  const messages = new Map<string, Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>>()
+const CONNECTION = "acceptance-fixture"
+
+/** A harness whose turns record who authored them and answer "accepted"; the runtime keeps the transcript. */
+function runtimeHarness() {
   const authors: unknown[] = []
-  const binding = (sessionId: string) => ({
-    sessionId,
-    workspaceId: "ws_runtime_private",
-    directory: "/workspace",
-    connectionId: "pi",
-    upstreamSessionId: sessionId,
+  const turns: string[] = []
+  const transport = new FakeTransport({
+    capabilities: { instructionChannel: "none" },
+    turn: async function* ({ session, turn }) {
+      authors.push(turn.prompt.author)
+      turns.push(turn.userMessageId)
+      yield { type: "text-delta", delta: "accepted" }
+      yield { type: "finish", sessionId: session.binding.sessionId }
+    },
   })
-  const adapter: AgentHarnessAdapter = {
-    async getSession(execution) {
-      return sessions.get(execution.sessionId) ?? null
-    },
-    async createSession(_directory, title, id) {
-      const session = { id: id ?? "ses_runtime_private", title: title ?? "Private runtime", time: { created: 1, updated: 1 } }
-      sessions.set(session.id, session)
-      return session
-    },
-    async updateSession(execution, update) {
-      const current = sessions.get(execution.sessionId)
-      if (!current) return null
-      const session = { ...current, ...(update.title ? { title: update.title } : {}), time: { ...current.time, updated: Date.now() } }
-      sessions.set(execution.sessionId, session)
-      return session
-    },
-    async deleteSession(execution) {
-      sessions.delete(execution.sessionId)
-    },
-    async getSessionConfig() {
-      return { harness: { id: "pi", access: "native" }, agent: "build", variant: null }
-    },
-    async updateSessionConfig() {
-      return { harness: { id: "pi", access: "native" }, agent: "build", variant: null }
-    },
-    instructionChannel: "none" as const,
-    readHarnessCapabilities() {
-      return {
-        harness: "pi",
-        abort: false,
-        reconnect: true,
-        replay: true,
-        permissions: false,
-        questions: false,
-        todos: false,
-        commands: false,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: false,
-        subagents: false,
-        goals: false,
-        effortLevels: NO_HARNESS_EFFORT,
-        instructionChannel: "none" as const,
-      }
-    },
-    async *executeTurn(execution, input) {
-      const sessionId = execution.sessionId
-      authors.push(input.author)
-      const user = buildUserMessage({
-        id: input.userMessageId!,
-        sessionID: sessionId,
-        agent: input.agent,
-        model: input.model,
-        ...(input.author ? { author: input.author } : {}),
-      })
-      const userPart = {
-        id: `${input.userMessageId}-text`,
-        sessionID: sessionId,
-        messageID: input.userMessageId!,
-        type: "text" as const,
-        text: textPartText(input.parts[0]),
-      }
-      const assistant = buildAssistantMessage({
-        id: input.assistantMessageId,
-        sessionID: sessionId,
-        parentID: input.userMessageId!,
-        agent: input.agent,
-        model: input.model,
-        directory: "/workspace",
-      })
-      const assistantPart = {
-        id: `${input.assistantMessageId}-text`,
-        sessionID: sessionId,
-        messageID: input.assistantMessageId,
-        type: "text" as const,
-        text: "accepted",
-      }
-      messages.set(sessionId, [
-        ...(messages.get(sessionId) ?? []),
-        { info: user as unknown as Record<string, unknown>, parts: [userPart] },
-        { info: assistant as unknown as Record<string, unknown>, parts: [assistantPart] },
-      ])
-      yield messageUpdated(user)
-      yield messageUpdated(assistant)
-      yield messagePartUpdated(assistantPart)
-      yield sessionIdle(sessionId)
-      yield { type: "finish", sessionId }
-    },
-    async getMessages(execution) {
-      return messages.get(execution.sessionId) as never ?? []
-    },
-    dispose() {},
-  }
-  return { adapter, messages, authors, binding }
+  return { transport, authors, turns }
 }
 
 describe("two-user signed runtime transport acceptance", () => {
@@ -418,70 +316,33 @@ describe("two-user signed runtime transport acceptance", () => {
       rht(caseyAuth, "jti_runtime_casey"),
     ])
 
-    const busListeners = new Set<(event: unknown) => unknown>()
-    const sessionBus = {
-      publish(event: unknown) {
-        for (const listener of busListeners) listener(event)
-      },
-      subscribe(listener: (event: unknown) => unknown) {
-        busListeners.add(listener)
-        return () => busListeners.delete(listener)
-      },
-    }
-    const fixture = runtimeAdapter()
-    const store = createMemoryRuntimeStore()
-    const runtime = createAgentRuntime({
-      store,
-      harnesses: [{ id: "pi", access: "native", create: () => fixture.adapter } as never],
-    })
+    const sessionBus = workspaceRuntimeBus
+    const fixture = runtimeHarness()
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "http://control.test/api/runtime-authority/session-authorize",
       fetch: async (input, init) => oracle.request(fetchUrl(input), init),
     })
-    const runtimeApp = new Hono()
-    runtimeApp.use("*", createRelayHostAuthMiddleware({
-      key: key.publicKey,
-      workspaceId: "ws_runtime_private",
-      hostId: "host_runtime_private",
-      verifier: {
-        async verify(token) {
-          const verified = await jwtVerify(token, key.publicKey, {
-            issuer: "workspace-relay",
-            audience: "workspace-host-service",
-          })
-          return { subject: String(verified.payload.sub), scopes: [], claims: verified.payload as never }
-        },
-      },
-    }))
-    runtimeApp.route("/", createSessionRoutes({
-      resolveAdapter: () => fixture.adapter,
-      resolveRuntime: () => runtime,
-      resolveDirectory: () => "/workspace",
-      listSessions: () => runtime.sessions.list("/workspace"),
-      createSession: (_c, directory, title, id) => runtime.sessions.create({
-        id,
-        workspaceId: "ws_runtime_private",
-        directory,
-        title,
-        harness: { id: "pi", access: "native" },
-      }),
-      getSession: (_c, directory, sessionId) => runtime.sessions.get(sessionId, directory),
-      getMessages: (_c, _directory, sessionId) => fixture.adapter.getMessages(fixture.binding(sessionId)),
+    const workspaceDirectory = path.join(root, "workspace")
+    await fs.mkdir(workspaceDirectory, { recursive: true })
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: relayWorkspaceRuntimeExposure({ key: key.publicKey, workspaceId: "ws_runtime_private", hostId: "host_runtime_private" }),
+      placement: loopbackMachineLoginPolicy(),
+      target: { workspaceId: "ws_runtime_private", directory: workspaceDirectory },
+      storeRoot: path.join(root, "runtime-state"),
+      connectionProviders: [fakeConnectionProvider({ providerKey: CONNECTION, transport: () => fixture.transport })],
       sessionAccessPolicy: policy,
-      publishGlobal: () => {},
-    }))
-    // The workspace's one stream: a share grantee reads it session-scoped
-    // under a lease, a principal without a grant is refused.
-    runtimeApp.get("/api/wr/events", workspaceEventsHandler({
-      directory: "/workspace",
-      eventHub: createRuntimeEventHub(),
-      bus: sessionBus as never,
-      sessionAccessPolicy: policy,
-      policy: sessionEventDeliveryPolicy(policy),
       // A revocation reaches a delivered session at the renewal cadence, not
       // on its next frame; the cadence is shortened so `ended()` sees it.
       renewalIntervalMs: 200,
-    }))
+    })
+    await runtime.host.apply({
+      version: 4,
+      mcp: {},
+      auth: {},
+      connections: [{ connectionId: CONNECTION, providerKey: CONNECTION, configRevision: 1, enabled: true, config: {} }],
+      defaultHarness: { kind: "connection", connectionId: CONNECTION },
+    })
+    const runtimeApp = runtime.app
 
     const operationId = "op_runtime_private"
     const reserved = await signedRequest(alice.token, "/api/control/session-registrations/reserve", {
@@ -568,7 +429,7 @@ describe("two-user signed runtime transport acceptance", () => {
     expect(bobPrompt.status).toBe(204)
     expect(await bobPrompt.text()).toBe("")
     await vi.waitFor(() => {
-      expect(fixture.messages.get("ses_runtime_private")?.some((message) => message.info.id === "msg_bob_runtime")).toBe(true)
+      expect(fixture.turns).toContain("msg_bob_runtime")
     })
 
     const transcript = await runtimeRequest(runtimeApp, bobRht, "/session/ses_runtime_private/message")
@@ -631,11 +492,11 @@ describe("two-user signed runtime transport acceptance", () => {
     const bobWide = await connect(runtimeApp, bobRht, undefined, "workspace")
     const caseyWide = await connect(runtimeApp, caseyRht, undefined, "workspace")
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    sessionBus.publish({ type: "process.status", directory: "/workspace", configId: "workspace-process", status: "running" })
+    sessionBus.publish({ type: "process.status", directory: workspaceDirectory, configId: "workspace-process", status: "running" })
     sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
-      directory: "/workspace",
+      directory: workspaceDirectory,
       sessionID: "ses_runtime_private",
       info: { id: "ses_runtime_private", title: "wide-private" },
       ts: 1,
@@ -665,12 +526,12 @@ describe("two-user signed runtime transport acceptance", () => {
     sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
-      directory: "/workspace",
+      directory: workspaceDirectory,
       sessionID: "ses_runtime_private",
       info: { id: "ses_runtime_private", title: "live-private" },
       ts: 1,
     })
-    sessionBus.publish({ type: "process.status", directory: "/workspace", configId: "public-process", status: "running" })
+    sessionBus.publish({ type: "process.status", directory: workspaceDirectory, configId: "public-process", status: "running" })
     const control = (frame: { data: Record<string, unknown> }) => frame.data.payload as { info?: { title?: string }; sessionID?: string } | undefined
     const bobLiveFrames = await bobLive.until((frames) => frames.some((frame) => control(frame)?.info?.title === "live-private"))
     const bobCursor = bobLiveFrames.findLast((frame) => frame.id)?.id
@@ -680,7 +541,7 @@ describe("two-user signed runtime transport acceptance", () => {
     sessionBus.publish({
       type: "session.lifecycle",
       phase: "creating",
-      directory: "/workspace",
+      directory: workspaceDirectory,
       sessionID: "ses_runtime_private",
       info: { id: "ses_runtime_private", title: "during-reconnect-gap" },
       ts: 2,
@@ -761,8 +622,3 @@ function runtimeRequest(app: Hono, token: string, pathname: string, init: Reques
   return app.request(`http://runtime.test${pathname}`, { ...init, headers })
 }
 
-/** The prompt's first part is a text part; anything else has no text to echo back. */
-function textPartText(part: unknown) {
-  const text = part && typeof part === "object" && "text" in part ? part.text : undefined
-  return typeof text === "string" ? text : ""
-}

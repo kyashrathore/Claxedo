@@ -1,18 +1,17 @@
 # `@claxedo/workspace-runtime`
 
 The workspace-runtime is the per-workspace host service. One process per
-workspace. It owns workspace host wiring around the runner adapters, plus the
-PTY and process managers, the LSP/VCS surface, and the relay-host tunnel to
-`workspace-relay`. Runner adapters live in `@claxedo/agent-sdk-runtime`;
-workspace-runtime only wraps them where it needs host storage or environment
-wiring.
+workspace. It owns the runtime host that drives every harness through its
+`@claxedo/harness` transport, plus the PTY and process managers, the LSP/VCS
+surface, and the relay-host tunnel to `workspace-relay`. The transports live in
+`@claxedo/harness`; this package composes them and owns what they never decide.
 
 UI never imports this package directly. The user's browser talks to
 `claxedo-server`, which proxies to a workspace-runtime instance via the
 gateway pattern in `claxedo-server/src/proxy.ts`.
 
 See [`docs/architecture.md`](docs/architecture.md) for the five deployment
-shapes, the two event systems, the harness adapter seam, and the
+shapes, the two event systems, the harness transport seam, and the
 journal-backed store, in one place.
 
 ## Install
@@ -46,7 +45,7 @@ for the other four exposure/deployment options, and
 
 ## Package role: a kit, not a runnable artifact
 
-This package ships the runtime **primitives** (host wiring, adapters,
+This package ships the runtime **primitives** (host wiring, harness composition,
 PTY/process/file/git/event surfaces, config apply behavior, exposure/relay
 contracts). It deliberately ships **no bin**: runnable hosts are composed by
 downstream packages. ACP binaries are not shipped by Claxedo. The operator
@@ -62,13 +61,14 @@ but **no boot-policy ladder**.
 
 Host decision seams (all default to decision-free kit behavior):
 `storeFactory` (store implementation; default SQLite `RuntimeStore`),
-`harnesses` (adapter registry; default `defaultWorkspaceHarnessRegistry()`),
 `corsOrigin` (origin policy; kit default = loopback dev origins only, no
-product domains), generic `connectionProviders` plus a strict v3 runtime
-snapshot (operator-owned process/remote descriptors and secret references),
-`opencodeRuntime` (the process-owned public embedded SDK runtime behind the
-native `opencode` harness, composed by `@claxedo/harness/opencode-sdk`),
-and `startServer`'s third argument `{ signals: true }` (process
+product domains), generic `connectionProviders` (custom harness providers the
+`@claxedo/harness` registry composes beside its built-in ACP and Pi RPC ones)
+plus a strict v4 runtime snapshot (operator-owned process/remote descriptors
+and secret references), `placement` (where the runtime runs and whose machine
+it is, which every transport's own-login decision reads), `harnessStateRoot`
+and `env` (where Claxedo-owned harness homes live and the environment harness
+processes inherit), and `startServer`'s third argument `{ signals: true }` (process
 signal/exit handling; kit default makes no process-global claims). Claxedo
 supplies all of these from `claxedo-server` (`runtime-boot.ts`, embedded
 options); guards in claxedo-server's architecture tests ban product strings
@@ -93,14 +93,14 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/projection` | SSE fanout and replay helpers for runtime presentation frames. |
-| `@claxedo/harness/opencode-sdk` | Process-owned public embedded SDK host, workspace-scoped ports, and harness adapter (Node 24+). |
+| `@claxedo/harness/opencode-sdk` | The embedded OpenCode engine and its transport, which this runtime composes as the `opencode` registry row (Node 24+). |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
 | `@claxedo/workspace-runtime/config` | Runtime config snapshot and management-auth contracts. |
 | `@claxedo/workspace-runtime/routes` | Neutral `/api/wr/*` route manifest. |
 | `@claxedo/workspace-runtime/http` | Shared bearer-token, bounded-body, and error-response primitives for host-supplied routes. |
 | `@claxedo/workspace-runtime/route-contribution` | Host route-contribution contracts and lifecycle-safe route mounting. |
-| `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, and the OpenCode engine this runtime composes (its runtime, scope, fixtures and today's adapter) for tools outside the workspace graph, such as `claxedo-app/perf-harness`, which resolve packages only through `claxedo-app`'s dependencies and so can't reach `@claxedo/harness` directly. |
+| `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, the fake transport and connection provider, and the OpenCode engine this runtime composes (its runtime, scope and fixtures) for tools outside the workspace graph, such as `claxedo-app/perf-harness`, which resolve packages only through `claxedo-app`'s dependencies and so can't reach `@claxedo/harness` directly. |
 
 Root runtime value exports:
 `FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`,
@@ -111,9 +111,9 @@ Root runtime value exports:
 `WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
 `createPersistentTranscriptHandleStore`, `createProcessObserver`,
 `createRuntimeCredentialIssuer`,
-`createTranscriptResolver`, `createWorkspaceHost`, `createWorkspaceOpenCodeRuntime`,
+`createTranscriptResolver`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
-`defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
+`embeddedWorkspaceRuntimeExposure`,
 `firstPartyMcpServerFor`, `isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
 `loopbackWorkspaceRuntimeExposure`, `managedWorkspaceSessionAccessPolicy`,
 `normalizeRuntimeSnapshot`,
@@ -323,7 +323,7 @@ States: `"ready" | "applying" | "error"` (see
 3. **Config apply observable** — accepted runtime config writes redacted metadata to `<workspace>/.workspace-runtime/runtime-config/accepted-snapshot.json`, and apply progress writes `<workspace>/.workspace-runtime/runtime-config/apply-status.json` with `applying`, `applied`, or `failed`. Auth values are never written to these status files; only auth key names are recorded.
 4. **Config applied** — `claxedo-server` POSTs a `RuntimeSnapshot` to
    `/api/wr/config`. The host transitions to `"applying"` while the
-   adapter is reconfigured, then back to `"ready"`.
+   attached sessions are reconfigured, then back to `"ready"`.
 5. **Relay/direct discovery** — supervisors and relays track runtime
    availability outside the OSS runtime package. `/api/wr/health` exposes only
    liveness and boundary metadata; richer diagnostics stay behind authenticated
@@ -334,7 +334,7 @@ States: `"ready" | "applying" | "error"` (see
    `host.dispose()` (with `WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS` wall-clock cap,
    default 10s). See `server.ts` for the exact phase sequence (P4).
 
-Expected route, adapter, process, and relay failures are handled at their
+Expected route, harness, process, and relay failures are handled at their
 own owner boundaries and mapped to route-specific responses or runtime
 state. Process-level `unhandledRejection` and `uncaughtException` handlers
 are last-resort fatal paths: they stop accepting new work, run the same
@@ -352,122 +352,44 @@ rolls back and a later runtime start rebuilds the projection from the journal.
 Startup replay resets the SQLite projection and replays journals in sequence.
 Replay-time recovery normalization, multi-row event projections, session
 deletion, and multi-field session updates run inside SQLite transactions.
-Adapters that create a `RuntimeStore` close it during adapter disposal; callers
-that inject their own store remain responsible for closing it.
+The workspace host closes the store it opened when it is disposed; a caller
+that injects its own store through `storeFactory` still receives that close.
 
-## `AgentHarnessAdapter` contract
+## Harness transports
 
-Defined in `@claxedo/agent-sdk-runtime/adapters` and re-exported as a type from
-the workspace-runtime root. The adapter is the single deep seam between the
-host and a specific harness (OpenCode, ACP harnesses, native SDK harnesses, or
-Pi).
+The runtime host in `src/host/` drives every harness through one
+`HarnessTransport` per composed harness, from `@claxedo/harness/contract`.
+`src/workspace/transports.ts` composes them through the `@claxedo/harness`
+registry: a native harness (Claude, Codex, Cursor, OpenCode, Pi) by its
+registry row, a configured connection by its descriptor, directory and secret
+lease. There is no second path: OpenCode is a registry row like the others.
 
-```ts
-export interface AgentHarnessAdapter {
-  // Session lifecycle
-  listSessions(directory: string): Promise<unknown[]>
-  getSession(id: string, directory: string): Promise<unknown | null>
-  createSession(directory: string, title?: string): Promise<{ id: string }>
-  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: string): Promise<unknown | null>
-  getSessionConfig(id: string, directory: string): Promise<SessionConfig>
-  updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig>
-  deleteSession(id: string, directory: string): Promise<void>
+The host owns what a transport never decides: turn admission and fencing,
+durable writes and the SSE projection (`src/projection/`), recovery and its
+receipts, goals the harness does not run natively, session titles, handoffs
+and child sessions. One request broker per store (`@claxedo/harness/broker`
+over `src/broker-ports/`) answers every permission, question and elicitation a
+transport asks, and persists each answer before the harness is released.
 
-  readHarnessCapabilities(directory: string): Promise<HarnessCapabilities> | HarnessCapabilities
+A descriptor whose revision or secret lease changes replaces its transport.
+The superseded one is disposed only once the turns admitted on it have ended,
+so their cancellation and requests still reach the process running them.
+Shutdown disposes every transport first: a pending start or a running turn may
+only settle once its harness stops.
 
-  // Messaging
-  sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent>
-  getMessages(id: string, directory: string): Promise<unknown[]>
-  cancelTurn(id: string, input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number }, directory: string): Promise<AdapterCancelOutcome>
-  revert(id: string, directory: string): Promise<void>
-  unrevert(id: string, directory: string): Promise<void>
-  forkSession(id: string, messageId: string, directory: string): Promise<{ id: string }>
-
-  // Commands
-  executeCommand(id: string, command: string, directory: string): Promise<void>
-  listCommands(directory: string): Promise<unknown[]>
-
-  // Agents / todos / permissions / questions
-  listAgents(directory: string): Promise<unknown[]>
-  getTodos(sessionId: string, directory: string): Promise<Array<{ content: string; status: string; priority: string }>>
-  listPermissions(directory: string): Promise<unknown[]>
-  respondPermission(permId: string, decision: PermissionDecision, directory: string): Promise<void>
-  listQuestions(directory: string): Promise<unknown[]>
-  replyQuestion(qId: string, answer: string, directory: string): Promise<void>
-  rejectQuestion(qId: string, directory: string): Promise<void>
-
-  // Config injection (called by /api/wr/config)
-  applyConfig(config: Record<string, unknown>): Promise<void>
-
-  // Runner config-options surface (no-op when unsupported)
-  probeConfigOptions(directory: string): Promise<unknown[]>
-  peekConfigOptions?(directory: string): Promise<unknown[] | null> | unknown[] | null
-
-  dispose(): void
-}
-```
-
-### Implementations
-
-Adapter implementations live in `@claxedo/agent-sdk-runtime`, not in this
-package. Workspace Runtime owns hosting, routing, target containment, config
-apply, PTYs, processes, files, diffs, and relay attachment around those
-adapters.
-
-### Adapter selection
-
-Strict type-based dispatch happens once, at host construction
-([`workspace/runtime.ts`](src/workspace/runtime.ts)). After that, the rest
-of the codebase calls into the `AgentHarnessAdapter` interface only — there are
-no connection-id-specific branches in the call paths.
-
-The four model-fallback sites (`bootstrap.ts`, `client-presentation.ts`)
-are *model defaulting* decisions, not adapter-selection branches.
-
-### Operator-configured ACP connections
-
-Alongside the finite native harness ids, a v2 runtime snapshot's `harnesses`
-list may carry operator-configured ACP rows — `{ id: "<slug>", access: "acp",
-connection: { kind: "process", binary, args?, env? } }` where `<slug>` matches
-`^[a-z][a-z0-9-]{0,63}$` and is none of the built-in ids. `host.apply`
-normalizes and retains these as the **applied registry**; session requests may
-then select the identity alone (`acp:<slug>` or `{ id, access: "acp" }`) and
-the host resolves the process descriptor from that registry at adapter
-creation.
-
-Resolution is fail-closed: an identity with no applied descriptor raises
-`WorkspaceHarnessUnavailableError` (`workspace_harness_not_configured`) — it
-never falls back to a bundled first-party ACP binary or to OpenCode. The
-configured `binary` is spawned verbatim (stdio transport only), and `env` is
-applied over the process environment. Because the descriptor — including
-`env` — only enters through the trusted config-apply path (`POST
-/api/wr/config` / `host.apply`), session callers can never supply process
-environment. Operator-facing semantics (config schema, mutation API,
-enable/disable, id rebinding) live in
+Resolution is fail-closed: a connection with no applied descriptor, or one
+whose secret references no host resolves, raises
+`WorkspaceHarnessUnavailableError` (`workspace_harness_not_configured`), which
+the session routes answer with 409. It never falls back to a bundled
+first-party binary. A descriptor, including a process environment, only enters
+through the trusted config-apply path (`POST /api/wr/config` / `host.apply`),
+so session callers can never supply one. Operator-facing semantics live in
 [`public-docs/acp-connections.md`](../../public-docs/acp-connections.md).
 
-### Error semantics
-
-- `sendMessage` yields a `CompatEvent` async iterable. Adapter-level
-  errors surface as `{ type: "error", error }` events; transport
-  faults raise as exceptions and are caught by the host route handler.
-- `cancelTurn` returns an `AdapterCancelOutcome`: an `execution` fact
-  (`running` / `terminal` / `unknown`), a `cleanup` fact (`owned` /
-  `verified_clear` / `unknown`) and an optional error. It reports what the
-  harness established, not whether the request was accepted; the runtime
-  decides from those facts whether the turn may be finalized.
-- `dispose()` is fire-and-forget. The drain phase runs it inside
-  `Promise.race` with a wall-clock timeout (default 10s) so a stuck
-  dispose cannot strand SIGTERM-driven shutdown.
-
-### Crash recovery
-
-ACP runner crashes are caught by the ACP adapter in
-`@claxedo/agent-sdk-runtime`, which calls `onDead()` and emits
-`session.recover`. The session is marked
-`"recovering"` and the workspace itself stays alive; only the affected
-session is impacted. This is the same shape as opencode adapter
-crash-handling.
+A configuration change reaches each attached session once through
+`transport.configure`. A transport may hold it until that session's turn ends;
+a refusal fails the apply that asked for it, and a held push refused after the
+turn is reported on the apply status the same way.
 
 ## Plugging in auth
 

@@ -4,7 +4,7 @@ import type { PtyRoutes } from "../routes/pty"
 import type { RuntimeHarnessSelection, RuntimeSnapshot } from "../routes/config"
 import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
-import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentRuntimeHealth } from "../host/contracts"
 import type { WorkspaceRuntimeExposure } from "../exposure"
 import type { WorkspaceEventFramesTap } from "../routes/events"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
@@ -144,13 +144,13 @@ export type WorkspaceHost = {
     healthStatus: "ok" | "degraded" | "unavailable"
     harness?: RuntimeHarnessSelection
     error: string
-    harnessHealth: AgentHarnessAdapterHealth
+    harnessHealth: AgentRuntimeHealth
     connectionState?: WorkspaceConnectionState
     workspaceHarnessEnabled: boolean
     configApply: RuntimeConfigApplyStatus
   }
   /** Read health for one session's resolved harness, without unrelated session history. */
-  readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentHarnessAdapterHealth>
+  readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentRuntimeHealth>
   readConnectionState: (input?: { sessionId?: string; directory?: string }) => WorkspaceConnectionState | undefined
   capabilities: () => WorkspaceCapabilities
   /** Canonical in-process work that prevents daemon quiescence. */

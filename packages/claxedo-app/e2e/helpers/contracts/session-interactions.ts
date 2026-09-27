@@ -24,11 +24,10 @@
 // clause the way `session-prompt.ts` does.
 //
 // What CAN be type-bound is the other end of the permission route: the decision the
-// route computes and hands to the adapter is typed `PermissionDecision`
-// (`agent-sdk-runtime/src/adapter-contract.ts:99`), re-exported as
-// `AgentRuntimePermissionDecision` (`agent-sdk-runtime/src/runtime.ts:44`, exported at
-// `agent-sdk-runtime/src/index.ts:15`). `PERMISSION_RESPONSE_DECISIONS` binds to it,
-// and `PERMISSION_DECISION_UNION_PINNED` fails the build if that union ever changes.
+// route computes and hands to the runtime host is typed
+// `AgentRuntimePermissionDecision` in the workspace-runtime host contracts.
+// `PERMISSION_RESPONSE_DECISIONS` binds to it, and `PERMISSION_DECISION_UNION_PINNED`
+// fails the build if that union ever changes.
 //
 // THE HAZARD THIS FILE PRIMARILY EXISTS FOR
 // -----------------------------------------
@@ -44,7 +43,7 @@
 // `{ ok: true }` (session-core.ts:845). The user clicks Allow, the tool call is denied,
 // and nothing anywhere reports an error. `parseSessionPermissionRequest` below makes
 // that case loud, because no other layer will.
-import type { AgentRuntimePermissionDecision } from "@claxedo/agent-sdk-runtime"
+import type { AgentRuntimePermissionDecision } from "../../../../workspace-runtime/src/host/contracts"
 
 function typeOf(value: unknown) {
   if (value === null) return "null"
@@ -93,9 +92,8 @@ export const PERMISSION_RESPONSE_IS_DEFAULT_ONLY: Readonly<Record<PermissionResp
 }
 
 /**
- * Wire value -> the `PermissionDecision` the route hands to
- * `adapter.respondPermission(permId, decision, directory)` (session-core.ts:837;
- * adapter signature at `agent-sdk-runtime/src/adapter-contract.ts:99`).
+ * Wire value -> the decision the route hands to the runtime host's
+ * `permissions.respond`, which the request broker answers the harness with.
  *
  * Bound to the real decision union so a server-side rename of any decision breaks this
  * file's build rather than silently invalidating every mocked permission assertion.
@@ -110,8 +108,8 @@ type ExactUnion<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : fal
 
 /**
  * Compile-time tripwire on the decision union itself. If a decision is added, removed,
- * or renamed in `agent-sdk-runtime/src/runtime.ts:44`, this assignment stops being
- * `true` and typecheck fails here.
+ * or renamed in the host contracts, this assignment stops being `true` and typecheck
+ * fails here.
  *
  * It is pinned to FOUR members while `PERMISSION_RESPONSE_DECISIONS` can only ever
  * produce three — see PERMISSION_UNREACHABLE_DECISIONS.
@@ -122,12 +120,10 @@ export const PERMISSION_DECISION_UNION_PINNED: ExactUnion<
 > = true
 
 /**
- * Decisions the adapter contract supports but this HTTP route can NEVER produce.
+ * Decisions the host contract supports but this HTTP route can NEVER produce.
  *
- * `reject_always` is a first-class decision — `agent-sdk-runtime/src/adapter-contract.ts:35`
- * lists it, and the harnesses act on it distinctly (the Claude driver escalates it to an
- * interrupt: `agent-sdk-runtime/src/harnesses/claude/driver.ts:120`
- * `interrupt: decision === "reject_always"`). But session-core.ts:835 has no wire token
+ * `reject_always` is a first-class decision, and the harnesses act on it distinctly
+ * (Claude escalates it to an interrupt). But the permission route has no wire token
  * that reaches it: `"always"` is hard-wired to the ALLOW side. So "deny for the rest of
  * this session" is unreachable over HTTP.
  *

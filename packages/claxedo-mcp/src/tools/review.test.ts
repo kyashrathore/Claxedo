@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -45,48 +44,13 @@ afterAll(() => {
 /** The runtime's own session and diff routes over the real repository above. */
 function runtimeApp() {
   const routes = createSessionRoutes({
+    runtime: async () => { throw new Error("A review reads sessions and diffs; it never reaches the runtime") },
+    defaultHarness: () => ({ id: "claude", access: "native" }),
+    requestedSessionHarness: () => undefined,
     resolveDirectory: () => repository,
-    resolveExecutionBinding: (_c, directory, sessionId) => ({
-      workspaceId: "ws_local",
-      directory: directory ?? repository,
-      sessionId,
-      connectionId: "conn",
-      upstreamSessionId: sessionId,
-    }),
     listSessions: async () => sessions.map((row) => ({ ...row })),
     getSession: (_c, _directory, sessionId) => sessions.find((row) => row.id === sessionId) ?? null,
     publishGlobal: () => {},
-    resolveAdapter: () => ({
-      instructionChannel: "none" as const,
-      getSession: async (binding) => sessions.find((row) => row.id === binding.sessionId) ?? null,
-      createSession: async () => ({ id: "ses_new" }),
-      updateSession: async () => null,
-      getSessionConfig: async () => ({ harness: { id: "claude", access: "native" as const }, agent: "build", variant: null }),
-      updateSessionConfig: async () => ({ harness: { id: "claude", access: "native" as const }, agent: "build", variant: null }),
-      deleteSession: async () => {},
-      readHarnessCapabilities: () => ({
-        harness: "claude",
-        abort: true,
-        reconnect: false,
-        replay: true,
-        permissions: true,
-        questions: true,
-        todos: false,
-        commands: false,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: false,
-        subagents: false,
-        goals: false,
-        effortLevels: NO_HARNESS_EFFORT,
-        instructionChannel: "none",
-      }),
-      executeTurn: () => (async function* () {})(),
-      getMessages: async () => [],
-      dispose: () => {},
-      abort: async () => ({ ok: true as const, status: "cancelled" as const }),
-    }),
   })
   return new Hono().route("/api/wr/diff", createDiffRoutes()).route("/", routes)
 }

@@ -1,7 +1,7 @@
 # Architecture
 
 This is the map for `@claxedo/workspace-runtime`: the five deployment
-shapes, the two event systems, the harness adapter seam, and the store. Each
+shapes, the two event systems, the harness transport seam, and the store. Each
 section links back to the README section or source file that has the
 authoritative detail — this doc is the overview, not a duplicate.
 
@@ -64,29 +64,20 @@ reaches it (the workspace's owner is not special); a principal it refuses
 reads one session under `?sessionID=` and a lease. The README's
 [Event contract](../README.md#event-contract) table has the full route list.
 
-## Harness adapter seam
+## Harness transport seam
 
-The `AgentHarnessAdapter` interface (defined in
-`@claxedo/agent-sdk-runtime/adapters`, re-exported as a type from this
-package's root) is the single deep seam between the host and a specific
-harness — OpenCode, ACP harnesses, native SDK harnesses, or Pi. Adapter
-*implementations* live in `@claxedo/agent-sdk-runtime`, not here;
-workspace-runtime owns hosting, routing, target containment, config apply,
-PTYs, processes, files, diffs, and relay attachment around whichever adapter
-is selected.
-
-Adapter selection is strict type-based dispatch that happens once, at host
-construction time in [`src/workspace/runtime.ts`](../src/workspace/runtime.ts).
-After that point the rest of the codebase calls only through the
-`AgentHarnessAdapter` interface — there is no harness-type branching in the
-route/call paths. The full interface, error semantics (`sendMessage` yields
-`{ type: "error", error }` events on adapter faults; `cancelTurn` returns the
-execution and cleanup facts it established; `dispose()` races a wall-clock
-drain timeout), and crash
-recovery behavior (ACP crashes mark the affected session `"recovering"` and
-emit `session.recover` without taking down the workspace) are documented in
-the README's [`AgentHarnessAdapter` contract](../README.md#agentharnessadapter-contract)
-section.
+`HarnessTransport` (from `@claxedo/harness/contract`) is the single seam
+between the runtime host and a specific harness: Claude, Codex, Cursor,
+OpenCode, Pi and every configured ACP or Pi RPC connection. The transports
+live in `@claxedo/harness`; [`src/workspace/transports.ts`](../src/workspace/transports.ts)
+composes them through its registry, one per native harness and one per
+connection descriptor, directory and secret lease. The host in
+[`src/host/`](../src/host/) owns admission, fencing, durable writes,
+recovery, goals, titles, handoffs and child sessions around whichever
+transport a session runs on, and one request broker per store answers every
+request a transport asks. The README's
+[Harness transports](../README.md#harness-transports) section has the
+lifecycle, failure and configuration rules.
 
 ## The store: journal plus SQLite projection
 
@@ -114,9 +105,8 @@ derived projection rebuilt from it:
   sessions interrupted, terminalizing stale `pending`/`running` tool parts),
   multi-row event projections, session deletion, and multi-field session
   updates all run inside SQLite transactions.
-- Adapters that construct their own `RuntimeStore` close it during adapter
-  disposal; callers that inject their own store instance remain responsible
-  for closing it themselves.
+- The workspace host closes the store it opened when it is disposed, including
+  one a `storeFactory` supplied.
 
 See the README's [Runtime store durability](../README.md#runtime-store-durability)
 section for the durability guarantee stated at the product level.

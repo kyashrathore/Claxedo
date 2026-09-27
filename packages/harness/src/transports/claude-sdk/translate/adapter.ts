@@ -35,7 +35,6 @@ type ClaudeBlockState = {
   toolName?: string
   input?: Record<string, unknown>
   partialInputJson?: string
-  /** The last streamed-input event's payload, so an unchanged read is not re-sent. */
   streamedInputJson?: string
 }
 
@@ -46,7 +45,6 @@ export type ClaudeRequestUsage = {
   cacheRead: number | null
   cacheWrite: number | null
   cacheWrite1h: number | null
-  /** The model the request's first report named; it decides the usage stream the request adds to. */
   model?: string
 }
 
@@ -56,29 +54,13 @@ export type ClaudeSdkAdapterState = {
   toolsById: Record<string, ClaudeBlockState>
   streamedAssistantTextByOwner: Record<string, string>
   reconciledAssistantTextByMessageId: Record<string, string>
-  /** The session root reported by `init`; the only place a read path can be tested against a workspace. */
   cwd?: string
   lastKnownContextWindow?: number
-  /**
-   * Every API request of the turn, by owner and then message id. The owner is
-   * `""` for the main thread and a child's `parent_tool_use_id` otherwise; the
-   * driver routes a child frame's events to that child's own session, so a
-   * child's usage is summed apart from the parent's.
-   */
   requestUsageByOwner?: Record<string, Record<string, ClaudeRequestUsage>>
-  /** The request each owner is streaming, until its `message_stop`: `message_delta` names none. */
   streamingRequestByOwner?: Record<string, string>
-  /** The request the main thread streamed last, which the context gauge reads. */
   lastMainRequest?: string
 }
 
-/**
- * A subagent request's usage as the Claude driver reads it from the subagent
- * transcript the CLI mirrors through `sessionStore`, ingested under
- * {@link CLAUDE_SUBAGENT_USAGE_METHOD}. It is routed to the child whose frame
- * carried the same message id; `null` names the main thread, which meters a
- * request whose frame never arrived.
- */
 export type ClaudeSubagentUsage = {
   parent_tool_use_id: string | null
   session_id?: string

@@ -89,10 +89,10 @@ import {
 } from "@claxedo/agent-event-runtime"
 ```
 
-Use subpaths for harness adapter and projection implementations:
+Use subpaths for projection implementations. The harness translators are
+internal to `@claxedo/harness` transports:
 
 ```ts
-import { claudeSdkAdapter } from "@claxedo/harness/claude-sdk/translate"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 ```
 

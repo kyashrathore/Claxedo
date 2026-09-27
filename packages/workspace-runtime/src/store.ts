@@ -30,7 +30,7 @@ import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "@claxedo/agent-sdk-runtime/stores/session-start"
 import type { AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-sdk-runtime"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
-import type { ChildSessionRef } from "@claxedo/harness/contract"
+import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
@@ -82,7 +82,7 @@ type Turn = {
   parentMessageId?: string
   assistantMessageId: string
   agent: string
-  model: Model
+  model?: Model
   parts: PromptInput["parts"]
   tools?: Record<string, boolean>
   format?: PromptFormat
@@ -1215,6 +1215,12 @@ export class RuntimeStore {
         directory TEXT NOT NULL,
         connection_id TEXT NOT NULL,
         upstream_session_id TEXT NOT NULL
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_owner (
+        session_id TEXT PRIMARY KEY,
+        owner_json TEXT NOT NULL
       )
     `)
     this.db.exec(`
@@ -3550,7 +3556,7 @@ export class RuntimeStore {
     parentMessageId?: string
     assistantMessageId: string
     agent: string
-    model: Model
+    model?: Model
     parts: PromptInput["parts"]
     tools?: Record<string, boolean>
     format?: PromptFormat
@@ -3622,7 +3628,7 @@ export class RuntimeStore {
         parentMessageId: input.parentMessageId,
         assistantMessageId: input.assistantMessageId,
         agent: input.agent,
-        model: input.model,
+        ...(input.model ? { model: input.model } : {}),
         parts: input.parts,
         ...(input.tools ? { tools: input.tools } : {}),
         ...(input.format ? { format: input.format } : {}),
@@ -3828,7 +3834,7 @@ export class RuntimeStore {
               directory: session?.directory ?? "",
               created: active.created_at,
               completed: input.outcome.completedAt,
-              error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
+              error: { name: "UnknownError", data: { ...firstTurnErrorData(input.outcome.error ?? "turn failed"), ...input.outcome.detail } },
               ...(control.variant ? { variant: control.variant } : {}),
             }),
           ),
@@ -4069,6 +4075,11 @@ export class RuntimeStore {
         FROM session
         LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
         WHERE session.directory = ?
+          -- A creation still waiting on its harness, or one that never finished, is nobody's session yet.
+          AND NOT EXISTS (
+            SELECT 1 FROM session_start start
+            WHERE start.session_id = session.id AND json_extract(start.data_json, '$.status') <> 'created'
+          )
         ORDER BY created_at DESC
       `,
         )
@@ -4233,6 +4244,36 @@ export class RuntimeStore {
       connectionId: row.connection_id,
       upstreamSessionId: row.upstream_session_id,
     }
+  }
+
+  recordSessionOwner(sessionId: string, owner: TurnActor) {
+    this.db
+      .prepare("INSERT INTO session_owner (session_id, owner_json) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET owner_json = excluded.owner_json")
+      .run(sessionId, JSON.stringify(owner))
+  }
+
+  sessionOwner(sessionId: string): TurnActor | undefined {
+    const row = this.db.prepare<{ owner_json: string }>("SELECT owner_json FROM session_owner WHERE session_id = ?").get(sessionId)
+    if (!row) return undefined
+    const owner: unknown = JSON.parse(row.owner_json)
+    if (!isRecord(owner)) throw new Error(`Session ${sessionId} has an unreadable owner`)
+    if (owner.kind === "machine-owner") return { kind: "machine-owner" }
+    if (owner.kind === "person" && typeof owner.userId === "string") return { kind: "person", userId: owner.userId }
+    throw new Error(`Session ${sessionId} has an unreadable owner`)
+  }
+
+  /** The child session and assistant message a routed correlation key names under a parent, once the broker bound it. */
+  childRouteBinding(parentSessionId: string, correlationKey: string): { childSessionId: string; assistantMessageId: string } | undefined {
+    const child = this.db.prepare<{ child_session_id: string; assistant_message_id: string }>(`
+      SELECT subagent.child_session_id, subagent.assistant_message_id FROM session_subagent subagent
+      LEFT JOIN session_subagent_correlation correlation
+        ON correlation.parent_session_id = subagent.parent_session_id
+        AND correlation.subagent_key = subagent.subagent_key
+      WHERE subagent.parent_session_id = ? AND (subagent.subagent_key = ? OR subagent.provider_id = ?
+        OR correlation.correlation_key = ?)
+        AND child_session_id IS NOT NULL AND assistant_message_id IS NOT NULL
+    `).get(parentSessionId, correlationKey, correlationKey, `route:${correlationKey}`)
+    return child ? { childSessionId: child.child_session_id, assistantMessageId: child.assistant_message_id } : undefined
   }
 
   getSessionOwnerKey(id: string) {

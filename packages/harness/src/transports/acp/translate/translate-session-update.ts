@@ -1,9 +1,3 @@
-/**
- * Layer 1: ACP SessionUpdate → AgentRuntimeEvent[]
- *
- * Pure function — no async, no Node imports, no side effects.
- * Exhaustiveness is enforced by `const _: never = update` in the default case.
- */
 
 import { asRecord } from "@claxedo/helpers/guards"
 import type {
@@ -28,14 +22,7 @@ export interface TranslatorContext {
   preserveUserMessageChunks?: boolean
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
-/**
- * Returns true when rawInput contains at least one key — i.e. is usable structured data.
- * Rejects empty objects sent as placeholders.
- */
 function hasStructuredInput(raw: unknown): raw is Record<string, unknown> {
   return raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length > 0
 }

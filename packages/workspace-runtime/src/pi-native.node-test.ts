@@ -9,6 +9,7 @@ import path from "node:path"
 import { createServer } from "node:http"
 import { createWorkspaceRuntimeApp } from "./server"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
+import { loopbackMachineLoginPolicy } from "./testing"
 
 void test(
   "lazy Pi admission clears crash-left credentials before its first unauthenticated HTTP turn",
@@ -40,6 +41,7 @@ void test(
       }),
     )
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "cold-auth", directory },
       storeRoot,
       exposure: loopbackWorkspaceRuntimeExposure(),
@@ -137,6 +139,7 @@ void test(
     )
     const create = () =>
       createWorkspaceRuntimeApp({
+        placement: loopbackMachineLoginPolicy(),
         target: { workspaceId: "workspace-proof", directory },
         storeRoot,
         harness: { kind: "native", harnessId: "pi" },

@@ -2,19 +2,10 @@ import { asRecord } from "@claxedo/helpers/guards"
 
 type Frame = {
   kind: "{" | "["
-  /** Inside an object, whether the next string is a member name. */
   expectKey: boolean
-  /** Prefix length at which every member of this frame so far is complete. */
   cut: number
 }
 
-/**
- * Reads the object a truncated JSON document is becoming. A string value cut mid-way
- * is kept as far as it got, so a command reads as it is typed; a member cut before
- * its value is complete (its name, its colon, a bare literal or number) is dropped
- * back to the last complete member, since guessing at it would invent a field.
- * `undefined` when the document is not an object or nothing parses.
- */
 export function readPartialJsonRecord(partial: string): Record<string, unknown> | undefined {
   const complete = parseJsonRecord(partial)
   if (complete) return complete

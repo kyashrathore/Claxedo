@@ -6,11 +6,6 @@ export const HOST_SUBAGENT_MCP_SERVER = "claxedo"
 export const HOST_SUBAGENT_TOOL = "create_subagent"
 export const HOST_SUBAGENT_RESULT_KIND = "claxedo.subagent"
 
-/**
- * Whether a tool call is the runtime's own `create_subagent`, in whichever
- * wrapping the harness reports MCP tools: Claude prefixes `mcp__<server>__`,
- * Codex and Cursor carry the server beside the bare name.
- */
 export function isHostSubagentTool(toolName: string, server?: string) {
   const normalized = toolName.toLowerCase()
   if (normalized === `mcp__${HOST_SUBAGENT_MCP_SERVER}__${HOST_SUBAGENT_TOOL}`) return true

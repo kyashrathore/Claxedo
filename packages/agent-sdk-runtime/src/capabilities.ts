@@ -1,4 +1,3 @@
-import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { GoalAction, GoalCapabilities } from "@claxedo/agent-runtime-contract"
 import type {
   AgentCapabilities,
@@ -8,7 +7,6 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 
 export type HarnessCapabilityTarget = SessionHarnessId
-export type AdapterCapability = "runtime-config"
 
 export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection"> &
   Partial<Pick<AgentCapabilities, "modelSelection">> & {
@@ -25,7 +23,7 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
   unrevert: boolean
   configOptions: boolean
   subagents: boolean
-  /** Runtime availability only. Detailed support is read from `SupportsGoals.goals`. */
+  /** Runtime availability only. Detailed support is read from the transport's declared goal capabilities. */
   goals: boolean
   /**
    * Which effort levels this harness accepts, per model. Required because a
@@ -40,14 +38,6 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
    */
   instructionChannel: HarnessInstructionChannel
   }
-
-export type HarnessCapabilityContext = {
-  sessionId?: string
-}
-
-export function harnessCapabilities(input: HarnessCapabilities): HarnessCapabilities {
-  return input
-}
 
 export const GOAL_ACTIONS = ["pause", "resume", "delete"] as const
 export const GOAL_OPTIONAL_FIELDS = [
@@ -95,21 +85,4 @@ export function requireGoalAction(capabilities: GoalCapabilities, action: GoalAc
   if (!goalActionAvailable(capabilities, action)) {
     throw new GoalCapabilityError(`Goal action '${action}' is not available`)
   }
-}
-
-export type AdapterCapabilityProvider = {
-  readonly adapterCapabilities: readonly AdapterCapability[]
-}
-
-export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
-  setModel(model: string): void
-}
-
-export function hasAdapterCapability(
-  adapter: unknown,
-  capability: AdapterCapability,
-): adapter is RuntimeConfigurableAdapter {
-  if (!isRecord(adapter)) return false
-  const list = adapter.adapterCapabilities
-  return Array.isArray(list) && list.includes(capability)
 }

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest"
 import { runDocumentsSessionRoundtripSmoke } from "../../../scripts/smoke/documents-session-roundtrip"
-import { unpinnedPiReason } from "../../../../agent-sdk-runtime/src/harnesses/pi/executable"
+import { resolvePiExecutable } from "../../../../workspace-runtime/src/host/executables/pi"
 
-const unpinnedPi = unpinnedPiReason()
+const unpinnedPi = resolvePiExecutable() === undefined ? "Pi executable not found" : undefined
 
 describe("real workspace-runtime document round-trip", () => {
   test.skipIf(unpinnedPi !== undefined)(
