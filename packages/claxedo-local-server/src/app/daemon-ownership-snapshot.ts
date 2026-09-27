@@ -15,6 +15,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
+import { writeFileAtomicSync } from "@claxedo/helpers/fs"
 import {
   DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
   daemonOwnershipSnapshotPath,
@@ -64,19 +65,7 @@ export function daemonOwnershipSnapshot(
 
 export function writeDaemonOwnershipSnapshot(file: string, snapshot: DaemonOwnershipSnapshot) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
-  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(snapshot)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 })
-    fs.renameSync(temporary, file)
-    fs.chmodSync(file, 0o600)
-  } finally {
-    try {
-      fs.unlinkSync(temporary)
-    } catch {
-      // Either the rename already moved it or it is not ours to remove; the
-      // write's own failure is what the caller needs to hear about.
-    }
-  }
+  writeFileAtomicSync(file, `${JSON.stringify(snapshot)}\n`)
 }
 
 export function clearDaemonOwnershipSnapshot(file: string, owner: { pid: number; generation: string }) {

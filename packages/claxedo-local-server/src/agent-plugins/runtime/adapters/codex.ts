@@ -2,6 +2,7 @@ import crypto from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { writeFileAtomic } from "@claxedo/helpers/fs"
 import type { AgentPluginMcpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import { pluginInstanceStorageKey } from "../plugin-data"
 import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
@@ -79,9 +80,7 @@ async function updateCodexPluginConfig(
     CONFIG_END,
   ].join("\n") : ""
   const next = [unmanaged, managed].filter(Boolean).join("\n\n")
-  const temporary = path.join(codexHome, `.config.toml.claxedo-${crypto.randomUUID()}`)
-  await fs.writeFile(temporary, next ? `${next}\n` : "")
-  await fs.rename(temporary, configFile)
+  await writeFileAtomic(configFile, next ? `${next}\n` : "")
 }
 
 function expand(value: string, pluginRoot: string, dataRoot: string) {

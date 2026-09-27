@@ -18,6 +18,7 @@
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { writeFileAtomicSync } from "@claxedo/helpers/fs"
 import { isJsonRecord, jsonRecord, parseJsonRecord } from "../platform/runtime/lib/json"
 import { dataDir } from "../platform/runtime/lib/paths"
 import { listCustomProviders } from "./custom-provider"
@@ -153,13 +154,7 @@ function readCache(env: NodeJS.ProcessEnv): { at: number; body: Record<string, M
 }
 
 function writeCache(body: Record<string, ModelsDevProvider>, env: NodeJS.ProcessEnv) {
-  const file = cachePath(env)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  // Write-then-rename so a crash cannot leave a half-written cache that the
-  // next boot would parse as corrupt and discard.
-  const pending = `${file}.pending`
-  fs.writeFileSync(pending, JSON.stringify({ at: Date.now(), body }))
-  fs.renameSync(pending, file)
+  writeFileAtomicSync(cachePath(env), JSON.stringify({ at: Date.now(), body }), { mkdir: true })
 }
 
 async function fetchCatalog(fetchImpl: CatalogFetch): Promise<Record<string, ModelsDevProvider>> {

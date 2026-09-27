@@ -1,6 +1,7 @@
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { writeFileAtomicSync } from "@claxedo/helpers/fs"
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
@@ -105,24 +106,13 @@ export function mirrorCodexTokens(next: RenewedCodexTokens, homeDir = home()): s
     }
 
     try {
-      writeAtomic(file, JSON.stringify(updated, null, 2) + "\n")
+      writeFileAtomicSync(file, JSON.stringify(updated, null, 2) + "\n")
       written.push(file)
     } catch (err) {
       log.warn("Failed to mirror renewed Codex tokens", { file, error: String(err) })
     }
   }
   return written
-}
-
-function writeAtomic(file: string, contents: string) {
-  const temporary = `${file}.claxedo-${process.pid}.tmp`
-  try {
-    fs.writeFileSync(temporary, contents, { mode: 0o600 })
-    fs.renameSync(temporary, file)
-  } catch (err) {
-    fs.rmSync(temporary, { force: true })
-    throw err
-  }
 }
 
 function home() {

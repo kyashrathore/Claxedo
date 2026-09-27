@@ -3,6 +3,7 @@ import path from "node:path"
 
 import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
+import { writeFileAtomicSync } from "@claxedo/helpers/fs"
 import { asRecord, isNonEmptyString } from "@claxedo/helpers/guards"
 import { readField } from "@claxedo/helpers/readers"
 import { createDaemonFetch } from "./daemon-request"
@@ -51,21 +52,7 @@ export function readClaxedoDaemonDiscovery(file: string): ClaxedoDaemonDiscovery
 
 export function writeClaxedoDaemonDiscovery(file: string, record: ClaxedoDaemonDiscovery) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
-  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 })
-    fs.renameSync(temporary, file)
-    fs.chmodSync(file, 0o600)
-  } finally {
-    // Best effort, and deliberately silent: a throw here would replace the
-    // write's own failure with a cleanup failure, and the caller would be told
-    // the wrong thing about why the discovery file is not there.
-    try {
-      fs.unlinkSync(temporary)
-    } catch {
-      // The temp file is either already gone or not ours to remove.
-    }
-  }
+  writeFileAtomicSync(file, `${JSON.stringify(record)}\n`)
 }
 
 export function clearClaxedoDaemonDiscovery(file: string, owner: ClaxedoDaemonDiscovery) {

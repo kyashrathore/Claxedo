@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import { writeFileAtomic } from "@claxedo/helpers/fs"
 import { isRecord } from "../../platform/json"
 
 const GENERATION_ID = /^generation-[0-9]+-[a-f0-9-]+$/
@@ -86,15 +87,7 @@ export async function activateGeneration(runtimeRoot: string, generation: Active
   if (!await fs.stat(root).then((item) => item.isDirectory()).catch(() => false)) {
     throw new AgentPluginGenerationError("generation-missing", `Cannot activate missing generation ${generation.generationId}`)
   }
-  const moduleRoot = agentPluginRuntimeRoot(runtimeRoot)
-  await fs.mkdir(moduleRoot, { recursive: true })
-  const pending = path.join(moduleRoot, `.active-${randomUUID()}.json`)
-  await fs.writeFile(pending, `${JSON.stringify(generation)}\n`, { flag: "wx" })
-  try {
-    await fs.rename(pending, path.join(moduleRoot, "active.json"))
-  } finally {
-    await fs.rm(pending, { force: true })
-  }
+  await writeFileAtomic(path.join(agentPluginRuntimeRoot(runtimeRoot), "active.json"), `${JSON.stringify(generation)}\n`, { mkdir: true })
 }
 
 /**

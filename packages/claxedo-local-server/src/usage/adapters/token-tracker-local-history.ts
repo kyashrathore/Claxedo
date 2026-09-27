@@ -13,6 +13,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createHash } from "node:crypto"
+import { writeFileAtomic } from "@claxedo/helpers/fs"
 import type { ExternalUsageBucket } from "@claxedo/server-core/usage/projection"
 import type { UsageProvenance } from "@claxedo/server-core/usage/provenance"
 import { record } from "../../platform/json"
@@ -115,10 +116,7 @@ async function readCached(stateDir: string, key: string, range: { since: number;
 
 async function writeCached(stateDir: string, cached: CachedLocalHistory) {
   await fs.mkdir(stateDir, { recursive: true, mode: 0o700 })
-  const target = path.join(stateDir, CACHE_FILE)
-  const temporary = `${target}.${process.pid}.${cached.key}.tmp`
-  await fs.writeFile(temporary, JSON.stringify(cached), { mode: 0o600 })
-  await fs.rename(temporary, target)
+  await writeFileAtomic(path.join(stateDir, CACHE_FILE), JSON.stringify(cached))
   for (const name of await fs.readdir(stateDir)) {
     if (name !== CACHE_FILE && CACHE_FILE_PATTERN.test(name)) await fs.rm(path.join(stateDir, name), { force: true })
   }
