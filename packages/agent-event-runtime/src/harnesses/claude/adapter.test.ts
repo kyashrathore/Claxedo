@@ -1171,6 +1171,39 @@ describe("claudeSdkAdapter", () => {
     expect(edges).toEqual(Array(4).fill({ toolCallId: "toolu_1", toolCallRole: "spawn" }))
   })
 
+  for (const shape of ["finishes before the turn's result", "outlives the turn's result"] as const) {
+    test(`U5: every frame of a background Task call the parent made names that call as the spawn when the child ${shape}`, () => {
+      const ledger = createClaudeTaskLedger()
+      const frame = (subtype: string, uuid: string, fields: Record<string, unknown>) => ({ type: "system", subtype, uuid, session_id: "sdk-session-1", ...fields })
+      const parentText = { type: "assistant", uuid: "parent-text", session_id: "sdk-session-1", parent_tool_use_id: null, message: { content: [{ type: "text", text: "DONE" }] } }
+      const result = { type: "result", subtype: "success", uuid: "result", session_id: "sdk-session-1" }
+      const child = [
+        { type: "assistant", uuid: "child-text", session_id: "sdk-session-1", parent_tool_use_id: "toolu_1", message: { content: [{ type: "text", text: "ok" }] } },
+        frame("background_tasks_changed", "departed", { tasks: [] }),
+        frame("task_updated", "updated", { task_id: "task-1", patch: { status: "completed" } }),
+        frame("task_notification", "notified", { task_id: "task-1", tool_use_id: "toolu_1", status: "completed", summary: "ok" }),
+      ]
+      const frames = [
+        { ...parentAgentCall("toolu_1"), message: { content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { description: "Find the project name", subagent_type: "general-purpose", run_in_background: true } }] } },
+        frame("background_tasks_changed", "live", { tasks: [{ task_id: "task-1", task_type: "local_agent", description: "Find the project name" }] }),
+        frame("task_started", "started", { task_id: "task-1", tool_use_id: "toolu_1", description: "Find the project name", subagent_type: "general-purpose", is_backgrounded: true, spawn_depth: 1 }),
+        {
+          type: "user",
+          uuid: "launched",
+          session_id: "sdk-session-1",
+          parent_tool_use_id: null,
+          message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "text", text: "Async agent launched successfully." }] }] },
+          tool_use_result: { isAsync: true, status: "async_launched", agentId: "task-1", description: "Find the project name" },
+        },
+        ...(shape === "outlives the turn's result" ? [parentText, result, ...child] : [...child, parentText, result]),
+      ]
+      const edges = frames.flatMap((item) => claudeSubagentObservations(item, ledger).map(({ stableCorrelationId, toolCallId, toolCallRole }) => (toolCallId ? { toolCallId, toolCallRole } : { stableCorrelationId })))
+      const spawn = { toolCallId: "toolu_1", toolCallRole: "spawn" as const }
+
+      expect(edges, "the call, task_started, the async launch, the departure, task_updated by its task id alone, task_notification").toEqual([spawn, spawn, spawn, spawn, { stableCorrelationId: "task-1" }, spawn])
+    })
+  }
+
   test("U5: a subagent a skill's forked execution runs keeps its call for routing but has no spawn edge", () => {
     const ledger = createClaudeTaskLedger()
     claudeSubagentObservations({
@@ -1699,6 +1732,16 @@ describe("claudeSdkAdapter", () => {
       childSessionId: "child-9",
       transcript: { kind: "live" },
     }])
+  })
+
+  test("a create_subagent call a subagent made binds its host-minted child for routing but has no spawn edge on the parent", () => {
+    const ledger = createClaudeTaskLedger()
+    claudeSubagentObservations(parentAgentCall("toolu_1"), ledger)
+    claudeSubagentObservations({ ...toolCallFrame("tool-mcp-nested-1", "mcp__claxedo__create_subagent"), parent_tool_use_id: "toolu_1" }, ledger)
+    const binding = JSON.stringify({ kind: "claxedo.subagent", subagentKey: "subagent_nested", sessionId: "child-10" })
+    const [observation] = claudeSubagentObservations({ ...toolResultFrame([["tool-mcp-nested-1", binding]]), parent_tool_use_id: "toolu_1" }, ledger)
+    expect(observation).toMatchObject({ subagentKey: "subagent_nested", toolCallId: "tool-mcp-nested-1", childSessionId: "child-10" })
+    expect(observation?.toolCallRole).toBeUndefined()
   })
 
   test("a binding in the result of any other tool, or of a call the turn never made, binds nothing", () => {

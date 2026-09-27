@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { SubagentStatus, SubagentToolCallRole } from "../contracts/agent-runtime-event"
+import type { SubagentStatus } from "../contracts/agent-runtime-event"
 import { text } from "../value"
 
 export const HOST_SUBAGENT_MCP_SERVER = "claxedo"
@@ -86,7 +86,6 @@ export type HostSubagentObservation = {
   harnessExecutionId?: string
   subagentKey: string
   toolCallId: string
-  toolCallRole: SubagentToolCallRole
   status?: SubagentStatus
   providerId: string
   providerKind: "claxedo"
@@ -96,9 +95,10 @@ export type HostSubagentObservation = {
 
 /**
  * The observation a bound `create_subagent` result raises on the parent, the
- * same on every harness: it names the host-minted row and binds the tool call
- * to it as the spawn edge. The row exists only once the runtime has minted
- * the key, so the call itself raises nothing until its result arrives.
+ * same on every harness: it names the host-minted row and correlates the tool
+ * call with it. Whether that call is the row's spawn edge is the harness's to
+ * say, by adding `toolCallRole`. The row exists only once the runtime has
+ * minted the key, so the call itself raises nothing until its result arrives.
  */
 export function hostSubagentObservation(input: {
   observationId: string
@@ -111,7 +111,6 @@ export function hostSubagentObservation(input: {
     ...(input.harnessExecutionId ? { harnessExecutionId: input.harnessExecutionId } : {}),
     subagentKey: input.binding.subagentKey,
     toolCallId: input.toolCallId,
-    toolCallRole: "spawn",
     ...(input.binding.status ? { status: input.binding.status } : {}),
     providerId: input.binding.sessionId,
     providerKind: "claxedo",

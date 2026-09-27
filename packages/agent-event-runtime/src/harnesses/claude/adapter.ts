@@ -396,12 +396,15 @@ function claudeHostSubagentObservations(
     const binding = hostSubagentBinding(tool.block)
       ?? (blocks.length === 1 ? hostSubagentBinding(message.tool_use_result) : undefined)
     if (!binding) return []
-    return [hostSubagentObservation({
-      observationId: `claude:host-subagent:${wrapperId}:${tool.toolCallId}`,
-      ...(harnessExecutionId ? { harnessExecutionId } : {}),
-      toolCallId: tool.toolCallId,
-      binding,
-    })]
+    return [{
+      ...hostSubagentObservation({
+        observationId: `claude:host-subagent:${wrapperId}:${tool.toolCallId}`,
+        ...(harnessExecutionId ? { harnessExecutionId } : {}),
+        toolCallId: tool.toolCallId,
+        binding,
+      }),
+      ...taskCall(tool.toolCallId, ledger),
+    }]
   })
 }
 
@@ -464,8 +467,11 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
   const wrapperId = text(message.uuid) ?? harnessExecutionId ?? "unknown"
 
   if (message.type === "assistant") {
+    const fromParent = !claudeChildCorrelationKey(message)
     for (const { tool } of assistantToolBlocks(message)) {
-      if (isHostSubagentTool(tool.toolName)) ledger.startHostSubagentCall(tool.toolCallId)
+      if (!isHostSubagentTool(tool.toolName)) continue
+      ledger.startHostSubagentCall(tool.toolCallId)
+      if (fromParent) ledger.startSpawnCall(tool.toolCallId)
     }
   }
 

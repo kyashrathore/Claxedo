@@ -295,12 +295,15 @@ export function cursorSubagentObservations(value: unknown): CursorSubagentObserv
   if (isHostSubagentTool(text(message.name) ?? "")) {
     const binding = hostSubagentBinding(message.result)
     return binding
-      ? [hostSubagentObservation({
-          observationId: `cursor:host-subagent:${text(message.run_id) ?? "unknown"}:${toolCallId}`,
-          ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
-          toolCallId,
-          binding,
-        })]
+      ? [{
+          ...hostSubagentObservation({
+            observationId: `cursor:host-subagent:${text(message.run_id) ?? "unknown"}:${toolCallId}`,
+            ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
+            toolCallId,
+            binding,
+          }),
+          toolCallRole: "spawn",
+        }]
       : []
   }
   if (!isTaskTool(text(message.name) ?? "")) return []

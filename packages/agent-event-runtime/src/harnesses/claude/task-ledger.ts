@@ -22,11 +22,13 @@ export type ClaudeTaskRecord = {
  * `cat`, a fetch, another MCP server — so a result binds a child only when
  * this ledger saw the call it answers.
  *
- * A task's frames name a `tool_use_id`, but that call is a spawn part of the
- * parent's transcript only when the parent's own assistant message carried it
- * as an Agent call. A skill's forked execution runs as a task named by the
- * Skill call, and a lane it forks names a call only the fork made; the ledger
- * records the parent's Agent calls so only those become spawn edges.
+ * A task's frames name a `tool_use_id`, and a `create_subagent` result answers
+ * one, but that call is a spawn part of the parent's transcript only when the
+ * parent's own assistant message carried it as an Agent or `create_subagent`
+ * call. A skill's forked execution runs as a task named by the Skill call, a
+ * lane it forks names a call only the fork made, and a subagent's own
+ * `create_subagent` call lives in that subagent's transcript; the ledger
+ * records the parent's spawning calls so only those become spawn edges.
  *
  * A subagent's frames name the Agent call that spawned it in
  * `parent_tool_use_id`, so a subagent's own subagent names a call the parent
@@ -35,7 +37,14 @@ export type ClaudeTaskRecord = {
  *
  * One ledger per query. `SDKBackgroundTasksChangedMessage` is a per-process
  * level that emits nothing at startup, so a set kept across processes would
- * report departures for tasks the new process never claimed were live.
+ * report departures for tasks the new process never claimed were live. A
+ * background task never outlives its query: the CLI keeps the query open until
+ * its background tasks end, even with stdin closed after the turn's result,
+ * and the driver reads the query to its end, so the turn stays running and a
+ * later prompt steers into it or waits behind it. Against Claude Code 2.1.283,
+ * a background Agent held 8 s past the turn's result sent its text,
+ * `task_updated` and `task_notification` in that query, then a second
+ * `result`; the next query carried no task frame.
  */
 export type ClaudeTaskLedger = {
   start(record: ClaudeTaskRecord): void
@@ -46,7 +55,7 @@ export type ClaudeTaskLedger = {
    * dropped; an id that left without ever being introduced belongs to no row.
    */
   replaceLive(taskIds: readonly string[]): ClaudeTaskRecord[]
-  /** Records an Agent call from the parent's own assistant message. */
+  /** Records an Agent or `create_subagent` call from the parent's own assistant message. */
   startSpawnCall(toolUseId: string): void
   isSpawnCall(toolUseId: string): boolean
   startHostSubagentCall(toolUseId: string): void

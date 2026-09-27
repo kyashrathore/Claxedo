@@ -16,10 +16,13 @@ export function codexHostSubagentObservation(
   if (!toolCallId || !tool || !isHostSubagentTool(tool, text(item.server))) return undefined
   const binding = hostSubagentBinding(item.result)
   if (!binding) return undefined
-  return hostSubagentObservation({
-    observationId: `codex:host-subagent:${threadId}:${toolCallId}`,
-    harnessExecutionId: threadId,
-    toolCallId,
-    binding,
-  })
+  return {
+    ...hostSubagentObservation({
+      observationId: `codex:host-subagent:${threadId}:${toolCallId}`,
+      harnessExecutionId: threadId,
+      toolCallId,
+      binding,
+    }),
+    toolCallRole: "spawn",
+  }
 }
