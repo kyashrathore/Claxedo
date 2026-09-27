@@ -2,18 +2,9 @@ import { ServerError } from "./errors"
 import { sessionEndpoint } from "./session-context"
 import { jsonInit, type RuntimeRoute, type Transport } from "./transport"
 import type { GoalAction, SessionGoal, SessionGoalState, SessionRef } from "./types"
-import { GOAL_ACTION_ROUTES, GOAL_UNAVAILABLE, goalMutationFromWire, goalStateFromWire } from "./wire/goal"
+import { GOAL_ACTION_ROUTES, goalMutationFromWire } from "./wire/goal"
 
 export const NO_GOAL: SessionGoalState = { goal: undefined, actions: [], available: false }
-
-export async function readGoalState(transport: Transport, where: RuntimeRoute, ref: SessionRef): Promise<SessionGoalState> {
-  try {
-    return goalStateFromWire(await transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/goal/state")))
-  } catch (error) {
-    if (error instanceof ServerError && error.code === GOAL_UNAVAILABLE) return NO_GOAL
-    throw error
-  }
-}
 
 export async function startGoal(transport: Transport, where: RuntimeRoute, ref: SessionRef, objective: string): Promise<SessionGoal> {
   const goal = goalMutationFromWire(await transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/goal"), jsonInit("POST", { objective })))

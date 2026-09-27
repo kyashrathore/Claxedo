@@ -91,7 +91,6 @@ export const MCP_OPERATIONS_WITHOUT_TOOLS = {
   permission_mode_read:
     "A session's permission mode is set once at creation under the caller's ceiling; reading it back invites the widening security review S4 closed.",
   permission_mode_write: "Widening a live session's permission mode is the escalation security review S4 closed.",
-  todo_read: "The harness writes its todo list into the transcript session_transcript already returns.",
   queue_read: "A prompt still waiting behind a running turn belongs to whoever queued it in a client; a model reads the turn it produces from the transcript.",
   command: "Slash commands are a harness UI affordance; a model writes the prose session_send carries.",
   shell: "Every harness already runs shell commands with its own tool; the plan drops the duplicate file, search, diff and git tools for the same reason.",
@@ -100,7 +99,6 @@ export const MCP_OPERATIONS_WITHOUT_TOOLS = {
   unrevert: "Forking, reverting and unreverting are transcript surgery keyed by message id, which no MCP host renders.",
   summarize: "The plan removes summarize_logs and the throwaway session it created.",
   goal_read: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
-  goal_state: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_capabilities: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_start: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_pause: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",

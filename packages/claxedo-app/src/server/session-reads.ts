@@ -2,12 +2,13 @@ import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { readCentralPage, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
-import { NO_GOAL, readGoalState } from "./session-goal"
+import { NO_GOAL } from "./session-goal"
 import { readOutline } from "./session-outline"
-import { readRequests } from "./session-requests"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { HeldSessionReads, SessionReads, SessionRef, SessionStatus, SessionSurfaceRead, Todo, TranscriptPage } from "./types"
+import type { HeldSessionReads, SessionReads, SessionRef, SessionStatus, SessionSurfaceRead, TranscriptPage } from "./types"
 import type { SessionHome } from "./workspaces"
+import { GOAL_UNAVAILABLE } from "./wire/goal"
+import { OPEN_VIEW, sessionOpenFromWire, type SessionFact, type SessionOpenView } from "./wire/session-open"
 import { sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
@@ -41,20 +42,31 @@ async function readSurface(context: SessionContext, ref: SessionRef, session: Pr
   return { ...details, transcript, latestTurnComplete: latestTurn !== undefined }
 }
 
+function factValue<T>(fact: SessionFact<T>): T {
+  if ("error" in fact) throw fact.error
+  return fact.value
+}
+
+function goalOf(view: SessionOpenView) {
+  return "error" in view.goal && view.goal.error.code === GOAL_UNAVAILABLE ? NO_GOAL : factValue(view.goal)
+}
+
 export function readSession(context: SessionContext, ref: SessionRef, held?: HeldSessionReads): SessionReads {
   const { transport } = context
-  const live = <T>(read: (route: RuntimeRoute) => Promise<T>, stopped: T) => onRuntime(context, ref, read, async () => stopped)
-  const session = live<AgentPresentationSession | undefined>((route) => transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), undefined)
+  const opened = onRuntime<SessionOpenView | undefined>(
+    context,
+    ref,
+    async (route) => sessionOpenFromWire(await transport.runtimeJson<unknown>(route, withQuery(sessionEndpoint(ref), OPEN_VIEW))),
+    async () => undefined,
+  )
+  const fact = <T>(read: (view: SessionOpenView) => T, stopped: T) => opened.then((view) => (view ? read(view) : stopped))
   return {
-    surface: readSurface(context, ref, session, held?.latestTurn),
+    surface: readSurface(context, ref, opened.then((view) => view?.session), held?.latestTurn),
     outline: held?.outline ? Promise.resolve(held.outline) : readOutline(context, ref),
-    status: live(async (route) => {
-      const row = await session
-      return row ? context.status.read(route, ref, row) : STOPPED_STATUS
-    }, STOPPED_STATUS),
-    requests: live(async (route) => (await readRequests(transport, route, ref.sessionId)).map((item) => item.request), []),
-    todos: live((route) => transport.runtimeJson<readonly Todo[]>(route, sessionEndpoint(ref, "/todo")), []),
-    goal: live((route) => readGoalState(transport, route, ref), NO_GOAL),
+    status: fact((view) => context.status.read(ref, view.session, view.status), STOPPED_STATUS),
+    requests: fact((view) => factValue(view.requests), []),
+    todos: fact((view) => factValue(view.todos), []),
+    goal: fact(goalOf, NO_GOAL),
   }
 }
 

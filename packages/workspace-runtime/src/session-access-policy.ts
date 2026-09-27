@@ -65,7 +65,6 @@ export type SessionAccessOperation =
   | "permission_response"
   | "question_list"
   | "question_response"
-  | "todo_read"
   | "queue_read"
   | "recovery_inspect"
   | "recovery_submit"
@@ -90,7 +89,6 @@ export type SessionAccessOperation =
   | "worktree_read"
   | "worktree_write"
   | "document_write"
-  | "goal_state"
   | "goal_capabilities"
   | "goal_read"
   | "goal_start"
@@ -342,7 +340,6 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "GET /session/:id/config": { kind: "authorize", operation: "session_config_read" },
   "GET /session/:id/goal": { kind: "authorize", operation: "goal_read" },
   "GET /session/:id/goal/capabilities": { kind: "authorize", operation: "goal_capabilities" },
-  "GET /session/:id/goal/state": { kind: "authorize", operation: "goal_state" },
   "POST /session/:id/goal": { kind: "authorize", operation: "goal_start" },
   "POST /session/:id/goal/pause": { kind: "authorize", operation: "goal_pause" },
   "POST /session/:id/goal/resume": { kind: "authorize", operation: "goal_resume" },
@@ -354,7 +351,6 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "GET /session/:id/queue": { kind: "authorize", operation: "queue_read" },
   "POST /session/:id/queue/:seq/:action": { kind: "authorize", operation: "prompt" },
   "GET /session/:id/outline": { kind: "authorize", operation: "message_read" },
-  "GET /session/:id/todo": { kind: "authorize", operation: "todo_read" },
   "GET /session/capabilities": { kind: "workspace" },
   "GET /session/status": { kind: "filter", operation: "session_status" },
   "PATCH /session/:id": { kind: "authorize", operation: "session_meta_write" },

@@ -76,7 +76,10 @@ function readErrorBody(text: string): ErrorBody {
 }
 
 export function statusError(status: number, text: string, label = "Request"): ServerError {
-  const body = readErrorBody(text)
+  return errorFromBody(status, readErrorBody(text), label)
+}
+
+export function errorFromBody(status: number, body: ErrorBody, label = "Request"): ServerError {
   return new ServerError({
     class: errorClassForStatus(status),
     message: body.message ?? `${label} failed with status ${status}`,

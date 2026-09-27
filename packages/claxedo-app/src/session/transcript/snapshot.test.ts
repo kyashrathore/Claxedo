@@ -1,7 +1,8 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
 import { createEffect, createRoot, on } from "solid-js"
-import { placementId, projectId, sessionId, type Server, type SessionReads, type SessionOutline, type SessionRef, type TranscriptPage } from "@/server"
+import { placementId, projectId, ServerError, sessionId, type Server, type SessionReads, type SessionOutline, type SessionRef, type TranscriptPage } from "@/server"
+import { createRequests } from "../requests"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
 import { loadOlder } from "./older"
 import { readSnapshot } from "./snapshot"
@@ -122,4 +123,26 @@ test("older: a whole-turn read pages from the same cursor, in the same slot, and
     expect(context.older.state().kind).toBe("idle")
     dispose()
   })
+})
+
+test("snapshot: a refused requests read leaves the transcript on screen and names the failure for its Retry, and the next read clears it", async () => {
+  const refused = new ServerError({ class: "network", status: 502, code: "harness_engine_error", message: "The engine refused the permission list" })
+  const answers = [Promise.reject(refused), Promise.resolve([])]
+  const { server: base } = fakeServer()
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref), requests: answers.shift()! }) } } as unknown as Server
+  let now = 1_000
+  const clock = spyOn(Date, "now").mockImplementation(() => (now += 1))
+  await createRoot(async (dispose) => {
+    const requests = createRequests(server)
+    const context = createTranscriptContext(server, ref, { list: { readRow: () => undefined, readStatus: () => undefined }, requests } as unknown as TranscriptDeps)
+    await readSnapshot(context)
+    await Promise.resolve()
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
+    expect(requests.readErrorFor(ref.sessionId)).toMatchObject({ status: 502, message: "The engine refused the permission list" })
+    await readSnapshot(context)
+    await Promise.resolve()
+    expect(requests.readErrorFor(ref.sessionId)).toBeUndefined()
+    dispose()
+  })
+  clock.mockRestore()
 })

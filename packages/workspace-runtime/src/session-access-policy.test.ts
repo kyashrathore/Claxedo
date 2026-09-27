@@ -188,7 +188,7 @@ describe("SessionAccessPolicy", () => {
         },
       },
     })
-    const goalReads = ["goal_read", "goal_state", "goal_capabilities"] as const
+    const goalReads = ["goal_read", "goal_capabilities"] as const
 
     for (const operation of goalReads) {
       await expect(policy.authorize({

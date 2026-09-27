@@ -8,7 +8,6 @@ import type {
   AgentQuestion,
   AgentQuestionAnswer,
   AgentRuntimeStatus,
-  AgentTodo,
   RecoveryOutcome,
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
@@ -105,7 +104,6 @@ export type WorkspaceSessionClient = {
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   /** The session's turns as the nav rail lists them: ids, timestamps, titles, snippets and subagent calls, never the content. */
   outline(input: SessionInput, options?: Options): Reply<TurnOutline>
-  todo(input: SessionInput, options?: Options): Reply<AgentTodo[]>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   /**
    * What the runtime owner knows about this session, and the operations a
@@ -141,7 +139,6 @@ export type WorkspaceSessionClient = {
     control(input: SessionQueueControlInput, options?: Options): Reply<Ok | { ok: false; status: "pending" | "unknown"; operationId: string; message: string }>
   }
   goal: {
-    state(input: SessionInput, options?: Options): Reply<{ capabilities: GoalCapabilities; goal: RuntimeGoalSnapshot | null }>
     capabilities(input: SessionInput, options?: Options): Reply<GoalCapabilities>
     get(input: SessionInput, options?: Options): Reply<RuntimeGoalSnapshot | null>
     start(input: SessionGoalStartInput, options?: Options): Reply<AgentGoalMutationResult>
@@ -250,7 +247,6 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     subagents: (input, options) => read("session.subagents", input, "/subagents", options),
     messages,
     outline: (input, options) => read("session.outline", input, "/outline", options),
-    todo: (input, options) => read("session.todo", input, "/todo", options),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
     recovery: {
       inspect: (input, options) => caller.decoded({
@@ -316,7 +312,6 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
       ),
     },
     goal: {
-      state: goalRead("session.goal.state", "/goal/state"),
       capabilities: goalRead("session.goal.capabilities", "/goal/capabilities"),
       get: goalRead("session.goal.get", "/goal"),
       start: (input, options) => write("session.goal.start", "POST", input, "/goal", options, { objective: input.objective }),

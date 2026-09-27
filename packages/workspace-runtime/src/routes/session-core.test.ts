@@ -1246,6 +1246,56 @@ describe("createSessionRoutes directory-less sessions", () => {
     ])
   })
 
+  test("opens a session with its own status, requests and todos as the per-fact routes answer them, on the session read's one decision", async () => {
+    const decisions: string[] = []
+    const filtered: string[] = []
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async (input) => {
+        decisions.push(`${input.sessionId}:${input.operation}`)
+        return { allowed: true }
+      },
+      authorizeSessionStart: async () => ({ allowed: true }),
+      authorizeSessionStartStatus: async () => ({ allowed: true }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => {
+        filtered.push(input.operation)
+        return input.sessionIds.filter((id) => id === "session_open")
+      },
+    }
+    const todos = [{ id: "todo_1", content: "Read the view", status: "pending", priority: "medium" }]
+    const routes = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      getStatus: () => ({ session_open: { type: "busy" }, session_other: { type: "idle" } }),
+      getTodos: (_c, _directory, sessionId) => sessionId === "session_open" ? todos : [],
+      listPermissions: async () => [
+        { id: "perm_open", sessionID: "session_open" },
+        { id: "perm_other", sessionID: "session_other" },
+      ] as AgentPermission[],
+      listQuestions: async () => [
+        { id: "question_open", sessionID: "session_open", questions: [] },
+        { id: "question_other", sessionID: "session_other", questions: [] },
+      ] as AgentQuestion[],
+      sessionAccessPolicy: policy,
+      publishGlobal: () => {},
+    })
+
+    const opened = await routes.request("http://localhost/session/session_open?view=open")
+
+    expect(opened.status).toBe(200)
+    const view = await opened.json()
+    expect(decisions).toEqual(["session_open:session_meta_read"])
+    expect(filtered).toEqual([])
+    expect(view.session).toEqual(await (await routes.request("http://localhost/session/session_open")).json())
+    expect(view.status).toEqual({ value: (await (await routes.request("http://localhost/session/status")).json()).session_open })
+    expect(view.permissions).toEqual({ value: await (await routes.request("http://localhost/permission")).json() })
+    expect(view.questions).toEqual({ value: await (await routes.request("http://localhost/question")).json() })
+    expect(view.todos).toEqual({ value: todos })
+    expect((await routes.request("http://localhost/session/session_open?view=everything")).status).toBe(400)
+  })
+
   test("threads immutable actor attribution from verified relay claims and ignores body spoofing", async () => {
     const starts: unknown[] = []
     const routes = createSessionRoutes({
@@ -2739,6 +2789,24 @@ describe("createSessionRoutes engine refusals", () => {
         },
       })
     }
+  })
+
+  test("an engine that refuses a pending-interaction read still opens the session, with the refusal in that fact's place", async () => {
+    const app = refusingRoutes(async () => { throw engineRefusal })
+    const response = await app.request("http://localhost/session/session_1?view=open")
+    expect(response.status).toBe(200)
+    const view = await response.json()
+    const refusal = {
+      error: {
+        status: 502,
+        code: "harness_engine_error",
+        message: "opencode answered permission.request.list for /workspace with status 500",
+      },
+    }
+    expect(view.session.id).toBe("session_1")
+    expect(view.permissions).toEqual(refusal)
+    expect(view.questions).toEqual(refusal)
+    expect(view.todos).toEqual({ value: [] })
   })
 
   test("any other adapter failure keeps propagating to the host's error handler", async () => {

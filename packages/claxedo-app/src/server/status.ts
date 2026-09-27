@@ -3,23 +3,21 @@ import { ServerError } from "./errors"
 import type { ServerEvent } from "./events"
 import { sessionEndpoint } from "./session-context"
 import type { PlacementId } from "./ids"
-import type { RuntimeRoute, Transport } from "./transport"
+import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { SessionRef, SessionStatus } from "./types"
-import { sessionStatusFromWire } from "./wire/status"
+import { OPEN_VIEW, sessionOpenFromWire, type SessionFact } from "./wire/session-open"
 
 export type StatusAdmission =
   | { readonly kind: "admitted"; readonly event: ServerEvent }
   | { readonly kind: "held"; readonly ref: SessionRef }
 
 export type StatusOwner = {
-  readonly read: (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => Promise<SessionStatus>
+  readonly read: (ref: SessionRef, row: AgentSession, live: SessionFact<SessionStatus | undefined>) => SessionStatus
   readonly listed: (ref: SessionRef, status: SessionStatus) => SessionStatus
   readonly settle: (route: RuntimeRoute, ref: SessionRef) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
   readonly forget: (ref: SessionRef) => void
 }
-
-const STATUS_PATH = "/session/status"
 
 type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
 
@@ -31,16 +29,6 @@ function statusFromLastTurn(row: AgentSession): SessionStatus {
 
 function settledStatus(live: SessionStatus | undefined, row: AgentSession): SessionStatus {
   return live && live.kind !== "idle" ? live : statusFromLastTurn(row)
-}
-
-function statusesOf(body: unknown): Map<string, SessionStatus> {
-  const statuses = new Map<string, SessionStatus>()
-  if (!body || typeof body !== "object") return statuses
-  for (const [id, value] of Object.entries(body)) {
-    const status = sessionStatusFromWire(value)
-    if (status) statuses.set(id, status)
-  }
-  return statuses
 }
 
 function failureKey(placementId: PlacementId, sessionId: string): string {
@@ -62,9 +50,9 @@ function createFailures() {
 
 export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
-  const live = async (route: RuntimeRoute) => statusesOf(await transport.runtimeJson<unknown>(route, STATUS_PATH))
-  const read = async (route: RuntimeRoute, ref: SessionRef, row: AgentSession) => {
-    const read = settledStatus((await live(route)).get(ref.sessionId), row)
+  const read = (ref: SessionRef, row: AgentSession, live: SessionFact<SessionStatus | undefined>) => {
+    if ("error" in live) throw live.error
+    const read = settledStatus(live.value, row)
     const known = failures.get(ref)
     if (!known) return read
     if (read.kind === "failed") return known
@@ -74,7 +62,10 @@ export function createStatusOwner(transport: Transport): StatusOwner {
   return {
     read,
     listed: (ref, status) => (status.kind === "idle" ? (failures.get(ref) ?? status) : status),
-    settle: async (route, ref) => read(route, ref, await transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref))),
+    settle: async (route, ref) => {
+      const view = sessionOpenFromWire(await transport.runtimeJson<unknown>(route, withQuery(sessionEndpoint(ref), OPEN_VIEW)))
+      return read(ref, view.session, view.status)
+    },
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }
       if (event.status.kind === "idle" && failures.get(event.ref)) return { kind: "held", ref: event.ref }

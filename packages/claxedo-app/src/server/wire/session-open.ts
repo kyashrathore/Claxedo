@@ -1,0 +1,55 @@
+import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { isRecord } from "@claxedo/helpers/guards"
+import { errorFromBody, ServerError } from "../errors"
+import type { AgentRequest, SessionGoalState, SessionStatus, Todo } from "../types"
+import { goalStateFromWire } from "./goal"
+import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
+import { sessionStatusFromWire } from "./status"
+
+export const OPEN_VIEW = { view: "open" } as const
+
+export type SessionFact<T> = { readonly value: T } | { readonly error: ServerError }
+
+export type SessionOpenView = {
+  readonly session: AgentPresentationSession
+  readonly status: SessionFact<SessionStatus | undefined>
+  readonly requests: SessionFact<readonly AgentRequest[]>
+  readonly todos: SessionFact<readonly Todo[]>
+  readonly goal: SessionFact<SessionGoalState>
+}
+
+function factFromWire<T>(value: unknown, label: string, read: (value: unknown) => T): SessionFact<T> {
+  if (isRecord(value) && "value" in value) return { value: read(value.value) }
+  const refusal = isRecord(value) && isRecord(value.error) ? value.error : undefined
+  if (!refusal || typeof refusal.status !== "number") throw new ServerError({ class: "internal", message: `The session's ${label} answered in no known shape` })
+  return {
+    error: errorFromBody(refusal.status, {
+      ...(typeof refusal.code === "string" ? { code: refusal.code } : {}),
+      ...(typeof refusal.message === "string" ? { message: refusal.message } : {}),
+    }, `The session's ${label}`),
+  }
+}
+
+const listFromWire = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : [])
+
+function requestsFromWire(permissions: SessionFact<readonly unknown[]>, questions: SessionFact<readonly unknown[]>): SessionFact<readonly AgentRequest[]> {
+  if ("error" in permissions) return permissions
+  if ("error" in questions) return questions
+  return {
+    value: [
+      ...permissions.value.filter(isPermissionWire).map(permissionRequest),
+      ...questions.value.filter(isQuestionWire).map(questionRequest),
+    ],
+  }
+}
+
+export function sessionOpenFromWire(body: unknown): SessionOpenView {
+  if (!isRecord(body) || !isRecord(body.session)) throw new ServerError({ class: "internal", message: "The session's open view answered without its session" })
+  return {
+    session: body.session as AgentPresentationSession,
+    status: factFromWire(body.status, "status", sessionStatusFromWire),
+    requests: requestsFromWire(factFromWire(body.permissions, "permissions", listFromWire), factFromWire(body.questions, "questions", listFromWire)),
+    todos: factFromWire(body.todos, "todos", (value) => listFromWire(value) as readonly Todo[]),
+    goal: factFromWire(body.goal, "goal", goalStateFromWire),
+  }
+}

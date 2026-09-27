@@ -27,8 +27,8 @@ for (const goal of GOALS) {
     const dock = app.getByRole("region", { name: "Goal", exact: true })
     await expect(dock).toBeVisible()
     await expect(dock).toContainText("Write GOALDONE into notes.md")
-    const state = await fetch(`${stack.url}/session/${session.id}/goal/state?directory=${encodeURIComponent(workspace.directory)}`)
-    expect(JSON.stringify(await state.json())).toContain("Write GOALDONE into notes.md")
+    const opened = await fetch(`${stack.url}/session/${session.id}?view=open&directory=${encodeURIComponent(workspace.directory)}`)
+    expect(JSON.stringify((await opened.json()).goal)).toContain("Write GOALDONE into notes.md")
     release()
   })
 }
@@ -36,9 +36,9 @@ for (const goal of GOALS) {
 test("07 a session whose harness has no Goals opens normally, with no Goal dock", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("no-goal")
   const session = await api.createSession(workspace.directory, { title: "No Goal", harness: { id: "opencode", access: "native" } })
-  const state = await fetch(`${stack.url}/session/${session.id}/goal/state?directory=${encodeURIComponent(workspace.directory)}`)
-  expect(state.status).toBe(200)
-  expect(await state.json()).toMatchObject({ capabilities: { implemented: false }, goal: null })
+  const opened = await fetch(`${stack.url}/session/${session.id}?view=open&directory=${encodeURIComponent(workspace.directory)}`)
+  expect(opened.status).toBe(200)
+  expect((await opened.json()).goal).toMatchObject({ value: { capabilities: { implemented: false }, goal: null } })
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
   await expect(app.getByText("Could not load this session")).toHaveCount(0)

@@ -931,6 +931,100 @@ async function filterSessionStatus(opts: Opts, c: Ctx, status: unknown) {
   return Object.fromEntries(entries.filter(([sessionId]) => allowed.has(sessionId)))
 }
 
+async function listPermissionRows(opts: Opts, c: Ctx, directory: RuntimeDirectory): Promise<AgentPermission[] | Response> {
+  try {
+    return opts.listPermissions
+      ? await opts.listPermissions(c, directory)
+      : await (await opts.resolveAdapter(c)).listPermissions?.(directory) ?? []
+  } catch (error) {
+    return engineRefusalResponse(c, error)
+  }
+}
+
+async function listQuestionRows(opts: Opts, c: Ctx, directory: RuntimeDirectory): Promise<AgentQuestion[] | Response> {
+  try {
+    return opts.listQuestions
+      ? await opts.listQuestions(c, directory)
+      : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
+  } catch (error) {
+    return engineRefusalResponse(c, error)
+  }
+}
+
+function sessionStartSettled(opts: Opts, sessionId: string) {
+  const start = opts.sessionStarts?.get(sessionId)
+  return !start || start.status === "created"
+}
+
+async function sessionOwnStatus(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<unknown> {
+  const snapshot = await opts.getStatus?.(c, directory)
+  if (!(snapshot instanceof Response)) return rec(snapshot)?.[sessionId] ?? null
+  return snapshot.ok ? rec(await snapshot.json())?.[sessionId] ?? null : snapshot
+}
+
+async function readSessionTodos(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<unknown[] | Response> {
+  const replay = await opts.getTodos?.(c, directory, sessionId)
+  if (replay) return replay
+  const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+  const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "todos", "getTodos", "todos")
+  if (unsupported) return unsupported
+  return adapter.getTodos!(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
+}
+
+async function readSessionGoal(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
+  const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+  if (runtime instanceof Response) return runtime
+  try {
+    const capabilities = await runtime.goals.capabilities(sessionId, directory)
+    return { capabilities, goal: capabilities.implemented ? await runtime.goals.read(sessionId, directory) : null }
+  } catch (error) {
+    return goalRuntimeErrorResponse(c, error)
+  }
+}
+
+type SessionFactRefusal = { status: number; code?: string; message: string }
+type SessionFact<T> = { value: T } | { error: SessionFactRefusal }
+
+/**
+ * One fact of the open view. A fact that cannot be read is reported in its
+ * own field, so a failed side read never costs the reader the session row,
+ * the same isolation the separate reads it replaces had.
+ */
+async function sessionFact<T>(read: () => Promise<T | Response>): Promise<SessionFact<T>> {
+  try {
+    const result = await read()
+    if (!(result instanceof Response)) return { value: result }
+    const refusal = rec(rec(await result.json().catch(() => undefined))?.error)
+    const code = str(refusal?.code)
+    return { error: { status: result.status, ...(code ? { code } : {}), message: str(refusal?.message) ?? `Refused with status ${result.status}` } }
+  } catch (error) {
+    if (error instanceof HTTPException) return { error: { status: error.status, message: error.message } }
+    console.error(error)
+    return { error: { status: 500, message: "Internal Server Error" } }
+  }
+}
+
+/**
+ * `GET /session/:id?view=open`: the row plus every fact a reader needs to open
+ * the session, read by the producers the per-fact routes use. The session
+ * read's own guard admits them all: no session access policy tells one read
+ * operation from another, because each classifies an operation only by its
+ * `sessionAccessWriteClass`, and a read has none. The rows are narrowed to
+ * this session here rather than filtered through the policy.
+ */
+async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, session: unknown) {
+  const own = <T extends { sessionID: string }>(rows: T[] | Response) =>
+    rows instanceof Response ? rows : rows.filter((row) => row.sessionID === sessionId)
+  const [status, permissions, questions, todos, goal] = await Promise.all([
+    sessionFact(() => sessionOwnStatus(opts, c, directory, sessionId)),
+    sessionFact(async () => own(await listPermissionRows(opts, c, directory))),
+    sessionFact(async () => sessionStartSettled(opts, sessionId) ? own(await listQuestionRows(opts, c, directory)) : []),
+    sessionFact(() => readSessionTodos(opts, c, directory, sessionId)),
+    sessionFact(() => readSessionGoal(opts, c, directory, sessionId)),
+  ])
+  return { session: normalizeSession(session, directory), status, permissions, questions, todos, goal }
+}
+
 /**
  * Resolves the session a `/question/:id` request acts on, then admits it.
  *
@@ -1533,18 +1627,6 @@ export function createSessionRoutes(opts: Opts) {
         throw error
       }
     })
-    // The combined Goal read. Session activation needs BOTH the adapter's Goal
-    // capabilities and the session's current Goal; asking for them separately
-    // costs two sequential round-trips and makes the runtime derive
-    // capabilities twice. This composes the same two resource calls server-side
-    // and skips the Goal read entirely when the harness has no Goal support.
-    .get("/session/:id/goal/state", goalRoute(opts, "goal_state", async ({ c, sessionId, directory, runtime }) => {
-      const capabilities = await runtime.goals.capabilities(sessionId, directory)
-      return noStoreJson(c, {
-        capabilities,
-        goal: capabilities.implemented ? await runtime.goals.read(sessionId, directory) : null,
-      })
-    }))
     .get("/session/:id/goal/capabilities", goalRoute(opts, "goal_capabilities", async ({ c, sessionId, directory, runtime }) =>
       noStoreJson(c, await runtime.goals.capabilities(sessionId, directory))))
     .get("/session/:id/goal", goalRoute(opts, "goal_read", async ({ c, sessionId, directory, runtime }) =>
@@ -1571,9 +1653,12 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
+      const view = c.req.query("view")
+      if (view !== undefined && view !== "open") return noStoreJson(c, errorBody("session_view_unknown", `Unknown session view ${view}`), 400)
       const session = await readRuntimeSession(opts, c, directory, sessionId)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
       await after(opts.afterGetSession?.(c, directory, session))
+      if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId, session))
       return noStoreJson(c, normalizeSession(session, directory))
     })
     .get("/session/:id/config-options", async (c) => {
@@ -1872,18 +1957,6 @@ export function createSessionRoutes(opts: Opts) {
       if (!outline) return noStoreJson(c, sessionNotFound(), 404)
       return noStoreJson(c, outline)
     })
-    .get("/session/:id/todo", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "todo_read")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const replay = await opts.getTodos?.(c, directory, sessionId)
-      if (replay) return noStoreJson(c, replay)
-      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "todos", "getTodos", "todos")
-      if (unsupported) return unsupported
-      return noStoreJson(c, await adapter.getTodos!(await requireExecutionBinding(opts, c, directory, sessionId, adapter)))
-    })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.
       //
@@ -2148,35 +2221,21 @@ export function createSessionRoutes(opts: Opts) {
       }
     })
     .get("/permission", async (c) => {
-      const directory = await opts.resolveDirectory(c)
-      let rows: AgentPermission[]
-      try {
-        rows = opts.listPermissions
-          ? await opts.listPermissions(c, directory)
-          : await (await opts.resolveAdapter(c)).listPermissions?.(directory) ?? []
-      } catch (error) {
-        return engineRefusalResponse(c, error)
-      }
+      const rows = await listPermissionRows(opts, c, await opts.resolveDirectory(c))
+      if (rows instanceof Response) return rows
       return c.json(await filterSessionRows(opts, c, "permission_list", rows))
     })
     .get("/question", async (c) => {
-      const directory = await opts.resolveDirectory(c)
-      let rows: AgentQuestion[]
-      try {
-        rows = opts.listQuestions
-          ? await opts.listQuestions(c, directory)
-          : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
-      } catch (error) {
-        return engineRefusalResponse(c, error)
-      }
+      const rows = await listQuestionRows(opts, c, await opts.resolveDirectory(c))
+      if (rows instanceof Response) return rows
       const sessionId = c.req.query("sessionId")
       const selected = sessionId ? rows.filter((row) => row.sessionID === sessionId) : rows
       const normal: AgentQuestion[] = []
       const pending: AgentQuestion[] = []
       for (const row of selected) {
         const start = opts.sessionStarts?.get(row.sessionID)
-        if (!start || start.status === "created") normal.push(row)
-        else if (start.status === "starting" && !await sessionStartGuard(opts, c, start.binding, "question_list")) pending.push(row)
+        if (sessionStartSettled(opts, row.sessionID)) normal.push(row)
+        else if (start?.status === "starting" && !await sessionStartGuard(opts, c, start.binding, "question_list")) pending.push(row)
       }
       return c.json([...await filterSessionRows(opts, c, "question_list", normal), ...pending])
     })
