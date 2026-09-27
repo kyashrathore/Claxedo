@@ -13,7 +13,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
-import { claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
+import { CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE, claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
 import { recordStartupClock } from "../src/shared/startup-clock-probe"
 import {
   CLAXEDO_DAEMON_SERVICE,
@@ -21,7 +21,7 @@ import {
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
 } from "../src/main/server-daemon-discovery"
-import { readCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { launchErrorText, readCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 import path from "node:path"
 
 // The V8 compile cache is already enabled and already seeded by the time this
@@ -166,11 +166,11 @@ const stop = () => {
   return stopping
 }
 
-const exit = (trigger: string) => {
+const exit = (trigger: string, code?: number) => {
   log.info("daemon exit requested", { trigger, pid: process.pid })
-  void stop().then((code) => {
+  void stop().then((stopped) => {
     clearDiscovery()
-    process.exit(code)
+    process.exit(code ?? stopped)
   })
 }
 requestStop = stop
@@ -183,15 +183,26 @@ process.once("SIGINT", () => exit("SIGINT"))
 process.once("exit", (code) => log.info("daemon exited", { code, pid: process.pid }))
 
 void server.ready.then(async () => {
-  // FIRST, before this port is announced to anyone: start() is what closes
-  // machine admission for the launch reconciliation, and a listener that is
-  // reachable before that hold exists admits work over launches nothing has
-  // accounted for yet.
+  // Begun ahead of start(), whose launch reconciliation probes identities too:
+  // the first read in this process decides whether the boot-time probe every
+  // later read shares has a kill timer. This one has none; main's ready
+  // deadline is what bounds a slow boot.
+  const identity = readCreationIdentity(process.pid, { probeTimeout: false })
+  // Before this port is announced to anyone: start() is what closes machine
+  // admission for the launch reconciliation, and a listener that is reachable
+  // before that hold exists admits work over launches nothing has accounted
+  // for yet.
   lifecycle.start()
   // THEN the discovery record, and only then the ready message: main reads the
   // record as soon as it hears ready, and a record that is not there yet reads
   // as a daemon that never published its authenticated identity.
-  await publishIdentity()
+  try {
+    publishIdentity(await identity)
+  } catch (error) {
+    log.error("daemon could not read its own creation identity", { error: launchErrorText(error), pid: process.pid })
+    exit("identity", CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE)
+    return
+  }
   parent?.send(claxedoServerReadyMessage(startup.port))
   recordStartupClock("server-listening", { port: startup.port })
   ownership.start()
@@ -200,16 +211,15 @@ void server.ready.then(async () => {
 /**
  * Publishes the discovery record once this process can say what it is.
  *
- * A record without the creation identity is worse than a late one: a launcher
- * that adopts it has nothing to verify before signalling. So the subprocess
- * this costs is paid before anyone is told the port exists.
+ * A record without the creation identity is worse than none: a launcher that
+ * adopts it has nothing to verify before signalling. So the subprocess this
+ * costs is paid before anyone is told the port exists, and a process table
+ * that has no row for this pid is a failure rather than a record without one.
  */
-async function publishIdentity() {
-  creation = await readCreationIdentity(process.pid)
-  writeClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, {
-    ...discovery,
-    ...(creation ? { identity: creation } : {}),
-  })
+function publishIdentity(identity: CreationIdentity | undefined) {
+  if (!identity) throw new Error(`the process table returned no row for this daemon's own pid ${process.pid}`)
+  creation = identity
+  writeClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, { ...discovery, identity })
 }
 
 // Bundle evaluation creates a large temporary object graph. The long-lived

@@ -173,3 +173,23 @@ describe.skipIf(process.platform !== "darwin")("a darwin start time", () => {
     }
   })
 })
+
+describe.skipIf(process.platform !== "darwin")("a read without the probe timeout", () => {
+  test("waits out a `ps` slower than the timeout that a bounded read is killed at", async () => {
+    const slow = await fs.mkdtemp(path.join(os.tmpdir(), "slow-ps-"))
+    await fs.writeFile(path.join(slow, "ps"), "#!/bin/sh\nsleep 3\nexec /bin/ps \"$@\"\n", { mode: 0o755 })
+    const realPath = process.env.PATH
+    process.env.PATH = `${slow}:${realPath}`
+    try {
+      const [bounded, unbounded] = await Promise.allSettled([
+        readCreationIdentity(process.pid),
+        readCreationIdentity(process.pid, { probeTimeout: false }),
+      ])
+      expect(bounded.status).toBe("rejected")
+      expect(unbounded).toMatchObject({ status: "fulfilled", value: { pid: process.pid, source: "darwin-ps" } })
+    } finally {
+      process.env.PATH = realPath
+      await fs.rm(slow, { recursive: true, force: true })
+    }
+  }, 15_000)
+})

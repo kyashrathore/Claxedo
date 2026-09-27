@@ -9,7 +9,10 @@ import * as path from "node:path"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "../src/main/daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
-import { parseClaxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
+import {
+  CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE,
+  parseClaxedoServerReadyMessage,
+} from "../src/shared/claxedo-server-lifecycle"
 import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
@@ -19,6 +22,7 @@ import { localServerBundleEntry, requireLocalServerBundle } from "./local-server
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
 const SERVER_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
+const PS_SHIM_DIR = path.join(SCRIPT_DIR, "fixtures", "ps-shim")
 
 const require = createRequire(import.meta.url)
 const electronExecutable = () => process.env.CLAXEDO_TEST_ELECTRON_EXECUTABLE || require("electron")
@@ -491,6 +495,93 @@ test("a terminal whose daemon was killed is reported gone and restored from hist
     fs.rmSync(root, { recursive: true, force: true })
   }
 }, 120_000)
+
+test("a daemon whose `ps` answers after 3 s still reaches ready and publishes its creation identity", async () => {
+  if (!fs.existsSync(SERVER_BUNDLE) || process.platform !== "darwin") {
+    console.warn("[skip] needs the server bundle and darwin's `ps` identity probe")
+    return
+  }
+  const daemon = await forkDaemonWithPsShim({ PS_SHIM_DELAY_SECONDS: "3" })
+  try {
+    await waitForHealth(daemon.base, daemon.child, daemon.stderr)
+    await waitForMessage(daemon.messages, (message) => parseClaxedoServerReadyMessage(message) !== null)
+    expect(JSON.parse(fs.readFileSync(daemon.discoveryPath, "utf8"))).toMatchObject({
+      pid: daemon.child.pid,
+      identity: { pid: daemon.child.pid, source: "darwin-ps" },
+    })
+  } catch (error) {
+    throw new Error(`${String(error)}\n${daemon.stderr().slice(-4000)}`, { cause: error })
+  } finally {
+    await daemon.dispose()
+  }
+}, 60_000)
+
+test("a daemon whose `ps` fails exits with the identity code and the logged cause, and announces nothing", async () => {
+  if (!fs.existsSync(SERVER_BUNDLE) || process.platform !== "darwin") {
+    console.warn("[skip] needs the server bundle and darwin's `ps` identity probe")
+    return
+  }
+  const daemon = await forkDaemonWithPsShim({ PS_SHIM_EXIT: "1" })
+  try {
+    const code = await Promise.race([daemon.exited, Bun.sleep(30_000).then(() => "still running")])
+    expect(code).toBe(CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE)
+    expect(daemon.stderr()).toContain(`daemon could not read its own creation identity service=daemon`)
+    expect(daemon.stderr()).toContain(`pid=${daemon.child.pid}`)
+    expect(daemon.stderr()).not.toMatch(/unhandled/i)
+    expect(daemon.messages.some((message) => parseClaxedoServerReadyMessage(message) !== null)).toBe(false)
+    expect(fs.existsSync(daemon.discoveryPath)).toBe(false)
+  } catch (error) {
+    throw new Error(`${String(error)}\n${daemon.stderr().slice(-4000)}`, { cause: error })
+  } finally {
+    await daemon.dispose()
+  }
+}, 60_000)
+
+async function forkDaemonWithPsShim(ps: Record<string, string>) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-ps-shim-test-"))
+  const port = await freePort()
+  const discoveryPath = path.join(root, "data", "local-daemon.json")
+  const serverLog = fs.openSync(path.join(root, "server.log"), "a")
+  const child = fork(SERVER_BUNDLE, [], {
+    ...claxedoServerForkOptions({
+      ...Object.fromEntries(
+        Object.entries(Bun.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      ),
+      ...ps,
+      PATH: `${PS_SHIM_DIR}${path.delimiter}${Bun.env.PATH ?? ""}`,
+      HOME: root,
+      CLAXEDO_CHILD_PORT: String(port),
+      CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
+      CLAXEDO_DAEMON_TOKEN: "ps-shim-daemon-token",
+      CLAXEDO_DAEMON_GENERATION: "ps-shim-generation",
+      CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
+      CLAXEDO_DATA_DIR: path.join(root, "data"),
+    }, serverLog),
+    execPath: electronExecutable(),
+    stdio: ["ignore", "ignore", "pipe", "ipc"],
+  })
+  fs.closeSync(serverLog)
+  let stderr = ""
+  child.stderr?.setEncoding("utf8")
+  child.stderr?.on("data", (chunk) => { stderr += String(chunk) })
+  const messages: unknown[] = []
+  child.on("message", (message) => messages.push(message))
+  const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
+  return {
+    child,
+    base: `http://127.0.0.1:${port}`,
+    discoveryPath,
+    messages,
+    exited,
+    stderr: () => stderr,
+    async dispose() {
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+      await Promise.race([exited, Bun.sleep(5_000)])
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+      fs.rmSync(root, { recursive: true, force: true })
+    },
+  }
+}
 
 async function freePort() {
   const server = net.createServer()

@@ -28,3 +28,18 @@ export function parseClaxedoServerReadyMessage(input: unknown): ClaxedoServerRea
   if (port === undefined || !Number.isInteger(port)) return null
   return { type: READY_TYPE, port }
 }
+
+/**
+ * The daemon exits with this, before it announces its port, when the operating
+ * system will not tell it its own creation identity. A discovery record without
+ * one would give a later launcher nothing to verify before signalling it.
+ */
+export const CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE = 71
+
+export function claxedoServerExitedBeforeListening(code: number | null, logPath: string) {
+  if (code === CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE) {
+    return `The Claxedo server could not read its own process identity from the operating system and stopped `
+      + `(exit code ${code}). The cause is in ${logPath}.`
+  }
+  return `claxedo-server exited before listening (code ${String(code)})`
+}

@@ -96,16 +96,32 @@ export type IdentityVerdict =
   | { state: "identity_mismatch"; observed: CreationIdentity }
   | { state: "unknown"; reason: string }
 
+/**
+ * A read that passes `probeTimeout: false` runs its probes with no kill timer.
+ * It is for a caller whose own deadline already ends the process doing the
+ * read, where a killed probe would turn a slow machine into a failed one.
+ */
+export type IdentityReadOptions = { probeTimeout?: false }
+
+function identityProbeTimeout(options: IdentityReadOptions, bounded: number) {
+  return options.probeTimeout === false ? 0 : bounded
+}
+
 let bootTime: Promise<string> | undefined
 
 export function readBootTime(): Promise<string> {
-  bootTime ??= probeBootTime()
+  return memoizedBootTime({})
+}
+
+/** The first read in a process decides whether this probe has a kill timer; every later read shares its answer. */
+function memoizedBootTime(options: IdentityReadOptions) {
+  bootTime ??= probeBootTime(identityProbeTimeout(options, PROBE_TIMEOUT_MS))
   return bootTime
 }
 
-async function probeBootTime(): Promise<string> {
+async function probeBootTime(timeout: number): Promise<string> {
   if (process.platform === "darwin") {
-    const { stdout } = await execFileAsync("sysctl", ["-n", "kern.boottime"], { timeout: PROBE_TIMEOUT_MS })
+    const { stdout } = await execFileAsync("sysctl", ["-n", "kern.boottime"], { timeout })
     const seconds = /sec\s*=\s*(\d+)/.exec(stdout)?.[1]
     if (seconds === undefined) throw new Error(`kern.boottime is not in the expected form: ${stdout.trim()}`)
     return seconds
@@ -121,7 +137,7 @@ async function probeBootTime(): Promise<string> {
   // from the gate child of every launch.
   const { stdout } = await execFileAsync(windowsSystemTool("reg.exe"), [
     "query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters", "/v", "BootId",
-  ], { timeout: PROBE_TIMEOUT_MS })
+  ], { timeout })
   return windowsBootId(stdout)
 }
 
@@ -132,12 +148,12 @@ export function windowsBootId(registryQuery: string): string {
   return String(parseInt(hex, 16))
 }
 
-export async function readCreationIdentity(pid: number): Promise<CreationIdentity | undefined> {
+export async function readCreationIdentity(pid: number, options: IdentityReadOptions = {}): Promise<CreationIdentity | undefined> {
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`readCreationIdentity needs a positive integer pid, got ${String(pid)}`)
-  const boot = await readBootTime()
+  const boot = await memoizedBootTime(options)
   if (process.platform === "linux") return readLinuxCreationIdentity(pid, boot)
-  if (process.platform === "win32") return readWindowsCreationIdentity(pid, boot)
-  return readDarwinCreationIdentity(pid, boot)
+  if (process.platform === "win32") return readWindowsCreationIdentity(pid, boot, identityProbeTimeout(options, POWERSHELL_PROBE_TIMEOUT_MS))
+  return readDarwinCreationIdentity(pid, boot, identityProbeTimeout(options, PROBE_TIMEOUT_MS))
 }
 
 const DARWIN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -153,7 +169,7 @@ export function darwinStartMs(lstart: string) {
   return Date.UTC(Number(match[6]), month, Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]))
 }
 
-async function readDarwinCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
+async function readDarwinCreationIdentity(pid: number, boot: string, timeout: number): Promise<CreationIdentity | undefined> {
   let stdout: string
   try {
     // `lstart` carries no zone and prints in the zone of the `ps` process, while
@@ -162,7 +178,7 @@ async function readDarwinCreationIdentity(pid: number, boot: string): Promise<Cr
     // UTC, where a process that existed before a spawn then passes for the one
     // it started.
     ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)], {
-      timeout: PROBE_TIMEOUT_MS,
+      timeout,
       env: { ...process.env, TZ: "UTC0", LC_ALL: "C" },
     }))
   } catch (error) {
@@ -222,13 +238,13 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
  * there is the `taskkill /T` tree, not a group signal. `CreationDate` has 100 ns
  * resolution, so `startSecond` alone already tells two holders of one pid apart.
  */
-async function readWindowsCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
+async function readWindowsCreationIdentity(pid: number, boot: string, timeout: number): Promise<CreationIdentity | undefined> {
   let stdout: string
   try {
     ;({ stdout } = await execFileAsync(windowsPowerShell(), [
       "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
       `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
-    ], { timeout: POWERSHELL_PROBE_TIMEOUT_MS, windowsHide: true }))
+    ], { timeout, windowsHide: true }))
   } catch (error) {
     throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }

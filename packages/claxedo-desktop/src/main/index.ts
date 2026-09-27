@@ -121,7 +121,7 @@ import {
   matchesDiagnosticsBinding,
   parseDiagnosticsTransportMessage,
 } from "../shared/diagnostics-transport"
-import { parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
+import { claxedoServerExitedBeforeListening, parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
 
 type ServerConnection =
   /**
@@ -480,7 +480,7 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
     child.once("exit", (code, signal) => {
       ownerBridge?.dispose()
       exited.resolve(code)
-      listening.reject(new Error(`claxedo-server exited before listening (code ${String(code)})`))
+      listening.reject(new Error(claxedoServerExitedBeforeListening(code, serverLog.path)))
       const detail = { pid: child.pid, code, signal }
       if (quitting || code === 0) logger.log("claxedo-server child process exited", detail)
       else logger.error("claxedo-server child process exited", detail)

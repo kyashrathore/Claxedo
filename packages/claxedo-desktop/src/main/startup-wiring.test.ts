@@ -124,6 +124,10 @@ describe("desktop cold startup wiring", () => {
     expect(grant).toBeGreaterThan(-1)
     expect(publish).toBeGreaterThan(grant)
   })
+
+  test("main names why a daemon that exited before listening stopped, from its exit code", () => {
+    expect(serverStart).toContain("listening.reject(new Error(claxedoServerExitedBeforeListening(code, serverLog.path)))")
+  })
 })
 
 // The renderer cannot issue a request before `serverReady` publishes the URL,
@@ -138,7 +142,7 @@ describe("startup clock probe placement", () => {
     const announce = childEntry.indexOf("parent?.send(claxedoServerReadyMessage(startup.port))")
     // The call site, not the function body below it: what is being pinned is
     // the order these three steps run in.
-    const identity = childEntry.indexOf("await publishIdentity()")
+    const identity = childEntry.indexOf("publishIdentity(await identity)")
 
     // start() closes machine admission before the port is announced, and the
     // discovery record is published before it too: main reads that record as
