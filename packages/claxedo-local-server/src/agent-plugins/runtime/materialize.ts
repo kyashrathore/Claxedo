@@ -388,28 +388,22 @@ export async function materializeAgentPluginGeneration(input: {
 }
 
 /**
- * Translate one materialized generation into the opaque launch contract
- * consumed by native harness drivers. The ACP projection is not a launch row:
- * custom connections take it as the snapshot's MCP map (`agentPluginAcpMcp`).
+ * The launch rows the workspace runtime turns into each harness's
+ * `StartInput.projection`: the generation identity and every plugin root the
+ * adapter projected. The ACP projection is not a launch row: custom
+ * connections take it as the snapshot's MCP map (`agentPluginAcpMcp`).
  */
-export async function agentPluginHarnessLaunch(
-  generation: Pick<MaterializedAgentPluginGeneration, "projections"> | undefined,
+export function agentPluginHarnessLaunch(
+  generation: Pick<MaterializedAgentPluginGeneration, "generationId" | "projections"> | undefined,
 ) {
   const result: Record<string, Record<string, unknown>> = {}
-  for (const [harnessId, projection] of Object.entries(generation?.projections ?? {})) {
+  if (!generation) return result
+  for (const [harnessId, projection] of Object.entries(generation.projections)) {
     if (!projection || harnessId === "acp") continue
-    if (projection.configFile) {
-      const config = JSON.parse(await fs.readFile(projection.configFile, "utf8")) as unknown
-      if (!config || typeof config !== "object" || Array.isArray(config)) {
-        throw new AgentPluginMaterializationError(
-          "artifact-unavailable",
-          `Materialized ${harnessId} plugin configuration is invalid`,
-        )
-      }
-      result[harnessId] = { config }
-      continue
+    result[harnessId] = {
+      generation: generation.generationId,
+      pluginRoots: projection.pluginRoots.map(({ pluginInstanceId, root, dataRoot }) => ({ pluginInstanceId, root, dataRoot })),
     }
-    result[harnessId] = { pluginRoots: projection.pluginRoots.map((plugin) => plugin.root) }
   }
   return result
 }

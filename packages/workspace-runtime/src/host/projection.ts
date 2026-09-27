@@ -16,12 +16,13 @@ function skillRoot(harnessId: string, value: unknown): SkillRoot {
   return { pluginInstanceId: value.pluginInstanceId, root: value.root, dataRoot: value.dataRoot }
 }
 
-export function pluginRootsFor(harness: SessionHarness, harnessLaunch: ProjectionSource["harnessLaunch"]): SkillRoot[] {
-  if (harness.access !== "native") return []
-  const roots = harnessLaunch[harness.id]?.pluginRoots
-  if (roots === undefined) return []
-  if (!Array.isArray(roots)) throw new Error(`The ${harness.id} plugin launch carries a pluginRoots that is not a list`)
-  return roots.map((value) => skillRoot(harness.id, value))
+function pluginLaunchFor(harness: SessionHarness, harnessLaunch: ProjectionSource["harnessLaunch"]): { generation?: string; pluginRoots: SkillRoot[] } {
+  const launch = harness.access === "native" ? harnessLaunch[harness.id] : undefined
+  if (launch === undefined) return { pluginRoots: [] }
+  if (typeof launch.generation !== "string" || !Array.isArray(launch.pluginRoots)) {
+    throw new Error(`The ${harness.id} plugin launch must name its generation and list its plugin roots`)
+  }
+  return { generation: launch.generation, pluginRoots: launch.pluginRoots.map((value) => skillRoot(harness.id, value)) }
 }
 
 export function configuredMcpServers(mcp: Record<string, unknown>): ProjectedMcpServer[] {
@@ -32,10 +33,11 @@ export function configuredMcpServers(mcp: Record<string, unknown>): ProjectedMcp
 
 /** The projection a harness launches with, from the accepted runtime snapshot. */
 export function pluginProjectionFor(harness: SessionHarness, source: ProjectionSource): PluginProjection {
+  const plugins = pluginLaunchFor(harness, source.harnessLaunch)
   return {
-    generation: source.generation,
+    generation: plugins.generation === undefined ? source.generation : `${source.generation}/plugins:${plugins.generation}`,
     mcpServers: configuredMcpServers(source.mcp),
-    pluginRoots: pluginRootsFor(harness, source.harnessLaunch),
+    pluginRoots: plugins.pluginRoots,
     notApplied: [],
   }
 }

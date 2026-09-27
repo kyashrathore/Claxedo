@@ -10,6 +10,7 @@ import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/
 import { encodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
 import { createLocalAgentPluginsComposition } from "./local-composition"
+import { pluginRoots } from "./test-support/launch"
 
 const roots: string[] = []
 const originalDataDir = process.env.CLAXEDO_DATA_DIR
@@ -82,9 +83,9 @@ describe("local Agent Plugins composition", () => {
     expect(activation.status).toBe(200)
 
     const launch = (await composition.runtimeContribution()).harnessLaunch
-    const config = launch.opencode?.config as { skills?: string[] }
-    expect(config.skills).toHaveLength(1)
-    const skills = config.skills![0]
+    const projected = pluginRoots(launch, "opencode")
+    expect(projected).toHaveLength(1)
+    const skills = path.join(projected[0].root, "skills")
     expect(skills).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(skills).not.toContain(collection)
     await expect(fs.readFile(path.join(skills, "review", "SKILL.md"), "utf8"))
@@ -117,9 +118,9 @@ describe("local Agent Plugins composition", () => {
     })
     await restarted.ready
     const relaunch = (await restarted.runtimeContribution()).harnessLaunch
-    const relaunchSkills = (relaunch.opencode?.config as { skills: string[] } | undefined)?.skills
-    const reprojected = relaunchSkills?.[0]
-    if (!reprojected) throw new Error("relaunch projected no skill root")
+    const relaunchRoot = pluginRoots(relaunch, "opencode")[0]?.root
+    if (!relaunchRoot) throw new Error("relaunch projected no skill root")
+    const reprojected = path.join(relaunchRoot, "skills")
     expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
     await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")
@@ -214,9 +215,9 @@ describe("local Agent Plugins composition", () => {
     expect(await applied.json()).toMatchObject({ active: true, revision: 7, userId: "usr_1" })
 
     const launch = (await composition.runtimeContribution()).harnessLaunch
-    const claudeRoot = (launch.claude?.pluginRoots as string[] | undefined)?.[0]
+    const claudeRoot = pluginRoots(launch, "claude")[0]?.root
     expect(claudeRoot).toContain(path.join(data, "runtime-signed", "agent-plugins", "generations", "generation-7-"))
-    const mcp = JSON.parse(await fs.readFile(path.join(claudeRoot!, ".mcp.json"), "utf8")) as {
+    const mcp = JSON.parse(await fs.readFile(path.join(claudeRoot, ".mcp.json"), "utf8")) as {
       mcpServers: { context7: { url: string; headers?: { Authorization?: string } } }
     }
     expect(mcp.mcpServers.context7.url).toBe("https://cp.test/api/claxedo/plugins/mcp/integration-1")
@@ -230,7 +231,7 @@ describe("local Agent Plugins composition", () => {
       body: JSON.stringify({ ...signedWorld, secrets: [{ name: "CLAXEDO_MCP_ABC", value: "Bearer rotated-token" }] }),
     })
     expect(refreshed.status).toBe(200)
-    const rotatedRoot = (((await composition.runtimeContribution()).harnessLaunch).claude?.pluginRoots as string[] | undefined)?.[0]
+    const rotatedRoot = pluginRoots((await composition.runtimeContribution()).harnessLaunch, "claude")[0]?.root
     if (!rotatedRoot) throw new Error("relaunch projected no plugin root")
     const rotated = JSON.parse(await fs.readFile(path.join(rotatedRoot, ".mcp.json"), "utf8")) as {
       mcpServers: { context7: { headers?: { Authorization?: string } } }

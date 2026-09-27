@@ -254,7 +254,7 @@ export function createLocalAgentPluginsComposition(
     await current
     await signedWork.catch(() => undefined)
     const generation = signedGeneration ?? activeGeneration
-    return { harnessLaunch: await agentPluginHarnessLaunch(generation), mcp: await agentPluginAcpMcp(generation) }
+    return { harnessLaunch: agentPluginHarnessLaunch(generation), mcp: await agentPluginAcpMcp(generation) }
   }
   return {
     routeContributions: [

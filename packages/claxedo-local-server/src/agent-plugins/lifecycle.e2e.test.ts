@@ -8,6 +8,7 @@ import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/a
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { createLocalAgentPluginsComposition } from "./local-composition"
+import { pluginRoots } from "./test-support/launch"
 
 /**
  * Whole-lifecycle exercise of the local Agent Plugins rail through its real
@@ -143,37 +144,28 @@ describe("local Agent Plugins lifecycle", () => {
     expect(Object.keys(launch).toSorted()).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES.filter((harnessId) => harnessId !== "acp").toSorted())
     expect(Object.values(contribution.mcp).map((server) => server.source)).toEqual(["plugin"])
 
-    // OpenCode: the SDK harness adapter receives `launch.config` verbatim (embedded SDK config shape).
-    const openCode = launch.opencode.config as { skills?: string[]; mcp?: Record<string, unknown> }
-    expect(openCode.skills).toHaveLength(1)
-    await expect(fs.readFile(path.join(openCode.skills![0], "code-review", "SKILL.md"), "utf8"))
-      .resolves.toContain("name: code-review")
-    expect(Object.keys(openCode.mcp ?? {})).toHaveLength(1)
+    const generations = new Set(Object.values(launch).map((row) => row.generation))
+    expect(generations.size).toBe(1)
+    expect([...generations][0]).toMatch(/^generation-/)
 
-    // Claude: `claudePluginConfigs` keeps every non-empty string in pluginRoots.
-    const claudeRoots = launch.claude.pluginRoots as string[]
+    const openCode = pluginRoots(launch, "opencode")
+    expect(openCode).toEqual([{ pluginInstanceId: candidate.pluginInstanceId, root: expect.any(String), dataRoot: expect.any(String) }])
+    await expect(fs.readFile(path.join(openCode[0].root, "skills", "code-review", "SKILL.md"), "utf8"))
+      .resolves.toContain("name: code-review")
+
+    const claudeRoots = pluginRoots(launch, "claude").map((plugin) => plugin.root)
     expect(claudeRoots).toHaveLength(1)
-    expect(claudeRoots.every((entry) => typeof entry === "string" && entry.trim() && path.isAbsolute(entry))).toBe(true)
+    expect(path.isAbsolute(claudeRoots[0])).toBe(true)
     await expect(fs.readFile(path.join(claudeRoots[0], ".claude-plugin", "plugin.json"), "utf8"))
       .resolves.toContain("code-review")
     await expect(fs.readFile(path.join(claudeRoots[0], ".mcp.json"), "utf8")).resolves.toContain("docs")
 
-    // Cursor: `cursorPluginRoots` requires an array of non-empty paths.
-    const cursorRoots = launch.cursor.pluginRoots as string[]
+    const cursorRoots = pluginRoots(launch, "cursor").map((plugin) => plugin.root)
     expect(cursorRoots).toHaveLength(1)
     expect(cursorRoots[0]).toContain(path.join(root, "home", ".cursor", "plugins", "local", "claxedo--"))
     await expect(fs.readFile(path.join(cursorRoots[0], "plugin.json"), "utf8")).resolves.toContain("code-review")
 
-    // Codex: `codexPluginLaunch` validates marketplace name/source and ids.
-    const codex = launch.codex.config as { marketplace: { name: string; source: string }; plugins: string[] }
-    expect(codex.marketplace.name).toMatch(/^[A-Za-z0-9_-]+$/)
-    expect(path.isAbsolute(codex.marketplace.source)).toBe(true)
-    expect(codex.plugins).toHaveLength(1)
-    for (const id of codex.plugins) {
-      expect(id).toMatch(/^[A-Za-z0-9._-]+@[A-Za-z0-9_-]+$/)
-      expect(id.endsWith(`@${codex.marketplace.name}`)).toBe(true)
-    }
-    expect(new Set(codex.plugins).size).toBe(codex.plugins.length)
+    expect(pluginRoots(launch, "codex")).toHaveLength(1)
     await expect(fs.readFile(path.join(root, "codex-home", "config.toml"), "utf8"))
       .resolves.toContain("code-review")
 
@@ -199,7 +191,7 @@ describe("local Agent Plugins lifecycle", () => {
     })
     expect(enabled.status).toBe(200)
     const afterEnable = (await composition.runtimeContribution()).harnessLaunch
-    expect((afterEnable.claude.pluginRoots as string[])).toHaveLength(1)
+    expect(pluginRoots(afterEnable, "claude")).toHaveLength(1)
 
     const enabledCatalog = await readCatalog(app)
     const retainedDigest = enabledCatalog.candidates[0].retainedDigest
@@ -214,8 +206,8 @@ describe("local Agent Plugins lifecycle", () => {
     expect(disabled.status).toBe(200)
 
     const afterDisable = (await composition.runtimeContribution()).harnessLaunch
-    expect((afterDisable.claude?.pluginRoots as string[] | undefined) ?? []).toEqual([])
-    expect((afterDisable.opencode.config as { skills?: string[] }).skills).toHaveLength(1)
+    expect(pluginRoots(afterDisable, "claude")).toEqual([])
+    expect(pluginRoots(afterDisable, "opencode")).toHaveLength(1)
 
     const finalCatalog = await readCatalog(app)
     const row = finalCatalog.candidates[0]
@@ -255,7 +247,7 @@ describe("local Agent Plugins lifecycle", () => {
     expect(retainedRow.updateAvailable).toBe(false)
 
     const launch = (await second.composition.runtimeContribution()).harnessLaunch
-    const skills = (launch.opencode.config as { skills: string[] }).skills[0]
+    const skills = path.join(pluginRoots(launch, "opencode")[0].root, "skills")
     await expect(fs.readFile(path.join(skills, "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
 
@@ -269,7 +261,7 @@ describe("local Agent Plugins lifecycle", () => {
     expect(rebuilt.status).toBe(200)
     expect(await rebuilt.json()).toMatchObject({ reconciliation: { state: "applied" } })
     const rebuiltLaunch = (await second.composition.runtimeContribution()).harnessLaunch
-    const claudeRoots = rebuiltLaunch.claude.pluginRoots as string[]
+    const claudeRoots = pluginRoots(rebuiltLaunch, "claude").map((plugin) => plugin.root)
     expect(claudeRoots).toHaveLength(1)
     await expect(fs.readFile(path.join(claudeRoots[0], ".claude-plugin", "plugin.json"), "utf8"))
       .resolves.toContain("code-review")

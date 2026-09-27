@@ -220,7 +220,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             // different capability set, so it alone cannot say whether the
             // active generation is the projection this request describes.
             if (executionKey(active.execution) === executionKey(execution)) {
-              const harnessLaunch = await agentPluginHarnessLaunch(active)
+              const harnessLaunch = agentPluginHarnessLaunch(active)
               await context.applyHarnessLaunch(harnessLaunch)
               return { ok: true, generationId: active.generationId, revision: active.revision, ...acknowledged, harnessLaunch }
             }
@@ -251,7 +251,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
               acpAgentPluginAdapter(),
             ],
           })
-          const harnessLaunch = await agentPluginHarnessLaunch(generation)
+          const harnessLaunch = agentPluginHarnessLaunch(generation)
           await context.applyHarnessLaunch(harnessLaunch)
           return { ok: true, generationId: generation.generationId, revision: generation.revision, ...acknowledged, harnessLaunch }
         })

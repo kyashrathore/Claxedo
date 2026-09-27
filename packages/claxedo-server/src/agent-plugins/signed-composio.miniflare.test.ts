@@ -351,8 +351,8 @@ describe("signed Composio Gmail on Miniflare", () => {
     expect(resolveConnection.mock.calls.every((call) => call[0].ownerUserId === USER.userId)).toBe(true)
     expect(resolveConnection).toHaveBeenCalledTimes(2)
 
-    const localClaude = (local.receipt.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
-    const cloudClaude = (cloud.receipt.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
+    const localClaude = (local.receipt.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
+    const cloudClaude = (cloud.receipt.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
     expect(localClaude).toBeTruthy()
     expect(cloudClaude).toBeTruthy()
     expect(await fs.readFile(path.join(localClaude!, "plugin.json"), "utf8")).toContain("composio")
@@ -514,8 +514,8 @@ describe("signed Composio Gmail on Miniflare", () => {
     expect(resolveConnection.mock.calls.every((call) => call[0].ownerUserId === USER.userId)).toBe(true)
     expect(signer).toHaveBeenCalledTimes(2)
 
-    const localClaude = (receipts.get("ws_local_mint")?.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
-    const cloudClaude = (receipts.get("ws_cloud_mint")?.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
+    const localClaude = (receipts.get("ws_local_mint")?.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
+    const cloudClaude = (receipts.get("ws_cloud_mint")?.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
     expect(localClaude).toBeTruthy()
     expect(cloudClaude).toBeTruthy()
     const localMcp = JSON.parse(await fs.readFile(path.join(localClaude!, ".mcp.json"), "utf8")) as {
