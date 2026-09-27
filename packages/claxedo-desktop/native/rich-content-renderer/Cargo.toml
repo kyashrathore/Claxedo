@@ -6,7 +6,6 @@ license = "MIT"
 publish = false
 
 [dependencies]
-comrak = { version = "=0.54.0", default-features = false }
 mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", rev = "7ff1196ed297c32a65a6b3cdc28f3ca3787fb65e", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

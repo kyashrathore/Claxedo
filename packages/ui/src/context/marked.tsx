@@ -84,8 +84,6 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   return result
 }
 
-export type NativeMarkdownParser = (markdown: string) => Promise<string>
-
 export function escapeRawMarkdownHtml(text: string) {
   return text
     .replace(/&/g, "&amp;")
@@ -243,31 +241,6 @@ export function ensureOpenCodeTheme() {
 
 let jsParser: Promise<{ parse(markdown: string): string | Promise<string> }> | undefined
 
-function createNativeParseScheduler(maxConcurrent: number) {
-  let active = 0
-  const queued: Array<() => void> = []
-
-  return function schedule<T>(run: () => Promise<T>) {
-    return new Promise<T>((resolve, reject) => {
-      const start = () => {
-        active += 1
-        Promise.resolve()
-          .then(run)
-          .then(resolve, reject)
-          .finally(() => {
-            active -= 1
-            queued.shift()?.()
-          })
-      }
-      if (active < maxConcurrent) {
-        start()
-        return
-      }
-      queued.push(start)
-    })
-  }
-}
-
 /** Shared syntax policy for immediate paint and asynchronous enhancement. */
 export const transcriptMarkdownExtensions: MarkedExtension[] = [
   markedTranscriptAutolink,
@@ -301,22 +274,7 @@ function loadJsParser() {
   return jsParser
 }
 
-export function createMarkdownParser(nativeParser?: NativeMarkdownParser) {
-  if (nativeParser) {
-    const scheduleNativeParse = createNativeParseScheduler(2)
-    return {
-      async parse(markdown: string): Promise<string> {
-        try {
-          const html = await scheduleNativeParse(() => nativeParser(markdown))
-          const withMath = await renderMathExpressions(html)
-          return highlightCodeBlocks(withMath)
-        } catch {
-          return (await loadJsParser()).parse(markdown)
-        }
-      },
-    }
-  }
-
+export function createMarkdownParser() {
   return {
     async parse(markdown: string) {
       return (await loadJsParser()).parse(markdown)
@@ -326,7 +284,5 @@ export function createMarkdownParser(nativeParser?: NativeMarkdownParser) {
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
-    return createMarkdownParser(props.nativeParser)
-  },
+  init: () => createMarkdownParser(),
 })

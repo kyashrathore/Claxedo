@@ -103,7 +103,6 @@ import { setupHostProviderConfigPush } from "./host-connector/provider-config-pu
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
-import { createNativeMarkdownRenderer } from "./native-markdown"
 import { createNativeMermaidRenderer } from "./native-mermaid"
 import { resolveRichContentRendererPath } from "./rich-content-renderer-path"
 import {
@@ -1020,7 +1019,6 @@ const diagnosticsIpc = registerIpcHandlers({
   installUpdate: async () => installUpdate(),
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
-  parseMarkdown: createNativeMarkdownRenderer(process.env.CLAXEDO_MARKDOWN_RENDERER_PATH ?? richContentRendererPath),
   renderMermaid: createNativeMermaidRenderer(process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? richContentRendererPath),
   browser: browserRegistry,
   processDiagnostics: {

@@ -10,56 +10,6 @@ Why: sanitization findings P-68, P-69, P-78 and S-2 (markdown, link and mermaid
 injection). KaTeX's stylesheet (about 30 KB raw, 21 @font-face rules) no longer loads
 in styles/index.css: it ships with the lazy math chunk, not in every eager bundle.
 
-diff --git a/src/context/marked-autolink-native-parity.test.ts b/src/context/marked-autolink-native-parity.test.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..6fdc82ed837f3f7fdecf87b373d6eca675219aab
---- /dev/null
-+++ b/src/context/marked-autolink-native-parity.test.ts
-@@ -0,0 +1,44 @@
-+import { expect, test } from "bun:test"
-+import { readFileSync } from "node:fs"
-+import { Marked } from "marked"
-+import { markedTranscriptAutolink, transcriptLinkPrefixes } from "./marked"
-+
-+/**
-+ * The desktop renders transcript Markdown in a Rust process, which cannot read
-+ * the list above, so it declares its own copy of it. A prefix added on one side
-+ * only would autolink on the web and stay inert on the desktop, or the reverse.
-+ */
-+const nativePrefixes = (() => {
-+  const source = readFileSync(
-+    new URL("../../../claxedo-desktop/native/rich-content-renderer/src/main.rs", import.meta.url),
-+    "utf8",
-+  )
-+  const declaration = /const TRANSCRIPT_LINK_PREFIXES:\s*\[&str;\s*\d+\]\s*=\s*\[([^\]]*)\]/.exec(source)
-+  if (!declaration) throw new Error("the native renderer no longer declares TRANSCRIPT_LINK_PREFIXES")
-+  return [...declaration[1].matchAll(/"([^"]*)"/g)].map(([, prefix]) => prefix)
-+})()
-+
-+test("the native renderer carries the same closed prefix list", () => {
-+  expect([...nativePrefixes].sort()).toEqual([...transcriptLinkPrefixes].sort())
-+})
-+
-+const parser = new Marked(markedTranscriptAutolink)
-+
-+/**
-+ * The other half of the agreement, for the destination an author writes rather
-+ * than one prose starts: comrak blanks a `file:` image source, so the native
-+ * renderer masks the scheme across its formatter and its own test asserts the
-+ * result. Marked hands the destination through untouched. Both then meet the
-+ * same DOMPurify config, whose URI allowlist is derived from the list above, so
-+ * the parse is the last stage where the two can differ over an image.
-+ */
-+test("the web renderer keeps an image source on the closed list", () => {
-+  expect(parser.parse("![shot](file:///Users/dev/shot.png)", { async: false })).toContain(
-+    'src="file:///Users/dev/shot.png"',
-+  )
-+  for (const prefix of transcriptLinkPrefixes) {
-+    expect(parser.parse(`![shot](${prefix}example.com/shot.png)`, { async: false })).toContain(
-+      `src="${prefix}example.com/shot.png"`,
-+    )
-+  }
-+})
 diff --git a/src/context/marked-autolink.test.ts b/src/context/marked-autolink.test.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..8460b5b79abf34c7614c5d0bce202bee8c4ee72b
@@ -313,69 +263,6 @@ index 0000000000000000000000000000000000000000..a06ce2a91b1db2e83d9b0470863f6ca8
 +
 +  return result
 +}
-diff --git a/src/context/marked-native.test.ts b/src/context/marked-native.test.ts
-new file mode 100644
-index 0000000000000000000000000000000000000000..c13685e7388dc670f78eb2aff22feff36d3e52cb
---- /dev/null
-+++ b/src/context/marked-native.test.ts
-@@ -0,0 +1,57 @@
-+import { describe, expect, test } from "bun:test"
-+import { createMarkdownParser } from "./marked"
-+
-+describe("native Markdown selection", () => {
-+  test("uses the desktop parser when it succeeds", async () => {
-+    const parser = createMarkdownParser(async (source) => `<p data-native="true">${source}</p>`)
-+    await expect(parser.parse("hello")).resolves.toBe('<p data-native="true">hello</p>')
-+  })
-+
-+  test("loads the JavaScript parser when the desktop parser fails", async () => {
-+    const parser = createMarkdownParser(async () => {
-+      throw new Error("unsupported")
-+    })
-+    const html = await parser.parse("# Fallback\n\n[Claxedo](https://claxedo.ai)")
-+    expect(html).toContain("<h1>Fallback</h1>")
-+    expect(html).toContain('class="external-link"')
-+  })
-+
-+  test("bounds native parsing before requests reach the desktop queue", async () => {
-+    const releases: Array<() => void> = []
-+    let calls = 0
-+    let active = 0
-+    let peak = 0
-+    const parser = createMarkdownParser((source) => {
-+      calls += 1
-+      active += 1
-+      peak = Math.max(peak, active)
-+      return new Promise<string>((resolve) => {
-+        releases.push(() => {
-+          active -= 1
-+          resolve(`<p>${source}</p>`)
-+        })
-+      })
-+    })
-+
-+    const pending = ["one", "two", "three", "four"].map((source) => parser.parse(source))
-+    await Bun.sleep(0)
-+    expect(calls).toBe(2)
-+    expect(peak).toBe(2)
-+
-+    releases.shift()?.()
-+    await Bun.sleep(0)
-+    expect(calls).toBe(3)
-+
-+    releases.shift()?.()
-+    await Bun.sleep(0)
-+    expect(calls).toBe(4)
-+
-+    releases.splice(0).forEach((release) => release())
-+    await expect(Promise.all(pending)).resolves.toEqual([
-+      "<p>one</p>",
-+      "<p>two</p>",
-+      "<p>three</p>",
-+      "<p>four</p>",
-+    ])
-+  })
-+})
 diff --git a/src/context/marked-parser.test.ts b/src/context/marked-parser.test.ts
 deleted file mode 100644
 index 3c79e0afa7128ab644ee14e2a9386f41bcb1dc7e..0000000000000000000000000000000000000000
@@ -565,10 +452,10 @@ index 527a35e678f0648d040761153816953fa202f70f..5d34c9eb7223c828b3f5947150fff495
 +  // the resolved `settings`, and shiki resolves the two when it loads the theme.
 +} satisfies ThemeRegistration
 diff --git a/src/context/marked.tsx b/src/context/marked.tsx
-index 155682f718ae11069568dadf10d8e7d75d9cff93..b156c6a71c1947e05ba181a54e044252671c529b 100644
+index 155682f718ae11069568dadf10d8e7d75d9cff93..c05a770c83852ccf529a3df09cea75fc1dddc184 100644
 --- a/src/context/marked.tsx
 +++ b/src/context/marked.tsx
-@@ -1,28 +1,322 @@
+@@ -1,28 +1,278 @@
 -import { getSharedHighlighter } from "@pierre/diffs"
 -import { bundledLanguages, type BundledLanguage } from "shiki"
 +import type { MarkedExtension, Tokens } from "marked"
@@ -649,8 +536,6 @@ index 155682f718ae11069568dadf10d8e7d75d9cff93..b156c6a71c1947e05ba181a54e044252
 +
 +  return result
 +}
-+
-+export type NativeMarkdownParser = (markdown: string) => Promise<string>
 +
 +export function escapeRawMarkdownHtml(text: string) {
 +  return text
@@ -809,31 +694,6 @@ index 155682f718ae11069568dadf10d8e7d75d9cff93..b156c6a71c1947e05ba181a54e044252
 +
 +let jsParser: Promise<{ parse(markdown: string): string | Promise<string> }> | undefined
 +
-+function createNativeParseScheduler(maxConcurrent: number) {
-+  let active = 0
-+  const queued: Array<() => void> = []
-+
-+  return function schedule<T>(run: () => Promise<T>) {
-+    return new Promise<T>((resolve, reject) => {
-+      const start = () => {
-+        active += 1
-+        Promise.resolve()
-+          .then(run)
-+          .then(resolve, reject)
-+          .finally(() => {
-+            active -= 1
-+            queued.shift()?.()
-+          })
-+      }
-+      if (active < maxConcurrent) {
-+        start()
-+        return
-+      }
-+      queued.push(start)
-+    })
-+  }
-+}
-+
 +/** Shared syntax policy for immediate paint and asynchronous enhancement. */
 +export const transcriptMarkdownExtensions: MarkedExtension[] = [
 +  markedTranscriptAutolink,
@@ -867,22 +727,7 @@ index 155682f718ae11069568dadf10d8e7d75d9cff93..b156c6a71c1947e05ba181a54e044252
 +  return jsParser
 +}
 +
-+export function createMarkdownParser(nativeParser?: NativeMarkdownParser) {
-+  if (nativeParser) {
-+    const scheduleNativeParse = createNativeParseScheduler(2)
-+    return {
-+      async parse(markdown: string): Promise<string> {
-+        try {
-+          const html = await scheduleNativeParse(() => nativeParser(markdown))
-+          const withMath = await renderMathExpressions(html)
-+          return highlightCodeBlocks(withMath)
-+        } catch {
-+          return (await loadJsParser()).parse(markdown)
-+        }
-+      },
-+    }
-+  }
-+
++export function createMarkdownParser() {
 +  return {
 +    async parse(markdown: string) {
 +      return (await loadJsParser()).parse(markdown)
@@ -907,9 +752,7 @@ index 155682f718ae11069568dadf10d8e7d75d9cff93..b156c6a71c1947e05ba181a54e044252
 -        tabindex: false,
 -      })
 -    }),
-+  init: (props: { nativeParser?: NativeMarkdownParser }) => {
-+    return createMarkdownParser(props.nativeParser)
-+  },
++  init: () => createMarkdownParser(),
  })
 diff --git a/src/i18n/en.ts b/src/i18n/en.ts
 index 54008fbc8d0b214aa06ea0027bf8a14d0966cbe9..77f8276a8ccdf3ddd81c00bd75f66f2d1536d68c 100644

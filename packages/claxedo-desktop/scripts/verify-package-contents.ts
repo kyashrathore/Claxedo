@@ -232,13 +232,6 @@ export function verifyPackageContents(
     // permissions remain packaging invariants; the functional smoke belongs to
     // a host with the same OS and architecture as the target.
     if (!canSmokePackagedBinary(target)) continue
-    const markdown = spawnSync(binaries[0], ["markdown"], {
-      input: JSON.stringify({ source: "# Packaged renderer\n\n| a | b |\n|---|---|\n| 1 | 2 |" }),
-      encoding: "utf8",
-    })
-    if (markdown.status !== 0 || !markdown.stdout.includes("<table>")) {
-      failures.push(`${archive}: packaged rich-content renderer failed its Markdown smoke`)
-    }
     const mermaid = spawnSync(binaries[0], ["mermaid"], {
       input: JSON.stringify({ source: "flowchart LR\nA --> B", theme: { primaryColor: "#123456" } }),
       encoding: "utf8",

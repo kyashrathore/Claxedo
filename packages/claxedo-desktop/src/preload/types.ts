@@ -140,10 +140,8 @@ export type DaemonRecoveryBridge = {
 
 export type ElectronAPI = {
   optionalFeatures: Readonly<{
-    nativeMarkdown: boolean
     nativeMermaid: boolean
   }>
-  parseMarkdown: (source: string) => Promise<string>
   renderMermaid: (source: string, theme?: Record<string, string>) => Promise<string>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServer: () => Promise<string | null>

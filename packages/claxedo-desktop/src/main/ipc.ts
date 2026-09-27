@@ -43,7 +43,6 @@ type Deps = {
   installUpdate: () => Promise<void> | void
   getStartAtLogin: () => boolean
   setStartAtLogin: (enabled: boolean) => void
-  parseMarkdown?: (source: string) => Promise<string>
   renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
   /** Optional; only provided when the browser-tab feature flag is set. */
   browser?: BrowserRegistry
@@ -101,10 +100,6 @@ export function registerIpcHandlers(deps: Deps) {
       "render-mermaid",
       (_event: IpcMainInvokeEvent, source: string, theme?: Record<string, string>) => renderMermaid(source, theme),
     )
-  }
-  const parseMarkdown = deps.parseMarkdown
-  if (parseMarkdown) {
-    ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, source: string) => parseMarkdown(source))
   }
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     assertStoreKey(key)

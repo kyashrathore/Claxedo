@@ -152,14 +152,10 @@ const daemonRecoveryBridge: DaemonRecoveryBridge = {
 
 const api: ElectronAPI = {
   optionalFeatures: {
-    nativeMarkdown: Boolean(
-      process.env.CLAXEDO_MARKDOWN_RENDERER_PATH ?? process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
-    ),
     nativeMermaid: Boolean(
       process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
     ),
   },
-  parseMarkdown: (source) => invoke("parse-markdown", source),
   renderMermaid: (source, theme) => invoke("render-mermaid", source, theme),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)
