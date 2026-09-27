@@ -15,6 +15,7 @@ export type Surface = {
   workspace: Workspace
   url: string
   writeScript(name: string, script: AcpScript): Promise<void>
+  release(name: string): Promise<void>
   open(): Promise<{ page: Page; cdp: CDPSession; bounds?: { x: number; y: number; width: number; height: number } }>
   close(): Promise<void>
 }
@@ -38,6 +39,7 @@ export async function webSurface(scale: number): Promise<Surface> {
     workspace: await withValues(await stack.daemon.makeWorkspace("switch", "Switch")),
     url: stack.url,
     writeScript: (name, script) => stack.acp.write(name, script),
+    release: (name) => stack.acp.release(name),
     open: async () => {
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: scale, colorScheme: "light", locale: "en-US", timezoneId: "UTC" })
       await context.addInitScript({ path: PROBE })
@@ -61,6 +63,7 @@ export async function desktopSurface(): Promise<Surface> {
     workspace: await withValues(await desktop.makeWorkspace("switch", "Switch")),
     url: desktop.url,
     writeScript: (name, script) => desktop.acp.write(name, script),
+    release: (name) => desktop.acp.release(name),
     open: async () => {
       const page = desktop.window
       await desktop.electron.evaluate(({ BrowserWindow }) => {
