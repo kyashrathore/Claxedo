@@ -19,23 +19,20 @@
     state.lastMutationAt = performance.now()
   }).observe(document, { subtree: true, childList: true, characterData: true })
 
-  const channel = new MessageChannel()
-  channel.port1.onmessage = () => {
-    const now = performance.now()
-    state.pending = state.pending.filter((item) => {
-      if (state.mutations === item.mutations) return true
-      state.latencies.push(now - item.at)
-      return false
-    })
-  }
   let last = 0
+  let stopFrames = () => {}
   function frame(at) {
-    if (!state.recording) return
     if (last) state.frames.push(at - last)
     last = at
     if (state.frames.length % 30 === 0) state.gaps.push(followGap())
-    channel.port2.postMessage(0)
-    requestAnimationFrame(frame)
+  }
+  function painted(mutations, at) {
+    state.pending = state.pending.filter((item) => {
+      if (mutations === item.mutations) return true
+      state.latencies.push(at - item.at)
+      return false
+    })
+    frame(at)
   }
 
   function followGap() {
@@ -78,9 +75,10 @@
     state.gaps = []
     state.arrivals = 0
     last = 0
-    requestAnimationFrame(frame)
+    stopFrames = window.__claxedoPaintedFrames({ sample: () => state.mutations, painted, overtaken: (_, at) => frame(at) })
   }
   state.stop = () => {
+    stopFrames()
     state.recording = false
     state.stoppedAt = performance.now()
   }

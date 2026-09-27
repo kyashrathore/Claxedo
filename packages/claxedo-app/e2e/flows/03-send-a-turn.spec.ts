@@ -1,21 +1,27 @@
 import type { Page } from "@playwright/test"
+import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 type FirstPaintWindow = Window & { __firstTranscriptPaint?: Promise<string> }
 
 async function firstPaintedTranscript(app: Page, sessionId: string): Promise<() => Promise<string>> {
+  await app.evaluate(installPaintedFrames)
   await app.evaluate((id) => {
+    const paintedFrames = window.__claxedoPaintedFrames
+    if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
     ;(window as FirstPaintWindow).__firstTranscriptPaint = new Promise<string>((resolve) => {
-      const painted = new MessageChannel()
-      const afterPaint = () => painted.port2.postMessage(undefined)
-      painted.port1.onmessage = () => {
-        const root = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${id}"]`)
-        if (root?.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true }) && root.querySelector("[data-timeline-key]")) {
-          return resolve(root.querySelector("[data-session-timeline-root]")?.textContent ?? "")
-        }
-        requestAnimationFrame(afterPaint)
-      }
-      requestAnimationFrame(afterPaint)
+      paintedFrames({
+        sample: () => {
+          const root = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${id}"]`)
+          if (!root?.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true }) || !root.querySelector("[data-timeline-key]")) return undefined
+          return root.querySelector("[data-session-timeline-root]")?.textContent ?? ""
+        },
+        painted: (text) => {
+          if (text === undefined) return
+          resolve(text)
+          return true
+        },
+      })
     })
   }, sessionId)
   return () => app.evaluate(() => (window as FirstPaintWindow).__firstTranscriptPaint!)

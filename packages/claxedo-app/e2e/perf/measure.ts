@@ -1,6 +1,7 @@
 import type { Browser, CDPSession, Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
 import { acpScriptToken } from "../harness/acp/script"
 import type { ClaxedoApi } from "../harness/api"
 import type { Stack } from "../harness/stack"
@@ -135,6 +136,8 @@ async function recorded(input: Run, page: Page, cdp: CDPSession) {
 
 export async function measure(input: Run) {
   const context = await input.browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: "light", locale: "en-US", timezoneId: "UTC" })
+  await context.addInitScript("globalThis.__name = (target) => target")
+  await context.addInitScript(installPaintedFrames)
   await context.addInitScript({ path: path.join(import.meta.dirname, "probe.js") })
   try {
     const page = await context.newPage()
