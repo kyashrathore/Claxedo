@@ -49,7 +49,6 @@ export const moduleStateExceptions: readonly ModuleStateException[] = [
   { file: `${transcript}/markdown.tsx`, binding: "markdownTableViewer", reason: "the full-screen table viewer the app registers once" },
   { file: `${transcript}/mermaid.ts`, binding: "mermaidModule", reason: "the one lazy mermaid import" },
   { file: `${transcript}/mermaid.ts`, binding: "counter", reason: "diagram id counter mermaid requires to be unique per page" },
-  { file: `${transcript}/message-file.ts`, binding: "LANGUAGE_NAMES", reason: "constant table derived from shiki's bundled language info" },
   { file: `${transcript}/session-diff.ts`, binding: "fileDiffCache", reason: protectedCache, cap: "16 entries (diffCacheLimit)" },
   { file: `${transcript}/session-diff.ts`, binding: "fileDiffSerial", reason: "serial minted per distinct diff content for Pierre's cacheKey" },
 ]

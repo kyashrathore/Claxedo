@@ -70,7 +70,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.common.file.one": "ملف",
   "transcript.common.file.other": "ملفات",
   "transcript.common.cancel": "إلغاء",
-  "transcript.common.showMore": "عرض المزيد",
   "transcript.message.copy": "نسخ",
   "transcript.message.copyMessage": "نسخ الرسالة",
   "transcript.message.revertMessage": "إعادة التعيين إلى هذه النقطة",

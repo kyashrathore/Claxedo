@@ -70,7 +70,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.common.file.one": "datoteka",
   "transcript.common.file.other": "datoteke",
   "transcript.common.cancel": "Otkaži",
-  "transcript.common.showMore": "Prikaži više",
   "transcript.message.copy": "Kopiraj",
   "transcript.message.copyMessage": "Kopiraj poruku",
   "transcript.message.revertMessage": "Resetuj na ovu tačku",

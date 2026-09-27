@@ -49,8 +49,6 @@ import { claxedoToolName, claxedoToolTitle, claxedoToolView } from "./claxedo-to
 import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
 import { Markdown } from "./markdown"
-import { AttachmentCardV2 } from "./attachment-card-v2"
-import { CommentCardV2 } from "./comment-card-v2"
 import { formatDuration } from "./format-duration"
 import { localPreviewUrl } from "./local-preview"
 import { stripShellWrapper } from "./shell-wrapper"
@@ -59,7 +57,7 @@ import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
-import { attached, inline, kind, typeLabel } from "./message-file"
+import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
@@ -181,7 +179,6 @@ export interface MessageProps {
   showAssistantCopyPartId?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
-  comments?: UserMessageComment[]
 }
 
 export type SessionAction = (input: { sessionId: string; messageId: string }) => Promise<void> | void
@@ -189,16 +186,6 @@ export type SessionAction = (input: { sessionId: string; messageId: string }) =>
 export type UserActions = {
   fork?: SessionAction
   revert?: SessionAction
-  openAttachment?: (file: AgentFilePart) => void
-}
-
-export type UserMessageComment = {
-  path: string
-  comment: string
-  selection?: {
-    startLine: number
-    endLine: number
-  }
 }
 
 export interface MessagePartProps {
@@ -398,10 +385,6 @@ export type ToolInfo = {
 function agentTitle(i18n: TranscriptI18n, type?: string) {
   if (!type) return i18n.t("transcript.tool.agent.default")
   return i18n.t("transcript.tool.agent", { type })
-}
-
-function newLayout() {
-  return typeof document !== "undefined" && document.body.hasAttribute("data-new-layout")
 }
 
 function webSearchProviderLabel(provider: unknown) {
@@ -851,13 +834,7 @@ export function Message(props: MessageProps) {
     <Switch>
       <Match when={userMessage(props.message)}>
         {(message) => (
-          <UserMessageDisplay
-            message={message()}
-            parts={props.parts}
-            actions={props.actions}
-            useV2Actions={props.useV2Actions}
-            comments={props.comments}
-          />
+          <UserMessageDisplay message={message()} parts={props.parts} actions={props.actions} />
         )}
       </Match>
       <Match when={assistantMessage(props.message)}>
@@ -1062,40 +1039,10 @@ export function WorkGroup(props: {
   )
 }
 
-function UserMessageComments(props: { comments: UserMessageComment[]; bounded: boolean }) {
-  const i18n = useTranscriptI18n()
-  const [state, setState] = createStore({ expanded: false })
-  const comments = createMemo(() => (props.bounded && !state.expanded ? props.comments.slice(0, 5) : props.comments))
-
-  return (
-    <div data-slot="user-message-comments" data-bounded={props.bounded ? "true" : undefined}>
-      <For each={comments()}>
-        {(comment) => (
-          <CommentCardV2
-            comment={comment.comment}
-            path={comment.path}
-            selection={comment.selection}
-            title={comment.comment}
-            tooltip
-            wide
-          />
-        )}
-      </For>
-      <Show when={props.bounded && props.comments.length > 5 && !state.expanded}>
-        <Button size="small" variant="ghost-muted" onClick={() => setState("expanded", true)}>
-          {i18n.t("transcript.common.showMore")}
-        </Button>
-      </Show>
-    </div>
-  )
-}
-
 export function UserMessageDisplay(props: {
   message: AgentUserMessage
   parts: AgentContentPart[]
   actions?: UserActions
-  useV2Actions?: boolean
-  comments?: UserMessageComment[]
 }) {
   const data = useData()
   const i18n = useTranscriptI18n()
@@ -1116,15 +1063,14 @@ export function UserMessageDisplay(props: {
 
   const attachments = createMemo(() => files().filter(attached))
 
-  const messageComments = createMemo(() => (newLayout() ? (props.comments ?? []) : []))
-
   const inlineFiles = createMemo(() => files().filter(inline))
 
   const agents = createMemo(() => props.parts?.filter((part) => part.type === "agent") ?? [])
 
-  const renderAsMarkdown = createMemo(
-    () => shouldRenderUserMarkdown(text()) && inlineFiles().length === 0 && agents().length === 0,
-  )
+  const shape = createMemo((): "markdown" | "text" | "empty" => {
+    if (!text()) return "empty"
+    return shouldRenderUserMarkdown(text()) && inlineFiles().length === 0 && agents().length === 0 ? "markdown" : "text"
+  })
 
   const model = createMemo(() => {
     const providerId = props.message.model?.providerID
@@ -1174,137 +1120,110 @@ export function UserMessageDisplay(props: {
       .finally(() => setState("busy", false))
   }
 
-  const renderAttachments = () => (
-    <Show when={attachments().length > 0}>
-      <div data-slot="user-message-attachments" class="ui-user-message-attachments">
-        <For each={attachments()}>
-          {(file) => {
-            const type = kind(file)
-            const name = file.filename ?? i18n.t("transcript.message.attachment.alt")
+  const metaHeadSpan = () => (
+    <span data-slot="user-message-meta" class="text-12-regular text-text-weak cursor-default">
+      {metaHead()}
+    </span>
+  )
+  const metaTailSpan = () => (
+    <span data-slot="user-message-meta-tail" class="text-12-regular text-text-weak cursor-default">
+      {metaTail()}
+    </span>
+  )
 
-            return (
-              <Show
-                when={newLayout() && type === "file"}
-                fallback={
-                  <div
- class="ui-user-message-attachment"
-                    data-type={type}
-                    data-clickable={type === "image" ? "true" : undefined}
-                    title={type === "file" ? name : undefined}
-                    onClick={() => {
-                      if (type === "image") openImagePreview(file.url, name)
-                    }}
-                  >
-                    <Show
-                      when={type === "image"}
-                      fallback={
-                        <div data-slot="user-message-attachment-file">
-                          <FileIcon node={{ path: name, type: "file" }} />
-                          <span class="ui-user-message-attachment-name">{name}</span>
-                        </div>
-                      }
-                    >
-                      <img data-slot="user-message-attachment-image" src={file.url} alt={name} />
-                    </Show>
-                  </div>
-                }
-              >
-                <AttachmentCardV2
-                  title={getFilename(name)}
-                  hover={name}
-                  clickable={!!props.actions?.openAttachment}
-                  onClick={() => props.actions?.openAttachment?.(file)}
-                >
-                  {typeLabel(name, file.mime)}
-                </AttachmentCardV2>
-              </Show>
-            )
+  const footer = () => (
+    <div class="ui-user-message-copy-wrapper">
+      <Switch>
+        <Match when={metaHead() && metaTail()}>
+          <span data-slot="user-message-meta-wrap">
+            {metaHeadSpan()}
+            <span class="text-12-regular text-text-weak cursor-default">{"\u00A0\u00B7\u00A0"}</span>
+            {metaTailSpan()}
+          </span>
+        </Match>
+        <Match when={metaHead()}>
+          <span data-slot="user-message-meta-wrap">{metaHeadSpan()}</span>
+        </Match>
+        <Match when={metaTail()}>
+          <span data-slot="user-message-meta-wrap">{metaTailSpan()}</span>
+        </Match>
+      </Switch>
+      <Show when={props.actions?.revert}>
+        <MessageActionButton
+          icon="reset"
+          label={i18n.t("transcript.message.revertMessage")}
+          disabled={busy()}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            event.stopPropagation()
+            revert()
           }}
-        </For>
-      </div>
-    </Show>
+          aria-label={i18n.t("transcript.message.revertMessage")}
+        />
+      </Show>
+      <MessageActionButton
+        icon={copied() ? "check" : "copy"}
+        label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyMessage")}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={(event) => {
+          event.stopPropagation()
+          void handleCopy()
+        }}
+        aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyMessage")}
+      />
+    </div>
   )
 
   return (
     <div data-component="user-message" class="ui-user-message" data-timeline-part-id={textPart()?.id}>
-      <Show when={!props.useV2Actions}>{renderAttachments()}</Show>
-      <Show
-        when={text()}
-        fallback={
-          <Show when={messageComments().length > 0}>
-            <UserMessageComments comments={messageComments()} bounded={false} />
-          </Show>
-        }
-      >
-        <div data-slot="user-message-body" class="ui-user-message-body" data-markdown={renderAsMarkdown() ? "true" : undefined}>
-          <div
-            data-slot="user-message-text" class="ui-user-message-text"
-            data-comments={messageComments().length > 0 ? "true" : undefined}
-            data-markdown={renderAsMarkdown() ? "true" : undefined}
-          >
-            <Show
-              when={renderAsMarkdown()}
-              fallback={<HighlightedText text={text()} references={inlineFiles()} agents={agents()} />}
-            >
+      <Show when={attachments().length > 0}>
+        <div data-slot="user-message-attachments" class="ui-user-message-attachments">
+          <For each={attachments()}>
+            {(file) => {
+              const type = kind(file)
+              const name = file.filename ?? i18n.t("transcript.message.attachment.alt")
+              return (
+                <div
+                  class="ui-user-message-attachment"
+                  data-type={type}
+                  data-clickable={type === "image" ? "true" : undefined}
+                  title={type === "file" ? name : undefined}
+                  onClick={() => {
+                    if (type === "image") openImagePreview(file.url, name)
+                  }}
+                >
+                  {type === "image" ? (
+                    <img data-slot="user-message-attachment-image" src={file.url} alt={name} />
+                  ) : (
+                    <div data-slot="user-message-attachment-file">
+                      <FileIcon node={{ path: name, type: "file" }} />
+                      <span class="ui-user-message-attachment-name">{name}</span>
+                    </div>
+                  )}
+                </div>
+              )
+            }}
+          </For>
+        </div>
+      </Show>
+      <Switch>
+        <Match when={shape() === "markdown"}>
+          <div data-slot="user-message-body" class="ui-user-message-body" data-markdown="true">
+            <div data-slot="user-message-text" class="ui-user-message-text" data-markdown="true">
               <Markdown text={text()} cacheKey={textPart()?.id} streaming={false} />
-            </Show>
-            <Show when={messageComments().length > 0}>
-              <UserMessageComments comments={messageComments()} bounded />
-            </Show>
+            </div>
           </div>
-        </div>
-      </Show>
-      <Show when={props.useV2Actions}>{renderAttachments()}</Show>
-      <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
-        <div class="ui-user-message-copy-wrapper">
-          <Show when={metaHead() || metaTail()}>
-            <span data-slot="user-message-meta-wrap">
-              <Show when={metaHead()}>
-                <span data-slot="user-message-meta" class="text-12-regular text-text-weak cursor-default">
-                  {metaHead()}
-                </span>
-              </Show>
-              <Show when={metaHead() && metaTail()}>
-                <span class="text-12-regular text-text-weak cursor-default">
-                  {"\u00A0\u00B7\u00A0"}
-                </span>
-              </Show>
-              <Show when={metaTail()}>
-                <span data-slot="user-message-meta-tail" class="text-12-regular text-text-weak cursor-default">
-                  {metaTail()}
-                </span>
-              </Show>
-            </span>
-          </Show>
-          <Show when={props.actions?.revert}>
-            <MessageActionButton
-              icon="reset"
-              label={i18n.t("transcript.message.revertMessage")}
-              useV2={props.useV2Actions}
-              disabled={busy()}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                revert()
-              }}
-              aria-label={i18n.t("transcript.message.revertMessage")}
-            />
-          </Show>
-          <Show when={text()}>
-            <MessageActionButton
-              icon={copied() ? "check" : "copy"}
-              label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyMessage")}
-              useV2={props.useV2Actions}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleCopy()
-              }}
-              aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copyMessage")}
-            />
-          </Show>
-        </div>
-      </Show>
+          {footer()}
+        </Match>
+        <Match when={shape() === "text"}>
+          <div data-slot="user-message-body" class="ui-user-message-body">
+            <div data-slot="user-message-text" class="ui-user-message-text">
+              <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+            </div>
+          </div>
+          {footer()}
+        </Match>
+      </Switch>
     </div>
   )
 }

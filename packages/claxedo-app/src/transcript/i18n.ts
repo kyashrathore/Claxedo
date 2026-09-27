@@ -181,7 +181,6 @@ const en = {
   "transcript.common.document.one": "document",
   "transcript.common.document.other": "documents",
   "transcript.common.cancel": "Cancel",
-  "transcript.common.showMore": "Show more",
   "transcript.message.copy": "Copy",
   "transcript.message.copyMessage": "Copy message",
   "transcript.message.revertMessage": "Revert message",

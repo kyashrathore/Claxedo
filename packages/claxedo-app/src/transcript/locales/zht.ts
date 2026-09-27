@@ -70,7 +70,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.common.file.one": "個檔案",
   "transcript.common.file.other": "個檔案",
   "transcript.common.cancel": "取消",
-  "transcript.common.showMore": "顯示更多",
   "transcript.message.copy": "複製",
   "transcript.message.copyMessage": "複製訊息",
   "transcript.message.revertMessage": "重設至此點",

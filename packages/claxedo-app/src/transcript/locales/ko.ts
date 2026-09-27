@@ -70,7 +70,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.common.file.one": "파일",
   "transcript.common.file.other": "파일",
   "transcript.common.cancel": "취소",
-  "transcript.common.showMore": "더 보기",
   "transcript.message.copy": "복사",
   "transcript.message.copyMessage": "메시지 복사",
   "transcript.message.revertMessage": "이 시점으로 초기화",
