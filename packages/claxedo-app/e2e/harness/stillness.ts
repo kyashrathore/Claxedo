@@ -72,10 +72,10 @@ export function sinceFirstReady(stillness: Stillness, from = 0) {
   if (!first) throw new Error("the transcript never showed its marker")
   const after = stillness.frames.filter((frame) => frame.at >= first.at)
   const secondFrame = after[1]?.at ?? Number.POSITIVE_INFINITY
-  const firstFrameScrollReport = (scroll: ScrollEvent) => scroll.at < secondFrame && scroll.scrollTop === first.scrollTop
+  const firstFrameScrollReport = stillness.scrolls.find((scroll) => scroll.at >= first.at && scroll.at < secondFrame && scroll.scrollTop === first.scrollTop)
   return {
     first,
-    scrolls: stillness.scrolls.filter((scroll) => scroll.at >= first.at && !firstFrameScrollReport(scroll)).length,
+    scrolls: stillness.scrolls.filter((scroll) => scroll.at >= first.at && scroll !== firstFrameScrollReport).length,
     scrollTopDelta: Math.max(...after.map((frame) => Math.abs(frame.scrollTop - first.scrollTop))),
     scrollHeightDelta: Math.max(...after.map((frame) => Math.abs(frame.scrollHeight - first.scrollHeight))),
     readsAfter: stillness.reads.filter((read) => read.at >= first.at).map((read) => read.kind),
