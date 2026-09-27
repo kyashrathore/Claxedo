@@ -24,7 +24,7 @@ export type DaytonaSandboxLike = {
       cwd?: string,
       env?: Record<string, string>,
       timeout?: number,
-    ) => Promise<unknown>
+    ) => Promise<{ exitCode: number }>
   }
   getPreviewLink: (port: number) => Promise<{ url?: string; token?: string }>
   getSignedPreviewUrl: (port: number, expiresInSeconds?: number) => Promise<{ url?: string; token?: string }>
@@ -288,13 +288,13 @@ export function createDaytonaSandboxDriver(
   async function findExisting(workspaceId: string) {
     const client = await resolveClient()
     const labels = { "claxedo.workspaceId": workspaceId }
-    if (client.findByLabels) return client.findByLabels(labels).catch(() => undefined)
+    if (client.findByLabels) return client.findByLabels(labels)
     // The `1, 1` here is "first page, one per page" — a hint, NOT a cap (see
     // DaytonaClientLike.list). Do not turn `limit` into a hard result cap to
     // make this line cheaper: `list()` below pages with it, so a cap would
     // silently truncate the GC sweep at one page and hide every orphan past it.
     // Unreachable in the default composition, which defines `findByLabels`.
-    const result = await client.list?.(labels, 1, 1).catch(() => undefined)
+    const result = await client.list?.(labels, 1, 1)
     return result?.items?.[0]
   }
 
@@ -304,9 +304,8 @@ export function createDaytonaSandboxDriver(
 
   async function previewUrl(sandbox: DaytonaSandboxLike) {
     const signed = await sandbox.getSignedPreviewUrl(runtimePort, previewExpiry)
-      .catch(() => undefined)
     if (signed?.url) return signed
-    return sandbox.getPreviewLink(runtimePort).catch(() => undefined)
+    return sandbox.getPreviewLink(runtimePort)
   }
 
   async function startRuntime(sandbox: DaytonaSandboxLike, input: SandboxDriverEnsureInput, env: Record<string, string>) {
@@ -315,13 +314,14 @@ export function createDaytonaSandboxDriver(
       `if (command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q :${runtimePort}); then exit 0; fi; ` +
       `mkdir -p ${shell(directory)}; cd ${shell(directory)}; ` +
       `nohup ${runtimeCommand} > /tmp/claxedo-wr.log 2>&1 & sleep 1`
-    await sandbox.process.executeCommand(`sh -lc ${shell(script)}`, directory, env, operationTimeout).catch(() => undefined)
+    const result = await sandbox.process.executeCommand(`sh -lc ${shell(script)}`, directory, env, operationTimeout)
+    if (result.exitCode !== 0) throw new Error(`Daytona runtime boot failed (exit ${result.exitCode}) for ${sandbox.id}`)
   }
 
   async function ensureStarted(sandbox: DaytonaSandboxLike) {
     if (!sandbox.state || sandbox.state === "started") return true
     if (sandbox.state === "starting") return false
-    await sandbox.start(operationTimeout).catch(() => undefined)
+    await sandbox.start(operationTimeout)
     return sandbox.state === "started"
   }
 
@@ -708,9 +708,7 @@ export function createDaytonaSandboxDriver(
     },
 
     async touch(target) {
-      await sandboxById(target.sandboxId)
-        .then((sandbox) => sandbox.refreshActivity())
-        .catch(() => undefined)
+      await (await sandboxById(target.sandboxId)).refreshActivity()
     },
 
     suspend: stop,

@@ -76,6 +76,27 @@ function fakeBox(options?: { states?: string[]; hostUrl?: string; failHealthOnce
 }
 
 describe("box sandbox driver", () => {
+  test.each(["transport", "http", "exit"] as const)("registry password cleanup %s failure prevents publishing the runtime", async (failure) => {
+    const box = fakeBox()
+    const error = new Error("cleanup connection refused")
+    const driver = createBoxSandboxDriver({
+      apiKey: "k",
+      healthIntervalMs: 0,
+      registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
+      fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command === "rm -f .claxedo-registry-password") {
+          if (failure === "transport") throw error
+          if (failure === "http") return Response.json({ error: "cleanup denied" }, { status: 403 })
+          return Response.json({ ok: true, exitCode: 1, stderr: "cleanup denied" })
+        }
+        return box.fetchImpl(url, init)
+      },
+    })
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow(/cleanup/)
+    expect(box.calls.some((call) => call.body?.command?.startsWith("host "))).toBe(false)
+  })
+
   test("persists a created box before readiness polling and resumes it after manager restart", async () => {
     let store = createMemoryLeaseStore()
     const box = fakeBox({ states: ["provisioning", "ready"] })
@@ -237,6 +258,9 @@ describe("box sandbox driver", () => {
       (err: unknown) => err as Error,
     )
     expect(failure.message).toContain("docker run")
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toHaveLength(2)
+    expect((failure as AggregateError).errors[1].message).toContain("registry password cleanup")
     expect(failure.message).not.toContain("synthetic-runtime-secret")
     expect(failure.message).not.toContain("synthetic-registry-pw")
   })

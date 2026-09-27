@@ -455,7 +455,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),
     async touch(target) {
-      await (await sandboxById(target)).extendTimeout(keepAliveMs).catch(() => undefined)
+      await (await sandboxById(target)).extendTimeout(keepAliveMs)
     },
     async suspend(target) {
       await (await sandboxById(target)).stop({ blocking: false })

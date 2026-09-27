@@ -49,6 +49,27 @@ const input = {
 }
 
 describe("ModalSandboxDriver", () => {
+  test.each(["setTags", "tunnels"] as const)("%s errors reach the caller", async (method) => {
+    const error = new Error(`${method} denied`)
+    const created = sandbox({ [method]: vi.fn(async () => { throw error }) })
+    const driver = createModalSandboxDriver({ ...baseOptions, client: client({ sandboxes: {
+      create: async () => created,
+      fromId: async () => created,
+    } }) })
+    await expect(driver.ensureHost(input)).rejects.toBe(error)
+    if (method === "setTags") expect(created.tunnels).not.toHaveBeenCalled()
+  })
+
+  test("a tunnel timeout keeps the sandbox provisioning", async () => {
+    const timeout = Object.assign(new Error("tunnels not ready"), { name: "SandboxTimeoutError" })
+    const created = sandbox({ tunnels: vi.fn(async () => { throw timeout }) })
+    const driver = createModalSandboxDriver({ ...baseOptions, client: client({ sandboxes: {
+      create: async () => created,
+      fromId: async () => created,
+    } }) })
+    await expect(driver.ensureHost(input)).resolves.toMatchObject({ provisioning: true })
+  })
+
   test("ensureHost creates a Modal sandbox running workspace-runtime with boot env", async () => {
     const created = sandbox()
     const modal = client({

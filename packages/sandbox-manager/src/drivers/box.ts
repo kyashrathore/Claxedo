@@ -303,13 +303,21 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     if (options.registryAuth) {
       await putFile(boxId, REGISTRY_PASSWORD_PATH, options.registryAuth.password)
     }
+    const failures: unknown[] = []
     try {
       await execOrThrow(boxId, script, "docker run")
-    } finally {
-      // The login step removes the staged password when it runs; this covers
-      // failures before the command reaches it.
-      if (options.registryAuth) await exec(boxId, `rm -f ${REGISTRY_PASSWORD_PATH}`).catch(() => undefined)
+    } catch (error) {
+      failures.push(error)
     }
+    // The login step removes the staged password when it runs; this covers
+    // failures before the command reaches it.
+    try {
+      if (options.registryAuth) await execOrThrow(boxId, `rm -f ${REGISTRY_PASSWORD_PATH}`, "registry password cleanup")
+    } catch (error) {
+      failures.push(error)
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `Box ${boxId} docker run and registry password cleanup failed`)
     // Publish the box-host port to a stable public HTTPS route, then read it back.
     await execOrThrow(boxId, `host ${port}`, "host publish")
     await waitForHealth(boxId, input)

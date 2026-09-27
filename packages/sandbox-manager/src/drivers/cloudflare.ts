@@ -390,7 +390,10 @@ export function createCloudflareSandboxDriver(
     ensureHost,
 
     async touch(target: SandboxTarget) {
-      await call(target.sandboxId, "touch-runtime", { port: runtimePort }).catch(() => undefined)
+      const { status, data } = await call(target.sandboxId, "touch-runtime", { port: runtimePort })
+      if (status < 200 || status >= 300 || data.ok !== true) {
+        throw new Error(`Cloudflare touch failed (${status}) for ${target.sandboxId}`)
+      }
     },
 
     async stop(target: SandboxTarget) {

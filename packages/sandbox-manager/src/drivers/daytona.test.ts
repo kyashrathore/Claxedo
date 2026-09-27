@@ -114,6 +114,61 @@ const input = {
 }
 
 describe("DaytonaSandboxDriver", () => {
+  test.each(["findByLabels", "list"] as const)("lookup %s failures never create a duplicate sandbox", async (method) => {
+    for (const status of [401, 404, 409, 500]) {
+      const error = Object.assign(new Error(`lookup ${status}`), { statusCode: status })
+      const daytona = { ...client(), [method]: vi.fn(async () => { throw error }) }
+      const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+      await expect(driver.ensureHost(input)).rejects.toBe(error)
+      expect(daytona.create).not.toHaveBeenCalled()
+      expect(daytona.secret.list).not.toHaveBeenCalled()
+    }
+  })
+
+  test.each(["getSignedPreviewUrl", "getPreviewLink"] as const)("preview %s errors reach the caller", async (method) => {
+    const error = new Error("preview denied")
+    const existing = sandbox({
+      getSignedPreviewUrl: vi.fn(async () => ({})),
+      [method]: vi.fn(async () => { throw error }),
+    })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ list: async () => ({ items: [existing] }) }) })
+    await expect(driver.ensureHost(input)).rejects.toBe(error)
+    if (method === "getSignedPreviewUrl") expect(existing.getPreviewLink).not.toHaveBeenCalled()
+  })
+
+  test("runtime command rejection prevents a ready target", async () => {
+    const error = new Error("command denied")
+    const existing = sandbox({ process: { executeCommand: async () => { throw error } } })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ list: async () => ({ items: [existing] }) }) })
+    await expect(driver.ensureHost(input)).rejects.toBe(error)
+    expect(existing.getSignedPreviewUrl).not.toHaveBeenCalled()
+  })
+
+  test("runtime command nonzero exit prevents a ready target", async () => {
+    const existing = sandbox({ process: { executeCommand: async () => ({ exitCode: 1 }) } })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ list: async () => ({ items: [existing] }) }) })
+    await expect(driver.ensureHost(input)).rejects.toThrow(/runtime.*exit 1/)
+    expect(existing.getSignedPreviewUrl).not.toHaveBeenCalled()
+  })
+
+  test("start errors reach the caller before runtime boot", async () => {
+    const error = new Error("start denied")
+    const existing = sandbox({ state: "stopped", start: async () => { throw error } })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ list: async () => ({ items: [existing] }) }) })
+    await expect(driver.ensureHost(input)).rejects.toBe(error)
+    expect(existing.process.executeCommand).not.toHaveBeenCalled()
+  })
+
+  test.each(["lookup", "refresh"])("touch propagates %s failures", async (operation) => {
+    const error = Object.assign(new Error("activity denied"), { statusCode: 404 })
+    const existing = sandbox({ refreshActivity: async () => { throw error } })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: client({ get: async () => {
+      if (operation === "lookup") throw error
+      return existing
+    } }) })
+    await expect(driver.touch!({ sandboxId: existing.id, hostId: "host", url: "https://r/" })).rejects.toBe(error)
+  })
+
   test.each(["stop", "suspend"] as const)("%s propagates lookup and stop failures", async (method) => {
     const target = { workspaceId: "ws_1", sandboxId: "sb_1", url: "https://r/", hostId: "host" }
     for (const status of [401, 409, 500]) {
@@ -294,7 +349,7 @@ describe("DaytonaSandboxDriver", () => {
 
   test("reuse restarts a running sandbox when the mounted secret names change", async () => {
     const secret = secretService([{ id: "sec_slot", name: sentinelSecret }])
-    const execute = vi.fn(async () => ({}))
+    const execute = vi.fn(async () => ({ exitCode: 0 }))
     const existing = sandbox({ process: { executeCommand: execute } })
     const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
@@ -449,7 +504,7 @@ describe("DaytonaSandboxDriver", () => {
   })
 
   test("reuse reconciles explicit secret withdrawal and does not boot after attachment failure", async () => {
-    const execute = vi.fn(async () => ({}))
+    const execute = vi.fn(async () => ({ exitCode: 0 }))
     const updateSecrets = vi.fn(async () => {})
     const existing = sandbox({ updateSecrets, process: { executeCommand: execute } })
     const daytona = client({ list: vi.fn(async () => ({ items: [existing] })) })
@@ -481,7 +536,7 @@ describe("DaytonaSandboxDriver", () => {
   })
 
   test("ensureHost passes git source materialization to the sandbox boot env", async () => {
-    const executeCommand = vi.fn(async () => ({ result: "" }))
+    const executeCommand = vi.fn(async () => ({ exitCode: 0, result: "" }))
     const existing = sandbox({ process: { executeCommand } })
     const daytona = client({ list: vi.fn(async () => ({ items: [existing] })) })
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })

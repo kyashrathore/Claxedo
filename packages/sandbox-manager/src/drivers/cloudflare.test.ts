@@ -291,8 +291,26 @@ describe("CloudflareSandboxDriver", () => {
     expect(seen).toContain("DELETE https://sbx.example.com/sandbox/claxedo-ws_1")
   })
 
-  test("touch refreshes the sandbox without throwing", async () => {
-    const { calls, fetch } = harness(() => ({ status: 200, json: { ok: true } }))
+  test("touch propagates transport failures", async () => {
+    const error = new Error("connection refused")
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => { throw error }) as unknown as typeof fetch })
+    await expect(driver.touch!({ sandboxId: "sb", hostId: "host", url: "https://r/" })).rejects.toBe(error)
+  })
+
+  test.each([401, 404, 500])("touch rejects HTTP %s", async (status) => {
+    const { fetch } = harness(() => ({ status, json: { error: "touch failed" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.touch!({ sandboxId: "sb", hostId: "host", url: "https://r/" })).rejects.toThrow(/touch.*failed/)
+  })
+
+  test.each([{}, { ok: false, ready: true }])("touch rejects an unconfirmed touch: %j", async (json) => {
+    const { fetch } = harness(() => ({ status: 200, json }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.touch!({ sandboxId: "sb", hostId: "host", url: "https://r/" })).rejects.toThrow(/touch.*failed/)
+  })
+
+  test("touch keeps a sandbox alive while its runtime is still booting", async () => {
+    const { calls, fetch } = harness(() => ({ status: 200, json: { ok: true, ready: false } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await driver.touch!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1" })
     expect(calls[0].url).toBe("https://sbx.example.com/sandbox/claxedo-ws_1/touch-runtime")

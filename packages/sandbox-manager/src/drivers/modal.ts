@@ -171,8 +171,11 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
   }
 
   async function readyTarget(input: SandboxDriverEnsureInput, sandbox: ModalSandboxLike, hostId: string): Promise<SandboxTarget | { provisioning: true; retryAfterMs: number }> {
-    await sandbox.setTags(input.labels).catch(() => undefined)
-    const tunnels = await sandbox.tunnels(tunnelTimeoutMs).catch(() => undefined)
+    await sandbox.setTags(input.labels)
+    const tunnels = await sandbox.tunnels(tunnelTimeoutMs).catch((error: unknown) => {
+      if (error instanceof Error && error.name === "SandboxTimeoutError") return undefined
+      throw error
+    })
     const tunnel = tunnels?.[runtimePort]
     if (!tunnel?.url) return { provisioning: true as const, retryAfterMs: 2_000 }
     return {
