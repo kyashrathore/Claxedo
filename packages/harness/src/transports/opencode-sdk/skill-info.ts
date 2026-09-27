@@ -1,6 +1,7 @@
 import { Skill } from "@opencode-ai/schema/skill"
 import { promises as fs } from "node:fs"
 import path from "node:path"
+import { decodeSkillFrontmatter } from "@claxedo/helpers/skill-frontmatter"
 
 function missingFile(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT"
@@ -28,17 +29,12 @@ export async function loadSkills(directories: readonly string[]): Promise<Skill.
 }
 
 export function parseSkill(id: string, location: string, text: string): Skill.Info {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)
-  const frontmatter: Record<string, string> = {}
-  for (const line of (match?.[1] ?? "").split(/\r?\n/)) {
-    const field = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line)
-    if (field?.[1] !== undefined) frontmatter[field[1]] = (field[2] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2")
-  }
+  const { fields, content } = decodeSkillFrontmatter(text)
   return Skill.Info.make({
     id: Skill.ID.make(id),
-    name: Skill.Name.make(frontmatter.name || id),
-    ...(frontmatter.description ? { description: frontmatter.description } : {}),
+    name: Skill.Name.make(fields?.name || id),
+    ...(fields?.description ? { description: fields.description } : {}),
     location: Skill.Info.fields.location.make(location),
-    content: match?.[2] ?? text,
+    content,
   })
 }

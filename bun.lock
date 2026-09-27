@@ -285,6 +285,9 @@
     "packages/claxedo-helpers": {
       "name": "@claxedo/helpers",
       "version": "0.2.0",
+      "dependencies": {
+        "yaml": "2.9.0",
+      },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "1.3.13",
@@ -457,7 +460,6 @@
         "hono": "4.12.34",
         "jose": "6.2.4",
         "tokentracker-cli": "0.91.0",
-        "yaml": "2.9.0",
         "zod": "4.4.3",
       },
       "devDependencies": {

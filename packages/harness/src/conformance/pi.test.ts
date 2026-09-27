@@ -211,7 +211,7 @@ runConformance({
     const state = await backend()
     const rotated: { port: number; server: Awaited<ReturnType<typeof startScriptedModelServer>> }[] = []
     const origin = { actor: { kind: "person" as const, userId: "member" }, via: "relay" as const, reissued: false }
-    const credentials = { providers: { openai: { baseUrl: state.server.url, placeholder: "pi-broker-placeholder", authMode: "api-key" as const } },
+    const credentials = { providers: { openai: { baseUrl: state.server.url, apiPath: "/v1", placeholder: "pi-broker-placeholder", authMode: "api-key" as const } },
       secrets: {}, leaseGeneration: "brokered" }
     const root = path.join(state.root, "plugin")
     await fs.mkdir(path.join(root, "extensions"), { recursive: true })

@@ -51,6 +51,18 @@ test("launch policy exposes skill directories and MCP servers to one workspace a
       mcp: { "claxedo-docs": { type: "remote", url: "http://127.0.0.1:9/mcp", disabled: true } },
     })
 
+    const invalidDirectory = path.join(root, "not-a-directory")
+    fs.writeFileSync(invalidDirectory, "file")
+    const rejected = expect(store.write({ skills: [invalidDirectory], mcp: {} })).rejects.toThrow()
+    const recovered = store.write({ skills: [skills], mcp: {} })
+    const afterRecovery = store.read()
+    const clear = store.write({ skills: [], mcp: {} })
+    await rejected
+    await recovered
+    expect(await afterRecovery).toEqual({ skills: [skills], mcp: {} })
+    await clear
+    expect(await store.read()).toEqual({ skills: [], mcp: {} })
+
     await store.write({ skills: [], mcp: {} })
     expect(await skillIds(a)).not.toContain("code-review")
     expect(await mcpNames(a)).not.toContain("claxedo-docs")

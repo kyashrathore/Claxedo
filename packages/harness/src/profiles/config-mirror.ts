@@ -25,11 +25,12 @@ export async function replaceAtomically(target: string, stage: (temporary: strin
 
 async function mirrorFile(source: string, target: string, stat: Stats): Promise<void> {
   const prior = await lstatIfExists(target)
-  if (prior?.isFile() && prior.size === stat.size && Math.floor(prior.mtimeMs) === Math.floor(stat.mtimeMs)) return
+  const mode = stat.mode & 0o111 ? 0o700 : 0o600
+  if (prior?.isFile() && prior.size === stat.size && Math.floor(prior.mtimeMs) === Math.floor(stat.mtimeMs) && (prior.mode & 0o7777) === mode) return
   if (prior && !prior.isFile()) await fs.rm(target, { recursive: true, force: true })
   await replaceAtomically(target, async (temporary) => {
     await fs.copyFile(source, temporary, constants.COPYFILE_FICLONE)
-    await fs.chmod(temporary, 0o600)
+    await fs.chmod(temporary, mode)
     await fs.utimes(temporary, stat.atime, stat.mtime)
   })
 }
