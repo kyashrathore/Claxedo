@@ -138,7 +138,7 @@ for (const machine of [false, true]) {
       expect(landed).toBe(false)
     } finally {
       metadata.resolve(openView())
-      await Promise.all([surface, reads.status, reads.requests, reads.todos, reads.goal])
+      await Promise.all([surface, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
     }
     expect((await surface).row.title).toBe("Live title")
     expect((await surface).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
@@ -159,7 +159,7 @@ for (const failedRead of ["metadata", "history"]) {
       },
     })
     const reads = readSession(server.context, ref)
-    const [surface] = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal])
+    const [surface] = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
     expect(surface).toEqual({ status: "rejected", reason: failure })
   })
 }
@@ -168,7 +168,7 @@ test("session reads: a failed placement lookup rejects every read without an unh
   const failure = new Error("catalog unavailable")
   const server = fakeServer({ reachable: () => { throw failure } })
   const reads = readSession(server.context, ref)
-  const results = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal, reads.outline])
+  const results = await Promise.allSettled([reads.surface, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.outline])
   for (const result of results) expect(result).toEqual({ status: "rejected", reason: failure })
 })
 

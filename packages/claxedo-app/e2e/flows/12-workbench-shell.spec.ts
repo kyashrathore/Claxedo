@@ -182,7 +182,7 @@ test("12 a boot reads neither Tasks nor pi's provider catalog, an open reads eac
     const reads = await open(title)
     expect(reads.filter((path, index) => reads.indexOf(path) !== index), `${title} read twice`).toEqual([])
     expect(reads.filter((path) => path === "/session/:session"), `${title}'s one session read`).toHaveLength(1)
-    expect(reads.filter((path) => /^\/(permission|question)$|^\/session\/status$|\/todo$|\/goal\/state$/.test(path)), `${title}'s facts read apart from its session`).toEqual([])
+    expect(reads.filter((path) => /^\/(permission|question)$|^\/session\/status$|\/(todo|subagents)$|\/goal\/state$/.test(path)), `${title}'s facts read apart from its session`).toEqual([])
   }
   expect(await open("Alpha"), "revisiting Alpha").toEqual([])
   expect(await open("Beta"), "revisiting Beta").toEqual([])

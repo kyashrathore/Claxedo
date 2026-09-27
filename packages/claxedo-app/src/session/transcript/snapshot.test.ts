@@ -32,6 +32,7 @@ function fakeServer(pages: readonly TranscriptPage[] = [olderPage], outlines: Pr
     requests: Promise.resolve([]),
     todos: Promise.resolve([]),
     goal: Promise.resolve({ goal: undefined, actions: [], available: false }),
+    subagents: Promise.resolve([]),
   } as unknown as SessionReads
   const server = {
     sessions: {

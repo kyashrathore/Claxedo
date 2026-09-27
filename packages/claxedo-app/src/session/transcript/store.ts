@@ -101,7 +101,6 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
     gap: () => {
       void readSnapshot(context)
       void context.queue.reread()
-      context.subagents.reread()
     },
   }
 }

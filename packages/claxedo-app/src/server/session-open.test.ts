@@ -7,7 +7,7 @@ import { fakeServer, historyPath, liveSession, openPath, openView, ref, stored }
 
 const outlinePath = sessionEndpoint(ref, "/outline")
 
-test("session reads: one runtime read opens a running session's row, status, requests, todos and goal beside its history", async () => {
+test("session reads: one runtime read opens a running session's row, status, requests, todos, goal and subagents beside its history", async () => {
   const permission = { id: "per_1", sessionID: "ses_1", permission: "edit", patterns: [], metadata: {}, always: [] }
   const question = { id: "que_1", sessionID: "ses_1", questions: [] }
   const todo = { id: "todo_1", content: "Ship it", status: "pending", priority: "high" }
@@ -25,6 +25,7 @@ test("session reads: one runtime read opens a running session's row, status, req
           questions: { value: [question] },
           todos: { value: [todo] },
           goal: { value: { capabilities: { implemented: true, available: true, actions: ["pause"] }, goal } },
+          subagents: { value: [{ subagentKey: "sub_1", revision: 2, status: "running", toolCallEdges: [{ toolCallId: "call_1", role: "spawn", revision: 1 }] }] },
         })
       }
       return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
@@ -37,6 +38,7 @@ test("session reads: one runtime read opens a running session's row, status, req
   expect((await reads.requests).map((request) => `${request.kind}:${request.id}`)).toEqual(["permission:per_1", "question:que_1"])
   expect(await reads.todos).toEqual([todo])
   expect(await reads.goal).toEqual({ goal, actions: ["pause"], available: true })
+  expect((await reads.subagents).map((row) => [row.subagentKey, row.revision, row.toolCallId ?? null])).toEqual([["sub_1", 2, null], ["sub_1", 1, "call_1"]])
   expect([...server.runtimeCalls].sort()).toEqual([historyPath, openPath, outlinePath].sort())
 })
 

@@ -23,7 +23,6 @@ import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection
 import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
-import { subagentsFromWire } from "./wire/subagents"
 
 function firstInputBody(prompt: SessionCreateInput["prompt"]) {
   if (!prompt) return {}
@@ -111,6 +110,5 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     newMessageId,
     ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),
-    subagents: (ref) => onRuntime(context, ref, async (where) => subagentsFromWire(await transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/subagents"))), async () => []),
   }
 }

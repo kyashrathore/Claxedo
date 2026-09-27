@@ -73,7 +73,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
     goal: createSessionGoal(server, ref),
     todos: createSessionTodos(),
-    subagents: createSessionSubagents(server, ref),
+    subagents: createSessionSubagents(),
     snapshotRead: { current: undefined },
     latestTurnRead: { current: undefined },
     olderRead: { current: undefined },

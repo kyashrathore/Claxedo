@@ -67,6 +67,7 @@ export function readSession(context: SessionContext, ref: SessionRef, held?: Hel
     requests: fact((view) => factValue(view.requests), []),
     todos: fact((view) => factValue(view.todos), []),
     goal: fact(goalOf, NO_GOAL),
+    subagents: fact((view) => factValue(view.subagents), []),
   }
 }
 

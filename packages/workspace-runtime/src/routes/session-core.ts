@@ -971,6 +971,10 @@ async function readSessionTodos(opts: Opts, c: Ctx, directory: RuntimeDirectory,
   return adapter.getTodos!(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
 }
 
+async function listSessionSubagents(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
+  return await opts.listSubagents?.(c, directory, sessionId) ?? []
+}
+
 async function readSessionGoal(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
   const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
   if (runtime instanceof Response) return runtime
@@ -1015,14 +1019,15 @@ async function sessionFact<T>(read: () => Promise<T | Response>): Promise<Sessio
 async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, session: unknown) {
   const own = <T extends { sessionID: string }>(rows: T[] | Response) =>
     rows instanceof Response ? rows : rows.filter((row) => row.sessionID === sessionId)
-  const [status, permissions, questions, todos, goal] = await Promise.all([
+  const [status, permissions, questions, todos, goal, subagents] = await Promise.all([
     sessionFact(() => sessionOwnStatus(opts, c, directory, sessionId)),
     sessionFact(async () => own(await listPermissionRows(opts, c, directory))),
     sessionFact(async () => sessionStartSettled(opts, sessionId) ? own(await listQuestionRows(opts, c, directory)) : []),
     sessionFact(() => readSessionTodos(opts, c, directory, sessionId)),
     sessionFact(() => readSessionGoal(opts, c, directory, sessionId)),
+    sessionFact(() => listSessionSubagents(opts, c, directory, sessionId)),
   ])
-  return { session: normalizeSession(session, directory), status, permissions, questions, todos, goal }
+  return { session: normalizeSession(session, directory), status, permissions, questions, todos, goal, subagents }
 }
 
 /**
@@ -1646,7 +1651,7 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "list_subagents")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
-      return noStoreJson(c, await opts.listSubagents?.(c, directory, sessionId) ?? [])
+      return noStoreJson(c, await listSessionSubagents(opts, c, directory, sessionId))
     })
     .get("/session/:id", async (c) => {
       const sessionId = c.req.param("id")

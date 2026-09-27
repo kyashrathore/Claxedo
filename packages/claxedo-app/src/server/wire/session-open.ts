@@ -1,10 +1,11 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import { errorFromBody, ServerError } from "../errors"
-import type { AgentRequest, SessionGoalState, SessionStatus, Todo } from "../types"
+import type { AgentRequest, SessionGoalState, SessionStatus, Subagent, Todo } from "../types"
 import { goalStateFromWire } from "./goal"
 import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
 import { sessionStatusFromWire } from "./status"
+import { subagentsFromWire } from "./subagents"
 
 export const OPEN_VIEW = { view: "open" } as const
 
@@ -16,6 +17,7 @@ export type SessionOpenView = {
   readonly requests: SessionFact<readonly AgentRequest[]>
   readonly todos: SessionFact<readonly Todo[]>
   readonly goal: SessionFact<SessionGoalState>
+  readonly subagents: SessionFact<readonly Subagent[]>
 }
 
 function factFromWire<T>(value: unknown, label: string, read: (value: unknown) => T): SessionFact<T> {
@@ -51,5 +53,6 @@ export function sessionOpenFromWire(body: unknown): SessionOpenView {
     requests: requestsFromWire(factFromWire(body.permissions, "permissions", listFromWire), factFromWire(body.questions, "questions", listFromWire)),
     todos: factFromWire(body.todos, "todos", (value) => listFromWire(value) as readonly Todo[]),
     goal: factFromWire(body.goal, "goal", goalStateFromWire),
+    subagents: factFromWire(body.subagents, "subagents", subagentsFromWire),
   }
 }

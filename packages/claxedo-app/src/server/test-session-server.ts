@@ -19,6 +19,7 @@ export function openView(facts: Readonly<Record<string, unknown>> = {}) {
     questions: { value: [] },
     todos: { value: [] },
     goal: { value: { capabilities: { implemented: false, available: false, actions: [] }, goal: null } },
+    subagents: { value: [] },
     ...facts,
   })
 }

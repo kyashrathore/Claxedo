@@ -184,6 +184,7 @@ export type SessionReads = {
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>
   readonly goal: Promise<SessionGoalState>
+  readonly subagents: Promise<readonly Subagent[]>
 }
 
 export type ModelChoice = { readonly providerId: string; readonly modelId: string; readonly variant?: string }

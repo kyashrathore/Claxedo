@@ -37,6 +37,7 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
   )
   landSide(context, "todos", reads.todos, (todos) => context.todos.read(todos, sentAt))
   landSide(context, "goal", reads.goal, context.goal.read)
+  landSide(context, "subagents", reads.subagents, context.subagents.read)
   reads.outline.then(
     (outline) => context.outline.send({ type: "outlineLanded", outline, sentAt }),
     (cause) => context.outline.send({ type: "outlineFailed", error: toAppError(cause), sentAt }),

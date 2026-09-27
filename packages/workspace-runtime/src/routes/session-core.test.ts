@@ -1246,7 +1246,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     ])
   })
 
-  test("opens a session with its own status, requests and todos as the per-fact routes answer them, on the session read's one decision", async () => {
+  test("opens a session with its own status, requests, todos and subagents as the per-fact routes answer them, on the session read's one decision", async () => {
     const decisions: string[] = []
     const filtered: string[] = []
     const policy: SessionAccessPolicy = {
@@ -1264,12 +1264,14 @@ describe("createSessionRoutes directory-less sessions", () => {
       },
     }
     const todos = [{ id: "todo_1", content: "Read the view", status: "pending", priority: "medium" }]
+    const subagents = [{ subagentKey: "sub_1", revision: 2, toolCallEdges: [{ toolCallId: "call_1", role: "spawn", revision: 1 }] }]
     const routes = createSessionRoutes({
       resolveAdapter: () => adapter(),
       resolveDirectory: () => "/workspace",
       resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
       getStatus: () => ({ session_open: { type: "busy" }, session_other: { type: "idle" } }),
       getTodos: (_c, _directory, sessionId) => sessionId === "session_open" ? todos : [],
+      listSubagents: (_c, _directory, parentSessionId) => parentSessionId === "session_open" ? subagents : [],
       listPermissions: async () => [
         { id: "perm_open", sessionID: "session_open" },
         { id: "perm_other", sessionID: "session_other" },
@@ -1293,6 +1295,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(view.permissions).toEqual({ value: await (await routes.request("http://localhost/permission")).json() })
     expect(view.questions).toEqual({ value: await (await routes.request("http://localhost/question")).json() })
     expect(view.todos).toEqual({ value: todos })
+    expect(view.subagents).toEqual({ value: await (await routes.request("http://localhost/session/session_open/subagents")).json() })
+    expect(view.subagents).toEqual({ value: subagents })
     expect((await routes.request("http://localhost/session/session_open?view=everything")).status).toBe(400)
   })
 

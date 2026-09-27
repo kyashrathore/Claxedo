@@ -97,7 +97,6 @@ export type SessionsApi = {
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
   readonly replaceQueued: (ref: SessionRef, seq: number, input: PromptInput, messageId: string) => Promise<boolean>
   readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
-  readonly subagents: (ref: SessionRef) => Promise<readonly Subagent[]>
 }
 
 export type ProjectsApi = {

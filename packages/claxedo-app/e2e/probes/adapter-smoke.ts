@@ -108,7 +108,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
     await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Delegate. ${acpScriptToken("delegate")}`, attachments: [] })
     await log.next("subagentUpdated", from, (event): event is ServerEvent => event.type === "subagentUpdated" && event.ref.sessionId === ref.sessionId)
     await log.next("idle", from, isStatus(ref.sessionId, ["idle"]))
-    const child = (await server.sessions.subagents(ref)).find((subagent) => subagent.childSessionId)
+    const child = (await server.sessions.read(ref).subagents).find((subagent) => subagent.childSessionId)
     if (!child?.childSessionId) throw new Error("no subagent names a child session")
     const snapshot = await surfaceOf(server, { ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
     return `${child.subagentKey} status=${child.status} child entries=${snapshot.transcript.entries.length}`
