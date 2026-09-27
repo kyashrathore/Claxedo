@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test"
+import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
@@ -13,6 +14,7 @@ const WATCH_MS = Number(process.env.WATCH_MS ?? "12000")
 const OUT = process.env.OUT ?? path.join(process.env.HOME ?? "", "test/claxedo-perf-private/perf/stream-switch/third")
 const TARGET = process.env.TARGET ?? "web"
 const EXTRA = Number(process.env.EXTRA ?? "0")
+const VIDEO = process.env.VIDEO === "1"
 const THROTTLE = Number(process.env.THROTTLE ?? "1")
 const C_HOLD_MS = Number(process.env.C_HOLD_MS ?? "0")
 
@@ -25,6 +27,13 @@ async function seedSession(surface: Surface, title: string) {
     await api.prompt(workspace.directory, session.id, `Earlier question ${turn}. ${acpScriptToken(script)}`)
   }
   return session.id
+}
+
+function recordScreen(bounds: { x: number; y: number; width: number; height: number } | undefined, file: string, seconds: number) {
+  const region = bounds ? [`-R${bounds.x},${bounds.y},${bounds.width},${bounds.height}`] : []
+  const child = spawn("screencapture", ["-v", "-x", "-k", `-V${seconds}`, ...region, file], { stdio: ["ignore", "inherit", "inherit"] })
+  console.log(`[third] screencapture pid ${child.pid} for ${seconds}s`)
+  return { startedAt: Date.now(), done: new Promise<void>((resolve) => child.on("exit", () => resolve())) }
 }
 
 function snapshot(page: Page) {
@@ -65,14 +74,19 @@ async function main() {
     for (const name of ["stream-a", "stream-b"]) await surface.writeScript(name, streamScript(workspace.directory))
     const cScript = streamScript(workspace.directory)
     await surface.writeScript("stream-c", C_HOLD_MS > 0 ? { ...cScript, steps: [{ kind: "hold", name: "c-boot" }, ...cScript.steps] } : cScript)
-    const { page, cdp } = await surface.open()
+    const { page, cdp, bounds } = await surface.open()
     page.on("console", (message) => {
       if (message.type() === "error" || message.type() === "warning") errors.push(`${message.type()}: ${message.text()}`)
     })
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.stack ?? error.message}`))
-    await page.goto(`${surface.url}${sessionRoute(workspace.id, alpha)}`)
+    if (TARGET === "desktop") {
+      await page.reload()
+      await page.locator('[data-testid="rail-sidebar-session-row"]').first().waitFor({ state: "visible", timeout: 60_000 })
+    } else {
+      await page.goto(`${surface.url}${sessionRoute(workspace.id, alpha)}`)
+      await page.getByText(`Seed turn ${SEED_TURNS} done.`).first().waitFor({ state: "visible", timeout: 60_000 })
+    }
     const rail = page.getByRole("navigation", { name: UI.rail })
-    await page.getByText(`Seed turn ${SEED_TURNS} done.`).first().waitFor({ state: "visible", timeout: 60_000 })
     const visit = async (id: string) => {
       const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${id}"]`)
       while (!(await row.isVisible())) await rail.getByRole("button", { name: "Load more" }).first().click()
@@ -92,6 +106,7 @@ async function main() {
     console.log(`[third] alpha ${alpha} and bravo ${bravo} streaming`)
     if (THROTTLE > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE })
 
+    const video = VIDEO ? recordScreen(bounds, path.join(OUT, "screen.mov"), Math.ceil(WATCH_MS / 1000) + 8) : undefined
     await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
     const samples: unknown[] = [await snapshot(page)]
     await page.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).click()
@@ -121,6 +136,7 @@ async function main() {
     }
     clearTimeout(released)
     const probe = await page.evaluate(() => (window as unknown as { __switchProbe: { stop(): unknown } }).__switchProbe.stop())
+    await video?.done
     const sessions = await api.sessions(workspace.directory)
     const created = sessions.filter((row) => row.id !== alpha && row.id !== bravo)
     const server = await Promise.all(
@@ -129,7 +145,7 @@ async function main() {
         return { id: row.id, title: row.title, messages: messages.map((message) => ({ role: message.info.role, parts: message.parts.length, chars: JSON.stringify(message.parts).length })) }
       }),
     )
-    await fs.writeFile(path.join(OUT, "third.json"), JSON.stringify({ target: TARGET, alpha, bravo, created: server, samples, shots, errors, probe }, null, 1))
+    await fs.writeFile(path.join(OUT, "third.json"), JSON.stringify({ target: TARGET, videoStartedAt: video?.startedAt, bounds, alpha, bravo, created: server, samples, shots, errors, probe }, null, 1))
     console.log(`[third] created ${JSON.stringify(server.map((row) => ({ id: row.id, messages: row.messages.length })))}`)
     console.log(`[third] final url ${page.url()}`)
     console.log(`[third] final slots ${JSON.stringify((samples.at(-1) as { slots: unknown }).slots)}`)
