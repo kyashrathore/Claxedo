@@ -9,6 +9,7 @@ export const OUT = process.env.PANEL_OUT ?? path.join(os.tmpdir(), "panel-perf")
 const TRACE_CATEGORIES = process.env.PANEL_TRACE_ALL === "1"
   ? ["blink", "cc", "gpu", "v8", "loading", "fonts", "renderer", "devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.frame", "blink.user_timing", "disabled-by-default-blink.debug.layout", "disabled-by-default-v8.compile", "disabled-by-default-cc.debug", "disabled-by-default-blink.debug.display_lock", "disabled-by-default-devtools.timeline.layers", "disabled-by-default-devtools.timeline.picture"]
   : ["devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.frame", "blink.user_timing", "v8.execute"]
+const TRACE_EXTRA = process.env.PANEL_TRACE_EXTRA?.split(",") ?? []
 
 export type Result = {
   readonly variant: string
@@ -21,6 +22,8 @@ export type Result = {
   readonly readyFrame: number
   readonly readyFrameFromClick: number
   readonly inputToReadyFrameEndMs: number
+  readonly inputToReadyPaintedMs: number
+  readonly worstPaintedGapMs: number
   readonly inputToSettledMs: number
   readonly inputToShellSettledMs: number | undefined
   readonly worstFrameMs: number
@@ -36,6 +39,8 @@ export type Result = {
   readonly cpu: readonly string[]
 }
 
+const UNTRACED = process.env.PANEL_UNTRACED === "1"
+const PROFILED = !UNTRACED && process.env.PANEL_PROFILE !== "0"
 const load = () => os.loadavg().map((value) => value.toFixed(2)).join(" ")
 export class Runner {
   private cdp: CDPSession | undefined
@@ -72,10 +77,12 @@ export class Runner {
     const chunks: TraceEvent[] = []
     const collect = (event: { value: unknown[] }) => chunks.push(...(event.value as TraceEvent[]))
     cdp.on("Tracing.dataCollected", collect)
-    await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: TRACE_CATEGORIES } })
-    await cdp.send("Profiler.enable")
-    await cdp.send("Profiler.setSamplingInterval", { interval: 100 })
-    await cdp.send("Profiler.start")
+    if (!UNTRACED) await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: [...TRACE_CATEGORIES, ...TRACE_EXTRA] } })
+    if (PROFILED) {
+      await cdp.send("Profiler.enable")
+      await cdp.send("Profiler.setSamplingInterval", { interval: 100 })
+      await cdp.send("Profiler.start")
+    }
     await this.page.evaluate((predicate) => window.__panelRec!.arm(predicate), predicate)
     const done = this.page.evaluate(() => window.__panelRec!.done())
     void done.catch(() => undefined)
@@ -85,21 +92,24 @@ export class Runner {
     await act()
     const recording = await done
     const actAt = recording.actAt
-    const { profile } = (await cdp.send("Profiler.stop")) as { profile: CpuProfile }
-    const complete = new Promise<void>((resolve) => cdp.once("Tracing.tracingComplete", () => resolve()))
-    await cdp.send("Tracing.end")
-    await complete
+    const profile = PROFILED ? ((await cdp.send("Profiler.stop")) as { profile: CpuProfile }).profile : undefined
+    if (!UNTRACED) {
+      const complete = new Promise<void>((resolve) => cdp.once("Tracing.tracingComplete", () => resolve()))
+      await cdp.send("Tracing.end")
+      await complete
+    }
     cdp.off("Tracing.dataCollected", collect)
     this.serial += 1
     const traceFile = path.join(OUT, `${this.variant}-${workspace}-${interaction}-${run}.trace.json`)
-    await fs.writeFile(traceFile, JSON.stringify({ traceEvents: chunks }))
-    const summary = summarizeTrace(chunks, this.mapper)
-    const cpu = summarizeProfile(profile, this.mapper)
-    await fs.writeFile(traceFile.replace(".trace.json", ".cpuprofile"), JSON.stringify(profile))
+    if (!UNTRACED) await fs.writeFile(traceFile, JSON.stringify({ traceEvents: chunks }))
+    const summary = UNTRACED ? { tasks: [] } : summarizeTrace(chunks, this.mapper)
+    const cpu = profile ? summarizeProfile(profile, this.mapper) : []
+    if (profile) await fs.writeFile(traceFile.replace(".trace.json", ".cpuprofile"), JSON.stringify(profile))
     const frames = recording.frames
     const cutoff = recording.settledAt ?? recording.readyAt ?? Number.POSITIVE_INFINITY
     const deltas = frames.filter((at) => at <= cutoff + 1).map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
     const quietDeltas = frames.map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
+    const paintedGaps = recording.painted.filter((_, index) => (frames[index] ?? Infinity) <= cutoff + 1).map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
     const worstQuiet = Math.max(0, ...quietDeltas)
     const worstQuietAt = quietDeltas.indexOf(worstQuiet) >= 0 ? (frames[quietDeltas.indexOf(worstQuiet)] ?? 0) - recording.inputAt : -1
     const requests = this.requests.map((request) => ({ ...request, startMs: Math.round(request.startMs - pageEpoch - recording.inputAt) })).filter((request) => request.startMs >= -5)
@@ -112,6 +122,8 @@ export class Runner {
       inputToClickMs: recording.actAt === undefined ? -1 : recording.actAt - recording.inputAt,
       readyFrameFromClick: recording.readyFrame === undefined || actAt === undefined ? -1 : recording.readyFrame - recording.frames.filter((at) => at < actAt).length,
       inputToReadyFrameEndMs: recording.readyFrameEnd === undefined ? -1 : recording.readyFrameEnd - recording.inputAt,
+      inputToReadyPaintedMs: recording.readyFrame === undefined ? -1 : (recording.painted[recording.readyFrame - 1] ?? -1) - recording.inputAt,
+      worstPaintedGapMs: paintedGaps.length ? Math.max(...paintedGaps) : -1,
       inputToSettledMs: recording.settledAt === undefined ? -1 : recording.settledAt - recording.inputAt,
       inputToShellSettledMs: recording.shellSettledAt === undefined ? undefined : recording.shellSettledAt - recording.inputAt,
       worstFrameMs: Math.max(0, ...deltas), framesOver16_7: deltas.filter((delta) => delta > 16.7).length, frameCount: deltas.length,
@@ -121,7 +133,7 @@ export class Runner {
     }
     this.results.push(result)
     const loafText = result.loafs.map((loaf) => `LoAF ${loaf.duration.toFixed(1)}ms(block ${loaf.blocking.toFixed(0)}) [${loaf.scripts.map((script) => `${script.fn || "(anon)"} ${script.duration.toFixed(1)}ms${script.forced ? ` forced ${script.forced.toFixed(1)}` : ""}`).join("; ")}]`).join("\n      ")
-    console.log(`[${this.variant}/${workspace}] ${interaction} #${run}: ready ${result.inputToReadyMs.toFixed(1)}ms frame#${result.readyFrame} (click +${result.inputToClickMs.toFixed(1)} -> ready ${result.clickToReadyMs.toFixed(1)} frame#${result.readyFrameFromClick}) (frame end ${result.inputToReadyFrameEndMs.toFixed(1)}) settled ${result.inputToSettledMs.toFixed(1)} shell ${result.inputToShellSettledMs?.toFixed(1) ?? "-"} worst ${result.worstFrameMs.toFixed(1)}ms over16.7=${result.framesOver16_7}/${result.frameCount} quiet-worst ${result.worstFrameToQuietMs.toFixed(1)}ms@${result.worstFrameToQuietAtMs.toFixed(0)} over=${result.framesOver16_7ToQuiet} load ${result.load}`)
+    console.log(`[${this.variant}/${workspace}] ${interaction} #${run}: ready ${result.inputToReadyMs.toFixed(1)}ms frame#${result.readyFrame} (click +${result.inputToClickMs.toFixed(1)} -> ready ${result.clickToReadyMs.toFixed(1)} frame#${result.readyFrameFromClick}) (frame end ${result.inputToReadyFrameEndMs.toFixed(1)}, painted ${result.inputToReadyPaintedMs.toFixed(1)}, worst painted gap ${result.worstPaintedGapMs.toFixed(1)}) settled ${result.inputToSettledMs.toFixed(1)} shell ${result.inputToShellSettledMs?.toFixed(1) ?? "-"} worst ${result.worstFrameMs.toFixed(1)}ms over16.7=${result.framesOver16_7}/${result.frameCount} quiet-worst ${result.worstFrameToQuietMs.toFixed(1)}ms@${result.worstFrameToQuietAtMs.toFixed(0)} over=${result.framesOver16_7ToQuiet} load ${result.load}`)
     if (process.env.PANEL_DEBUG === "1") console.log(`      frames: ${recording.signatures.slice(0, 6).join(" || ")}`)
     if (requests.length) console.log(`      requests: ${requests.map((request) => `${request.url} +${request.startMs}ms ${request.ms}ms`).join(" | ")}`)
     if (loafText) console.log(`      ${loafText}`)

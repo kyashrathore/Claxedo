@@ -25,6 +25,7 @@ export type Recording = {
   readonly settledAt: number | undefined
   readonly shellSettledAt: number | undefined
   readonly frames: readonly number[]
+  readonly painted: readonly number[]
   readonly loafs: readonly Loaf[]
   readonly longTasks: readonly { readonly start: number; readonly duration: number }[]
   readonly signatures: readonly string[]
@@ -51,6 +52,7 @@ export function installRecorder() {
     settledAt: number | undefined
     shellSettledAt: number | undefined
     frames: number[]
+    painted: number[]
     loafs: Loaf[]
     longTasks: { start: number; duration: number }[]
     signatures: string[]
@@ -62,7 +64,7 @@ export function installRecorder() {
   }
   const state: State = {
     predicate: undefined, inputAt: undefined, actAt: undefined, readyAt: undefined, readyFrame: undefined, readyFrameEnd: undefined, settledAt: undefined, shellSettledAt: undefined,
-    frames: [], loafs: [], longTasks: [], signatures: [], stable: 0, previous: "", resolve: undefined, reject: undefined, deadline: 0,
+    frames: [], painted: [], loafs: [], longTasks: [], signatures: [], stable: 0, previous: "", resolve: undefined, reject: undefined, deadline: 0,
   }
   const visible = (element: Element | null | undefined) => {
     if (!element) return false
@@ -169,7 +171,7 @@ export function installRecorder() {
   const finish = () => {
     const recording: Recording = {
       inputAt: state.inputAt ?? -1, actAt: state.actAt, readyAt: state.readyAt, readyFrame: state.readyFrame, readyFrameEnd: state.readyFrameEnd, settledAt: state.settledAt, shellSettledAt: state.shellSettledAt,
-      frames: state.frames, loafs: state.loafs, longTasks: state.longTasks, signatures: state.signatures, timeOrigin: performance.timeOrigin,
+      frames: state.frames, painted: state.painted, loafs: state.loafs, longTasks: state.longTasks, signatures: state.signatures, timeOrigin: performance.timeOrigin,
     }
     const resolve = state.resolve
     state.predicate = undefined
@@ -182,6 +184,7 @@ export function installRecorder() {
     if (!state.predicate || state.inputAt === undefined) return
     const index = message.data
     const at = state.frames[index - 1] ?? 0
+    state.painted[index - 1] = performance.now()
     const host = shell()
     if (state.shellSettledAt === undefined && host?.dataset.shellSettled === "true" && at > state.inputAt + 20) state.shellSettledAt = at
     const { ready, signature, debug } = evaluate(state.predicate)
@@ -261,6 +264,7 @@ export function installRecorder() {
       state.settledAt = undefined
       state.shellSettledAt = undefined
       state.frames = []
+      state.painted = []
       state.loafs = []
       state.longTasks = []
       state.signatures = []
