@@ -16,7 +16,7 @@ Owns: the workspace panel's Review tab and its Changes column, ported from v1. T
 ## Invariants
 
 - Diffs, status, log, refs and bases are the adapter's query data, refreshed by its invalidation after every git action and by `filesChanged`. Nothing here copies them.
-- `ReviewProvider` holds the per-placement view state (scope, open files, forced files, the commit message). It mounts inside the scoped shell, so that state survives closing the panel and switching its tabs.
+- `ReviewProvider` holds the per-placement view state (scope, open files, forced files, the commit message, the Changes sections and their scroll position). It mounts inside the scoped shell, so that state survives closing the panel and switching its tabs.
 - A comment's range is stored without its diff side until the composer's file context item carries one, so a comment on a deleted line is drawn on the additions side.
 - `ReviewCodeView` reports its rendered rows on every render and scroll frame. Asking again for files already at the front of the requested list writes nothing, because a write rebuilds every row's content query and re-renders the list.
 - Git error codes (`git_empty_message`, `git_nothing_staged`, `git_conflict`, `git_push_rejected`, `git_timeout`) have their own copy (`gitErrorCopy`); any other failure shows the app's copy for its error class.

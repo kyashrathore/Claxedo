@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
+import { restoreScrollTop } from "@/lib/scroll-restore"
 import type { PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, DelayedLoading, Spinner, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
@@ -87,10 +88,12 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   )
   const showTree = () => !search.pending() && !search.empty()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
-  const bindScroller = (element: HTMLDivElement) => {
-    element.scrollTop = files.scrollTop()
-    setScroller(element)
-  }
+  restoreScrollTop({
+    element: scroller,
+    contentReady: () => showTree() && search.source().children("").length > 0,
+    top: files.scrollTop,
+  })
+  createEffect(on(search.source, files.resetBatches, { defer: true }))
   const dataReady = () => source.state("").loaded && source.children("").length > 0
   expandToActivePath({ path: () => props.activePath, active: () => props.active, expand: source.expand })
   return (
@@ -104,7 +107,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
       <SearchRow />
       <ScrollView
         class="min-h-0 flex-1"
-        viewportRef={bindScroller}
+        viewportRef={setScroller}
         onScroll={(event) => files.setScrollTop(event.currentTarget.scrollTop)}
       >
         <Show when={search.pending()}>
@@ -120,6 +123,8 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
         <div style={{ "content-visibility": showTree() ? "visible" : "hidden" }}>
           <FileTree
             source={search.source()}
+            batches={files.batches}
+            showMore={files.growBatches}
             scroller={scroller}
             reveal={props.active ? props.activePath : undefined}
             modified={changed()}

@@ -1,6 +1,7 @@
-import { createMemo, createSignal, onMount, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
+import { restoreScrollTop } from "@/lib/scroll-restore"
 import {
   toAppError,
   type DiffScope,
@@ -122,11 +123,9 @@ export function SourceControlView(props: SourceControlViewProps): JSX.Element {
   const git = createGitActions(() => props.placementId)
   const sections: Sections = { collapsed: review.sections, toggle: review.toggleSection }
   let groups: HTMLDivElement | undefined
-  onMount(() => {
-    if (groups) groups.scrollTop = review.groupsScrollTop()
-  })
   const target = createMemo(() => compareScopeOf(review.scope()))
   const statusQuery = useQuery(() => ({ ...api.status(props.placementId), enabled: props.active }))
+  restoreScrollTop({ element: () => groups, contentReady: () => !statusQuery.isPending, top: review.groupsScrollTop })
   const logQuery = useQuery(() => ({ ...api.log(props.placementId, GRAPH_LIMIT), enabled: props.active }))
   const compareQuery = useQuery(() => ({
     ...api.diff(props.placementId, target() ?? defaultScope),

@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
 import { createVirtualizer } from "@tanstack/solid-virtual"
 import { useTranslator } from "@/i18n"
 import type { FileNode } from "@/server"
@@ -17,6 +16,8 @@ const ESTIMATES: Readonly<Record<TreeRow["kind"], number>> = { node: 24, more: 2
 
 export type FileTreeProps = {
   readonly source: TreeSource
+  readonly batches: (dir: string) => RevealBatches
+  readonly showMore: (dir: string, side: keyof RevealBatches) => void
   readonly scroller: Accessor<HTMLElement | undefined>
   readonly active?: string
   readonly reveal?: string
@@ -25,18 +26,6 @@ export type FileTreeProps = {
   readonly visibleLimit?: number
   readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
-}
-
-function createBatches(source: () => TreeSource) {
-  const [batches, setBatches] = createStore<Record<string, RevealBatches>>({})
-  createEffect(on(source, () => setBatches((current) => Object.fromEntries(Object.keys(current).map((dir) => [dir, { before: 0, after: 0 }]))), { defer: true }))
-  return {
-    of: (dir: string): RevealBatches => batches[dir] ?? { before: 0, after: 0 },
-    grow: (dir: string, side: "before" | "after") => {
-      const current = batches[dir] ?? { before: 0, after: 0 }
-      setBatches(dir, { ...current, [side]: current[side] + 1 })
-    },
-  }
 }
 
 function sameRow(a: TreeRow | undefined, b: TreeRow | undefined): boolean {
@@ -58,9 +47,8 @@ function createMarks(props: FileTreeProps) {
 
 export function FileTree(props: FileTreeProps): JSX.Element {
   const t = useTranslator(filesDictionary)
-  const batches = createBatches(() => props.source)
   const rows = createMemo(() =>
-    treeRows({ source: props.source, active: props.active, batchSize: props.visibleLimit ?? Number.POSITIVE_INFINITY, batches: batches.of }),
+    treeRows({ source: props.source, active: props.active, batchSize: props.visibleLimit ?? Number.POSITIVE_INFINITY, batches: props.batches }),
   )
   const indexByKey = createMemo(() => new Map(rows().map((row, index) => [row.key, index])))
   let container: HTMLDivElement | undefined
@@ -97,7 +85,7 @@ export function FileTree(props: FileTreeProps): JSX.Element {
     kinds: () => props.kinds,
     marks,
     loadingEpisode: () => props.loadingEpisode,
-    showMore: batches.grow,
+    showMore: (dir, side) => props.showMore(dir, side),
     onFileClick: (file) => props.onFileClick?.(file),
   }
   const scrollTo = (index: number) => virtualizer.scrollToIndex(index, { align: "auto" })
