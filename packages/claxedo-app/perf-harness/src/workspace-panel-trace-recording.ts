@@ -66,11 +66,16 @@ type TraceRecording = {
   stopListening: () => void
 }
 
-export async function markCounterEnd(page: Page, at: number) {
-  await page.evaluate(({ endMark, at }) => {
+export async function markActionEnd(page: Page, readyAt: number) {
+  await page.evaluate(({ endMark, readyAt }) => {
+    const trace = window.__claxedoPublicPanelTrace
+    const inputAt = trace?.trustedInputAt
+    if (!trace?.active || inputAt === undefined) throw new Error("Claxedo measured action has no trusted input")
+    const second = trace.frames.filter((frame) => frame.startedAt >= inputAt)[1]
+    if (!second) throw new Error("Claxedo measured action has fewer than two presented frames after its input")
     performance.clearMarks(endMark)
-    performance.mark(endMark, { startTime: at })
-  }, { endMark: COUNTER_END_MARK, at })
+    performance.mark(endMark, { startTime: Math.max(readyAt, second.paintedAt) })
+  }, { endMark: COUNTER_END_MARK, readyAt })
 }
 
 export async function beginTrace(

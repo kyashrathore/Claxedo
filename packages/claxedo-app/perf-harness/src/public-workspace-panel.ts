@@ -15,7 +15,7 @@ import {
   addMilestones,
   beginTrace,
   finishMeasuredTrace,
-  markCounterEnd,
+  markActionEnd,
   waitForTracedOpenFiles,
 } from "./workspace-panel-trace-recording"
 import { waitForPaintedFile, waitForPanelClosed, waitForPanelProfile } from "./workspace-panel-readiness"
@@ -203,7 +203,7 @@ export async function runPrearmedStablePaint(input: {
   }
 }
 
-async function measurePrearmedSettledAction(
+export async function measurePrearmedSettledAction(
   page: Page,
   ready: () => Promise<number>,
   click: () => Promise<void>,
@@ -220,7 +220,7 @@ async function measurePrearmedSettledAction(
       },
     })
     await addMilestones(page, [{ id: "action-painted", at: paintedAt }])
-    await markCounterEnd(page, paintedAt)
+    await markActionEnd(page, paintedAt)
     return await finishMeasuredTrace(page, recording)
   } catch (error) {
     if (!aborted) await abortTrace(page, recording)
@@ -272,7 +272,7 @@ async function measureNavigation(
       { id: "content-identity", at: session.paintedAtMs },
       { id: "above-fold-painted", at: end },
     ])
-    await markCounterEnd(page, end)
+    await markActionEnd(page, end)
     return await finishMeasuredTrace(page, recording)
   } catch (error) {
     await cancelPanelOwnerObserver(page, panelObserverToken)
