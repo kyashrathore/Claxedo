@@ -1,7 +1,7 @@
 import { resolveIconArtworkLibrary } from "@opencode-ai/ui/icon-artwork-policy"
 import { CODEX_CUSTOM_ARTWORK } from "@opencode-ai/ui/codex-custom-artwork"
 import { HARNESS_BRAND_ARTWORK } from "@opencode-ai/ui/harness-brand-artwork"
-import { createEffect, Show, splitProps, useContext, type ComponentProps, type JSX } from "solid-js"
+import { createEffect, splitProps, useContext, type ComponentProps, type JSX } from "solid-js"
 import {
   ensureSvgSpriteHost,
   OpenCodeIcon as UpstreamIcon,
@@ -99,94 +99,70 @@ const customGlyphs = {
   "codex-custom-worktree": "worktree",
 } as const satisfies Record<CodexCustomGlyph, keyof typeof claxedoIcons>
 
-function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
-  const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare", "library"])
+const GLYPH_SIZES = { small: 14, medium: 18, large: 20, normal: 16 } as const
+
+function codexSvg(props: ClaxedoIconProps, bare: boolean): JSX.Element {
+  const [local, svgProps] = splitProps(props, ["name", "size", "class", "classList", "library"])
   const glyph = () => codexIconLibrary.resolve(local.name)
   const custom = () => customGlyph(glyph())
-  createEffect(() => {
-    ensureSprite()
-    if (!custom()) codexIconSprite.ensure(glyph())
-  })
-  const size = () => {
-    if (local.size === "small") return 14
-    if (local.size === "large") return 20
-    if (local.size === "medium") return 18
-    return 16
-  }
-
+  const size = () => GLYPH_SIZES[local.size ?? "normal"]
   return (
     <svg
-      data-component={local.bare ? undefined : "icon"}
+      data-component={bare ? undefined : "icon"}
       data-slot="icon-svg"
       data-icon={local.name}
       data-library="codex"
-      data-size={local.bare ? undefined : local.size || "normal"}
+      data-size={bare ? undefined : local.size || "normal"}
       classList={{
-        "ui-icon": !local.bare,
+        "ui-icon": !bare,
         "ui-icon-svg": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
-      width={local.bare ? size() : undefined}
-      height={local.bare ? size() : undefined}
+      width={bare ? size() : undefined}
+      height={bare ? size() : undefined}
       fill="none"
       viewBox="0 0 20 20"
-      aria-hidden={others["aria-hidden"] ?? "true"}
-      {...others}
+      aria-hidden={svgProps["aria-hidden"] ?? "true"}
+      {...svgProps}
     >
-      <use
-        href={custom() ? `#${symbol(custom()!)}` : codexIconSprite.href(glyph())}
-        transform={codexTransform(local.name)}
-      />
+      <use href={custom() ? `#${symbol(custom()!)}` : codexIconSprite.href(glyph())} transform={codexTransform(local.name)} />
     </svg>
   )
 }
 
-function upstreamProps(props: ClaxedoIconProps) {
-  const [, others] = splitProps(props, ["name", "library"])
-  return others
-}
-
-function Skinned(props: { readonly name: ClaxedoIconName; readonly children: JSX.Element }): JSX.Element {
+function icon(props: ClaxedoIconProps, bare: boolean): JSX.Element {
   const skin = useContext(IconSkinContext)
-  if (!skin) return props.children
-  return (
-    <Show when={skin()?.[props.name]} fallback={props.children}>
-      {(draw) => (
+  const [, upstream] = splitProps(props, ["name", "library"])
+  const skinned = () => skin?.()?.[props.name]
+  const codex = () => resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"
+  createEffect(() => {
+    if (skinned() || !codex()) return
+    ensureSprite()
+    const glyph = codexIconLibrary.resolve(props.name)
+    if (!customGlyph(glyph)) codexIconSprite.ensure(glyph)
+  })
+  const view = () => {
+    const draw = skinned()
+    if (draw) {
+      return (
         <span data-icon={props.name} data-icon-skin="" aria-hidden="true">
-          {draw()()}
+          {draw()}
         </span>
-      )}
-    </Show>
-  )
+      )
+    }
+    if (!codex()) return <UpstreamIcon {...upstream} name={openCodeIconLibrary.resolve(props.name)} />
+    return codexSvg(props, bare)
+  }
+  return <>{view()}</>
 }
 
 export function ClaxedoIcon(props: ClaxedoIconProps) {
-  const upstream = () => upstreamProps(props)
-  return (
-    <Skinned name={props.name}>
-      <Show
-        when={resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"}
-        fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
-      >
-        <CodexGlyph {...props} />
-      </Show>
-    </Skinned>
-  )
+  return icon(props, false)
 }
 
 export function ClaxedoIconV2(props: ClaxedoIconProps) {
-  const upstream = () => upstreamProps(props)
-  return (
-    <Skinned name={props.name}>
-      <Show
-        when={resolveIconArtworkLibrary(props.name, props.library ?? iconLibrary()) === "codex"}
-        fallback={<UpstreamIcon {...upstream()} name={openCodeIconLibrary.resolve(props.name)} />}
-      >
-        <CodexGlyph {...props} bare />
-      </Show>
-    </Skinned>
-  )
+  return icon(props, true)
 }
 
 function customGlyph(name: CodexGlyphName) {
