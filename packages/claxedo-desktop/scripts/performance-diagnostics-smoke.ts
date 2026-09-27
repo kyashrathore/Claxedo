@@ -460,6 +460,7 @@ export async function runPackagedSmoke() {
     const client = await connectToPackagedApp(debugPort, application)
     try {
       await waitForMainWindow(client)
+      await requirePackagedMermaid(client)
       // Host metrics are deliberately on-demand in the packaged app. Opening
       // the product surface establishes the diagnostics subscription that
       // activates windows-cim/macos-ps/linux-proc. Waiting for source health
@@ -744,6 +745,13 @@ async function waitForMainWindow(client: CdpClient) {
     await Bun.sleep(500)
   }
   throw new Error("Packaged Claxedo main window did not become ready")
+}
+
+async function requirePackagedMermaid(client: CdpClient) {
+  const svg = await client.evaluate(`window.api.renderMermaid("flowchart LR\\n  A --> B")`)
+  if (typeof svg !== "string" || !svg.startsWith("<svg")) {
+    throw new Error("Packaged render-mermaid did not draw a flowchart as SVG")
+  }
 }
 
 async function openDiagnosticsDialog(client: CdpClient) {
