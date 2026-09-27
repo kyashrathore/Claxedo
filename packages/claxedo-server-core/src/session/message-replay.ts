@@ -124,6 +124,8 @@ export function persistMessageEvent(
     if (!info) return
     const messageId = asString(info.id)
     if (!messageId) return
+    const existing = loadMessage(sessionId, messageId)
+    if (existing === FOREIGN) return
 
     const now = Date.now()
 
@@ -149,7 +151,7 @@ export function persistMessageEvent(
           set: {
             workspace_id,
             role: asString(info.role) ?? null,
-            data: JSON.stringify({ info, parts: existingParts(messageId) }),
+            data: JSON.stringify({ info, parts: existing ? readStoredMessage(existing.data).parts : [] }),
             event_ordinal,
             updated_at: now,
           },
@@ -167,7 +169,8 @@ export function persistMessageEvent(
     if (!messageId) return
 
     const now = Date.now()
-    const existing = loadMessage(messageId)
+    const existing = loadMessage(sessionId, messageId)
+    if (existing === FOREIGN) return
     const parsed = existing
       ? readStoredMessage(existing.data)
       : { info: { id: messageId, sessionID: asString(part.sessionID) ?? sessionId }, parts: [] }
@@ -198,7 +201,8 @@ export function persistMessageEvent(
     if (!messageId || !partId || !field || delta === undefined) return
 
     const now = Date.now()
-    const existing = loadMessage(messageId)
+    const existing = loadMessage(sessionId, messageId)
+    if (existing === FOREIGN) return
     const parsed = existing
       ? readStoredMessage(existing.data)
       : { info: { id: messageId, sessionID: asString(props?.sessionID) ?? sessionId }, parts: [] }
@@ -517,15 +521,18 @@ function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
   )
 }
 
-function loadMessage(messageId: string) {
-  return ClaxedoDB.use((db) =>
+const FOREIGN = Symbol("foreign message")
+
+/**
+ * The session's own row for a message id. Message ids are the table's primary
+ * key across every session, so a row another session holds is `FOREIGN`: an
+ * event naming it is dropped instead of overwriting that session's message.
+ */
+function loadMessage(sessionId: string, messageId: string) {
+  const row = ClaxedoDB.use((db) =>
     db.select().from(ClaxedoCloudMessageTable).where(eq(ClaxedoCloudMessageTable.message_id, messageId)).get(),
   )
-}
-
-function existingParts(messageId: string): unknown[] {
-  const row = loadMessage(messageId)
-  return row ? readStoredMessage(row.data).parts : []
+  return row && row.session_id !== sessionId ? FOREIGN : row
 }
 
 /**

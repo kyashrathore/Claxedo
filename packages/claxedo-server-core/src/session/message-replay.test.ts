@@ -649,6 +649,37 @@ describe("message replay", () => {
     expect(messages[0].parts[0].text).toBe("Hello world")
   })
 
+  test("an event naming another session's message id writes nothing to either session", () => {
+    persistMessageEvent("sess_a", {
+      type: "message.updated",
+      properties: { info: { id: "msg_shared", sessionID: "sess_a", role: "assistant", created: 100, updated: 100 } },
+    })
+    persistMessageEvent("sess_a", {
+      type: "message.part.updated",
+      properties: { part: { id: "p_a", sessionID: "sess_a", messageID: "msg_shared", type: "text", text: "session a" } },
+    })
+    const before = readSessionMessages("sess_a")
+    const eventsBefore = readSessionEventsAfter("sess_a", 0)
+
+    persistMessageEvent("sess_b", {
+      type: "message.updated",
+      properties: { info: { id: "msg_shared", sessionID: "sess_b", role: "user", created: 200, updated: 200 } },
+    })
+    persistMessageEvent("sess_b", {
+      type: "message.part.updated",
+      properties: { part: { id: "p_b", sessionID: "sess_b", messageID: "msg_shared", type: "text", text: "session b" } },
+    })
+    persistMessageEvent("sess_b", {
+      type: "message.part.delta",
+      properties: { sessionID: "sess_b", messageID: "msg_shared", partID: "p_a", field: "text", delta: " from b" },
+    } as any)
+
+    expect(readSessionMessages("sess_a")).toEqual(before)
+    expect(readSessionEventsAfter("sess_a", 0)).toEqual(eventsBefore)
+    expect(readSessionMessages("sess_b")).toEqual([])
+    expect(readSessionEventsAfter("sess_b", 0)).toEqual([])
+  })
+
   test("upserts parts on repeated message.part.updated", async () => {
     persistMessageEvent("sess_1", {
       type: "message.updated",
