@@ -62,7 +62,6 @@ const createBody = z
   .object({
     orgId: z.string().optional(),
     projectId: z.string().optional(),
-    projectName: z.string().optional(),
     workspaceName: z.string().optional(),
     repoUrl: z.string().optional(),
     connectionId: z.string().optional(),
@@ -708,7 +707,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           workspaceId,
           org_id: orgId,
           project_id: projectId,
-          project_name: body.projectName?.trim() || repoName || name,
+          project_name: repoName || name,
           workspace_name: name,
           directory,
           kind: "cloud",
