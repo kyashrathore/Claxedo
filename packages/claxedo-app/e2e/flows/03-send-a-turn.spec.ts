@@ -21,6 +21,35 @@ async function firstPaintedTranscript(app: Page, sessionId: string): Promise<() 
   return () => app.evaluate(() => (window as FirstPaintWindow).__firstTranscriptPaint!)
 }
 
+type SentFramesWindow = Window & { __sentFrames?: Promise<boolean[]> }
+
+async function recordSentMessage(app: Page, text: string): Promise<() => Promise<boolean[]>> {
+  await app.evaluate((needle) => {
+    ;(window as SentFramesWindow).__sentFrames = new Promise<boolean[]>((resolve) => {
+      const frames: boolean[] = []
+      const painted = new MessageChannel()
+      const afterPaint = () => painted.port2.postMessage(undefined)
+      painted.port1.onmessage = () => {
+        const sent = [...document.querySelectorAll('[data-component="user-message"]')]
+        frames.push(sent.some((node) => node.textContent?.includes(needle) && node.checkVisibility({ opacityProperty: true, visibilityProperty: true })))
+        if (document.querySelector('[data-testid="session-page-root"] [data-component="text-part"]') || frames.length > 3000) return resolve(frames)
+        requestAnimationFrame(afterPaint)
+      }
+      requestAnimationFrame(afterPaint)
+    })
+  }, text)
+  return () => app.evaluate(() => (window as SentFramesWindow).__sentFrames!)
+}
+
+function sessionWrites(app: Page): string[] {
+  const writes: string[] = []
+  app.on("request", (request) => {
+    const path = new URL(request.url()).pathname
+    if (request.method() === "POST" && /^\/session(\/[^/]+\/(prompt_async|goal|message))?$/.test(path)) writes.push(path.replace(/\/session\/[^/]+\//, "/session/:id/"))
+  })
+  return writes
+}
+
 const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
 test("03 send a turn: the reply streams in with its tool groups, diff, todo list, image, math and Mermaid", async ({ stack, api, app }) => {
@@ -83,6 +112,61 @@ test("03 a new session's first send creates the session and its draft pane becom
   await expect(app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Scripted Session", exact: true })).toBeVisible()
   const sent = (await api.messages(workspace.directory, created.id)).filter((message) => message.info.role === "user")
   expect(JSON.stringify(sent)).toContain("Start the draft session")
+})
+
+test("03 a draft's first send is one request: its message shows before the session answers and stays on screen through the swap", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("one-request")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const writes = sessionWrites(app)
+  let answer!: () => void
+  const answered = new Promise<void>((resolve) => { answer = resolve })
+  await app.route((url) => url.pathname === "/session", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback()
+    await answered
+    await route.continue()
+  })
+  const text = "Start the one-request draft"
+  const frames = await recordSentMessage(app, text)
+  await sendPrompt(app, text)
+
+  await expect(app.locator('[data-component="user-message"]').getByText(text, { exact: true })).toBeVisible()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("")
+  expect(writes).toEqual(["/session"])
+  answer()
+
+  await expect.poll(async () => (await api.sessions(workspace.directory)).length).toBe(1)
+  const [created] = await api.sessions(workspace.directory)
+  if (!created) throw new Error("the first send created no session")
+  await expect(app).toHaveURL(new RegExp(`${sessionRoute(workspace.id, created.id)}$`))
+  const shown = await frames()
+  const first = shown.indexOf(true)
+  expect(first).toBeGreaterThanOrEqual(0)
+  expect(shown.slice(first)).not.toContain(false)
+  expect(writes).toEqual(["/session"])
+  const sent = (await api.messages(workspace.directory, created.id)).filter((message) => message.info.role === "user")
+  expect(sent).toHaveLength(1)
+  expect(JSON.stringify(sent)).toContain(text)
+})
+
+test("03 a draft's first send the runtime refuses leaves no session, and its text goes back to the composer with the error", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("refused-first")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await app.route((url) => url.pathname === "/session", async (route) => {
+    const request = route.request()
+    if (request.method() !== "POST") return route.fallback()
+    await route.continue({ postData: JSON.stringify({ ...request.postDataJSON(), permissionCeiling: "full" }) })
+  })
+  const text = "A first prompt under a ceiling the harness cannot enforce"
+  await sendPrompt(app, text)
+
+  await expect(app.getByText("This harness offers no permission mode within the full ceiling").filter({ visible: true }).first()).toBeVisible()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText(text)
+  await expect(app.locator('[data-component="user-message"]')).toHaveCount(0)
+  expect(await api.sessions(workspace.directory)).toEqual([])
+  await app.reload()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  expect(await api.sessions(workspace.directory)).toEqual([])
+  await expect(app.getByTestId("rail-sidebar-session-row")).toHaveCount(0)
 })
 
 test("03 two sessions stream at once: the second's reply shows while the first still runs, in the foreground and in the first frame after a switch", async ({ stack, api, app, isMobile }) => {

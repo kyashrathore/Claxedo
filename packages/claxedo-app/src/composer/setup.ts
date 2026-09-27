@@ -25,7 +25,7 @@ export type ComposerProps = {
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean
   readonly hidden?: boolean
-  readonly createSession?: (submission: Submission) => Promise<SessionView>
+  readonly startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void; readonly replace: (input: PromptInput) => Promise<boolean> }
   readonly dropZone?: () => HTMLElement | undefined
@@ -59,7 +59,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     submission: selection.submission,
     goalCapable: () => goalCapable(props, selection),
     view: () => props.view,
-    createSession: props.createSession,
+    startSession: props.startSession,
     queuedReplace: () => (props.queuedEdit?.active() ? props.queuedEdit.replace : undefined),
     afterAccepted: (view) => {
       late.controller?.resetHistory()
@@ -168,7 +168,6 @@ function submitState(input: {
   asleep: Accessor<boolean>
 }) {
   const { selection, send } = input
-  const booting = createMemo(() => send.boot() !== undefined)
   const submitBlock = createMemo(() => {
     const state = selection.selection()
     const harnessMode = !!state.harness
@@ -184,7 +183,7 @@ function submitState(input: {
       modelBlocked: !harnessMode,
       modelBlockLabel: undefined,
       providerLoading: false,
-      booting: booting(),
+      booting: send.booting(),
       stoppable: input.working(),
       blank: input.controller.blank(),
       workspaceAsleep: input.asleep(),
@@ -192,9 +191,9 @@ function submitState(input: {
   })
   const bootText = () => {
     const type = selection.selection().harness
-    return send.boot() === "sending" ? "Sending first message..." : `Booting ${type ? harnessProfile(type).displayName : "Select harness"}...`
+    return `Booting ${type ? harnessProfile(type).displayName : "Select harness"}...`
   }
-  return { harnessPending: createMemo(() => selection.selection().readiness === "polling"), booting, bootText, submitBlock }
+  return { harnessPending: createMemo(() => selection.selection().readiness === "polling"), booting: send.booting, bootText, submitBlock }
 }
 
 export type ComposerSetup = ReturnType<typeof createComposer>

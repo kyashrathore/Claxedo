@@ -147,7 +147,7 @@ It is the old app's session renderers, **moved, not rebuilt**: only import paths
 
 ## Why the rail works this way
 
-- The rail reads only a user message's id and summary, structurally, so an optimistic turn (no `agent` or `model` yet) can be passed; its callbacks are generic over the caller's row type.
+- The rail reads only a user message's id and summary, structurally, so an optimistic turn can be passed; its callbacks are generic over the caller's row type.
 - Preview text joins every part of a turn, so it is computed only for the one open card.
 - Kobalte compares `relatedTarget` against its content node, so a non-Node target is never inside it.
 - The overlay edge is one border clipped to the padding box with `--shadow-md`, like hover cards and popovers; the extra ring shadow read as a doubled outline on dark surfaces.

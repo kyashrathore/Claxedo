@@ -1,4 +1,4 @@
-import type { PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentUserMessage, PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
 import type { PromptAttachment, PromptDelivery, PromptInput } from "../types"
 
 export const PROMPT_ROUTE = "/prompt_async"
@@ -29,17 +29,38 @@ function wireAttachmentPart(attachment: PromptAttachment): WirePart {
   }
 }
 
+const wireModel = (input: PromptInput) => (input.model ? { model: { providerID: input.model.providerId, modelID: input.model.modelId } } : {})
+
+function promptParts(input: PromptInput): WirePart[] {
+  return [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(wireAttachmentPart)]
+}
+
 export function promptBody(input: PromptInput, messageId: string) {
   return {
     messageID: messageId,
     agent: input.agent ?? DEFAULT_AGENT,
-    ...(input.model ? { model: { providerID: input.model.providerId, modelID: input.model.modelId } } : {}),
+    ...wireModel(input),
     ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
     ...(input.effort !== undefined ? { variant: input.effort } : {}),
     ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
     ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
     ...(input.delivery ? { delivery: input.delivery } : {}),
-    parts: [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(wireAttachmentPart)],
+    parts: promptParts(input),
+  }
+}
+
+export function promptEcho(input: PromptInput, ids: { readonly sessionId: string; readonly messageId: string; readonly created: number }): { info: AgentUserMessage; parts: AgentContentPart[] } {
+  const { sessionId, messageId } = ids
+  return {
+    info: {
+      id: messageId,
+      sessionID: sessionId,
+      role: "user",
+      time: { created: ids.created },
+      agent: input.agent ?? DEFAULT_AGENT,
+      ...wireModel(input),
+    },
+    parts: promptParts(input).map((part, index) => ({ ...part, id: `${messageId}:${index}`, sessionID: sessionId, messageID: messageId })),
   }
 }
 

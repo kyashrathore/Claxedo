@@ -101,7 +101,7 @@ type SendInput = {
   working: Accessor<boolean>
   goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
-  createSession?: (submission: Submission) => Promise<SessionView>
+  startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
   queuedReplace: () => ((input: PromptInput) => Promise<boolean>) | undefined
   focusEditor: () => void
@@ -143,34 +143,43 @@ function createArmGoal(input: SendInput) {
   }
 }
 
-export type BootPhase = "booting" | "sending"
+async function startDraftSession(input: SendInput, submission: Submission, prompt: PromptInput, setBooting: (booting: boolean) => void): Promise<SessionView> {
+  const key = input.key()
+  const draft = input.store.take(key)
+  setBooting(true)
+  const view = await required(input.startSession)(submission, prompt).catch((error: unknown) => {
+    input.store.restore(key, draft)
+    throw error
+  })
+  input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
+  input.normalMode()
+  return view
+}
 
-async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBoot: (phase: BootPhase | undefined) => void): Promise<SessionView> {
+async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBooting: (booting: boolean) => void): Promise<SessionView> {
   const key = input.key()
   const delivery = input.working() ? "queue" : undefined
   const submission = await input.submission()
   const prompt = await buildPromptInput({ draft, submission, goal, delivery })
   const existing = input.view()
+  if (!existing) return startDraftSession(input, submission, { ...prompt, clientRequestId }, setBooting)
   const replace = goal.kind === "submit" ? undefined : input.queuedReplace()
-  if (existing && replace && (await replace(prompt))) {
+  if (replace && (await replace(prompt))) {
     input.store.reset(key)
     input.normalMode()
     return existing
   }
-  if (!existing) setBoot("booting")
-  const view = existing ?? (await required(input.createSession)(submission))
-  if (!existing) setBoot("sending")
-  await view.send({ ...prompt, clientRequestId })
+  await existing.send({ ...prompt, clientRequestId })
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
   input.store.reset(key)
   input.normalMode()
-  return view
+  return existing
 }
 
 export function createComposerSend(input: SendInput) {
   const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
   const sending = createMemo(() => state.state().kind === "sending")
-  const [boot, setBoot] = createSignal<BootPhase>()
+  const [booting, setBooting] = createSignal(false)
   const armGoal = createArmGoal(input)
   const stop = createStop(input.view, input.goalStopFailed)
   const send = async () => {
@@ -181,19 +190,19 @@ export function createComposerSend(input: SendInput) {
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {
-      const view = await deliverDraft(input, draft, goal, clientRequestId, setBoot)
+      const view = await deliverDraft(input, draft, goal, clientRequestId, setBooting)
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {
       state.send({ type: "sendRejected", error: toAppError(error) })
     } finally {
-      setBoot(undefined)
+      setBooting(false)
     }
   }
   return {
     state: state.state,
     sending,
-    boot,
+    booting,
     send,
     armGoal,
     disarmGoal: () => input.store.setGoalArmed(input.key(), false),
@@ -205,6 +214,6 @@ export function createComposerSend(input: SendInput) {
 }
 
 function required<T>(value: T | undefined): T {
-  if (value === undefined) throw new Error("A draft composer needs createSession to send its first prompt")
+  if (value === undefined) throw new Error("A draft composer needs startSession to send its first prompt")
   return value
 }

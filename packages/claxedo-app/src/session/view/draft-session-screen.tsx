@@ -1,11 +1,14 @@
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
-import type { PlacementId, ProjectId } from "@/server"
-import { useSessionStores, type SessionView } from "@/session"
+import { useServer, type PlacementId, type ProjectId, type PromptInput } from "@/server"
+import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
 import { useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
+import { pendingMessage } from "../transcript/send"
 import { draftSessionPaneKind } from "./draft-pane"
+import { SentMessage } from "./sent-message"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import { registerSessionCommands } from "./session-commands"
@@ -20,6 +23,7 @@ export type DraftSessionState = {
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const stores = useSessionStores()
+  const server = useServer()
   const workbench = useWorkbench()
   const routing = useShellRoute()
   registerSessionCommands({ commands: useCommands(), placementId: () => props.state.placementId, active: () => props.active, navigate: (path) => routing.navigate(path), t })
@@ -27,9 +31,28 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined
-  const createSession = async (submission: Submission): Promise<SessionView> => {
-    const ref = await stores.list.create({ placementId: await draft.resolve(props.state), harness: submission.harness, model: submission.model })
-    return stores.open(ref)
+  const [sent, setSent] = createSignal<SentPrompt>()
+  const sentMessage = createMemo(() => {
+    const prompt = sent()
+    return prompt && pendingMessage("", prompt)
+  })
+  const [started, setStarted] = createSignal<SessionView>()
+  createEffect(() => {
+    const view = started()
+    if (view && view.state().kind !== "loading") workbench.replacePane(props.paneId, sessionPaneKind, view.ref)
+  })
+  const startSession = async (submission: Submission, input: PromptInput): Promise<SessionView> => {
+    const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
+    setSent(prompt)
+    try {
+      const ref = await stores.list.create({ placementId: await draft.resolve(props.state), harness: submission.harness, model: submission.model, prompt })
+      const view = stores.open(ref)
+      view.showSent(prompt)
+      return view
+    } catch (error) {
+      setSent(undefined)
+      throw error
+    }
   }
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
@@ -50,14 +73,15 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                     onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
                   />
                 </div>
+                <Show when={sentMessage()}>{(message) => <SentMessage message={message()} placementId={props.state.placementId} />}</Show>
                 <div class="relative z-10 -mt-2">
                   <WorkspaceSleepCard placementId={props.state.placementId} />
                   <Composer
                     composerKey={key()}
                     placementId={props.state.placementId}
                     attachmentWorkspace={true}
-                    createSession={createSession}
-                    afterAccepted={(view) => workbench.replacePane(props.paneId, sessionPaneKind, view.ref)}
+                    startSession={startSession}
+                    afterAccepted={setStarted}
                     dropZone={() => pane}
                   />
                 </div>

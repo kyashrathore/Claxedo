@@ -10,7 +10,7 @@ import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
 import "./transcript-kit.css"
 
-const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
+export const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 
 export function userMessages(view: SessionView): TranscriptUserMessage[] {
   const messages = view.conversation()?.messages ?? []

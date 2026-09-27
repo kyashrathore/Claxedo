@@ -5,12 +5,9 @@ import type {
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
 
-export type OptimisticUserMessage = {
+export type OptimisticUserMessage = AgentUserMessage & {
   readonly origin: "optimistic"
-  readonly id: string
-  readonly role: "user"
-  readonly time: { readonly created: number }
-  readonly summary?: undefined
+  readonly parts: AgentContentPart[]
 }
 
 export type TranscriptUserMessage = AgentUserMessage | OptimisticUserMessage
@@ -26,6 +23,10 @@ export type TranscriptConversation = {
   readonly partsWithText: Readonly<Record<string, true>>
 }
 
+export function isOptimisticMessage(message: ConversationMessage): message is OptimisticUserMessage {
+  return "origin" in message
+}
+
 export function isRuntimeMessage(message: ConversationMessage): message is AgentPresentationMessage {
-  return !("origin" in message)
+  return !isOptimisticMessage(message)
 }

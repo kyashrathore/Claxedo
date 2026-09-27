@@ -24,6 +24,8 @@ import type { QueuedMessages } from "./view/timeline/model"
 
 export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
 
+export type SentPrompt = PromptInput & { readonly messageId: string; readonly sentAt: number }
+
 export type SessionRowView = SessionRow & {
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
@@ -104,6 +106,7 @@ export type SessionView = {
   readonly loadOlder: () => Promise<void>
   readonly reload: () => Promise<void>
   readonly send: (input: PromptInput) => Promise<void>
+  readonly showSent: (prompt: SentPrompt) => void
   readonly stop: () => Promise<void>
   readonly reply: (requestId: RequestId, reply: AgentRequestReply) => Promise<void>
 }

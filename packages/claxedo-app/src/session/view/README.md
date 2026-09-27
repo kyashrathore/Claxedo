@@ -5,7 +5,7 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 ## Exports (`index.ts`)
 
 - `sessionPaneKind`: pane kind `session`, state `SessionRef`, routed at `/w/:placementId/session/:sessionId`.
-- `draftSessionPaneKind`: pane kind `draftSession`, state `{ projectId, placementId }`, routed at `/w/:placementId/session`. A workspace has one draft, as in today's app: New Session, the landing and a reload all show the same draft with its unsent text (the composer keys it `draft:<placementId>`). Its composer creates the session on the first send (`SessionList.create`, with the harness and model chosen in the draft), sends, and then replaces its own pane with a `session` pane (`useWorkbench().replacePane`).
+- `draftSessionPaneKind`: pane kind `draftSession`, state `{ projectId, placementId }`, routed at `/w/:placementId/session`. A workspace has one draft, as in today's app: New Session, the landing and a reload all show the same draft with its unsent text (the composer keys it `draft:<placementId>`). Its composer's first send is one request: `SessionList.create` carries the harness, the model and the prompt, and the runtime creates the session and admits the prompt together. The draft draws the sent message at once with the timeline's own `TimelineUserMessage` (`SentMessage`), under the message id the create sends; on the answer it opens the session, shows the same message there (`showSent`), and replaces its own pane with the `session` pane once that view has loaded, so the message never leaves the screen. A refused create leaves no session; the draft drops the message and the composer gets the text back.
 
 ## Owned concepts
 

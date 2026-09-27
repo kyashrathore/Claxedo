@@ -258,6 +258,6 @@ e2e/
     installed-cli.ts     Claude / Codex CLI detection
     acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process), agent-process.ts (its PIDs under a stack's daemon)
     ports.ts, process.ts, health.ts
-  perf/                  bun run e2e:perf-stream: a streaming turn measured on one or more builds
+  perf/                  bun run e2e:perf-stream: a streaming turn measured on one or more builds; first-send.ts: pointerdown to the sent message painted and to the first reply text, over fresh drafts
   probes/                one-off probes (P0.7 harness status, harness health after a killed agent), not collected as flows
 ```

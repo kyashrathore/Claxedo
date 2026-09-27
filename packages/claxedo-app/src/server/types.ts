@@ -196,6 +196,7 @@ export type SessionCreateInput = {
   readonly harness?: string
   readonly model?: ModelChoice
   readonly title?: string
+  readonly prompt?: PromptInput & { readonly messageId: string }
 }
 
 export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly filename?: string }

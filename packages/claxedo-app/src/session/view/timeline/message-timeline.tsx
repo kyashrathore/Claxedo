@@ -59,7 +59,7 @@ import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineLoadingRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
-import { isRuntimeMessage } from "@/transcript"
+import { isOptimisticMessage, isRuntimeMessage } from "@/transcript"
 import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,
@@ -105,6 +105,8 @@ import "./markdown-surfaces.css"
 
 const emptyMessages: ConversationMessage[] = []
 const emptyParts: PartType[] = []
+
+const ownParts = (message: ConversationMessage | undefined) => (message && isOptimisticMessage(message) ? message.parts : emptyParts)
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { kind: "idle" as const }
 
@@ -356,7 +358,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const parentId = createMemo(() => props.parentId)
   const parentConversation = host.parentConversation
   const parentMessages = createMemo(() => parentConversation()?.messages ?? emptyMessages)
-  const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? emptyParts
+  const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? ownParts(messageById().get(msgId))
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
   const turnPreview = (message: UserMessage) =>
     messageNavPreview({
@@ -1104,8 +1106,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const userMessageRow = rowOfTag(row, "UserMessage", current)
         const message = createMemo(() => {
           const m = messageById().get(userMessageRow().userMessageId)
-          if (m && isRuntimeMessage(m) && m.role === "user") return m
-          return undefined
+          return m?.role === "user" ? m : undefined
         })
         return (
           <TimelineRowFrame row={userMessageRow}>
@@ -1114,7 +1115,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 <TimelineUserMessage
                   message={message()}
                   parts={getMsgParts(userMessageRow().userMessageId)}
-                  actions={props.actions}
+                  actions={isRuntimeMessage(message()) ? props.actions : undefined}
                 />
               )}
             </Show>

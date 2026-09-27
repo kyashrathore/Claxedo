@@ -68,6 +68,7 @@ function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): Ses
     title: input.title ?? "",
     createdAt: at,
     updatedAt: at,
+    ...(input.prompt ? { lastHumanTurnAt: at } : {}),
     ...(input.harness ? { harness: harnessSelectionOf(input.harness) } : {}),
     ...(input.model ? { model: input.model } : {}),
   }

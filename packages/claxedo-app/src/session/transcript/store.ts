@@ -2,15 +2,15 @@ import { createMemo, onCleanup } from "solid-js"
 import { unreachable } from "@/lib/machine"
 import type { Server, ServerEvent, SessionRef } from "@/server"
 import type { SessionLoadState, SessionView } from "@/session"
-import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
 import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
 import { settleTurn } from "./settle"
+import type { TranscriptConversation } from "@/transcript"
 import { isPendingMessage, searchById } from "./merge"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
-import { sendPrompt, stopTurn } from "./send"
+import { sendPrompt, showSent, stopTurn } from "./send"
 import { readSnapshot } from "./snapshot"
 
 export type { TranscriptDeps } from "./context"
@@ -80,6 +80,7 @@ function sessionView(context: TranscriptContext): SessionView {
     loadOlder: () => loadOlder(context),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),
+    showSent: (prompt) => showSent(context, prompt),
     stop: () => stopTurn(context),
     reply: (requestId, reply) => deps.requests.reply(ref, requestId, reply),
   }

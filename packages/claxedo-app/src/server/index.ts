@@ -29,5 +29,6 @@ export type { AuthSource, ServerConfig } from "./config"
 export { ServerError, isAppError, isCodexTurnAborted, isGeminiQuotaRetry, isRetryableServerError, isTurnAdmissionConflict, toAppError } from "./errors"
 export { ServerContext, useServer } from "./context"
 export { createServer, type ServerHandle } from "./server"
+export { promptEcho } from "./wire/prompt"
 export { ServerProvider } from "./provider"
 

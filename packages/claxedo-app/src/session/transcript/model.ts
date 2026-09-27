@@ -4,9 +4,7 @@ import type { AppError, FileDiff, ServerEvent, TranscriptPart } from "@/server"
 import type { OlderState } from "@/session"
 import type { OptimisticUserMessage } from "@/transcript"
 
-export type PendingUserMessage = OptimisticUserMessage & Pick<AgentPresentationMessage, "sessionID">
-
-export type SessionMessage = AgentPresentationMessage | PendingUserMessage
+export type SessionMessage = AgentPresentationMessage | OptimisticUserMessage
 
 export type TranscriptData = {
   messages: SessionMessage[]

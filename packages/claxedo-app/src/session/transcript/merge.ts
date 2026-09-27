@@ -1,12 +1,13 @@
 import type { AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
 import { readField, readString } from "@claxedo/helpers/readers"
 import type { TranscriptMessage, TranscriptPart } from "@/server"
-import type { PendingUserMessage, SessionMessage } from "./model"
+import type { OptimisticUserMessage } from "@/transcript"
+import type { SessionMessage } from "./model"
 
 export const isPresentationMessage = (info: TranscriptMessage): info is AgentPresentationMessage =>
   info.role === "user" || info.role === "assistant"
 
-export const isPendingMessage = (message: SessionMessage): message is PendingUserMessage => "origin" in message
+export const isPendingMessage = (message: SessionMessage): message is OptimisticUserMessage => "origin" in message
 
 export type Found = { readonly found: boolean; readonly index: number }
 

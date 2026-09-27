@@ -33,7 +33,7 @@ Removed with the move: the renderer-phase perf marks (`window.__claxedoPerf*` ho
 
 ## Props (`message-timeline-props.ts`)
 
-Today's props keep their names, except `parentID` → `parentId`, and `status`, `directorySessions`, `workspaceId` and `sessionRef` moved into the host. `userMessages`, `navMessages` and `currentMessage` are `TranscriptUserMessage[]`: a runtime user message, or the optimistic stub the store keeps for a prompt the runtime has not echoed yet (`origin: "optimistic"`, `id`, `role`, `time.created`, no `summary`). `queued` is the runtime's held prompts (`QueuedMessages`), which the timeline draws after the last row until the admitted message appears in the conversation.
+Today's props keep their names, except `parentID` → `parentId`, and `status`, `directorySessions`, `workspaceId` and `sessionRef` moved into the host. `userMessages`, `navMessages` and `currentMessage` are `TranscriptUserMessage[]`: a runtime user message, or the optimistic stub the store keeps for a prompt the runtime has not echoed yet: the predicted echo (`id`, `role`, `time.created`, `agent`, `model`, no `summary`) with `origin: "optimistic"` and the prompt's own `parts`, which the user row draws until the echo replaces it. `queued` is the runtime's held prompts (`QueuedMessages`), which the timeline draws after the last row until the admitted message appears in the conversation.
 
 ## Data shapes
 
@@ -81,7 +81,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 - A failed turn keeps its assistant message, not only the error: that message's provider and model are what the turn dispatched with, and the error card names that provider.
 - Part rows mirror the renderer's registered part types (`PART_MAPPING` in `@/transcript`): a part other than text, reasoning or a tool renders only when a component exists for it; `file` carries assistant image, audio and resource-link attachments.
 - The turn's summary diffs keep the last diff per file in display order, with a Set so a large summary stays linear.
-- The indexes of assistant messages by parent and by pending completion exclude optimistic rows, which have no parent id and no completion time.
+- The indexes of assistant messages by parent and by pending completion exclude optimistic rows, which have no parent id and no completion time. A stub's parts are its own (`OptimisticUserMessage.parts`), not the conversation's, so the echo replaces message and parts in one step.
 - A stale uncompleted assistant message anchors on its parent only while that parent is the newest prompt; once a follow-up lands, the new user message owns the turn even if the old completion frame is still in flight.
 - An admitted prompt reaches the transcript over events before the next queue poll drops its record. The record carries the id the turn's user message gets, so the queued bubble yields to the row as soon as the row exists.
 - Per-message row inputs are equality-gated (`timeline-row-equality.ts`): a streaming part event produces a new conversation snapshot and a new by-parent map every tick, and identity comparisons turn that into work proportional to the changed turn. A session row's `lastTurn` is compared by the fields the timeline reads, because the session-cache row changes identity on every cache write.

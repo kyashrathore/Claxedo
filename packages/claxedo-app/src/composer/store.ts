@@ -1,5 +1,5 @@
 import { batch, createContext, useContext } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { createStore, produce, unwrap } from "solid-js/store"
 import type { PlacementId, SessionRef } from "@/server"
 import type {
   AttachmentState,
@@ -146,6 +146,24 @@ function draftActions(table: EntryTable) {
   }
 }
 
+function sentDraftActions(table: EntryTable) {
+  const { ensure, setEntries, persist } = table
+  return {
+    take: (key: ComposerKey): Draft => {
+      ensure(key)
+      const taken = { ...unwrap(table.entry(key).draft) }
+      setEntries(key, "draft", emptyDraft())
+      persist(key)
+      return taken
+    },
+    restore: (key: ComposerKey, draft: Draft) => {
+      ensure(key)
+      setEntries(key, "draft", draft)
+      persist(key)
+    },
+  }
+}
+
 function entryActions(table: EntryTable) {
   const { ensure, setEntries, persist } = table
   return {
@@ -174,6 +192,7 @@ export function createComposerStore(persistence?: ComposerPersistence) {
     history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => table.entry(key).history[mode],
     ...promptActions(table),
     ...draftActions(table),
+    ...sentDraftActions(table),
     ...entryActions(table),
   }
 }

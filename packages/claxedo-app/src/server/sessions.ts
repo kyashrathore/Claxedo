@@ -25,11 +25,17 @@ import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
 import { subagentsFromWire } from "./wire/subagents"
 
+function firstInputBody(prompt: SessionCreateInput["prompt"]) {
+  if (!prompt) return {}
+  return prompt.goal ? { goal: { objective: prompt.goal.objective } } : { prompt: promptBody(prompt, prompt.messageId) }
+}
+
 function createBody(input: SessionCreateInput) {
   return {
     ...(input.title ? { title: input.title } : {}),
     ...(input.harness ? { harness: harnessIdentity(input.harness) } : {}),
     ...(input.model ? { model: { providerID: input.model.providerId, id: input.model.modelId, ...(input.model.variant ? { variant: input.model.variant } : {}) } } : {}),
+    ...firstInputBody(input.prompt),
   }
 }
 
