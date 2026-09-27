@@ -2,20 +2,13 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../services"
-import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
+import { ControlPlaneProtocolError, type ControlPlaneHttpOptions } from "./protocol"
+import { txt } from "@claxedo/server-core/session/meta/shape"
 import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
 import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-
-export function runtimePath(path: string, query?: Record<string, string | undefined>) {
-  const url = new URL(path, "http://workspace-runtime.local")
-  for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, value)
-  }
-  return `${url.pathname}${url.search}`
-}
 
 export async function verifiedRuntimeJson(
   services: ControlPlaneServices,

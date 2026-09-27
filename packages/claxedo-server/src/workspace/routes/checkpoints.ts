@@ -7,6 +7,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "../route-support"
+import { relayRole } from "../../authority/pulled-session"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
@@ -185,10 +186,6 @@ async function authorized(
 
 export function workspaceCheckpointRoleAllowsWrite(role: string | undefined) {
   return role === "editor" || role === "admin" || role === "owner"
-}
-
-function relayRole(role: unknown): RelayRole | undefined {
-  return role === "viewer" || role === "editor" || role === "admin" || role === "owner" ? role : undefined
 }
 
 function service(

@@ -116,8 +116,8 @@ const ENTRIES = [
   // because this node composes no owner grants. No package edge.
   // +1 module: `routes/hosted/host-session-rows.ts`, the intake for the
   // session rows an enrolled machine publishes. No package edge.
-  // +1 module: `authority/pulled-session-time.ts`, the one owner of the update
-  // time both pulls list a pulled session at. No package edge.
+  // +1 module: `authority/pulled-session.ts`, the one reader of a session
+  // pull's answer that both pulls share. No package edge.
   // `script/product-boundary/policies/server.ts` holds the review; this is the
   // same measurement recorded a second time, so the two must agree. 129/41.
   { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 129, packages: 41 },

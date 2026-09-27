@@ -53,6 +53,7 @@ import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 import type { ControlPlaneServices } from "../../authority/services"
 import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
+import { relayRole } from "../../authority/pulled-session"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
@@ -246,10 +247,6 @@ function harnessWorkspaceId(directory: string) {
   return HARNESS_WORKSPACE_ID.test(candidate) ? candidate : undefined
 }
 
-function relayRoleOf(input: unknown): RelayRole | undefined {
-  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
-}
-
 // `/api/wr/health`'s shape, read defensively the way every other hosted
 // shape-mirror in this file reads a runtime/authority payload: an untyped
 // wire response, never a value this module minted itself.
@@ -377,7 +374,7 @@ export function hostedHarnessRuntimeStatus(
       if (err instanceof ControlPlaneAuthError) return undefined
       throw err
     })
-    const role = relayRoleOf(opened?.role)
+    const role = relayRole(opened?.role)
     if (!opened || !role) return undefined
     const workspaceRecord = opened.workspace
     const orgId = asString(workspaceRecord?.org_id) ?? asString(await authority.resolveOrgId(auth))

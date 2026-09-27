@@ -2,15 +2,17 @@ import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
-import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
-import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./runtime-transport"
-import type { RelayRole } from "@claxedo/workspace-relay"
-import { asRecord } from "@claxedo/helpers/guards"
-import { pulledSessionUpdatedAt } from "../pulled-session-time"
-
-function workspaceRoleAllowsWrite(role: unknown) {
-  return role === "editor" || role === "admin" || role === "owner"
-}
+import { ControlPlaneProtocolError, type ControlPlaneHttpOptions } from "./protocol"
+import { txt } from "@claxedo/server-core/session/meta/shape"
+import { runtimeJson, verifiedRuntimeJson } from "./runtime-transport"
+import {
+  messagesPayload,
+  pulledSession,
+  relayRole,
+  runtimePath,
+  sessionIsIdle,
+  workspaceRoleAllowsWrite,
+} from "../pulled-session"
 
 export async function resolveSessionGateway(
   services: ControlPlaneServices,
@@ -89,8 +91,8 @@ export async function pullControlSessionMessages(
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
-  const payload = messagesPayload(pulled)
-  const { updatedAt } = pulledSession(payload.session, input.sessionId)
+  const payload = messagesPayload(pulled, ControlPlaneProtocolError)
+  const { updatedAt } = pulledSession(payload.session, input.sessionId, ControlPlaneProtocolError)
   const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson(services, options, {
@@ -181,7 +183,7 @@ async function syncPulledSessionMetadata(
   sessionId: string,
   session: unknown,
 ) {
-  const visibility = pulledSession(session, sessionId)
+  const visibility = pulledSession(session, sessionId, ControlPlaneProtocolError)
   await services.projectionStore.sync_session_meta(ws, session)
   if (auth?.mode !== "signed") return
   await requireAuthority(services).upsertSessionVisibility(auth, { workspaceId: ws.id, sessions: [visibility] })
@@ -245,79 +247,3 @@ async function workspaceForPull(
   return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
 }
 
-function relayRole(value: unknown): RelayRole | undefined {
-  return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
-}
-
-function messagesPayload(input: unknown) {
-  const row = asRecord(input)
-  const session = asRecord(row?.session)
-  if (!row || !Array.isArray(row.messages) || !session) {
-    throw new ControlPlaneProtocolError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned an invalid message snapshot",
-    )
-  }
-  const maxEventOrdinal = row.maxEventOrdinal
-  const fencingToken = row.fencingToken
-  if (
-    maxEventOrdinal !== undefined
-    && (typeof maxEventOrdinal !== "number" || !Number.isInteger(maxEventOrdinal) || maxEventOrdinal < 0)
-  ) {
-    throw new ControlPlaneProtocolError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned an invalid message snapshot",
-    )
-  }
-  if (
-    fencingToken !== undefined
-    && (typeof fencingToken !== "number" || !Number.isSafeInteger(fencingToken) || fencingToken <= 0)
-  ) {
-    throw new ControlPlaneProtocolError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned an invalid message snapshot fence",
-    )
-  }
-  return {
-    messages: row.messages,
-    maxEventOrdinal,
-    fencingToken,
-    session,
-  }
-}
-
-function sessionPayloadId(input: unknown) {
-  const row = asRecord(input)
-  return txt(row?.id) ?? txt(row?.sessionId) ?? txt(row?.sessionID)
-}
-
-/**
- * A pulled session is refused before anything is projected unless it is the
- * requested session and carries its runtime's time.updated.
- */
-function pulledSession(input: unknown, sessionId: string) {
-  const row = asRecord(input)
-  if (!row || sessionPayloadId(row) !== sessionId) {
-    throw new ControlPlaneProtocolError(
-      409,
-      "workspace_runtime_session_mismatch",
-      "Workspace runtime session identity does not match requested session",
-    )
-  }
-  const title = txt(row.title) ?? txt(row.slug)
-  return {
-    sessionId,
-    ...(title ? { title } : {}),
-    updatedAt: pulledSessionUpdatedAt(row, ControlPlaneProtocolError),
-  }
-}
-
-function sessionIsIdle(input: unknown, sessionId: string) {
-  const statuses = asRecord(input)
-  if (!statuses) return false
-  if (!(sessionId in statuses)) return true
-  return asRecord(statuses[sessionId])?.type === "idle"
-}

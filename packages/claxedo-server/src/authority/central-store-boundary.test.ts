@@ -13,6 +13,7 @@ import { importPattern } from "../test-support/guards"
 const centralStoreFiles = [
   "http/session-pull.ts",
   "hosted-session-pull.ts",
+  "pulled-session.ts",
   "projection-store.ts",
   "../../../claxedo-server-core/src/platform/auth/durable-session-log.ts",
 ]

@@ -131,11 +131,13 @@ export const serverSelfHosted: Policy = {
    * as the hosted plane does. No package edge: zod, hono and the server-core
    * authority port were already here.
    *
-   * `src/authority/pulled-session-time.ts` is the reviewed owner of the update
-   * time a pulled session is listed at: the machine pull and the hosted pull
-   * both refuse a session without the runtime's `time.updated` through it,
-   * rather than each keeping its own copy. No package edge: `@claxedo/helpers`
-   * was already here.
+   * `src/authority/pulled-session.ts` is the reviewed owner of reading what a
+   * session pull brings back: the runtime path it asks, the workspace role the
+   * authority granted, the snapshot and its session identity, the update time
+   * the session is listed at (refused without the runtime's `time.updated`)
+   * and whether its intake is idle. The machine pull and the hosted pull both
+   * read through it rather than each keeping a copy. No package edge:
+   * `@claxedo/helpers` and `@claxedo/server-core` were already here.
    */
   ceilings: { modules: 129, packages: 41 },
 

@@ -8,11 +8,15 @@ import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import { pulledSessionUpdatedAt } from "./pulled-session-time"
-
-function workspaceRoleAllowsWrite(role: unknown) {
-  return role === "editor" || role === "admin" || role === "owner"
-}
+import {
+  messagesPayload,
+  pulledSession,
+  relayRole,
+  runtimePath,
+  sessionIsIdle,
+  workspaceRoleAllowsWrite,
+} from "./pulled-session"
+import { txt } from "@claxedo/server-core/session/meta/shape"
 
 export class HostedSessionPullError extends Error {
   constructor(
@@ -24,98 +28,9 @@ export class HostedSessionPullError extends Error {
   }
 }
 
-function txt(input: unknown) {
-  return typeof input === "string" && input.trim() ? input.trim() : undefined
-}
-
 function requireSignedAuth(auth: ControlPlaneAuthContext | undefined) {
   if (auth?.mode === "signed") return auth
   throw new HostedSessionPullError(401, "signed_auth_required", "Signed auth is required")
-}
-
-function relayRole(value: unknown): RelayRole | undefined {
-  return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
-}
-
-function messagesPayload(input: unknown) {
-  const row = asRecord(input)
-  const session = asRecord(row?.session)
-  if (!row || !Array.isArray(row.messages) || !session) {
-    throw new HostedSessionPullError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned an invalid message snapshot",
-    )
-  }
-  const maxEventOrdinal = row.maxEventOrdinal
-  const fencingToken = row.fencingToken
-  if (
-    maxEventOrdinal !== undefined
-    && (typeof maxEventOrdinal !== "number" || !Number.isInteger(maxEventOrdinal) || maxEventOrdinal < 0)
-  ) {
-    throw new HostedSessionPullError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned an invalid message snapshot",
-    )
-  }
-  if (
-    fencingToken !== undefined
-    && (typeof fencingToken !== "number" || !Number.isSafeInteger(fencingToken) || fencingToken <= 0)
-  ) {
-    throw new HostedSessionPullError(
-      502,
-      "workspace_runtime_snapshot_invalid",
-      "Workspace runtime returned an invalid message snapshot fence",
-    )
-  }
-  return {
-    messages: row.messages,
-    maxEventOrdinal,
-    fencingToken,
-    session,
-  }
-}
-
-function sessionPayloadId(input: unknown) {
-  const row = asRecord(input)
-  return txt(row?.id) ?? txt(row?.sessionId) ?? txt(row?.sessionID)
-}
-
-/**
- * A pulled session is refused before anything is projected unless it is the
- * requested session and carries its runtime's time.updated.
- */
-function pulledSession(input: unknown, sessionId: string) {
-  const row = asRecord(input)
-  if (!row || sessionPayloadId(row) !== sessionId) {
-    throw new HostedSessionPullError(
-      409,
-      "workspace_runtime_session_mismatch",
-      "Workspace runtime session identity does not match requested session",
-    )
-  }
-  const title = txt(row.title) ?? txt(row.slug)
-  return {
-    sessionId,
-    ...(title ? { title } : {}),
-    updatedAt: pulledSessionUpdatedAt(row, HostedSessionPullError),
-  }
-}
-
-function sessionIsIdle(input: unknown, sessionId: string) {
-  const statuses = asRecord(input)
-  if (!statuses) return false
-  if (!(sessionId in statuses)) return true
-  return asRecord(statuses[sessionId])?.type === "idle"
-}
-
-function runtimePath(path: string, query?: Record<string, string | undefined>) {
-  const url = new URL(path, "http://workspace-runtime.local")
-  for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, value)
-  }
-  return `${url.pathname}${url.search}`
 }
 
 async function hostedWorkspaceForPull(
@@ -290,8 +205,8 @@ export async function pullHostedControlSessionMessages(
     ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
-  const payload = messagesPayload(pulled)
-  const { updatedAt } = pulledSession(payload.session, input.sessionId)
+  const payload = messagesPayload(pulled, HostedSessionPullError)
+  const { updatedAt } = pulledSession(payload.session, input.sessionId, HostedSessionPullError)
   const syncAuthority = async (messages: unknown[], maxEventOrdinal: number, fencingToken?: number) => {
     const intakeReady = await runtimeJson(services, signed, {
       ...target,
@@ -380,7 +295,7 @@ async function syncHostedSessionMetadata(
   sessionId: string,
   session: unknown,
 ) {
-  const visibility = pulledSession(session, sessionId)
+  const visibility = pulledSession(session, sessionId, HostedSessionPullError)
   await services.projectionStore.sync_session_meta(target.ws, session)
   await requireAuthority(services).upsertSessionVisibility(auth, {
     workspaceId: target.workspaceId,
