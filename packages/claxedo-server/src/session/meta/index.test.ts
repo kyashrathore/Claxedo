@@ -489,8 +489,6 @@ describe("session meta", () => {
       project_id: "proj_1",
       directory: "/tmp/repo-a",
       kind: "local" as const,
-      created_at: 1,
-      updated_at: 1,
     }, [
       { id: "shared", title: "A", time: { created: 1, updated: 20 } },
     ])
@@ -499,8 +497,6 @@ describe("session meta", () => {
       project_id: "proj_2",
       directory: "/tmp/repo-b",
       kind: "local" as const,
-      created_at: 1,
-      updated_at: 1,
     }, [
       { id: "shared", title: "B", time: { created: 1, updated: 30 } },
     ])

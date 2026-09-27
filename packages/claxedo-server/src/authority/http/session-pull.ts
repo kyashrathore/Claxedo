@@ -1,4 +1,4 @@
-import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+import { resolveWorkspace, type SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
@@ -179,7 +179,7 @@ export async function pullControlSessionMessages(
 async function syncPulledSessionMetadata(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
-  ws: Workspace,
+  ws: SessionProjectionWorkspace,
   sessionId: string,
   session: unknown,
 ) {
@@ -234,16 +234,13 @@ async function workspaceForPull(
   const orgId = txt(opened?.workspace?.org_id)
     ?? (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(auth)) : undefined)
   const projectId = txt(opened?.workspace?.project_id)
-  const stamp = Date.now()
   const ws = {
     id: workspaceId,
     ...(orgId ? { org_id: orgId } : {}),
     ...(projectId ? { project_id: projectId } : {}),
     directory: `workspace:${workspaceId}`,
     kind: "cloud",
-    created_at: stamp,
-    updated_at: stamp,
-  } satisfies Workspace
+  } satisfies SessionProjectionWorkspace
   return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
 }
 

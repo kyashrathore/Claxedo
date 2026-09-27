@@ -15,7 +15,7 @@ export async function verifiedRuntimeJson(
   options: ControlPlaneHttpOptions,
   input: {
     workspaceId: string
-    ws: Workspace
+    ws: Pick<Workspace, "org_id">
     authorityWorkspace?: WorkspaceRecord
     authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
@@ -46,7 +46,7 @@ export async function runtimeJson(
   options: ControlPlaneHttpOptions,
   input: {
     workspaceId: string
-    ws: Workspace
+    ws: Pick<Workspace, "org_id">
     authorityWorkspace?: WorkspaceRecord
     authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
@@ -70,7 +70,7 @@ async function runtimeFetch(
   options: ControlPlaneHttpOptions,
   input: {
     workspaceId: string
-    ws: Workspace
+    ws: Pick<Workspace, "org_id">
     authorityWorkspace?: WorkspaceRecord
     authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext

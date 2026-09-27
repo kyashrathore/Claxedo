@@ -1,6 +1,6 @@
 import { ClaxedoDB, desc, eq } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable } from "./cloud.sql"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 
 function now() {
@@ -19,13 +19,13 @@ function messageId(input: unknown, session_id: string, ordinal: number) {
   return asString(row?.id) ?? asString(info?.id) ?? `${session_id}:${ordinal}`
 }
 
-function cloud(ws: Workspace) {
+function cloud(ws: SessionProjectionWorkspace) {
   return ws.kind === "cloud"
 }
 
 /** Whether the cloud messages were written. A non-cloud workspace stores nothing. */
 export async function syncCloudMessages(
-  ws: Workspace,
+  ws: SessionProjectionWorkspace,
   session_id: string,
   messages: unknown[],
   options: { maxEventOrdinal?: number } = {},

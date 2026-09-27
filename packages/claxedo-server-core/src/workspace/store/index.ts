@@ -73,6 +73,8 @@ export type Workspace = {
   updated_at: number
 }
 
+export type SessionProjectionWorkspace = Pick<Workspace, "id" | "org_id" | "project_id" | "directory" | "kind">
+
 /**
  * A workspace as the project catalog publishes it: the stored row plus the two
  * facts only the serving process can answer — whether its directory is still

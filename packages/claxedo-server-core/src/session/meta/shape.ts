@@ -1,6 +1,6 @@
 import { isOneOf } from "../../platform/runtime/lib/json"
 import { SESSION_ATTACHMENT_KINDS, type SessionAttachment } from "./types"
-import type { Workspace } from "../../workspace/store"
+import type { SessionProjectionWorkspace, Workspace } from "../../workspace/store"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
 
@@ -91,7 +91,7 @@ export function storedSessionRef(input: {
   return `local:${input.directory ?? "global"}:session:${input.session_id}`
 }
 
-export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
+export function sessionMetaSyncRow(input: unknown, ws?: SessionProjectionWorkspace) {
   const item = asRecord(input)
   const session_id = txt(item?.id)
   if (!item || !session_id || (item.host !== undefined && !host(item.host))) return undefined

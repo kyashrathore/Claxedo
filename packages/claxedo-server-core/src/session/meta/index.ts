@@ -26,7 +26,7 @@ import {
   sessionMetaMapByRef,
   sessionMetaMapBySessionId,
 } from "./read"
-import { resolveWorkspace, type Workspace } from "../../workspace/store"
+import { resolveWorkspace, type SessionProjectionWorkspace, type Workspace } from "../../workspace/store"
 import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
 import { sessionOrderSql, type SessionOrderColumns } from "../navigation-order"
@@ -51,7 +51,7 @@ export { parseSessionMeta } from "./shape"
  * exactly one population — the engine's own sessions — so the stale sweep is
  * scoped to it and refuses to act on a snapshot that carries no evidence.
  */
-export async function syncSessionMetas(ws: Workspace | undefined, input: unknown[]) {
+export async function syncSessionMetas(ws: SessionProjectionWorkspace | undefined, input: unknown[]) {
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))
   const inserted = await upsertRows(rows)
   await announceInventoryChange(inserted, ws)
@@ -87,7 +87,7 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   reportSessionMetaChanges([{ kind: "workspace", workspaceId: ws.id }])
 }
 
-export async function syncSessionMeta(ws: Workspace | undefined, input: unknown) {
+export async function syncSessionMeta(ws: SessionProjectionWorkspace | undefined, input: unknown) {
   const row = sessionMetaSyncRow(input, ws)
   const inserted = await upsertRows([row])
   await announceInventoryChange(inserted, ws)
@@ -118,7 +118,7 @@ export async function deleteSessionMeta(sessionID: string) {
  * Rings `cp/events` once per workspace whose inventory gained or lost a row.
  * After the write has committed, so the read the notice provokes sees the row.
  */
-async function announceInventoryChange(workspaceIDs: Array<string | null | undefined>, ws?: Workspace) {
+async function announceInventoryChange(workspaceIDs: Array<string | null | undefined>, ws?: SessionProjectionWorkspace) {
   const ts = Date.now()
   for (const workspaceId of new Set(workspaceIDs.flatMap((id) => (id ? [id] : [])))) {
     const workspace = ws?.id === workspaceId ? ws : await resolveWorkspace({ workspaceId }).catch(() => undefined)

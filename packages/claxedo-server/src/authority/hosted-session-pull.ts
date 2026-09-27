@@ -1,5 +1,5 @@
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -7,7 +7,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
-import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   messagesPayload,
   pulledSession,
@@ -48,22 +48,18 @@ async function hostedWorkspaceForPull(
     txt(workspace?.org_id) ??
     txt(workspace?.orgId) ??
     (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(signed)) : undefined)
-  const stamp = Date.now()
   const ws = {
     id: workspaceId,
     ...(orgId ? { org_id: orgId } : {}),
     directory: `workspace:${workspaceId}`,
     kind: "cloud",
-    status: "ready",
-    created_at: asFiniteNumber(workspace?.created_at) ?? asFiniteNumber(workspace?.createdAt) ?? stamp,
-    updated_at: asFiniteNumber(workspace?.updated_at) ?? asFiniteNumber(workspace?.updatedAt) ?? stamp,
-  } satisfies Workspace
+  } satisfies SessionProjectionWorkspace
   return { workspaceId, ws, workspace, role }
 }
 
 type RuntimePullInput = {
   workspaceId: string
-  ws: Workspace
+  ws: SessionProjectionWorkspace
   hostId: string
   routingId?: string
   homeRegion: ClaxedoRegion
@@ -291,7 +287,7 @@ export async function pullHostedControlSessionMessages(
 async function syncHostedSessionMetadata(
   services: ControlPlaneServices,
   auth: ReturnType<typeof requireSignedAuth>,
-  target: { workspaceId: string; ws: Workspace },
+  target: { workspaceId: string; ws: SessionProjectionWorkspace },
   sessionId: string,
   session: unknown,
 ) {

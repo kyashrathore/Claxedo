@@ -1,5 +1,5 @@
 import type { AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
-import type { Workspace } from "../workspace/store/index"
+import type { SessionProjectionWorkspace, Workspace } from "../workspace/store/index"
 import type {
   SessionAttachment,
   SessionMeta,
@@ -19,10 +19,10 @@ import type { ReplayMessage, SessionMessagePage } from "../session/message-repla
  * The hosted `ProjectionStore` extends this with its channel methods.
  */
 export type SessionProjectionStore = {
-  sync_session_meta: (ws: Workspace | undefined, input: unknown) => Promise<void>
-  sync_session_metas: (ws: Workspace | undefined, input: unknown[]) => Promise<void>
+  sync_session_meta: (ws: SessionProjectionWorkspace | undefined, input: unknown) => Promise<void>
+  sync_session_metas: (ws: SessionProjectionWorkspace | undefined, input: unknown[]) => Promise<void>
   sync_session_messages: (
-    ws: Workspace | undefined,
+    ws: SessionProjectionWorkspace | undefined,
     sessionID: string,
     messages: unknown[],
     options?: { maxEventOrdinal?: number },

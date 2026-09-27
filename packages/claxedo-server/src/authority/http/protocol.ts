@@ -25,7 +25,7 @@ export type ControlPlaneHttpOptions = {
   cliTokenEnv?: Record<string, string | undefined>
   runtimeFetch?: (input: {
     workspaceId: string
-    ws: Workspace
+    ws: Pick<Workspace, "org_id">
     authorityWorkspace?: WorkspaceRecord
     authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
