@@ -1,5 +1,6 @@
-import { marked, type Token } from "marked"
+import { Marked, type Token } from "marked"
 import remend from "remend"
+import { transcriptMarkdownExtensions } from "@/ui/utils"
 
 export type Block = {
   raw: string
@@ -7,7 +8,10 @@ export type Block = {
   mode: "full" | "live" | "code"
   language?: string
   complete?: boolean
+  tokens?: Token[]
 }
+
+export const transcriptMarked = new Marked(...transcriptMarkdownExtensions)
 
 export type Projection = {
   text: string
@@ -76,14 +80,17 @@ function heal(text: string) {
 }
 
 function complete(text: string) {
-  const tokens = marked.lexer(text)
+  const tokens = transcriptMarked.lexer(text)
   const defs = refs(text) ? definitionSuffix(tokens.links ?? {}) : ""
   return withDefinitions(tokens.reduce<Block[]>((result, token) => {
     if (token.type === "space") {
       const previous = result.at(-1)
       if (!previous) return result
       previous.raw += token.raw
-      if (previous.mode === "full") previous.src += token.raw
+      if (previous.mode === "full") {
+        previous.src += token.raw
+        previous.tokens?.push(token)
+      }
       return result
     }
     const fence = codeBlock(token)
@@ -97,14 +104,14 @@ function complete(text: string) {
       })
       return result
     }
-    result.push({ raw: token.raw, src: token.raw, mode: "full" })
+    result.push({ raw: token.raw, src: token.raw, mode: "full", tokens: [token] })
     return result
   }, []), defs)
 }
 
 export function stream(text: string, live: boolean): Block[] {
   if (!live) return complete(text)
-  const tokens = marked.lexer(text)
+  const tokens = transcriptMarked.lexer(text)
   const defs = refs(text) ? definitionSuffix(tokens.links ?? {}) : ""
   const tail = tokens.findLastIndex((token) => token.type !== "space")
   if (tail < 0) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
@@ -115,14 +122,19 @@ export function stream(text: string, live: boolean): Block[] {
   for (let index = 0; index < tail; index++) {
     const token = tokens[index]
     if (!token || token.type === "space") continue
+    const group = [token]
     let raw = token.raw
-    while (tokens[index + 1]?.type === "space" && index + 1 < tail) raw += tokens[++index].raw
+    while (tokens[index + 1]?.type === "space" && index + 1 < tail) {
+      const space = tokens[++index]!
+      group.push(space)
+      raw += space.raw
+    }
     const fence = codeBlock(token)
     if (fence) {
       result.push({ raw, src: fence.text, mode: "code", language: language(fence.lang), complete: true })
       continue
     }
-    result.push({ raw, src: raw, mode: "full" })
+    result.push({ raw, src: raw, mode: "full", tokens: group })
   }
 
   const raw = tokens

@@ -1,8 +1,7 @@
-import { checksum, markdownEnhances, transcriptMarkdownExtensions } from "@/ui/utils"
-import { Marked } from "marked"
+import { checksum, markdownEnhances } from "@/ui/utils"
 import { bundledLanguages } from "shiki"
 import { codeThemeName } from "./code-theme-name"
-import type { Block, Projection } from "./markdown-stream"
+import { transcriptMarked, type Block, type Projection } from "./markdown-stream"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { getCachedCodeHighlight } from "./markdown-code-cache"
@@ -40,20 +39,18 @@ export function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
 }
 
-const syncParser = new Marked(...transcriptMarkdownExtensions)
-
 export function blockHash(raw: string, final: boolean) {
   const hash = checksum(raw) ?? ""
   return final ? hash : `${hash}:first-paint`
 }
 
-function syncRichHtml(src: string): { html: string; final: boolean } {
+function syncRichHtml(block: Block): { html: string; final: boolean } {
   try {
-    const parsed = syncParser.parse(src, { async: false })
-    if (typeof parsed !== "string") return { html: fallback(src), final: false }
+    const parsed = block.tokens ? transcriptMarked.parser(block.tokens) : transcriptMarked.parse(block.src, { async: false })
+    if (typeof parsed !== "string") return { html: fallback(block.src), final: false }
     return { html: sanitizeMarkdown(parsed), final: !markdownEnhances(parsed) }
   } catch {
-    return { html: fallback(src), final: false }
+    return { html: fallback(block.src), final: false }
   }
 }
 
@@ -72,7 +69,7 @@ export function syncBlock(owner: string, cacheKey: string | undefined, index: nu
       unstable: [[block.src, ""] as MarkdownToken],
     }
   }
-  const { html, final } = syncRichHtml(block.src)
+  const { html, final } = syncRichHtml(block)
   return { key, mode: block.mode, raw: block.raw, hash: blockHash(block.raw, final), html, final }
 }
 
