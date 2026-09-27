@@ -131,8 +131,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     annotations: props.comments?.annotations,
   }))
 
-  const stamp = () => {
-    stampFrame = undefined
+  const stampRows = () => {
     const current = view
     const host = root
     if (!current || !host) return
@@ -147,10 +146,16 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
         element.style.minHeight = "1px"
       }
     }
-    handFocusToHeader(host)
-    host.dataset.reviewRenderedFiles = String(rendered.length)
-    host.dataset.reviewTotalFiles = String(props.diffs.length)
-    if (props.onDiffContentRequired) {
+    const renderedFiles = String(rendered.length)
+    if (host.dataset.reviewRenderedFiles !== renderedFiles) host.dataset.reviewRenderedFiles = renderedFiles
+    const totalFiles = String(props.diffs.length)
+    if (host.dataset.reviewTotalFiles !== totalFiles) host.dataset.reviewTotalFiles = totalFiles
+  }
+
+  const stamp = () => {
+    stampRows()
+    const current = view
+    if (current && props.onDiffContentRequired) {
       const visible = current.getRenderedItemIds()
       const nearby = current.getRenderedItemIds({ before: 2, after: 2 })
       props.onDiffContentRequired([...new Set([...visible, ...nearby])].filter(expanded))
@@ -192,11 +197,10 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
 
   const stampSoon = () => {
     if (!view || stampFrame !== undefined) return
-    if (typeof requestAnimationFrame !== "function") {
+    stampFrame = requestAnimationFrame(() => {
+      stampFrame = undefined
       stamp()
-      return
-    }
-    stampFrame = requestAnimationFrame(stamp)
+    })
   }
 
   onMount(() => {
@@ -242,6 +246,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
         : {}),
       onPostRender: () => {
         props.onDiffRendered?.()
+        stampRows()
         stampSoon()
       },
     }
@@ -264,6 +269,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
         }
         setCustomFiles((files) => files.filter((file) => custom.has(file)))
         comments?.onRenderedFilesChange([...rendered].filter(expanded))
+        stampRows()
         stampSoon()
       },
     })
@@ -272,6 +278,8 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     instance.render(true)
     props.anchorTopRef?.((file) => instance.getTopForItem(file))
     tryReveal()
+    stampRows()
+    stampSoon()
 
     const scroller = host
     scroller.dataset.scrollable = "true"
@@ -282,14 +290,13 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     }
     scroller.addEventListener("scroll", forwardScroll, { passive: true })
     const unsubscribe = instance.subscribeToScroll(() => stampSoon())
-    stampSoon()
 
     onCleanup(() => {
       view = undefined
       props.anchorTopRef?.(undefined)
       unsubscribe()
       scroller.removeEventListener("scroll", forwardScroll)
-      if (stampFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(stampFrame)
+      if (stampFrame !== undefined) cancelAnimationFrame(stampFrame)
       instance.cleanUp()
       headerHosts.clear()
       setHeaderFiles([])
@@ -305,9 +312,14 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       if (previous === undefined) return
       const holder = customFileHolding(document.activeElement)
       view?.setItems(next)
-      if (holder && !customHosts.get(holder)?.isConnected) focusHandoff = holder
+      if (holder && !customHosts.get(holder)?.isConnected) {
+        focusHandoff = holder
+        const host = root
+        if (host) requestAnimationFrame(() => handFocusToHeader(host))
+      }
       if (props.revealTarget) view?.render(true)
       tryReveal()
+      stampRows()
       stampSoon()
     },
   ))
