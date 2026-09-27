@@ -1,6 +1,5 @@
 import fs from "node:fs/promises"
-import path from "node:path"
-import { isMissingFile } from "@claxedo/helpers/fs"
+import { isMissingFile, writeFileAtomic } from "@claxedo/helpers/fs"
 
 export class LivePluginStoreError extends Error {
   readonly file: string
@@ -28,8 +27,5 @@ export async function readJsonFileIfPresent(file: string): Promise<unknown | und
 }
 
 export async function writeJsonFileAtomically(file: string, value: unknown): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true })
-  const staged = `${file}.${process.pid}.${Date.now()}.tmp`
-  await fs.writeFile(staged, `${JSON.stringify(value, null, 2)}\n`)
-  await fs.rename(staged, file)
+  await writeFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`, { mkdir: true })
 }
