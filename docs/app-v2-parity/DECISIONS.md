@@ -320,3 +320,9 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Owner, 2026-09-27: a switched-to session paints at its latest turn, bottom-anchored
 - Replaces the rail bullet of "a session's first load shows the turn peek rail…" (2026-09-26): the pane no longer waits for the older page.
 - A switched-to session shows as soon as its latest turn is complete and laid out, at the bottom of the view where it stays. The older page loads right after and lands above without moving what is on screen; the rail appears in the frame the page brings the turn count above ten, in a gutter on both sides, so the transcript does not shift.
+
+## Orchestrator, 2026-09-27: Composer and Workspace panel budgets reviewed; the panel's hidden navigator view unmounts
+- **Composer: 11,154.** The 11,141 above was reviewed and accepted. Of the 13 lines above it, 12 are the kit v2 controls merged beside the footer seed and 1 is the helpers split of `persistence.ts`'s record import. The budget is the measured 11,154, with no headroom.
+- **Workspace panel: 1,752.** `createExposed` (`src/panel/exposed.ts`) is the one open-signal-plus-close-grace hold, and both the panel frame and the navigator column use it. The budget is the measured 1,752, with no headroom.
+- **Only the navigator view on screen is mounted** (owner rule: hidden panes unmount). Files and Changes keep their view state per placement in `FilesProvider` and `ReviewProvider`, through the shell's `createPlacementState`: expanded folders, reveal batches, search, sections and scroll position. A remounted view puts its scroll position back once its rows render (`@/lib/scroll-restore`).
+- **The diff worker pool's main-thread highlighter uses shiki's JS regex engine** (`patches/@pierre%2Fdiffs@1.4.3.patch`), not the Oniguruma WASM engine. Only the path where the worker fails reaches it. The token differences are recorded in `src/transcript/README.md`.
