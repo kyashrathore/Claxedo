@@ -25,7 +25,9 @@ function entryBytes(entry: CodeHighlightEntry) {
   return bytes
 }
 
-const cache = createByteBoundedCache<string, CodeHighlightEntry>({ entries: 4096, bytes: 8_000_000 }, (_key, entry) => entryBytes(entry))
+const codeHighlightCacheLimits = { entries: 4096, bytes: 8_000_000 }
+
+const cache = createByteBoundedCache<string, CodeHighlightEntry>(codeHighlightCacheLimits, (_key, entry) => entryBytes(entry))
 
 export function getCachedCodeHighlight(src: string, language: string, theme: string) {
   const key = cacheKey(src, language, theme)

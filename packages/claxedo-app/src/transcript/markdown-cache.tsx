@@ -8,10 +8,9 @@ export type MarkdownCacheEntry = {
   html: string
 }
 
-const cache = createByteBoundedCache<string, MarkdownCacheEntry>(
-  { entries: 4096, bytes: 8_000_000 },
-  (_key, value) => value.raw.length + value.html.length,
-)
+const markdownCacheLimits = { entries: 4096, bytes: 8_000_000 }
+
+const cache = createByteBoundedCache<string, MarkdownCacheEntry>(markdownCacheLimits, (_key, value) => value.raw.length + value.html.length)
 
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
@@ -105,10 +104,9 @@ export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
   cache.set(key, value)
 }
 
-const mermaidCache = createByteBoundedCache<string, string>(
-  { entries: 256, bytes: 2_000_000 },
-  (source, svg) => source.length + svg.length,
-)
+const mermaidSvgCacheLimits = { entries: 256, bytes: 2_000_000 }
+
+const mermaidCache = createByteBoundedCache<string, string>(mermaidSvgCacheLimits, (source, svg) => source.length + svg.length)
 
 export function getCachedMermaidSvg(source: string): string | undefined {
   return mermaidCache.get(source)
