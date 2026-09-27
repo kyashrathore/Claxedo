@@ -3,8 +3,8 @@ import { useTranslator } from "@/i18n"
 import { usageDictionary } from "./i18n"
 import { UsageSection } from "./view/usage-section"
 
-export type { QuotaAccount, QuotaWindow } from "./model"
-export { QuotaWindowMeter, useWindowName } from "./view/quota-windows"
+export type { QuotaWindow } from "./model"
+export { useWindowName } from "./view/quota-windows"
 
 export const usageSettingsSection: SettingsSection = {
   id: "usage",

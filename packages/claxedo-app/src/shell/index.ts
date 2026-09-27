@@ -2,11 +2,9 @@ export type {
   AnyPaneKind,
   CommandEntry,
   Disposer,
-  IconSkin,
   Json,
   MentionEntry,
   MentionSource,
-  OverlayEntry,
   PageEntry,
   PageProps,
   PaneKind,
@@ -22,21 +20,17 @@ export type {
   ThemeEntry,
 } from "./types"
 export type { FirstPartyEntries } from "./registries"
-export { byOrder, createRegistry, createShellRegistries, ShellRegistriesContext, useShellRegistries } from "./registries"
-export type { RouteParams, ShellRoute } from "./routes"
-export { draftPath, fillPattern, homePath, localSessionPath, matchPattern, sessionLinkPath, parseRoute, panePlacementOf, placementOf, sessionPath, settingsPath, sidebarModeOf, terminalPath } from "./routes"
+export { byOrder, createShellRegistries, ShellRegistriesContext, useShellRegistries } from "./registries"
+export { draftPath, fillPattern, localSessionPath, sessionLinkPath, panePlacementOf, sessionPath, settingsPath } from "./routes"
 export type { ShellRouterComponent, ShellRouting } from "./router"
 export { ShellRouter, useShellRoute } from "./router"
-export { createPlacementState, type PlacementState } from "./placement-state"
-export type { ShellLayoutEvent, ShellLayoutState, SideRegion, SidebarRegion, PhoneOverlay, WideRegions } from "./model"
-export type { ShellLayout } from "./layout"
+export { createPlacementState } from "./placement-state"
 export { useShellLayout } from "./layout"
 export type { Commands } from "./palette/commands"
-export { DialogSelectFile, type DialogSelectFileProps } from "./palette/select-file"
+export { DialogSelectFile } from "./palette/select-file"
 export { PALETTE_ID, useCommands } from "./palette/commands"
-export type { CommandOption, CommandSource } from "./palette/registrations"
-export type { AppShellProps } from "./view/app-shell"
+export type { CommandOption } from "./palette/registrations"
 export { AppShell } from "./view/app-shell"
-export { iconNameOf, RegistryIcon } from "./view/icon"
+export { RegistryIcon } from "./view/icon"
 export { pageTabPaneKind } from "./view/page-tab"
 export { settingsPage } from "./view/settings-page"
