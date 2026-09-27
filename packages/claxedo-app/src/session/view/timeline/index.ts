@@ -31,7 +31,6 @@ export { providerErrorDetail, providerLabel, providerUsageLimitDetail, stripRela
 export { sessionTitle } from "./session-title"
 export { latchSessionTitle, type LatchedSessionTitle } from "./session-title-latch"
 export { createActivePaneProjection } from "./active-pane-projection"
-export { subagentHostCallIds } from "./subagent-parts"
 export { sessionMessageScrollInset } from "./session-message-scroll-position"
 export { messageAuthor, MessageAuthorAvatar, MessageAuthorLane } from "./message-author"
 export * from "./message-gesture"

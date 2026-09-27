@@ -83,7 +83,6 @@ import { formatDuration } from "@/transcript"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
-import { subagentHostCallIds } from "./subagent-parts"
 import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import { TimelineUserMessage } from "./timeline-user-message"
 import {
@@ -318,11 +317,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const directorySessionRows = createActivePaneProjection({ active: displayed, read: host.sessions, initial: [] as readonly TimelineSessionRow[] })
   const directorySession = (sessionId: string | undefined) =>
     sessionId ? directorySessionRows().find((session) => session.id === sessionId) : undefined
-  const hostCallIds = createMemo(whileOnScreen(props.onScreen, () => subagentHostCallIds(sessionConversation()?.parts ?? {})))
   const resolveAmbientSubagents = () => {
     const id = sessionId()
     if (!id) return []
-    return (data.resolveSubagents?.(id, undefined, hostCallIds()) ?? []).filter((subagent) => subagent.ambient)
+    return (data.resolveSubagents?.(id) ?? []).filter((subagent) => subagent.ambient)
   }
   const ambientSubagents = createActivePaneProjection({
     active: displayed,

@@ -32,9 +32,9 @@ export function SessionTimeline(props: {
   const current = () => users().find((message) => message.id === props.scroll.selected())
   const t = useSessionScreenText()
   const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
-  const resolveSubagents = (parentSessionId: string, toolCallId?: string, hostableCallIds?: ReadonlySet<string>) =>
+  const resolveSubagents = (parentSessionId: string, toolCallId?: string) =>
     parentSessionId === props.view.ref.sessionId
-      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, hostableCallIds, historyComplete: !props.view.hasOlder() })
+      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId })
       : []
   return (
     <TranscriptKitProviders>

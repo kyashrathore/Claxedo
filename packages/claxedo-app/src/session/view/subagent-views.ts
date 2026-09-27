@@ -25,22 +25,14 @@ function resolutionOf(entry: SessionSubagent, kind: SubagentView["transcriptKind
   return kind === "live" || kind === "file" || kind === "messages" ? "not-yet-bound" : "unavailable"
 }
 
-function ambientOf(entry: SessionSubagent, hostableCallIds: ReadonlySet<string> | undefined, historyComplete: boolean): boolean {
-  if (entry.toolCallEdges.size === 0) return true
-  if (hostableCallIds === undefined || !historyComplete) return false
-  return ![...entry.toolCallEdges.keys()].some((id) => hostableCallIds.has(id))
-}
-
 type ViewContext = {
   readonly parentSessionId: string
   readonly labels: SubagentLabels
   readonly toolCallId?: string
-  readonly hostableCallIds?: ReadonlySet<string>
-  readonly historyComplete: boolean
 }
 
 function subagentView(entry: SessionSubagent, context: ViewContext): SubagentView {
-  const { parentSessionId, labels, toolCallId, hostableCallIds } = context
+  const { parentSessionId, labels, toolCallId } = context
   const transcriptKind = transcriptOf(entry)
   const role = toolCallId ? entry.toolCallEdges.get(toolCallId) : undefined
   return {
@@ -55,7 +47,7 @@ function subagentView(entry: SessionSubagent, context: ViewContext): SubagentVie
     ...(entry.childSessionId ? { childSessionId: entry.childSessionId } : {}),
     transcriptKind,
     resolution: resolutionOf(entry, transcriptKind),
-    ambient: ambientOf(entry, hostableCallIds, context.historyComplete),
+    ambient: entry.toolCallEdges.size === 0,
   }
 }
 

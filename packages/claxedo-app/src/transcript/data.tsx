@@ -77,11 +77,7 @@ export type DataProviderProps = {
   onSessionHref?: SessionHrefFn
   onTaskHref?: TaskHrefFn
   onClaxedoToolHref?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined
-  resolveSubagents?: (
-    parentSessionId: string,
-    toolCallId?: string,
-    hostableCallIds?: ReadonlySet<string>,
-  ) => SubagentView[]
+  resolveSubagents?: (parentSessionId: string, toolCallId?: string) => SubagentView[]
   fileUrl?: (path: string) => string | undefined
   readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
 }
