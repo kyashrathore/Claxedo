@@ -35,6 +35,12 @@ export async function openSection(app: Page, isMobile: boolean, section: Section
   await expect(app.getByRole("heading", { level: 1, name: section })).toBeVisible()
 }
 
+export async function leaveSettings(app: Page, isMobile: boolean) {
+  await showSettingsNav(app, isMobile)
+  await app.getByRole("link", { name: "Back", exact: true }).click()
+  await expect(app.getByTestId("settings-sidebar")).toHaveCount(0)
+}
+
 export async function openSettings(app: Page, isMobile: boolean) {
   await revealRail(app, isMobile)
   await app.getByRole("button", { name: UI.signedOutAccount }).click()

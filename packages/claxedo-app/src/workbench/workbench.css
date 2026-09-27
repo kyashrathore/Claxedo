@@ -57,14 +57,16 @@
   pointer-events: none;
 }
 
-.workbench-slot[data-presence="outgoing"]::after {
-  content: "";
+.workbench-handover {
   position: absolute;
-  inset: 0 0 auto 0;
+  pointer-events: none;
+}
+
+.workbench-handover-cue {
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--v2-border-border-strong, #4a4444), transparent) 0 0 / 40% 100% no-repeat;
   opacity: 0;
-  animation: workbench-handover-cue 1.2s linear 150ms 50;
+  animation: workbench-handover-cue 1.2s linear 150ms infinite;
 }
 
 @keyframes workbench-handover-cue {
@@ -85,7 +87,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .workbench-slot[data-presence="outgoing"]::after {
+  .workbench-handover-cue {
     background-size: 100% 100%;
     animation: workbench-handover-cue-still 0s linear 150ms forwards;
   }

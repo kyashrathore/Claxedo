@@ -37,6 +37,7 @@ export { REFUSED_BACKGROUND_TARGETS, unexpectedEgress, type EgressAttempt, type 
 export { SCRIPTED_PROVIDER_IDS, type ScriptedProviderId } from "./scripted-providers"
 export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolCall } from "./scripted-model-server"
 export { expectWithinBaseline, settled, type Surface } from "./a11y"
+export { expectNothingAnimating } from "./animations"
 export { sessionRoute, UI } from "./ui-names"
 export { sendPrompt, type SendOptions } from "./composer"
 export { apiRequests } from "./requests"

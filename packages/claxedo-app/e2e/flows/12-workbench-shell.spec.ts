@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { acpScriptToken, apiRequests, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
+import { acpScriptToken, apiRequests, expect, expectNothingAnimating, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
 import { recordSwitchFrames, switchReport, type SwitchReport } from "./12-switch-paint.frames"
 
 function panes(app: Page) {
@@ -130,6 +130,17 @@ test("12 closing every tab leaves the workspace's new-session composer, and New 
   await expect(app).toHaveURL(new RegExp(`/w/${workspace.id}(/session)?$`))
 })
 
+test("12 a session opened from the new-session composer leaves nothing animating once it is shown", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`${first.id}$`))
+  await expectNothingAnimating(app)
+})
+
 test("12 Tasks and Marketplace share one page tab that shows the last one opened", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
@@ -257,6 +268,7 @@ test("12 a session switch shows the previous session until the next one is laid 
       expect.soft(seen.footers[0], `the ${label} session's first footer`).not.toMatch(/Select (model|agent)/)
       expect.soft(seen.railApart, "frames where the rail selects a session other than the one shown").toEqual([])
       expect.soft(seen.sessions, "sessions shown, in order").toEqual(seen.sessions.length === 1 ? [next.id] : [seen.sessions[0], next.id])
+      await expectNothingAnimating(app)
     })
   }
 })

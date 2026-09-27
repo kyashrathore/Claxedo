@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Locator } from "@playwright/test"
-import { apiRequests, expect, git, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork } from "../harness"
+import { apiRequests, expect, expectNothingAnimating, git, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork } from "../harness"
 
 test.skip(({ isMobile }) => isMobile, "flow 14 runs at desktop width")
 
@@ -22,14 +22,17 @@ test("14 switching back to a session whose panel was open shows the files tree a
   await expect(panel.getByRole("treeitem", { name: /^notes\.md/ })).toBeVisible()
   const settled = apiRequests(app, stack.url)
   await settled()
+  await expectNothingAnimating(app)
   const work = await watchPageWork(app, { nodes: { tree: '[data-component="filetree"]' } })
   const rail = app.getByRole("navigation", { name: UI.rail })
   await rail.getByRole("button", { name: "Without panel", exact: true }).click()
   await expect(app.getByRole("button", { name: UI.openPanel })).toBeVisible()
   await expect(panel).toHaveCount(0)
   await expect.poll(() => app.locator('[data-component="filetree"]').count(), { message: "the hidden tree unmounts" }).toBe(0)
+  await expectNothingAnimating(app)
   await rail.getByRole("button", { name: "With panel", exact: true }).click()
   await expect(panel.getByRole("treeitem", { name: /^notes\.md/ })).toBeVisible()
+  await expectNothingAnimating(app)
 
   const seen = await work()
   expect(seen.removed.tree ?? 0, "files trees removed while the panel was hidden").toBe(1)
@@ -80,6 +83,7 @@ test("14 the files tree and the Changes groups come back where they were after t
   await panel.getByRole("button", { name: "Open Files" }).click()
   await expect(row("n-025.ts")).toBeVisible()
   await expect.poll(() => distance(treeScroller(), 600), { message: "tree scroll after the navigator switched" }).toBeLessThanOrEqual(1)
+  await expectNothingAnimating(app)
 
   await panel.getByPlaceholder("Search files...").pressSequentially("n-14")
   await expect(row("n-143.ts")).toBeVisible()
@@ -105,6 +109,7 @@ test("14 the files tree and the Changes groups come back where they were after t
 
   await app.getByRole("button", { name: "Close workspace panel" }).click()
   await expect(groups()).toHaveCount(0)
+  await expectNothingAnimating(app)
   await app.clock.fastForward("11:00")
   const reads = apiRequests(app, stack.url)
   await app.getByRole("button", { name: UI.openPanel }).click()

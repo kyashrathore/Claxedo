@@ -1,5 +1,5 @@
-import { expect, sessionRoute, test, UI } from "../harness"
-import { choose, openSection, openSettings, picker, SECTIONS } from "./15-settings.navigation"
+import { expect, expectNothingAnimating, sessionRoute, test, UI } from "../harness"
+import { choose, leaveSettings, openSection, openSettings, picker, SECTIONS } from "./15-settings.navigation"
 
 test("15 settings: color scheme, a rebound shortcut and its reset, every section", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("settings", "Settings")
@@ -57,4 +57,14 @@ test("15 settings: color scheme, a rebound shortcut and its reset, every section
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
   await app.keyboard.press("ControlOrMeta+Shift+KeyP")
   await expect(palette).toBeVisible()
+})
+
+test("15 settings opened and closed again leave nothing animating", async ({ stack, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("settings", "Settings")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await openSettings(app, isMobile)
+  await expectNothingAnimating(app)
+  await leaveSettings(app, isMobile)
+  await expectNothingAnimating(app)
 })

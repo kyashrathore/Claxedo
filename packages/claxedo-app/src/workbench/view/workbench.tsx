@@ -103,6 +103,13 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           </For>
         </div>
         <div class="workbench-layer">
+          <Show when={wb.handing()}>
+            {(handing) => (
+              <div class="workbench-handover" style={paneStyle(handing().paneId)}>
+                <div class="workbench-handover-cue" />
+              </div>
+            )}
+          </Show>
           <For each={wb.layout().panes}>
             {(pane) => <PaneChrome pane={pane} style={paneStyle(pane.id)} closable={wb.layout().panes.length > 1} />}
           </For>

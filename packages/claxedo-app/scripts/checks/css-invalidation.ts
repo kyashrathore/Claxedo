@@ -18,6 +18,7 @@ const baseline: readonly Baselined[] = [
   { file: "src/auth/view/auth.css", matcher: "animation: auth-spin", owner: "auth", reason: "spinner while a sign-in request is pending" },
   { file: "src/shell/styles/ui-overrides.css", matcher: "animation: tl-dot-wave", owner: "shell", reason: "typing dots while a turn is running" },
   { file: "src/transcript/agent-glyph.css", matcher: "animation: agent-glyph-pulse", owner: "transcript", reason: "the agent glyph pulses while the agent is active" },
+  { file: "src/workbench/workbench.css", matcher: "animation: workbench-handover-cue", owner: "workbench", reason: "the handover's progress line sweeps while mounted, and is mounted only while a pane hands over" },
   { file: "src/onboarding/view/first-project-canvas.css", matcher: "animation: first-project-drift", owner: "onboarding", reason: "the first-project canvas hatch drifts for the whole onboarding screen" },
   { file: "src/shell/styles/index.css", matcher: '[data-component="session-progress-bar"] { will-change: clip-path', owner: "shell", reason: "always-on hint on the progress bar; set it only while a turn is running" },
   { file: "src/shell/styles/app-shell.css", matcher: ".claxedo-pop-bounce { will-change: transform", owner: "shell", reason: "hint for a one-shot bounce; the animation alone promotes the layer" },
