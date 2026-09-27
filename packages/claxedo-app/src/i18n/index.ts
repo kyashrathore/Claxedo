@@ -1,4 +1,4 @@
-export type { Dictionary, TemplateParams, Translations } from "./dictionary"
+export type { TemplateParams, Translations } from "./dictionary"
 export { fillTemplate } from "./dictionary"
 export type { ErrorCopy } from "./error-copy"
 export { useErrorCopy } from "./error-copy"

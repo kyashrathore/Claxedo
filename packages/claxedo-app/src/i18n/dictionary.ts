@@ -1,7 +1,5 @@
 import type { Locale } from "./locales"
 
-export type Dictionary = Readonly<Record<string, string>>
-
 export type Translations<Keys extends string = string> = {
   readonly en: Readonly<Record<Keys, string>>
 } & {

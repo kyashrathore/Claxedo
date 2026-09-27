@@ -1,16 +1,10 @@
-import {
-  harnessBindingIds as tableBindingIds,
-  harnessForProviderId,
-  isHarnessId,
-  HARNESS_TABLE,
-} from "@claxedo/agent-runtime-contract"
+import { harnessForProviderId, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import type { NativeHarnessId } from "@/lib/harness-selection"
 
 type HarnessEntry = {
   label: string
   vendor: string
   icon: string
-  providerIds?: readonly string[]
   connectProvider?: string
   vendorProvider?: string
 }
@@ -45,21 +39,6 @@ export type ConnectContext =
   | { kind: "harness"; harness: string; vendor: string }
   | { kind: "engine"; engine: string; vendor: string }
 
-export const CONNECT_CONTEXT_COPY: Readonly<Record<
-  "title" | "context" | "autoVisitSuffix" | "codeVisitSuffix" | "connected",
-  string
->> = {
-  title: "provider.connect.title",
-  context: "provider.connect.context",
-  autoVisitSuffix: "provider.connect.oauth.auto.visit.suffix",
-  codeVisitSuffix: "provider.connect.oauth.code.visit.suffix",
-  connected: "provider.connect.toast.connected.description",
-}
-
-export function connectContextKey(base: string, context: ConnectContext): string {
-  return `${base}.${context.kind}`
-}
-
 export function connectVars(context: ConnectContext): Record<string, string> {
   return context.kind === "harness"
     ? { harness: context.harness, vendor: context.vendor }
@@ -86,14 +65,6 @@ export function harnessIcon(id: string): string {
 
 export function harnessLabelForProviderId(providerId: string): string | undefined {
   return harnessLabel(harnessForProviderId(providerId) ?? providerId)
-}
-
-function harnessProviderIds(id: string): readonly string[] {
-  return entry(id)?.providerIds ?? []
-}
-
-export function bindingIdsForHarness(id: string): readonly string[] {
-  return isHarnessId(id) ? tableBindingIds(id) : harnessProviderIds(id)
 }
 
 export function harnessForConnectProvider(providerId: string): string | undefined {

@@ -19,18 +19,6 @@ function selection(value: unknown): FileSelection | undefined {
   return { startLine, startChar, endLine, endChar }
 }
 
-export function createCommentMetadata(input: PromptComment) {
-  return {
-    claxedoComment: {
-      path: input.path,
-      selection: input.selection,
-      comment: input.comment,
-      preview: input.preview,
-      origin: input.origin,
-    },
-  }
-}
-
 export function readCommentMetadata(value: unknown): PromptComment | undefined {
   const meta = readField(value, "claxedoComment")
   const path = readString(meta, "path")
@@ -84,10 +72,6 @@ export type PromptImageMarkComment = {
   filename: string
   number: number
   comment: string
-}
-
-export function createImageMarkMetadata(input: PromptImageMarkComment) {
-  return { claxedoImageMark: { filename: input.filename, number: input.number, comment: input.comment } }
 }
 
 export function readImageMarkMetadata(value: unknown): PromptImageMarkComment | undefined {

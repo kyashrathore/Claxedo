@@ -46,12 +46,6 @@ export function sanitizeMarkdown(html: string) {
 
 const SAFE_SVG_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
 
-const URI_WHITESPACE = /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
-
-export function isSafeSvgUri(value: string) {
-  return SAFE_SVG_URI.test(value.replace(URI_WHITESPACE, ""))
-}
-
 const CSS_AT_RULE = /@(?:import|namespace)\b/gi
 const CSS_URL = /url\(\s*(['"]?)([^)]*?)\1\s*\)/gi
 
@@ -130,10 +124,6 @@ export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
   }
 }
 
-export function markdownCacheStats() {
-  return { entries: cache.size, bytes: totalBytes }
-}
-
 export const mermaidSvgCacheLimits = {
   entries: 256,
   bytes: 2_000_000,
@@ -166,13 +156,4 @@ export function touchCachedMermaidSvg(source: string, svg: string) {
     mermaidBytes -= oldest[0].length + oldest[1].length
     mermaidCache.delete(oldest[0])
   }
-}
-
-export function mermaidSvgCacheStats() {
-  return { entries: mermaidCache.size, bytes: mermaidBytes }
-}
-
-export function clearMermaidSvgCache() {
-  mermaidCache.clear()
-  mermaidBytes = 0
 }

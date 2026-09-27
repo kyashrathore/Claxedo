@@ -26,8 +26,6 @@ export function createSelectorScope(input: {
   return { scope, scopeInput, placementId, sessionId, sessionLocked }
 }
 
-export type SelectorScope = ReturnType<typeof createSelectorScope>
-
 export function createScopeSelection(input: {
   controller: Accessor<HarnessSelectionController>
   scope: Accessor<string>

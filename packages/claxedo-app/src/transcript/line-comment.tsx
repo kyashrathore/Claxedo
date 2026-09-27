@@ -6,23 +6,12 @@ import { useTranscriptI18n } from "./i18n"
 
 installLineCommentStyles()
 
-export type LineCommentVariant = "default" | "editor" | "add"
+export type LineCommentVariant = "default" | "editor"
 
-function InlineGlyph(props: { icon: "comment" | "plus" }) {
+function InlineGlyph() {
   return (
     <svg data-slot="line-comment-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <Show
-        when={props.icon === "comment"}
-        fallback={
-          <path
-            d="M10 5.41699V10.0003M10 10.0003V14.5837M10 10.0003H5.4165M10 10.0003H14.5832"
-            stroke="currentColor"
-            stroke-linecap="square"
-          />
-        }
-      >
-        <path d="M16.25 3.75H3.75V16.25L6.875 14.4643H16.25V3.75Z" stroke="currentColor" stroke-linecap="square" />
-      </Show>
+      <path d="M16.25 3.75H3.75V16.25L6.875 14.4643H16.25V3.75Z" stroke="currentColor" stroke-linecap="square" />
     </svg>
   )
 }
@@ -34,7 +23,6 @@ export type LineCommentAnchorProps = {
   hideButton?: boolean
   open: boolean
   variant?: LineCommentVariant
-  icon?: "comment" | "plus"
   buttonLabel?: string
   onClick?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
   onMouseEnter?: JSX.EventHandlerWithOptionsUnion<HTMLElement, MouseEvent>
@@ -47,7 +35,6 @@ export type LineCommentAnchorProps = {
 export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
   const hidden = () => !props.inline && props.top === undefined
   const variant = () => props.variant ?? "default"
-  const icon = () => props.icon ?? "comment"
   const inlineBody = () => props.inline && props.hideButton
 
   return (
@@ -86,9 +73,9 @@ export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
             >
               <Show
                 when={props.inline}
-                fallback={<Icon name={icon() === "plus" ? "plus-small" : "comment"} size="small" />}
+                fallback={<Icon name="comment" size="small" />}
               >
-                <InlineGlyph icon={icon()} />
+                <InlineGlyph />
               </Show>
             </button>
             <Show when={props.open}>
@@ -150,25 +137,6 @@ export const LineComment = (props: LineCommentProps) => {
         </div>
       </div>
     </LineCommentAnchor>
-  )
-}
-
-export type LineCommentAddProps = Omit<LineCommentAnchorProps, "children" | "variant" | "open" | "icon"> & {
-  label?: string
-}
-
-export const LineCommentAdd = (props: LineCommentAddProps) => {
-  const [split, rest] = splitProps(props, ["label"])
-  const i18n = useTranscriptI18n()
-
-  return (
-    <LineCommentAnchor
-      {...rest}
-      open={false}
-      variant="add"
-      icon="plus"
-      buttonLabel={split.label ?? i18n.t("transcript.lineComment.submit")}
-    />
   )
 }
 

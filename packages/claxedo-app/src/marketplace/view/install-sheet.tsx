@@ -1,4 +1,4 @@
-import { createSignal, For, Show, type JSX } from "solid-js"
+import { createSignal, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer, type PluginCandidate, type PluginHarness } from "@/server"

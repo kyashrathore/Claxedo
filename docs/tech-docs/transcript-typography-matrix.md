@@ -104,7 +104,7 @@ Line-length: `--transcript-measure` caps the column (shipped 48rem, 880px from
 | Background subagents heading | 12 / 500 `--text-weak`, pb 2 | **fixed** |
 | Column | `--transcript-measure` \| 48rem / 880px @2xl; px-4 (md: px-5) | measure |
 
-## 4. Tool calls, groups and cards (`basic-tool.css`, `activity-row.css`, `work-group.css`, `message-part.css`, `claxedo-tool.css`)
+## 4. Tool calls, groups and cards (`basic-tool.css`, `work-group.css`, `message-part.css`, `claxedo-tool.css`)
 
 Names in quotes are what the screenshot shows.
 
@@ -112,7 +112,6 @@ Names in quotes are what the screenshot shows.
 |---|---|---|---|---|---|---|---|
 | Tool row ("Read a-codex-theme.png", "Running ls …") — `[data-component="tool-trigger"]` | `--font-family-sans` (rescoped by body face) | 14 | title 500 / subtitle & arg 400 | 150% | title & row `--text-weak` (legacy); subtitle `--v2-text-text-muted`; hover/focus → `--text-strong` | row min-height 32 (activity row), gap 8; leading icon 14, spinner/indicator 16; exit `--text-weak`; elapsed `--text-weaker` tabular, ml auto, pl 8 | face only |
 | Fold row ("Worked for 5m 40s", `[data-component="turn-fold"]`, `turn-fold.css`) | sans | `tool-size` 14 | `tool-weight` 500 | `tool-line-height` 150% | `tool-color` → hover `tool-hover-color`; footer `meta-color` `--text-weaker` | height `tool-row-height` 32, gap 6, 1px rule below | toolSize, toolWeight, toolLineHeight, toolColor, toolHoverColor, toolRowHeight, metaSize, metaColor |
-| Activity row (`.activity-row`, verb + tail) | sans | 14 | verb 500 / tail 400 | 150% | `--text-weak` → hover strong; nested tail `--text-weaker` | height 32, gap 8, nested pl 8, chevron 16 fades in on hover | face only |
 | File chip under a read ("a-codex-theme.png 205 KB", `.ui-tool-loaded-file`) | sans | 12 | 400 | 150% | `--text-weak` | gap 8, padding 4px 0 4px 28px | metaSize, metaLineHeight, metaColor |
 | Tool group ("Ran 5 commands", `work-group-trigger` / `.ui-work-group-summary`) | sans | 14 | 500 | 150% | `--text-weak` → hover strong; arrow `--icon-weaker` | min-height 32, gap 8, icon 14 | face only |
 | Group body (`.ui-work-group-list`, the nested "Ran …" rows) | rows as "Tool row" | | | | member titles `--text-weak` | padding-left 8, gap 4, **max-height 224** scroll with edge fades | face only |

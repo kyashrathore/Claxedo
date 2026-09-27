@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import { restoreScrollTop } from "@/lib/scroll-restore"
 import {
-  toAppError,
   type DiffScope,
   type DiffSummary,
   type GitCommit,

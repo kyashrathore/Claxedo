@@ -77,12 +77,3 @@ export async function highlightCodeThroughCache(
   if (complete) cacheCodeHighlight(src, language, theme, result)
   return result
 }
-
-export function codeHighlightCacheStats() {
-  return { entries: cache.size, bytes: totalBytes }
-}
-
-export function clearCodeHighlightCache() {
-  cache.clear()
-  totalBytes = 0
-}
