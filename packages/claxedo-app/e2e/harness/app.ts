@@ -7,6 +7,7 @@ const APP_ROOT = path.resolve(import.meta.dirname, "../..")
 const BUILD_STAMP = "claxedo-e2e-build.json"
 const DIST_DIR = "dist-e2e"
 const SOURCE_ENTRIES = ["src", "public", "index.html", "vite.cloud.config.ts", "vite.account-binding.ts", "vite.content-security-policy.ts", "content-security-policy.ts", "browser-preview.html", "cli-callback.html", "package.json", "../../plugins"]
+const DEPENDENCY_ENTRIES = ["../../bun.lock", "../../patches"]
 const SKIPPED_DIRS = new Set(["node_modules"])
 
 export function appDistDir() {
@@ -29,8 +30,16 @@ export function newestMtime(entry: string): number {
   return newest
 }
 
+function workspaceDependencies(): string[] {
+  const manifest = JSON.parse(fs.readFileSync(path.join(APP_ROOT, "package.json"), "utf8")) as Record<string, Record<string, string> | undefined>
+  return Object.entries({ ...manifest.dependencies, ...manifest.devDependencies })
+    .filter(([, version]) => version.startsWith("workspace:"))
+    .map(([name]) => fs.realpathSync(path.join(APP_ROOT, "node_modules", name)))
+}
+
 export function sourceMtime() {
-  return Math.max(...SOURCE_ENTRIES.map((entry) => newestMtime(path.join(APP_ROOT, entry))))
+  const entries = [...SOURCE_ENTRIES, ...DEPENDENCY_ENTRIES, ...workspaceDependencies()]
+  return Math.max(...entries.map((entry) => newestMtime(path.resolve(APP_ROOT, entry))))
 }
 
 function buildIsCurrent(distDir: string, mtime: number, serverUrl: string) {
