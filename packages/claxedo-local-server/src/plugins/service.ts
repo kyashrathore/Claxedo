@@ -111,9 +111,21 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
     publish({ type: "plugins.changed", pluginId: record.entry.id, status: record.state.kind, ...(bundle ? { hash: bundle.hash } : {}), ts: Date.now() })
   }
 
+  const toolchainFor = async (record: LivePluginRecord) => {
+    try {
+      return await pluginToolchain()
+    } catch (error) {
+      log.error("the plugin toolchain failed to load", { id: record.entry.id, error: String(error) })
+      apply(record, { type: "buildFailed", error: `The plugin toolchain failed to load: ${String(error)}` })
+      return undefined
+    }
+  }
+
   const runBuild = async (record: LivePluginRecord) => {
     apply(record, { type: "buildStarted" })
-    const { buildPluginApp, PluginBuildError } = await pluginToolchain()
+    const toolchain = await toolchainFor(record)
+    if (!toolchain) return
+    const { buildPluginApp, PluginBuildError } = toolchain
     try {
       const built = await buildPluginApp({ rootDir: record.entry.directory })
       if (built.manifest.id !== record.entry.id) {
@@ -139,8 +151,8 @@ export function createLivePluginService(options: LivePluginServiceOptions): Live
   }
 
   const startWatch = async (record: LivePluginRecord) => {
-    const { watchPluginFolder } = await pluginToolchain()
-    return watchPluginFolder({
+    const toolchain = await toolchainFor(record)
+    return toolchain?.watchPluginFolder({
       rootDir: record.entry.directory,
       onChange: () => void enqueueBuild(record),
       onError: (error) => apply(record, { type: "buildFailed", error: `The folder watch failed: ${error.message}` }),
