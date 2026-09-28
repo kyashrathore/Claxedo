@@ -165,7 +165,7 @@ test("retrying the identical refused snapshot resends its credentials and projec
   expect((await f.request("/session", "POST", { id: "held" })).status).toBe(201)
   const prompt = f.request("/session/held/message", "POST", { parts: [{ type: "text", text: "go" }] })
   await f.startedTurn
-  const next = snapshot("renewed", { docs: { name: "docs", transport: "stdio", command: "docs", args: [], env: {} } })
+  const next = snapshot("renewed", { docs: { name: "docs", source: "user", transport: "stdio", command: "docs", args: [], env: {} } })
   await expect(f.host.apply(next)).rejects.toThrow("refused")
   f.release()
   await prompt
