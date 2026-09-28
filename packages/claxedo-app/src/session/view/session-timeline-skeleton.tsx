@@ -27,11 +27,7 @@ const TURNS: SkeletonTurn[] = (() => {
   }))
 })()
 
-export function sessionTranscriptLoadingEpisode(sessionId: string | undefined) {
-  return sessionId ? `session-transcript:${sessionId}` : undefined
-}
-
-export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?: string }) {
+export function SessionTimelineSkeleton(props: { centered?: boolean }) {
   const t = useSessionScreenText()
   const centered = () => props.centered !== false
 
@@ -48,7 +44,7 @@ export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?:
       }}
     >
       <span class="sr-only">{t("sessionScreen.loading")}</span>
-      <DelayedLoading episode={sessionTranscriptLoadingEpisode(props.sessionId)}>
+      <DelayedLoading>
         <div
           aria-hidden="true"
           classList={{

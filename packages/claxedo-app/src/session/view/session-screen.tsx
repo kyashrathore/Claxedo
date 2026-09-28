@@ -215,7 +215,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
             )}
           </Match>
           <Match when={view().state().kind === "loading" && !view().conversation()}>
-            <SessionTimelineSkeleton centered={!phone()} sessionId={props.sessionRef.sessionId} />
+            <SessionTimelineSkeleton centered={!phone()} />
           </Match>
         </Switch>
       </FailureBoundary>

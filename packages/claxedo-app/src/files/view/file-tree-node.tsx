@@ -139,11 +139,11 @@ export function FileRowIcon(props: { readonly node: FileNode; readonly kind: Cha
   )
 }
 
-export function TreeLoading(props: { readonly level: number; readonly episode?: string }): JSX.Element {
+export function TreeLoading(props: { readonly level: number }): JSX.Element {
   const t = useTranslator(filesDictionary)
   return (
     <div data-file-tree-loading class="flex flex-col gap-0.5 p-1" aria-label={t("files.loading")}>
-      <DelayedLoading episode={props.episode}>
+      <DelayedLoading>
         <For each={Array.from({ length: props.level === 0 ? 8 : 3 })}>
           {(_, index) => (
             <div
