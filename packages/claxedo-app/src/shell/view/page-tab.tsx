@@ -1,5 +1,6 @@
-import { createMemo, Show, type JSX } from "solid-js"
+import { createMemo, Show, type Accessor, type JSX } from "solid-js"
 import { readString } from "@claxedo/helpers/readers"
+import { useWorkbench } from "@/workbench"
 import { useShellRegistries } from "../registries"
 import { parseRoute } from "../routes"
 import type { PageEntry, PaneKind, PaneProps } from "../types"
@@ -30,4 +31,12 @@ export const pageTabPaneKind: PaneKind<PageTabState> = {
   },
   fromRoute: (route) => (route.kind === "pageTab" ? { path: route.path } : undefined),
   toRoute: (state) => ({ kind: "pageTab", path: state.path }),
+}
+
+export function usePageTabFocused(): Accessor<boolean> {
+  const workbench = useWorkbench()
+  return () => {
+    const focused = workbench.selectors.focusedContent()
+    return focused !== null && workbench.content(focused)?.kind.kind === pageTabPaneKind.kind
+  }
 }

@@ -29,7 +29,7 @@ const OWNER_WORKSPACES = [
   { workspace_id: "ws_cloud", project_id: "proj_one", backing: "cloud-vm", workspace_name: "main", remote_directory: "/workspace", created_at: 1_800_000_000_000 },
 ]
 
-function bootstrap(options: { authConfig: ControlPlaneAuthConfig; version?: string; token?: string }) {
+function bootstrap(options: { authConfig: ControlPlaneAuthConfig; version?: string; token?: string; connections?: boolean }) {
   const { token, ...route } = options
   return HostedShellRoutes({ ...route, verifier, listWorkspaces: async () => OWNER_WORKSPACES }).request("http://cp.test/api/claxedo/bootstrap", {
     headers: token ? { authorization: `Bearer ${token}` } : {},
@@ -45,8 +45,15 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: false },
-      deployment: { issuesSessions: true, documents: false },
+      deployment: { issuesSessions: true, documents: false, connections: false },
     })
+  })
+
+  test("declares Connections only when the entry composed the hosted Connections family", async () => {
+    const composed = await (await bootstrap({ authConfig: signedConfig, connections: true })).json() as Record<string, unknown>
+    expect(composed.deployment).toMatchObject({ connections: true })
+    const bare = await (await bootstrap({ authConfig: signedConfig })).json() as Record<string, unknown>
+    expect(bare.deployment).toMatchObject({ connections: false })
   })
 
   // A hosted central serves no runtime of its own, so every workspace stream it

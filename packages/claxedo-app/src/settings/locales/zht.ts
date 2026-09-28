@@ -69,6 +69,7 @@ export default {
   "settings.connections.agents.operator": "代理程式連線由營運人員在本機主機上設定。",
   "settings.connections.integrations": "整合",
   "settings.connections.integrations.empty": "沒有可用的整合。",
+  "settings.connections.integrations.unoffered": "此伺服器不提供整合。",
   "settings.connections.add": "新增連線",
   "settings.connections.status.connected": "已連線",
   "settings.connections.status.degraded": "降級",

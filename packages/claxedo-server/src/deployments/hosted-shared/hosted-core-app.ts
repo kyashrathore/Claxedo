@@ -304,6 +304,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     HostedShellRoutes({
       authentication: options.authentication,
       authConfig,
+      connections: options.integrationRoutes !== undefined,
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
       ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
       ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),

@@ -69,6 +69,7 @@ export default {
   "settings.connections.agents.operator": "يُعدّ المشغّل اتصالات الوكلاء على المضيف المحلي.",
   "settings.connections.integrations": "عمليات التكامل",
   "settings.connections.integrations.empty": "لا توجد عمليات تكامل متاحة.",
+  "settings.connections.integrations.unoffered": "لا يوفّر هذا الخادم عمليات تكامل.",
   "settings.connections.add": "إضافة اتصال",
   "settings.connections.status.connected": "متصل",
   "settings.connections.status.degraded": "متدهور",

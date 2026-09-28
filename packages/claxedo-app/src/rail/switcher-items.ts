@@ -1,4 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
+import { useUnseenFailures } from "@/notifications"
 import { useProjectList } from "@/projects"
 import { useServer, type ProjectId } from "@/server"
 import { panePlacementOf } from "@/shell"
@@ -24,13 +25,10 @@ function kindOf(paneKind: string): SwitcherKind {
   return paneKind === "terminal" ? "terminal" : "other"
 }
 
-export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
-  const workbench = useWorkbench()
+function useProjectLabels(): Accessor<ReadonlyMap<ProjectId, string>> {
   const server = useServer()
-  const stores = useSessionStores()
-  const terminals = useTerminals()
   const projects = useProjectList()
-  const labels = createMemo(() => {
+  return createMemo(() => {
     const placements = server.placements.list()
     const map = new Map<ProjectId, string>()
     for (const entry of projects.list()) {
@@ -39,6 +37,15 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
     }
     return map
   })
+}
+
+export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
+  const workbench = useWorkbench()
+  const server = useServer()
+  const stores = useSessionStores()
+  const terminals = useTerminals()
+  const unseenFailures = useUnseenFailures()
+  const labels = useProjectLabels()
   return createMemo(() =>
     workbench.selectors.aliveContents().flatMap((contentId) => {
       const opened = workbench.content(contentId)
@@ -58,7 +65,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
           title: opened.kind.title(opened.state as never),
           projectLabel: placement ? labels().get(placement.projectId) : undefined,
           workspaceLabel: placement?.label,
-          status: row ? navigationStatus(row) : terminal ? terminalNavigationStatus(terminal) : "idle",
+          status: row ? navigationStatus(row, unseenFailures.has(row.ref.sessionId)) : terminal ? terminalNavigationStatus(terminal) : "idle",
         },
       ]
     }),

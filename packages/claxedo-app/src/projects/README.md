@@ -23,7 +23,7 @@ Owns: the project as the app sees it, its placements, the create-project form (t
 
 `useProjectCommands()` gives `remove`, which calls `server.projects`. The Edit dialog saves the name, icon, colour, startup command and environment in one `server.projects.update`; an empty name drops a name set by hand, as v1 did for the folder's own name. The adapter updates the project queries from each answer; this domain never writes the query cache.
 
-The repository picker reads the integrations catalog (`queries.integrations.catalog()`, with `codeHostConnections` picking the code-host connections from it) and `queries.codeHost.repositories(connectionId)`. Failures become `AppError`s through the adapter's `toAppError`.
+The repository picker reads the integrations catalog (`queries.integrations.catalog()`, with `codeHostConnections` picking the code-host connections from it) and `queries.codeHost.repositories(connectionId)`, only where the bootstrap declares Connections (`features.connections`); elsewhere a repository is entered by URL. Failures become `AppError`s through the adapter's `toAppError`.
 
 ## Routes
 

@@ -278,6 +278,7 @@ export type Capabilities = {
   readonly harnesses: readonly HarnessInfo[]
   readonly features: {
     readonly documents: boolean
+    readonly connections: boolean
     readonly cloud: boolean
     readonly remoteAccess: boolean
     readonly marketplace: boolean

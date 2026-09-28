@@ -58,9 +58,12 @@ export function createConnectForm(scope: ConnectionScope) {
 }
 
 export function connectError(outcome: Extract<IntegrationConnectOutcome, { kind: "failed" }>): string {
-  if (outcome.code === "connection_verify_failed") return verifyFailedMessage(outcome.verifyReason)
-  if (outcome.status === undefined) return outcome.reason === "unreachable" ? "Connect failed (unreachable)" : "The server did not return an authorization URL. Try again."
-  return `Connect failed (${outcome.code ?? `status ${outcome.status}`})`
+  if (outcome.code === "connection_verify_failed" || outcome.code === "verify_failed") return verifyFailedMessage(outcome.verifyReason)
+  if (outcome.reason === "unreachable") return "Could not reach the server. Try again."
+  if (outcome.reason === "unoffered") return "This server does not offer this integration."
+  if (outcome.reason === "rejected") return "The server refused this connection. Check the values and try again."
+  if (outcome.status === undefined) return "The server did not return an authorization URL. Try again."
+  return "Connecting failed. Try again."
 }
 
 export function grantError(reason: IntegrationFailure): string {

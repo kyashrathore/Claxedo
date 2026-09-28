@@ -1194,6 +1194,7 @@ export function createSelfHostedApp(
       services,
       env: process.env,
       hostAggregateEvents: !!runtimeProxy.hostEventStream,
+      connections: true,
       // Read per request: this node enrolls, re-enrolls and is revoked while
       // it runs, and a client reads this to tell a workspace row placed here
       // from one it must reach over the relay.

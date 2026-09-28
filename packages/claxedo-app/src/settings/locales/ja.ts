@@ -69,6 +69,7 @@ export default {
   "settings.connections.agents.operator": "エージェント接続はローカルホストでオペレーターが設定します。",
   "settings.connections.integrations": "連携",
   "settings.connections.integrations.empty": "利用できる連携はありません。",
+  "settings.connections.integrations.unoffered": "このサーバーは連携を提供していません。",
   "settings.connections.add": "接続を追加",
   "settings.connections.status.connected": "接続済み",
   "settings.connections.status.degraded": "低下",

@@ -67,6 +67,7 @@ export default {
   "settings.connections.agents.operator": "Agentforbindelser konfigureres af operatøren på den lokale vært.",
   "settings.connections.integrations": "Integrationer",
   "settings.connections.integrations.empty": "Ingen integrationer tilgængelige.",
+  "settings.connections.integrations.unoffered": "Denne server tilbyder ikke integrationer.",
   "settings.connections.add": "Tilføj forbindelse",
   "settings.connections.status.connected": "Forbundet",
   "settings.connections.status.degraded": "Nedsat",

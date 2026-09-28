@@ -69,6 +69,7 @@ export default {
   "settings.connections.agents.operator": "智能体连接由运维人员在本地主机上配置。",
   "settings.connections.integrations": "集成",
   "settings.connections.integrations.empty": "没有可用的集成。",
+  "settings.connections.integrations.unoffered": "此服务器不提供集成。",
   "settings.connections.add": "添加连接",
   "settings.connections.status.connected": "已连接",
   "settings.connections.status.degraded": "降级",

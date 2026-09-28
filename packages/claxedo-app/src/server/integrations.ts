@@ -4,6 +4,7 @@ import { readArray, readBoolean, readField, readFiniteNumber, readString } from 
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { ask } from "./answer"
+import { responseError } from "./errors"
 import { jsonInit, type Transport } from "./transport"
 import type { CodeHostConnection } from "./cloud-types"
 import type { FetchQuery } from "./types"
@@ -202,7 +203,7 @@ async function reverify(transport: Transport, connectionId: string) {
 
 async function disconnect(transport: Transport, connectionId: string) {
   const response = await transport.request(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}`, { method: "DELETE" })
-  if (!response.ok && response.status !== 404) throw new Error(`Disconnect failed (${response.status})`)
+  if (!response.ok && response.status !== 404) throw await responseError(response, "Disconnect")
 }
 
 export function createIntegrationsApi(transport: Transport, queryClient: QueryClient): IntegrationsApi {

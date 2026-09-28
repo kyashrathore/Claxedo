@@ -69,6 +69,7 @@ export default {
   "settings.connections.agents.operator": "에이전트 연결은 로컬 호스트에서 운영자가 설정합니다.",
   "settings.connections.integrations": "통합",
   "settings.connections.integrations.empty": "사용 가능한 통합이 없습니다.",
+  "settings.connections.integrations.unoffered": "이 서버는 통합을 제공하지 않습니다.",
   "settings.connections.add": "연결 추가",
   "settings.connections.status.connected": "연결됨",
   "settings.connections.status.degraded": "성능 저하",

@@ -58,13 +58,15 @@ function NameField(props: { look: CreateFormLook; name: string; onName: (name: s
 
 function createRepositoryChoice(active: Accessor<boolean>) {
   const server = useServer()
-  const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() }))
+  const connectionsServed = () => server.capabilities()?.features.connections === true
+  const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() && connectionsServed() }))
   const integration = () => codeHostIntegrations(offered.data)[0]
   const usable = createMemo(() => codeHostConnections(offered.data).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
   const [entry, setEntry] = createSignal<"list" | "url">("list")
   const view = (): "checking" | "url" | "connect" | "list" => {
+    if (!connectionsServed()) return "url"
     if (offered.isPending) return "checking"
     if (!integration() || entry() === "url") return "url"
     return connection() ? "list" : "connect"

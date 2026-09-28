@@ -4,7 +4,7 @@ import { useWorkbench, Workbench } from "@/workbench"
 import { useShellLayout } from "../layout"
 import type { RouteParams } from "../routes"
 import type { PageEntry } from "../types"
-import { pageTabPaneKind } from "./page-tab"
+import { usePageTabFocused } from "./page-tab"
 import { PageView } from "./page-view"
 import { Region } from "./region"
 import { Sidebar, type SidebarProps } from "./sidebar"
@@ -19,12 +19,8 @@ export type ShellFrameProps = {
 }
 
 function CenterHeader(props: { readonly center: CenterContent; readonly tabs: JSX.Element }): JSX.Element {
-  const workbench = useWorkbench()
   const page = () => (props.center.kind === "page" ? props.center.page : undefined)
-  const onPageTab = () => {
-    const focused = workbench.selectors.focusedContent()
-    return focused !== null && workbench.content(focused)?.kind.kind === pageTabPaneKind.kind
-  }
+  const onPageTab = usePageTabFocused()
   return (
     <Switch fallback={<WorkbenchHeader global={false} tabs={props.tabs} />}>
       <Match when={page()?.sidebar === "settings"}>

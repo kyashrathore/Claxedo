@@ -60,6 +60,8 @@ export type HostedShellRouteOptions = {
   verifier?: ControlPlaneTokenVerifier
   /** Reported by /global/health and the bootstrap aggregate. */
   version?: string
+  /** Whether the entry mounted the hosted Connections family; the bootstrap declares it. */
+  connections?: boolean
   /** Signed project inventory source (the authority workspaces.list). */
   listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   /** Whose lease says which cloud workspaces of that inventory are running. */
@@ -677,7 +679,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
-        deployment: { issuesSessions: issuesSessions(options.authConfig), documents: false },
+        deployment: { issuesSessions: issuesSessions(options.authConfig), documents: false, connections: options.connections === true },
       }
       if (!hasCredential(c, options)) return c.json(declaration)
       try {

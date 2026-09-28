@@ -84,7 +84,9 @@ export function WorkspaceArea(props: ParentProps): JSX.Element {
       >
         {props.children}
       </div>
-      <WorkspacePanel />
+      <Show when={panel.allowed()}>
+        <WorkspacePanel />
+      </Show>
     </div>
   )
 }

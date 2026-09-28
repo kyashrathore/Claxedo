@@ -68,6 +68,7 @@ export default {
   "settings.connections.agents.operator": "Подключения агентов настраивает оператор на локальном хосте.",
   "settings.connections.integrations": "Интеграции",
   "settings.connections.integrations.empty": "Нет доступных интеграций.",
+  "settings.connections.integrations.unoffered": "Этот сервер не предоставляет интеграции.",
   "settings.connections.add": "Добавить подключение",
   "settings.connections.status.connected": "Подключено",
   "settings.connections.status.degraded": "Работает с ошибками",

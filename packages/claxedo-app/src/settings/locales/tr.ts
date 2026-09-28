@@ -68,6 +68,7 @@ export default {
   "settings.connections.agents.operator": "Ajan bağlantıları yerel ana makinede operatör tarafından yapılandırılır.",
   "settings.connections.integrations": "Entegrasyonlar",
   "settings.connections.integrations.empty": "Kullanılabilir entegrasyon yok.",
+  "settings.connections.integrations.unoffered": "Bu sunucu entegrasyon sunmuyor.",
   "settings.connections.add": "Bağlantı ekle",
   "settings.connections.status.connected": "Bağlı",
   "settings.connections.status.degraded": "Kısıtlı",

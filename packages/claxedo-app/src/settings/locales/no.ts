@@ -67,6 +67,7 @@ export default {
   "settings.connections.agents.operator": "Agenttilkoblinger konfigureres av operatøren på den lokale verten.",
   "settings.connections.integrations": "Integrasjoner",
   "settings.connections.integrations.empty": "Ingen integrasjoner tilgjengelig.",
+  "settings.connections.integrations.unoffered": "Denne serveren tilbyr ikke integrasjoner.",
   "settings.connections.add": "Legg til tilkobling",
   "settings.connections.status.connected": "Tilkoblet",
   "settings.connections.status.degraded": "Redusert",

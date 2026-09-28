@@ -37,6 +37,7 @@ export default {
   "settings.connections.agents.operator": "Agent connections are configured by the operator on the local host.",
   "settings.connections.integrations": "Integrations",
   "settings.connections.integrations.empty": "No integrations available.",
+  "settings.connections.integrations.unoffered": "This server doesn't offer integrations.",
   "settings.connections.add": "Add connection",
   "settings.connections.status.connected": "Connected",
   "settings.connections.status.degraded": "Degraded",

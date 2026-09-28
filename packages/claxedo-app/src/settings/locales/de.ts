@@ -67,6 +67,7 @@ export default {
   "settings.connections.agents.operator": "Agent-Verbindungen richtet der Betreiber auf dem lokalen Host ein.",
   "settings.connections.integrations": "Integrationen",
   "settings.connections.integrations.empty": "Keine Integrationen verfügbar.",
+  "settings.connections.integrations.unoffered": "Dieser Server bietet keine Integrationen an.",
   "settings.connections.add": "Verbindung hinzufügen",
   "settings.connections.status.connected": "Verbunden",
   "settings.connections.status.degraded": "Eingeschränkt",

@@ -68,6 +68,7 @@ export default {
   "settings.connections.agents.operator": "As conexões de agentes são configuradas pelo operador no host local.",
   "settings.connections.integrations": "Integrações",
   "settings.connections.integrations.empty": "Nenhuma integração disponível.",
+  "settings.connections.integrations.unoffered": "Este servidor não oferece integrações.",
   "settings.connections.add": "Adicionar conexão",
   "settings.connections.status.connected": "Conectado",
   "settings.connections.status.degraded": "Degradado",

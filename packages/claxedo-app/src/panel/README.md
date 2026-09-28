@@ -15,7 +15,7 @@ Owns: the workspace panel, v1's right-hand overlay with its own tab strip. Files
 
 ## Invariants
 
-- The shell's layout owns whether the panel is shown (`showPanel`, `hidePanel`, `togglePanel`); this domain owns everything inside it.
+- The shell's layout owns whether the panel is shown (`showPanel`, `hidePanel`, `togglePanel`); this domain owns everything inside it. The layout keeps the reader's open or closed choice (`panelOpen`) apart from whether the focused tab may have a panel (`panelAllowed`): a page tab (Tasks, Marketplace) has none, so `WorkspaceArea` mounts no panel there and the toggle and its command are gone, while the choice stays for the next session.
 - The panel shows the route's placement. A tab's content reads through its own domain: `@/files` for file tabs and the tree, `@/review` for Review, `@/browser` for Browser, `@/transcript` for plans.
 - Tabs never persist across a reload; only the navigator and the width do.
 

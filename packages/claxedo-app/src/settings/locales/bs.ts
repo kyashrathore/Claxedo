@@ -68,6 +68,7 @@ export default {
   "settings.connections.agents.operator": "Veze agenata konfiguriše operater na lokalnom hostu.",
   "settings.connections.integrations": "Integracije",
   "settings.connections.integrations.empty": "Nema dostupnih integracija.",
+  "settings.connections.integrations.unoffered": "Ovaj server ne nudi integracije.",
   "settings.connections.add": "Dodaj vezu",
   "settings.connections.status.connected": "Povezano",
   "settings.connections.status.degraded": "Degradirano",
