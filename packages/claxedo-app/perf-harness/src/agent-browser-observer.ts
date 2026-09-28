@@ -1,5 +1,7 @@
+import { settleExpression, type PageSettle } from "agent-app-benchmark/driver-sdk";
 import type { BenchmarkLocator } from "./agent-cdp-page";
 import { installPaintedFrames } from "./browser/painted-frames";
+import { claxedoSettleFacts, type SettleFactsTarget } from "./claxedo-settle-facts";
 
 /**
  * The page surface this observer drives.
@@ -15,9 +17,10 @@ export type Page = {
   /**
    * Resolves `unknown` because the answer crosses a JSON boundary: see
    * `BenchmarkPage.evaluate`. Playwright's own `evaluate` satisfies this, since
-   * its `Promise<R>` is assignable to `Promise<unknown>`.
+   * its `Promise<R>` is assignable to `Promise<unknown>`. A string is evaluated
+   * as an expression, as Playwright does.
    */
-  evaluate<A = undefined>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>;
+  evaluate<A = undefined>(fn: string | ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>;
   locator(selector: string): BenchmarkLocator;
   getByTestId(testId: string): BenchmarkLocator;
   waitForFunction<A = undefined>(
@@ -27,391 +30,34 @@ export type Page = {
   ): Promise<unknown>;
 };
 import {
-  optionalRecord,
-  optionalText,
   readBoolean,
-  readList,
   readNumber,
   readNumberFields,
   readRecord,
   readRecords,
   readText,
 } from "./page-value";
-import {
-  blockedFrameRatio,
-  eventTimingP95,
-  percentile,
-  terminalThroughput,
-  type AgentMetricValue,
-} from "./agent-metrics";
 
 type ActionResult =
   | {
       state: "exact";
       durationMs: number;
       trustedEventAtMs: number;
-      paintedAtMs: number;
+      endAtMs: number;
     }
   | { state: "invalid"; reason: string };
 
-type TimelineCoverage = {
-  overflowPx: number;
-  topGapPx: number;
-  visibleRowCount: number;
-  virtualKeyCount: number;
-  rowCount: number;
-};
-
-export type PaintSettleFrame = {
-  paintedAtMs: number;
-  ready: boolean;
-  signature?: Record<string, unknown>;
-  /** A childList or characterData mutation inside the timeline root arrived since the previous frame. */
-  mutated: boolean;
-};
-
-type PaintStabilityFrame = PaintSettleFrame & {
-  observerSampleMs: number;
-};
-
-/**
- * Unchanged frames that confirm a settle, the count the T3 and OpenCode
- * drivers use. A 60 fps recording of the switch put the last visible change
- * 90-150 ms after the first content (a tail-only first view, then the
- * prepended older page, once a placeholder flash), and a follow-up read lands
- * 30-100 ms after the first. The reference MacBook display runs at 120 Hz,
- * where 30 frames is 250 ms, past both; at 60 Hz it is 500 ms.
- */
-export const PAINT_SETTLE_CONFIRMATION_FRAMES = 30;
-
-/**
- * The visual settle of a switched session: the first frame of the final run of
- * `confirmationFrames + 1` consecutive ready frames with one signature and no
- * timeline mutation between them. The reported time is when that first frame
- * was painted, so the confirmation window is never charged to the product.
- * The in-page observer is stringified into the renderer and cannot import
- * this, so it applies the same rule inline and its answer is checked here.
- */
-export function paintSettle(
-  frames: readonly PaintSettleFrame[],
-  confirmationFrames: number,
-): { settledAtMs: number; runStartIndex: number } | undefined {
-  let run: { startIndex: number; signature: string } | undefined;
-  for (let index = 0; index < frames.length; index++) {
-    const frame = frames[index]!;
-    if (!frame.ready || frame.signature === undefined) {
-      run = undefined;
-      continue;
-    }
-    const signature = JSON.stringify(frame.signature);
-    if (!run || frame.mutated || signature !== run.signature) {
-      run = { startIndex: index, signature };
-    }
-    if (index - run.startIndex >= confirmationFrames) {
-      return { settledAtMs: frames[run.startIndex]!.paintedAtMs, runStartIndex: run.startIndex };
-    }
-  }
-  return undefined;
-}
-
-export type PaintedMessage = {
-  messageId: string;
-  kind: "UserMessage" | "AssistantPart";
-  /**
-   * The part-group identity of the painted row. An assistant message renders
-   * one row per part group, all stamped with the same message id, so only the
-   * part id says whether the row belongs to the latest turn's parts.
-   */
-  partId: string | undefined;
-  textLength: number;
-  composerVisibleAndEnabled: boolean;
-  surfaceFocused: boolean;
-  timelineCoverage: TimelineCoverage;
-};
-
-type SemanticTimelineTarget = {
-  expectedMessageIds: readonly string[];
-  /** Every latest-turn part id, text or not. */
-  expectedPartIds: readonly string[];
-};
-
-export type SessionReadinessTarget = SemanticTimelineTarget & {
-  sessionId: string;
-  title: string;
-};
-
-type SessionActionResult =
-  | Extract<ActionResult, { state: "invalid" }>
-  | (Extract<ActionResult, { state: "exact" }> & {
-      paintedMessage: PaintedMessage;
-      paintStabilityFrames: PaintStabilityFrame[];
-    });
-
-type StreamEvidence = {
-  startedAtMs: number;
-  endedAtMs: number;
-  durationMs: number;
-  probeCount: number;
-  durationThresholdMs: number;
-  eventEntries: Array<{ interactionId: number; durationMs: number }>;
-  loafSupported: boolean;
-  loafEntries: Array<{ durationMs: number; blockingDurationMs: number }>;
-};
-
-type TerminalEvidence = {
-  /**
-   * Echoes that arrived further than the 64 KiB `parsedTail` window from the end
-   * of their own batch. Recorded on every run at zero marginal cost so the
-   * distribution of `bytesFromEnd` accumulates across ordinary benchmark runs
-   * instead of needing a dedicated hunt: the gate opens below 65,536 and
-   * `serialize()` can only still contain the echo below the ~340 KB scrollback,
-   * so these two numbers bound how often each window is the binding one.
-   */
-  echoTailMisses: Array<{ echo: string; batchBytes: number; bytesFromEnd: number }>;
-  instanceId: string;
-  bytes: number;
-  acceptedAtMs: number;
-  paintedAtMs: number;
-  modelHash: string;
-  cols: number;
-  rows: number;
-  outputHash: string;
-  outputHashAlgorithm: "sha256-chunk-tree-v1";
-  inputDurationsMs: number[];
-  inputWindows: Array<{ startTimestamp: number; endTimestamp: number }>;
-};
+export type SessionReadinessTarget = SettleFactsTarget & { title: string };
 
 type BrowserBenchmark = {
   armAction(token: string): void;
-  finishAction(
-    token: string,
-    observedPaintAtMs?: number,
-  ): Promise<ActionResult>;
-  beginStream(): void;
-  finishStream(): StreamEvidence;
-  beginTerminal(input: {
-    terminalId: string;
-    instanceId: string;
-    startSentinel: string;
-    rawEndSentinel: string;
-    modelEndSentinel: string;
-    expectedEchoes: string[];
-    bytes: number;
-  }): void;
-  armTerminalInput(expectedEcho: string): void;
-  terminalOutputObserved(terminalId: string): boolean;
-  terminalOutputIncludes(terminalId: string, text: string): boolean;
-  terminalInputObserved(expectedEcho: string): boolean;
-  terminalObservationStarted(): boolean;
-  terminalObservationAcceptedBytes(): number;
-  terminalAcceptedMarkerObserved(value: string): boolean;
-  terminalObservationComplete(): boolean;
-  terminalObservationStatus(): Record<string, unknown>;
-  finishTerminal(): Promise<
-    TerminalEvidence | { state: "invalid"; reason: string }
-  >;
-  terminalWriteAccepted(receipt: {
-    data: string;
-    acceptedAtMs: number;
-    terminalId: string;
-    instanceId: string;
-  }): void;
-  terminalWriteParsed(receipt: {
-    data: string;
-    serialize: () => string;
-    dimensions: () => { cols: number; rows: number };
-    parsedAtMs: number;
-    terminalId: string;
-    instanceId: string;
-  }): void;
+  finishAction(token: string): Promise<ActionResult>;
 };
 
 declare global {
   interface Window {
     __CLAXEDO_AGENT_APP_BENCHMARK__?: BrowserBenchmark;
   }
-}
-
-// Readers for what `BrowserBenchmark` answers.
-//
-// `BrowserBenchmark` is the observer's own contract, but it is implemented in
-// the renderer and its answers reach here as JSON, so the declaration above
-// describes the producer and these readers describe what actually arrived. They
-// throw rather than defaulting: every one of them feeds a published measurement,
-// and a missing field silently read as `0` is a fabricated number.
-
-function readTimelineCoverage(value: unknown): TimelineCoverage {
-  return readNumberFields(value, [
-    "overflowPx",
-    "topGapPx",
-    "visibleRowCount",
-    "virtualKeyCount",
-    "rowCount",
-  ]);
-}
-
-function readPaintedMessage(value: unknown): PaintedMessage {
-  const record = readRecord(value);
-  const kind = readText(record.kind);
-  if (kind !== "UserMessage" && kind !== "AssistantPart") {
-    throw new Error(`browser observer painted an unknown row kind: ${kind}`);
-  }
-  return {
-    messageId: readText(record.messageId),
-    kind,
-    partId: optionalText(record.partId),
-    textLength: readNumber(record.textLength),
-    composerVisibleAndEnabled: readBoolean(record.composerVisibleAndEnabled),
-    surfaceFocused: readBoolean(record.surfaceFocused),
-    timelineCoverage: readTimelineCoverage(record.timelineCoverage),
-  };
-}
-
-function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
-  const record = readRecord(value);
-  return {
-    ...readNumberFields(record, ["paintedAtMs", "observerSampleMs"]),
-    ready: readBoolean(record.ready),
-    mutated: readBoolean(record.mutated),
-    signature: optionalRecord(record.signature),
-  };
-}
-
-function readStablePaint(value: unknown) {
-  const record = readRecord(value);
-  return {
-    paintedAtMs: readNumber(record.paintedAtMs),
-    paintedMessage: readPaintedMessage(record.paintedMessage),
-    frames: readList(record.frames).map(readPaintStabilityFrame),
-  };
-}
-
-function readActionResult(value: unknown): ActionResult {
-  const record = readRecord(value);
-  if (record.state === "invalid") {
-    return { state: "invalid", reason: readText(record.reason) };
-  }
-  if (record.state !== "exact") {
-    throw new Error(
-      `browser observer answered an unknown action state: ${JSON.stringify(record.state)}`,
-    );
-  }
-  return {
-    state: "exact",
-    ...readNumberFields(record, ["durationMs", "trustedEventAtMs", "paintedAtMs"]),
-  };
-}
-
-function readStreamEvidence(value: unknown): StreamEvidence | undefined {
-  if (value === undefined || value === null) return undefined;
-  const record = readRecord(value);
-  return {
-    ...readNumberFields(record, [
-      "startedAtMs",
-      "endedAtMs",
-      "durationMs",
-      "probeCount",
-      "durationThresholdMs",
-    ]),
-    eventEntries: readRecords(record.eventEntries).map((entry) =>
-      readNumberFields(entry, ["interactionId", "durationMs"]),
-    ),
-    loafSupported: readBoolean(record.loafSupported),
-    loafEntries: readRecords(record.loafEntries).map((entry) =>
-      readNumberFields(entry, ["durationMs", "blockingDurationMs"]),
-    ),
-  };
-}
-
-function readTerminalEvidence(
-  value: unknown,
-): TerminalEvidence | { state: "invalid"; reason: string } | undefined {
-  if (value === undefined || value === null) return undefined;
-  const record = readRecord(value);
-  if ("state" in record) return { state: "invalid", reason: readText(record.reason) };
-  const outputHashAlgorithm = readText(record.outputHashAlgorithm);
-  if (outputHashAlgorithm !== "sha256-chunk-tree-v1") {
-    throw new Error(`terminal evidence used an unknown output hash: ${outputHashAlgorithm}`);
-  }
-  return {
-    echoTailMisses: readRecords(record.echoTailMisses).map((entry) => ({
-      echo: readText(entry.echo),
-      ...readNumberFields(entry, ["batchBytes", "bytesFromEnd"]),
-    })),
-    instanceId: readText(record.instanceId),
-    ...readNumberFields(record, ["bytes", "acceptedAtMs", "paintedAtMs", "cols", "rows"]),
-    modelHash: readText(record.modelHash),
-    outputHash: readText(record.outputHash),
-    outputHashAlgorithm,
-    inputDurationsMs: readList(record.inputDurationsMs).map(readNumber),
-    inputWindows: readRecords(record.inputWindows).map((entry) =>
-      readNumberFields(entry, ["startTimestamp", "endTimestamp"]),
-    ),
-  };
-}
-
-export function seededSwitchSequence<T>(values: readonly T[], seed: number) {
-  const result = [...values];
-  let state = seed >>> 0;
-  const random = () => {
-    state += 0x6d2b79f5;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
-  };
-  for (let index = result.length - 1; index > 0; index--) {
-    const swap = Math.floor(random() * (index + 1));
-    [result[index], result[swap]] = [result[swap], result[index]];
-  }
-  return result;
-}
-
-export function warmSwitchPlan<T extends { sessionId: string }>(
-  values: readonly T[],
-  seed: number,
-) {
-  const warmup = [...values];
-  // Headed runs should click top→bottom in rail order. `values` is already the
-  // visible/created_desc sequence; do not reshuffle into a random path.
-  void seed;
-  const measured = [...values];
-  if (measured[0]?.sessionId === warmup.at(-1)?.sessionId)
-    measured.push(measured.shift()!);
-  return { warmup, measured };
-}
-
-export function completeFirstFold(coverage: TimelineCoverage) {
-  return (
-    coverage.overflowPx <= 100 ||
-    (coverage.visibleRowCount > 0 && coverage.topGapPx <= 96)
-  );
-}
-
-/**
- * The painted row is the destination's own latest turn: an assistant row shows
- * one of that turn's parts (a text part or a transformed tool/diff part), and a
- * row without part identity is the turn's message. The rendered text is not
- * compared with the corpus: every app renders markdown its own way, and the
- * rule the three compared drivers share is identity plus painted text.
- */
-export function latestTurnIdentity(message: PaintedMessage, target: SemanticTimelineTarget): boolean {
-  if (!target.expectedMessageIds.includes(message.messageId)) return false
-  if (message.kind === "AssistantPart" && message.partId !== undefined) return target.expectedPartIds.includes(message.partId)
-  return true
-}
-
-export function semanticTimelinePaintReady(
-  message: PaintedMessage,
-  target: SemanticTimelineTarget,
-) {
-  return (
-    latestTurnIdentity(message, target) &&
-    message.textLength > 0 &&
-    message.composerVisibleAndEnabled &&
-    message.surfaceFocused &&
-    completeFirstFold(message.timelineCoverage)
-  );
 }
 
 export async function installAgentBrowserObserver(page: {
@@ -425,520 +71,58 @@ export async function installAgentBrowserObserver(page: {
 }
 
 /**
- * Windows a side observation to exactly the interval the duration covers.
- *
- * A CPU profile of a session switch is only readable if it starts at the
- * trusted click and ends once the settle is confirmed. Started any earlier it
- * also contains sidebar pagination — fixture discovery the measured duration
- * deliberately excludes — and every frame of that shows up as app cost that
- * no user pays.
+ * Opens `target` through its rail row with a trusted click, timed by the
+ * benchmark's page clock from the click's pointerdown to the settle frame.
  */
-export type ActivationHooks = {
-  /** After the action is armed, before the trusted click. */
-  onArmed?: () => Promise<void>
-  /**
-   * Once the settle is confirmed, `PAINT_SETTLE_CONFIRMATION_FRAMES` after
-   * the reported paint; the profile window is that much longer than the duration.
-   */
-  onPainted?: () => Promise<void>
-  readinessTimeoutMs?: number
-}
-
 export async function measureSessionActivation(
   page: Page,
   target: SessionReadinessTarget,
-  hooks?: ActivationHooks,
-): Promise<SessionActionResult> {
+  options: { readinessTimeoutMs?: number } = {},
+): Promise<PageSettle> {
   // Pagination is fixture discovery, not session activation. Expose the target
-  // through the same public sidebar path before arming the trusted-action clock.
+  // through the same public sidebar path before arming the clock.
   await revealSessionRows(page, [target.sessionId]);
-  const token = `session:${target.sessionId}:${crypto.randomUUID()}`;
-  await page.evaluate(
-    (next) => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.armAction(next),
-    token,
-  );
-  await hooks?.onArmed?.();
-  // Installed before the trusted pointerdown: a frame the app paints during a
-  // Node round trip would be missing from the settle run, and the mutation
-  // observer must see every timeline mutation from the click on.
-  const stablePaintPromise = page.evaluate(
-    ({
-      id,
-      expectedMessageIds,
-      readinessTimeoutMs,
-      confirmationFrames,
-    }: {
-      id: string;
-      expectedMessageIds: string[];
-      readinessTimeoutMs: number;
-      confirmationFrames: number;
-    }) =>
-      new Promise<{
-        paintedAtMs: number;
-        paintedMessage: PaintedMessage;
-        frames: PaintStabilityFrame[];
-      }>(
-        (resolve, reject) => {
-          const expected = new Set(expectedMessageIds);
-          const deadline = performance.now() + readinessTimeoutMs;
-          const frames: PaintStabilityFrame[] = [];
-          let run:
-            | {
-                startIndex: number;
-                startedAtMs: number;
-                signature: string;
-                paintedMessage: PaintedMessage;
-              }
-            | undefined;
-          // The target's timeline root may not exist before the click, so the
-          // whole document is observed and records are attributed by ancestry.
-          let timelineMutations = 0;
-          const countTimelineMutations = (records: MutationRecord[]) => {
-            for (const record of records) {
-              const node = record.target;
-              const element =
-                node instanceof Element ? node : node.parentElement;
-              const timeline = element?.closest<HTMLElement>(
-                "[data-session-timeline-root]",
-              );
-              const root = timeline?.closest<HTMLElement>(
-                '[data-testid="session-page-root"]',
-              );
-              if (root?.dataset.sessionId === id) timelineMutations++;
-            }
-          };
-          const mutations = new MutationObserver(countTimelineMutations);
-          mutations.observe(document.documentElement, {
-            childList: true,
-            characterData: true,
-            subtree: true,
-          });
-          const takeTimelineMutations = () => {
-            countTimelineMutations(mutations.takeRecords());
-            const count = timelineMutations;
-            timelineMutations = 0;
-            return count;
-          };
-          const hashText = (value: string) => {
-            let hash = 2_166_136_261;
-            for (let index = 0; index < value.length; index++) {
-              hash ^= value.charCodeAt(index);
-              hash = Math.imul(hash, 16_777_619) >>> 0;
-            }
-            return hash;
-          };
-          const timeoutDiagnostic = () => {
-            const candidate = document.querySelector<HTMLElement>(
-              `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
-            );
-            const surface = candidate?.closest<HTMLElement>("[data-workbench-content]");
-            const composer = candidate?.querySelector<HTMLElement>('[data-component="prompt-input"]');
-            const timeline = candidate?.querySelector<HTMLElement>("[data-session-timeline-root]");
-            const viewport = timeline?.querySelector<HTMLElement>(
-              '[data-slot="session-timeline-scroll"] [data-scrollable]',
-            );
-            const rect = (element: HTMLElement | null | undefined) => {
-              if (!element) return undefined;
-              const bounds = element.getBoundingClientRect();
-              const style = getComputedStyle(element);
-              return {
-                display: style.display,
-                visibility: style.visibility,
-                opacity: style.opacity,
-                x: Math.round(bounds.x * 10) / 10,
-                y: Math.round(bounds.y * 10) / 10,
-                width: Math.round(bounds.width * 10) / 10,
-                height: Math.round(bounds.height * 10) / 10,
-              };
-            };
-            const expectedRows = candidate
-              ? [...candidate.querySelectorAll<HTMLElement>("[data-content-message-id]")]
-                .filter((item) => expected.has(item.dataset.contentMessageId ?? ""))
-                .slice(0, 8)
-                .map((item) => ({
-                  messageId: item.dataset.contentMessageId,
-                  partId: item.dataset.contentPartId,
-                  timelineRow: item.dataset.timelineRow,
-                  textLength: item.innerText.trim().length,
-                  rect: rect(item),
-                }))
-              : [];
-            return {
-              root: rect(candidate),
-              selectionSync: {
-                activeRailSessionIds: [
-                  ...document.querySelectorAll<HTMLElement>(
-                    '[data-testid="rail-sidebar-session-row"][data-active="true"]',
-                  ),
-                ].map((row) => row.dataset.sessionId ?? ""),
-                visibleSessionIds: [
-                  ...document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"),
-                ]
-                  .filter((root) => {
-                    const host = root.closest<HTMLElement>("[data-workbench-content]");
-                    return !!host && host.getAttribute("aria-hidden") !== "true" && !host.hasAttribute("inert");
-                  })
-                  .map((root) => root.dataset.sessionId ?? ""),
-              },
-              sessionState: {
-                firstFoldReady: candidate?.dataset.sessionFirstFoldReady,
-                messagesReady: candidate?.dataset.sessionMessagesReady,
-                messageCount: candidate?.dataset.sessionMessageCount,
-                conversationCount: candidate?.dataset.sessionConversationCount,
-                visibleUserCount: candidate?.dataset.sessionVisibleUserCount,
-                renderedUserCount: candidate?.dataset.sessionRenderedUserCount,
-                timelineLoading: !!candidate?.querySelector("[data-session-timeline-loading]"),
-                unavailable: !!candidate?.querySelector('[data-testid="session-unavailable"]'),
-              },
-              surface: {
-                rect: rect(surface),
-                ariaHidden: surface?.getAttribute("aria-hidden"),
-                inert: surface?.hasAttribute("inert"),
-              },
-              composer: {
-                rect: rect(composer),
-                ariaDisabled: composer?.getAttribute("aria-disabled"),
-                contenteditable: composer?.getAttribute("contenteditable"),
-              },
-              timeline: {
-                rect: rect(timeline),
-                revealReady: timeline?.dataset.sessionTimelineRevealReady,
-                progressiveReady: timeline?.dataset.sessionTimelineProgressiveReady,
-                rowCount: timeline?.dataset.sessionTimelineRowCount,
-                virtualKeyCount: timeline?.dataset.sessionTimelineKeyCount,
-              },
-              viewport: viewport
-                ? {
-                    rect: rect(viewport),
-                    scrollTop: viewport.scrollTop,
-                    scrollHeight: viewport.scrollHeight,
-                    clientHeight: viewport.clientHeight,
-                    mountedKeys: [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
-                      .slice(-8)
-                      .map((item) => item.dataset.timelineKey),
-                  }
-                : undefined,
-              expectedRows,
-              documentFocused: document.hasFocus(),
-              documentVisibility: document.visibilityState,
-              run: run
-                ? {
-                    startIndex: run.startIndex,
-                    startedAtMs: run.startedAtMs,
-                    length: frames.length - run.startIndex,
-                    signature: run.signature,
-                  }
-                : undefined,
-              frameCount: frames.length,
-              lastFrames: frames.slice(-4).map((frame) => ({
-                paintedAtMs: frame.paintedAtMs,
-                ready: frame.ready,
-                mutated: frame.mutated,
-              })),
-            };
-          };
-          const sample = ():
-            | {
-                signature: string;
-                signatureValue: Record<string, unknown>;
-                paintedMessage: PaintedMessage;
-              }
-            | undefined => {
-            const candidate = document.querySelector<HTMLElement>(
-              `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
-            );
-            if (!candidate) return undefined;
-            const surface = candidate.closest<HTMLElement>(
-              "[data-workbench-content]",
-            );
-            if (
-              !surface ||
-              surface.getAttribute("aria-hidden") === "true" ||
-              surface.hasAttribute("inert")
-            )
-              return undefined;
-            // Left/right sync: the rail's selected row and the painted session
-            // root must agree on this activation. A draft or previous session
-            // still owning the pane while another row looks selected is a fail.
-            const activeRows = [
-              ...document.querySelectorAll<HTMLElement>(
-                '[data-testid="rail-sidebar-session-row"][data-active="true"]',
-              ),
-            ];
-            const activeIds = activeRows.map((row) => row.dataset.sessionId ?? "");
-            if (activeIds.length !== 1 || activeIds[0] !== id) return undefined;
-            const visibleSessionRoots = [
-              ...document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"),
-            ].filter((root) => {
-              const host = root.closest<HTMLElement>("[data-workbench-content]");
-              if (!host || host.getAttribute("aria-hidden") === "true" || host.hasAttribute("inert")) {
-                return false;
-              }
-              const style = getComputedStyle(root);
-              const bounds = root.getBoundingClientRect();
-              return (
-                style.display !== "none" &&
-                style.visibility !== "hidden" &&
-                Number(style.opacity) !== 0 &&
-                bounds.width > 0 &&
-                bounds.height > 0
-              );
-            });
-            if (
-              visibleSessionRoots.length !== 1 ||
-              visibleSessionRoots[0]?.dataset.sessionId !== id ||
-              visibleSessionRoots.some((root) => root.dataset.sessionId === "new")
-            ) {
-              return undefined;
-            }
-            const composer = candidate.querySelector<HTMLElement>(
-              '[data-component="prompt-input"]',
-            );
-            const composerStyle = composer ? getComputedStyle(composer) : undefined;
-            const composerBounds = composer?.getBoundingClientRect();
-            const composerVisibleAndEnabled = !!(
-              composer &&
-              composerStyle &&
-              composerBounds &&
-              composerStyle.display !== "none" &&
-              composerStyle.visibility !== "hidden" &&
-              Number(composerStyle.opacity) !== 0 &&
-              composerBounds.width > 0 &&
-              composerBounds.height > 0 &&
-              composer.getAttribute("aria-disabled") !== "true" &&
-              composer.getAttribute("contenteditable") === "true"
-            );
-            const surfaceFocused = document.visibilityState === "visible" && document.hasFocus();
-            if (!composerVisibleAndEnabled || !surfaceFocused) return undefined;
-            // KTD11: app-specific progressive and staged-ready markers never
-            // end the neutral clock. Canonical DOM content, generic geometry,
-            // composer usability, focus, and an unchanged run of frames are
-            // sufficient. A loading placeholder only holds the clock open.
-            if (candidate.querySelector("[data-session-timeline-loading]"))
-              return undefined;
-            const timeline = candidate.querySelector<HTMLElement>(
-              "[data-session-timeline-root]",
-            );
-            if (!timeline || timeline.querySelector('[data-slot="skeleton"]'))
-              return undefined;
-            const viewport = timeline.querySelector<HTMLElement>(
-              '[data-slot="session-timeline-scroll"] [data-scrollable]',
-            );
-            if (!viewport) return undefined;
-            const view = viewport.getBoundingClientRect();
-            const visible = (element: HTMLElement) => {
-              const style = getComputedStyle(element);
-              const bounds = element.getBoundingClientRect();
-              return (
-                style.display !== "none" &&
-                style.visibility !== "hidden" &&
-                Number(style.opacity) !== 0 &&
-                bounds.width > 0 &&
-                bounds.height > 0 &&
-                bounds.bottom > view.top &&
-                bounds.top < view.bottom
-              );
-            };
-            const mountedRows = [
-              ...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]"),
-            ];
-            const virtualRows = mountedRows
-              .filter(visible)
-              .sort(
-                (left, right) =>
-                  left.getBoundingClientRect().top -
-                  right.getBoundingClientRect().top,
-              );
-            const timelineCoverage = {
-              overflowPx: Math.max(
-                0,
-                viewport.scrollHeight - viewport.clientHeight,
-              ),
-              topGapPx: Math.max(
-                0,
-                (virtualRows[0]?.getBoundingClientRect().top ?? view.bottom) -
-                  view.top,
-              ),
-              visibleRowCount: virtualRows.length,
-              virtualKeyCount: Number(timeline.dataset.sessionTimelineKeyCount),
-              rowCount: Number(timeline.dataset.sessionTimelineRowCount),
-            };
-            const row = [
-              ...candidate.querySelectorAll<HTMLElement>(
-                '[data-timeline-row="UserMessage"][data-content-message-id], [data-timeline-row="AssistantPart"][data-content-message-id]',
-              ),
-            ].find(
-              (item) =>
-                item.dataset.contentMessageId &&
-                expected.has(item.dataset.contentMessageId) &&
-                visible(item),
-            );
-            const kind = row?.dataset.timelineRow;
-            const messageId = row?.dataset.contentMessageId;
-            const partId = row?.dataset.contentPartId;
-            const content =
-              kind === "AssistantPart" && partId
-                ? row?.querySelector<HTMLElement>(
-                    `[data-component="text-part"][data-timeline-part-id="${CSS.escape(partId)}"] [data-slot="text-part-body"]`,
-                  )
-                : kind === "UserMessage"
-                  ? row?.querySelector<HTMLElement>(
-                      '[data-slot="user-message-text"]',
-                    )
-                  : undefined;
-            const text = (content ?? row)?.innerText.trim() ?? "";
-            const completeFirstFold =
-              timelineCoverage.overflowPx <= 100 ||
-              (timelineCoverage.visibleRowCount > 0 &&
-                timelineCoverage.topGapPx <= 96);
-            if (
-              !row ||
-              !messageId ||
-              (kind !== "UserMessage" && kind !== "AssistantPart") ||
-              text.length === 0 ||
-              !completeFirstFold
-            )
-              return undefined;
-            const paintedMessage: PaintedMessage = {
-              messageId,
-              kind,
-              partId,
-              textLength: text.length,
-              composerVisibleAndEnabled,
-              surfaceFocused,
-              timelineCoverage,
-            };
-            const signatureValue = {
-              messageId,
-              partId,
-              textLength: text.length,
-              textHash: hashText(text),
-              scrollTop: Math.round(viewport.scrollTop * 10) / 10,
-              scrollHeight: viewport.scrollHeight,
-              clientHeight: viewport.clientHeight,
-              timelineCoverage,
-              rootOpacity: getComputedStyle(candidate).opacity,
-              timelineOpacity: getComputedStyle(timeline).opacity,
-              mountedRowCount: mountedRows.length,
-              mountedKeysHash: hashText(
-                mountedRows.map((item) => item.dataset.timelineKey ?? "").join("\n"),
-              ),
-              rows: virtualRows.map((item) => {
-                const bounds = item.getBoundingClientRect();
-                const rowText = item.innerText.trim();
-                return [
-                  item.dataset.timelineKey,
-                  item.querySelector<HTMLElement>("[data-message-id]")?.dataset
-                    .messageId,
-                  rowText.length,
-                  hashText(rowText),
-                  Math.round(bounds.top * 10) / 10,
-                  Math.round(bounds.height * 10) / 10,
-                ];
-              }),
-            };
-            return { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage };
-          };
-          const paintedFrames = window.__claxedoPaintedFrames;
-          if (!paintedFrames) {
-            reject(new Error("Claxedo painted-frame clock is not installed"));
-            return;
-          }
-          paintedFrames({
-            sample: () => {
-              const sampledAtMs = performance.now();
-              const current = sample();
-              return {
-                current,
-                observerSampleMs: performance.now() - sampledAtMs,
-                mutated: takeTimelineMutations() > 0,
-              };
-            },
-            painted: ({ current, observerSampleMs, mutated }, paintedAtMs) => {
-              const index = frames.length;
-              frames.push({
-                paintedAtMs,
-                ready: !!current,
-                mutated,
-                observerSampleMs,
-                signature: current?.signatureValue,
-              });
-              if (!current) {
-                run = undefined;
-              } else if (!run || mutated || current.signature !== run.signature) {
-                run = {
-                  startIndex: index,
-                  startedAtMs: paintedAtMs,
-                  signature: current.signature,
-                  paintedMessage: current.paintedMessage,
-                };
-              }
-              if (run && index - run.startIndex >= confirmationFrames) {
-                mutations.disconnect();
-                resolve({
-                  paintedAtMs: run.startedAtMs,
-                  paintedMessage: run.paintedMessage,
-                  frames,
-                });
-                return true;
-              }
-              if (performance.now() >= deadline) {
-                mutations.disconnect();
-                reject(
-                  new Error(
-                    `Claxedo timeline did not settle on a canonical latest-turn message: ${JSON.stringify(timeoutDiagnostic())}`,
-                  ),
-                );
-                return true;
-              }
-            },
-          });
-        },
-      ),
-    {
-      id: target.sessionId,
+  const expression = settleExpression({
+    facts: claxedoSettleFacts,
+    target: {
+      sessionId: target.sessionId,
       expectedMessageIds: [...target.expectedMessageIds],
-      readinessTimeoutMs: hooks?.readinessTimeoutMs ?? 30_000,
-      confirmationFrames: PAINT_SETTLE_CONFIRMATION_FRAMES,
+      expectedPartIds: [...target.expectedPartIds],
     },
-  );
-  await clickVisibleSessionActivation(page, target.sessionId);
-  const stablePaint = readStablePaint(await stablePaintPromise);
-  await hooks?.onPainted?.();
-  const paintedMessage = stablePaint?.paintedMessage;
-  const timing = readActionResult(
-    await page.evaluate(
-      async (input: { token: string; paintedAtMs?: number }) =>
-        (await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(
-          input.token,
-          input.paintedAtMs,
-        )) ?? {
-          state: "invalid",
-          reason: "browser-observer-missing",
+    timeoutMs: options.readinessTimeoutMs ?? 30_000,
+    start: "trusted-pointerdown",
+  });
+  // The clock is sent before the click: the click's own renderer evaluations
+  // queue behind it, so the clock is armed before the pointerdown.
+  const settle = page.evaluate(expression).catch((error: unknown) => {
+    throw new Error(`Claxedo session ${target.sessionId} did not settle: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  });
+  const [settled] = await Promise.all([settle, clickVisibleSessionActivation(page, target.sessionId)]);
+  return readPageSettle(settled);
+}
+
+/** The page clock's answer, read off JSON; it throws rather than defaulting because every field is a published measurement. */
+function readPageSettle(value: unknown): PageSettle {
+  const record = readRecord(value);
+  return {
+    ...readNumberFields(record, ["startAt", "settledAt", "timeOrigin"]),
+    frames: readRecords(record.frames).map((frame) => {
+      const gates = readRecord(frame.gates);
+      return {
+        at: readNumber(frame.at),
+        gates: {
+          displayedDestination: readBoolean(gates.displayedDestination),
+          latestTurnPainted: readBoolean(gates.latestTurnPainted),
+          noPlaceholder: readBoolean(gates.noPlaceholder),
+          firstFoldComplete: readBoolean(gates.firstFoldComplete),
+          composerEditable: readBoolean(gates.composerEditable),
+          windowVisibleFocused: readBoolean(gates.windowVisibleFocused),
         },
-      { token, paintedAtMs: stablePaint.paintedAtMs },
-    ),
-  );
-  if (timing.state !== "exact") return timing;
-  if (!stablePaint)
-    return {
-      state: "invalid",
-      reason: "visible-real-message-missing-after-stable-paint",
-    };
-  const settle = paintSettle(stablePaint.frames, PAINT_SETTLE_CONFIRMATION_FRAMES);
-  if (settle?.settledAtMs !== stablePaint.paintedAtMs) {
-    return {
-      state: "invalid",
-      reason: `paint-settle-mismatch:${JSON.stringify({ reported: stablePaint.paintedAtMs, verified: settle })}`,
-    };
-  }
-  if (!paintedMessage || !semanticTimelinePaintReady(paintedMessage, target)) {
-    return {
-      state: "invalid",
-      reason: `invalid-semantic-paint:${JSON.stringify(paintedMessage)}`,
-    };
-  }
-  return { ...timing, paintedMessage, paintStabilityFrames: stablePaint.frames };
+        signature: frame.signature === null ? null : readText(frame.signature),
+        mutated: readBoolean(frame.mutated),
+      };
+    }),
+  };
 }
 
 async function clickVisibleSessionActivation(page: Page, sessionId: string) {
@@ -978,52 +162,6 @@ async function clickVisibleSessionActivation(page: Page, sessionId: string) {
   const index = readNumber(answer.index);
   if (index < 0) throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(readRecords(answer.candidates))}`);
   await page.locator(selector).nth(index).click();
-}
-
-export async function measureWarmSwitches(
-  page: Page,
-  targets: readonly SessionReadinessTarget[],
-  seed: number,
-) {
-  if (targets.length !== 20)
-    throw new Error("warm switch requires exactly twenty work items");
-  const sessionIds = targets.map((target) => target.sessionId);
-  await revealSessionRows(page, sessionIds);
-  // Establish the warm condition through the same public UI path before any
-  // measured switch. The final warm-up target is known, so rotate the seeded
-  // order if necessary to keep the first measurement a real switch too.
-  const plan = warmSwitchPlan(targets, seed);
-  for (const target of plan.warmup) {
-    const warmed = await measureSessionActivation(page, target);
-    if (warmed.state !== "exact") {
-      return {
-        metric: { state: "invalid", reason: warmed.reason } as AgentMetricValue,
-        sequence: [],
-      };
-    }
-  }
-  const samples: number[] = [];
-  const actions: Array<Extract<SessionActionResult, { state: "exact" }>> = [];
-  for (const target of plan.measured) {
-    const result = await measureSessionActivation(page, target);
-    if (result.state !== "exact")
-      return {
-        metric: { state: "invalid", reason: result.reason } as AgentMetricValue,
-        sequence: plan.measured,
-      };
-    samples.push(result.durationMs);
-    actions.push(result);
-  }
-  return {
-    metric: {
-      state: "exact",
-      value: percentile(samples, 95),
-      unit: "ms",
-    } as AgentMetricValue,
-    samples,
-    actions,
-    sequence: plan.measured,
-  };
 }
 
 async function revealSessionRows(page: Page, sessionIds: readonly string[]) {
@@ -1107,230 +245,21 @@ async function revealSessionRows(page: Page, sessionIds: readonly string[]) {
   );
 }
 
-export async function beginStreamObservation(page: Page) {
-  await page.evaluate(() =>
-    window.__CLAXEDO_AGENT_APP_BENCHMARK__?.beginStream(),
-  );
-}
-
-export async function finishStreamObservation(page: Page) {
-  const evidence = readStreamEvidence(
-    await page.evaluate(() => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishStream()),
-  );
-  if (!evidence) {
-    const invalid = invalidMetric("browser-observer-missing");
-    return { interaction: invalid, blockedFrames: invalid };
-  }
-  return {
-    interaction: eventTimingP95({
-      probeCount: evidence.probeCount,
-      durationThresholdMs: evidence.durationThresholdMs,
-      entries: evidence.eventEntries,
-    }),
-    blockedFrames: blockedFrameRatio({
-      scenarioDurationMs: evidence.durationMs,
-      supported: evidence.loafSupported,
-      entries: evidence.loafEntries,
-    }),
-    evidence,
-  };
-}
-
-export async function beginTerminalObservation(
-  page: Page,
-  input: {
-    terminalId: string;
-    instanceId: string;
-    startSentinel: string;
-    rawEndSentinel: string;
-    modelEndSentinel: string;
-    expectedEchoes: string[];
-    bytes: number;
-  },
-) {
-  await page.evaluate(
-    (value) => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.beginTerminal(value),
-    input,
-  );
-}
-
-export async function finishTerminalObservation(
-  page: Page,
-  expected: { outputHash: string; bytes: number; minimumDurationMs: number },
-) {
-  const evidence = readTerminalEvidence(
-    await page.evaluate(() => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishTerminal()),
-  );
-  if (!evidence || "state" in evidence) {
-    return {
-      metric: invalidMetric(evidence?.reason ?? "browser-observer-missing"),
-      evidence,
-    };
-  }
-  return {
-    metric: terminalThroughput({
-      bytes: evidence.bytes,
-      startedAtMs: evidence.acceptedAtMs,
-      paintedAtMs: evidence.paintedAtMs,
-      exactModelHash:
-        evidence.outputHash === expected.outputHash &&
-        evidence.bytes === expected.bytes,
-      concurrentInputP95Ms: percentile(evidence.inputDurationsMs, 95),
-      minimumDurationMs: expected.minimumDurationMs,
-    }),
-    inputMetric:
-      evidence.inputDurationsMs.length === 0
-        ? invalidMetric("terminal-input-evidence-missing")
-        : ({
-            state: "exact",
-            value: percentile(evidence.inputDurationsMs, 95),
-            unit: "ms",
-          } as AgentMetricValue),
-    evidence,
-  };
-}
-
 function cssEscape(value: string) {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-}
-
-function invalidMetric(reason: string): AgentMetricValue {
-  return { state: "invalid", reason };
 }
 
 function installBrowserBenchmark() {
   if (window.__CLAXEDO_AGENT_APP_BENCHMARK__) return;
 
-  const durationThresholdMs = 16;
   let action: { token: string; trustedEventAtMs?: number } | undefined;
-  let stream:
-    | {
-        startedAtMs: number;
-        probeCount: number;
-        events: Map<number, number>;
-        probes: Array<{ atMs: number; type: string; matched: boolean }>;
-        interactionIds: Set<number>;
-        loafs: Array<{ durationMs: number; blockingDurationMs: number }>;
-      }
-    | undefined;
-  let terminal:
-    | {
-        startSentinel: string;
-        rawEndSentinel: string;
-        modelEndSentinel: string;
-        expectedEchoes: string[];
-        terminalId: string;
-        instanceId: string;
-        bytes: number;
-        acceptedAtMs?: number;
-        paintedAtMs?: number;
-        model?: string;
-        cols?: number;
-        rows?: number;
-        inputStarts: number[];
-        inputDurationsMs: number[];
-        inputPaintedAtMs: number[];
-        inputPaintPending: Set<number>;
-        pendingInputIndex?: number;
-        acceptedTail: string;
-        acceptedChunks: Array<{ data: string; atMs: number }>;
-        acceptedEndTail: string;
-        acceptedHashBuffer: Uint8Array<ArrayBuffer>;
-        acceptedHashLength: number;
-        acceptedHashDigests: Array<Promise<ArrayBuffer>>;
-        acceptedBytes: number;
-        acceptedComplete?: boolean;
-        startSentinelOverflow?: boolean;
-        parsedTail: string;
-        echoTailMisses: Array<{ echo: string; batchBytes: number; bytesFromEnd: number }>;
-        foreignAcceptedCount: number;
-        foreignParsedCount: number;
-      }
-    | undefined;
-  const terminalsWithParsedOutput = new Set<string>();
-  const terminalParsedTails = new Map<string, string>();
-
   const trustedEvent = (event: Event) => {
     if (!event.isTrusted) return;
     if (action && action.trustedEventAtMs === undefined)
       action.trustedEventAtMs = performance.now();
-    if (stream && (event.type === "pointerdown" || event.type === "keydown")) {
-      stream.probeCount++;
-      stream.probes.push({
-        atMs: event.timeStamp,
-        type: event.type,
-        matched: false,
-      });
-    }
-    if (
-      terminal &&
-      event.type === "keydown" &&
-      terminal.pendingInputIndex !== undefined
-    ) {
-      terminal.inputStarts[terminal.pendingInputIndex] = performance.now();
-      terminal.pendingInputIndex = undefined;
-    }
   };
   addEventListener("pointerdown", trustedEvent, true);
   addEventListener("keydown", trustedEvent, true);
-
-  let eventObserver: PerformanceObserver | undefined;
-  const processEventEntries = (entries: PerformanceEntry[]) => {
-    if (!stream) return;
-    for (const raw of entries) {
-      const entry = raw as PerformanceEntry & { interactionId?: number };
-      if (!entry.interactionId || entry.duration < durationThresholdMs)
-        continue;
-      if (!stream.interactionIds.has(entry.interactionId)) {
-        const probe = stream.probes.find(
-          (candidate) =>
-            !candidate.matched &&
-            candidate.type === entry.name &&
-            Math.abs(candidate.atMs - entry.startTime) <= 8,
-        );
-        if (!probe) continue;
-        probe.matched = true;
-        stream.interactionIds.add(entry.interactionId);
-      }
-      stream.events.set(
-        entry.interactionId,
-        Math.max(stream.events.get(entry.interactionId) ?? 0, entry.duration),
-      );
-    }
-  };
-  try {
-    eventObserver = new PerformanceObserver((list) =>
-      processEventEntries(list.getEntries()),
-    );
-    eventObserver.observe({
-      type: "event",
-      buffered: false,
-      durationThreshold: durationThresholdMs,
-    } as PerformanceObserverInit);
-  } catch {
-    eventObserver?.disconnect();
-  }
-
-  const loafSupported = PerformanceObserver.supportedEntryTypes.includes(
-    "long-animation-frame",
-  );
-  let loafObserver: PerformanceObserver | undefined;
-  const processLoafEntries = (entries: PerformanceEntry[]) => {
-    if (!stream) return;
-    for (const raw of entries) {
-      const entry = raw as PerformanceEntry & { blockingDuration?: number };
-      stream.loafs.push({
-        durationMs: entry.duration,
-        blockingDurationMs: entry.blockingDuration ?? 0,
-      });
-    }
-  };
-  if (loafSupported) {
-    loafObserver = new PerformanceObserver((list) =>
-      processLoafEntries(list.getEntries()),
-    );
-    loafObserver.observe({ type: "long-animation-frame", buffered: false });
-  }
 
   const afterPaint = () =>
     new Promise<number>((resolve, reject) => {
@@ -1345,355 +274,27 @@ function installBrowserBenchmark() {
       };
       paintedFrames({ sample: () => undefined, painted });
     });
-  const hash = async (value: string) => {
-    const bytes = new TextEncoder().encode(value);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("");
-  };
-  const appendTerminalHash = (current: NonNullable<typeof terminal>, value: string) => {
-    const bytes = new TextEncoder().encode(value);
-    current.acceptedBytes += bytes.byteLength;
-    let offset = 0;
-    while (offset < bytes.byteLength) {
-      const count = Math.min(
-        current.acceptedHashBuffer.byteLength - current.acceptedHashLength,
-        bytes.byteLength - offset,
-      );
-      current.acceptedHashBuffer.set(bytes.subarray(offset, offset + count), current.acceptedHashLength);
-      current.acceptedHashLength += count;
-      offset += count;
-      if (current.acceptedHashLength !== current.acceptedHashBuffer.byteLength) continue;
-      const block = current.acceptedHashBuffer;
-      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block));
-      current.acceptedHashBuffer = new Uint8Array(1024 * 1024);
-      current.acceptedHashLength = 0;
-    }
-  };
-  const appendTerminalAccepted = (current: NonNullable<typeof terminal>, value: string) => {
-    if (current.acceptedComplete) return;
-    const combined = current.acceptedEndTail + value;
-    const endIndex = combined.indexOf(current.rawEndSentinel);
-    if (endIndex >= 0) {
-      appendTerminalHash(current, combined.slice(0, endIndex + current.rawEndSentinel.length));
-      current.acceptedEndTail = "";
-      current.acceptedComplete = true;
-      return;
-    }
-    const retainedChars = Math.max(0, current.rawEndSentinel.length - 1);
-    const confirmedEnd = Math.max(0, combined.length - retainedChars);
-    if (confirmedEnd > 0) appendTerminalHash(current, combined.slice(0, confirmedEnd));
-    current.acceptedEndTail = combined.slice(confirmedEnd);
-  };
-  const finishTerminalHash = async (current: NonNullable<typeof terminal>) => {
-    if (current.acceptedHashLength > 0) {
-      const block = current.acceptedHashBuffer.slice(0, current.acceptedHashLength);
-      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block.buffer));
-      current.acceptedHashLength = 0;
-    }
-    const digests = await Promise.all(current.acceptedHashDigests);
-    const tree = new Uint8Array(digests.length * 32);
-    digests.forEach((digest, index) => tree.set(new Uint8Array(digest), index * 32));
-    const root = await crypto.subtle.digest("SHA-256", tree);
-    return Array.from(new Uint8Array(root), (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("");
-  };
 
   window.__CLAXEDO_AGENT_APP_BENCHMARK__ = {
     armAction(token) {
       action = { token };
     },
-    async finishAction(token, observedPaintAtMs) {
+    async finishAction(token) {
       if (!action || action.token !== token)
         return { state: "invalid", reason: "action-token-mismatch" };
       const trustedEventAtMs = action.trustedEventAtMs;
       action = undefined;
       if (trustedEventAtMs === undefined)
         return { state: "invalid", reason: "trusted-action-missing" };
-      // An already-active destination can satisfy the semantic observer before
-      // the trusted row click is dispatched. That observation cannot timestamp
-      // the click's presentation; wait for the canonical post-input paint
-      // instead of returning an impossible negative interval.
-      const paintedAtMs = observedPaintAtMs !== undefined && observedPaintAtMs >= trustedEventAtMs
-        ? observedPaintAtMs
-        : await afterPaint();
-      if (!Number.isFinite(paintedAtMs) || paintedAtMs < trustedEventAtMs)
-        return { state: "invalid", reason: "invalid-paint-timestamp" };
+      const endAtMs = await afterPaint();
+      if (!Number.isFinite(endAtMs) || endAtMs < trustedEventAtMs)
+        return { state: "invalid", reason: "invalid-end-timestamp" };
       return {
         state: "exact",
-        durationMs: paintedAtMs - trustedEventAtMs,
+        durationMs: endAtMs - trustedEventAtMs,
         trustedEventAtMs,
-        paintedAtMs,
+        endAtMs,
       };
-    },
-    beginStream() {
-      stream = {
-        startedAtMs: performance.now(),
-        probeCount: 0,
-        events: new Map(),
-        probes: [],
-        interactionIds: new Set(),
-        loafs: [],
-      };
-    },
-    finishStream() {
-      processEventEntries(eventObserver?.takeRecords() ?? []);
-      processLoafEntries(loafObserver?.takeRecords() ?? []);
-      const current = stream;
-      stream = undefined;
-      if (!current) {
-        return {
-          startedAtMs: 0,
-          endedAtMs: 0,
-          durationMs: 0,
-          probeCount: 0,
-          durationThresholdMs,
-          eventEntries: [],
-          loafSupported,
-          loafEntries: [],
-        };
-      }
-      const endedAtMs = performance.now();
-      return {
-        startedAtMs: current.startedAtMs,
-        endedAtMs,
-        durationMs: endedAtMs - current.startedAtMs,
-        probeCount: current.probeCount,
-        durationThresholdMs,
-        eventEntries: Array.from(
-          current.events,
-          ([interactionId, durationMs]) => ({ interactionId, durationMs }),
-        ),
-        loafSupported,
-        loafEntries: current.loafs,
-      };
-    },
-    beginTerminal(input) {
-      terminal = {
-        ...input,
-        inputStarts: [],
-        inputDurationsMs: [],
-        inputPaintedAtMs: [],
-        inputPaintPending: new Set(),
-        acceptedTail: "",
-        acceptedChunks: [],
-        acceptedEndTail: "",
-        acceptedHashBuffer: new Uint8Array(1024 * 1024),
-        acceptedHashLength: 0,
-        acceptedHashDigests: [],
-        acceptedBytes: 0,
-        parsedTail: "",
-        echoTailMisses: [],
-        foreignAcceptedCount: 0,
-        foreignParsedCount: 0,
-      };
-    },
-    armTerminalInput(expectedEcho) {
-      if (!terminal) return;
-      const index = terminal.expectedEchoes.indexOf(expectedEcho);
-      if (index >= 0) terminal.pendingInputIndex = index;
-    },
-    terminalOutputObserved(terminalId) {
-      return terminalsWithParsedOutput.has(terminalId);
-    },
-    terminalOutputIncludes(terminalId, text) {
-      return terminalParsedTails.get(terminalId)?.includes(text) === true;
-    },
-    terminalInputObserved(expectedEcho) {
-      if (!terminal) return false;
-      const index = terminal.expectedEchoes.indexOf(expectedEcho);
-      return index >= 0 && terminal.inputDurationsMs[index] !== undefined;
-    },
-    terminalObservationStarted() {
-      return !!(
-        terminal &&
-        terminal.acceptedAtMs !== undefined &&
-        terminal.parsedTail.includes(terminal.startSentinel)
-      );
-    },
-    terminalObservationAcceptedBytes() {
-      if (!terminal || terminal.acceptedAtMs === undefined) return 0;
-      return terminal.acceptedBytes + new TextEncoder().encode(terminal.acceptedEndTail).byteLength;
-    },
-    terminalAcceptedMarkerObserved(value) {
-      return !!terminal?.acceptedEndTail.includes(value);
-    },
-    terminalObservationComplete() {
-      return (
-        terminal?.paintedAtMs !== undefined &&
-        terminal.inputDurationsMs.filter((value) => value !== undefined)
-          .length === terminal.expectedEchoes.length
-      );
-    },
-    terminalObservationStatus() {
-      if (!terminal) return { active: false };
-      return {
-        active: true,
-        instanceId: terminal.instanceId,
-        acceptedStarted: terminal.acceptedAtMs !== undefined,
-        acceptedComplete: terminal.acceptedComplete === true,
-        parsedReachedEnd: terminal.parsedTail.includes(terminal.modelEndSentinel),
-        modelCaptured: terminal.model !== undefined,
-        painted: terminal.paintedAtMs !== undefined,
-        inputCount: terminal.inputDurationsMs.filter((value) => value !== undefined).length,
-        expectedInputCount: terminal.expectedEchoes.length,
-        foreignAcceptedCount: terminal.foreignAcceptedCount,
-        foreignParsedCount: terminal.foreignParsedCount,
-      };
-    },
-    async finishTerminal() {
-      const current = terminal;
-      terminal = undefined;
-      if (current?.startSentinelOverflow)
-        return { state: "invalid", reason: "terminal-start-sentinel-missing" };
-      if (
-        current?.acceptedAtMs === undefined ||
-        !current.acceptedComplete ||
-        current.paintedAtMs === undefined ||
-        current.model === undefined ||
-        current.cols === undefined ||
-        current.rows === undefined
-      ) {
-        return { state: "invalid", reason: "terminal-output-incomplete" };
-      }
-      return {
-        instanceId: current.instanceId,
-        bytes: current.acceptedBytes,
-        acceptedAtMs: current.acceptedAtMs,
-        paintedAtMs: current.paintedAtMs,
-        modelHash: await hash(current.model),
-        cols: current.cols,
-        rows: current.rows,
-        outputHash: await finishTerminalHash(current),
-        outputHashAlgorithm: "sha256-chunk-tree-v1" as const,
-        echoTailMisses: current.echoTailMisses,
-        inputDurationsMs: current.inputDurationsMs,
-        inputWindows: current.inputDurationsMs.map((_, index) => ({
-          startTimestamp: current.inputStarts[index],
-          endTimestamp: current.inputPaintedAtMs[index],
-        })),
-      };
-    },
-    terminalWriteAccepted(receipt) {
-      if (!terminal || receipt.terminalId !== terminal.terminalId) return;
-      if (receipt.instanceId !== terminal.instanceId) {
-        terminal.foreignAcceptedCount += 1;
-        return;
-      }
-      if (terminal.acceptedAtMs !== undefined) {
-        appendTerminalAccepted(terminal, receipt.data);
-        return;
-      }
-      terminal.acceptedChunks.push({
-        data: receipt.data,
-        atMs: receipt.acceptedAtMs,
-      });
-      terminal.acceptedTail += receipt.data;
-      const sentinelIndex = terminal.acceptedTail.indexOf(
-        terminal.startSentinel,
-      );
-      if (sentinelIndex >= 0) {
-        let offset = 0;
-        terminal.acceptedAtMs = terminal.acceptedChunks.find((chunk) => {
-          const containsStart = sentinelIndex < offset + chunk.data.length;
-          offset += chunk.data.length;
-          return containsStart;
-        })?.atMs;
-        const initial = terminal.acceptedTail.slice(sentinelIndex);
-        terminal.acceptedTail = "";
-        terminal.acceptedChunks = [];
-        appendTerminalAccepted(terminal, initial);
-      }
-      if (terminal.acceptedTail.length > 65_536) {
-        terminal.startSentinelOverflow = true;
-        terminal.acceptedTail = "";
-        terminal.acceptedChunks = [];
-      }
-    },
-    terminalWriteParsed(receipt) {
-      terminalsWithParsedOutput.add(receipt.terminalId);
-      terminalParsedTails.set(
-        receipt.terminalId,
-        `${terminalParsedTails.get(receipt.terminalId) ?? ""}${receipt.data}`.slice(
-          -65_536,
-        ),
-      );
-      const current = terminal;
-      if (!current || receipt.terminalId !== current.terminalId) return;
-      if (receipt.instanceId !== current.instanceId) {
-        current.foreignParsedCount += 1;
-        return;
-      }
-      current.parsedTail = `${current.parsedTail}${receipt.data}`.slice(
-        -65_536,
-      );
-      // The rolling tail is a cheap gate to avoid calling the expensive
-      // `serialize()` on every batch; `serialized.includes(echo)` below remains
-      // the authoritative check. A batch larger than the 64 KiB window can
-      // evict an echo in the same append that delivers it, so the gate never
-      // opens and a correctly echoed, on-screen input is recorded as never
-      // observed. Testing the incoming batch's own `data` too costs one
-      // `indexOf` per expected echo per batch and cannot admit anything the
-      // authoritative check would reject.
-      const matchedEchoes = current.expectedEchoes.filter((echo) => {
-        // `parsedTail` holds the last 64 KiB of the stream, and this batch ends
-        // it, so the tail contains the echo iff `bytesFromEnd + echo.length <=
-        // 65,536`. The fallback branch below covers exactly the population the
-        // tail check misses, at the cost of one `indexOf` on a batch already
-        // being scanned.
-        if (current.parsedTail.includes(echo)) return true;
-        const at = receipt.data.indexOf(echo);
-        if (at < 0) return false;
-        current.echoTailMisses.push({
-          echo,
-          batchBytes: receipt.data.length,
-          bytesFromEnd: receipt.data.length - at - echo.length,
-        });
-        return true;
-      });
-      // Same false negative as the echo gate above, same non-weakening fix: the
-      // authoritative test is `serialized.includes(current.modelEndSentinel)`
-      // below and is untouched. Without this, an end sentinel landing more than
-      // 64 KiB from its batch's end never opens the gate, `serialize()` is never
-      // called, the model is never captured, and it surfaces as "Terminal
-      // observation did not complete" — the same string that a component remount
-      // also produces, which is why that string implies two mechanisms, not one.
-      const reachedEnd =
-        current.parsedTail.includes(current.modelEndSentinel) ||
-        receipt.data.includes(current.modelEndSentinel);
-      if (matchedEchoes.length === 0 && !reachedEnd) return;
-      const serialized = receipt.serialize();
-      for (const [echoIndex, echo] of current.expectedEchoes.entries()) {
-        if (
-          !serialized.includes(echo) ||
-          current.inputStarts[echoIndex] === undefined ||
-          current.inputDurationsMs[echoIndex] !== undefined ||
-          current.inputPaintPending.has(echoIndex)
-        )
-          continue;
-        current.inputPaintPending.add(echoIndex);
-        const startedAtMs = current.inputStarts[echoIndex];
-        void afterPaint().then((paintedAtMs) => {
-          current.inputPaintPending.delete(echoIndex);
-          current.inputPaintedAtMs[echoIndex] = paintedAtMs;
-          current.inputDurationsMs[echoIndex] = paintedAtMs - startedAtMs;
-        });
-      }
-      if (
-        current.paintedAtMs !== undefined ||
-        !reachedEnd ||
-        !serialized.includes(current.modelEndSentinel)
-      )
-        return;
-      current.model = serialized;
-      const dimensions = receipt.dimensions();
-      current.cols = dimensions.cols;
-      current.rows = dimensions.rows;
-      void afterPaint().then((paintedAtMs) => {
-        current.paintedAtMs = paintedAtMs;
-      });
     },
   };
 }

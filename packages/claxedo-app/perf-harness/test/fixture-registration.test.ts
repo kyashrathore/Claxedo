@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { registerCorpusSessions, registerWorkspace } from "../src/fixture-registration"
 import { OpenCodeCorpus } from "../src/opencode-corpus"
-import { initializeWorkspace } from "../src/workspace-fixture"
+import { initializeWorkspace } from "../src/corpus-workspace"
 
 describe("corpus registration", () => {
   test("publishes exact corpus identity and registered local workspace scope in isolated states", async () => {

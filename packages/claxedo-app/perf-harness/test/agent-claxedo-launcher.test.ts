@@ -2,8 +2,9 @@ import { expect, test } from "bun:test"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher"
+import { appStartClock, launchPackagedClaxedo } from "../src/agent-claxedo-launcher"
 import { readProcessTable, sameProcessIdentity, type ProcessSnapshot } from "../src/agent-process-family"
+import { frameLogMismatch, resolvedSettle } from "./page-settle"
 
 test("failed startup waits for owned descendants before disposable state is removed", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "claxedo-launch-cleanup-"))
@@ -14,8 +15,12 @@ test("failed startup waits for owned descendants before disposable state is remo
   const unrelated = Bun.spawn([node, "-e", "setInterval(() => {}, 1000)"], { stdout: "ignore", stderr: "ignore" })
   try {
     const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
-    await writeFile(executable, `#!/bin/sh\nsleep 60 &\necho $! > ${quote(pidFile)}\nexec sleep 60\n`)
+    await writeFile(executable, `#!/bin/sh\n[ "$1" = --warm ] && exit 0\nsleep 60 &\necho $! > ${quote(pidFile)}\nexec sleep 60\n`)
     await chmod(executable, 0o700)
+    // macOS checks a new executable on its first exec: 500–1100 ms on a loaded
+    // host, against 7 ms for later execs. Paid here, it cannot delay the child
+    // past the launch's lifetime.
+    await Bun.spawn([executable, "--warm"]).exited
     const launching = launchPackagedClaxedo({
       executable,
       isolatedProfilePath: path.join(root, "profile"),
@@ -26,9 +31,11 @@ test("failed startup waits for owned descendants before disposable state is remo
     })
     // Attach the rejection handler immediately; the fixture deliberately never
     // exposes CDP, then leaves its child alive when the parent exits.
-    const failure = launching.catch((error) => error as Error)
-    const deadline = performance.now() + 3_000
-    while (!owned && performance.now() < deadline) {
+    let settled = false
+    const failure = launching.catch((error) => error as Error).finally(() => {
+      settled = true
+    })
+    while (!owned && !settled) {
       const child = Number(await readFile(pidFile, "utf8").catch(() => ""))
       if (child > 0) owned = (await readProcessTable()).find((item) => item.pid === child)
       if (!owned) await Bun.sleep(25)
@@ -85,3 +92,14 @@ test("the app resolves HOME and every XDG root inside the run's home, whatever t
     await rm(root, { recursive: true, force: true })
   }
 }, 20_000)
+
+test("app start runs on the driver's clock from the spawn to the renderer's settle frame", () => {
+  const driverTimeOrigin = 1_700_000_000_000
+  const settle = resolvedSettle({ startAt: 900, timeOrigin: driverTimeOrigin + 250, unready: 6 })
+  const spawnAt = 120
+  const { endTimestamp, frameLog } = appStartClock(settle, spawnAt, driverTimeOrigin)
+  expect(endTimestamp).toBe(settle.settledAt + 250)
+  expect(frameLog).toEqual({ startAt: spawnAt - 250, offsetMs: 250, frames: settle.frames })
+  expect(frameLogMismatch(frameLog, { start: spawnAt, end: endTimestamp })).toBeNull()
+  expect(frameLogMismatch(frameLog, { start: spawnAt, end: settle.settledAt })).not.toBeNull()
+})

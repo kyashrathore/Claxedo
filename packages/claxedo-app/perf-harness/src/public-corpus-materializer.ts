@@ -4,10 +4,8 @@ import { mkdir, readFile, realpath } from "node:fs/promises"
 import path from "node:path"
 import { createInterface } from "node:readline"
 import { OpenCodeCorpus } from "./opencode-corpus"
-import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
-import { verifyWorkspaceFixtureManifest } from "agent-app-benchmark/workspace-fixture"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
-import { initializeWorkspace, type MaterializedWorkspace } from "./workspace-fixture"
+import { initializeWorkspace, type MaterializedWorkspace } from "./corpus-workspace"
 import { persistClaxedoCorpus, registerWorkspace } from "./fixture-registration"
 import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
 
@@ -208,16 +206,14 @@ export type MaterializedSession = {
   updatedAt: number
 }
 
+export type CorpusReadinessTarget = SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
+
 export type ClaxedoPublicMaterialization = {
   corpusDigestSha256: string
   eventSchemaDigestSha256: string
   mappingDigestSha256: string
-  workspaceFixtureDigestSha256?: string
   sessionMapping: Readonly<Record<string, string>>
-  readinessTargets: ReadonlyMap<
-    string,
-    SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
-  >
+  readinessTargets: ReadonlyMap<string, CorpusReadinessTarget>
   messageCount: number
   transcriptBytes: number
 }
@@ -229,8 +225,6 @@ export async function materializeClaxedoPublicCorpus(input: {
   expectedEventSchemaDigestSha256: string
   dataDirectory: string
   workspaceDirectory: string
-  workspaceFixtureManifest?: WorkspaceFixtureManifest
-  expectedWorkspaceFixtureDigestSha256?: string
 }): Promise<ClaxedoPublicMaterialization> {
   const manifest = parseCorpusManifest(JSON.parse(await readFile(input.corpusManifestPath, "utf8")))
   if (manifest.schemaVersion !== 1 || manifest.corpusDigestSha256 !== input.expectedCorpusDigestSha256) {
@@ -239,14 +233,13 @@ export async function materializeClaxedoPublicCorpus(input: {
   if (manifest.sourceEventFormat.schemaDigestSha256 !== input.expectedEventSchemaDigestSha256) {
     throw new Error("Claxedo received an OpenCode event schema with the wrong digest")
   }
-  const workspaceFixture = verifyRequestedWorkspaceFixture(input)
   await mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 })
   const workspaceRoot = await realpath(input.workspaceDirectory)
   const workspaces = new Map<string, MaterializedWorkspace>()
   for (const workspaceId of [...new Set(manifest.sessions.map((session) => session.workspaceId))].sort()) {
     const directory = path.join(workspaceRoot, workspaceId)
     await mkdir(directory, { recursive: true, mode: 0o700 })
-    const projectId = await initializeWorkspace(directory, workspaceId, workspaceFixture)
+    const projectId = await initializeWorkspace(directory, workspaceId)
     await registerWorkspace({
       dataDirectory: input.dataDirectory,
       directory,
@@ -257,10 +250,7 @@ export async function materializeClaxedoPublicCorpus(input: {
   }
 
   const database = new OpenCodeCorpus("recorded-events")
-  const readinessTargets = new Map<
-    string,
-    SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
-  >()
+  const readinessTargets = new Map<string, CorpusReadinessTarget>()
   const materializedSessions: MaterializedSession[] = []
   let expectedMessageCount = 0
   let expectedTranscriptBytes = 0
@@ -307,7 +297,6 @@ export async function materializeClaxedoPublicCorpus(input: {
     corpusDigestSha256: manifest.corpusDigestSha256,
     eventSchemaDigestSha256: manifest.sourceEventFormat.schemaDigestSha256,
     mappingDigestSha256: createHash("sha256").update(canonicalJson(sessionMapping)).digest("hex"),
-    ...(workspaceFixture ? { workspaceFixtureDigestSha256: workspaceFixture.manifestDigestSha256 } : {}),
     sessionMapping,
     readinessTargets,
     messageCount,
@@ -483,21 +472,6 @@ export function workspaceListRanks(
     ranks.set(session.logicalSessionId, listIndex)
   }
   return ranks
-}
-
-function verifyRequestedWorkspaceFixture(input: {
-  workspaceFixtureManifest?: WorkspaceFixtureManifest
-  expectedWorkspaceFixtureDigestSha256?: string
-}): WorkspaceFixtureManifest | undefined {
-  if (!input.workspaceFixtureManifest && !input.expectedWorkspaceFixtureDigestSha256) return undefined
-  if (!input.workspaceFixtureManifest || !input.expectedWorkspaceFixtureDigestSha256) {
-    throw new Error("Claxedo workspace fixture manifest and digest must be supplied together")
-  }
-  const manifest = verifyWorkspaceFixtureManifest(input.workspaceFixtureManifest)
-  if (manifest.manifestDigestSha256 !== input.expectedWorkspaceFixtureDigestSha256) {
-    throw new Error("Claxedo received the wrong workspace fixture digest")
-  }
-  return manifest
 }
 
 function canonicalJson(value: unknown): string {
