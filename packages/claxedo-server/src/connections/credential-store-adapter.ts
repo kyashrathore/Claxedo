@@ -27,7 +27,7 @@ export function createCredentialStoreAdapter(credentials: ControlPlaneCredential
       })
     },
     async get(providerId) {
-      const meta = await credentials.getCredentialByProvider(providerId)
+      const meta = await credentials.getCredentialByProvider(providerId, { owner: null })
       if (!meta || (meta.kind !== "api_key" && meta.kind !== "oauth_token")) return undefined
       return {
         kind: meta.kind,
@@ -51,12 +51,12 @@ export function createCredentialStoreAdapter(credentials: ControlPlaneCredential
     async readSecret(providerId) {
       const readById = credentials.resolveCredentialSecretById
       if (!readById) throw new ConnectionsUnavailableError()
-      const meta = await credentials.getCredentialByProvider(providerId)
+      const meta = await credentials.getCredentialByProvider(providerId, { owner: null })
       if (!meta) return null
       return readById(meta.id)
     },
     async setStatus(providerId, status, lastError) {
-      const meta = await credentials.getCredentialByProvider(providerId)
+      const meta = await credentials.getCredentialByProvider(providerId, { owner: null })
       if (meta) await credentials.updateCredentialStatus(meta.id, status, lastError)
     },
     async deleteByProvider(providerId) {

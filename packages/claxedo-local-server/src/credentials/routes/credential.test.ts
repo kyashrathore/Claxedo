@@ -1232,6 +1232,8 @@ describe("choosing which account a provider runs on", () => {
     }
     expect(effective.credentials.filter((row) => row.provider_id === "claude-sdk").map((row) => row.id))
       .toEqual([second.id])
+    const byProvider = await (await app.request("http://localhost/claude-sdk")).json() as { credential: { id: string; is_active: boolean } }
+    expect(byProvider.credential).toMatchObject({ id: second.id, is_active: true })
   })
 
   test("the org's team account is what a person spends only once they choose it, and choosing their own puts theirs back", async () => {

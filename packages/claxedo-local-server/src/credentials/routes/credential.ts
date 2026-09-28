@@ -379,7 +379,7 @@ export function CredentialRoutes(
       }
     })
     .get("/:providerId", async (c) => {
-      const cred = (await credentials.listCredentials(org(c.req.raw))).find((row) => row.provider_id === c.req.param("providerId") && row.owner === actor(c.req.raw))
+      const cred = await credentials.getCredentialByProvider(c.req.param("providerId"), { owner: actor(c.req.raw) }, org(c.req.raw))
       if (!cred) return c.json({ credential: null })
       return c.json({ credential: redact(cred) })
     })

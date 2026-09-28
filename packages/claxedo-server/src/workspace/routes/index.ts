@@ -595,7 +595,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           // Kind-scoped: unscoped, a model-provider API key under the same id
           // (`vercel` is both) satisfied this gate with no sandbox credential
           // present, so creation passed here and failed later at launch.
-          .getCredentialByProvider(id, "sandbox_driver")
+          .getCredentialByProvider(id, { owner: null, kind: "sandbox_driver" })
           .catch(() => undefined)
         const hasCredentials = credential?.status === "available" || !!sandboxDriverAuth(driverConfig, id)
         log.info("Create cloud workspace requested", {

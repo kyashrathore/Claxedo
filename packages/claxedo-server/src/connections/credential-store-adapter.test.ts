@@ -122,7 +122,7 @@ describe.each([
       secret: JSON.stringify({ access: "old-access", refresh: "old-refresh" }),
       expiresAt: 1,
     })
-    const meta = await credentials.getCredentialByProvider(PROVIDER)
+    const meta = await credentials.getCredentialByProvider(PROVIDER, { owner: null })
     await credentials.updateCredentialStatus(meta!.id, "revoked")
     return store
   }

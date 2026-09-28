@@ -32,9 +32,11 @@ function serviceOrigin(owner: TurnActor): TurnOrigin {
 /**
  * The sessions this host holds open on a transport. A session is attached
  * lazily from its durable binding the first time it is used after a restart
- * or after its transport was replaced, and every handle read here carries the
- * binding the store holds now, so a rebind by a handoff is never served from a
- * stale copy.
+ * or after its transport was replaced. Every attachment read here is brought
+ * to the binding the store holds now, in place, whether a handoff or the
+ * harness itself rebound it: a transport refuses a session under a stale
+ * upstream id, and readers that key state on the attachment must keep finding
+ * the same object.
  */
 export class SessionAttachments {
   private readonly attached = new Map<string, AttachedSession>()
@@ -59,7 +61,7 @@ export class SessionAttachments {
   }
 
   entries(): AttachedSession[] {
-    return [...this.attached.values()].filter((entry) => !entry.handle.retired())
+    return [...this.attached].filter(([, entry]) => !entry.handle.retired()).map(([sessionId, entry]) => this.current(sessionId, entry))
   }
 
   owner(sessionId: string): TurnActor {
@@ -99,9 +101,9 @@ export class SessionAttachments {
 
   private current(sessionId: string, entry: AttachedSession): AttachedSession {
     const binding = this.binding(sessionId)
-    if (binding.upstreamSessionId === entry.session.binding.upstreamSessionId &&
-      binding.connectionId === entry.session.binding.connectionId) return entry
-    return { ...entry, session: { ...entry.session, binding } }
+    if (binding.upstreamSessionId !== entry.session.binding.upstreamSessionId ||
+      binding.connectionId !== entry.session.binding.connectionId) entry.session = { ...entry.session, binding }
+    return entry
   }
 
   private async attach(sessionId: string, requestedDirectory?: string, authority?: ConnectionSecretAuthority): Promise<AttachedSession> {
