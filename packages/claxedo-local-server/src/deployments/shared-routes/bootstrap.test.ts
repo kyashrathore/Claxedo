@@ -41,6 +41,7 @@ async function signedBootstrap(input: {
   return await BootstrapRoutes({
     ...signedAuth,
     hostAggregateEvents: input.hostAggregateEvents ?? false,
+    connections: false,
     ...(input.hostEnrollmentId ? { hostEnrollmentId: input.hostEnrollmentId } : {}),
     services: {
       authority: { listWorkspaces: async () => input.workspaces ?? [] },
@@ -51,7 +52,7 @@ async function signedBootstrap(input: {
 
 describe("BootstrapRoutes", () => {
   test("returns only Claxedo-owned bootstrap fields", async () => {
-    const response = await BootstrapRoutes({ env: { npm_package_version: "9.9.9-test" }, hostAggregateEvents: true })
+    const response = await BootstrapRoutes({ env: { npm_package_version: "9.9.9-test" }, hostAggregateEvents: true, connections: false })
       .request("/api/claxedo/bootstrap")
 
     expect(response.status).toBe(200)
@@ -69,7 +70,7 @@ describe("BootstrapRoutes", () => {
   })
 
   test("shell scope omits credential presentation", async () => {
-    const response = await BootstrapRoutes({ env: {}, hostAggregateEvents: true })
+    const response = await BootstrapRoutes({ env: {}, hostAggregateEvents: true, connections: false })
       .request("/api/claxedo/bootstrap?scope=shell")
 
     expect(response.status).toBe(200)
@@ -81,7 +82,7 @@ describe("BootstrapRoutes", () => {
   test("allows loopback browser bootstrap when a bearer is attached", async () => {
     const response = await BootstrapRoutes({
       authConfig: { enabled: false, mode: "local-only", reason: "local test" },
-      hostAggregateEvents: true,
+      hostAggregateEvents: true, connections: false,
     }).request("http://127.0.0.1/api/claxedo/bootstrap", {
       headers: {
         Authorization: "Bearer local-test-token",
@@ -97,17 +98,33 @@ describe("BootstrapRoutes", () => {
   // issuer on localhost too — nor from its own build flags, so a body that
   // omits it leaves the reader opening a stream the server may refuse forever.
   test("declares whether this composition serves the host aggregate, in the local body", async () => {
-    const served = await BootstrapRoutes({ env: {}, hostAggregateEvents: true })
+    const served = await BootstrapRoutes({ env: {}, hostAggregateEvents: true, connections: false })
       .request("/api/claxedo/bootstrap")
     await expect(served.json()).resolves.toMatchObject({ events: { hostAggregate: true } })
 
-    const unserved = await BootstrapRoutes({ env: {}, hostAggregateEvents: false })
+    const unserved = await BootstrapRoutes({ env: {}, hostAggregateEvents: false, connections: false })
       .request("/api/claxedo/bootstrap")
     await expect(unserved.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
 
-    const shell = await BootstrapRoutes({ env: {}, hostAggregateEvents: false })
+    const shell = await BootstrapRoutes({ env: {}, hostAggregateEvents: false, connections: false })
       .request("/api/claxedo/bootstrap?scope=shell")
     await expect(shell.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
+  })
+
+  // The desktop-local composition mounts no Connections family and a node
+  // does, over the same bootstrap route, so only the composition can say which.
+  test("declares whether this composition serves Connections, in every body", async () => {
+    const served = await BootstrapRoutes({ env: {}, hostAggregateEvents: true, connections: true })
+      .request("/api/claxedo/bootstrap")
+    await expect(served.json()).resolves.toMatchObject({ deployment: { connections: true } })
+
+    const unserved = await BootstrapRoutes({ env: {}, hostAggregateEvents: true, connections: false })
+      .request("/api/claxedo/bootstrap?scope=shell")
+    await expect(unserved.json()).resolves.toMatchObject({ deployment: { connections: false } })
+
+    const anonymous = await BootstrapRoutes({ ...signedAuth, env: {}, hostAggregateEvents: true, connections: true })
+      .request("http://control.example/api/claxedo/bootstrap")
+    await expect(anonymous.json()).resolves.toMatchObject({ deployment: { connections: true } })
   })
 
   // A client answers "is the machine serving this workspace me" by comparing a
@@ -116,18 +133,18 @@ describe("BootstrapRoutes", () => {
   test("states this machine's enrollment, and states its absence rather than omitting it", async () => {
     const enrolled = await BootstrapRoutes({
       env: {},
-      hostAggregateEvents: true,
+      hostAggregateEvents: true, connections: false,
       hostEnrollmentId: () => "enr_this_machine",
     }).request("/api/claxedo/bootstrap")
     await expect(enrolled.json()).resolves.toMatchObject({ host: { enrollment: "enr_this_machine" } })
 
-    const unenrolled = await BootstrapRoutes({ env: {}, hostAggregateEvents: true })
+    const unenrolled = await BootstrapRoutes({ env: {}, hostAggregateEvents: true, connections: false })
       .request("/api/claxedo/bootstrap")
     await expect(unenrolled.json()).resolves.toMatchObject({ host: { enrollment: null } })
 
     const shellScope = await BootstrapRoutes({
       env: {},
-      hostAggregateEvents: true,
+      hostAggregateEvents: true, connections: false,
       hostEnrollmentId: () => "enr_this_machine",
     }).request("/api/claxedo/bootstrap?scope=shell")
     await expect(shellScope.json()).resolves.toMatchObject({ host: { enrollment: "enr_this_machine" } })
@@ -140,14 +157,14 @@ describe("BootstrapRoutes", () => {
   test("declares whether this composition issues sessions", async () => {
     const localOnly = await BootstrapRoutes({
       env: {},
-      hostAggregateEvents: false,
+      hostAggregateEvents: false, connections: false,
       authConfig: { enabled: false, mode: "local-only", reason: "local test" },
     }).request("/api/claxedo/bootstrap")
     await expect(localOnly.json()).resolves.toMatchObject({ deployment: { issuesSessions: false } })
 
     const shell = await BootstrapRoutes({
       env: {},
-      hostAggregateEvents: false,
+      hostAggregateEvents: false, connections: false,
       authConfig: { enabled: false, mode: "local-only", reason: "local test" },
     }).request("/api/claxedo/bootstrap?scope=shell")
     await expect(shell.json()).resolves.toMatchObject({ deployment: { issuesSessions: false } })
@@ -162,7 +179,7 @@ describe("BootstrapRoutes", () => {
   test("a misconfigured signed composition still says it issues sessions", async () => {
     const response = await BootstrapRoutes({
       env: {},
-      hostAggregateEvents: false,
+      hostAggregateEvents: false, connections: false,
       authConfig: { enabled: false, mode: "misconfigured", reason: "hosted route mounted without an auth config" },
     }).request("http://control.example/api/claxedo/bootstrap")
     await expect(response.json()).resolves.toMatchObject({ deployment: { issuesSessions: true } })
@@ -175,7 +192,7 @@ describe("BootstrapRoutes", () => {
     const response = await BootstrapRoutes({
       ...signedAuth,
       env: { npm_package_version: "9.9.9-test" },
-      hostAggregateEvents: true,
+      hostAggregateEvents: true, connections: false,
     }).request("http://control.example/api/claxedo/bootstrap")
 
     expect(response.status).toBe(200)
@@ -184,21 +201,21 @@ describe("BootstrapRoutes", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: true },
-      deployment: { issuesSessions: true, documents: true },
+      deployment: { issuesSessions: true, documents: true, connections: false },
     })
   })
 
   test("an anonymous caller on a local-only node still gets the machine's own body", async () => {
     const response = await BootstrapRoutes({
       env: {},
-      hostAggregateEvents: true,
+      hostAggregateEvents: true, connections: false,
       authConfig: { enabled: false, mode: "local-only", reason: "local test" },
     }).request("/api/claxedo/bootstrap")
 
     const body = await response.json()
     expect(body.path).toBeDefined()
     expect(body.project).toEqual([])
-    expect(body.deployment).toEqual({ issuesSessions: false, documents: true })
+    expect(body.deployment).toEqual({ issuesSessions: false, documents: true, connections: false })
   })
 
   test("declares it in the signed body too", async () => {

@@ -830,7 +830,7 @@ describe("local composition — bootstrap behind the daemon capability", () => {
     })
     expect(anonymous.status).toBe(200)
     const declaration = await anonymous.json() as Record<string, unknown>
-    expect(declaration).toMatchObject({ healthy: true, deployment: { issuesSessions: true } })
+    expect(declaration).toMatchObject({ healthy: true, deployment: { issuesSessions: true, connections: false } })
     expect(declaration.path).toBeUndefined()
     expect(declaration.project).toBeUndefined()
 
