@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import os from "node:os"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
@@ -9,12 +10,7 @@ import { config } from "../config"
 import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
 import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../connect/host"
-import {
-  CLAXEDO_DAEMON_PROTOCOL,
-  desktopDaemonDiscoveryFiles,
-  desktopDaemonState,
-  type DesktopDaemonState,
-} from "../connect/desktop-daemon"
+import { desktopDaemonDiscoveryFiles, desktopDaemonState, type DesktopDaemonState } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { defaultServiceDeps, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 

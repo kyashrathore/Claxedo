@@ -60,6 +60,13 @@
       "import": "./dist/string.mjs",
       "default": "./dist/string.mjs"
     },
+    "./claxedo-daemon": {
+      "development": "./src/claxedo-daemon.ts",
+      "bun": "./src/claxedo-daemon.ts",
+      "types": "./dist/claxedo-daemon.d.ts",
+      "import": "./dist/claxedo-daemon.mjs",
+      "default": "./dist/claxedo-daemon.mjs"
+    },
     "./claxedo-document": {
       "development": "./src/claxedo-document.ts",
       "bun": "./src/claxedo-document.ts",

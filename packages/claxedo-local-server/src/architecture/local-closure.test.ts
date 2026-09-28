@@ -224,12 +224,6 @@ describe("@claxedo/local-server closure", () => {
     //    installs them through; only the process whose runtimes resolve a
     //    turn's credentials can hold them. The parser and the `projectAuth`
     //    composition are server-core's `credentials/host-provider-config.ts`.
-    //  - `platform/auth/project-access.ts` — the one authorization operation
-    //    for the projects this server stores, shared by the shell `/project`
-    //    routes and the `/api/claxedo/projects` router. Two route families in
-    //    this package ask the same question, and a second implementation of it
-    //    is a second answer; it reaches only server-core's authority port and
-    //    branded-id leaves.
     //  - `app/daemon-admission.ts` and
     //    `workspace/runtime-dispatch/relay-admission.ts` — who may drive this
     //    daemon, and the bound within which that answer defers to the relay.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { claxedoServerStartup } from "./claxedo-server-startup"
-import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 
 const DAEMON_ENV = {
   CLAXEDO_CHILD_PORT: "3210",

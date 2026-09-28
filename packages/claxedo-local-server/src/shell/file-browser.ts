@@ -2,7 +2,7 @@ import fs from "fs"
 import path from "path"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceInput, workspacePath, workspaceRoot, type ShellRequestContext } from "./request-context"
-import { fileStatus, gitListAll, globSearch, grepSearch, walkAll } from "./files"
+import { gitListAll, globSearch, grepSearch, walkAll } from "./files"
 
 export async function findTextBody(c: ShellRequestContext) {
   const pattern = c.req.query("pattern") ?? ""
@@ -54,51 +54,6 @@ export async function directoryEntriesBody(c: ShellRequestContext) {
   } catch {
     return []
   }
-}
-
-export async function fileContentBody(c: ShellRequestContext) {
-  const input = workspaceInput(c)
-  const ws = await resolveWorkspace({
-    workspaceId: input.workspaceId,
-    directory: input.directory,
-  })
-  // Outside the try for the same reason as `directoryEntriesBody`: the catch
-  // returns empty content, which would mask the containment rejection.
-  const full = await workspacePath(workspaceRoot(ws, input), c.req.query("path"))
-  try {
-    const buf = await fs.promises.readFile(full)
-    if (buf.includes(0)) return binaryFileContent(buf)
-    try {
-      return {
-        type: "text",
-        content: new TextDecoder("utf-8", { fatal: true }).decode(buf).trim(),
-      }
-    } catch {
-      return binaryFileContent(buf)
-    }
-  } catch {
-    return {
-      type: "text",
-      content: "",
-    }
-  }
-}
-
-function binaryFileContent(content: Buffer) {
-  return {
-    type: "binary",
-    content: content.toString("base64"),
-    encoding: "base64",
-  }
-}
-
-export async function fileStatusBody(c: ShellRequestContext) {
-  const input = workspaceInput(c)
-  const ws = await resolveWorkspace({
-    workspaceId: input.workspaceId,
-    directory: input.directory,
-  })
-  return fileStatus(workspaceRoot(ws, input))
 }
 
 export async function allFilesBody(c: ShellRequestContext) {

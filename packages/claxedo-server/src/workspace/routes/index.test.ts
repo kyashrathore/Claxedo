@@ -365,7 +365,7 @@ describe("workspace create environment", () => {
     const res = await app.request("http://localhost/create", {
       method: "POST",
       headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
-      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", projectName: "Demo" }),
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
     })
 
     expect(res.status).toBe(200)

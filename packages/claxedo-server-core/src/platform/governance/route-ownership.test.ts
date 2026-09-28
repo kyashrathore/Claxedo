@@ -27,8 +27,8 @@ describe("routeOwnership", () => {
     for (const path of ["/api/wr/file", "/api/wr/file/status", "/api/wr/file/content", "/api/wr/find/file", "/file", "/find/file"]) {
       expect(routeOwnership(path).handler, path).toBe(RouteHandler.SandboxRuntime)
     }
-    expect(routeOwnership("/api/wr/session-activity").handler).toBe(RouteHandler.SandboxRuntime)
-    expect(routeOwnership("/api/wr/session-activity/extra").handler).toBe(RouteHandler.Unclaimed)
+    expect(routeOwnership("/api/wr/events").handler).toBe(RouteHandler.SandboxRuntime)
+    expect(routeOwnership("/api/wr/events/extra").handler).toBe(RouteHandler.Unclaimed)
     expect(routeOwnership("/api/claxedo/agent-config/providers").handler).toBe(RouteHandler.CentralServer)
   })
 

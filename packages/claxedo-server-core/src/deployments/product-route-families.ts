@@ -68,7 +68,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "live-plugins",
     owner: "local-server",
-    serves: "The machine owner's live plugin folders: register, build, serve bundles, show source; self-hosted signed access requires a deployment operator.",
+    serves: "The machine owner's live plugin folders: list, register, unregister, and serve each build's bundle; self-hosted signed access requires a deployment operator.",
     paths: ["/api/claxedo/live-plugins", "/api/claxedo/live-plugins/"],
   },
   {
@@ -102,7 +102,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     owner: "local-server",
     serves: "Project, file, diff, search, VCS, worktree, and process surfaces backed by Workspace Runtime.",
     paths: [
-      "/project",
       "/project/",
       "/file",
       "/file/",
@@ -110,8 +109,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
       "/find/",
       "/path",
       "/vcs",
-      "/agent",
-      "/command",
       "/question",
       "/session/status",
       "/mcp",
@@ -204,7 +201,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "remote-access-owner",
     owner: "server",
-    serves: "The owner's view of their enrolled machines: status, devices, revoke, second-device open.",
+    serves: "The owner's view of their enrolled machines: status, devices, rename, revoke.",
     paths: ["/api/claxedo/remote-access", "/api/claxedo/remote-access/"],
   },
   {

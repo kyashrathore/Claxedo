@@ -13,12 +13,11 @@ describe("remote access routes", () => {
       relayConfigured: false,
       authenticate,
       service: {
-        status: vi.fn(async () => ({ enrolled: false, enabled: false, secondDeviceOpen: false })),
+        status: vi.fn(async () => ({ enrolled: false, enabled: false })),
         enable,
         devices: vi.fn(async () => []),
         revoke: vi.fn(async () => ({ revoked: false })),
         rename: vi.fn(async () => ({ displayName: "Renamed" })),
-        markSecondDeviceOpen: vi.fn(async () => ({ recorded: false })),
       },
     })
 
@@ -30,7 +29,6 @@ describe("remote access routes", () => {
       hosted_signed_in: true,
       enrolled: false,
       enabled: false,
-      second_device_open: false,
     })
     authenticate.mockClear()
 
@@ -49,12 +47,11 @@ describe("remote access routes", () => {
       relayConfigured: true,
       authenticate: vi.fn(async () => auth),
       service: {
-        status: vi.fn(async () => ({ enrolled: true, enabled: true, secondDeviceOpen: false })),
+        status: vi.fn(async () => ({ enrolled: true, enabled: true })),
         enable: vi.fn(),
         devices: vi.fn(async () => []),
         revoke: vi.fn(async () => ({ revoked: true })),
         rename,
-        markSecondDeviceOpen: vi.fn(),
       },
     })
 
@@ -96,7 +93,6 @@ describe("remote access routes", () => {
         devices: vi.fn(),
         revoke: vi.fn(),
         rename: vi.fn(async () => ({ displayName: "Renamed" })),
-        markSecondDeviceOpen: vi.fn(),
       },
     })
 
@@ -108,12 +104,11 @@ describe("remote access routes", () => {
 
   test("enables, lists, and revokes enrolled machines through signed auth", async () => {
     const service = {
-      status: vi.fn(async () => ({ enrolled: true, enabled: true, secondDeviceOpen: false })),
+      status: vi.fn(async () => ({ enrolled: true, enabled: true })),
       enable: vi.fn(async () => ({ hostId: "host_1", workspaceIds: ["ws_1", "ws_2"], connectionCount: 1 })),
       devices: vi.fn(async () => [{ hostId: "host_1", displayName: "Mac", lastSeenAt: 10, workspaceIds: ["ws_1", "ws_2"] }]),
       revoke: vi.fn(async () => ({ revoked: true })),
       rename: vi.fn(async () => ({ displayName: "Renamed" })),
-      markSecondDeviceOpen: vi.fn(async () => ({ recorded: true })),
     }
     const app = RemoteAccessRoutes({
       deviceLoginConfigured: true,
@@ -148,36 +143,4 @@ describe("remote access routes", () => {
     expect(service.revoke).toHaveBeenCalledWith(auth, "host_1")
   })
 
-  test("records completion only for a different client id", async () => {
-    const markSecondDeviceOpen = vi.fn(async () => ({ recorded: true }))
-    const app = RemoteAccessRoutes({
-      deviceLoginConfigured: true,
-      relayConfigured: true,
-      authenticate: vi.fn(async () => auth),
-      service: {
-        status: vi.fn(async () => ({ enrolled: true, enabled: true, secondDeviceOpen: false })),
-        enable: vi.fn(),
-        devices: vi.fn(async () => []),
-        revoke: vi.fn(),
-        rename: vi.fn(async () => ({ displayName: "Renamed" })),
-        markSecondDeviceOpen,
-      },
-    })
-
-    const same = await app.request("http://localhost/workspaces/ws_1/second-device-open", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source_client_id: "desktop", current_client_id: "desktop" }),
-    })
-    expect(same.status).toBe(400)
-    expect(markSecondDeviceOpen).not.toHaveBeenCalled()
-
-    const phone = await app.request("http://localhost/workspaces/ws_1/second-device-open", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source_client_id: "desktop", current_client_id: "phone" }),
-    })
-    await expect(phone.json()).resolves.toEqual({ recorded: true })
-    expect(markSecondDeviceOpen).toHaveBeenCalledWith(auth, "ws_1")
-  })
 })

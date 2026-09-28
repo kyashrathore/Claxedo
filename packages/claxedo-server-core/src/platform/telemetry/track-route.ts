@@ -40,7 +40,6 @@ export const TRACK_EVENTS: ReadonlySet<string> = new Set([
   "sandbox_provider_configured",
   "first_cloud_turn_ok",
   "remote_access_enabled",
-  "second_device_open",
   "gofurther_card_clicked",
   "gofurther_card_dismissed",
   "turn_completed",

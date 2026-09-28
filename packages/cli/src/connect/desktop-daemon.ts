@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { sameCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { CLAXEDO_DAEMON_DISCOVERY_FILE, CLAXEDO_DAEMON_PROTOCOL, CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { asRecordOrEmpty, isNonNegativeSafeInteger, nonEmptyString } from "@claxedo/helpers/guards"
 
 /**
@@ -42,18 +43,13 @@ export type DesktopDaemonState =
   | { state: "unresponsive"; pid: number; port: number; file: string }
   | { state: "incompatible"; pid: number; port: number; file: string; protocol: number }
 
-/** The management protocol this build speaks; the desktop's own literal is its other half. */
-export const CLAXEDO_DAEMON_PROTOCOL = 3
-export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
-
-const DAEMON_SERVICE = "claxedo-local-daemon"
 const DESKTOP_CHANNEL_DIRS = [".claxedo", ".claxedo-dev", ".claxedo-beta"]
 const VERIFY_TIMEOUT_MS = 1_500
 
 export function desktopDaemonDiscoveryFiles(env: NodeJS.ProcessEnv, homedir: string) {
   const configured = env.CLAXEDO_DATA_DIR?.trim()
   const dirs = [...(configured ? [configured] : []), ...DESKTOP_CHANNEL_DIRS.map((dir) => path.join(homedir, dir))]
-  return [...new Set(dirs)].map((dir) => path.join(dir, "local-daemon.json"))
+  return [...new Set(dirs)].map((dir) => path.join(dir, CLAXEDO_DAEMON_DISCOVERY_FILE))
 }
 
 function integerBetween(value: unknown, min: number, max: number) {
@@ -73,7 +69,7 @@ export function parseDesktopDaemonDiscovery(text: string): DesktopDaemonDiscover
   const token = nonEmptyString(record.token)
   const generation = nonEmptyString(record.generation)
   const protocol = integerBetween(record.protocol, 1, Number.MAX_SAFE_INTEGER)
-  if (record.service !== DAEMON_SERVICE || !pid || !port || !token || !generation || !protocol) return undefined
+  if (record.service !== CLAXEDO_DAEMON_SERVICE || !pid || !port || !token || !generation || !protocol) return undefined
   const identity = creationIdentity(record.identity)
   return { pid, port, token, generation, protocol, ...(identity ? { identity } : {}) }
 }
@@ -118,7 +114,7 @@ export async function verifyDesktopDaemon(
     if (!response.ok) return "unresponsive"
     const identity = asRecordOrEmpty(await response.json())
     const answered = (
-      identity.service === DAEMON_SERVICE &&
+      identity.service === CLAXEDO_DAEMON_SERVICE &&
       identity.protocol === record.protocol &&
       identity.generation === record.generation &&
       identity.pid === record.pid &&

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
 import { daemonRecoveryBridge, type DaemonOwnershipView, type DaemonRecoveryResult } from "./daemon-recovery"
-import { CLAXEDO_DAEMON_PROTOCOL, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
+import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
 const GENERATION = "generation-1"
 

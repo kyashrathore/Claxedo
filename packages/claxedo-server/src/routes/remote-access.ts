@@ -12,13 +12,8 @@ const enableBody = z.object({
 
 const renameBody = z.object({ display_name: z.string().trim().min(1).max(120) }).strict()
 
-const secondDeviceBody = z.object({
-  source_client_id: z.string().trim().min(1).max(200),
-  current_client_id: z.string().trim().min(1).max(200),
-}).strict()
-
 export type RemoteAccessService = {
-  status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean; secondDeviceOpen: boolean }>
+  status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean }>
   enable(
     auth: SignedControlPlaneAuth,
     input: { startAtLogin: boolean },
@@ -38,11 +33,10 @@ export type RemoteAccessService = {
     auth: SignedControlPlaneAuth,
     input: { hostId: string; displayName: string },
   ): Promise<{ displayName: string } | undefined>
-  markSecondDeviceOpen(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ recorded: boolean }>
 }
 
 /** The owner's view of their machines: what every signed control plane serves. */
-export type RemoteAccessOwnerService = Pick<RemoteAccessService, "status" | "devices" | "revoke" | "rename" | "markSecondDeviceOpen">
+export type RemoteAccessOwnerService = Pick<RemoteAccessService, "status" | "devices" | "revoke" | "rename">
 
 export type RemoteAccessRouteOptions<Service extends RemoteAccessOwnerService> = {
   deviceLoginConfigured: boolean
@@ -65,8 +59,8 @@ async function authenticateRemoteAccess(options: RemoteAccessRouteOptions<Remote
 
 /**
  * Remote access has two sides. The OWNER's side — which machines are enrolled,
- * what they serve, when they were last seen, revoke one, record a second-device
- * open — is control-plane data and is served by every signed deployment. The
+ * what they serve, when they were last seen, rename or revoke one — is
+ * control-plane data and is served by every signed deployment. The
  * MACHINE's side — enrolling this process as a machine and opening its tunnel
  * — exists only where the server IS a machine (the self-hosted single binary);
  * on the desktop it belongs to the Host Connector, and the hosted control plane
@@ -78,10 +72,9 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
 
   app.get("/", async (c) => {
     // Per-caller enrollment/enabled state — refuse the anonymous remote
-    // caller the same way `/devices`, `/devices/:hostId`, and the
-    // second-device route below do. `RemoteAccessService.status` still
-    // accepts an absent auth for its own direct callers/tests; this route
-    // simply never reaches it without one.
+    // caller the same way `/devices` and `/devices/:hostId` below do.
+    // `RemoteAccessService.status` still accepts an absent auth for its own
+    // direct callers/tests; this route simply never reaches it without one.
     const auth = await authenticateRemoteAccess(options, c.req.raw)
     // Node's HTTP adapter replaces Response, while Response.json can return the
     // original constructor. Discriminate the trusted auth result by its shape.
@@ -93,7 +86,6 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
       hosted_signed_in: true,
       enabled: available && result.enabled,
       enrolled: available && result.enrolled,
-      second_device_open: available && result.secondDeviceOpen,
     })
   })
 
@@ -131,21 +123,6 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
     const auth = await authenticateRemoteAccess(options, c.req.raw)
     if (!("user" in auth)) return auth
     return c.json(await options.service.revoke(auth, c.req.param("hostId")))
-  })
-
-  app.post("/workspaces/:workspaceId/second-device-open", async (c) => {
-    const body = secondDeviceBody.safeParse(await c.req.json().catch(() => ({})))
-    if (!body.success || body.data.source_client_id === body.data.current_client_id) {
-      return c.json({
-        error: {
-          code: "second_device_required",
-          message: "The workspace must be opened from a different signed-in client",
-        },
-      }, 400)
-    }
-    const auth = await authenticateRemoteAccess(options, c.req.raw)
-    if (!("user" in auth)) return auth
-    return c.json(await options.service.markSecondDeviceOpen(auth, c.req.param("workspaceId")))
   })
 
   return app

@@ -91,8 +91,8 @@ async function originRepositoryName(directory: string) {
  * or it can never be opened.
  *
  * `projectId` is the local store's project id, and the authority must file the
- * workspace under that same id: the signed `/project` list authorises each
- * local project by its own id, so a workspace registered under a freshly
+ * workspace under that same id: `/api/claxedo/projects` authorises each local
+ * project by its own id, so a workspace registered under a freshly
  * minted authority project leaves its project invisible to the caller who
  * just created it.
  */

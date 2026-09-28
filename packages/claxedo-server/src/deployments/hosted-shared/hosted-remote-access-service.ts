@@ -11,9 +11,9 @@ import type { RemoteAccessOwnerService } from "../../routes/remote-access"
 export function hostedRemoteAccessService(authority: WorkspaceAuthority): RemoteAccessOwnerService {
   return {
     async status(auth?: SignedControlPlaneAuth) {
-      if (!auth) return { enrolled: false, enabled: false, secondDeviceOpen: false }
+      if (!auth) return { enrolled: false, enabled: false }
       const active = await authority.activeHostEnrollment(auth)
-      return { enrolled: active.active, enabled: active.active, secondDeviceOpen: false }
+      return { enrolled: active.active, enabled: active.active }
     },
     async devices(auth) {
       const [assignments, active] = await Promise.all([
@@ -55,10 +55,6 @@ export function hostedRemoteAccessService(authority: WorkspaceAuthority): Remote
         displayName,
       })
       return { displayName: result.display_name }
-    },
-    async markSecondDeviceOpen(auth, workspaceId) {
-      const result = await authority.markSecondDeviceOpen(auth, { workspaceId })
-      return { recorded: result.recorded }
     },
   }
 }

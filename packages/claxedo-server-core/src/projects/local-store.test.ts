@@ -415,7 +415,7 @@ describe("local project routes on a signed server", () => {
     const [auth, workspace] = registerWorkspace.mock.calls[0] as unknown as [typeof signed, { workspaceId: string; projectId: string; displayName: string; directory: string; repoUrl?: string }]
     expect(auth).toMatchObject({ mode: "signed", user: { subject: "usr_1" } })
     // The authority files the workspace under the project id this server
-    // answers `/project` with; a different id hides the project from its creator.
+    // answers with; a different id hides the project from its creator.
     expect(workspace).toMatchObject({ projectId: project.id, displayName: "Signed Folder", directory })
     expect(workspace.workspaceId).toBeTruthy()
     expect(workspace.repoUrl).toBeUndefined()

@@ -20,6 +20,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { timingSafeEqual } from "node:crypto"
+import { CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
   requestIsHttps,
@@ -118,13 +119,6 @@ export function localCorsOrigin(
   if (origin === ownOrigin) return origin
   return browserOrigins.includes(origin) ? origin : undefined
 }
-
-/**
- * The management protocol the caller declares. Both halves of this protocol
- * are literals in two packages, so a client that does not send it is one built
- * before the header existed and is refused rather than guessed at.
- */
-export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
 
 const RECOVERY_REFUSAL_STATUS: Readonly<Record<RecoveryRefusal["kind"], 403 | 409 | 410 | 426 | 503>> = {
   generation_conflict: 409,
@@ -373,7 +367,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
       if (!authorized(c.req.header("authorization"))) return unauthorized(c)
       const creation = identity.creation?.()
       return c.json({
-        service: "claxedo-local-daemon",
+        service: CLAXEDO_DAEMON_SERVICE,
         protocol: identity.protocol,
         generation: identity.generation,
         pid: identity.pid,

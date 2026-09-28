@@ -17,12 +17,15 @@ function tmp() {
 }
 
 /** The SQL surface this harness bulk-inserts through. */
+type PerfStatement = {
+  run(...params: unknown[]): unknown
+  get(...params: unknown[]): unknown
+  all(...params: unknown[]): unknown[]
+}
+
 type PerfDatabase = {
   exec(sql: string): unknown
-  prepare(sql: string): {
-    run(...params: unknown[]): unknown
-    get(...params: unknown[]): unknown
-  }
+  prepare(sql: string): PerfStatement
 }
 
 function hasPerfDatabase(value: unknown): value is { db: PerfDatabase } {
@@ -45,6 +48,32 @@ function database(store: RuntimeStore): PerfDatabase {
     throw new Error("RuntimeStore no longer exposes a `db` handle; the perf harness seeds rows through it")
   }
   return handle.db
+}
+
+type Executed = { sql: string; params: unknown[] }
+
+/** Every statement the store runs on its handle until `stop`, with the values it bound. */
+function recordStatements(db: PerfDatabase) {
+  const executed: Executed[] = []
+  const prepare = db.prepare
+  db.prepare = (sql) => {
+    const statement = prepare.call(db, sql)
+    return {
+      run: (...params) => (executed.push({ sql, params }), statement.run(...params)),
+      get: (...params) => (executed.push({ sql, params }), statement.get(...params)),
+      all: (...params) => (executed.push({ sql, params }), statement.all(...params)),
+    }
+  }
+  return {
+    executed,
+    stop: () => {
+      db.prepare = prepare
+    },
+  }
+}
+
+function queryPlan(db: PerfDatabase, { sql, params }: Executed) {
+  return db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params).map((row) => String(rec(row)?.detail))
 }
 
 afterEach(() => {
@@ -142,7 +171,7 @@ describe("RuntimeStore performance", () => {
     store.close()
   })
 
-  it("keeps a message's new-part writes flat as the workspace's other parts grow", () => {
+  it("orders a message's new part through the part index, not a scan of the workspace's other parts", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -164,8 +193,8 @@ describe("RuntimeStore performance", () => {
     }
     database(store).exec("COMMIT")
 
-    const started = performance.now()
-    for (const index of Array.from({ length: 200 }, (_, value) => value)) {
+    const recorder = recordStatements(database(store))
+    for (const index of Array.from({ length: 2 }, (_, value) => value)) {
       store.appendEvent({
         sessionId: "s1",
         payload: messagePartUpdated({
@@ -177,8 +206,18 @@ describe("RuntimeStore performance", () => {
         }),
       })
     }
-    const elapsed = performance.now() - started
-    assert(elapsed < 200, `200 new-part writes beside 200k other parts took ${elapsed.toFixed(1)}ms`)
+    recorder.stop()
+
+    const partReads = recorder.executed.filter(({ sql }) => /^\s*SELECT\b[\s\S]*\bFROM part\b/i.test(sql))
+    assert(partReads.length > 0, "a new-part write read nothing from the part table")
+    const plans = partReads.map((statement) => ({ sql: statement.sql.trim(), plan: queryPlan(database(store), statement) }))
+    for (const { sql, plan } of plans) {
+      assert(plan.some((detail) => /^SEARCH part USING (COVERING )?INDEX /.test(detail)), `${sql} reads part without an index: ${plan.join("; ")}`)
+    }
+    assert(
+      plans.some(({ plan }) => plan.some((detail) => detail.includes("part_session_message_ord_idx (session_id=? AND message_id=?)"))),
+      `no part read used part_session_message_ord_idx: ${JSON.stringify(plans)}`,
+    )
     store.close()
   })
 

@@ -10,7 +10,7 @@
 
 import { randomUUID } from "node:crypto"
 import { DAEMON_CAPABILITY_HEADER } from "../daemon-admission"
-import { DAEMON_PROTOCOL_HEADER } from "../local-app"
+import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { createLocalDaemonLifecycle } from "../local-daemon-lifecycle"
 import type { LocalAppOptions } from "../local-app"
 

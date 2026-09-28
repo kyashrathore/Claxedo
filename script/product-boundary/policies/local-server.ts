@@ -139,12 +139,6 @@ export const localServer: Policy = {
   //    them through. The parser and the `projectAuth` composition are
   //    server-core's (`credentials/host-provider-config.ts`, already a
   //    package edge), so these two cost no package.
-  //  - `platform/auth/project-access.ts` (owner: local-server platform): the
-  //    one authorization operation for the projects this server stores, shared
-  //    by the shell `/project` routes and the `/api/claxedo/projects` router so
-  //    a signed caller's reach is decided in one place. It reaches server-core's
-  //    authority port and branded-id leaves, both already here, so it costs no
-  //    package.
   //  - `app/daemon-admission.ts` (owner: the desktop-local composition): who
   //    may drive this daemon, decided once ahead of every mount. It is this
   //    product's own authority boundary — a loopback page is not the
@@ -210,8 +204,8 @@ export const localServer: Policy = {
   //    reader budget is sized against one constant. The package already ships
   //    in this bundle under @claxedo/agent-sdk-runtime and
   //    @claxedo/workspace-runtime; this makes it a direct edge.
-  //    82/31, no headroom.
-  ceilings: { modules: 82, packages: 31 },
+  //    81/31, no headroom.
+  ceilings: { modules: 81, packages: 31 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
