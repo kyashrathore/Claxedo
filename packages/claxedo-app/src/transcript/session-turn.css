@@ -70,8 +70,8 @@
     font-weight: var(--font-weight-regular);
   }
 
-  .error-card {
-    color: var(--v2-text-text-base);
+  .ui-card.error-card {
+    color: var(--text-base);
     max-height: 240px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -102,7 +102,7 @@
     position: sticky;
     top: var(--sticky-accordion-top, 0px);
     z-index: 20;
-    background-color: var(--v2-background-bg-base);
+    background-color: var(--background-stronger);
     height: 44px;
   }
 
@@ -212,16 +212,6 @@
 
   [data-slot="session-turn-diff-view"]::-webkit-scrollbar {
     display: none;
-  }
-}
-
-body:not([data-new-layout]) [data-component="session-turn"] {
-  .error-card {
-    color: var(--text-base);
-  }
-
-  [data-slot="session-turn-diffs-header"] {
-    background-color: var(--background-stronger);
   }
 }
 
