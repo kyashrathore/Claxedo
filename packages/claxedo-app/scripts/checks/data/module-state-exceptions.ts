@@ -37,6 +37,7 @@ export const moduleStateExceptions: readonly ModuleStateException[] = [
   { file: `${transcript}/markdown-worker.ts`, binding: "states", reason: "per-stream worker state", cap: "deleted on dispose" },
   { file: `${transcript}/markdown-worker.ts`, binding: "keys", reason: "live stream keys", cap: "deleted on dispose" },
   { file: `${transcript}/markdown-worker.ts`, binding: "latest", reason: "latest request id per stream", cap: "deleted on dispose" },
+  { file: `${transcript}/markdown-code-tokens.ts`, binding: "painted", reason: "the source each code block inside prose was last painted with, so a morph or a late answer never repaints it", cap: "weak on the element" },
   { file: `${transcript}/markdown.tsx`, binding: "renderedCodeTokens", reason: "per-element highlight state for rendered code blocks", cap: "weak on the element" },
   { file: `${transcript}/markdown.tsx`, binding: "copyButtonState", reason: "per-button copy feedback state", cap: "weak on the element" },
   { file: `${transcript}/markdown.tsx`, binding: "viewButtonState", reason: "per-button full-screen view handler", cap: "weak on the element" },

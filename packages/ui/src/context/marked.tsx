@@ -1,87 +1,15 @@
 import type { MarkedExtension, Tokens } from "marked"
-import type { BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
-import { isKeyOf } from "../utils/record"
-import { OpenCodeTheme } from "./marked-theme"
-
-export { OpenCodeTheme } from "./marked-theme"
-
-const codeBlockPattern = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
-
-function hasMath(html: string) {
-  return html.includes("$$") || html.includes("\\(")
-}
 
 /** False when the asynchronous parse returns marked's synchronous output with the same extensions unchanged. */
 export function markdownEnhances(html: string) {
-  return hasMath(html) || html.search(codeBlockPattern) !== -1
+  return html.includes("$$") || html.includes("\\(")
 }
 
 async function renderMathExpressions(html: string) {
-  if (!hasMath(html)) return html
+  if (!markdownEnhances(html)) return html
   const math = await import("./marked-math")
   return math.renderMathExpressions(html)
-}
-
-/**
- * Shiki emits `<pre class="shiki OpenCode"><code>` and drops the
- * `class="language-X"` that marked's own code renderer puts on the `<code>`.
- * Consumers read that class back off the DOM to recover a block's language —
- * session-ui's markdown decorator uses it for code metadata and, critically, it
- * is how ```mermaid fences are found. Highlighting must not cost the language.
- *
- * The name used is the one actually highlighted with (unknown languages having
- * been folded to `text`), which matches what session-ui stamps on the code
- * blocks it builds itself.
- */
-async function highlightCodeBlocks(html: string): Promise<string> {
-  const matches = [...html.matchAll(codeBlockPattern)]
-  if (matches.length === 0) return html
-
-  const [{ bundledLanguages, addClassToHast }, { getSharedHighlighter }] = await Promise.all([
-    import("shiki"),
-    ensureOpenCodeTheme(),
-  ])
-  const highlighter = await getSharedHighlighter({
-    themes: ["OpenCode"],
-    langs: [],
-    preferredHighlighter: "shiki-wasm",
-  })
-
-  let result = html
-  for (const match of matches) {
-    const [fullMatch, lang, escapedCode] = match
-    const code = escapedCode
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-
-    // `text` is shiki's plain-text pseudo-language: it has no grammar in `bundledLanguages`
-    // and must not be handed to `loadLanguage`, which is why the two are typed apart here.
-    const requested = lang || "text"
-    const bundled: BundledLanguage | undefined = isKeyOf(bundledLanguages, requested) ? requested : undefined
-    const language: BundledLanguage | "text" = bundled ?? "text"
-    if (bundled && !highlighter.getLoadedLanguages().includes(bundled)) {
-      await highlighter.loadLanguage(bundledLanguages[bundled])
-    }
-
-    const highlighted = highlighter.codeToHtml(code, {
-      lang: language,
-      theme: "OpenCode",
-      tabindex: false,
-      transformers: [{
-        name: "opencode:language-class",
-        code(node) {
-          addClassToHast(node, `language-${language}`)
-        },
-      }],
-    })
-    result = result.replace(fullMatch, () => highlighted)
-  }
-
-  return result
 }
 
 export function escapeRawMarkdownHtml(text: string) {
@@ -229,16 +157,6 @@ export const markedTranscriptAutolink: MarkedExtension = {
   ],
 }
 
-let openCodeThemeRegistration: Promise<typeof import("@pierre/diffs")> | undefined
-
-export function ensureOpenCodeTheme() {
-  openCodeThemeRegistration ??= import("@pierre/diffs").then((pierre) => {
-    pierre.registerCustomTheme("OpenCode", () => Promise.resolve(OpenCodeTheme))
-    return pierre
-  })
-  return openCodeThemeRegistration
-}
-
 let jsParser: Promise<{ parse(markdown: string): string | Promise<string> }> | undefined
 
 /** Shared syntax policy for immediate paint and asynchronous enhancement. */
@@ -266,8 +184,7 @@ function loadJsParser() {
     return {
       async parse(markdown: string) {
         const html = await parser.parse(markdown)
-        const withMath = await renderMathExpressions(html)
-        return highlightCodeBlocks(withMath)
+        return renderMathExpressions(html)
       },
     }
   })

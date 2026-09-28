@@ -1,5 +1,4 @@
 import { useMarked, useDialog, ImagePreview, Icon, IconButton, Tooltip } from "@/ui"
-import { reportUiError } from "@/ui/utils"
 import { codeTheme } from "./code-theme"
 import { useTranscriptI18n } from "./i18n"
 import { useOptionalData } from "./data"
@@ -19,19 +18,12 @@ import {
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
-import {
-  disposeStreamingCode,
-  highlightStreamingCode,
-  MarkdownWorkerDisposedError,
-  MarkdownWorkerSupersededError,
-  MarkdownWorkerUnavailableError,
-} from "./markdown-worker"
-import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
+import { disposeStreamingCode } from "./markdown-worker"
+import { markdownBlockKey } from "./markdown-worker-protocol"
 import { sameRenderedCode, sameToken, shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMermaidSvg, sanitizeSvg, touchCachedMermaidSvg } from "./markdown-cache"
 import {
   blockHash,
-  codeLanguageName,
   enhanceTextBlock,
   entryBase,
   fallback,
@@ -41,7 +33,7 @@ import {
   type RenderedBlock,
   type RenderResult,
 } from "./markdown-blocks"
-import { highlightCodeThroughCache } from "./markdown-code-cache"
+import { createTokenSpan, highlightCode, highlightedCodeTokenLimit, highlightNestedCode, paintCachedNestedCode } from "./markdown-code-tokens"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
@@ -51,26 +43,6 @@ import { nextIdleSlice } from "@/lib/idle"
 import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
 
 const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
-const highlightedCodeTokenLimit = 800
-
-async function code(text: string, language: string | undefined, key: string, complete = false) {
-  const name = codeLanguageName(language)
-  try {
-    return await highlightCodeThroughCache(text, name, codeTheme.name, complete, async () => {
-      const result = await highlightStreamingCode(key, text, name, complete)
-      return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
-    })
-  } catch (error) {
-    if (
-      !(error instanceof MarkdownWorkerDisposedError) &&
-      !(error instanceof MarkdownWorkerSupersededError) &&
-      !(error instanceof MarkdownWorkerUnavailableError)
-    )
-      reportUiError(error, "markdown-highlight")
-    return { language: name, generation: 0, stable: [], unstable: [[text, ""] as MarkdownToken] }
-  }
-}
-
 type CopyLabels = {
   copy: string
   copied: string
@@ -395,6 +367,7 @@ function largeMermaid(source: string) {
 }
 
 function ensureCodeWrapper(block: HTMLPreElement) {
+  block.className = `shiki ${codeTheme.name}`
   const parent = block.parentElement
   if (!parent) return
   if (parent.getAttribute("data-component") === "markdown-code") return
@@ -449,6 +422,7 @@ function decorate(root: HTMLDivElement, images: ImageWaits, data?: ImageFiles) {
   markCodeLinks(root)
   decorateTables(root)
   stabilizeImages(root, images, data)
+  paintCachedNestedCode(root)
   renderMermaidBlocks(root)
 }
 
@@ -563,7 +537,7 @@ export function Markdown(
         src.projection.blocks.map(async (block, index) => {
           if (block.mode === "code") {
             const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
-            const result = await code(block.src, block.language, blockKey, block.complete)
+            const result = await highlightCode(block.src, block.language, blockKey, block.complete)
             return {
               key: blockKey,
               mode: block.mode,
@@ -738,6 +712,7 @@ function updateBlock(
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)
     attachControls(next, labels)
+    if (block.mode === "full") highlightNestedCode(next, block.key)
     return
   }
 
@@ -753,6 +728,7 @@ function updateBlock(
     },
   })
   attachControls(current, labels)
+  if (block.mode === "full") highlightNestedCode(current, block.key)
 }
 
 function updateCodeBlock(
@@ -842,11 +818,4 @@ function drawnCodeUnchanged(node: HTMLDivElement, block: Extract<RenderedBlock, 
   if (node.dataset.markdownComplete !== (block.complete ? "true" : "false")) return false
   const render = block.stable.length + block.unstable.length > highlightedCodeTokenLimit ? "plain" : "tokens"
   return sameRenderedCode(renderedCodeTokens.get(node), drawnCode(block, render))
-}
-
-function createTokenSpan(token: MarkdownToken) {
-  const span = document.createElement("span")
-  span.setAttribute("style", token[1])
-  span.textContent = token[0]
-  return span
 }
