@@ -1,7 +1,7 @@
 import { createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { createDraftPlacementResolver, NewSessionContextRow, type DraftCreation } from "@/projects"
-import { toAppError, useServer, type PlacementId } from "@/server"
+import { isTerminalSessionRequired, toAppError, useServer, type PlacementId } from "@/server"
 import type { PaneProps } from "@/shell"
 import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
@@ -78,8 +78,15 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const draft = createDraftPlacementResolver()
   const launchers = () =>
     terminalLaunchers(t("terminal.creator.shell"), installed.state === "ready" ? installed() : undefined)
+  const sessionMissing = () =>
+    (creating() === "cloud" || server.terminals.requiresOpenSession(props.state.placementId))
+    && (creating() !== undefined || runtime.openSession()?.placementId !== props.state.placementId)
   const launch = async (launcher: TerminalLauncher) => {
     if (starting()) return
+    if (sessionMissing()) {
+      setError(t("terminal.sessionRequired"))
+      return
+    }
     setStarting(launcher.id)
     setError(undefined)
     try {
@@ -90,7 +97,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
       const terminal = await runtime.store(placementId).create({ command: launcher.command, title: launcher.title })
       runtime.open({ placementId, terminalId: terminal.id }, props.paneId)
     } catch (cause) {
-      setError(errorCopy(toAppError(cause)).message)
+      setError(isTerminalSessionRequired(cause) ? t("terminal.sessionRequired") : errorCopy(toAppError(cause)).message)
     } finally {
       setStarting(undefined)
     }

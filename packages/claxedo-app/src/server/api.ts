@@ -118,6 +118,7 @@ export type PlacementsApi = {
 export type TerminalsApi = {
   readonly list: (placementId: PlacementId) => Promise<readonly Terminal[]>
   readonly create: (input: TerminalCreateInput) => Promise<Terminal>
+  readonly requiresOpenSession: (placementId: PlacementId) => boolean
   readonly update: (placementId: PlacementId, terminalId: TerminalId, input: TerminalUpdateInput) => Promise<void>
   readonly remove: (placementId: PlacementId, terminalId: TerminalId) => Promise<void>
   readonly presence: (placementId: PlacementId, terminalId: TerminalId) => Promise<TerminalPresence>

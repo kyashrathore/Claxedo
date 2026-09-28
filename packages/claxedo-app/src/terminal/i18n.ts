@@ -12,6 +12,7 @@ const en = {
   "terminal.restoreFailed": "Terminal restore failed",
   "terminal.startFailed.title": "Terminal failed to start",
   "terminal.createFailed": "The terminal could not be created.",
+  "terminal.sessionRequired": "Open a session on this machine to start a terminal",
   "terminal.closeFailed": "The terminal could not be ended. Its shell may still be running.",
   "terminal.keys": "Terminal keys",
   "terminal.key.escape": "Escape",

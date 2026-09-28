@@ -7,6 +7,11 @@ import type { Workspaces } from "./workspaces"
 import { agentStatusFromWire, PTY_NOT_FOUND, PTY_PATH, TERMINAL_HOOK_PATH, terminalFrameOf, terminalFromWire } from "./wire/terminals"
 
 const PROTOCOL_ERROR_CLOSE = 1002
+const TERMINAL_SESSION_REQUIRED = "terminal_session_required"
+
+export function isTerminalSessionRequired(error: unknown): boolean {
+  return error instanceof ServerError && error.code === TERMINAL_SESSION_REQUIRED
+}
 
 function attachSocket(socket: WebSocket, input: TerminalAttachInput): TerminalStream {
   const decoder = new TextDecoder()
@@ -32,10 +37,14 @@ function ptyPath(terminalId: TerminalId) {
 }
 
 async function createPty(transport: Transport, where: RuntimeRoute, input: TerminalCreateInput): Promise<Terminal> {
+  const sessionId = input.sessionId ?? (where.remote ? input.openSessionId : undefined)
+  if (where.remote && !sessionId) {
+    throw new ServerError({ class: "invalid", code: TERMINAL_SESSION_REQUIRED, message: "A terminal on a placement reached over the relay belongs to a session, and none is open" })
+  }
   const body = {
     title: input.title,
     createRequestId: input.createRequestId,
-    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(sessionId ? { sessionId } : {}),
     ...(input.command ? { initialCommand: input.command } : {}),
     env: {
       CLAXEDO_PORT: new URL(transport.serverUrl).port,
@@ -67,6 +76,7 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
       return rows.flatMap((row) => terminalFromWire(row, placementId) ?? [])
     },
     create: async (input) => createPty(transport, await route(input.placementId), input),
+    requiresOpenSession: (placementId) => workspaces.catalog()?.placements.find((record) => record.placement.id === placementId)?.route.remote === true,
     update: async (placementId, terminalId, input) => {
       await transport.runtimeJson<unknown>(await route(placementId), ptyPath(terminalId), jsonInit("PUT", input))
     },
