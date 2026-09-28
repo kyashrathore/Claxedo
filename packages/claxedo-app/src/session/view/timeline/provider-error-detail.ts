@@ -6,7 +6,6 @@ export type DispatchContext = Pick<AgentAssistantMessage, "providerID" | "modelI
 
 export type ProviderErrorDetail = {
   summary?: string
-  detail?: string
   status?: number
 }
 
@@ -142,10 +141,7 @@ export function providerErrorDetail(
   const body = text(data.responseBody)
   const provider = providerLabel({ providerID: context?.providerID, modelID: context?.modelID, relayLabel })
 
-  const parts: string[] = []
-  if (message) parts.push(message)
-  if (body && body !== message) parts.push(body)
-  const detail = parts.length ? parts.join("\n") : undefined
+  const detailed = !!(message || body)
 
   const summary = (() => {
     if (status !== undefined) {
@@ -153,11 +149,11 @@ export function providerErrorDetail(
       const named = provider ? head.replace(/^The model provider/, provider) : head
       return `${named} (${status}). ${repair(status)}`
     }
-    if (detail) {
+    if (detailed) {
       return "The agent returned an error before completing this turn. Check the details below, then resend the last prompt."
     }
     return "The agent returned an error before completing this turn. Resend the last prompt."
   })()
 
-  return { summary, detail, ...(status !== undefined ? { status } : {}) }
+  return { summary, ...(status !== undefined ? { status } : {}) }
 }
