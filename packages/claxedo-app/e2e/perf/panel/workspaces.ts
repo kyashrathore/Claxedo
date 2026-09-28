@@ -6,9 +6,9 @@ import { acpScriptToken } from "../../harness/acp/script"
 import type { ClaxedoApi } from "../../harness/api"
 import { git } from "../../harness/git"
 import type { Stack } from "../../harness/stack"
+import { buildWorkspaceFixture, generateWorkspaceFileBytes } from "./workspace-fixture"
 
 const LARGE_SOURCE = process.env.PANEL_LARGE_REPO ?? "/Users/yashvardhansingh/test/opencode"
-const BENCHMARK = process.env.PANEL_BENCHMARK ?? "/Users/yashvardhansingh/test/agent-app-benchmark"
 
 export type Workspace = { readonly id: string; readonly directory: string; readonly name: string; readonly sessions: readonly string[]; readonly files: readonly string[]; readonly changed: readonly string[] }
 
@@ -35,12 +35,8 @@ async function seedSessions(stack: Stack, api: ClaxedoApi, directory: string, la
 }
 
 export async function benchmarkWorkspace(stack: Stack, api: ClaxedoApi): Promise<Workspace> {
-  const fixture = await import(path.join(BENCHMARK, "src/workspace-fixture.mjs")) as {
-    buildWorkspaceFixtureManifest: (load: Record<string, number | string>, seed: string) => { directories: string[]; files: { path: string; changed: boolean; byteLength: number; hunks: unknown[] }[]; changedFilePaths: string[] }
-    generateWorkspaceFileBytes: (seed: string, file: unknown, revision: "initial" | "current") => Uint8Array
-  }
   const seed = "panel-switch-lane"
-  const manifest = fixture.buildWorkspaceFixtureManifest({ generator: "agent-app-workspace-v1", directoryCount: 16, sourceFileCount: 160, sourceFileBytes: 32768, changedFileCount: 24, diffHunksPerFile: 8, diffLinesPerHunk: 24, openFileTabCount: 4 }, seed)
+  const manifest = buildWorkspaceFixture({ directoryCount: 16, sourceFileCount: 160, sourceFileBytes: 32768, changedFileCount: 24, diffHunksPerFile: 8, diffLinesPerHunk: 24 }, seed)
   const directory = path.join(stack.dataDir, "workspaces", "bench")
   await fs.mkdir(directory, { recursive: true })
   await git(directory, "init", "-q", "--initial-branch=main")
@@ -48,7 +44,7 @@ export async function benchmarkWorkspace(stack: Stack, api: ClaxedoApi): Promise
     for (const file of manifest.files) {
       const target = path.join(directory, file.path)
       await fs.mkdir(path.dirname(target), { recursive: true })
-      await fs.writeFile(target, fixture.generateWorkspaceFileBytes(seed, file, revision))
+      await fs.writeFile(target, generateWorkspaceFileBytes(seed, file, revision))
     }
     if (revision === "initial") {
       await git(directory, "add", "-A")
