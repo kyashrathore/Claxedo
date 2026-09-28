@@ -25,6 +25,7 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   <main id="main-content" class="home">
     <h1 class="sr-only">Claxedo</h1>
     <section class="story" aria-label="What Claxedo does" data-story style={`--steps:${home.lines.length}`}>
+      {home.lines.map((line, index) => <div class="sentinel" data-sentinel={index} style={`--k:${index}`} aria-hidden="true"></div>)}
       <div class="pin">
         <ol class="stage" data-stage>
           {home.lines.map((line, index) => (
@@ -38,7 +39,7 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
             </li>
           ))}
         </ol>
-        <div class="demo-area" data-settle>
+        <div class="demo-area">
           <div class="demo-frame" data-zoom>
             <ClaxedoAppReplica />
             <div class="scrim" data-metrics>
@@ -46,7 +47,7 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
                 {home.benchmark.metrics.map((metric) => (
                   <div class="metric">
                     <dt><b>{metric.lead}</b><span>{metric.label}</span></dt>
-                    <dd><span>{metric.vs}</span>{"value" in metric && <span>{metric.value}</span>}</dd>
+                    <dd>{"value" in metric ? `${metric.vs} · ${metric.value}` : metric.vs}</dd>
                   </div>
                 ))}
               </dl>
@@ -69,7 +70,7 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
               {home.benchmark.metrics.map((metric) => (
                 <div class="metric">
                   <dt><b>{metric.lead}</b><span>{metric.label}</span></dt>
-                  <dd><span>{metric.vs}</span>{"value" in metric && <span>{metric.value}</span>}</dd>
+                  <dd>{"value" in metric ? `${metric.vs} · ${metric.value}` : metric.vs}</dd>
                 </div>
               ))}
             </dl>
@@ -99,59 +100,128 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   const still = window.matchMedia("(prefers-reduced-motion: reduce)")
   if (story && demo && !still.matches) {
     const lines = Array.from(story.querySelectorAll<HTMLElement>("[data-stage-line]"))
+    const sentinels = Array.from(story.querySelectorAll<HTMLElement>("[data-sentinel]"))
     const frame = story.querySelector<HTMLElement>("[data-zoom]")!
-    const settle = story.querySelector<HTMLElement>("[data-settle]")!
     const metrics = story.querySelector<HTMLElement>("[data-metrics]")!
-    const scrollLinked = CSS.supports("animation-timeline: scroll()")
-    const clamp = (value: number) => Math.min(1, Math.max(0, value))
-    const ease = (t: number) => {
-      let low = 0
-      let high = 1
-      for (let i = 0; i < 12; i++) {
-        const mid = (low + high) / 2
-        const x = 3 * 0.2 * mid * (1 - mid) ** 2 + mid ** 3
-        if (x < t) low = mid
-        else high = mid
-      }
-      const u = (low + high) / 2
-      return 3 * u ** 2 * (1 - u) + u ** 3
-    }
-    const segment = () => innerHeight * (innerWidth < 768 ? 0.85 : 0.9)
+    const ratios = sentinels.map(() => 0)
     let current = -1
-    let request = 0
+    let settle = 0
 
     const enter = (step: number) => {
+      if (step === current) return
+      current = step
       lines.forEach((line, i) => {
+        const leaving = line.classList.contains("is-in") && i !== step
         line.classList.toggle("is-in", i === step)
+        line.classList.toggle("is-out", leaving)
+        if (leaving) window.setTimeout(() => line.classList.remove("is-out"), 200)
         line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === step ? 0 : -1 })
       })
+      metrics.classList.toggle("is-gone", step !== 0)
+      story.dataset.step = String(step)
       demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: lines[step].dataset.stageLine, open: true } }))
-      current = step
+    }
+    const decide = () => {
+      clearTimeout(settle)
+      settle = window.setTimeout(() => {
+        const best = ratios.indexOf(Math.max(...ratios))
+        if (ratios[best] >= 0.6) enter(best)
+      }, 90)
     }
 
-    const update = () => {
-      const position = scrollY / segment()
-      const step = Math.min(lines.length - 1, Math.max(0, Math.floor(position)))
-      if (step !== current) enter(step)
-      metrics.classList.toggle("is-gone", position > 0.4)
-      if (lines[step].dataset.stageLine === "prompt") {
-        demo.dispatchEvent(new CustomEvent("demo:progress", { detail: { spot: "prompt", progress: clamp(position - step) } }))
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) ratios[Number((entry.target as HTMLElement).dataset.sentinel)] = entry.intersectionRatio
+      decide()
+    }, { threshold: [0, 0.6, 1] })
+    sentinels.forEach((sentinel) => observer.observe(sentinel))
+    new IntersectionObserver(([entry]) => frame.classList.toggle("is-growing", entry.isIntersecting), { threshold: 0 }).observe(sentinels[0])
+
+    if (!CSS.supports("animation-timeline: scroll()")) {
+      let growEnd = 1
+      let request = 0
+      const measure = () => { growEnd = story.offsetTop + sentinels[1].offsetTop }
+      const grow = () => {
+        const t = Math.min(1, Math.max(0, scrollY / growEnd))
+        const from = Number(getComputedStyle(frame).getPropertyValue("--zoom-from")) || 1
+        frame.style.scale = String(from + (1 - from) * (1 - (1 - t) ** 3))
+        metrics.style.opacity = String(Math.max(0, 1 - t / 0.6))
       }
-      if (scrollLinked) return
-      const from = Number(getComputedStyle(frame).getPropertyValue("--zoom-from")) || 1
-      frame.style.scale = String(from + (1 - from) * ease(clamp(position)))
-      metrics.style.opacity = String(1 - ease(clamp(position / 0.6)))
-      settle.style.scale = String(1 - 0.06 * ease(clamp((position - lines.length) / 0.5)))
+      measure()
+      addEventListener("resize", measure, { passive: true })
+      addEventListener("scroll", () => { cancelAnimationFrame(request); request = requestAnimationFrame(grow) }, { passive: true })
+      grow()
     }
+
+    let stops: number[] = []
+    const measureStops = () => {
+      const last = document.documentElement.scrollHeight - innerHeight
+      stops = [0, ...sentinels.slice(1).map((sentinel) => story.offsetTop + sentinel.offsetTop), last].map((y) => Math.min(y, last))
+    }
+    const nearest = () => stops.reduce((best, y, i) => (Math.abs(y - scrollY) < Math.abs(stops[best] - scrollY) ? i : best), 0)
+    let moving = false
+    let quietUntil = 0
+    const glide = (index: number) => {
+      const target = stops[Math.min(stops.length - 1, Math.max(0, index))]
+      const start = scrollY
+      if (Math.abs(target - start) < 2) return
+      moving = true
+      const began = performance.now()
+      const duration = 700
+      const frame = (now: number) => {
+        const t = Math.min(1, (now - began) / duration)
+        scrollTo({ top: start + (target - start) * (1 - (1 - t) ** 4), behavior: "instant" })
+        if (t < 1) requestAnimationFrame(frame)
+        else moving = false
+      }
+      requestAnimationFrame(frame)
+    }
+    const step = (direction: 1 | -1) => glide(nearest() + direction)
+    const inStory = () => scrollY <= stops[stops.length - 1] + 2
+    let wheelTotal = 0
+    let gestureUsed = false
+    addEventListener("wheel", (event: WheelEvent) => {
+      if (!inStory() || event.ctrlKey) return
+      event.preventDefault()
+      const now = performance.now()
+      if (now > quietUntil) {
+        wheelTotal = 0
+        gestureUsed = moving
+      }
+      quietUntil = now + 180
+      if (gestureUsed || moving) return
+      wheelTotal += event.deltaY
+      if (Math.abs(wheelTotal) < 8) return
+      gestureUsed = true
+      step(wheelTotal > 0 ? 1 : -1)
+    }, { passive: false })
+    let touchStart = 0
+    addEventListener("touchstart", (event: TouchEvent) => { touchStart = event.touches[0].clientY }, { passive: true })
+    addEventListener("touchmove", (event: TouchEvent) => { if (inStory()) event.preventDefault() }, { passive: false })
+    addEventListener("touchend", (event: TouchEvent) => {
+      const moved = touchStart - event.changedTouches[0].clientY
+      if (!inStory() || moving || Math.abs(moved) < 40) return
+      step(moved > 0 ? 1 : -1)
+    }, { passive: true })
+    const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+    addEventListener("keydown", (event: KeyboardEvent) => {
+      if (!inStory() || editable(event.target) || event.metaKey || event.altKey || event.ctrlKey) return
+      if (event.key === " " && event.target instanceof Element && event.target.closest("button, a, summary, [role=button]")) return
+      const down = event.key === "PageDown" || event.key === "ArrowDown" || (event.key === " " && !event.shiftKey)
+      const up = event.key === "PageUp" || event.key === "ArrowUp" || (event.key === " " && event.shiftKey)
+      const edge = event.key === "Home" ? 0 : event.key === "End" ? stops.length - 1 : -1
+      if (!down && !up && edge < 0) return
+      event.preventDefault()
+      if (moving) return
+      if (edge >= 0) glide(edge)
+      else step(down ? 1 : -1)
+    })
+    addEventListener("scrollend", () => { if (!moving && inStory()) glide(nearest()) })
+    addEventListener("resize", measureStops, { passive: true })
+    measureStops()
 
     lines.forEach((line, i) => line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === 0 ? 0 : -1 }))
     story.dataset.playing = "true"
-    addEventListener("scroll", () => {
-      cancelAnimationFrame(request)
-      request = requestAnimationFrame(update)
-    }, { passive: true })
-    addEventListener("resize", update, { passive: true })
-    update()
+    enter(0)
   }
 </script>
 
@@ -178,18 +248,21 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
       --quiet-text: #6e7178;
     }
   }
+  :global(html) { scroll-behavior: auto; }
   :global(.nav) { position: relative; }
 
   .home {
     --column: min(100% - 4rem, 75rem);
-    --segment: 90vh;
+    --view: 100vh;
     --stage-size: clamp(2.5rem, 5vw, 4.5rem);
     --line-box: calc(var(--stage-size) * 1.05 * 2);
     --head: calc(clamp(1rem, 3vh, 2rem) + var(--line-box) + 2.75rem);
   }
 
-  .story { position: relative; height: calc(100vh + (var(--steps) + .5) * var(--segment)); }
-  .pin { position: sticky; top: 0; display: grid; grid-template-rows: var(--head) minmax(0, 1fr); height: 100vh; overflow: clip; }
+  @supports (height: 100svh) { .home { --view: 100svh; } }
+  .story { position: relative; height: calc(var(--steps) * var(--view)); }
+  .sentinel { position: absolute; inset: calc(var(--k) * var(--view)) 0 auto; height: var(--view); pointer-events: none; }
+  .pin { position: sticky; top: 0; display: grid; grid-template-rows: var(--head) minmax(0, 1fr); height: var(--view); overflow: clip; }
 
   .stage { position: relative; width: var(--column); margin: 0 auto; padding: 0; list-style: none; }
   .stage-line {
@@ -200,9 +273,9 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
     opacity: 0;
     transform: translateY(6px);
     pointer-events: none;
-    transition: opacity 380ms cubic-bezier(0.2, 0, 0, 1), transform 380ms cubic-bezier(0.2, 0, 0, 1);
   }
-  .stage-line.is-in { opacity: 1; transform: none; pointer-events: auto; }
+  .stage-line.is-in { opacity: 1; transform: none; pointer-events: auto; transition: opacity 380ms cubic-bezier(0.2, 0, 0, 1) 120ms, transform 380ms cubic-bezier(0.2, 0, 0, 1) 120ms; }
+  .stage-line.is-out { opacity: 0; transform: translateY(-3px); transition: opacity 160ms ease-out, transform 160ms ease-out; }
   .sentence { align-self: end; max-width: 30ch; margin: 0; font: 600 var(--stage-size)/1.05 var(--font-display); letter-spacing: -.02em; text-wrap: balance; }
   .loud { color: var(--ink); }
   .muted { color: var(--quiet); font-weight: 400; }
@@ -211,22 +284,21 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   .quiet-link { color: var(--quiet-text); font: 400 .875rem/1.4 var(--font-sans); text-decoration: none; }
   .quiet-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: .2em; }
 
-  .demo-area { display: grid; justify-items: center; align-content: start; min-height: 0; transform-origin: 50% 40%; }
+  .demo-area { display: grid; justify-items: center; align-content: start; min-height: 0; }
+  .demo-frame.is-growing { will-change: scale; }
   .demo-frame {
     --zoom-from: .88;
     position: relative;
-    width: min(var(--column), (100vh - var(--head) - 2rem) * 1.9);
-    height: min(75vh, 100vh - var(--head) - 2rem);
+    width: min(var(--column), (var(--view) - var(--head) - 2rem) * 1.9);
+    height: min(75vh, var(--view) - var(--head) - 2rem);
     transform-origin: 50% 0;
     scale: var(--zoom-from);
   }
   @keyframes demo-grow { from { scale: var(--zoom-from); } to { scale: 1; } }
   @keyframes metrics-out { to { opacity: 0; } }
-  @keyframes demo-settle { to { scale: .94; } }
   @supports (animation-timeline: scroll()) {
-    .demo-frame { animation: demo-grow cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 var(--segment); }
-    .scrim { animation: metrics-out cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 calc(var(--segment) * .6); }
-    .demo-area { animation: demo-settle cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: calc(var(--steps) * var(--segment)) calc((var(--steps) + .5) * var(--segment)); }
+    .demo-frame { animation: demo-grow cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 var(--view); }
+    .scrim { animation: metrics-out cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 calc(var(--view) * .6); }
   }
 
   .scrim {
@@ -236,18 +308,18 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
     display: grid;
     place-content: center;
     justify-items: center;
-    gap: 2rem;
+    gap: clamp(1.5rem, 4vh, 2.5rem);
     border-radius: 0 0 13px 13px;
-    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(8px);
   }
   .scrim.is-gone { pointer-events: none; }
-  .metrics { display: grid; grid-template-columns: repeat(5, max-content); gap: 2.25rem; margin: 0; }
-  .metric { display: grid; align-content: start; gap: .5rem; }
-  .metric dt { display: grid; gap: .35rem; }
-  .metric b { color: var(--ink); font: 600 2.75rem/1 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .metric dt span { color: var(--ink); font: 500 .9375rem/1.3 var(--font-sans); }
-  .metric dd { display: grid; margin: 0; color: var(--quiet-text); font: 400 .8125rem/1.45 var(--font-sans); }
+  .metrics { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(1.25rem, 3.5vh, 2.25rem) clamp(2.5rem, 5vw, 4.5rem); max-width: 64rem; margin: 0; }
+  .metric { display: grid; justify-items: start; gap: .5rem; }
+  .metric dt { display: grid; gap: .5rem; }
+  .metric b { color: var(--ink); font: 600 clamp(4rem, min(8.5vw, 11vh), 8.5rem)/.9 var(--font-display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .metric dt span { color: var(--ink); font: 500 1.125rem/1.3 var(--font-sans); }
+  .metric dd { margin: 0; color: var(--quiet-text); font: 400 .8125rem/1.45 var(--font-sans); }
 
   .stills { display: none; }
 
@@ -257,11 +329,12 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   .closing p { margin: .75rem 0 0; color: var(--quiet-text); font: 400 .9375rem/1.5 var(--font-sans); }
 
   @media (max-width: 47.99rem) {
-    .home { --column: calc(100% - 2rem); --segment: 85vh; --stage-size: min(2.5rem, 10vw); --line-box: calc(var(--stage-size) * 1.05 * 3); }
+    .home { --column: calc(100% - 2rem); --stage-size: min(2.5rem, 10vw); --line-box: calc(var(--stage-size) * 1.05 * 3); }
     .demo-frame { --zoom-from: 1; width: var(--column); }
     .scrim { place-content: center stretch; padding: 1rem; gap: 1.25rem; }
-    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; }
-    .metric b { font-size: 2rem; }
+    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; }
+    .metric b { font-size: 3.5rem; }
+    .metric dt span { font-size: 1rem; }
     .metric dd { display: none; }
   }
 
@@ -270,7 +343,8 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
     .stills { display: grid; gap: clamp(3.5rem, 8vw, 6rem); width: var(--column); margin: 0 auto; padding: clamp(2rem, 5vh, 3.5rem) 0 0; }
     .still { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.25rem 2rem; align-items: end; }
     .still .sentence { max-width: none; }
-    .still-metrics { grid-column: 1 / -1; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .still-metrics { grid-column: 1 / -1; justify-content: start; }
+    .still-metrics .metric b { font-size: clamp(3rem, 6vw, 5.5rem); }
     .still-image { grid-column: 1 / -1; }
     .still-image img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); }
   }

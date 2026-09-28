@@ -548,21 +548,20 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
     }
     approveButton.addEventListener("click", install)
     approval.querySelector("[data-plugin-decline]")!.addEventListener("click", () => { approval.hidden = true })
-    const PLUGIN_STAGES = [0.2, 0.4, 0.5, 0.68] as const
-    let pluginStage = -1
-    const setPluginStage = (progress: number) => {
-      const stage = PLUGIN_STAGES.filter((edge) => progress >= edge).length
-      if (stage === pluginStage) return
-      pluginStage = stage
-      approval.hidden = stage !== 1 && stage !== 2
-      approveButton.classList.toggle("is-pressed", stage === 2)
-      showPlugin(stage >= 3)
-      if (stage >= 4) setSurface("standup")
-      else selectSession("standup")
+    let sequence: number[] = []
+    const stopSequence = () => { sequence.forEach(clearTimeout); sequence = [] }
+    const at = (ms: number, step: () => void) => { sequence.push(window.setTimeout(step, ms)) }
+    const playPluginBuild = () => {
+      showPlugin(false)
+      selectSession("standup")
+      at(450, () => { approval.hidden = false })
+      at(1000, () => approveButton.classList.add("is-pressed"))
+      at(1250, install)
+      at(1800, () => setSurface("standup"))
     }
     const storyStates: Record<string, () => void> = {
       speed: () => selectSession("usage-meter"),
-      prompt: () => { pluginStage = -1; setPluginStage(0) },
+      prompt: playPluginBuild,
       team: () => { selectSession("usage-meter"); root.dataset.account = "open"; root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "true") },
       place: () => { selectSession("relay-tokens"); if (window.innerWidth > 920) root.dataset.environment = "expanded" },
       tools: () => setSurface("marketplace"),
@@ -573,6 +572,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       if (spot) root.dataset.spot = spot
       else delete root.dataset.spot
       if (!spot || !open) return
+      stopSequence()
       approval.hidden = true
       approveButton.classList.remove("is-pressed")
       showPlugin(true)
@@ -581,10 +581,6 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       setComposerMenu("closed")
       closePanel()
       storyStates[spot]?.()
-    })
-    root.addEventListener("demo:progress", (event) => {
-      const { spot, progress } = (event as CustomEvent<{ spot: string; progress: number }>).detail
-      if (spot === "prompt") setPluginStage(progress)
     })
   }
 </script>
