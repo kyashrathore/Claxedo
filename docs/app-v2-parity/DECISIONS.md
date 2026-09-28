@@ -381,4 +381,4 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **Composer: 11,260.** It measured 11,169 before. 86 lines are `view/selector-notice.test.ts` (unknown shows nothing; answered with no model shows the notice, for a connection and a native harness), 5 the answered read and its use. The budget is the measured 11,260, with no headroom, pending the orchestrator's review.
 
 ## Lane fix/rate-limit-vs-usage-limit, 2026-09-28: a failed turn names its account
-- Lead ruling (owner's no-compatibility rule, unreleased, no users): the provider projection's new `account` field ships with its validator and its sender in one commit, ungated; a separately deployed runtime picks it up with its next build, and until then refuses a snapshot carrying it.
+- Owner ruling (unreleased, no users, no backward compatibility): a runtime that receives the provider projection's new `account` field before its rebuild refuses the whole snapshot, and that is accepted. The validator and the broker that sends the field changed in one commit, ungated; a separately deployed runtime picks it up with its next build.
