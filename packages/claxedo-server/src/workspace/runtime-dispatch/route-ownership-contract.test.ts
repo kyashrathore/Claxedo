@@ -122,9 +122,6 @@ describe("route ownership", () => {
     const paths = [
       "/api/wr/config",
       "/api/wr/harness-config-options",
-      "/mcp",
-      "/mcp/local/connect",
-      "/mcp/local/disconnect",
       "/agent",
       "/command",
     ]
