@@ -11,7 +11,9 @@ function openExternalAnchors(api: ElectronAPI) {
   document.addEventListener("click", (event) => {
     if (!event.isTrusted || event.defaultPrevented || event.button !== 0) return
     const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null
-    if (!(anchor instanceof HTMLAnchorElement) || !EXTERNAL_PROTOCOLS.has(new URL(anchor.href).protocol)) return
+    if (!(anchor instanceof HTMLAnchorElement)) return
+    const url = new URL(anchor.href)
+    if (url.origin === window.location.origin || !EXTERNAL_PROTOCOLS.has(url.protocol)) return
     event.preventDefault()
     api.openLink(anchor.href)
   })

@@ -4,6 +4,7 @@ import { ensureAppBuilt, signedDistDir, type AppBuild } from "./app"
 import { launchDesktop, type Desktop, type DesktopAccount } from "./desktop"
 import { recordDestinations, reportDestinations } from "./destinations"
 import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
+import type { DesktopRenderer } from "./desktop-renderer"
 import { unexpectedEgress, type EgressAttempt } from "./egress-guard"
 import { releasePort, reservePort } from "./ports"
 import { startSignedStack, type SignedStack } from "./signed-stack"
@@ -13,6 +14,7 @@ export type HarnessFixtures = {
   stack: Stack
   api: ClaxedoApi
   app: Page
+  desktopRenderer: DesktopRenderer
   desktop: Desktop
   signed: SignedStack
   signedDesktop: Desktop
@@ -97,18 +99,25 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     }
     refuseEgress(signed.stack.egress.attempts)
   },
-  desktop: async ({ desktopBuild }, use, testInfo) => {
-    await useDesktop(testInfo, desktopBuild, undefined, use)
+  desktopRenderer: ["file", { option: true }],
+  desktop: async ({ desktopBuild, desktopRenderer }, use, testInfo) => {
+    await useDesktop(testInfo, desktopBuild, desktopRenderer, undefined, use)
   },
-  signedDesktop: async ({ desktopBuild, signedCloud }, use, testInfo) => {
-    await useDesktop(testInfo, desktopBuild, { coreOrigin: signedCloud.url, trust: signedCloud.trust }, use)
+  signedDesktop: async ({ desktopBuild, desktopRenderer, signedCloud }, use, testInfo) => {
+    await useDesktop(testInfo, desktopBuild, desktopRenderer, { coreOrigin: signedCloud.url, trust: signedCloud.trust }, use)
   },
 })
 
-async function useDesktop(testInfo: TestInfo, desktopBuild: DesktopBuild, account: DesktopAccount | undefined, use: (desktop: Desktop) => Promise<void>) {
+async function useDesktop(
+  testInfo: TestInfo,
+  desktopBuild: DesktopBuild,
+  renderer: DesktopRenderer,
+  account: DesktopAccount | undefined,
+  use: (desktop: Desktop) => Promise<void>,
+) {
   const how = desktopBuild.built ? `built in ${desktopBuild.ms} ms` : "already current"
   testInfo.annotations.push({ type: "desktop build", description: how })
-  const desktop = await launchDesktop({ label: testInfo.title, red: redRun(), ...(account ? { account } : {}) })
+  const desktop = await launchDesktop({ label: testInfo.title, red: redRun(), renderer, ...(account ? { account } : {}) })
   try {
     await use(desktop)
   } finally {

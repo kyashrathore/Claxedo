@@ -201,6 +201,8 @@ Moving `HOME` hides the login keychain from the `security` tool (it answers 44),
 
 Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build` with `VITE_CLAXEDO_HOSTED_ACTIVATION=true`, so sign-in is offered; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
 
+The window loads the packaged document, a `file://` page, unless the spec sets `test.use({ desktopRenderer: "http" })`: then the fixture serves `out/renderer` over http on a port from the run's range and names it to main as `ELECTRON_RENDERER_URL`, so the app runs on an http origin the way `bun run dev` loads it from Vite. The daemon never answers its credential routes to another origin, so that document cannot store the scripted keys, and an http desktop starts without the scripted world (no scripted providers, no Pi default, no scripted ACP connection).
+
 The embedded server admits only its application: Electron main stamps a capability on its own renderer's requests, and nothing else can send it. So `desktop.api` and `desktop.makeWorkspace` send through the app's window, with the app's own privileges. The fixture waits for main to publish the server (`awaitInitialization`), which is when that capability is armed.
 
 | Member | Meaning |
@@ -235,6 +237,7 @@ e2e/
     launch-gate-child.ts builds the runtime's launch gate child
     workspace-dists.ts   builds a workspace package's dist when it is missing
     desktop-build.ts     builds packages/claxedo-desktop when stale
+    desktop-renderer.ts  serves the built desktop renderer over http for desktopRenderer "http"
     desktop.ts           launches the Electron app isolated, with its scripted world
     scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent
     workspaces.ts        a fresh repository registered with a server
