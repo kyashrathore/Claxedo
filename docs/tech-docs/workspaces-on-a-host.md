@@ -248,11 +248,11 @@ On a signed desktop the catalog has a second source, the account's:
 If the account catalog cannot be read, the failure is logged and the desktop
 lists its own placements. `workspaces.refresh` re-reads both sources.
 
-Observed: `accountCatalogFromWire` reads each row's `reachable`, while the
-`/api/workspace` list rows carry `host_online` on machine rows
-(`listWorkspaces` in
-`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`)
-and no `reachable`. Every account placement therefore reads as unreachable.
+`accountCatalogFromWire` reads each row's `reachable`. Both `/api/workspace`
+list routes set it through `withAuthorityRowReachability`
+(`packages/claxedo-server-core/src/workspace/placement-reachability.ts`): a
+machine row is reachable when its enrollment serves it (`host_online`), a
+cloud row when its sandbox lease is ready.
 
 **B.3 Address** — a workspace is addressed by its id everywhere in the app.
 The placement id is the workspace id, and the shell's routes name it
@@ -311,8 +311,7 @@ placement's machine is offline.
 Observed limit: on a signed desktop, another machine's workspace comes only
 from the account catalog, and the daemon's `/workspaces/<id>` surface serves
 only ids in its own store. The desktop therefore has no path to that
-machine's runtime. Because of B.2's `reachable` reading, the app shows that
-placement as an offline machine.
+machine's runtime.
 
 ## C. Connecting: the mint
 
@@ -503,13 +502,15 @@ control frames from `workspaceRuntimeBus` (`pty.*`, `process.*`,
   daemon's proxy on loopback, the relay otherwise). It opens the stream while
   at least one of the placement's sessions is attached (E.1) and the catalog
   says the placement is `reachable`, closes it when either stops, and
-  reconciles on every update of the bootstrap catalog. The stream never
-  names a `sessionID`. A placement that is not remote gets no stream of its
-  own; on the daemon the aggregate carries it.
+  reconciles on every update of the bootstrap catalog. Refused with 403
+  `workspace_event_stream_denied` (F.2), the placement reads one
+  `?sessionID=` stream per attached session instead. A placement that is not
+  remote gets no stream of its own; on the daemon the aggregate carries it.
 
 `openStream` reads SSE and resumes by `Last-Event-ID`. It reconnects with a
 backoff that doubles from 250 ms to 15 s and never gives up, and it drops and
-reopens a stream that sends no frame for 40 s. A `stream.replay-gap` frame
+reopens a stream that sends no frame for 40 s. A 403 is the answer, not a
+failure: the stream goes offline, reports the refusal and never reopens. A `stream.replay-gap` frame
 becomes `streamGap`, on which every store re-reads.
 
 **F.2 The runtime decides the arm** — the runtime decides from the REQUEST,
@@ -526,9 +527,7 @@ not from the composition. `authorizeSessionEventScope`
   session under a lease (`authorizeStream`; 403 there is
   `session_event_stream_denied`).
 
-A subagent child's frames are scoped as its parent's. The app's placement
-stream is always the unscoped arm: on 403 `workspace_event_stream_denied` it
-reconnects with backoff and never reopens with `?sessionID=`.
+A subagent child's frames are scoped as its parent's.
 
 Provenance is stamped once at the daemon's ingress,
 `resolveIngressProvenance`
@@ -614,9 +613,10 @@ session; `denyWorkspaceViewers`
 (`packages/workspace-runtime/src/routes/workspace-role.ts`) refuses a
 viewer's PTY, process and Git writes by the role on the relay token (403
 `relay_role_denied`). A terminal's `pty.*` frames ride the workspace bus.
-Inference from those two facts: a terminal the app creates through the relay
-on a machine whose runtime is `managed-private` is refused with
-`pty_session_id_required`.
+So a terminal the app creates through the relay on a machine whose runtime is
+`managed-private` is refused with `pty_session_id_required`; the pty route
+test "requires and authorizes a persisted session identity for managed PTY
+creation" is that refusal.
 
 **G.2 Configuration** — provider configuration the owner pushed to a machine
 reaches the daemon over `PUT /api/claxedo/host-provider-config`
@@ -629,8 +629,9 @@ from the attached server, not the runtime: `readHarnessOptions`
 workspace id, and the answer's `resolvedModel` is the model the harness
 resolved. The daemon serves that route
 (`packages/claxedo-local-server/src/agent-config/routes/harness-routes.ts`);
-the hosted control plane registers only `GET /api/claxedo/agent-config/harness`,
-a machine-placed workspace's harness health read over the relay
+the hosted control plane serves it too, reading the workspace runtime's
+`/api/wr/harness-config-options` (or the session's `config-options`) over the
+relay beside its harness health route
 (`packages/claxedo-server/src/routes/hosted/shell.ts`).
 
 ## H. Authority on the runtime side
