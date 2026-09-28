@@ -7,7 +7,7 @@ export type NavigationStatus = "idle" | "working" | "permission" | "error" | "do
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
-export function navigationStatus(row: SessionRowView): NavigationStatus {
+export function navigationStatus(row: SessionRowView, failureUnseen: boolean): NavigationStatus {
   if (row.waitingOnUser) return "permission"
   if (row.pending) return "working"
   switch (row.status.kind) {
@@ -16,7 +16,7 @@ export function navigationStatus(row: SessionRowView): NavigationStatus {
     case "recovering":
       return "working"
     case "failed":
-      return "error"
+      return failureUnseen ? "error" : "idle"
     default:
       return "idle"
   }

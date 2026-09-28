@@ -42,9 +42,9 @@ function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonl
   )
 }
 
-function Alerts(): JSX.Element {
+function Alerts(props: ParentProps): JSX.Element {
   const preferences = usePreferences()
-  return <AttentionAlerts preferences={preferences.alerts} />
+  return <AttentionAlerts preferences={preferences.alerts}>{props.children}</AttentionAlerts>
 }
 
 function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
@@ -72,8 +72,9 @@ export function App(props: AppProps): JSX.Element {
               <ClockProvider>
                 <ShellRouter router={props.router}>
                   <SignedServer serverUrl={props.serverUrl}>
-                    <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
-                    <Alerts />
+                    <Alerts>
+                      <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                    </Alerts>
                   </SignedServer>
                 </ShellRouter>
               </ClockProvider>

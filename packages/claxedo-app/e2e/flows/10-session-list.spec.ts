@@ -125,3 +125,39 @@ test("10 a background turn, in a session visited before, changes only its own ra
   expect(Object.keys(seen.mutations), "regions the background turn changed").toEqual(["ownRow"])
 })
 
+
+test("10 a failed turn's dot clears once the reader opens the session, stays cleared after a reload, and returns for the next failure", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("unseen", "Unseen")
+  const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
+  const other = await create("Other")
+  const greeting = await create("Greeting")
+  await stack.acp.write("failing", { steps: [{ kind: "error", message: "Rate limit reached for requests" }] })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const mark = row(app, "Greeting").locator("[data-sidebar-status]")
+  const lastTurn = async () => (await api.session(workspace.directory, greeting.id)).lastTurn as { status?: string; completedAt?: number } | undefined
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, other.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await api.promptAsync(workspace.directory, greeting.id, `Say hello. ${acpScriptToken("failing")}`)
+  await expect.poll(async () => (await lastTurn())?.status).toBe("failed")
+  await expect(mark).toHaveAttribute("data-sidebar-status", "error")
+
+  await rail.getByRole("button", { name: "Greeting", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(greeting.id))
+  await expect(app.getByText("Rate limit reached for requests")).toBeVisible()
+  await expect(mark).toHaveCount(0)
+
+  await app.reload()
+  await expect(app.getByText("Rate limit reached for requests")).toBeVisible()
+  await expect(row(app, "Greeting")).toBeVisible()
+  await expect(mark).toHaveCount(0)
+  await rail.getByRole("button", { name: "Other", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(other.id))
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await expect(mark).toHaveCount(0)
+
+  const seen = (await lastTurn())?.completedAt
+  await api.promptAsync(workspace.directory, greeting.id, `Say hello again. ${acpScriptToken("failing")}`)
+  await expect.poll(async () => (await lastTurn())?.completedAt).not.toBe(seen)
+  await expect(mark).toHaveAttribute("data-sidebar-status", "error")
+})
