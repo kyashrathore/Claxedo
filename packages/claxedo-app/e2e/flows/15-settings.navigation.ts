@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, UI } from "../harness"
+import { expect, expectNothingAnimating, UI } from "../harness"
 
 export type Section = "Appearance" | "Keyboard shortcuts" | "Organization" | "Models" | "Machines" | "Connections"
 
@@ -23,6 +23,7 @@ export async function revealRail(app: Page, isMobile: boolean) {
 async function showSettingsNav(app: Page, isMobile: boolean) {
   const nav = app.getByRole("group", { name: "App" })
   await expect(async () => {
+    await expectNothingAnimating(app)
     const open = app.getByRole("button", { name: UI.openRail })
     if (isMobile && (await open.isVisible())) await open.click()
     await expect(nav).toBeInViewport({ ratio: 1, timeout: 1000 })
