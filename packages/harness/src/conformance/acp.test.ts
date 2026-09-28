@@ -22,6 +22,24 @@ type AcpBackend = ConformanceBackend & {
   connection: ConstructorParameters<typeof AcpTransport>[1]
 }
 
+test("ACP launches the projected servers and reports the ones the projection could not apply", async () => {
+  const context = await setupConformance({
+    name: "acp partial MCP projection",
+    backend: async () => ({ ...await backend("process"), projection: { generation: "partial", pluginRoots: [],
+      notApplied: [{ item: "needs-cwd", reason: "unsupported-by-harness" as const }],
+      mcpServers: [{ kind: "stdio" as const, origin: "plugin" as const, name: "supported", command: "/plugin/other" }] } }),
+    makeTransport: (services, state) => new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+      async () => { throw new Error("No restore in this scenario") }),
+  })
+  try {
+    const request = (await readAcpRequests(context.backend.directory)).find((row) => row.method === "session/new")
+    expect(request?.params).toMatchObject({ mcpServers: [expect.objectContaining({ name: "supported" })] })
+    expect(context.ports.sessionEvents).toContainEqual(expect.objectContaining({ event: expect.objectContaining({
+      type: "harness-notice", details: { notApplied: [{ item: "needs-cwd", reason: "unsupported-by-harness" }] },
+    }) }))
+  } finally { await context.close() }
+})
+
 async function backend(kind: "process" | "websocket" | "streamable-http", restoreMode: "resume" | "load" = "resume", supportsMcpServers = true,
   holdMethod?: string, red = false, startupQuestion = false, groups?: readonly string[]): Promise<AcpBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "acp-conformance-"))

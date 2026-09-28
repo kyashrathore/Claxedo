@@ -5,14 +5,11 @@ import path from "path"
 import { createStatusHooksManifest, writeStatusHooksArtifacts } from "./setup"
 
 const dirs: string[] = []
-const originalCodexNativeHooks = process.env.CLAXEDO_CODEX_NATIVE_HOOKS
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true })
   }
-  if (originalCodexNativeHooks === undefined) delete process.env.CLAXEDO_CODEX_NATIVE_HOOKS
-  else process.env.CLAXEDO_CODEX_NATIVE_HOOKS = originalCodexNativeHooks
 })
 
 function temp() {
@@ -35,6 +32,9 @@ describe("writeStatusHooksArtifacts", () => {
     expect(existsSync(manifest.files.notify)).toBe(true)
     expect(existsSync(manifest.files.geminiHook)).toBe(true)
     expect(existsSync(manifest.files.cursorHook)).toBe(true)
+    expect(JSON.parse(readFileSync(manifest.files.claudeSettings, "utf-8")).hooks.UserPromptSubmit).toEqual([
+      { hooks: [{ type: "command", command: `'${manifest.files.notify}' --harness=claude` }] },
+    ])
     expect(existsSync(manifest.files.copilotHook)).toBe(true)
     expect(existsSync(path.join(manifest.dirs.bin, "claude"))).toBe(true)
     expect(existsSync(path.join(manifest.dirs.bin, "codex"))).toBe(true)
@@ -46,33 +46,15 @@ describe("writeStatusHooksArtifacts", () => {
     expect(readFileSync(path.join(manifest.dirs.bin, "amp"), "utf-8")).not.toContain('hook_event_name')
   })
 
-  it("ignores ambient native Codex hook env unless the option is set", async () => {
-    const root = temp()
-    const manifest = createStatusHooksManifest(root)
-    process.env.CLAXEDO_CODEX_NATIVE_HOOKS = "1"
-
-    await writeStatusHooksArtifacts(manifest, {
-      port: 4312,
-      force: true,
-    })
-
-    expect(existsSync(manifest.files.codexNotify)).toBe(true)
-    expect(existsSync(manifest.files.codexWatcher)).toBe(true)
-    expect(readFileSync(path.join(manifest.dirs.bin, "codex"), "utf-8")).toContain(manifest.files.codexNotify)
-  })
-
-  it("uses native Codex hook artifacts when explicitly requested", async () => {
+  it("writes a Codex wrapper whose hooks run Claxedo's notify script", async () => {
     const root = temp()
     const manifest = createStatusHooksManifest(root)
 
     await writeStatusHooksArtifacts(manifest, {
       port: 4312,
       force: true,
-      codexNativeHooks: true,
     })
 
-    expect(existsSync(manifest.files.codexNotify)).toBe(false)
-    expect(existsSync(manifest.files.codexWatcher)).toBe(false)
-    expect(readFileSync(path.join(manifest.dirs.bin, "codex"), "utf-8")).toContain(manifest.files.notify)
+    expect(readFileSync(path.join(manifest.dirs.bin, "codex"), "utf-8")).toContain(`command="'\\''${manifest.files.notify}'\\'' --harness=codex"`)
   })
 })

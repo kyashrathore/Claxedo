@@ -3,7 +3,11 @@ import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { spawn } from "node:child_process"
 import type { PluginProjection, ResolvedCredentials } from "../../contract"
+import { ensurePinnedCodex, PINNED_CODEX } from "../../../e2e/harness/pinned-codex"
+import { releasePort, reservePort } from "../../../e2e/harness/ports"
+import { startScriptedModelServer } from "../../../e2e/harness/scripted-model-server"
 import { prepareCodexProfile } from "."
 
 const brokered: ResolvedCredentials = { providers: { codex: { baseUrl: "http://127.0.0.1:47501/v1", placeholder: "first", authMode: "api-key" } }, secrets: {}, leaseGeneration: "first" }
@@ -72,6 +76,102 @@ test("an own-login session with plugins leaves the owner's Codex home byte-ident
     expect(await fs.readdir(owner)).not.toContain("plugins")
     const again = await prepareCodexProfile({ homeRoot: path.join(root, "homes"), owner: machineOwner, credentials: ownLogin, projection, ownerHome: owner })
     expect(again.home).toBe(first.home)
+    expect(await snapshot(owner)).toEqual(before)
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})
+
+async function codexLogin(codexHome: string, home: string, apiKey: string): Promise<void> {
+  const child = spawn(PINNED_CODEX, ["login", "--with-api-key"], { env: { PATH: process.env.PATH ?? "", HOME: home, CODEX_HOME: codexHome }, stdio: ["pipe", "ignore", "pipe"] })
+  let stderr = ""
+  child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+  child.stdin.end(`${apiKey}\n`)
+  const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("close", resolve) })
+  if (code !== 0) throw new Error(`codex login exited ${code}: ${stderr}`)
+}
+
+test("only the own-login home links the owner's auth, and a login in a brokered home stays in that home", async () => {
+  await ensurePinnedCodex()
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-auth-boundary-"))
+  try {
+    const owner = await ownerHome(root)
+    const ownerAuth = path.join(owner, "auth.json")
+    const before = await snapshot(owner)
+    const homeRoot = path.join(root, "homes")
+    const own = await prepareCodexProfile({ homeRoot, owner: machineOwner, credentials: ownLogin, projection: noPlugins, ownerHome: owner })
+    expect(await fs.readlink(path.join(own.home, "auth.json"))).toBe(await fs.realpath(ownerAuth))
+    const { home } = await prepareCodexProfile({ homeRoot, owner: machineOwner, credentials: brokered, projection: noPlugins, ownerHome: owner })
+    expect(home).not.toBe(own.home)
+    expect(await fs.readdir(home)).not.toContain("auth.json")
+    await codexLogin(home, root, "sk-brokered-login")
+    const brokeredAuth = await fs.lstat(path.join(home, "auth.json"))
+    expect(brokeredAuth.isSymbolicLink()).toBe(false)
+    expect(await fs.readFile(path.join(home, "auth.json"), "utf8")).toContain("sk-brokered-login")
+    await prepareCodexProfile({ homeRoot, owner: machineOwner, credentials: brokered, projection: noPlugins, ownerHome: owner })
+    expect((await fs.lstat(path.join(home, "auth.json"))).isSymbolicLink()).toBe(false)
+    expect(await snapshot(owner)).toEqual(before)
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+}, 60_000)
+
+async function codexExec(codexHome: string, home: string, cwd: string, args: string[]): Promise<number | null> {
+  const child = spawn(PINNED_CODEX, ["exec", ...args], { cwd, env: { PATH: process.env.PATH ?? "", HOME: home, CODEX_HOME: codexHome }, stdio: ["ignore", "ignore", "pipe"] })
+  let stderr = ""
+  child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+  const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("close", resolve) })
+  if (code !== 0) throw new Error(`codex exec exited ${code}: ${stderr.slice(-800)}`)
+  return code
+}
+
+test("a plugin version bump in a selected execution keeps the home, so a thread started before it resumes after", async () => {
+  await ensurePinnedCodex()
+  const port = await reservePort()
+  const model = await startScriptedModelServer({ port, red: false })
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-bump-"))
+  try {
+    const owner = await ownerHome(root)
+    await fs.writeFile(path.join(owner, "config.toml"), [
+      "check_for_update_on_startup = false", 'model = "gpt-4.1"', 'model_provider = "scripted"', "[model_providers.scripted]",
+      'name = "scripted"', `base_url = "${model.v1Url}"`, 'wire_api = "responses"', "requires_openai_auth = false",
+      'http_headers = { Authorization = "Bearer bump" }', "",
+    ].join("\n"))
+    const work = path.join(root, "work")
+    await fs.mkdir(work)
+    const homeRoot = path.join(root, "homes")
+    const selected = (hash: string, version: string) => plugin(path.join(root, version), "bumped", version)
+      .then((bumped) => ({ ...noPlugins, pluginRoots: [bumped], pluginSelection: { mode: "selected" as const, selectionHash: hash } }))
+    const before = await prepareCodexProfile({ homeRoot, owner: machineOwner, credentials: ownLogin, projection: await selected("digest-v1", "1.0.0"), ownerHome: owner })
+    await codexExec(before.home, root, work, ["--skip-git-repo-check", "BUMPFIRST start the thread"])
+    const after = await prepareCodexProfile({ homeRoot, owner: machineOwner, credentials: ownLogin, projection: await selected("digest-v2", "2.0.0"), ownerHome: owner })
+    expect(after.home).toBe(before.home)
+    expect(await fs.readdir(path.join(after.home, "plugins", "cache", "claxedo-agent-plugins", "bumped"))).toEqual(["2.0.0"])
+    model.requests.splice(0)
+    await codexExec(after.home, root, work, ["--skip-git-repo-check", "resume", "--last", "BUMPSECOND continue it"])
+    expect(model.requests.some((request) => JSON.stringify(request.body).includes("BUMPFIRST"))).toBe(true)
+  } finally {
+    await model.close()
+    releasePort(port)
+    await fs.rm(root, { recursive: true, force: true })
+  }
+}, 120_000)
+
+test("selected execution excludes personal plugin config and cache from the shared home", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-selected-"))
+  try {
+    const owner = await ownerHome(root)
+    await fs.appendFile(path.join(owner, "config.toml"), '\n[marketplaces.personal]\nsource = "/personal"\n[plugins."unselected@personal"]\nenabled = true\n')
+    await fs.mkdir(path.join(owner, "plugins/cache/personal/unselected"), { recursive: true })
+    const selected = await plugin(root, "selected")
+    const projection = { ...noPlugins, pluginRoots: [selected], pluginSelection: { mode: "selected" as const, selectionHash: "selection-a" } }
+    const before = await snapshot(owner)
+    const { home } = await prepareCodexProfile({ homeRoot: path.join(root, "homes"), owner: machineOwner, credentials: ownLogin, projection, ownerHome: owner })
+    const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
+    expect(config).not.toContain("unselected")
+    expect(config).not.toContain("marketplaces.personal")
+    expect(config).toContain('[plugins."selected@claxedo-agent-plugins"]')
+    expect(await fs.readdir(path.join(home, "plugins/cache"))).toEqual(["claxedo-agent-plugins"])
+    const cache = path.join(home, "plugins/cache/claxedo-agent-plugins")
+    const inode = (await fs.stat(cache)).ino
+    await prepareCodexProfile({ homeRoot: path.join(root, "homes"), owner: machineOwner, credentials: ownLogin, projection, ownerHome: owner })
+    expect((await fs.stat(cache)).ino).toBe(inode)
     expect(await snapshot(owner)).toEqual(before)
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })

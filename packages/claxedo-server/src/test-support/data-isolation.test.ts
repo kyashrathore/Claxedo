@@ -57,7 +57,7 @@ test("agent hook setup rewrites the harness configs under the temporary home, no
   const written = agentHookConfigPaths(os.homedir())
   for (const file of Object.values(written)) expect({ file, exists: existsSync(file) }).toEqual({ file, exists: true })
   const workspaceRuntime = process.env.WORKSPACE_RUNTIME_DATA_DIR!
-  expect(readFileSync(written.codex, "utf8")).toContain(path.join(workspaceRuntime, "hooks", "notify.sh"))
-  expect(readFileSync(written.cursor, "utf8")).toContain(path.join(workspaceRuntime, "hooks", "cursor-hook.sh"))
+  expect(readFileSync(written.gemini, "utf8")).toContain(path.join(workspaceRuntime, "hooks", "gemini-hook.sh"))
+  expect(readFileSync(path.join(workspaceRuntime, "hooks", "claude-settings.json"), "utf8")).toContain(path.join(workspaceRuntime, "hooks", "notify.sh"))
   expect(fingerprint(home)).toEqual(before)
 })

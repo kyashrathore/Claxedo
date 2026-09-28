@@ -1,76 +1,19 @@
-import fs from "node:fs/promises"
-import path from "node:path"
-import type { AgentPluginMcpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
-import type { AgentPluginHarnessProjectionAdapter, GenerationPluginRoot } from "./types"
-import { pluginInstanceStorageKey } from "../plugin-data"
-import { flatMcpServerName, projectedMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
+import type { AgentPluginHarnessProjectionAdapter } from "./types"
+import { pluginMcpProjection } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 
-function expand(value: string, plugin: GenerationPluginRoot) {
-  return value
-    .replaceAll("${PLUGIN_ROOT}", plugin.root)
-    .replaceAll("${PLUGIN_DATA}", plugin.dataRoot)
-}
-
-function serverName(plugin: GenerationPluginRoot, name: string) {
-  return flatMcpServerName(plugin.plugin.manifest.name, pluginInstanceStorageKey(plugin.pluginInstanceId), name)
-}
-
-function openCodeMcpServer(plugin: GenerationPluginRoot, server: AgentPluginMcpServer) {
-  if (server.type === "stdio") {
-    return {
-      type: "local",
-      command: [expand(server.command, plugin), ...(server.args ?? []).map((value) => expand(value, plugin))],
-      ...(server.env ? {
-          environment: Object.fromEntries(Object.entries(server.env).map(([name, value]) => [name, expand(value, plugin)])),
-        } : {}),
-      cwd: server.cwd ? expand(server.cwd, plugin) : plugin.root,
-    }
-  }
-  return {
-    type: "remote",
-    url: server.url,
-    ...(server.headers ? {
-        headers: Object.fromEntries(Object.entries(server.headers).map(([name, value]) => [name, expand(value, plugin)])),
-      } : {}),
-  }
-}
-
-/**
- * OpenCode has native Agent Skills and MCP configuration, but not an Agent
- * Plugins root loader. Generate one module-owned config document (the embedded
- * SDK's config shape: `skills` is a list of skill directories, `mcp` its server
- * map) instead of writing to the project or the user's global OpenCode
- * configuration. The workspace runtime's OpenCode adapter applies it per
- * workspace through the SDK's plugin surface.
- */
 export function openCodeAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter {
   return {
     harnessId: "opencode",
-    async project({ generationRoot, plugins, mcpServers = [] }) {
-      const root = path.join(generationRoot, "harnesses", "opencode")
-      await fs.mkdir(root, { recursive: true })
-      const skills = plugins.flatMap((plugin) =>
-        plugin.plugin.skills.map((skill) => path.join(plugin.root, skill.path)))
-      const mcp = Object.fromEntries(plugins.flatMap((plugin) =>
-        plugin.plugin.mcp.status === "valid"
-          ? projectedMcpServers(plugin, mcpServers).map((server) => [serverName(plugin, server.name), openCodeMcpServer(plugin, server)] as const)
-          : [],
-      ))
-      const configFile = path.join(root, "opencode.json")
-      await fs.writeFile(configFile, `${JSON.stringify({
-        ...(skills.length ? { skills } : {}),
-        ...(Object.keys(mcp).length ? { mcp } : {}),
-      }, null, 2)}\n`)
+    async project({ plugins, mcpServers = [] }) {
+      const projected = await pluginMcpProjection(plugins, mcpServers)
       return {
         harnessId: "opencode",
-        configFile,
         pluginRoots: plugins.map((plugin) => ({
-          pluginInstanceId: plugin.pluginInstanceId,
-          root: plugin.root,
-          dataRoot: plugin.dataRoot,
+          pluginInstanceId: plugin.pluginInstanceId, root: plugin.root, dataRoot: plugin.dataRoot,
           skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })),
-        diagnostics: [],
+        mcpServers: projected.servers,
+        notApplied: projected.notApplied,
       }
     },
   }

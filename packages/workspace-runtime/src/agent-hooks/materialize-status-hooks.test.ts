@@ -3,7 +3,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { agentHookConfigPaths, getClaudeManagedHookCommand, materializeAgentHooks } from "./materialize-status-hooks"
+import { agentHookConfigPaths, materializeAgentHooks } from "./materialize-status-hooks"
 import { generateAntigravityHook, generateCursorHook, generateGeminiHook, generateNotifyScript } from "./core/hooks"
 
 const root = path.join(os.tmpdir(), `agent-hooks-materializer-${randomUUID().slice(0, 8)}`)
@@ -68,41 +68,16 @@ describe("materializeAgentHooks", () => {
       notifyPath,
       geminiHookPath,
       cursorHookPath,
-      codexNativeHooks: true,
       force: true,
     })
 
     expect(results.every((item) => item.status === "applied")).toBe(true)
-    // Each config carries the harness that owns it, so notify.sh can drop a
-    // config replayed by a different agent.
-    expect(getClaudeManagedHookCommand()).toContain("/hooks/notify.sh\" --harness=claude")
-    await expect(readJson(path.join(root, ".claude", "settings.json"))).resolves.toMatchObject({
-      hooks: {
-        UserPromptSubmit: [{ hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
-        PermissionRequest: [{ matcher: "*", hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
-        PermissionDenied: [{ matcher: "*", hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
-      },
-    })
-    await expect(readJson(path.join(root, ".codex", "hooks.json"))).resolves.toMatchObject({
-      hooks: {
-        SessionStart: [{ hooks: [{ type: "command", command: `'${notifyPath}' --harness=codex` }] }],
-        Interrupt: [{ hooks: [{ type: "command", command: `'${notifyPath}' --harness=codex` }] }],
-      },
-    })
+    for (const personal of [".claude", ".codex"]) {
+      await expect(fs.stat(path.join(root, personal))).rejects.toMatchObject({ code: "ENOENT" })
+    }
     await expect(readJson(path.join(root, ".gemini", "settings.json"))).resolves.toMatchObject({
       hooks: {
         BeforeAgent: [{ hooks: [{ type: "command", command: geminiHookPath }] }],
-      },
-    })
-    await expect(readJson(path.join(root, ".cursor", "hooks.json"))).resolves.toEqual({
-      version: 1,
-      hooks: {
-        beforeSubmitPrompt: [{ command: `${cursorHookPath} Start` }],
-        stop: [{ command: `${cursorHookPath} Stop` }],
-        beforeShellExecution: [{ command: `${cursorHookPath} PermissionRequest` }],
-        beforeMCPExecution: [{ command: `${cursorHookPath} PermissionRequest` }],
-        postToolUse: [{ command: `${cursorHookPath} PostToolUse`, matcher: "^(Shell|MCP:.+)$" }],
-        postToolUseFailure: [{ command: `${cursorHookPath} PostToolUse`, matcher: "^(Shell|MCP:.+)$" }],
       },
     })
     await expect(readJson(path.join(root, ".mastracode", "hooks.json"))).resolves.toMatchObject({
@@ -110,23 +85,120 @@ describe("materializeAgentHooks", () => {
     })
   })
 
-  test("Cursor keeps user hooks and replaces an older registration of the same event", async () => {
+  test("Cursor adds only Claxedo's entries and keeps the person's file byte-for-byte around them", async () => {
     const file = path.join(root, ".cursor", "hooks.json")
     await fs.mkdir(path.dirname(file), { recursive: true })
-    await fs.writeFile(file, JSON.stringify({ version: 1, hooks: {
-      beforeShellExecution: [{ command: "./scripts/approve-network.sh", matcher: "curl|wget" }, { command: `${cursorHookPath} PermissionRequest` }],
-      postToolUse: [{ command: `${cursorHookPath} Start` }],
-      afterFileEdit: [{ command: "./scripts/format.sh" }],
-    } }))
+    const person = `{
+    "version": 1,
+    "hooks": {
+        "afterFileEdit": [ { "command": "./scripts/format.sh" } ],
+        "beforeShellExecution": [
+            { "command": "./scripts/approve-network.sh", "matcher": "curl|wget" }
+        ]
+    },
+    "theme": "person-owned"
+}
+`
+    await fs.writeFile(file, person, { mode: 0o600 })
     const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
-    for (let i = 0; i < 2; i++) await materializeAgentHooks(input)
-    const hooks = (await readJson(file) as { hooks: Record<string, unknown[]> }).hooks
+
+    expect((await materializeAgentHooks(input)).find((result) => result.runner === "cursor")?.status).toBe("applied")
+    const first = await fs.readFile(file, "utf8")
+    expect(first).toContain(`"afterFileEdit": [ { "command": "./scripts/format.sh" } ]`)
+    expect(first).toContain(`{ "command": "./scripts/approve-network.sh", "matcher": "curl|wget" }`)
+    expect(first).toContain(`"theme": "person-owned"`)
+    const hooks = (JSON.parse(first) as { hooks: Record<string, unknown[]> }).hooks
     expect(hooks.beforeShellExecution).toEqual([
       { command: "./scripts/approve-network.sh", matcher: "curl|wget" },
       { command: `${cursorHookPath} PermissionRequest` },
     ])
-    expect(hooks.postToolUse).toEqual([{ command: `${cursorHookPath} PostToolUse`, matcher: "^(Shell|MCP:.+)$" }])
     expect(hooks.afterFileEdit).toEqual([{ command: "./scripts/format.sh" }])
+    expect(hooks.stop).toEqual([{ command: `${cursorHookPath} Stop` }])
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+
+    const before = await fs.stat(file)
+    await materializeAgentHooks({ ...input, force: true })
+    expect(await fs.readFile(file, "utf8")).toBe(first)
+    expect((await fs.stat(file)).mtimeMs).toBe(before.mtimeMs)
+  })
+
+  test.each([
+    ["gemini", ".gemini/settings.json", `{
+    "theme":   "Dracula",
+    "hooks": {
+        "BeforeAgent": [ { "hooks": [ { "type": "command", "command": "/user/before.sh" } ] } ]
+    }
+}
+`, `"BeforeAgent": [ { "hooks": [ { "type": "command", "command": "/user/before.sh" } ] }`],
+    ["antigravity", ".gemini/config/hooks.json", `{
+    "person-lifecycle": { "Stop": [ { "type": "command", "command": "/user/stop.sh" } ] }
+}
+`, `"person-lifecycle": { "Stop": [ { "type": "command", "command": "/user/stop.sh" } ] }`],
+    ["droid", ".factory/hooks.json", `{
+    "Stop": [ { "hooks": [ { "type": "command", "command": "/user/stop.sh" } ] } ],
+    "SessionStart": [ { "hooks": [ { "type": "command", "command": "/user/start.sh" } ] } ]
+}
+`, `"SessionStart": [ { "hooks": [ { "type": "command", "command": "/user/start.sh" } ] } ]`],
+    ["mastra", ".mastracode/hooks.json", `{
+    "Stop": [ { "type": "command", "command": "/user/stop.sh" } ],
+    "Custom": [ { "type": "command", "command": "/user/custom.sh" } ]
+}
+`, `"Custom": [ { "type": "command", "command": "/user/custom.sh" } ]`],
+    ["cursor", ".cursor/hooks.json", `{
+    "version": 1,
+    "hooks": { "afterFileEdit": [ { "command": "./scripts/format.sh" } ] }
+}
+`, `"afterFileEdit": [ { "command": "./scripts/format.sh" } ]`],
+  ])("%s keeps the person's entries byte-for-byte, and a second setup writes nothing", async (runner, relative, person, kept) => {
+    const file = path.join(root, relative)
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, person, { mode: 0o640 })
+    const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
+    expect((await materializeAgentHooks(input)).find((result) => result.runner === runner)?.status).toBe("applied")
+    const first = await fs.readFile(file, "utf8")
+    expect(first).not.toBe(person)
+    expect(first).toContain(kept)
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o640)
+    const before = await fs.stat(file)
+    await materializeAgentHooks({ ...input, force: true })
+    expect(await fs.readFile(file, "utf8")).toBe(first)
+    expect((await fs.stat(file)).mtimeMs).toBe(before.mtimeMs)
+  })
+
+  test("Amp keeps the person's own plugins and writes its plugin only when it changed", async () => {
+    const dir = path.join(root, ".config", "amp", "plugins")
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(path.join(dir, "person.ts"), "person plugin\n")
+    const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
+    await materializeAgentHooks(input)
+    const plugin = path.join(dir, "claxedo-lifecycle.ts")
+    const before = await fs.stat(plugin)
+    await materializeAgentHooks({ ...input, force: true })
+    expect((await fs.stat(plugin)).mtimeMs).toBe(before.mtimeMs)
+    expect(await fs.readFile(path.join(dir, "person.ts"), "utf8")).toBe("person plugin\n")
+  })
+
+  test("Cursor refuses a hooks file it cannot merge into without touching it", async () => {
+    const file = path.join(root, ".cursor", "hooks.json")
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    for (const content of ['{"version":1,"hooks":{"stop":"not-a-list"}}', "{ not json"]) {
+      await fs.writeFile(file, content)
+      const results = await materializeAgentHooks({ homeDir: root, notifyPath, geminiHookPath, cursorHookPath })
+      expect(results.find((result) => result.runner === "cursor")?.status).toBe("failed")
+      expect(await fs.readFile(file, "utf8")).toBe(content)
+    }
+  })
+
+  test("Cursor writes through a linked hooks file to its target", async () => {
+    const target = path.join(root, "dotfiles", "cursor-hooks.json")
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, '{"version":1,"hooks":{}}\n')
+    const file = path.join(root, ".cursor", "hooks.json")
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.symlink(target, file)
+    await materializeAgentHooks({ homeDir: root, notifyPath, geminiHookPath, cursorHookPath })
+    expect((await fs.lstat(file)).isSymbolicLink()).toBe(true)
+    expect(await fs.readFile(target, "utf8")).toContain(`${cursorHookPath} Stop`)
   })
 
   test("Droid uses standalone hooks and retires only its owned settings entries", async () => {
@@ -151,13 +223,17 @@ describe("materializeAgentHooks", () => {
     expect(await readJson(settings)).toEqual({ model: "keep", hooks: { Stop: [user] } })
   })
 
-  test("Droid preserves effective settings hooks when creating the standalone file", async () => {
+  test("Droid registers in settings.json when that is where its hooks live, and never creates hooks.json", async () => {
     const directory = path.join(root, ".factory")
     await fs.mkdir(directory)
     const user = { hooks: [{ type: "command", command: "/user/start.sh" }] }
-    await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({ hooks: { SessionStart: [user] } }))
+    await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({ model: "keep", hooks: { SessionStart: [user] } }))
     await materializeAgentHooks({ homeDir: root, notifyPath, geminiHookPath, cursorHookPath })
-    expect(await readJson(path.join(directory, "hooks.json"))).toMatchObject({ SessionStart: [user] })
+    await expect(fs.stat(path.join(directory, "hooks.json"))).rejects.toMatchObject({ code: "ENOENT" })
+    const settings = await readJson(path.join(directory, "settings.json")) as { model: string; hooks: Record<string, unknown[]> }
+    expect(settings.model).toBe("keep")
+    expect(settings.hooks.SessionStart).toEqual([user])
+    expect(settings.hooks.Stop).toEqual([{ hooks: [{ type: "command", command: `'${notifyPath}' --harness=droid` }] }])
   })
 
   test("Droid refuses a malformed standalone file without pruning working settings", async () => {
@@ -172,29 +248,10 @@ describe("materializeAgentHooks", () => {
     expect(await fs.readFile(path.join(directory, "hooks.json"), "utf8")).toBe("{broken")
   })
 
-  test("retires Claude child completion hooks without removing user commands", async () => {
-    const file = path.join(root, ".claude", "settings.json")
-    await fs.mkdir(path.dirname(file), { recursive: true })
-    await fs.writeFile(file, JSON.stringify({ hooks: {
-      SubagentStop: [{ hooks: [
-        { type: "command", command: getClaudeManagedHookCommand() },
-        { type: "command", command: "/user/child-completed.sh" },
-      ] }],
-    } }))
-    const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath, force: true }
-    await materializeAgentHooks(input)
-    await materializeAgentHooks(input)
-    const result = await readJson(file)
-    expect(result).toMatchObject({ hooks: {
-      SubagentStop: [{ hooks: [{ type: "command", command: "/user/child-completed.sh" }] }],
-      Stop: [{ hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
-    } })
-  })
-
   test("reports a corrupted settings file as failed instead of rewriting it", async () => {
-    const claudePath = path.join(root, ".claude", "settings.json")
-    await fs.mkdir(path.dirname(claudePath), { recursive: true })
-    await fs.writeFile(claudePath, "{ this is not json")
+    const geminiPath = path.join(root, ".gemini", "settings.json")
+    await fs.mkdir(path.dirname(geminiPath), { recursive: true })
+    await fs.writeFile(geminiPath, "{ this is not json")
 
     const results = await materializeAgentHooks({
       homeDir: root,
@@ -204,42 +261,13 @@ describe("materializeAgentHooks", () => {
       force: true,
     })
 
-    const claude = results.find((item) => item.runner === "claude")
-    expect(claude?.status).toBe("failed")
-    expect(claude?.reason).toContain("invalid JSON")
-    await expect(fs.readFile(claudePath, "utf8")).resolves.toBe("{ this is not json")
-    expect(results.filter((item) => item.runner !== "claude").every((item) => item.status === "applied")).toBe(true)
+    const gemini = results.find((item) => item.runner === "gemini")
+    expect(gemini?.status).toBe("failed")
+    expect(gemini?.reason).toContain("invalid JSON")
+    await expect(fs.readFile(geminiPath, "utf8")).resolves.toBe("{ this is not json")
+    expect(results.filter((item) => item.runner !== "gemini").every((item) => item.status === "applied")).toBe(true)
   })
 
-  test("preserves user hooks and removes stale managed Codex hooks when native hooks are disabled", async () => {
-    const codexPath = path.join(root, ".codex", "hooks.json")
-    await fs.mkdir(path.dirname(codexPath), { recursive: true })
-    await fs.writeFile(codexPath, JSON.stringify({
-      hooks: {
-        SessionStart: [
-          { hooks: [{ type: "command", command: "/old/.claxedo/hooks/notify.sh" }] },
-          { hooks: [{ type: "command", command: "/user/hook.sh" }] },
-        ],
-      },
-    }, null, 2))
-
-    await materializeAgentHooks({
-      homeDir: root,
-      notifyPath,
-      geminiHookPath,
-      cursorHookPath,
-      codexNativeHooks: false,
-      force: true,
-    })
-
-    expect(await readJson(codexPath)).toEqual({
-      hooks: {
-        SessionStart: [
-          { hooks: [{ type: "command", command: "/user/hook.sh" }] },
-        ],
-      },
-    })
-  })
 })
 
 function hookCommandsIn(value: unknown): string[] {
@@ -297,7 +325,6 @@ describe("materializeAgentHooks across data roots", () => {
       notifyPath: scripts.notify,
       geminiHookPath: scripts.gemini,
       cursorHookPath: scripts.cursor,
-      codexNativeHooks: true,
     })
   }
 
@@ -313,7 +340,6 @@ describe("materializeAgentHooks across data roots", () => {
     expect(await commandsIn(files.gemini)).toEqual(times(3, last.gemini))
     expect(await commandsIn(files.mastra)).toEqual(times(3, `bash '${last.notify}' --harness=mastracode`))
     expect(await commandsIn(files.droid)).toEqual(times(4, `'${last.notify}' --harness=droid`))
-    expect(await commandsIn(files.codex)).toEqual(times(4, `'${last.notify}' --harness=codex`))
     expect((await commandsIn(files.cursor)).length).toBe(6)
     expect(await commandsIn(files.antigravity)).toEqual([
       `bash '${last.antigravity}' PreInvocation`,
@@ -329,16 +355,12 @@ describe("materializeAgentHooks across data roots", () => {
     await fs.mkdir(path.dirname(foreign), { recursive: true })
     await fs.writeFile(foreign, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
     const guardedMissing = `if [ -x '${deleted.gemini}' ]; then /bin/sh '${deleted.gemini}'; fi`
-    const supersetDynamic = `[ -n "$SUPERSET_HOME_DIR" ] && [ -x "$SUPERSET_HOME_DIR/hooks/notify.sh" ] && "$SUPERSET_HOME_DIR/hooks/notify.sh" || true`
     const command = (value: string) => ({ type: "command", command: value })
     const files = agentHookConfigPaths(home)
-    const droidSettings = path.join(path.dirname(files.droid), "settings.json")
+    const droidSettings = files.droid
+    const droidHooks = path.join(path.dirname(files.droid), "hooks.json")
 
-    await writeJson(files.codex, { hooks: {
-      SessionStart: [{ hooks: [command(`'${previous.notify}' --harness=codex`)] }, { hooks: [command(foreign)] }],
-      Stop: [{ hooks: [command(`'${deleted.notify}' --harness=codex`), command(foreign)] }],
-    } })
-    await writeJson(files.droid, {
+    await writeJson(droidHooks, {
       Stop: [{ hooks: [command(deleted.notify)] }, { hooks: [command(foreign)] }],
       PostToolUse: [{ matcher: "*", hooks: [command(`'${previous.notify}' --harness=droid`)] }],
     })
@@ -361,11 +383,6 @@ describe("materializeAgentHooks across data roots", () => {
       { command: `${previous.cursor} Stop` },
       { command: "./scripts/format.sh" },
     ], afterAgentResponse: [{ command: `${deleted.cursor} Stop` }] } })
-    await writeJson(files.claude, { hooks: { Stop: [{ hooks: [
-      command(`'${deleted.notify}' --harness=claude`),
-      command(supersetDynamic),
-      command(foreign),
-    ] }] } })
     await writeJson(files.antigravity, { "claxedo-lifecycle": {
       PreInvocation: [{ ...command(`bash '${previous.antigravity}' PreInvocation`), timeout: 3 }],
       Stop: [{ ...command(`bash '${deleted.antigravity}' Stop`), timeout: 3 }],
@@ -376,14 +393,12 @@ describe("materializeAgentHooks across data roots", () => {
     }
 
     const sorted = (...commands: string[]) => commands.sort()
-    expect(await commandsIn(files.codex)).toEqual(sorted(...times(2, foreign), ...times(4, `'${current.notify}' --harness=codex`)))
-    expect(await commandsIn(files.droid)).toEqual(sorted(foreign, ...times(4, `'${current.notify}' --harness=droid`)))
+    expect(await commandsIn(droidHooks)).toEqual(sorted(foreign, ...times(4, `'${current.notify}' --harness=droid`)))
     expect(await commandsIn(droidSettings)).toEqual([foreign])
     expect(await commandsIn(files.mastra)).toEqual(sorted(`bash '${foreign}'`, ...times(3, `bash '${current.notify}' --harness=mastracode`)))
     expect(await commandsIn(files.gemini)).toEqual(sorted(guardedMissing, "/user/gemini-notify.sh", ...times(3, current.gemini)))
     expect(Object.keys((await readJson(files.cursor)).hooks as object)).not.toContain("afterAgentResponse")
     expect((await commandsIn(files.cursor)).filter((value) => !value.startsWith(`${current.cursor} `))).toEqual(["./scripts/format.sh"])
-    expect(await commandsIn(files.claude)).toEqual(sorted(foreign, supersetDynamic, ...times(6, getClaudeManagedHookCommand())))
     expect(await commandsIn(files.antigravity)).toEqual([
       `bash '${current.antigravity}' PreInvocation`,
       `bash '${current.antigravity}' Stop`,
@@ -395,15 +410,15 @@ describe("materializeAgentHooks across data roots", () => {
     const other = path.join(home, ".superset", "hooks", "notify.sh")
     await fs.mkdir(path.dirname(other), { recursive: true })
     await fs.writeFile(other, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
-    const file = agentHookConfigPaths(home).codex
-    await writeJson(file, { hooks: { Stop: [{ hooks: [{ type: "command", command: other }] }] } })
+    const file = path.join(path.dirname(agentHookConfigPaths(home).droid), "hooks.json")
+    await writeJson(file, { Stop: [{ hooks: [{ type: "command", command: other }] }] })
 
     await materializeFor(current)
     expect(await commandsIn(file)).toContain(other)
 
     await fs.writeFile(other, generateNotifyScript(7860))
     await materializeFor(current)
-    expect(await commandsIn(file)).toEqual(times(4, `'${current.notify}' --harness=codex`))
+    expect(await commandsIn(file)).toEqual(times(4, `'${current.notify}' --harness=droid`))
   })
 
   test("Antigravity refuses a claxedo-lifecycle hook whose script exists without the marker", async () => {

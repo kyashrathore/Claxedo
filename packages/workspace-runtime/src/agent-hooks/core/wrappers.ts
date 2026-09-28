@@ -38,7 +38,7 @@ export function buildWrapperScript(binaryName: string, execBlock: string): strin
 
 // ── Wrapper generators ──────────────────────────────────────────────────────
 
-export function generateClaudeWrapper(notifyPath: string): string {
+export function generateClaudeWrapper(notifyPath: string, settingsPath: string): string {
   return buildWrapperScript("claude", `# Ensure status is cleared even if Claude crashes, hits a limit, or is killed
 cleanup() {
   EXIT_CODE=$?
@@ -52,14 +52,33 @@ trap cleanup EXIT
 
 # Do not use exec here — exec replaces the shell process, which
 # prevents the EXIT trap from firing.
-"$REAL_BIN" "$@"`)
+"$REAL_BIN" --settings ${shellQuote(settingsPath)} "$@"`)
 }
 
-export function generateCodexWrapper(opts: { notifyPath: string; watcherPath: string; native: boolean }): string {
-  const template = opts.native ? "codex-wrapper-exec.template.sh" : "codex-wrapper-exec-legacy.template.sh"
-  return buildWrapperScript("codex", loadTemplate(template, {
-    CODEX_NOTIFY_PATH: opts.notifyPath,
-    CODEX_WATCHER_PATH: opts.watcherPath,
+const CODEX_LIFECYCLE_HOOKS: readonly { event: string; matcher?: string }[] = [
+  { event: "SessionStart" },
+  { event: "SessionEnd" },
+  { event: "UserPromptSubmit" },
+  { event: "PreToolUse", matcher: "^request_user_input$" },
+  { event: "PostToolUse", matcher: "*" },
+  { event: "PermissionRequest" },
+  { event: "Stop" },
+  { event: "Interrupt" },
+  { event: "SubagentStart" },
+  { event: "SubagentStop" },
+]
+
+export function codexHookFlags(notifyPath: string): string[] {
+  const command = JSON.stringify(`${shellQuote(notifyPath)} --harness=codex`)
+  return CODEX_LIFECYCLE_HOOKS.flatMap(({ event, matcher }) => [
+    "-c",
+    `hooks.${event}=[{${matcher ? `matcher=${JSON.stringify(matcher)},` : ""}hooks=[{type="command",command=${command}}]}]`,
+  ])
+}
+
+export function generateCodexWrapper(notifyPath: string): string {
+  return buildWrapperScript("codex", loadTemplate("codex-wrapper-exec.template.sh", {
+    HOOK_FLAGS: codexHookFlags(notifyPath).map(shellQuote).join(" "),
   }))
 }
 
@@ -95,14 +114,19 @@ export function generateCopilotWrapper(copilotHookPath: string): string {
 if [ -n "$CLAXEDO_TAB_ID" ] && [ -f ${shellQuote(copilotHookPath)} ]; then
   COPILOT_HOOKS_DIR=".github/hooks"
   COPILOT_HOOK_FILE="$COPILOT_HOOKS_DIR/${COPILOT_PROJECT_HOOK}"
+  COPILOT_HOOKS='${escapedJson}'
 
-  # Always refresh our dedicated hook file so stale paths cannot break notifications.
-  mkdir -p "$COPILOT_HOOKS_DIR" 2>/dev/null
-  printf '%s\\n' '${escapedJson}' > "$COPILOT_HOOK_FILE" 2>/dev/null
+  if [ "$(cat "$COPILOT_HOOK_FILE" 2>/dev/null)" != "$(printf '%s\\n' "$COPILOT_HOOKS")" ]; then
+    mkdir -p "$COPILOT_HOOKS_DIR" 2>/dev/null &&
+      printf '%s\\n' "$COPILOT_HOOKS" > "$COPILOT_HOOK_FILE.tmp.$$" 2>/dev/null &&
+      mv -f "$COPILOT_HOOK_FILE.tmp.$$" "$COPILOT_HOOK_FILE" 2>/dev/null
+  fi
 
-  if [ -d ".git/info" ]; then
-    grep -qF ".github/hooks/${COPILOT_PROJECT_HOOK}" ".git/info/exclude" 2>/dev/null || \\
-      printf '%s\\n' ".github/hooks/${COPILOT_PROJECT_HOOK}" >> ".git/info/exclude" 2>/dev/null
+  COPILOT_EXCLUDE=".git/info/exclude"
+  if [ -d ".git/info" ] && ! grep -qxF ".github/hooks/${COPILOT_PROJECT_HOOK}" "$COPILOT_EXCLUDE" 2>/dev/null; then
+    # Never join the line onto a last entry the person left without a newline.
+    [ -s "$COPILOT_EXCLUDE" ] && [ -n "$(tail -c 1 "$COPILOT_EXCLUDE")" ] && printf '\\n' >> "$COPILOT_EXCLUDE"
+    printf '%s\\n' ".github/hooks/${COPILOT_PROJECT_HOOK}" >> "$COPILOT_EXCLUDE" 2>/dev/null
   fi
 fi
 

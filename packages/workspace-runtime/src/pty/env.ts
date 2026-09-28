@@ -155,9 +155,6 @@ const ALLOWED_CLAXEDO_VARS = new Set([
   "CLAXEDO_ACP_MODEL",
   // Shell integration: zsh rc redirection needs the original ZDOTDIR back.
   "CLAXEDO_ORIG_ZDOTDIR",
-  // Harness hook wiring read by the codex driver inside the child.
-  "CLAXEDO_CODEX_NATIVE_HOOKS",
-  "CLAXEDO_CODEX_START_WATCHER_PID",
   // Paths. Not secrets — the child already has filesystem access.
   "CLAXEDO_DATA_DIR",
   "CLAXEDO_HOME",

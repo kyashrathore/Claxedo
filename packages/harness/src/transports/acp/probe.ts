@@ -10,7 +10,8 @@ import { AcpStartupDeadline } from "./deadline"
 import { acpAgentList } from "./extensions/agents"
 import { acpGroups } from "./extensions/groups"
 import type { AgentAgent } from "@claxedo/agent-runtime-contract"
-import { draftProbeKey, DraftProbeCache, sessionMcpServers } from "../../contract"
+import { draftProbeKey, DraftProbeCache } from "../../contract"
+import { acpMcpProjection } from "./projection"
 import { acpAgents, acpModeState, type AcpCatalog } from "./options"
 
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
@@ -62,11 +63,7 @@ export class AcpDraftProbes {
     if (this.disposed) { await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
     this.peers.add(peer)
     try {
-      const projected = sessionMcpServers(input, this.services, { includeFirstParty: true,
-        duplicate: (name) => new AcpTransportError("configuration", `Duplicate ACP MCP server ${name}`) })
-      const servers = this.filterMcp({ servers: projected, locality: input.locality,
-        mcpCapabilities: peer.handshake.agentCapabilities?.mcpCapabilities,
-        supportsMcpServers: this.connection.supportsMcpServers }).servers
+      const { servers } = acpMcpProjection({ start: input, peer }, this.services, this.connection, this.filterMcp)
       const { meta } = claudeOptionsMeta(peer.handshake, input)
       const deadline = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft probe")
       const result = await deadline.run(peer.agent.newSession({ cwd: input.directory, mcpServers: servers.map(acpMcp),

@@ -3,7 +3,7 @@ import path from "path"
 import type { McpServer } from "@agentclientprotocol/sdk"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { dataDir } from "../paths"
-import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@claxedo/agent-runtime-contract"
 import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
 
 // Resolve storage paths at operation time because the data directory is a runtime setting.
@@ -305,21 +305,6 @@ export function toAcpMcpServers(mcp: Record<string, ResolvedMcpServer>): McpServ
 
 export function shellCommand(path: string) {
   return `bash ${shellQuote(path)}`
-}
-
-/** Servers a config payload declares, parsed rather than asserted. */
-export function resolvedMcpServers(value: unknown): Record<string, ResolvedMcpServer> | undefined {
-  const servers = asRecord(value)
-  if (!servers) return undefined
-  return Object.fromEntries(
-    Object.entries(servers).flatMap(([name, server]) => (isResolvedMcpServer(server) ? [[name, server]] : [])),
-  )
-}
-
-function isResolvedMcpServer(value: unknown): value is ResolvedMcpServer {
-  if (!isRecord(value) || typeof value.name !== "string") return false
-  if (value.transport === "stdio") return typeof value.command === "string" && Array.isArray(value.args) && isRecord(value.env)
-  return value.transport === "remote" && typeof value.url === "string" && isRecord(value.headers)
 }
 
 export async function saveManagedMcpState(state: ManagedMcpState) {

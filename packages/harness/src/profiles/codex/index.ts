@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { parse, stringify } from "smol-toml"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
@@ -90,6 +91,15 @@ function withoutClaxedoBlock(content: string): string {
   return begin < 0 ? content.trimEnd() : `${content.slice(0, begin)}${content.slice(end + END.length)}`.trim()
 }
 
+function personalConfig(content: string, projection: PluginProjection): string {
+  const retained = withoutClaxedoBlock(content)
+  if (projection.pluginSelection?.mode !== "selected") return retained
+  const config = parse(retained)
+  delete config.plugins
+  delete config.marketplaces
+  return stringify(config).trimEnd()
+}
+
 export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {
   const selected = input.credentials.providers.codex
   if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
@@ -103,10 +113,10 @@ export async function prepareCodexProfile(input: CodexProfileInput): Promise<Cod
   if (existing?.isSymbolicLink()) throw new Error("Codex home cannot be a symlink")
   await fs.mkdir(home, { recursive: true, mode: 0o700 })
   await fs.chmod(home, 0o700)
-  if (!brokered) await mirrorOwnerCodexHome(ownerHome, home)
+  if (!brokered) await mirrorOwnerCodexHome(ownerHome, home, input.projection.pluginSelection?.mode !== "selected")
   const fragments = [await marketplace(home, input.projection)]
   if (selected && !("unavailable" in selected)) fragments.unshift(brokerFragment(selected))
-  const retained = brokered ? "" : withoutClaxedoBlock(await readOptional(path.join(ownerHome, "config.toml")))
+  const retained = brokered ? "" : personalConfig(await readOptional(path.join(ownerHome, "config.toml")), input.projection)
   const block = fragments.filter(Boolean).join("\n\n")
   const next = [retained, block ? `${START}\n${block}\n${END}` : ""].filter(Boolean).join("\n\n")
   await writePrivateFileAtomic(path.join(home, "config.toml"), `${next}\n`)

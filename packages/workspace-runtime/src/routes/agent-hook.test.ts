@@ -107,6 +107,33 @@ test("a pending ask survives unrelated tool completions and retires with its own
   }
 })
 
+test("a subagent still working after the parent's turn ended never pulls the tab back to busy", async () => {
+  const app = AgentHookRoutes()
+  const terminalId = "pty_subagent_after_stop"
+  const get = liveTerminals(terminalId)
+  const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tabId: "tab_subagent_after_stop", terminalId, provider: "codex", providerEvent: JSON.stringify(providerEvent) }),
+  })
+  const state = async () => (await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()).session.eventType
+  try {
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "parent", turn_id: "t1" })
+    await post({ hook_event_name: "SubagentStart", session_id: "parent", agent_id: "child" })
+    await post({ hook_event_name: "Stop", session_id: "parent", turn_id: "t1" })
+    expect(await state()).toBe("Idle")
+    for (const hook_event_name of ["SessionStart", "UserPromptSubmit", "PostToolUse"]) {
+      await post({ hook_event_name, session_id: "child-session", agent_id: "child", tool_name: "Bash", tool_input: { command: "ls" } })
+      expect(await state()).toBe("Idle")
+    }
+    await post({ hook_event_name: "PermissionRequest", session_id: "child-session", agent_id: "child", tool_name: "Bash", tool_input: { command: "rm -rf dist" } })
+    expect(await state()).toBe("UserActionRequired")
+    await post({ hook_event_name: "PostToolUse", session_id: "child-session", agent_id: "child", tool_name: "Bash", tool_input: { command: "rm -rf dist" } })
+    expect(await state()).toBe("Busy")
+  } finally {
+    get.mockRestore()
+  }
+})
+
 test("a denial or failure retires only its own ask, and tool hooks never rebind the terminal's session", async () => {
   const app = AgentHookRoutes()
   const terminalId = "pty_raw_deny_and_bind"
@@ -129,7 +156,7 @@ test("a denial or failure retires only its own ask, and tool hooks never rebind 
     expect(await (await post({ hook_event_name: "PostToolUseFailure", session_id: "parent", tool_name: "Grep", tool_input: { pattern: "x" }, error: "no matches" })).json()).toMatchObject({ held: true })
     expect((await session()).eventType).toBe("UserActionRequired")
     // A subagent's shell command reports the child's session; the binding stays with the parent.
-    expect(await (await post({ hook_event_name: "PostToolUse", session_id: "child-agent", agent_id: "child", tool_name: "Bash", tool_input: { command: "ls" } })).json()).toMatchObject({ held: true })
+    expect(await (await post({ hook_event_name: "PostToolUse", session_id: "child-agent", agent_id: "child", tool_name: "Bash", tool_input: { command: "ls" } })).json()).toMatchObject({ ignored: true })
     expect((await session()).sessionId).toBe("parent")
     // Denying the shell command retires that ask; the edit is still waiting.
     expect(await (await post({ hook_event_name: "PermissionDenied", session_id: "parent", tool_name: "Bash", tool_input: { command: "rm -rf dist" }, reason: "user" })).json()).toMatchObject({ held: true })

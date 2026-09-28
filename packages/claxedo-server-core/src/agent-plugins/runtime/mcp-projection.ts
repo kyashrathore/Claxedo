@@ -3,6 +3,8 @@ import type { ArtifactDigest } from "../activation/types"
 import type { AgentPluginMcpServer, ValidatedAgentPlugin } from "../catalog/types"
 import type { AgentPluginRuntimeApplyRequest } from "./apply-contract"
 import type { AgentPluginHarnessId } from "./harness-registry"
+import { harnessSupportsMcpServer, type NotApplied, type ProjectedMcpServer } from "@claxedo/harness/contract"
+import type { NativeHarnessId } from "@claxedo/agent-runtime-contract"
 
 type RuntimeMcpServerProjectionIdentity = {
   pluginInstanceId: string
@@ -53,6 +55,8 @@ export type ProjectedPlugin = {
   pluginInstanceId: string
   artifactDigest: ArtifactDigest
   plugin: Pick<ValidatedAgentPlugin, "manifest" | "mcp">
+  root?: string
+  dataRoot?: string
 }
 
 function projectionFor(
@@ -79,20 +83,10 @@ export function projectedMcpServers(
   const result: AgentPluginMcpServer[] = []
   for (const server of plugin.plugin.mcp.servers) {
     const projection = projectionFor(plugin, server.name, projections)
-    if (!projection) {
-      result.push(server)
-      continue
-    }
-    if (projection.state === "unavailable") continue
-    if (server.type === "stdio") {
-      result.push(server)
-      continue
-    }
-    result.push({
-      ...server,
-      url: projection.url,
-      ...(projection.headers ? { headers: projection.headers } : { headers: undefined }),
-    })
+    if (projection?.state === "unavailable") continue
+    result.push(projection && server.type !== "stdio"
+      ? { ...server, url: projection.url, ...(projection.headers ? { headers: projection.headers } : { headers: undefined }) }
+      : server)
   }
   return result
 }
@@ -108,13 +102,83 @@ export function flatMcpServerName(pluginName: string, storageKey: string, server
 
 /** The runtime snapshot's shape for one server every ACP connection receives at `session/new`. */
 export type AcpRuntimeMcpServer =
-  | { name: string; source: "plugin"; transport: "stdio"; command: string; args: string[]; env: Record<string, string> }
+  | { name: string; source: "plugin"; transport: "stdio"; command: string; args: string[]; env: Record<string, string>; cwd?: string }
   | { name: string; source: "plugin"; transport: "remote"; url: string; headers: Record<string, string> }
 
+function serverStrings(server: AgentPluginMcpServer): string[] {
+  if (server.type !== "stdio") return [server.url, ...Object.values(server.headers ?? {})]
+  return [server.command, ...(server.cwd ? [server.cwd] : []), ...server.args ?? [], ...Object.values(server.env ?? {})]
+}
+
+function resolvable(server: AgentPluginMcpServer, plugin: ProjectedPlugin): boolean {
+  const relative = server.type === "stdio" && (server.command.startsWith("./") || server.cwd?.startsWith("./"))
+  const strings = serverStrings(server)
+  return !((relative || strings.some((value) => value.includes("${PLUGIN_ROOT}"))) && !plugin.root)
+    && !(strings.some((value) => value.includes("${PLUGIN_DATA}")) && !plugin.dataRoot)
+}
+
 function expandRoots(value: string, roots: { root?: string; dataRoot?: string }) {
-  return value
-    .replaceAll("${PLUGIN_ROOT}", roots.root ?? "${PLUGIN_ROOT}")
-    .replaceAll("${PLUGIN_DATA}", roots.dataRoot ?? "${PLUGIN_DATA}")
+  return value.replaceAll("${PLUGIN_ROOT}", roots.root ?? "").replaceAll("${PLUGIN_DATA}", roots.dataRoot ?? "")
+}
+
+function pluginPath(value: string, plugin: ProjectedPlugin) {
+  return value.startsWith("./") ? `${plugin.root}/${value.slice(2)}` : expandRoots(value, plugin)
+}
+
+function resolveServer(server: AgentPluginMcpServer, plugin: ProjectedPlugin): AgentPluginMcpServer {
+  if (server.type !== "stdio") return { ...server,
+    ...(server.headers ? { headers: Object.fromEntries(Object.entries(server.headers).map(([key, value]) => [key, expandRoots(value, plugin)])) } : {}) }
+  return { ...server, command: pluginPath(server.command, plugin),
+    ...(server.args ? { args: server.args.map((value) => expandRoots(value, plugin)) } : {}),
+    ...(server.env ? { env: Object.fromEntries(Object.entries(server.env).map(([key, value]) => [key, expandRoots(value, plugin)])) } : {}),
+    ...(server.cwd ? { cwd: pluginPath(server.cwd, plugin) } : {}) }
+}
+
+function projectedServer(server: AgentPluginMcpServer, name: string): ProjectedMcpServer {
+  return server.type === "stdio"
+    ? { kind: "stdio", name, origin: "plugin", command: server.command,
+      ...(server.args ? { args: server.args } : {}), ...(server.env ? { env: server.env } : {}), ...(server.cwd ? { cwd: server.cwd } : {}) }
+    : { kind: server.type === "streamable-http" ? "http" : "sse", name, origin: "plugin", url: server.url,
+      ...(server.headers ? { headers: server.headers } : {}) }
+}
+
+export type PluginMcpProjection = {
+  byPlugin: Map<string, AgentPluginMcpServer[]>
+  servers: ProjectedMcpServer[]
+  notApplied: NotApplied[]
+}
+
+/**
+ * The one projection of plugin MCP servers. A server that needs the plugin's
+ * files where none are materialized is skipped as not installed. With a
+ * `harness`, a server that harness cannot represent is skipped as
+ * unsupported; without one the host applies that rule to the projected
+ * servers. Every skip names the server by its flat name.
+ */
+export async function pluginMcpProjection(plugins: readonly ProjectedPlugin[], projections: readonly RuntimeMcpServerProjection[],
+  harness?: NativeHarnessId): Promise<PluginMcpProjection> {
+  const result: PluginMcpProjection = { byPlugin: new Map(), servers: [], notApplied: [] }
+  for (const plugin of plugins) {
+    const storageKey = await sha256Hex(plugin.pluginInstanceId)
+    const carried: AgentPluginMcpServer[] = []
+    for (const server of projectedMcpServers(plugin, projections)) {
+      const name = flatMcpServerName(plugin.plugin.manifest.name, storageKey, server.name)
+      if (!resolvable(server, plugin)) {
+        result.notApplied.push({ item: name, reason: "not-installed" })
+        continue
+      }
+      const resolved = resolveServer(server, plugin)
+      const projected = projectedServer(resolved, name)
+      if (harness && !harnessSupportsMcpServer(harness, projected)) {
+        result.notApplied.push({ item: name, reason: "unsupported-by-harness" })
+        continue
+      }
+      carried.push(resolved)
+      result.servers.push(projected)
+    }
+    result.byPlugin.set(plugin.pluginInstanceId, carried)
+  }
+  return result
 }
 
 /**
@@ -125,25 +189,24 @@ function expandRoots(value: string, roots: { root?: string; dataRoot?: string })
  * install receives the same list as one that existed before it.
  */
 export async function acpSessionMcpServers(
-  plugins: readonly (ProjectedPlugin & { root?: string; dataRoot?: string })[],
+  plugins: readonly ProjectedPlugin[],
   projections: readonly RuntimeMcpServerProjection[],
-): Promise<Record<string, AcpRuntimeMcpServer>> {
+): Promise<{ servers: Record<string, AcpRuntimeMcpServer>; notApplied: NotApplied[] }> {
   const result: Record<string, AcpRuntimeMcpServer> = {}
-  for (const plugin of plugins) {
-    const storageKey = await sha256Hex(plugin.pluginInstanceId)
-    for (const server of projectedMcpServers(plugin, projections.filter((entry) => entry.harnessId === "acp"))) {
-      const name = flatMcpServerName(plugin.plugin.manifest.name, storageKey, server.name)
-      result[name] = server.type === "stdio"
+  const projected = await pluginMcpProjection(plugins, projections.filter((entry) => entry.harnessId === "acp"))
+  for (const server of projected.servers) {
+    const name = server.name
+    result[name] = server.kind === "stdio"
         ? {
             name,
             source: "plugin",
             transport: "stdio",
-            command: expandRoots(server.command, plugin),
-            args: (server.args ?? []).map((value) => expandRoots(value, plugin)),
-            env: Object.fromEntries(Object.entries(server.env ?? {}).map(([key, value]) => [key, expandRoots(value, plugin)])),
+            command: server.command,
+            args: [...server.args ?? []],
+            env: { ...server.env },
+            ...(server.cwd ? { cwd: server.cwd } : {}),
           }
         : { name, source: "plugin", transport: "remote", url: server.url, headers: { ...server.headers } }
-    }
   }
-  return result
+  return { servers: result, notApplied: projected.notApplied }
 }

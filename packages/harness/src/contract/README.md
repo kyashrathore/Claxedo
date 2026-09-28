@@ -46,6 +46,11 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 - **Credentials follow the session's owner (`StartInput.owner`).** `TurnInput.origin` is for authorization and audit only.
 - **Command and agent listing name their target.** A session target reads that session's process. A draft target uses its launch context, cancels requests without a person, bounds discovery, and retires the probe.
 
+## MCP projection
+
+- **An entry a harness cannot represent is reported, never altered.** `harnessSupportsMcpServer` is the one rule: a stdio `cwd` is representable for Codex (`mcp_servers.<name>.cwd`), Cursor (SDK `McpServerConfig.cwd`) and OpenCode (`LocalConfig.cwd` in `@opencode-ai/schema`), and not for ACP (`McpServerStdio` has no `cwd`) or the Claude Agent SDK (`McpStdioServerConfig` has no `cwd`); Codex takes no SSE server (`codex-app-server/configuration.ts` refuses it); Pi has no MCP. An entry that fails it is left out, the rest launch, and the skip is recorded as `notApplied: unsupported-by-harness` under the server's flat name. The host applies it to every projected server (`projectMcpForHarness`, snapshot servers and OpenCode's launch row, ACP connections included); the server-core `pluginMcpProjection` applies it to the plugin servers Claude, Codex and Cursor read from plugin roots, which never reach the host. A transport encodes the servers it receives and reports `projection.notApplied`.
+- **Plugin provenance survives the projection.** A snapshot MCP entry's `source` must be exactly `plugin`, `managed` or `user`, and becomes the `plugin`, `first-party` or `configured` origin the remote filter decides on. Any other value is refused.
+
 ## Events
 
 A protocol event a transport doesn't recognize becomes a `diagnostic` event with the code `unrecognized-event`, through `src/translate/unrecognized.ts`. Its payload is capped at 4 KB.

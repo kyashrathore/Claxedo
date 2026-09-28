@@ -210,8 +210,6 @@ async function runtimeVm(workspaceId: string, env: NodeJS.ProcessEnv) {
     app,
     contributions: [agentPluginWorkspaceRuntimeContribution({
       runtimeRoot: root,
-      codexHome: path.join(root, "codex"),
-      userHomeDirectory: path.join(root, "home"),
       env,
     })],
     context: {

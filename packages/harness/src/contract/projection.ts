@@ -33,6 +33,7 @@ export type NotApplied = {
 }
 
 export type PluginProjection = {
+  pluginSelection?: { mode: "default" } | { mode: "selected"; selectionHash: string }
   generation: string
   mcpServers: readonly ProjectedMcpServer[]
   pluginRoots: readonly SkillRoot[]

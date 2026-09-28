@@ -23,7 +23,7 @@ afterEach(async () => {
 })
 
 describe("local Agent Plugins composition", () => {
-  test("activation materializes an OpenCode projection exposed through the runtime launch contract", async () => {
+  test.each(["root", "mcpServers", "notApplied", "execution"] as const)("activation recovers a malformed %s through the runtime launch contract", async (field) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-plugin-composition-"))
     roots.push(root)
     const data = path.join(root, "data")
@@ -92,15 +92,15 @@ describe("local Agent Plugins composition", () => {
     await expect(fs.readFile(path.join(skills, "review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: review")
 
-    // A restart over a generation this build cannot restore (here: a manifest
-    // whose projection root escapes the generation, as older builds wrote for
-    // Cursor) must re-project the durable activation state, not refuse to start.
     const generationRoot = skills.slice(0, skills.indexOf(`${path.sep}plugins${path.sep}`))
     const manifestPath = path.join(generationRoot, "generation.json")
     const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as {
-      projections: { opencode: { pluginRoots: Array<{ root: string }> } }
+      execution?: unknown
+      projections: { opencode: { pluginRoots: Array<{ root: string }>; mcpServers?: unknown; notApplied?: unknown } }
     }
-    manifest.projections.opencode.pluginRoots[0].root = "../../../../escaped"
+    if (field === "root") manifest.projections.opencode.pluginRoots[0].root = "../../../../escaped"
+    else if (field === "execution") delete manifest.execution
+    else manifest.projections.opencode[field] = [{ invalid: true }]
     await fs.writeFile(manifestPath, JSON.stringify(manifest))
     const restarted = createLocalAgentPluginsComposition({
       CODEX_HOME: path.join(root, "codex-home"),
@@ -125,6 +125,29 @@ describe("local Agent Plugins composition", () => {
     expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
     await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")
+
+    if (field !== "root") return
+    const generations = path.dirname(relaunchRoot.slice(0, relaunchRoot.indexOf(`${path.sep}plugins${path.sep}`)))
+    const backup = `${generations}.saved`
+    await fs.rename(generations, backup)
+    await fs.writeFile(generations, "prevent projection")
+    const change = (choice: boolean, expectedRevision: number) => app.request("http://local.test/api/claxedo/plugins/activation", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pluginInstanceId: candidate.pluginInstanceId, harnessIds: ["opencode"], choice, expectedRevision }),
+    })
+    try {
+      const failed = await change(false, 1)
+      expect(failed.status).toBe(202)
+      expect(await failed.json()).toMatchObject({ revision: 2, reconciliation: { state: "failed" } })
+      expect(pluginRoots((await composition.runtimeContribution()).harnessLaunch, "opencode")).toHaveLength(1)
+    } finally {
+      await fs.rm(generations)
+      await fs.rename(backup, generations)
+    }
+    const recovered = await change(true, 2)
+    expect(recovered.status).toBe(200)
+    expect(await recovered.json()).toMatchObject({ revision: 3, reconciliation: { state: "applied" } })
+    expect(pluginRoots((await composition.runtimeContribution()).harnessLaunch, "opencode")).toHaveLength(1)
   })
 
   test("a signed world pushed through the loopback surface launches instead of the machine world until withdrawn", async () => {

@@ -30,7 +30,7 @@ test("catalog-approved skills admit an OpenCode session across generation reload
     expect(inspected.diagnostics).toContainEqual(expect.objectContaining({ code: "skill_invalid", path: "skills/broken/SKILL.md" }))
     const retained = await artifacts.put(inspected)
     const generation = await materializeAgentPluginGeneration({
-      runtimeRoot, identity: { mode: "unsigned", machineId: "machine" }, revision: 1, artifacts,
+      runtimeRoot, identity: { mode: "unsigned", machineId: "machine" }, revision: 1, artifacts, execution: { mode: "default" },
       selections: [{ pluginInstanceId: "mixed", artifactDigest: retained.digest, harnessIds: ["opencode"] }],
       adapters: [openCodeAgentPluginAdapter()],
     })

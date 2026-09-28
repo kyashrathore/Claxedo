@@ -3,8 +3,12 @@ export type HttpReply = { status: number; body: string }
 export type HttpTransport = (request: HttpRequest) => Promise<HttpReply>
 
 export const directTransport: HttpTransport = async (request) => {
-  const response = await fetch(request.url, { method: request.method, headers: request.headers, body: request.body })
-  return { status: response.status, body: await response.text() }
+  try {
+    const response = await fetch(request.url, { method: request.method, headers: request.headers, body: request.body })
+    return { status: response.status, body: await response.text() }
+  } catch (cause) {
+    throw new Error(`Waiting for ${request.method} ${new URL(request.url).pathname} failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
+  }
 }
 
 export async function sendJson(transport: HttpTransport, method: string, url: string, body: unknown, label: string) {

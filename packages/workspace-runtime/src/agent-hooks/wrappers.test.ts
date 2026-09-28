@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
 import { execFileSync } from "child_process"
 import { tmpdir } from "os"
 import path from "path"
 import {
   buildWrapperScript,
   generateClaudeWrapper,
+  codexHookFlags,
   generateCodexWrapper,
   generatePassthroughWrapper,
   generateGenericWrapper,
@@ -63,52 +64,23 @@ describe("generatePassthroughWrapper", () => {
 
 describe("generateClaudeWrapper", () => {
   it("includes exit trap for idle/error notification", () => {
-    const script = generateClaudeWrapper("/tmp/hooks/notify.sh")
+    const script = generateClaudeWrapper("/tmp/hooks/notify.sh", "/tmp/hooks/claude-settings.json")
 
     expect(script).toContain("trap cleanup EXIT")
     expect(script).toContain('hook_event_name":"Idle"')
     expect(script).toContain('hook_event_name":"Error"')
     expect(script).toContain('find_real_binary "claude"')
+    expect(script).toContain(`"$REAL_BIN" --settings '/tmp/hooks/claude-settings.json' "$@"`)
   })
 })
 
-describe("generateCodexWrapper", () => {
-  it("renders legacy codex wrapper with log watcher + notify bridge", () => {
-    const script = generateCodexWrapper({
-      notifyPath: "/tmp/hooks/codex-notify.sh",
-      watcherPath: "/tmp/hooks/codex-watcher.sh",
-      native: false,
-    })
-
-    expect(script).toContain(".codex-watch.pid")
-    expect(script).toContain(".codex-turn")
-    expect(script).toContain("/tmp/hooks/codex-watcher.sh")
-    expect(script).toContain("/tmp/hooks/codex-notify.sh")
-    expect(script).toContain('notify=["bash","/tmp/hooks/codex-notify.sh"]')
-  })
-
-  it("renders native codex wrapper with tui session log watcher", () => {
-    const script = generateCodexWrapper({
-      notifyPath: "/tmp/hooks/notify.sh",
-      watcherPath: "/tmp/hooks/notify.sh",
-      native: true,
-    })
-
-    expect(script).not.toContain('notify=[')
-    expect(script).toContain('"$REAL_BIN" "$@"')
-    expect(script).toContain("export CODEX_TUI_RECORD_SESSION=1")
-    expect(script).toContain('"msg":{"type":"task_started"')
-    expect(script).toContain('_claxedo_last_turn_id=""')
-    expect(script).toContain('_claxedo_last_approval_id=""')
-    expect(script).toContain('_claxedo_last_exec_call_id=""')
-    expect(script).toContain("_claxedo_approval_fallback_seq=0")
-    expect(script).toContain("_claxedo_emit_event()")
-    expect(script).toContain('"msg":{"type":"exec_command_begin"')
-    expect(script).toContain('_approval_request"')
-    expect(script).toContain('_claxedo_emit_event "Start"')
-    expect(script).toContain('_claxedo_emit_event "PermissionRequest"')
-    expect(script).toContain("CLAXEDO_CODEX_START_WATCHER_PID")
-    expect(script).toContain('kill "$CLAXEDO_CODEX_START_WATCHER_PID"')
+describe("codexHookFlags", () => {
+  it("registers every lifecycle event as a session flag that runs the notify script for codex", () => {
+    const flags = codexHookFlags("/tmp/hooks/notify.sh")
+    const events = flags.filter((_, index) => index % 2 === 1).map((flag) => flag.slice("hooks.".length, flag.indexOf("=")))
+    expect(events).toEqual(["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "Interrupt", "SubagentStart", "SubagentStop"])
+    expect(flags.filter((_, index) => index % 2 === 0).every((flag) => flag === "-c")).toBe(true)
+    expect(flags[7]).toBe(`hooks.PreToolUse=[{matcher="^request_user_input$",hooks=[{type="command",command="'/tmp/hooks/notify.sh' --harness=codex"}]}]`)
   })
 })
 
@@ -182,48 +154,78 @@ describe("copilot wrapper integration", () => {
   })
 })
 
+describe("copilot project hooks", () => {
+  function copilotProject() {
+    const projectDir = path.join(TEST_ROOT, "copilot-project")
+    const realBinDir = path.join(TEST_ROOT, "copilot-real-bin")
+    const wrapperPath = path.join(TEST_ROOT, "copilot-bin", "copilot")
+    const hookScriptPath = path.join(TEST_ROOT, "copilot-hooks", "copilot-hook.sh")
+    for (const dir of [path.join(projectDir, ".git", "info"), path.join(projectDir, ".github", "hooks"), realBinDir, path.dirname(wrapperPath), path.dirname(hookScriptPath)]) {
+      mkdirSync(dir, { recursive: true })
+    }
+    writeFileSync(hookScriptPath, "#!/bin/bash\nexit 0\n", { mode: 0o755 })
+    writeFileSync(path.join(realBinDir, "copilot"), "#!/bin/bash\nexit 0\n", { mode: 0o755 })
+    writeFileSync(wrapperPath, generateCopilotWrapper(hookScriptPath), { mode: 0o755 })
+    const run = (tab: string) => execFileSync(wrapperPath, [], {
+      cwd: projectDir, env: { ...process.env, PATH: `${realBinDir}:${process.env.PATH || ""}`, CLAXEDO_TAB_ID: tab }, encoding: "utf-8",
+    })
+    return { projectDir, run }
+  }
+
+  it("adds its exclude line once, keeps the person's lines, and rewrites its hook file only when it changed", () => {
+    const { projectDir, run } = copilotProject()
+    const exclude = path.join(projectDir, ".git", "info", "exclude")
+    const personHook = path.join(projectDir, ".github", "hooks", "person.json")
+    writeFileSync(exclude, "# person's excludes\nbuild/")
+    writeFileSync(personHook, '{"person":true}')
+    run("tab-1")
+    const hookFile = path.join(projectDir, ".github", "hooks", "claxedo-notify.json")
+    const first = statSync(hookFile).mtimeMs
+    expect(readFileSync(exclude, "utf-8")).toBe("# person's excludes\nbuild/\n.github/hooks/claxedo-notify.json\n")
+    run("tab-1")
+    expect(readFileSync(exclude, "utf-8")).toBe("# person's excludes\nbuild/\n.github/hooks/claxedo-notify.json\n")
+    expect(statSync(hookFile).mtimeMs).toBe(first)
+    expect(readFileSync(personHook, "utf-8")).toBe('{"person":true}')
+  })
+
+  it("outside a tab writes nothing into the project", () => {
+    const { projectDir, run } = copilotProject()
+    rmSync(path.join(projectDir, ".github"), { recursive: true, force: true })
+    writeFileSync(path.join(projectDir, ".git", "info", "exclude"), "")
+    run("")
+    expect(existsSync(path.join(projectDir, ".github"))).toBe(false)
+    expect(readFileSync(path.join(projectDir, ".git", "info", "exclude"), "utf-8")).toBe("")
+  })
+})
+
 describe("codex wrapper integration", () => {
-  it("preserves native Codex arguments without installing a legacy completion notifier", () => {
+  function run(args: string[], env: Record<string, string>) {
     const realBinDir = path.join(TEST_ROOT, "real-bin")
-    const wrapperBinDir = path.join(TEST_ROOT, "bin")
-    const realCodex = path.join(realBinDir, "codex")
-    const wrapperPath = path.join(wrapperBinDir, "codex")
+    const wrapperPath = path.join(TEST_ROOT, "bin", "codex")
     const argsFile = path.join(TEST_ROOT, "codex-args.txt")
     const notifyPath = path.join(TEST_ROOT, "hooks", "notify.sh")
-
     mkdirSync(realBinDir, { recursive: true })
-    mkdirSync(wrapperBinDir, { recursive: true })
-    mkdirSync(path.dirname(notifyPath), { recursive: true })
-    writeFileSync(notifyPath, "#!/bin/bash\nexit 0\n", { mode: 0o755 })
-
-    writeFileSync(
-      realCodex,
-      `#!/bin/bash\nprintf '%s\\n' "$@" > "${argsFile}"\nexit 0\n`,
-      { mode: 0o755 },
-    )
-    chmodSync(realCodex, 0o755)
-
-    const script = generateCodexWrapper({
-      notifyPath,
-      watcherPath: notifyPath,
-      native: true,
-    })
-    writeFileSync(wrapperPath, script, { mode: 0o755 })
+    mkdirSync(path.dirname(wrapperPath), { recursive: true })
+    writeFileSync(path.join(realBinDir, "codex"), `#!/bin/bash\nprintf '%s\\n' "$@" > "${argsFile}"\nexit 0\n`, { mode: 0o755 })
+    chmodSync(path.join(realBinDir, "codex"), 0o755)
+    writeFileSync(wrapperPath, generateCodexWrapper(notifyPath), { mode: 0o755 })
     chmodSync(wrapperPath, 0o755)
+    execFileSync(wrapperPath, args, { env: { ...process.env, CLAXEDO_TAB_ID: "", ...env, PATH: `${realBinDir}:${process.env.PATH || ""}` }, encoding: "utf-8" })
+    return { args: readFileSync(argsFile, "utf-8").trimEnd().split("\n"), flags: codexHookFlags(notifyPath) }
+  }
 
-    // Don't include wrapperBinDir in PATH (find_real_binary would find
-    // the wrapper itself → infinite recursion). Also omit CLAXEDO_TAB_ID
-    // to skip the background session-log watcher which holds stdout pipes open.
-    execFileSync(wrapperPath, ["exec", "Reply with exactly OK."], {
-      env: {
-        ...process.env,
-        PATH: `${realBinDir}:${process.env.PATH || ""}`,
-      },
-      encoding: "utf-8",
-    })
+  it("inside a tab, turns hooks on, bypasses hook trust once and adds the hook flags ahead of the caller's arguments", () => {
+    const { args, flags } = run(["exec", "Reply with exactly OK."], { CLAXEDO_TAB_ID: "tab-1" })
+    expect(args).toEqual(["--enable", "hooks", "--dangerously-bypass-hook-trust", ...flags, "exec", "Reply with exactly OK."])
+  })
 
-    const args = readFileSync(argsFile, "utf-8")
-    expect(args).toBe("exec\nReply with exactly OK.\n")
+  it("does not repeat a trust bypass the caller already passed", () => {
+    const { args, flags } = run(["--dangerously-bypass-hook-trust", "resume"], { CLAXEDO_TAB_ID: "tab-1" })
+    expect(args).toEqual(["--enable", "hooks", ...flags, "--dangerously-bypass-hook-trust", "resume"])
+  })
+
+  it("outside a tab, passes the caller's arguments through untouched", () => {
+    expect(run(["exec", "hello"], {}).args).toEqual(["exec", "hello"])
   })
 })
 

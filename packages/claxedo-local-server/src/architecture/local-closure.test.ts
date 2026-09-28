@@ -181,10 +181,6 @@ describe("@claxedo/local-server closure", () => {
     // Why the modules the desktop owns are owned here:
     //  - `platform/json.ts` — the one leaf every module reading untrusted JSON
     //    narrows through instead of writing its own `record`/`text` pair.
-    //  - `agent-config/hosted-mcp-install.ts` — the one-click write of the
-    //    hosted `claxedo` entry into the Claude Code, Cursor and Codex configs
-    //    on this machine; the desktop's own agent-config routes are what a user
-    //    clicks.
     //  - `shell/event-stream-response.ts` — the one writer that serves the
     //    daemon's `cp/events` over HTTP SSE or a loopback WebSocket alike.
     //  - `app/local-documents.ts` — the desktop composition of shared Documents.
@@ -254,8 +250,7 @@ describe("@claxedo/local-server closure", () => {
     // header injection and runtime-token verification behind the broker
     // handler; `@claxedo/process-ownership` supplies dependency-free data and
     // OS reads, with no server, runtime or store closure behind them;
-    // `smol-toml` is the hosted MCP installer's configuration
-    // validator; `@claxedo/agent-runtime-contract` is the dependency-free data
+    // `@claxedo/agent-runtime-contract` is the dependency-free data
     // this product reads rather than restating — the harness/provider-id table
     // the credential routes, the reaper and the agent-config auth route all
     // key on, and the login-document claim readers the provider-auth exchange

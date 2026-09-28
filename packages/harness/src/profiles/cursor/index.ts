@@ -32,10 +32,10 @@ export function projectCursorMcpServers(servers: readonly McpServerSpec[]): Reco
 }
 
 export function cursorHomeKey(owner: TurnActor, login: Pick<MachineLoginPolicy, "machineOwnerUserId">, binding: string,
-  projection: Pick<PluginProjection, "pluginRoots">): string {
+  projection: Pick<PluginProjection, "pluginRoots" | "pluginSelection">): string {
   const selection = [...new Set(projection.pluginRoots.map((plugin) => plugin.pluginInstanceId))].sort()
   const ownerId = owner.kind === "person" ? owner.userId : login.machineOwnerUserId
-  return createHash("sha256").update(JSON.stringify([ownerId, binding, selection])).digest("hex").slice(0, 16)
+  return createHash("sha256").update(JSON.stringify([ownerId, binding, selection, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)
 }
 
 function managedPluginName(plugin: SkillRoot): string {
@@ -120,8 +120,8 @@ export async function projectCursorPlugins(projection: Pick<PluginProjection, "p
   return desired.size > 0
 }
 
-async function mirrorPersonalPlugins(personalFolder: string, folder: string, personalRoot: string): Promise<void> {
-  const names = (await lstatIfExists(personalFolder))?.isDirectory()
+async function mirrorPersonalPlugins(personalFolder: string, folder: string, personalRoot: string, include: boolean): Promise<void> {
+  const names = include && (await lstatIfExists(personalFolder))?.isDirectory()
     ? (await fs.readdir(personalFolder)).filter((name) => !name.startsWith(".") && !name.startsWith(PREFIX)) : []
   for (const name of await fs.readdir(folder)) {
     if (name.startsWith(".") || name.startsWith(PREFIX) || names.includes(name)) continue
@@ -132,7 +132,7 @@ async function mirrorPersonalPlugins(personalFolder: string, folder: string, per
   }
 }
 
-async function mirrorPersonalConfig(personal: string | undefined, cursorDir: string): Promise<void> {
+async function mirrorPersonalConfig(personal: string | undefined, cursorDir: string, includePersonalPlugins: boolean): Promise<void> {
   const root = personal && (await lstatIfExists(personal))?.isDirectory() ? await fs.realpath(personal) : undefined
   for (const name of MIRRORED) {
     const target = path.join(cursorDir, name)
@@ -145,15 +145,15 @@ async function mirrorPersonalConfig(personal: string | undefined, cursorDir: str
   }
   const folder = path.join(cursorDir, "plugins", "local")
   await fs.mkdir(folder, { recursive: true, mode: 0o700 })
-  if (root) await mirrorPersonalPlugins(path.join(root, "plugins", "local"), folder, root)
+  if (root) await mirrorPersonalPlugins(path.join(root, "plugins", "local"), folder, root, includePersonalPlugins)
 }
 
 export async function composeCursorHome(input: { root: string; key: string; personalCursorDir?: string;
-  projection: Pick<PluginProjection, "pluginRoots"> }): Promise<CursorHome> {
+  projection: Pick<PluginProjection, "pluginRoots" | "pluginSelection"> }): Promise<CursorHome> {
   const home = path.join(input.root, input.key)
   const cursorDir = path.join(home, ".cursor")
   await fs.mkdir(cursorDir, { recursive: true, mode: 0o700 })
-  await mirrorPersonalConfig(input.personalCursorDir, cursorDir)
+  await mirrorPersonalConfig(input.personalCursorDir, cursorDir, input.projection.pluginSelection?.mode !== "selected")
   const delivered = await projectCursorPlugins(input.projection, path.join(cursorDir, "plugins", "local"))
   return { home, local: { settingSources: delivered ? ["user", "plugins"] : ["user"] } }
 }

@@ -89,10 +89,6 @@ export const localServer: Policy = {
   //  - `platform/json.ts`: the one dependency-free leaf every reader of
   //    untrusted JSON (request bodies, runtime event payloads, subprocess
   //    output) narrows through.
-  //  - `agent-config/hosted-mcp-install.ts` (owner: local-server platform): the
-  //    one-click write of the hosted `claxedo` MCP entry into the Claude Code,
-  //    Cursor and Codex configs on this machine; smol-toml validates the Codex
-  //    configuration before any file is written.
   //  - `shell/event-stream-response.ts`: the authorized event producer over
   //    HTTP or WebSocket.
   //  - `shell/host-events.ts`: the host aggregate `wr/events`, which serves

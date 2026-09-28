@@ -4,7 +4,6 @@ import {
   AGENT_PLUGIN_MCP_SCHEMA,
   type AgentPluginMcpServer,
 } from "@claxedo/server-core/agent-plugins/catalog/types"
-import { projectedMcpServers, type RuntimeMcpServerProjection } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import type { GenerationPluginRoot } from "./types"
 
 function standardServer(server: AgentPluginMcpServer) {
@@ -25,13 +24,8 @@ function standardServer(server: AgentPluginMcpServer) {
 }
 
 /** Rewrite a harness-owned copy, never the retained digest-addressed root. */
-export async function writeProjectedMcpFile(
-  root: string,
-  plugin: GenerationPluginRoot,
-  projections: readonly RuntimeMcpServerProjection[],
-) {
+export async function writeProjectedMcpFile(root: string, plugin: GenerationPluginRoot, servers: readonly AgentPluginMcpServer[]) {
   if (plugin.plugin.mcp.status === "absent") return
-  const servers = projectedMcpServers(plugin, projections)
   await fs.writeFile(path.join(root, "mcp.json"), `${JSON.stringify({
     $schema: AGENT_PLUGIN_MCP_SCHEMA,
     mcpServers: Object.fromEntries(servers.map((server) => [server.name, standardServer(server)])),

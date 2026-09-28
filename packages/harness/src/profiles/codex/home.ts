@@ -17,7 +17,7 @@ export function codexHomeKey(owner: TurnActor, selected: ProviderBinding | undef
   const ownerKey = owner.kind === "machine-owner" ? "machine-owner" : `person:${owner.userId}`
   const credentialKey = selected ? `broker:${selected.baseUrl}:${selected.authMode}` : "own-login"
   const plugins = [...new Set(projection.pluginRoots.map((root) => root.pluginInstanceId))].sort()
-  return `codex-${createHash("sha256").update(JSON.stringify([ownerKey, credentialKey, plugins])).digest("hex").slice(0, 16)}`
+  return `codex-${createHash("sha256").update(JSON.stringify([ownerKey, credentialKey, plugins, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)}`
 }
 
 export function copyTreeAtomically(source: string, target: string, root: string, relative = ""): Promise<void> {
@@ -33,7 +33,7 @@ async function linkOwnerAuth(ownerHome: string, home: string): Promise<void> {
   await replaceAtomically(target, (temporary) => fs.symlink(auth, temporary))
 }
 
-export async function mirrorOwnerCodexHome(source: string, home: string): Promise<void> {
+export async function mirrorOwnerCodexHome(source: string, home: string, includePersonalPlugins: boolean): Promise<void> {
   const ownerHome = await fs.realpath(source).catch((error: unknown) => {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return path.resolve(source)
     throw error
@@ -41,6 +41,11 @@ export async function mirrorOwnerCodexHome(source: string, home: string): Promis
   for (const name of MIRRORED) {
     const from = path.join(ownerHome, name)
     const to = path.join(home, name)
+    if (name === "plugins" && !includePersonalPlugins) {
+      await pruneMirrorDirectory(to, name, ["cache"], mirror)
+      await pruneMirrorDirectory(path.join(to, "cache"), path.join(name, "cache"), [], mirror)
+      continue
+    }
     if (await lstatIfExists(from)) await copyTreeAtomically(from, to, ownerHome, name)
     else if (name === "plugins" || name === "skills") await pruneMirrorDirectory(to, name, [], mirror)
     else await fs.rm(to, { recursive: true, force: true })
