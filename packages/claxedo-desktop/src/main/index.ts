@@ -4,9 +4,9 @@ import { closeSync, existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Event, MessageBoxOptions } from "electron"
+import type { Event, MessageBoxOptions, OnHeadersReceivedListenerDetails } from "electron"
 import { app, BrowserWindow, dialog, ipcMain, powerMonitor, safeStorage, session, utilityProcess } from "electron"
-import { daemonResponseListener, grantMainRendererDaemonAccess, HTTP_REQUEST_URLS, type RendererDaemonPolicy } from "./renderer-daemon-access"
+import { daemonResponseListener, grantMainRendererDaemonAccess, HTTP_REQUEST_URLS, type DaemonResponseHeaders } from "./renderer-daemon-access"
 import { createDaemonFetch, type DaemonEndpoint } from "./daemon-request"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
@@ -623,11 +623,11 @@ class DaemonUnresolvedError extends Error {
 }
 
 async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
-  let rendererDaemonPolicy: RendererDaemonPolicy | undefined
+  let daemonResponses: DaemonResponseHeaders | undefined
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: [...rendererDocumentUrlPatterns(), ...HTTP_REQUEST_URLS] },
-    daemonResponseListener({
-      policy: () => rendererDaemonPolicy,
+    daemonResponseListener<OnHeadersReceivedListenerDetails>({
+      daemonResponses: () => daemonResponses,
       otherwise: rendererContentSecurityListener({
         serverOrigin: serverOrigin.promise,
         isRendererDocument: isRendererDocumentUrl,
@@ -670,17 +670,16 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
       // the daemon capability to be admitted at all, and its file:// document
       // sends `Origin: file://` on every WebSocket handshake, which the loopback
       // gate rejects with 403. See renderer-daemon-access.ts.
-      rendererDaemonPolicy = {
-        daemonOrigin: endpoint.origin,
-        capability: endpoint.capability,
-        // The same registry the IPC boundary trusts: a webContents this
-        // process registered as bridge-carrying, never a URL a page controls.
-        isBridgeCarryingWebContents: (webContentsId) =>
-          mainIpcCallerGuard().check({ senderId: webContentsId, isMainFrame: true }).allowed,
-        isTrustedDocumentUrl: isTrustedMainRendererUrl,
-      }
-      grantMainRendererDaemonAccess({
-        policy: rendererDaemonPolicy,
+      daemonResponses = grantMainRendererDaemonAccess({
+        policy: {
+          daemonOrigin: endpoint.origin,
+          capability: endpoint.capability,
+          // The same registry the IPC boundary trusts: a webContents this
+          // process registered as bridge-carrying, never a URL a page controls.
+          isBridgeCarryingWebContents: (webContentsId) =>
+            mainIpcCallerGuard().check({ senderId: webContentsId, isMainFrame: true }).allowed,
+          isTrustedDocumentUrl: isTrustedMainRendererUrl,
+        },
         onBeforeSendHeaders: (filter, listener) =>
           session.defaultSession.webRequest.onBeforeSendHeaders(filter, listener),
       })

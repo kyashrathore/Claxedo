@@ -1,36 +1,15 @@
 export { MessageTimeline } from "./message-timeline"
 export type { MessageTimelineProps } from "./message-timeline-props"
 export type {
-  QueuedMessage,
-  QueuedMessages,
   TimelineFocus,
   TimelineHost,
   TimelineNavTurn,
-  TimelineNavigation,
-  TimelinePlatform,
   TimelineSessionRow,
   TimelineSettings,
   TimelineTextKey,
-  TimelineTranslate,
-  TurnOutcome,
 } from "./model"
 export { queuedMessageText, turnActive } from "./model"
-export { messageNavVisible } from "./message-nav-preview"
 export { useTranscriptTypography } from "./transcript-typography"
-export { MessageComment, Timeline, uniqueSummaryDiffs, type SummaryDiff } from "./message-timeline.data"
-export { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 export { PreviousMessagesRow } from "./message-timeline-turn-rows"
-export { TimelineErrorPresentation, FirstTurnRecoveryCard, TurnAdmissionStatus } from "./first-turn-recovery-card"
-export {
-  sessionRecovery,
-  sessionRecoveryClass,
-  sessionRecoveryDescription,
-  type SessionErrorClass,
-} from "./turn-recovery"
-export { providerErrorDetail, providerLabel, providerUsageLimitDetail, stripRelayPrefix } from "./provider-error-detail"
-export { sessionTitle } from "./session-title"
-export { latchSessionTitle, type LatchedSessionTitle } from "./session-title-latch"
-export { createActivePaneProjection } from "./active-pane-projection"
-export { sessionMessageScrollInset } from "./session-message-scroll-position"
-export { messageAuthor, MessageAuthorAvatar, MessageAuthorLane } from "./message-author"
-export * from "./message-gesture"
+export type { SessionErrorClass } from "./turn-recovery"
+export { createScrollGestureWindow } from "./message-gesture"

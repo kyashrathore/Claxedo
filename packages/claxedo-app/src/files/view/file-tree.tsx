@@ -24,7 +24,6 @@ export type FileTreeProps = {
   readonly modified?: readonly string[]
   readonly kinds?: ReadonlyMap<string, ChangeKind>
   readonly visibleLimit?: number
-  readonly loadingEpisode?: string
   readonly onFileClick?: (file: FileNode) => void
   readonly onFilePress?: (file: FileNode) => void
 }
@@ -85,7 +84,6 @@ export function FileTree(props: FileTreeProps): JSX.Element {
     active: () => props.active,
     kinds: () => props.kinds,
     marks,
-    loadingEpisode: () => props.loadingEpisode,
     showMore: (dir, side) => props.showMore(dir, side),
     onFileClick: (file) => props.onFileClick?.(file),
     onFilePress: (file) => props.onFilePress?.(file),

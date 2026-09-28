@@ -73,13 +73,13 @@ export type ComposerTextKey =
   | "command.prompt.mode.normal"
   | "command.category.session"
   | "prompt.toast.promptSendFailed.title"
-  | "common.requestFailed"
+  | "composer.requestFailed"
   | "prompt.toast.goalStopFailed.title"
   | "prompt.imageMarks.title"
   | "prompt.imageMarks.hint"
   | "prompt.imageMarks.delete"
   | "prompt.imageMarks.mark"
-  | "common.cancel"
+  | "composer.cancel"
   | "common.save"
   | "composer.health.stopped"
   | "composer.health.checkAgain"
@@ -180,13 +180,13 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "command.prompt.mode.normal": "Prompt",
   "command.category.session": "Session",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
-  "common.requestFailed": "Request failed",
+  "composer.requestFailed": "Request failed",
   "prompt.toast.goalStopFailed.title": "Could not stop Goal",
   "prompt.imageMarks.title": "Mark up image",
   "prompt.imageMarks.hint": "Drag to box an area or click to drop a pin, then comment on it.",
   "prompt.imageMarks.delete": "Delete mark",
   "prompt.imageMarks.mark": "mark {{number}}",
-  "common.cancel": "Cancel",
+  "composer.cancel": "Cancel",
   "common.save": "Save",
   "composer.recovery.chooseModel": "Choose a model to resend",
   "composer.recovery.noModels": "No other models are available. Configure another model in Settings → Providers.",

@@ -12,6 +12,7 @@ const checks = [
   "one-home-per-datum",
   "domain-boundaries",
   "one-owner",
+  "one-registration",
   "no-directory-identity",
   "access-boundary",
   "protected-areas",

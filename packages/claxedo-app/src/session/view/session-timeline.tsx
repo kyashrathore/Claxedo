@@ -10,7 +10,6 @@ import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
 import "./transcript-kit.css"
 
-export const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 
 export function userMessages(view: SessionView): TranscriptUserMessage[] {
   const messages = view.conversation()?.messages ?? []
@@ -39,7 +38,6 @@ export function SessionTimeline(props: {
   return (
     <TranscriptKitProviders>
       <DataProvider
-        data={EMPTY_DATA}
         directory={props.host.placementPath}
         onNavigateToSession={props.host.navigation.toSession}
         onSessionHref={(id) =>

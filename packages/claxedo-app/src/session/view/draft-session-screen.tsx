@@ -3,7 +3,7 @@ import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoti
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
 import { useServer, type PlacementId, type ProjectId, type PromptInput } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
-import { useCommands, useShellRoute, type PaneProps } from "@/shell"
+import type { PaneProps } from "@/shell"
 import { ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { pendingMessage } from "../transcript/send"
@@ -11,7 +11,6 @@ import { draftSessionPaneKind } from "./draft-pane"
 import { SentMessage } from "./sent-message"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
-import { registerSessionCommands } from "./session-commands"
 import { WorkspaceSleepCard } from "./workspace-sleep"
 import "./session-screen.css"
 
@@ -25,8 +24,6 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const stores = useSessionStores()
   const server = useServer()
   const workbench = useWorkbench()
-  const routing = useShellRoute()
-  registerSessionCommands({ commands: useCommands(), placementId: () => props.state.placementId, active: () => props.active, navigate: (path) => routing.navigate(path), t })
   const key = () => draftComposerKey(props.state.placementId)
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
