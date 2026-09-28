@@ -45,6 +45,7 @@ The timeline reaches the app through one prop, `host`, which `createTimelineHost
 
 - The idle status can land before the turn's final transcript read. While `turnSettlePending(userMessageId)` is true the turn is still working: its Thinking row stays and it does not fold.
 - A reader's toggle of a fold, a group or a tool row calls `onReaderToggle`, which stops following the end, so what opens grows downward and no row above it moves.
+- The jump button cancels its fade transition when it unmounts. A timeline leaves while that transition is still running, and Chromium can keep a removed element's running CSS transition on the document timeline, which held the whole detached timeline (431 nodes) alive after a session switch; flow 30's `image-never-loads` case measures it.
 - The Thinking row stays painted for 80 ms (`THINKING_HIDE_HOLD_MS`, `thinking-visibility-hold.ts`) after whatever cleared it; dropping it at once collapses the virtualizer and jumps the composer.
 - A row's key is stable across rebuilds and `TimelineRow.reuse` keeps an equal row's identity; a tag-narrowed row accessor (`rowOfTag`) latches the last matching row for the tick before Solid disposes the branch.
 - Mount snapshots (scroll, measurements, open groups, open and revealed tools; `timeline-mount-cache.ts`) are kept for 64 sessions, fold choices (`turn-fold-store.ts`) for 16. Both are module-level caches, listed as named exceptions in `scripts/checks/data/module-state-exceptions.ts`.
