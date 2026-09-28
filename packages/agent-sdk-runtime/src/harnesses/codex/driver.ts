@@ -257,6 +257,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    * leaked the lease, and one leaked lease disarms the reaper for the driver's
    * whole life: the next turn's app-server then stays resident forever.
    */
+  turnAccount() {
+    return this.broker.account()
+  }
+
   async runTurn(input: SdkRuntimeTurnInput) {
     const turn = this.idle.lease()
     try {

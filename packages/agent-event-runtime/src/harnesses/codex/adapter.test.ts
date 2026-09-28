@@ -934,8 +934,38 @@ describe("codexAppServerAdapter", () => {
       },
     }).events).toMatchObject([
       { type: "session-status", status: "error" },
-      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours." },
+      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours.", errorClass: "usage_limit" },
     ])
+  })
+
+  test("a Codex HTTP failure that answered 429 is a temporary rate limit", () => {
+    expect(runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: false,
+        error: {
+          message: "exceeded retry limit, last status: 429 Too Many Requests",
+          codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 429 } },
+          additionalDetails: null,
+        },
+      },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "exceeded retry limit, last status: 429 Too Many Requests", errorClass: "rate_limit" },
+    ])
+  })
+
+  test("a Codex failure with no limit behind it carries no class of its own", () => {
+    const [, error] = runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied", codexErrorInfo: "sandboxError" } },
+    }).events
+    expect(error).toMatchObject({ type: "error", error: "sandbox denied" })
+    expect(error).not.toHaveProperty("errorClass")
   })
 
   test("stamps the last Codex usage-limit sentence onto a failed turn after prune", () => {
@@ -968,7 +998,7 @@ describe("codexAppServerAdapter", () => {
       payload: { turn: { id: "turn-2", status: "failed" } },
     }).events).toMatchObject([
       { type: "session-status", status: "error" },
-      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours." },
+      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours.", errorClass: "usage_limit" },
     ])
   })
 

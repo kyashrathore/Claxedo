@@ -1,3 +1,5 @@
+import type { NativeSdkHarnessId, TurnAccount } from "@claxedo/agent-runtime-contract"
+
 /**
  * What a harness receives in place of a credential.
  *
@@ -29,7 +31,11 @@ export type ProviderBinding = {
    * which means `baseUrl` is already the root.
    */
   apiPath?: string
+  /** The stored credential the placeholder spends, by its non-secret metadata, so a turn can say which account it ran on. */
+  account?: BindingAccount
 }
+
+export type BindingAccount = { credentialId: string; providerId: string; label?: string }
 
 export type ProviderUnavailable = {
   unavailable: true
@@ -57,7 +63,7 @@ export type ProviderProjectionSource = ProviderBindingSource | ProviderUnavailab
 export type PlaceholderEnvironment = Record<string, string | undefined>
 
 const AUTH_MODES = ["api-key", "bearer"] as const
-const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
+const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath", "account"])
 const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
 
 /**
@@ -94,11 +100,14 @@ export function providerProjection(
   }
   const apiPath = row.apiPath
   if (apiPath !== undefined && (typeof apiPath !== "string" || (apiPath && !apiPath.startsWith("/")))) return undefined
+  const account = row.account === undefined ? undefined : bindingAccount(row.account)
+  if (row.account !== undefined && !account) return undefined
   const rest = {
     baseUrl,
     authMode,
     ...(expiresAt === undefined ? {} : { expiresAt }),
     ...(apiPath === undefined ? {} : { apiPath }),
+    ...(account ? { account } : {}),
   }
   if (placeholderEnv !== undefined) {
     if (row.placeholder !== undefined || typeof placeholderEnv !== "string" || !placeholderEnv) return undefined
@@ -112,6 +121,14 @@ export function providerProjection(
   const placeholder = row.placeholder
   if (typeof placeholder !== "string" || !placeholder) return undefined
   return { ...rest, placeholder }
+}
+
+function bindingAccount(input: unknown): BindingAccount | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
+  const { credentialId, providerId, label } = input as Record<string, unknown>
+  if (typeof credentialId !== "string" || !credentialId || typeof providerId !== "string" || !providerId) return undefined
+  if (label !== undefined && typeof label !== "string") return undefined
+  return { credentialId, providerId, ...(label ? { label } : {}) }
 }
 
 /**
@@ -253,4 +270,15 @@ export function providerProjectionKey(projection: ProviderProjection | undefined
   if (!projection) return ""
   if (isProviderUnavailable(projection)) return `unavailable\n${projection.reason}`
   return `${projection.baseUrl}${projection.apiPath ?? ""}\n${projection.placeholder}\n${projection.authMode}`
+}
+
+/**
+ * The account a turn launched on this projection runs on. None bound means the
+ * harness's own login on this machine; a binding from an authority that names
+ * no account, or one that cannot be bound, names nothing.
+ */
+export function turnAccountFor(harnessId: NativeSdkHarnessId, projection: ProviderProjection | undefined): TurnAccount | undefined {
+  if (!projection) return { kind: "machine", harnessId }
+  if (isProviderUnavailable(projection) || !projection.account) return undefined
+  return { kind: "stored", harnessId, ...projection.account }
 }

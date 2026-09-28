@@ -13,6 +13,7 @@ import { toolDisplayFromInput } from "../tool-display"
 import { contentBlockImages, imageUrlAttachment } from "../tool-attachments"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, optionLabels, own, pathFields, text } from "../../value"
 import type { ServerNotification, ServerRequest } from "./protocol"
+import type { FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { codexMcpApproval } from "./mcp-elicitation"
 
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
@@ -517,13 +518,9 @@ function completionEvents(
   const turn = asRecord(row.turn) ?? row
   const status = text(turn.status)
   if (status === "failed" || status === "error") {
-    const message = turnErrorMessage(asRecord(turn.error), lastLimitedRateLimitMessage)
-      ?? text(row.message)
-      ?? lastLimitedRateLimitMessage
-      ?? "Codex turn failed"
     return [
       { type: "session-status", status: "error" },
-      { type: "error", error: message },
+      turnErrorEvent(asRecord(turn.error), text(row.message), lastLimitedRateLimitMessage, "Codex turn failed"),
     ] satisfies AgentRuntimeEvent[]
   }
   if (status === "cancelled" || status === "interrupted") {
@@ -778,6 +775,35 @@ function codexErrorInfoMessage(info: unknown) {
   if (info === "contextWindowExceeded") return "This turn exceeded the Codex context window."
   if (info === "cyberPolicy") return "Codex refused this request due to a safety policy."
   return undefined
+}
+
+const HTTP_FAILURE_INFO = ["httpConnectionFailed", "responseStreamConnectionFailed", "responseStreamDisconnected", "responseTooManyFailedAttempts"]
+
+function codexErrorInfoClass(info: unknown): FirstTurnErrorClass | undefined {
+  if (info === "usageLimitExceeded") return "usage_limit"
+  const variants = asRecord(info)
+  const status = HTTP_FAILURE_INFO.map((name) => asRecord(variants?.[name])?.httpStatusCode).find((code) => code !== undefined)
+  return status === 429 ? "rate_limit" : undefined
+}
+
+/**
+ * A failure that names only Codex's generic "session error" is explained by
+ * the last limited rate-limit window, and that window is a plan limit.
+ */
+function turnErrorEvent(
+  error: Record<string, unknown> | undefined,
+  rowMessage: string | undefined,
+  lastLimitedRateLimitMessage: string | undefined,
+  fallback: string,
+): AgentRuntimeEventOf<"error"> {
+  const message = turnErrorMessage(error, lastLimitedRateLimitMessage) ?? rowMessage
+  const errorClass = codexErrorInfoClass(error?.codexErrorInfo)
+    ?? (lastLimitedRateLimitMessage && (message === undefined || message.startsWith(lastLimitedRateLimitMessage)) ? "usage_limit" : undefined)
+  return {
+    type: "error",
+    error: message ?? lastLimitedRateLimitMessage ?? fallback,
+    ...(errorClass ? { errorClass } : {}),
+  }
 }
 
 function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimitedRateLimitMessage?: string) {
@@ -1183,18 +1209,11 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           })]
 
         case "error": {
-          const error = asRecord(row.error)
-          const message = turnErrorMessage(error, state.lastLimitedRateLimitMessage)
-            ?? text(row.message)
-            ?? state.lastLimitedRateLimitMessage
-            ?? "Codex provider error"
+          const failure = turnErrorEvent(asRecord(row.error), text(row.message), state.lastLimitedRateLimitMessage, "Codex provider error")
           if (row.willRetry === true) {
-            return [diagnosticForEvent({ code: "codex_app_server.retryable_error", message, severity: "warn", event })]
+            return [diagnosticForEvent({ code: "codex_app_server.retryable_error", message: failure.error, severity: "warn", event })]
           }
-          return [
-            { type: "session-status", status: "error" },
-            { type: "error", error: message },
-          ]
+          return [{ type: "session-status", status: "error" }, failure]
         }
 
         case "windowsSandbox/setupCompleted":

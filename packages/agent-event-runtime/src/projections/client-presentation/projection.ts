@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { canonicalToolName, type AgentSessionTitleSource } from "@claxedo/agent-runtime-contract"
+import { canonicalToolName, type AgentSessionTitleSource, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
 import { boundKeyedMap, object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
@@ -203,7 +203,11 @@ function sessionIdle(sessionID: string): EventSessionIdle {
   }
 }
 
-function sessionError(message: string, sessionID?: string): EventSessionError {
+function sessionError(
+  message: string,
+  sessionID?: string,
+  facts: { errorClass?: FirstTurnErrorClass; account?: TurnAccount } = {},
+): EventSessionError {
   return {
     id: `session.error:${sessionID ?? "global"}`,
     type: "session.error",
@@ -211,7 +215,11 @@ function sessionError(message: string, sessionID?: string): EventSessionError {
       ...(sessionID ? { sessionID } : {}),
       error: {
         name: "UnknownError",
-        data: { message },
+        data: {
+          message,
+          ...(facts.errorClass ? { firstTurnErrorClass: facts.errorClass } : {}),
+          ...(facts.account ? { account: facts.account } : {}),
+        },
       },
     },
   }
@@ -1424,7 +1432,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       ]
 
     case "error":
-      return [withDir(ctx.directory, sessionError(chunk.error, ctx.sessionId))]
+      return [withDir(ctx.directory, sessionError(chunk.error, ctx.sessionId, { errorClass: chunk.errorClass, account: chunk.account }))]
 
     case "permission-request":
       return [withDir(ctx.directory, permissionAsked({

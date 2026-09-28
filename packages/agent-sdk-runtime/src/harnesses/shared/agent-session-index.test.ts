@@ -46,6 +46,7 @@ function driverStub(capture: (host: SdkRuntimeDriverHost) => void): (host: SdkRu
       instructionChannel: "thread-start",
       interactions: { permissions: true, questions: true },
         applyConfig() {},
+        turnAccount: () => undefined,
       createAgentSession: async () => ({ id: "thread-1" }),
       createRuntime() {
         const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })

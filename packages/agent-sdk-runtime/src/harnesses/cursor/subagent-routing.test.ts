@@ -14,6 +14,7 @@ function cursorDriver(transcriptRegistrar?: Parameters<typeof ingestCursorSdkMes
     instructionChannel: "prompt-prefix",
     interactions: { permissions: false, questions: false },
     applyConfig() {},
+    turnAccount: () => undefined,
     createAgentSession: async () => ({ id: "cursor-parent-agent" }),
     deleteAgentSession() {},
     createRuntime: (threadId) => createAgentEventRuntime({

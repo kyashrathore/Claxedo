@@ -49,7 +49,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { liveProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
+import { liveProviderBinding, providerProjectionKey, providerProjectionRecord, turnAccountFor, type ProviderBinding } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -333,6 +333,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         ? [{ id: todo.id, description: todo.content, status: todo.status }]
         : [])),
     })
+  }
+
+  turnAccount() {
+    return turnAccountFor("claude", this.auth.anthropic)
   }
 
   async runTurn(input: SdkRuntimeTurnInput) {

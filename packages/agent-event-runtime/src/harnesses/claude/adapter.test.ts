@@ -1840,6 +1840,77 @@ describe("claudeSdkAdapter rate limits", () => {
     }
   })
 
+  test("a rate_limit refusal is a temporary rate limit unless the last window report rejected a plan window", () => {
+    const agent = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter(),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    })
+    const window = (status: string) => agent.ingest({
+      source: "claude.sdk",
+      method: "claude/rate_limit_event",
+      payload: { type: "rate_limit_event", uuid: `rate-${status}`, session_id: "sdk-session-1", rate_limit_info: { status, rateLimitType: "five_hour" } },
+    })
+    const refusal = () => agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "assistant", error: "rate_limit",
+        message: { content: [{ type: "text", text: "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later." }] },
+      },
+    }).events.find((event) => event.type === "error")
+
+    expect(refusal()).toMatchObject({ type: "error", errorClass: "rate_limit" })
+    window("rejected")
+    expect(refusal()).toMatchObject({ type: "error", errorClass: "usage_limit" })
+    window("allowed")
+    expect(refusal()).toMatchObject({ type: "error", errorClass: "rate_limit" })
+  })
+
+  test("the owner's recorded 429, with no window report before it in its session, is a temporary rate limit", () => {
+    const events = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter(),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    }).ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "assistant",
+        message: {
+          id: "9ee31f29-0ea3-48fa-91c1-91a9e43c812b",
+          model: "<synthetic>",
+          role: "assistant",
+          stop_reason: "stop_sequence",
+          stop_sequence: "",
+          type: "message",
+          usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          content: [{ type: "text", text: "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later." }],
+        },
+        parent_tool_use_id: null,
+        session_id: "b66f22f2-d1b5-442e-8f63-bc12b84276d9",
+        uuid: "c47b02b7-8985-4da0-859c-fdf3dbe6736f",
+        error: "rate_limit",
+        is_api_error_message: true,
+      },
+    }).events
+    expect(events.find((event) => event.type === "error")).toMatchObject({ errorClass: "rate_limit" })
+  })
+
+  test("an assistant failure that is no limit carries no class of its own", () => {
+    const [, error] = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter(),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    }).ingest({ source: "claude.sdk.message", payload: { type: "assistant", error: "invalid_request", message: { content: [] } } }).events
+    expect(error).toMatchObject({ type: "error" })
+    expect(error).not.toHaveProperty("errorClass")
+  })
+
   test("only a rejection is a limit", () => {
     expect(emitted({ status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 })).toEqual([{
       type: "rate-limit",

@@ -138,6 +138,22 @@ describe("local binding authority", () => {
     expect(await local.authority.currentRuntime(await local.runtimeIdentity(workspaceId))).toBe(true)
   })
 
+  test("the projection names the credential it spends by its non-secret metadata", async () => {
+    const credential = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      source: "managed",
+      label: "contactyash",
+      account_id: `acc-${randomUUID().slice(0, 8)}`,
+      secret: "sk-ant-oat01-secret",
+    })
+    expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
+    const projection = bound((await broker().projectAuth({ workspaceId }))["claude-sdk"])
+
+    expect(projection.account).toEqual({ credentialId: credential.id, providerId: "claude-sdk", label: "contactyash" })
+    expect(JSON.stringify(projection)).not.toContain("sk-ant-oat01-secret")
+  })
+
   test("a renewal re-projects onto the binding this broker already minted", async () => {
     // The renewal timer re-projects every workspace every 30s for the life of
     // the process. A binding id derived from anything that moves between

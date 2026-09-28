@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import type { AgentTurnOutcome, FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { type PairedTranscriptTypography } from "@/ui/utils"
 import type { SessionStatus } from "@/server"
 import type { MessageNavMessage, MessageNavPreview, TranscriptConversation } from "@/transcript"
@@ -55,6 +55,11 @@ export type TimelineTextKey =
   | "ui.sessionTurn.diffs.showAll"
   | "ui.sessionTurn.diffs.showLess"
   | "ui.sessionTurn.status.thinking"
+  | `turnRecovery.${FirstTurnErrorClass}.title`
+  | `turnRecovery.${FirstTurnErrorClass}.description`
+  | `turnRecovery.${Exclude<FirstTurnErrorClass, "usage_limit">}.action`
+  | "turnRecovery.account.stored"
+  | "turnRecovery.account.machine"
 
 export type TimelineTranslate = (key: TimelineTextKey, params?: Record<string, string | number>) => string
 

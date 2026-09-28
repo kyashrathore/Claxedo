@@ -383,7 +383,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       // those details when finalizing that same failure, not an older error.
       const error = info.error?.data.message === errorMessage
         ? info.error
-        : { name: "UnknownError", data: firstTurnErrorData(errorMessage) }
+        : { name: "UnknownError", data: firstTurnErrorData(errorMessage, input.outcome) }
       const terminal = sessionError(errorMessage, input.sessionId)
       terminal.properties.error = error
       events.push(

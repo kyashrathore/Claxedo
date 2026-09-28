@@ -40,6 +40,7 @@ function recordingDriver(channel: HarnessInstructionChannel, deliveries: Deliver
     instructionChannel: channel,
     interactions: { permissions: false, questions: false },
     applyConfig() {},
+    turnAccount: () => undefined,
     createAgentSession: async (input) => {
       deliveries.creates.push(input.system)
       return { id: "thread-1" }

@@ -5,6 +5,7 @@ import {
   USAGE_WINDOW_NAMES,
 } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
+import type { FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
   AgentRuntimeEvent,
@@ -70,6 +71,12 @@ export type ClaudeSdkAdapterState = {
   streamingRequestByOwner?: Record<string, string>
   /** The request the main thread streamed last, which the context gauge reads. */
   lastMainRequest?: string
+  /**
+   * The last `rate_limit_event` rejected a plan window (five-hour, seven-day
+   * and the like). The CLI reports a refusal inside that window with the same
+   * `rate_limit` code as a momentary 429, and this is what tells them apart.
+   */
+  planWindowRejected?: boolean
 }
 
 /**
@@ -959,6 +966,11 @@ function rateLimitResetMs(value: unknown) {
   return Math.round(reset < 1e12 ? reset * 1000 : reset)
 }
 
+function assistantErrorClass(code: string, state: ClaudeSdkAdapterState): FirstTurnErrorClass | undefined {
+  if (code !== "rate_limit") return undefined
+  return state.planWindowRejected ? "usage_limit" : "rate_limit"
+}
+
 function claudeRateLimitEvent(info: Record<string, unknown>) {
   const utilization = asFiniteNumber(info.utilization)
   const limitId = text(info.rateLimitType)
@@ -1295,9 +1307,14 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
         case "assistant": {
           if (message.error) {
             const explanation = assistantSnapshotText(rawMessage)
+            const errorClass = assistantErrorClass(message.error, state)
             return [
               { type: "session-status", status: "error" },
-              { type: "error", error: [`Claude assistant message failed: ${message.error}`, explanation].filter(Boolean).join("\n") },
+              {
+                type: "error",
+                error: [`Claude assistant message failed: ${message.error}`, explanation].filter(Boolean).join("\n"),
+                ...(errorClass ? { errorClass } : {}),
+              },
             ] satisfies AgentRuntimeEvent[]
           }
           const completeTools = assistantToolBlocks(rawMessage)
@@ -1394,8 +1411,10 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               event,
             })
 
-        case "rate_limit_event":
-          return [claudeRateLimitEvent(asRecord(message.rate_limit_info) ?? {})]
+        case "rate_limit_event": {
+          const event = claudeRateLimitEvent(asRecord(message.rate_limit_info) ?? {})
+          return { state: { ...state, planWindowRejected: event.status === "limited" }, events: [event] }
+        }
 
         case "prompt_suggestion":
           return unmappedSdkEvent({

@@ -17,7 +17,7 @@ import type {
 } from "../../adapter-contract"
 import type { AgentHarnessAdapterHealth } from "../../harness-health"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
+import type { NativeSdkHarnessId, TurnAccount } from "@claxedo/agent-runtime-contract"
 import type { AgentProcessObserver } from "../../process-observer"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { AgentSessionBinding } from "./agent-session-index"
@@ -186,6 +186,8 @@ export type SdkRuntimeDriver = {
   createAgentSession(input: { directory: string; title?: string; model: string; system?: string; sessionId: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>
   createRuntime(threadId: string, todos?: AgentTodo[]): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
+  /** The account a turn on `input` launches on, read before the turn starts. */
+  turnAccount(input: PromptInput): TurnAccount | undefined
   deleteAgentSession?(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
   /**
    * Run the title side turn and return the model's raw reply. Absent on a

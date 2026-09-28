@@ -16,7 +16,7 @@ The timeline reaches the app through one prop, `host`, which `createTimelineHost
 - `recordViewport(size)`: the scroller's measured size, which the session stores use to size the next transcript page read.
 - `syncSession?`: reads a session's conversation; used for a subagent's parent when the child has no task description and the parent's transcript is not loaded.
 - `settings`: four accessors (reasoning summaries, shell and edit tool rows expanded, turn tokens).
-- `transcriptTypography`; `t: TimelineTranslate`, typed on the 38 keys the timeline uses (`TimelineTextKey`).
+- `transcriptTypography`; `t: TimelineTranslate`, typed on the 63 keys the timeline uses (`TimelineTextKey`).
 - `platform`: `openLink`, and `renderMermaid` from `desktopBridge()` (`@/lib/desktop-bridge`), present only on desktop.
 - `openFocus(focus)`: opens a `TimelineFocus` (file, browser, plan or subagent) as a workspace-panel tab; a subagent tab records the panel's session as its parent.
 - `openSessionInPane(sessionId, label?)`: opens a subagent in the pane at phone width.
@@ -132,12 +132,14 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 ## Why failed turns read this way
 
 - A failed turn's wire error carries more than `data.message`: the engine's `APIError` also has `statusCode`, `responseBody` and `responseHeaders`. The row's text is the message, with the relay prefix stripped and a JSON error body unwrapped to its type and message, followed by the response body when it differs; it sits in a disclosure, collapsed by default, with a copy button once open. `responseBody` exists on only some members of the wire error union, so it is read structurally.
-- The row's summary is composed when the row is built, not at mount, so the primary line never paints raw provider bytes first; the card derives it only when a caller has none.
+- The row's summary is composed when the row is built, not at mount, so the primary line never paints raw provider bytes first; the card derives it only when a caller has none. The class copy (`turnRecovery.<class>.title`, `.description`, `.action` in the timeline's text keys) is translated at mount and is used only when the error gave nothing more specific.
 - With an HTTP status, the summary is a status sentence naming the dispatched provider ("Anthropic rejected the credential (401). Check your API key in Settings, then try again.") for every class: a real status says something more specific than the class copy. Without one, the class keeps its repair sentence, a usage limit reads the provider's limit and reset time (`providerUsageLimitDetail`), and `unknown` ends at a sentence that still says what is known. A status-less error does not prove the provider was unreachable.
 - Relays (the opencode gateway among them) prefix the provider's message with `Error from provider (<label>): `, where the label is the relay's upstream account, not a provider. The prefix is stripped, and the summary names the provider the turn was dispatched to, falling back to the relay label only when the turn has no provider id.
 - An operator ACP connection dispatches with `acp:<slug>` as its provider id; its label comes from `harnessDisplayLabel` (`@/lib/harness-catalog`).
 - The recovery class is attached to every failed turn, not only the first: it is position-independent, and the recovery line mounts on its presence. A turn-admission conflict reads "Message wasn't sent" instead.
 - `turn-recovery.ts` mirrors the server classifier `classifyFirstTurnError` (`packages/agent-sdk-runtime/src/first-turn-error.ts`), which is the source of truth and is not browser-safe. The server stamps `error.data.firstTurnErrorClass`, which wins; the regexes are a fallback for class-less errors and must stay in lockstep with that file. The credential broker's codes come from `@claxedo/agent-runtime-contract` on both sides and are read before the regexes: without them a 403 naming a route the binding does not allow reads as `credential` and asks the user to reconnect a working account.
+- `rate_limit` is a temporary refusal (a 429, "try again later") that the same account clears by waiting, so its line offers Resend. `usage_limit` is an exhausted plan or quota window, which a resend on the same account hits again until it resets, so it asks for another model or account, with no button. Harness adapters name either from the harness's own structured error where it has one; the message is read only without it.
+- A failed turn names the account it ran on (`error.data.account`, which the runtime reads off the binding the turn launched on): a stored credential by its label, or this computer's login when none was bound. The runtime records it only for the native harnesses; a failure without one shows no account line.
 - Recovery copy is position-independent (never "first turn") and says "agent", never "harness", "ACP" or "adapter".
 
 ## Why the smaller pieces work this way
