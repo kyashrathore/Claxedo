@@ -23,3 +23,25 @@ export async function ensureFrontWindow(page: BenchmarkPage, pid: number): Promi
   }
   throw new Error("Claxedo window is not visible and focused; keep the app frontmost during the run")
 }
+
+/**
+ * The application in front, named when a launch or switch fails: a covered or
+ * hidden window stops the renderer's frames, so the failure itself cannot say
+ * what covered it.
+ */
+export async function frontmostApplication(): Promise<string> {
+  const child = Bun.spawn({
+    cmd: [
+      "osascript",
+      "-e",
+      'tell application "System Events" to set frontApp to first application process whose frontmost is true',
+      "-e",
+      'tell application "System Events" to return (name of frontApp) & " (pid " & (unix id of frontApp) & ")"',
+    ],
+    stdout: "pipe",
+    stderr: "ignore",
+  })
+  const answered = await Promise.race([new Response(child.stdout).text(), Bun.sleep(5_000).then(() => undefined)])
+  if (answered === undefined) child.kill()
+  return answered?.trim() || "unknown"
+}

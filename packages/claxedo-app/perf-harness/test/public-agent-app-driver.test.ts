@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
+  annotateFailure,
   createClaxedoPublicDriver,
   PRIVATE_CORPUS_SCENARIO_IDS,
   PUBLIC_SCENARIO_IDS,
@@ -11,6 +12,7 @@ import {
   writePreparedCache,
 } from "../src/public-agent-app-driver"
 import { frameLogMismatch, resolvedSettle } from "./page-settle"
+import { SessionActivationError } from "../src/agent-browser-observer"
 
 const receipt = {
   endpoint: "correct-content-painted-and-input-ready" as const,
@@ -24,6 +26,7 @@ const receipt = {
 
 function harness(extraSessionIds: string[] = []) {
   const activations: string[] = []
+  const failures: Error[] = []
   const launches: Array<{ stateHandle: string; initialSessionId: string }> = []
   let clock = 10
   const target = (logicalSessionId: string, sessionId: string) => ({
@@ -65,6 +68,8 @@ function harness(extraSessionIds: string[] = []) {
     },
     activate: async (target) => {
       activations.push(target.logicalSessionId)
+      const failure = failures.shift()
+      if (failure) throw failure
       const start = clock
       clock += 2
       return {
@@ -75,7 +80,7 @@ function harness(extraSessionIds: string[] = []) {
     listedSessionIds: async () => listed.ids,
     shutdown: async () => ({ terminated: [], survivors: [], forced: [] }),
   })
-  return { driver, listed, activations, launches }
+  return { driver, listed, activations, launches, failures }
 }
 
 // Resolve the installed package so dependency drift cannot be hidden by a local
@@ -173,6 +178,40 @@ describe("Claxedo public driver", () => {
     await expect(driver.execute({ scenarioId: "session-switch-walk", case: { ...cases[0]!, caseId: "again" } })).rejects.toThrow(
       /does not match this process's visits/,
     )
+  })
+
+  test("a first visit whose settle failed after its click still counts as a visit", async () => {
+    const scenario = await readScenario("session-switch-walk")
+    const cases = expandCases(scenario, "smoke")
+    const ids = cases.flatMap((item) => ("destinationSessionId" in item ? [item.destinationSessionId] : []))
+    const firstVisit = cases[0]!
+    const destination = "destinationSessionId" in firstVisit ? firstVisit.destinationSessionId : ""
+    const returnVisit = cases.find((item) => item !== firstVisit && "destinationSessionId" in item && item.destinationSessionId === destination)!
+    const walk = async (clicked: boolean) => {
+      const { driver, failures, activations } = harness(ids)
+      await prepare(driver, "session-switch-walk", scenario)
+      await driver.launch({ scenarioId: "session-switch-walk", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+      failures.push(new SessionActivationError("window hidden", clicked))
+      await expect(driver.execute({ scenarioId: "session-switch-walk", case: firstVisit })).rejects.toThrow("window hidden")
+      return { driver, activations }
+    }
+    const clicked = await walk(true)
+    await clicked.driver.execute({ scenarioId: "session-switch-walk", case: returnVisit })
+    expect(clicked.activations.at(-1)).toBe(destination)
+    const notClicked = await walk(false)
+    await expect(notClicked.driver.execute({ scenarioId: "session-switch-walk", case: returnVisit })).rejects.toThrow(
+      /does not match this process's visits/,
+    )
+  })
+
+  test("a failure names the application in front and keeps whether the click went through", () => {
+    const switchFailure = annotateFailure(new SessionActivationError("No settle within 30000 ms (document hidden)", true), "Google Chrome (pid 42)")
+    expect(switchFailure).toBeInstanceOf(SessionActivationError)
+    expect((switchFailure as SessionActivationError).clicked).toBe(true)
+    expect(switchFailure.message).toBe("No settle within 30000 ms (document hidden); frontmost application: Google Chrome (pid 42)")
+    const launchFailure = annotateFailure(new Error("Packaged renderer CDP command timed out: Runtime.evaluate"), "Finder (pid 7)")
+    expect(launchFailure).not.toBeInstanceOf(SessionActivationError)
+    expect(launchFailure.message).toBe("Packaged renderer CDP command timed out: Runtime.evaluate; frontmost application: Finder (pid 7)")
   })
 
   test("measures application start from the requested exact state", async () => {

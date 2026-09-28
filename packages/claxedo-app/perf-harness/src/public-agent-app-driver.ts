@@ -12,8 +12,8 @@ import {
   type PageSettle,
   type PrepareParams,
 } from "agent-app-benchmark/driver-sdk"
-import { measureSessionActivation } from "./agent-browser-observer"
-import { ensureFrontWindow } from "./front-window"
+import { measureSessionActivation, SessionActivationError } from "./agent-browser-observer"
+import { ensureFrontWindow, frontmostApplication } from "./front-window"
 import { readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
 import { isRecord, numberField, textField } from "./json-fields"
@@ -208,7 +208,14 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
             throw new Error(`Claxedo lists ${destination.logicalSessionId} ${sourceRow < 0 ? "without" : "not directly below"} ${source.logicalSessionId}`)
           }
         }
-        const measured = await dependencies.activate(destination)
+        let measured: Activation
+        try {
+          measured = await dependencies.activate(destination)
+        } catch (error) {
+          // The click opened the session even though its settle failed, so a later return to it is a return.
+          if (error instanceof SessionActivationError && error.clicked) walkedSessions.add(destination.logicalSessionId)
+          throw error
+        }
         walkedSessions.add(destination.logicalSessionId)
         return activationExecution(benchmarkCase.caseId, measured)
       }
@@ -249,6 +256,14 @@ export function switchActivation(settle: PageSettle): Activation {
     },
     frameLog: frameLogOf(settle),
   }
+}
+
+/** A failure that also names the application in front, keeping whether a switch's click went through. */
+export function annotateFailure(error: unknown, frontmost: string): Error {
+  const message = `${error instanceof Error ? error.message : String(error)}; frontmost application: ${frontmost}`
+  return error instanceof SessionActivationError
+    ? new SessionActivationError(message, error.clicked, { cause: error })
+    : new Error(message, { cause: error })
 }
 
 function readinessReceipt(observedAt?: number): ReadinessReceipt {
@@ -416,15 +431,17 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
         return await startState(attempt, true)
       } catch (error) {
         await rm(attempt, { recursive: true, force: true })
-        throw error
+        throw annotateFailure(error, await frontmostApplication())
       }
     },
     activate: async (target, readinessTimeoutMs) => {
       if (!current) throw new Error("Claxedo renderer is not running")
-      await ensureFrontWindow(current.page, current.application.pid)
-      return switchActivation(
-        await measureSessionActivation(current.page, target, { readinessTimeoutMs }),
-      )
+      try {
+        await ensureFrontWindow(current.page, current.application.pid)
+        return switchActivation(await measureSessionActivation(current.page, target, { readinessTimeoutMs }))
+      } catch (error) {
+        throw annotateFailure(error, await frontmostApplication())
+      }
     },
     listedSessionIds: async () => {
       if (!current) throw new Error("Claxedo renderer is not running")

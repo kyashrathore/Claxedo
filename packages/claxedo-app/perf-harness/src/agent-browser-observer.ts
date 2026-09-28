@@ -70,6 +70,17 @@ export async function installAgentBrowserObserver(page: {
   await page.evaluate(installBrowserBenchmark);
 }
 
+/** A switch that failed, and whether its trusted click reached the session row before it did. */
+export class SessionActivationError extends Error {
+  constructor(
+    message: string,
+    readonly clicked: boolean,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
 /**
  * Opens `target` through its rail row with a trusted click, timed by the
  * benchmark's page clock from the click's pointerdown to the settle frame.
@@ -94,11 +105,21 @@ export async function measureSessionActivation(
   });
   // The clock is sent before the click: the click's own renderer evaluations
   // queue behind it, so the clock is armed before the pointerdown.
-  const settle = page.evaluate(expression).catch((error: unknown) => {
-    throw new Error(`Claxedo session ${target.sessionId} did not settle: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  const settle = page.evaluate(expression);
+  let clicked = false;
+  const click = clickVisibleSessionActivation(page, target.sessionId).then(() => {
+    clicked = true;
   });
-  const [settled] = await Promise.all([settle, clickVisibleSessionActivation(page, target.sessionId)]);
-  return readPageSettle(settled);
+  try {
+    const [settled] = await Promise.all([settle, click]);
+    return readPageSettle(settled);
+  } catch (error) {
+    throw new SessionActivationError(
+      `Claxedo session ${target.sessionId} did not settle: ${error instanceof Error ? error.message : String(error)}`,
+      clicked,
+      { cause: error },
+    );
+  }
 }
 
 /** The page clock's answer, read off JSON; it throws rather than defaulting because every field is a published measurement. */
