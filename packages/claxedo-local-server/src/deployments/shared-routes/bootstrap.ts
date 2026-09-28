@@ -134,12 +134,12 @@ function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<
     const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
     if (!workspaceId) continue
     // A control-plane row is ADDRESSED by its id; the serving host's path is
-    // placement metadata. The client resolves a `/w/<id>` route through
-    // `workspaceRouteIdentity` and registers its panes under what this says,
-    // while both event lanes publish under `workspace:<id>`: a filesystem path
-    // here would put every live frame of an attached turn on a scope nothing
-    // publishes to. Same shape the hosted control plane serves
-    // (`signedShellProjects`).
+    // placement metadata. The app routes a row this machine serves by the
+    // `directory` given here (`placementRecord` in the app's
+    // server/wire/placements.ts), and both event lanes publish under
+    // `workspace:<id>`: a filesystem path here would put every live frame of an
+    // attached turn on a scope nothing publishes to. Same shape the hosted
+    // control plane serves (`signedShellProjects`).
     const directory = `workspace:${workspaceId}`
     const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
     const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
