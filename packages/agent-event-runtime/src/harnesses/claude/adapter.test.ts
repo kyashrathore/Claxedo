@@ -1899,6 +1899,62 @@ describe("claudeSdkAdapter rate limits", () => {
     expect(events.find((event) => event.type === "error")).toMatchObject({ errorClass: "rate_limit" })
   })
 
+  test("a refusal inside a recorded rejected weekly window names the window and when it resets", () => {
+    const agent = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter(),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    })
+    agent.ingest({
+      source: "claude.sdk",
+      method: "claude/rate_limit_event",
+      payload: {
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "rejected",
+          resetsAt: 1790391600,
+          rateLimitType: "seven_day",
+          overageStatus: "rejected",
+          overageDisabledReason: "org_level_disabled",
+          isUsingOverage: false,
+          unifiedWindows: { five_hour: { utilization: 0.1, resetsAt: 1790129400 }, seven_day: { utilization: 1, resetsAt: 1790391600 } },
+        },
+        uuid: "b33b8089-cf07-417f-8f1c-cb639d495f83",
+        session_id: "8f4a7cac-7236-426d-befc-31ea7d872d95",
+      },
+    })
+    const refusal = agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "assistant",
+        message: {
+          id: "62753f45-5dbd-4494-952e-99c0e5408885",
+          model: "<synthetic>",
+          role: "assistant",
+          stop_reason: "stop_sequence",
+          type: "message",
+          content: [{ type: "text", text: "You've hit your weekly limit · resets Sep 26 at 8:30am (Asia/Calcutta)" }],
+        },
+        parent_tool_use_id: null,
+        session_id: "8f4a7cac-7236-426d-befc-31ea7d872d95",
+        uuid: "27cdc408-be34-43d1-9ffe-d435254e8d41",
+        error: "rate_limit",
+        is_api_error_message: true,
+      },
+    }).events.find((event) => event.type === "error")
+
+    expect(refusal).toMatchObject({
+      type: "error",
+      error: [
+        `You've reached your Claude weekly limit. It will reset at ${new Date(1_790_391_600_000).toLocaleString()}.`,
+        "You've hit your weekly limit · resets Sep 26 at 8:30am (Asia/Calcutta)",
+      ].join("\n"),
+      errorClass: "usage_limit",
+    })
+  })
+
   test("an assistant failure that is no limit carries no class of its own", () => {
     const [, error] = createAgentEventRuntime({
       harness: "claude-sdk",

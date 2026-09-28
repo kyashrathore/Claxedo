@@ -15,6 +15,7 @@ import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, optionLabels, own, pathFields
 import type { ServerNotification, ServerRequest } from "./protocol"
 import type { FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { codexMcpApproval } from "./mcp-elicitation"
+import { formatRateLimitReset } from "../rate-limit-reset"
 
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
@@ -750,20 +751,6 @@ function rateLimitErrorMessage(event: Extract<AgentRuntimeEvent, { type: "rate-l
     return `You've reached your ${event.limitName} limit.${reset}`
   }
   return `You've reached your Codex usage limit.${reset}`
-}
-
-function formatRateLimitReset(resetsAt?: number | null, windowDurationMins?: number | null) {
-  if (typeof resetsAt === "number" && resetsAt > 1_000_000_000) {
-    const millis = resetsAt > 1_000_000_000_000 ? resetsAt : resetsAt * 1000
-    return ` It will reset at ${new Date(millis).toLocaleString()}.`
-  }
-  if (typeof windowDurationMins === "number" && windowDurationMins > 0) {
-    const hours = Math.round(windowDurationMins / 60)
-    if (hours >= 2) return ` It will reset in about ${hours} hours.`
-    if (hours === 1) return " It will reset in about 1 hour."
-    return ` It will reset in ${windowDurationMins} minutes.`
-  }
-  return ""
 }
 
 function codexErrorInfoMessage(info: unknown) {
