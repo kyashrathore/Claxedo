@@ -1,18 +1,24 @@
-import { For, Show, type JSX } from "solid-js"
+import { createUniqueId, For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
+import { harnessDisplayLabel, harnessIcon } from "@/lib/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
-import { ProviderIcon } from "@/ui"
+import { ClaxedoIcon, ProviderIcon } from "@/ui"
 import { usageDictionary, type UsageKey } from "../i18n"
 import { usedPercent, type QuotaAccount, type QuotaWindow } from "../model"
-import "./usage.css"
+import { windowRisk } from "../quota-groups"
+import "./limits.css"
 
 const WINDOW_KEY: Readonly<Record<string, UsageKey>> = {
   session: "usage.window.session",
   weekly: "usage.window.weekly",
   weekly_opus: "usage.window.weeklyOpus",
+  credits: "usage.window.credits",
+  spark_session: "usage.window.sparkSession",
+  spark_weekly: "usage.window.sparkWeekly",
+  plan: "usage.window.plan",
+  auto: "usage.window.auto",
+  api: "usage.window.api",
 }
-
-const HARNESS_ICON: Readonly<Record<string, string>> = { claude: "anthropic", codex: "openai", cursor: "cursor" }
 
 export function useWindowName(): (window: QuotaWindow) => string {
   const t = useTranslator(usageDictionary)
@@ -22,56 +28,70 @@ export function useWindowName(): (window: QuotaWindow) => string {
   }
 }
 
-export function QuotaWindowMeter(props: { readonly account: string; readonly window: QuotaWindow }): JSX.Element {
+export function quotaAccountTitle(account: QuotaAccount): string {
+  return account.otherAgent ? (account.label ?? harnessDisplayLabel(account.harness)) : harnessDisplayLabel(account.harness)
+}
+
+function accountDetail(account: QuotaAccount): string | undefined {
+  return account.otherAgent ? undefined : account.label
+}
+
+function QuotaWindowMeter(props: { readonly account: string; readonly window: QuotaWindow }): JSX.Element {
   const t = useTranslator(usageDictionary)
   const i18n = useI18n()
   const windowName = useWindowName()
   const percent = () => usedPercent(props.window)
+  const risk = () => windowRisk(props.window)
   return (
-    <div class="usage-meter">
-      <div class="usage-meter-label">
-        <span>{windowName(props.window)}</span>
-        <span>{t("usage.quota.windowLeft", { percent: 100 - percent() })}</span>
-      </div>
+    <div class="usage-window" data-risk={risk()}>
+      <span class="usage-window-name">{windowName(props.window)}</span>
       <progress
-        class="usage-meter-bar"
+        class="usage-window-bar"
         max={100}
         value={percent()}
         aria-label={t("usage.quota.windowUsed", { account: props.account, window: windowName(props.window), percent: percent() })}
       />
-      <Show when={props.window.resetsAt}>
-        {(resetsAt) => <span class="usage-meter-reset">{t("usage.quota.windowResets", { reset: formatRelativeTime(resetsAt(), i18n.intlTag()) })}</span>}
-      </Show>
+      <span class="usage-window-value">{risk() === "reached" ? t("usage.quota.windowReached") : t("usage.quota.windowPercent", { percent: percent() })}</span>
+      <span class="usage-window-reset">
+        <Show when={props.window.resetsAt}>{(resetsAt) => t("usage.quota.windowResets", { reset: formatRelativeTime(resetsAt(), i18n.intlTag()) })}</Show>
+      </span>
     </div>
   )
 }
 
-function quotaAccountLabel(account: QuotaAccount): string {
-  return account.label ?? account.harness
-}
-
-export function QuotaWindows(props: { readonly accounts: readonly QuotaAccount[] }): JSX.Element {
+export function QuotaAccountCard(props: { readonly account: QuotaAccount }): JSX.Element {
   const t = useTranslator(usageDictionary)
+  const i18n = useI18n()
+  const titleId = createUniqueId()
+  const spoken = () => [quotaAccountTitle(props.account), accountDetail(props.account)].filter(Boolean).join(" ")
   return (
-    <section class="usage-quota" aria-label={t("usage.quota.title")}>
-      <Show when={props.accounts.length > 0} fallback={<p class="usage-note">{t("usage.quota.empty")}</p>}>
-        <For each={props.accounts}>
-          {(account) => (
-            <article class="usage-card" aria-label={quotaAccountLabel(account)}>
-              <header class="usage-card-head">
-                <ProviderIcon id={HARNESS_ICON[account.harness] ?? account.harness} class="size-4 shrink-0 icon-strong-base" />
-                <span class="usage-card-title">{quotaAccountLabel(account)}</span>
-                <Show when={account.plan}>{(plan) => <span class="usage-card-meta">{plan()}</span>}</Show>
-                <Show when={account.inUse}>
-                  <span class="usage-card-badge">{t("usage.quota.inUse")}</span>
-                </Show>
-              </header>
-              <Show when={account.usageError}>{(error) => <p class="usage-note" data-tone="danger">{error()}</p>}</Show>
-              <For each={account.windows}>{(window) => <QuotaWindowMeter account={quotaAccountLabel(account)} window={window} />}</For>
-            </article>
-          )}
-        </For>
+    <article class="usage-account" aria-labelledby={titleId}>
+      <header class="usage-account-head">
+        <ProviderIcon id={harnessIcon(props.account.harness)} class="usage-account-icon" />
+        <div id={titleId} class="usage-account-title">
+          <span class="usage-account-name">
+            {quotaAccountTitle(props.account)}
+            <Show when={props.account.plan}>{(plan) => <span class="usage-account-plan">{plan()}</span>}</Show>
+          </span>
+          <Show when={accountDetail(props.account)}>{(detail) => <span class="usage-account-detail">{detail()}</span>}</Show>
+        </div>
+        <Show when={props.account.usageAt}>
+          {(at) => <span class="usage-account-updated">{t("usage.quota.updated", { time: formatRelativeTime(at(), i18n.intlTag()) })}</span>}
+        </Show>
+      </header>
+      <Show when={props.account.usageError}>
+        {(error) => (
+          <p class="usage-account-note">
+            <ClaxedoIcon name="circle-alert" size="small" class="usage-account-note-icon" />
+            <span>{error()}</span>
+          </p>
+        )}
       </Show>
-    </section>
+      <Show when={props.account.windows.length > 0}>
+        <div class="usage-windows">
+          <For each={props.account.windows}>{(window) => <QuotaWindowMeter account={spoken()} window={window} />}</For>
+        </div>
+      </Show>
+    </article>
   )
 }

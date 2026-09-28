@@ -1,198 +1,49 @@
 .usage {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   min-width: 0;
 }
 
-.usage-toolbar {
+.usage-header,
+.usage-controls {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-}
-
-.usage-note {
-  font-size: var(--font-size-small);
-  color: var(--v2-text-text-muted);
-}
-
-.usage-note[data-tone="danger"],
-.usage-failure {
-  color: var(--v2-state-fg-danger);
-}
-
-.usage-failure {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.usage-quota {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-  gap: 12px;
-}
-
-.usage-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: 8px;
-  background: var(--v2-background-bg-layer-01);
-  min-width: 0;
-}
-
-.usage-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.usage-card-title {
-  font-weight: var(--font-weight-medium);
-  overflow-wrap: anywhere;
-}
-
-.usage-card-meta {
-  font-size: var(--font-size-small);
-  color: var(--v2-text-text-muted);
-}
-
-.usage-card-badge {
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: var(--font-size-small);
-  background: var(--v2-state-bg-success);
-  color: var(--v2-state-fg-success);
-}
-
-.usage-meter {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.usage-meter-label {
-  display: flex;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+}
+
+.usage-controls {
+  flex-wrap: wrap;
+  margin-top: -8px;
+}
+
+.usage-status,
+.usage-empty,
+.usage-hint {
   font-size: var(--font-size-small);
-}
-
-.usage-meter-bar {
-  width: 100%;
-  height: 6px;
-  appearance: none;
-  border: none;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--v2-background-bg-layer-03);
-  accent-color: var(--v2-icon-icon-accent);
-}
-
-.usage-meter-bar::-webkit-progress-bar {
-  background: var(--v2-background-bg-layer-03);
-}
-
-.usage-meter-bar::-webkit-progress-value {
-  background: var(--v2-icon-icon-accent);
-}
-
-.usage-meter-bar::-moz-progress-bar {
-  background: var(--v2-icon-icon-accent);
-}
-
-.usage-meter-reset {
-  font-size: var(--font-size-small);
+  line-height: var(--line-height-18);
   color: var(--v2-text-text-muted);
+  text-wrap: pretty;
 }
 
-.usage-totals {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
+.usage-empty {
+  padding: 20px 16px;
+  text-align: center;
+  border: 1px dashed var(--v2-border-border-muted);
+  border-radius: var(--radius-lg);
 }
 
-.usage-total {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px;
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: 6px;
-}
-
-.usage-total dt {
-  font-size: var(--font-size-small);
+.usage-group-title {
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
   color: var(--v2-text-text-muted);
-}
-
-.usage-total dd {
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-table th,
-.usage-table td {
-  padding: 8px;
-  border-bottom: 1px solid var(--v2-border-border-muted);
-  text-align: right;
-}
-
-.usage-table th:first-child {
-  text-align: left;
-  font-weight: var(--font-weight-regular);
-  overflow-wrap: anywhere;
-}
-
-.usage-table thead th {
-  font-size: var(--font-size-small);
-  color: var(--v2-text-text-muted);
-}
-
-.usage-paging {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 @media (pointer: coarse) {
-  .usage-toolbar button {
-    min-height: 44px;
+  .usage-refresh {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
-}
-
-.usage-daily {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 96px;
-  margin: 0;
-  padding: 8px;
-  border: 1px solid var(--v2-border-border-muted);
-  border-radius: 8px;
-}
-
-.usage-daily-day {
-  display: flex;
-  flex: 1;
-  align-items: flex-end;
-  height: 100%;
-  min-width: 2px;
-}
-
-.usage-daily-day i {
-  width: 100%;
-  border-radius: 2px 2px 0 0;
-  background: var(--v2-icon-icon-accent);
 }
