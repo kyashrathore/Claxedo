@@ -69,6 +69,13 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
     const dialog = app.getByRole("dialog", { name: "Edit project" })
     const field = dialog.getByRole("textbox", { name: "Name", exact: true })
     await expect(field).toHaveValue(from)
+    await expect(dialog.getByRole("button", { name: "Save" })).toBeInViewport({ ratio: 1 })
+    const lastField = dialog.getByRole("button", { name: "+ Add variable" })
+    await field.hover()
+    await expect(async () => {
+      await app.mouse.wheel(0, 400)
+      await expect(lastField).toBeInViewport({ ratio: 1, timeout: 1000 })
+    }).toPass()
     await field.fill(to)
     await dialog.getByRole("button", { name: "Save" }).click()
     await expect(dialog).toHaveCount(0)
