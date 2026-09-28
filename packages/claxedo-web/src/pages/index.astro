@@ -9,7 +9,7 @@ import { home, site, type HomeLine } from "../content/site"
 
 for (const id of [...home.benchmark.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
 
-const holdMs = { speed: 5200, prompt: 3600, team: 3600, place: 3600, tools: 3600, terminal: 3800 } as const
+const holdMs = { speed: 5200, prompt: 5400, team: 3600, place: 3600, tools: 3600, terminal: 3800 } as const
 const split = (line: HomeLine) => {
   const at = line.text.indexOf(line.loud)
   return [

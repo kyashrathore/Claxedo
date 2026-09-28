@@ -8,6 +8,7 @@ export type Claim = {
   status: ClaimStatus
   verifiedAt?: string
   reason?: string
+  note?: string
 }
 
 export const claims = [
@@ -194,6 +195,7 @@ export const claims = [
       "docs/reports/2026-09-27-perf-goal-final.md",
       "https://github.com/kyashrathore/agent-app-benchmark/blob/964887d536e26802f0a88bb8ebf8c5778a4c9a8c/README.md#latest-results",
     ],
+    note: "Owner ruling 2026-09-29: \"beats\" means wins on medians; idle CPU against T3 Code (0.0% vs 1.6%) is a median win that the benchmark marks not statistically significant.",
     status: "verified",
     verifiedAt: "2026-09-28",
   },
