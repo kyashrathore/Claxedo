@@ -88,7 +88,7 @@ export class SessionAttachments {
    */
   async for(sessionId: string, directory?: string, generation?: object, authority?: ConnectionSecretAuthority): Promise<AttachedSession> {
     const executing = generation ? this.input.executing(sessionId, generation) : undefined
-    if (executing) return executing
+    if (executing) return this.current(sessionId, executing)
     return await this.attaching.run(sessionId, async () => this.peek(sessionId) ?? await this.attach(sessionId, directory, authority))
   }
 

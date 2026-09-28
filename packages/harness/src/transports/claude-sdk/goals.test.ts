@@ -24,6 +24,9 @@ function stream(messages: AsyncIterable<SDKMessage>): Query {
 
 const admitted: TurnRef = { turnId: "goal-turn", assistantMessageId: "goal-assistant" }
 
+const ACTIVE_GOAL = { type: "active_goal", session_id: "up1", uuid: "g1", value: { condition: "Ship", iterations: 1,
+  set_at: 1_700_000_000, tokens_at_start: 0 } } as unknown as SDKMessage
+
 function broker(initial: "active" | "absent" = "absent") {
   let goal: { sessionId: string; objective: string; status: "active" | "paused" | "blocked"; createdAt: number; updatedAt: number; lastReason?: string } | null =
     initial === "active" ? { sessionId: "s1", objective: "Ship", status: "active", createdAt: 1, updatedAt: 1 } : null
@@ -41,27 +44,44 @@ function broker(initial: "active" | "absent" = "absent") {
   return { value, published, settled: () => settled }
 }
 
-test("a native Goal runs under the admitted turn's identity", async () => {
+test("a native Goal starts under the admitted turn's identity and answers with the Goal Claude reported", async () => {
   const state = broker()
   const specs: Parameters<ClaudeQueryLauncher["launch"]>[0][] = []
+  let finish!: () => void
+  const finished = new Promise<void>((resolve) => { finish = resolve })
   const launcher = { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => {
     specs.push(spec)
     return stream({ async *[Symbol.asyncIterator]() {
+      yield ACTIVE_GOAL
+      await finished
       yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
     } })
   } } as unknown as ClaudeQueryLauncher
   const goals = new ClaudeGoals(launcher)
-  expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
+  const started = await goals.start(entry(), state.value, "Ship")
+  expect(state.published).toHaveLength(1)
+  expect(started).toEqual({ ok: true, goal: state.value.goal.read() })
+  expect(started.ok && started.goal).toMatchObject({ objective: "Ship", status: "active" })
   expect(goals.turnId("s1")).toBe("goal-turn")
+  finish()
   await state.settled()
   expect(specs[0]).toMatchObject({ turnId: "goal-turn", assistantMessageId: "goal-assistant" })
+})
+
+test("a native Goal whose turn ends before Claude reports it fails its start", async () => {
+  const state = broker()
+  const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {
+    yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
+  } }) } as unknown as ClaudeQueryLauncher
+  const goals = new ClaudeGoals(launcher)
+  expect(await goals.start(entry(), state.value, "Ship")).toEqual({ ok: false, status: "failed", message: "Claude ended before reporting the Goal" })
+  expect(state.published).toEqual([])
 })
 
 test("a dead native Goal query settles failed and blocks the active Goal", async () => {
   const state = broker()
   const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {
-    yield { type: "active_goal", session_id: "up1", uuid: "g1", value: { condition: "Ship", iterations: 1,
-      set_at: 1_700_000_000, tokens_at_start: 0 } } as unknown as SDKMessage
+    yield ACTIVE_GOAL
     throw new Error("query died")
   } }) } as unknown as ClaudeQueryLauncher
   const goals = new ClaudeGoals(launcher)
@@ -96,7 +116,8 @@ test("stop drains the admitted Goal turn before clearing it", async () => {
       } })
     }
     return stream({ async *[Symbol.asyncIterator]() {
-      await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+      yield ACTIVE_GOAL
+      if (!spec.abort.signal.aborted) await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
       order.push("goal drained")
     } })
   } } as unknown as ClaudeQueryLauncher
@@ -113,6 +134,7 @@ test("goal cancellation returns a failed settlement when owned retirement fails"
   const launcher = { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => {
     spec.processes.add({ retire: async () => { throw new Error("retirement failed") } } as unknown as import("./process").ClaudeProcess)
     return stream({ async *[Symbol.asyncIterator]() {
+      yield ACTIVE_GOAL
       if (!spec.abort.signal.aborted) await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
     } })
   } } as unknown as ClaudeQueryLauncher
@@ -125,6 +147,6 @@ test("a Goal stream that ends without a result fails with the transport's protoc
   const state = broker()
   const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {} }) } as unknown as ClaudeQueryLauncher
   const goals = new ClaudeGoals(launcher)
-  expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
+  expect(await goals.start(entry(), state.value, "Ship")).toEqual({ ok: false, status: "failed", message: "Claude SDK stream ended without a result" })
   expect(await state.settled()).toEqual({ state: "failed", error: "Claude SDK stream ended without a result" })
 })

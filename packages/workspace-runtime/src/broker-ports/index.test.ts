@@ -394,6 +394,21 @@ describe("store broker ports", () => {
     if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
   })
 
+  test("a provider turn on a session that never picked an agent or model runs the defaults a prompted turn runs", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")?.leaseId
+    if (!lease) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    store.updateSessionConfig("s1", { agent: null, model: null })
+    const admitted = await ports.admitProviderTurn("s1", { reason: "goal" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    if (!admitted.admitted) throw new Error("Provider turn was not admitted")
+    expect(await admitted.settled).toEqual({ state: "completed" })
+    expect(store.getMessages("s1").at(-1)?.info).toMatchObject({ agent: "build", providerID: "claude", modelID: "default" })
+  })
+
   test("a provider turn settles from its own terminal event, and one exhausted without it fails", async () => {
     const { store, ports } = setup()
     const lease = store.readTurnAuthority("s1")?.leaseId

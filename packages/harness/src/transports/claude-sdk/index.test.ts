@@ -109,13 +109,13 @@ test("Claude session config has one owner, the runtime, and the transport keeps 
   } finally { await value.close(session) }
 })
 
-test("goal cancellation reports terminal cleanup once admission settles cancelled or completed", async () => {
+test("goal cancellation reports terminal execution and unproven cleanup once admission settles cancelled or completed", async () => {
   for (const state of ["cancelled", "completed"] as const) {
     const value = transport({ async *[Symbol.asyncIterator]() {} })
     const session = await value.start(input, sessionBroker)
     Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state }) } })
     expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
-      .toEqual({ execution: "terminal", cleanup: "owned" })
+      .toEqual({ execution: "terminal", cleanup: "unknown" })
   }
 })
 
@@ -130,6 +130,23 @@ test("a stop during Claude turn startup aborts it before launch and says nothing
       .toEqual({ execution: "terminal", cleanup: "verified_clear" })
     expect(await first).toEqual({ done: true, value: undefined })
     expect(specs).toEqual([])
+  } finally { await value.dispose() }
+})
+
+test("a stop of a launched Claude turn retires its process and claims no process it still owns", async () => {
+  let launched!: () => void
+  const running = new Promise<void>((resolve) => { launched = resolve })
+  const value = transport({ async *[Symbol.asyncIterator]() {
+    launched()
+    await new Promise(() => {})
+  } })
+  const session = await value.start(input, sessionBroker)
+  try {
+    const stream = value.send(session, turn, { signal: new AbortController().signal } as TurnBroker)[Symbol.asyncIterator]()
+    void stream.next()
+    await running
+    expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1_000, signal: new AbortController().signal }))
+      .toEqual({ execution: "unknown", cleanup: "unknown" })
   } finally { await value.dispose() }
 })
 

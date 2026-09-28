@@ -22,18 +22,26 @@ export class ClaudeGoals {
     const { input } = entry
     if (this.running.has(input.sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
     const abort = new AbortController()
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) => this.run(entry, broker, turnBroker, turn, nativeGoalPrompt(objective), abort))
+    let accept!: (result: AgentGoalMutationResult) => void
+    const accepted = new Promise<AgentGoalMutationResult>((resolve) => { accept = resolve })
+    const reporting: SessionBroker = { ...broker, goal: { ...broker.goal, publish: async (goal) => {
+      await broker.goal.publish(goal)
+      if (goal) accept({ ok: true, goal })
+    } } }
+    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) =>
+      this.run(entry, reporting, turnBroker, turn, nativeGoalPrompt(objective), abort))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
     const running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled }
     this.running.set(input.sessionId, running)
     void admitted.settled.then(async (outcome) => {
       if (this.running.get(input.sessionId) === running) this.running.delete(input.sessionId)
+      accept({ ok: false, status: "failed", message: outcome.state === "failed" ? outcome.error : "Claude ended before reporting the Goal" })
       const goal = broker.goal.read()
       if (goal?.status === "active" && outcome.state !== "completed") await broker.goal.publish({ ...goal,
         status: outcome.state === "cancelled" ? "paused" : "blocked", updatedAt: Date.now(),
         ...(outcome.state === "failed" ? { lastReason: outcome.error } : {}) })
     })
-    return { ok: true, goal: broker.goal.read() }
+    return await accepted
   }
 
   async stop(entry: ClaudeGoalEntry, broker: SessionBroker): Promise<AgentGoalMutationResult> {

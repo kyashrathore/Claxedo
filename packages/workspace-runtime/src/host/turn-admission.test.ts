@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import type { TurnInput } from "@claxedo/harness/contract"
+import type { SessionBroker, TurnInput } from "@claxedo/harness/contract"
 import {
   RECOVERY_TEST_CALLER,
+  cancelRuntimeTurn,
   cancelTurnRequest,
   controlledTurn,
   createHostFixture,
   promptText,
   sessionCreate,
+  submittedOperation,
   until,
   type TurnControl,
   tempStoreRoot,
@@ -122,6 +124,57 @@ test("a steer suspended in harness resolution cannot attach to a replacement tur
   expect(steered).toEqual([])
   expect(turns).toEqual(["first", "replacement"])
   controls[1].finish()
+  await dispose()
+})
+
+test("a steer and a stop reach the running turn under the binding it rebound to", async () => {
+  const control = controlledTurn("ses_busy")
+  let sessions!: SessionBroker
+  const addressed: string[] = []
+  const transport = new FakeTransport({
+    beforeStart: async (_input, broker) => { sessions = broker },
+    turn: () => (async function* () {
+      await sessions.rebind("upstream-reported-by-first-message")
+      yield* control.events
+    })(),
+    steer: async (session) => {
+      addressed.push(`steer ${session.binding.upstreamSessionId}`)
+      return { ok: true as const }
+    },
+    cancel: async ({ session }) => {
+      addressed.push(`cancel ${session.binding.upstreamSessionId}`)
+      control.finish()
+      return { execution: "terminal", cleanup: "verified_clear" }
+    },
+  })
+  const { runtime, sessionId, store, dispose } = await session(transport)
+  const origin = sessionCreate().origin
+  await runtime.turns.start({ sessionId, messageId: "first", text: "first", origin })
+  await until(() => store.getExecutionBinding(sessionId)?.upstreamSessionId === "upstream-reported-by-first-message", "rebind")
+  expect((await runtime.turns.start({ sessionId, messageId: "steer", text: "S", delivery: "steer", origin })).steering).toEqual({ ok: true })
+  submittedOperation(await cancelRuntimeTurn(runtime, sessionId))
+  expect(addressed).toEqual(["steer upstream-reported-by-first-message", "cancel upstream-reported-by-first-message"])
+  await dispose()
+})
+
+test("a steer the harness never answers is unknown once its turn ends", async () => {
+  const control = controlledTurn("ses_busy")
+  let reached!: () => void
+  const steering = new Promise<void>((resolve) => { reached = resolve })
+  const transport = new FakeTransport({
+    turn: () => control.events,
+    steer: () => {
+      reached()
+      return new Promise(() => {})
+    },
+  })
+  const { runtime, sessionId, dispose } = await session(transport)
+  const origin = sessionCreate().origin
+  await runtime.turns.start({ sessionId, messageId: "first", text: "first", origin })
+  const steered = runtime.turns.start({ sessionId, messageId: "steer", text: "S", delivery: "steer", origin })
+  await steering
+  control.finish()
+  expect((await steered).steering).toEqual({ ok: false, status: "unknown", message: "The turn ended before the harness answered the steer" })
   await dispose()
 })
 

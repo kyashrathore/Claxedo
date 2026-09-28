@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, TurnRef } from "@claxedo/harness/contract"
+import { resolveSessionModel } from "@claxedo/agent-sdk-runtime"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "../host/turn-outcome"
+import { sessionTurnAgent } from "../host/turn-record"
 import type { RuntimeStore } from "../store"
 import type { BrokerSessionEvents } from "./session-events"
 import type { BrokerEventDelivery } from "./delivery"
@@ -47,7 +49,8 @@ export class BrokerProviderTurns {
     const session = this.store.getSession(sessionId) as { time?: { archived?: number } } | null
     if (!session || session.time?.archived) return { admitted: false, reason: "closed" }
     const config = this.store.getSessionConfig(sessionId)
-    if (!config?.model || !config.agent) throw new Error(`Provider turn ${sessionId} has no resolved model or agent`)
+    if (!config) throw new Error(`Provider turn ${sessionId} has no runtime config`)
+    const model = resolveSessionModel(config)
     const leaseId = this.store.acquireTurnLease(sessionId)
     if (!leaseId) return { admitted: false, reason: "busy" }
     const turnId = randomUUID()
@@ -56,7 +59,7 @@ export class BrokerProviderTurns {
     try {
       const started = this.store.startTurn({
         sessionId, agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
-        assistantMessageId: turnId, agent: config.agent, model: config.model,
+        assistantMessageId: turnId, agent: sessionTurnAgent(config), ...(model ? { model } : {}),
         parts: input.userMessage ? [{ type: "text", text: input.userMessage.text }] : [],
         ...(input.userMessage ? { userMessageId: input.userMessage.id } : {}),
       })
