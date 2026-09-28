@@ -70,7 +70,6 @@ const core = {
     get: () => ({ fetch: async () => new Response(null, { status: 503 }) }),
   },
   sharedRateLimitStore: { periodSeconds: 60, check: async () => ({ allowed: true }) },
-  serviceCatalog: async () => [],
 }
 
 const billingStore: BillingStore = {

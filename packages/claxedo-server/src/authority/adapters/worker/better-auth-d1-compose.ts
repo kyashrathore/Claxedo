@@ -86,7 +86,6 @@ export type BetterAuthD1UserDeployedCompositionInput = {
   env: HostedWorkerEnv
   authDatabase: D1Database
   controlPlaneDatabase: D1Database
-  environmentId: string
   descriptorExpiresAt: number
   product: Extract<D1AuthorityProductPolicy, { kind: "user-deployed" }>
   emailSender?: AuthEmailSender
@@ -136,7 +135,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     )
   }
   const deploymentId = required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID")
-  const environmentId = required(input.environmentId, "environmentId")
   requireProfile(input.env, input.sandbox)
   const configured = resolveBetterAuthConfiguration({
     env: input.env,
@@ -189,19 +187,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     ...(input.now ? { now: input.now } : {}),
   })
   const serviceInstallations = new D1ServiceInstallationStore(input.controlPlaneDatabase)
-  const serviceCatalog = async () => {
-    const installations = await serviceInstallations.list({ environmentId, deploymentId })
-    const enabled = installations.filter((row) => row.descriptor.state === "enabled")
-    if (enabled.length) {
-      throw new HostedWorkerCompositionError(
-        "hosted_capability_unavailable",
-        `Base user-deployed core has enabled service installation(s) without bindings: ${enabled
-          .map((row) => row.descriptor.serviceId)
-          .join(", ")}`,
-      )
-    }
-    return []
-  }
   const legacyAuthBoundary: ControlPlaneAuthAdapter = {
     config: {
       enabled: true,
@@ -233,7 +218,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     plane,
     options: {
       authentication,
-      serviceCatalog,
       // User-deployed has no billing tier: with a composed sandbox the owner's
       // organization is entitled to cloud workspaces; without one the answer
       // names the posture instead of a 404.

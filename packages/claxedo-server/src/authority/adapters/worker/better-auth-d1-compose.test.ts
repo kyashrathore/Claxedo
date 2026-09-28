@@ -106,7 +106,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
       env: env(),
       authDatabase: recording(authDatabase, authSql),
       controlPlaneDatabase: recording(controlPlaneDatabase, controlSql),
-      environmentId: "production",
       descriptorExpiresAt: 1_900_000_000_000,
       now: () => 1_800_000_000_000,
       product: {
@@ -131,7 +130,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
     const input = {
       authDatabase,
       controlPlaneDatabase,
-      environmentId: "staging",
       descriptorExpiresAt: 1_900_000_000_000,
       now: () => 1_800_000_000_000,
       product: {
@@ -197,7 +195,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
     const input = {
       authDatabase,
       controlPlaneDatabase,
-      environmentId: "staging",
       descriptorExpiresAt: 1_900_000_000_000,
       now: () => 1_800_000_000_000,
       product: {
@@ -258,7 +255,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
       env: env(),
       authDatabase,
       controlPlaneDatabase,
-      environmentId: "production",
       descriptorExpiresAt: 1_900_000_000_000,
       now: () => 1_800_000_000_000,
       product: {
@@ -287,21 +283,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
         desktop: { flow: "authorization-code-pkce" },
       },
     })
-    expect(await composed.options.serviceCatalog({} as never)).toEqual([])
-    await controlPlaneDatabase
-      .prepare(
-        `insert into service_installations (
-        environment_id, deployment_id, service_id, protocol_version, schema_version,
-        lifecycle_state, binding_name, entrypoint, binding_provenance,
-        probe_status, probe_checked_at, service_build_id, revision, last_operation_id, updated_at
-      ) values (?, ?, 'documents', 'claxedo.service.v1', 1, 'enabled', 'DOCUMENTS_SERVICE',
-        'DocumentsServiceV1', 'cloudflare-service:test', 'ready', ?, 'build-1', 2, 'op-enable', ?)`,
-      )
-      .bind("production", "deployment-1", "2026-08-28T00:00:00Z", "2026-08-28T00:00:00Z")
-      .run()
-    await expect(composed.options.serviceCatalog({} as never)).rejects.toThrow(
-      "enabled service installation(s) without bindings: documents",
-    )
     expect(composed.billing).toBe("absent")
     expect(composed.product).toMatchObject({
       productPosture: "user-deployed",
@@ -341,7 +322,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
         }),
         authDatabase,
         controlPlaneDatabase,
-        environmentId: "production",
         descriptorExpiresAt: 1_900_000_000_000,
         now: () => 1_800_000_000_000,
         product: {
@@ -364,7 +344,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
         env: env(),
         authDatabase,
         controlPlaneDatabase: authDatabase,
-        environmentId: "production",
         descriptorExpiresAt: 1_900_000_000_000,
         now: () => 1_800_000_000_000,
         product: {
