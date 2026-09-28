@@ -19,6 +19,7 @@ describe("Claude session credentials", () => {
   test.each(["api-key", "bearer"])("a %s binding replaces inherited provider credentials before spawn", (authMode) => {
     const binding = { baseUrl: "http://127.0.0.1:47800", placeholder: "placeholder", authMode }
     const selected = claudeBinding({ ...empty, providers: { anthropic: binding } }, person)
+    expect(selected).toEqual(binding)
     const env = claudeEnvironment({ PATH: "/bin", ANTHROPIC_API_KEY: "operator-own", ANTHROPIC_AUTH_TOKEN: "operator-own",
       CLAUDE_CODE_OAUTH_TOKEN: "operator-own", CLAUDE_CODE_OAUTH_SCOPES: "operator-own",
       CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "local-secret", CLAXEDO_OTHER_SECRET: "other-secret" }, selected, "/claxedo/claude")
@@ -38,6 +39,12 @@ describe("Claude session credentials", () => {
       anthropic: { baseUrl: "http://127.0.0.1:47802", placeholder: "vendor", authMode: "api-key" },
     } }, person)
     expect(chosen?.placeholder).toBe("native")
+  })
+
+  test("another harness binding never selects Claude credentials", () => {
+    expect(claudeBinding({ ...empty, providers: { "cursor-sdk": {
+      baseUrl: "http://127.0.0.1:48850", placeholder: "foreign", authMode: "bearer",
+    } } }, machine)).toBeUndefined()
   })
 
   test("an ACP Claude binding is eligible for the native SDK transport", () => {

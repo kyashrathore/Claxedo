@@ -1,9 +1,10 @@
+import { scriptedTransport, type Frame } from "../transports/codex-app-server/test-support/transport"
 import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
-import { expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { ensurePinnedCodex, PINNED_CODEX } from "../../e2e/harness/pinned-codex"
@@ -12,13 +13,14 @@ import { listenOnLoopback } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
-import { CodexRpc } from "../transports/codex-app-server/rpc"
+import { CodexRpc, type RpcMessage } from "../transports/codex-app-server/rpc"
 import { answerCodexRequest } from "../transports/codex-app-server/requests"
 import { prepareCodexProfile } from "../profiles/codex"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
-import type { HarnessTransport, StartInput, TurnInput } from "../contract"
+import type { PermissionDecision } from "@claxedo/agent-runtime-contract"
+import type { HarnessTransport, PendingRequest, RequestAnswer, ResolvedCredentials, RoutedEvent, StartInput, TurnBroker, TurnInput } from "../contract"
 
 type CodexBackend = ConformanceBackend & {
   root: string
@@ -60,8 +62,6 @@ async function backend(): Promise<CodexBackend> {
     },
   }
 }
-
-type Frame = { id?: number; method?: string; params?: Record<string, unknown> }
 
 function recordingBackend(): { backend: () => Promise<CodexBackend>; frames: Frame[] } {
   const frames: Frame[] = []
@@ -283,7 +283,7 @@ test("Codex capabilities probe model/list before a session exists", async () => 
 
 const OWNER_KEY = "owner-key-1"
 
-async function ownLoginContext(name: string) {
+async function ownLoginContext(name: string, providers: ResolvedCredentials["providers"] = {}) {
   const state = await backend()
   const ownerHome = path.join(state.root, "owner-codex")
   const mcpPort = await reservePort()
@@ -300,7 +300,7 @@ async function ownLoginContext(name: string) {
     'wire_api = "responses"', "requires_openai_auth = true", "", "[mcp_servers.owner]",
     `url = ${JSON.stringify(`http:${String.fromCharCode(47, 47)}127.0.0.1:${mcpPort}/mcp`)}`, "",
   ].join("\n"))
-  const ownLogin: CodexBackend = { ...state, owner: { kind: "machine-owner" }, credentials: { providers: {}, secrets: {}, leaseGeneration: "own" },
+  const ownLogin: CodexBackend = { ...state, owner: { kind: "machine-owner" }, credentials: { providers, secrets: {}, leaseGeneration: "own" },
     close: async () => {
       mcp.closeAllConnections()
       await new Promise<void>((resolve) => mcp.close(() => resolve()))
@@ -382,6 +382,22 @@ test("a login the app-server persists through the linked auth.json lands in the 
     expect(after).toEqual(before)
     const stray = (await fs.readdir(home, { recursive: true })).filter((name) => name.endsWith("auth.json") && name !== "auth.json")
     expect(stray).toEqual([])
+  } finally { await context.close() }
+}, 60_000)
+
+test("a foreign harness projection leaves Codex on the owner's own login and its auth file untouched", async () => {
+  const { context, ownerHome } = await ownLoginContext("codex-foreign-projection", {
+    "claude-sdk": { baseUrl: "http://127.0.0.1:9/foreign", placeholder: "foreign-placeholder", authMode: "api-key" },
+  })
+  try {
+    const auth = path.join(ownerHome, "auth.json")
+    const before = await fs.readFile(auth, "utf8")
+    expect(await fs.realpath(path.join(entryHome(context.transport, "s1"), "auth.json"))).toBe(await fs.realpath(auth))
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: FOREIGNPROJECTION"), context.turnBroker())) {}
+    const state = context.backend as CodexBackend
+    expect(state.server.requests.find((row) => row.prompt.includes("FOREIGNPROJECTION"))?.authorization).toContain(OWNER_KEY)
+    expect(state.server.requests.filter((row) => row.authorization?.includes("foreign-placeholder"))).toEqual([])
+    expect(await fs.readFile(auth, "utf8")).toBe(before)
   } finally { await context.close() }
 }, 60_000)
 
@@ -468,7 +484,8 @@ test("Codex turn model overrides start model and validates effort and tier from 
 
 test("Codex exec approval reaches the durable broker and a denied command never runs", async () => {
   const state = await backend()
-  const marker = `/etc/codex-denied-${process.pid}-${Date.now()}`
+  const marker = path.join(state.root, "denied-marker")
+  await fs.access(state.root, fs.constants.W_OK)
   state.server.scriptTool({ name: "exec_command", input: { cmd: `touch ${marker}`, sandbox_permissions: "require_escalated", justification: "Test a denied Codex approval" } })
   const services = createTestServices()
   const transport = new CodexAppServerTransport(services, { binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env })
@@ -504,6 +521,26 @@ test("Codex exec approval reaches the durable broker and a denied command never 
     await transport.dispose()
     await state.close()
   }
+}, 60_000)
+
+test("a Codex approval whose publication fails gets the exact JSON-RPC error and its public turn still settles", async () => {
+  const recorder = recordingBackend()
+  const context = await setupConformance({ name: "codex-approval-publication", backend: recorder.backend, makeTransport })
+  const state = context.backend as CodexBackend
+  const marker = path.join(state.root, "unpublished-marker")
+  try {
+    await fs.access(state.root, fs.constants.W_OK)
+    state.server.scriptTool({ name: "exec_command", input: { cmd: `touch ${marker}`, sandbox_permissions: "require_escalated", justification: "Test an unpublished Codex approval" } })
+    context.ports.publish = async () => { throw new Error("permission storage unavailable") }
+    const events: RoutedEvent[] = []
+    for await (const event of context.transport.send(context.session, context.turn("Run the requested command"), context.turnBroker())) events.push(event)
+    expect(recorder.frames.filter((frame) => !frame.method && "error" in frame).map((frame) => frame.error))
+      .toEqual([{ code: -32603, message: "permission storage unavailable" }])
+    expect(events.filter((row) => row.event.type === "finish")).toHaveLength(1)
+    expect(context.owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+    expect(context.ports.saved).toHaveLength(0)
+    expect(await fs.stat(marker).then(() => true, (error: NodeJS.ErrnoException) => error.code !== "ENOENT")).toBe(false)
+  } finally { await context.close() }
 }, 60_000)
 
 test("Codex native goals use the running app-server", async () => {
@@ -607,72 +644,304 @@ async function pendingCount(owner: ReturnType<typeof createRequestBroker>, sessi
   throw new Error(`Expected ${count} pending Codex requests for ${sessionId}`)
 }
 
-test("Codex native request IDs are unique across processes and answers stay in their sessions", async () => {
-  const ports = new MemoryPorts()
-  ports.current.set("s2", { ...authority, sessionId: "s2", workspaceId: "w2" })
-  ports.directories.set("s2", "/work")
-  const owner = createRequestBroker(ports)
-  const first = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
-  const second = createTurnBroker(owner, { authority: { ...authority, sessionId: "s2", workspaceId: "w2" }, origin,
-    signal: new AbortController().signal })
-  const question = { id: 0, method: "item/tool/requestUserInput", params: { questions: [{ id: "answer", question: "Choose" }] } }
-  const one = answerCodexRequest(question, first, "s1")
-  const two = answerCodexRequest(question, second, "s2")
-  const [row1] = await pendingCount(owner, "s1", 1)
-  const [row2] = await pendingCount(owner, "s2", 1)
-  expect(row1?.request.requestId).not.toBe(row2?.request.requestId)
-  expect((await owner.broker.answer(row1!.request.requestId, { kind: "answers", answers: [["one"]] }, { sessionId: "s1" })).ok).toBe(true)
-  expect((await owner.broker.answer(row2!.request.requestId, { kind: "answers", answers: [["two"]] }, { sessionId: "s2" })).ok).toBe(true)
-  expect(await one).toEqual({ answers: { answer: { answers: ["one"] } } })
-  expect(await two).toEqual({ answers: { answer: { answers: ["two"] } } })
+describe("Codex transport configuration", () => {
+  const catalog = [
+    { model: "fast", displayName: "Fast", isDefault: true, defaultReasoningEffort: "low",
+      supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }], serviceTiers: [{ id: "priority", name: "Fast" }] },
+    { model: "deep", displayName: "Deep", defaultReasoningEffort: "high", hidden: true,
+      supportedReasoningEfforts: [{ reasoningEffort: "high" }, { reasoningEffort: "xhigh" }] },
+  ]
+  async function configuredCodex() {
+    const peer = await scriptedTransport({ models: catalog, completeTurns: true })
+    const turn = (model?: string, effort?: string, serviceTier?: string | null): TurnInput => ({
+      turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", todos: [],
+      origin: { actor: peer.startInput.owner, via: "loopback", reissued: false },
+      ...(model ? { model: { providerID: "codex", modelID: model } } : {}), ...(effort ? { effort } : {}),
+      prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "hello" }], serviceTier: serviceTier ?? undefined },
+    })
+    const run = async (session: Awaited<ReturnType<typeof peer.transport.start>>, value: TurnInput) => {
+      for await (const _event of peer.transport.send(session, value, { signal: new AbortController().signal } as TurnBroker)) {}
+    }
+    return Object.assign(peer, { turn, run })
+  }
+
+  test.each(["default", "deep"])("thread creation preserves the native model selection %s", async (modelID) => {
+    const f = await configuredCodex()
+    try {
+      await f.transport.start({ ...f.startInput, model: { providerID: "codex", modelID } }, f.liveBroker())
+      expect(f.frames.find((row) => row.method === "thread/start")?.params?.model).toBe(modelID === "default" ? undefined : modelID)
+    } finally { await f.close() }
+  })
+
+  test("a cold first turn sends its explicit model effort and priority tier", async () => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start({ ...f.startInput, model: { providerID: "codex", modelID: "deep" } }, f.liveBroker())
+      await f.run(session, f.turn("fast", "high", "priority"))
+      expect(f.frames.filter((row) => row.method === "model/list")).toHaveLength(1)
+      expect(f.frames.find((row) => row.method === "turn/start")?.params).toMatchObject({ model: "fast", effort: "high", serviceTier: "priority" })
+    } finally { await f.close() }
+  })
+
+  test("every turn sends concrete defaults after an explicit model effort and tier", async () => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start(f.startInput, f.liveBroker())
+      await f.run(session, f.turn("deep", "xhigh", "priority"))
+      await f.run(session, f.turn())
+      expect(f.frames.filter((row) => row.method === "turn/start").map((row) => ({ model: row.params?.model, effort: row.params?.effort, serviceTier: row.params?.serviceTier })))
+        .toEqual([{ model: "deep", effort: "xhigh", serviceTier: null }, { model: "fast", effort: "low", serviceTier: null }])
+    } finally { await f.close() }
+  })
+
+  test("options describe the requested model independently of the last created session", async () => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start({ ...f.startInput, model: { providerID: "codex", modelID: "deep" } }, f.liveBroker())
+      const options = async (modelID: string) => (await f.transport.config.options({ session, model: { providerID: "codex", modelID } }, "probe")).options
+      const fast = await options("fast")
+      const deep = await options("deep")
+      expect(fast.find((row) => row.id === "effort")?.selectOptions?.map((row) => row.id)).toEqual(["low", "high"])
+      expect(deep.find((row) => row.id === "effort")?.selectOptions?.map((row) => row.id)).toEqual(["high", "xhigh"])
+      expect(fast.find((row) => row.id === "service_tier")?.selectOptions).toEqual([{ id: "priority", name: "Fast" }])
+      expect(deep.find((row) => row.id === "service_tier")).toBeUndefined()
+      expect((await options("fast"))).toEqual(fast)
+    } finally { await f.close() }
+  })
+
+  test("a hidden model is confirmed before its turn and an unsupported effort never starts", async () => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start(f.startInput, f.liveBroker())
+      await expect(f.run(session, f.turn("deep", "low"))).rejects.toMatchObject({ code: "configuration" })
+      expect(f.frames.filter((row) => row.method === "turn/start")).toHaveLength(0)
+      await f.run(session, f.turn("deep", "xhigh"))
+      expect(f.frames.find((row) => row.method === "turn/start")?.params).toMatchObject({ model: "deep", effort: "xhigh" })
+    } finally { await f.close() }
+  })
+
+  test.each(["priority", null, "flex"])("a requested service tier %p reaches the wire with its canonical value", async (tier) => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start(f.startInput, f.liveBroker())
+      await f.run(session, f.turn("fast", "high", tier))
+      expect(f.frames.find((row) => row.method === "turn/start")?.params?.serviceTier).toBe(tier === "priority" ? "priority" : null)
+    } finally { await f.close() }
+  })
+
+  test("the selected openai Codex account is brokered", async () => {
+    const f = await configuredCodex()
+    try {
+      await fs.mkdir(path.join(f.root, "owner"))
+      await fs.writeFile(path.join(f.root, "owner", "auth.json"), '{"tokens":{"access_token":"operator-sentinel"}}')
+      await f.transport.start({ ...f.startInput, credentials: { ...f.startInput.credentials, providers: {
+        openai: { baseUrl: "http://127.0.0.1:48850/binding", placeholder: "signed-placeholder", authMode: "bearer", apiPath: "/backend-api/codex" },
+      } } }, f.liveBroker())
+      const home = f.environments[0]!.CODEX_HOME!
+      const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
+      const entries = await fs.readdir(home)
+      expect(config).toContain('base_url = "http://127.0.0.1:48850/binding/backend-api/codex"')
+      expect(config).toContain('Authorization = "Bearer signed-placeholder"')
+      expect(config).toContain('requires_openai_auth = false')
+      expect(config).toContain('wire_api = "responses"')
+      expect(config).not.toContain("operator-sentinel")
+      expect(entries).not.toContain("auth.json")
+      expect(f.frames.find((row) => row.method === "thread/start")?.params?.modelProvider).toBe("broker")
+      expect(f.frames.some((row) => row.method === "account/login/start")).toBe(false)
+    } finally { await f.close() }
+  })
+
+  test.skipIf(process.platform === "win32")("Codex narrows a permissive composed home on the next launch", async () => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start(f.startInput, f.liveBroker())
+      const home = f.environments[0]!.CODEX_HOME!
+      await f.transport.close(session)
+      await fs.chmod(home, 0o755)
+      await f.transport.start(f.startInput, f.liveBroker())
+      expect((await fs.stat(home)).mode & 0o777).toBe(0o700)
+    } finally { await f.close() }
+  })
+
+  test("Codex refuses a symlinked composed home before spawning", async () => {
+    const f = await configuredCodex()
+    try {
+      const session = await f.transport.start(f.startInput, f.liveBroker())
+      const home = f.environments[0]!.CODEX_HOME!
+      await f.transport.close(session)
+      await fs.rename(home, `${home}-outside`)
+      const before = await fs.readFile(path.join(`${home}-outside`, "config.toml"), "utf8")
+      await fs.symlink(`${home}-outside`, home, process.platform === "win32" ? "junction" : "dir")
+      await expect(f.transport.start(f.startInput, f.liveBroker())).rejects.toThrow("symlink")
+      expect(f.environments).toHaveLength(1)
+      expect(await fs.readFile(path.join(`${home}-outside`, "config.toml"), "utf8")).toBe(before)
+    } finally { await f.close() }
+  })
+
+  test("closing an unattached Codex session never starts the broken executable", async () => {
+    const f = await configuredCodex()
+    try {
+      await f.transport.close({ directory: f.startInput.directory, locality: "local", binding: await f.liveBroker().rebind("missing-thread") })
+      expect(f.environments).toHaveLength(0)
+      expect(f.frames).toHaveLength(0)
+    } finally { await f.close() }
+  })
+
 })
 
-test("Codex persistent approval grants reapply only to the same session, directory, mode, and command", async () => {
-  const ports = new MemoryPorts()
-  const owner = createRequestBroker(ports)
-  const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
-  const context = { directory: "/work", permissionMode: "default" }
-  const command = { id: 0, method: "item/commandExecution/requestApproval", params: {
-    threadId: "thread", turnId: "turn", itemId: "item", startedAtMs: 1, command: "echo hello", cwd: "/work",
-  } }
-  const first = answerCodexRequest(command, turn, "s1", context)
-  const [pending] = await pendingCount(owner, "s1", 1)
-  expect((await owner.broker.answer(pending!.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" })).ok).toBe(true)
-  expect(await first).toEqual({ decision: "acceptForSession" })
-  ports.current.set("s1", { ...authority, turnId: "replacement-turn" })
-  const replacement = createTurnBroker(owner, { authority: { ...authority, turnId: "replacement-turn" }, origin,
-    signal: new AbortController().signal })
-  const same = { ...command, params: { ...command.params, turnId: "new-turn", itemId: "new-item" } }
-  expect(await answerCodexRequest(same, replacement, "s1", context)).toEqual({ decision: "acceptForSession" })
-  const variants = [
-    { frame: { ...same, params: { ...same.params, command: "echo changed" } }, context },
-    { frame: same, context: { ...context, directory: "/other" } },
-    { frame: same, context: { ...context, permissionMode: "restricted" } },
-    { frame: { ...same, params: { ...same.params, additionalPermissions: ["network"] } }, context },
-  ]
-  for (const variant of variants) {
-    const asked = answerCodexRequest(variant.frame, replacement, "s1", variant.context)
-    const [row] = await pendingCount(owner, "s1", 1)
-    expect((await owner.broker.answer(row!.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })).ok).toBe(true)
-    expect(await asked).toEqual({ decision: "decline" })
+describe("Codex request persistence", () => {
+  const interactions = [
+    { name: "command approval", method: "item/commandExecution/requestApproval", params: { command: "echo test" },
+      answer: { kind: "permission", decision: "deny" }, result: { decision: "decline" } },
+    { name: "question", method: "item/tool/requestUserInput", params: { questions: [{ id: "q", question: "Choose?" }] },
+      answer: { kind: "answers", answers: [["Staging"]] }, result: { answers: { q: { answers: ["Staging"] } } } },
+    { name: "MCP form", method: "mcpServer/elicitation/request", params: { mode: "form", message: "Input", requestedSchema: { type: "object", properties: {} } },
+      answer: { kind: "form", values: {} }, result: { action: "accept", content: {} } },
+    { name: "MCP approval", method: "mcpServer/elicitation/request", params: { mode: "form", serverName: "test", message: "Allow tool?",
+      requestedSchema: { type: "object", properties: {} }, _meta: { codex_approval_kind: "mcp_tool_call" } },
+      answer: { kind: "permission", decision: "deny", optionId: "cancel" }, result: { action: "cancel", content: null, _meta: null } },
+  ] satisfies { name: string; method: string; params: Record<string, unknown>; answer: RequestAnswer; result: unknown }[]
+
+  for (const interaction of interactions) {
+    test(`${interaction.name} accepts a reply initiated during publication and leaves no pending request`, async () => {
+      const ports = new MemoryPorts()
+      const owner = createRequestBroker(ports)
+      let response: Promise<unknown> | undefined
+      ports.publish = async (event, pending) => {
+        await MemoryPorts.prototype.publish.call(ports, event, pending)
+        if (!pending) return
+        expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+        response = owner.broker.answer(pending.request.requestId, interaction.answer, { sessionId: "s1" })
+      }
+      const broker = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+      expect(await answerCodexRequest({ id: 0, method: interaction.method, params: interaction.params }, broker, "s1"))
+        .toEqual(interaction.result)
+      expect(await response).toMatchObject({ ok: true })
+      expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+      expect(ports.saved).toHaveLength(1)
+    })
+
+    test(`${interaction.name} removes its pending request when publication fails`, async () => {
+      const ports = new MemoryPorts()
+      const owner = createRequestBroker(ports)
+      ports.publish = async () => {
+        expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+        throw new Error("permission storage failed")
+      }
+      const broker = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+      await expect(answerCodexRequest({ id: 0, method: interaction.method, params: interaction.params }, broker, "s1"))
+        .rejects.toThrow("permission storage failed")
+      expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
+      expect(ports.saved).toHaveLength(0)
+    })
   }
-  ports.current.set("s2", { ...authority, sessionId: "s2", workspaceId: "w2" })
-  ports.directories.set("s2", "/work")
-  const foreign = createTurnBroker(owner, { authority: { ...authority, sessionId: "s2", workspaceId: "w2" }, origin,
-    signal: new AbortController().signal })
-  const otherSession = answerCodexRequest(same, foreign, "s2", context)
-  const [other] = await pendingCount(owner, "s2", 1)
-  expect((await owner.broker.answer(other!.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s2" })).ok).toBe(true)
-  expect(await otherSession).toEqual({ decision: "decline" })
-  for (const decision of ["allow_once", "deny", "reject_always"] as const) {
-    const frame = { ...same, params: { ...same.params, command: `echo ${decision}` } }
-    const asked = answerCodexRequest(frame, replacement, "s1", context)
-    const [row] = await pendingCount(owner, "s1", 1)
-    expect((await owner.broker.answer(row!.request.requestId, { kind: "permission", decision }, { sessionId: "s1" })).ok).toBe(true)
-    await asked
-    const retry = answerCodexRequest({ ...frame, params: { ...frame.params, turnId: `after-${decision}` } }, replacement, "s1", context)
-    const [again] = await pendingCount(owner, "s1", 1)
-    expect((await owner.broker.answer(again!.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })).ok).toBe(true)
-    expect(await retry).toEqual({ decision: "decline" })
+
+  test("a failed durable Codex grant write withholds approval until cancellation", async () => {
+    const ports = new MemoryPorts()
+    ports.failGrant = true
+    const owner = createRequestBroker(ports)
+    const broker = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+    let released = false
+    const asking = answerCodexRequest({ id: 0, method: "item/commandExecution/requestApproval", params: { command: "echo test" } }, broker, "s1")
+      .then((answer) => { released = true; return answer })
+    await pendingCount(owner, "s1", 1)
+    const pending = owner.broker.list({ sessionId: "s1" })[0]!
+    expect(await owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
+      .toMatchObject({ ok: false, refusal: "persistence" })
+    expect(released).toBe(false)
+    expect(ports.saved).toHaveLength(0)
+    expect(ports.states.size).toBe(0)
+    await owner.endTurn(authority)
+    expect(await asking).toEqual({ decision: "cancel" })
+  })
+
+  const grantCommand = { command: "printf approved > /tmp/result", cwd: "/work", additionalPermissions: null }
+  function codexGrants() {
+    const ports = new MemoryPorts()
+    let owner = createRequestBroker(ports)
+    let count = 0
+    let decision: PermissionDecision = "deny"
+    ports.publish = async (event, pending) => {
+      await MemoryPorts.prototype.publish.call(ports, event, pending)
+      if (!pending) return
+      count++
+      void owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: pending.sessionId })
+    }
+    const run = async (answer: PermissionDecision, sessionId = "s1", params: Record<string, unknown> = grantCommand, mode = "workspace-write", directory = "/work") => {
+      decision = answer
+      const current = { ...authority, sessionId, workspaceId: sessionId === "s1" ? "w1" : "w2", directory, upstreamSessionId: `process-${count}`, turnId: `turn-${count}` }
+      ports.current.set(sessionId, current)
+      ports.directories.set(sessionId, directory)
+      owner = createRequestBroker(ports)
+      const broker = createTurnBroker(owner, { authority: current, origin, signal: new AbortController().signal })
+      return answerCodexRequest({ id: 0, method: "item/commandExecution/requestApproval", params: {
+        ...params, threadId: current.upstreamSessionId, turnId: current.turnId, itemId: `item-${count}`, startedAtMs: count,
+      } }, broker, sessionId, { directory, permissionMode: mode })
+    }
+    return { ports, run, count: () => count }
   }
+
+  test.each(["allow_always", "allow_once", "deny", "reject_always"] as const)("Codex %s is reused after broker reconstruction only when it was allow_always", async (decision) => {
+    const f = codexGrants()
+    expect(await f.run(decision)).toEqual({ decision: { allow_always: "acceptForSession", allow_once: "accept", deny: "decline", reject_always: "decline" }[decision] })
+    expect(f.count()).toBe(1)
+    expect(await f.run("deny")).toEqual({ decision: decision === "allow_always" ? "acceptForSession" : "decline" })
+    expect(f.count()).toBe(decision === "allow_always" ? 1 : 2)
+  })
+
+  test("a saved Codex allow_always grant stores a digest and none of the approved request", async () => {
+    const f = codexGrants()
+    await f.run("allow_always", "s1", { ...grantCommand, command: "printf APPROVED-COMMAND > /tmp/result" })
+    const grants = f.ports.states.get("s1")?.brokerGrants
+    expect(Array.isArray(grants) ? grants.map((grant) => JSON.parse(String(grant))) : grants).toEqual([["c1", expect.stringMatching(/^[0-9a-f]{64}$/)]])
+    expect(JSON.stringify([f.ports.states.get("s1"), f.ports.published.filter((event) => event.type === "permission.auto-answered")])).not.toContain("APPROVED")
+  })
+
+  test.each([
+    ["the session is in another workspace", "other", grantCommand, "workspace-write", "/work"],
+    ["the command changes", "s1", { ...grantCommand, command: "rm /tmp/result" }, "workspace-write", "/work"],
+    ["the native cwd changes", "s1", { ...grantCommand, cwd: "/other" }, "workspace-write", "/work"],
+    ["the permission mode changes", "s1", grantCommand, "plan", "/work"],
+    ["an unknown native field appears", "s1", { ...grantCommand, futurePermissionContext: "new-authority" }, "workspace-write", "/work"],
+    ["the workspace directory changes", "s1", grantCommand, "workspace-write", "/other"],
+    ["additional permissions are requested", "s1", { ...grantCommand, additionalPermissions: { network: { enabled: true } } }, "workspace-write", "/work"],
+  ] satisfies [string, string, Record<string, unknown>, string, string][])("a saved Codex allow_always grant asks again when %s", async (_name, sessionId, params, mode, directory) => {
+    const f = codexGrants()
+    await f.run("allow_always")
+    expect(await f.run("deny", sessionId, params, mode, directory)).toEqual({ decision: "decline" })
+    expect(f.count()).toBe(2)
+  })
+
+  const approvalFrame = { id: 0, method: "item/commandExecution/requestApproval", params: { command: "echo test" } }
+  const questionFrame = { id: 0, method: "item/tool/requestUserInput", params: { questions: [{ id: "environment", question: "Which environment?" }] } }
+  const staging = { answers: { environment: { answers: ["Staging"] } } }
+  test.each([
+    ["an approval", approvalFrame, [{ kind: "permission", decision: "allow_once" }, { kind: "permission", decision: "deny" }], [{ decision: "accept" }, { decision: "decline" }]],
+    ["an answered question", questionFrame, [{ kind: "answers", answers: [["Staging"]] }, { kind: "answers", answers: [["Production"]] }],
+      [staging, { answers: { environment: { answers: ["Production"] } } }]],
+    ["a dismissed question", questionFrame, [{ kind: "answers", answers: [["Staging"]] }, { kind: "rejected" }], [staging, { answers: {} }]],
+  ] satisfies [string, RpcMessage, RequestAnswer[], unknown[]][])("RPC id zero in two workspaces keeps native identity and routes %s to its own session", async (_name, frame, answers, results) => {
+    const ports = new MemoryPorts()
+    const owner = createRequestBroker(ports)
+    const replies = ["s1", "s2"].map((sessionId) => {
+      const current = { ...authority, sessionId, workspaceId: sessionId === "s1" ? "w1" : "w2" }
+      ports.current.set(sessionId, current)
+      ports.directories.set(sessionId, "/work")
+      return answerCodexRequest(frame, createTurnBroker(owner, { authority: current, origin, signal: new AbortController().signal }), sessionId)
+    })
+    const [first] = await pendingCount(owner, "s1", 1)
+    const [second] = await pendingCount(owner, "s2", 1)
+    expect(first!.request.requestId).not.toBe(second!.request.requestId)
+    const native = (row: PendingRequest) => row.request.kind === "question" ? row.request.question.harnessPayload
+      : row.request.kind === "permission" ? row.request.permission.harnessPayload : undefined
+    expect([native(first!), native(second!)]).toEqual([frame, frame])
+    expect(await owner.broker.answer(second!.request.requestId, answers[0]!, { sessionId: "s1" })).toMatchObject({ ok: false, refusal: "foreign" })
+    expect(owner.broker.list({ sessionId: "s2" })).toEqual([second!])
+    for (const [index, row] of [first!, second!].entries()) {
+      expect(await owner.broker.answer(row.request.requestId, answers[index]!, { sessionId: row.sessionId })).toMatchObject({ ok: true })
+    }
+    expect(await Promise.all(replies)).toEqual(results)
+    expect(owner.broker.list({ directory: "/work" })).toHaveLength(0)
+  })
+
 })

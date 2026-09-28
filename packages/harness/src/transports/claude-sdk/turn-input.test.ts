@@ -11,6 +11,7 @@ test("steering resolves only after the matching replay", async () => {
   expect((await iterator.next()).value.message.content).toEqual([{ type: "text", text: "first" }])
   const accepted = input.steer(message("second"))
   const replay = (await iterator.next()).value
+  expect(replay.uuid).toBeString()
   expect(input.observe({ ...replay, uuid: "unrelated", isReplay: true })).toBe(true)
   let resolved = false
   void accepted.then(() => { resolved = true })
@@ -26,6 +27,31 @@ test.each(["ended", "failed"] as const)("an unreplayed steer settles %s", async 
   const input = new ClaudeTurnInput(message("first"))
   const pending = input.steer(message("second"))
   input.settle(outcome)
-  expect(await pending).toMatchObject({ ok: false, status: outcome === "ended" ? "declined" : "unknown" })
+  expect(await pending).toEqual({ ok: false, status: outcome === "ended" ? "declined" : "unknown", message: "Claude did not replay the steer" })
   expect(await input.steer(message("late"))).toMatchObject({ ok: false, status: "no_active_turn" })
+})
+
+test("ordinary user messages cannot acknowledge a steer", async () => {
+  const input = new ClaudeTurnInput(message("first"))
+  const iterator = input.stream[Symbol.asyncIterator]()
+  await iterator.next()
+  const pending = input.steer(message("second"))
+  const written = (await iterator.next()).value
+  expect(input.observe(written)).toBe(false)
+  input.settle("ended")
+  expect(await pending).toMatchObject({ ok: false, status: "declined" })
+})
+
+test("closed stdin rejects a new steer while delivering the one already written", async () => {
+  const input = new ClaudeTurnInput(message("first"))
+  const iterator = input.stream[Symbol.asyncIterator]()
+  await iterator.next()
+  const pending = input.steer(message("second"))
+  input.close()
+  expect(await input.steer(message("late"))).toMatchObject({ ok: false, status: "no_active_turn" })
+  const written = (await iterator.next()).value
+  expect(written.message.content).toEqual([{ type: "text", text: "second" }])
+  expect(input.observe({ ...written, isReplay: true })).toBe(true)
+  expect(await pending).toEqual({ ok: true })
+  expect((await iterator.next()).done).toBe(true)
 })

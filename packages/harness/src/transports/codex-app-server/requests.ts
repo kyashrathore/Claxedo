@@ -3,6 +3,7 @@ import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRequest, permissionSelection, requestQuestionAnswers, questionRequest, type TurnBroker } from "../../contract"
 import type { RpcMessage } from "./rpc"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
+import { grantIdentity } from "../../contract/grant-identity"
 
 const approvalMethods = [
   "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -29,7 +30,7 @@ async function approval(method: string, params: Record<string, unknown>, message
   const { threadId: _threadId, turnId: _turnId, itemId: _itemId, startedAtMs: _startedAtMs, approvalId: _approvalId, ...keyParams } = params
   const answer = await broker.ask(permissionRequest({ sessionId, permission: method, title: command,
     patterns: [command], metadata: { method, params }, harnessPayload: message,
-    grantKey: JSON.stringify([method, context?.directory, context?.permissionMode, keyParams]),
+    grantKey: grantIdentity([method, context?.directory, context?.permissionMode, keyParams]),
     options: [
       { optionId: protocolDecisionMapping.once, kind: protocolDecisionMapping.once, name: "Allow once" },
       { optionId: protocolDecisionMapping.always, kind: protocolDecisionMapping.always, name: "Allow for session" },
@@ -49,8 +50,9 @@ async function question(params: Record<string, unknown>, message: RpcMessage, br
         })), custom: question.isOther === true }
   })
   const answers = requestQuestionAnswers(await broker.ask(questionRequest({ sessionId, questions, harnessPayload: message })))
+  if (!answers) return { answers: {} }
   const ids = rawQuestions.map((item) => asString(asRecordOrEmpty(item).id) ?? "answer")
-  return { answers: Object.fromEntries(ids.map((id, index) => [id, { answers: answers?.[index] ?? [] }])) }
+  return { answers: Object.fromEntries(ids.map((id, index) => [id, { answers: answers[index] ?? [] }])) }
 }
 
 async function elicitation(params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string): Promise<unknown> {

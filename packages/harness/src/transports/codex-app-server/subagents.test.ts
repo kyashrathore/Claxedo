@@ -5,7 +5,7 @@ import type { CodexEvents } from "./events"
 import type { CodexRpc, RpcMessage } from "./rpc"
 import { answerCodexToolCall, type SubagentHost } from "./subagents"
 
-function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held" } = {}) {
+function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held"; startError?: string } = {}) {
   const listeners = new Set<(message: RpcMessage) => void>()
   const requests: { method: string; params: Record<string, unknown> }[] = []
   const emit = (message: RpcMessage) => { for (const listener of listeners) listener(message) }
@@ -16,6 +16,7 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held" }
       requests.push({ method, params })
       if (method === "thread/start") return { thread: { id: "child-1" } }
       if (method === "turn/start") {
+        if (options.startError) throw new Error(options.startError)
         if (options.childOutcome !== "held") queueMicrotask(() => emit(completion(options.childOutcome ?? "completed")))
         return { turn: { id: "child-turn" } }
       }
@@ -25,7 +26,7 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held" }
     onMessage: (listener: (message: RpcMessage) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
     onFailure: () => () => {},
   } as unknown as CodexRpc
-  return { rpc, requests, emit }
+  return { rpc, requests, emit, listenerCount: () => listeners.size }
 }
 
 function host(rpc: CodexRpc): SubagentHost & { children: Map<string, CodexEvents> } {
@@ -92,4 +93,13 @@ test("an aborted parent turn interrupts the running child turn", async () => {
   expect(requests.map((request) => request.method)).toEqual(["thread/start", "turn/start", "turn/interrupt"])
   expect(requests[2]?.params).toEqual({ threadId: "child-1", turnId: "child-turn" })
   expect(observations.at(-1)?.status).toBe("completed")
+})
+
+test("a failed child turn start removes the child listener", async () => {
+  const { rpc, listenerCount } = scriptedRpc({ startError: "turn start refused" })
+  const { turnBroker, observations } = broker()
+  expect(await answerCodexToolCall(host(rpc), turnBroker, call({ task_name: "review", message: "Inspect this" })))
+    .toEqual({ contentItems: [{ type: "inputText", text: "Subagent failed: turn start refused" }], success: false })
+  expect(listenerCount()).toBe(0)
+  expect(observations.map((row) => row.status)).toEqual(["running", "failed"])
 })

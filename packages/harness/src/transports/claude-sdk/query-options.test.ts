@@ -36,4 +36,10 @@ test("turns and native goals share session options while clear forbids tools", a
   expect(options[1]?.tools).toBeUndefined()
   expect(options[2]).toMatchObject({ tools: [], maxTurns: 1 })
   expect(options[2]?.sessionStore).toBeUndefined()
+  expect(JSON.stringify(options[0]?.env)).not.toContain("Bearer local")
+  expect(options[0]?.extraArgs).toEqual({ "replay-user-messages": null })
+  const key = { projectKey: "project", sessionId: "up1" }
+  expect(await options[1]?.sessionStore?.load(key)).toBeNull()
+  expect(await options[1]?.sessionStore?.listSessions?.("project")).toEqual([])
+  expect(await options[1]?.sessionStore?.listSubkeys?.(key)).toEqual([])
 })

@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import { createTestServices } from "./test-support/services"
+import { processAlive } from "../../e2e/harness/process-alive"
 import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { assertListedCommandsRun } from "./test-support/commands"
 import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
@@ -247,11 +248,6 @@ function piTransport(services: ReturnType<typeof createTestServices>, state: Con
     canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env })
 }
 
-function alive(pid: number): boolean {
-  try { process.kill(pid, 0); return true }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error }
-}
-
 test("a Pi process death mid-turn fails the turn through the channel's exit", async () => {
   const context = await setupConformance({ name: "pi process death", backend, makeTransport: piTransport })
   try {
@@ -356,15 +352,15 @@ test("a failed Pi retirement during configure keeps the session and its process 
     for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIRETIRE"), context.turnBroker())) {}
     await expect(context.transport.configure(context.session, { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } }))
       .rejects.toThrow("retirement refused once")
-    expect(alive(pid!)).toBe(true)
+    expect(processAlive(pid!)).toBe(true)
     expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("ready")
     expect(context.transport.health?.runtime(context.backend.directory, "s1").status).toBe("degraded")
     await context.transport.close(context.session)
     expect(await context.services.processes[0]!.exited).toBeDefined()
-    expect(alive(pid!)).toBe(false)
+    expect(processAlive(pid!)).toBe(false)
   } finally {
     await context.close()
-    if (pid !== undefined && alive(pid)) process.kill(pid, "SIGKILL")
+    if (pid !== undefined && processAlive(pid)) process.kill(pid, "SIGKILL")
   }
 }, 30_000)
 

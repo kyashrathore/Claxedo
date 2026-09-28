@@ -5,6 +5,7 @@ import path from "node:path"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createRuntimeCredentialIssuer } from "./first-party-mcp"
 import { createHarnessServices } from "./harness-services"
+import { createProcessObserver, type ProcessObserverEvent } from "./managed-processes/process-observer"
 import { createTranscriptResolver } from "./transcript-resolver"
 
 const roots: string[] = []
@@ -100,4 +101,18 @@ test("every transport receives the parent- and workspace-bound opaque transcript
   const unauthorized = await registrar.register({ parentSessionId: "parent-b", providerKind: "cursor-agent", filePath: valid })
   expect(unauthorized).toMatchObject({ state: "unavailable", reason: "unauthorized" })
   expect(JSON.stringify(unauthorized)).not.toContain(providerRoot)
+})
+
+test("a harness spawn is registered with the workspace process observer", async () => {
+  const { log, clock, patternEvaluator } = fixture()
+  const events: ProcessObserverEvent[] = []
+  const input = { ownership: volatileLaunchOwnership(), log, clock, patternEvaluator,
+    observation: { observer: createProcessObserver({ sink: (event) => events.push(event) }) } }
+  const services = createHarnessServices(input)
+  const child = await services.spawn({ file: "/bin/sh", args: ["-c", "printf ready"], cwd: "/tmp", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
+    { role: "harness", label: "observed harness", sessionId: "s1", signal: new AbortController().signal })
+  expect((await child.exited).code).toBe(0)
+  expect(await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })).toEqual({ stopped: true })
+  expect(events).toContainEqual(expect.objectContaining({ type: "registered",
+    descriptor: expect.objectContaining({ kind: "harness", role: "harness", pid: child.pid, sessionId: "s1" }) }))
 })
