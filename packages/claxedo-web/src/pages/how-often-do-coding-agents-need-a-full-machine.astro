@@ -28,7 +28,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
               <h1>How often do coding agents need a full machine?</h1>
               <p class="hero-lede">After an agent finished one full-machine call, it needed the machine again a median of {seconds(study.metrics.medianFullMachineReturnIntervalMs)} later.</p>
               <div class="hero-actions">
-                <div class="hero-command"><code>{command}</code><button class="btn-primary" type="button" data-copy-command data-label="Copy">Copy</button></div>
+                <div class="hero-command dark-band"><code>{command}</code><button class="btn-primary" type="button" data-copy-command data-label="Copy">Copy</button></div>
                 <a class="text-link" href={discussionUrl} target="_blank" rel="noopener noreferrer">Original discussion on X <span aria-hidden="true">↗</span></a>
                 <a class="text-link" href="https://github.com/kyashrathore/agent-runtime-stats" target="_blank" rel="noopener noreferrer">Analyzer source <span aria-hidden="true">↗</span></a>
               </div>
@@ -42,7 +42,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
           </div>
         </header>
 
-        <section class="study-section dark-study" aria-labelledby="finding-title">
+        <section class="study-section dark-study dark-band" aria-labelledby="finding-title">
           <div class="study-wrap narrow-copy">
             <p class="eyebrow">The finding</p>
             <h2 id="finding-title">Your agent needs the machine again too soon to shut it down between calls.</h2>
@@ -69,7 +69,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
           </div>
         </section>
 
-        <section class="study-section dark-study" aria-labelledby="prevalence-title">
+        <section class="study-section dark-study dark-band" aria-labelledby="prevalence-title">
           <div class="study-wrap">
             <div class="section-heading">
               <p class="eyebrow">Not a rare edge case</p>
@@ -136,7 +136,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
         <section class="run-section" id="run" aria-labelledby="run-title">
           <div class="study-wrap run-panel">
             <div><p class="eyebrow">Measure your own agents</p><h2 id="run-title">How often does your agent need a full machine?</h2><p>Run the analyzer locally against supported coding-agent transcripts. See the complete report, then save a shareable page.</p></div>
-            <div class="command-block"><span>Terminal</span><code>{command}</code><button class="btn-primary" type="button" data-copy-command data-label="Copy command">Copy command</button></div>
+            <div class="command-block dark-band"><span>Terminal</span><code>{command}</code><button class="btn-primary" type="button" data-copy-command data-label="Copy command">Copy command</button></div>
           </div>
         </section>
       </article>
@@ -162,7 +162,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
 </script>
 
 <style>
-  :global(.runtime-study-page) { --study-accent:var(--brand); }
+  :global(.runtime-study-page), .dark-band { --study-accent:var(--brand); }
   .study-wrap { width:min(100%,72rem); margin-inline:auto; padding-inline:var(--gutter); }
   .study-hero { position:relative; padding:clamp(4rem,9vw,8rem) 0 clamp(4rem,8vw,7rem); overflow:hidden; }
   .study-hero::after { content:""; position:absolute; width:34rem; height:34rem; right:-10rem; top:-13rem; border-radius:50%; background:color-mix(in srgb,var(--study-accent) 10%,transparent); filter:blur(90px); pointer-events:none; }

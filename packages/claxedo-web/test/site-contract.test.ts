@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { claims, publishableClaims } from "../src/content/claims"
 import { marketingActions, publicOrigin, routes } from "../src/content/routes"
-import { approvedMarketingActions, site } from "../src/content/site"
+import { approvedMarketingActions, home, site } from "../src/content/site"
 import { downloads } from "../src/config"
 
 describe("public site contract", () => {
@@ -17,12 +17,24 @@ describe("public site contract", () => {
     expect(new URL(publicOrigin).origin).toBe(publicOrigin)
   })
 
-  test("leads with the set-up-once story", () => {
-    expect(site.headline).toBe("Set up your coding agents once. Run them anywhere, with anyone.")
-    expect(site.hero.headline).toBe(site.headline)
-    expect(site.hero.lead).toContain("plugins, skills, MCP servers, and credentials")
-    expect(site.hero.lead).toContain("in any sandbox")
-    expect(site.description).toContain("Claude Code, Codex, Cursor, and OpenCode")
+  test("leads with the set-up-once story and five evidenced points", () => {
+    expect(site.headline).toBe("Set up your coding agents once. Run them anywhere.")
+    expect(site.description).toContain("Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent")
+    expect(home.points).toHaveLength(5)
+    const publishable = new Set<string>(publishableClaims.map((item) => item.id))
+    for (const point of home.points) {
+      expect(point.claims.length).toBeGreaterThan(0)
+      for (const id of point.claims) expect(publishable.has(id)).toBe(true)
+    }
+  })
+
+  test("cites evidence that exists in the repository", async () => {
+    const repositoryFiles = publishableClaims.flatMap((item) => item.evidence).filter((path) => !path.startsWith("https://"))
+    const missing = []
+    for (const path of repositoryFiles) {
+      if (!(await Bun.file(new URL(`../../../${path}`, import.meta.url)).exists())) missing.push(path)
+    }
+    expect(missing).toEqual([])
   })
 
   test("withholds claims without evidence", () => {

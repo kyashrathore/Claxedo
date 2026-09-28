@@ -23,7 +23,6 @@ const ogImage = new URL(image, site)
 const markdownTwin = markdownTwins[canonicalPath.replace(/\/$/, "") || "/"]
 
 import "../styles/site.css"
-import "../styles/transitions.css"
 import StructuredData from "../components/StructuredData.astro"
 import { markdownTwins } from "../content/markdown"
 ---
@@ -34,8 +33,9 @@ import { markdownTwins } from "../content/markdown"
     <meta charset="UTF-8" />
     <meta name="description" content={description} />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#08090a" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
     {markdownTwin && <link rel="alternate" type="text/markdown" href={new URL(markdownTwin, site)} />}

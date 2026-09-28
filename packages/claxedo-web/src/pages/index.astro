@@ -1,9 +1,90 @@
 ---
 import Layout from "../layouts/Layout.astro"
-import ClaxedoStorm from "../components/ClaxedoStorm.astro"
-import { site } from "../content/site"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import DownloadMenu from "../components/DownloadMenu.astro"
+import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
+import { requireClaim } from "../content/claims"
+import { home, site } from "../content/site"
+
+for (const point of home.points) point.claims.forEach(requireClaim)
 ---
 
 <Layout title={`Claxedo — ${site.headline}`} description={site.description}>
-  <ClaxedoStorm />
+  <Nav />
+  <main id="main-content" class="home">
+    <section class="intro" aria-labelledby="home-title">
+      <div class="lead">
+        <h1 id="home-title">{site.headline}</h1>
+        <div class="actions">
+          <DownloadMenu placement="hero" />
+          <a class="btn-secondary" href={home.openInBrowser.href}>{home.openInBrowser.label}</a>
+        </div>
+      </div>
+      <dl class="points">
+        {home.points.map((point) => (
+          <div>
+            <dt>{point.title}</dt>
+            <dd>
+              {point.line}
+              {point.link && <a href={point.link.href}>{point.link.label}</a>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+    <div class="preview">
+      <ClaxedoAppReplica />
+    </div>
+  </main>
+  <Footer />
 </Layout>
+
+<style>
+  .home { --home-width: min(100% - 2 * var(--gutter), 75rem); }
+  .intro {
+    display: grid;
+    grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+    gap: clamp(2.5rem, 5vw, 5rem);
+    align-items: start;
+    width: var(--home-width);
+    margin: 0 auto;
+    padding-block: clamp(2rem, 5vh, 3rem) clamp(2rem, 4.5vh, 2.75rem);
+  }
+  h1 {
+    margin: 0;
+    font: var(--display-weight) clamp(2.1rem, 3.3vw, 2.9rem)/1.08 var(--font-display);
+    letter-spacing: var(--display-tracking);
+    font-feature-settings: var(--display-features);
+    text-wrap: balance;
+  }
+  .actions { margin-top: 1.75rem; }
+  .points { margin: 0; border-bottom: 1px solid var(--line); }
+  .points > div {
+    display: grid;
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    gap: 1.5rem;
+    padding: .7rem 0;
+    border-top: 1px solid var(--line);
+  }
+  dt { color: var(--ink); font-size: .9rem; font-weight: 500; line-height: 1.45; }
+  dd { margin: 0; color: var(--ink-soft); font-size: .9rem; line-height: 1.45; text-wrap: pretty; }
+  dd a { margin-left: .35em; color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); }
+  dd a:hover { text-decoration-color: currentColor; }
+  .preview { width: var(--home-width); margin: 0 auto clamp(4rem, 8vw, 6rem); }
+
+  @media (max-width: 64rem) {
+    .intro { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+    h1 { max-width: 20ch; }
+  }
+
+  @media (max-width: 38rem) {
+    .home { --home-width: calc(100% - 2rem); }
+    .intro { padding-top: 1.75rem; gap: 1.5rem; }
+    h1 { font-size: 1.85rem; }
+    .actions { flex-wrap: nowrap; margin-top: 1.25rem; }
+    .actions > :global(*) { flex: 1 1 0; width: auto; }
+    .points > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; padding: .55rem 0; }
+    dt, dd { font-size: .875rem; }
+  }
+</style>

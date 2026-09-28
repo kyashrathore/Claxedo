@@ -1,6 +1,6 @@
 import { downloads, github, contact, version } from "../config"
 import { canonicalUrl, routes } from "./routes"
-import { site } from "./site"
+import { home, site } from "./site"
 import { currentComparisons } from "./competitors"
 
 /** Pages that serve a markdown twin at `${path}.md` (the homepage twin is /index.md). */
@@ -15,9 +15,9 @@ export const whenToUse = `## When to use Claxedo
 
 Reach for Claxedo when someone wants to:
 
-- Run Claude Code, Codex, Cursor, or OpenCode from one workspace instead of separate terminals.
-- Configure plugins, skills, MCP servers, and credentials once and have every agent read the same setup.
-- Move a coding session between a laptop and a cloud VM on a sandbox provider they already pay for.
+- Run Claude Code, Codex, Cursor, OpenCode, Pi, or an ACP agent from one app instead of separate terminals.
+- Configure skills, plugins, and MCP servers once and have Claude Code, Codex, Cursor, and OpenCode read the same setup.
+- Run a coding session on their laptop, another machine they own, or a cloud sandbox, and reopen it from the desktop app or a browser.
 - Share a coding session with teammates through a control plane they self-host on a Cloudflare Worker.
 - Compare coding-agent workspaces on open source, self-hosting, multiplayer, and sandbox support.
 
@@ -40,21 +40,12 @@ export const homeMarkdown = `# ${site.name}
 
 ${site.description}
 
-- Open source, MIT licensed, built on the OpenCode engine.
-- Desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}
-- Hosted product: ${site.clients.web.destination}
+${home.points.map((point) => `- **${point.title}.** ${point.line}${point.link ? ` ${point.link.label}: ${point.link.href}` : ""}`).join("\n")}
+
+- Download the desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}
+- ${home.openInBrowser.label}: ${home.openInBrowser.href}
 - Source: ${github}
 - Community: ${contact}
-
-## What it does
-
-1. **Set up once.** Add agent plugins, skills, MCP servers, or AI provider credentials once. Claxedo syncs them to every agent on every device and shares them with your team.
-2. **Access from anywhere.** Open the same session from any browser, and move it to a cloud VM on any supported provider with your setup already there.
-3. **Share with anyone.** Invite your team into a session on a Cloudflare Worker you deploy in one command. They see every turn and approve from a phone.
-4. **Sidebar or tabs.** Hide the sidebar and sessions turn into tabs. The chat view and the real CLI live in the same workbench.
-5. **Orchestrate over MCP.** Any agent can consult a second model, open a session in another harness, or file a task through the Claxedo MCP.
-6. **Tasks board.** The work in flight as cards; each card starts a session from a preset, and agents file cards over MCP.
-7. **Fast.** A published, repeatable benchmark against T3 Code; see the comparison pages for the current figures.
 
 ## Pages
 
