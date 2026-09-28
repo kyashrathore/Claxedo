@@ -134,11 +134,8 @@ describe("a session's effective selections", () => {
     expect(effectivePermissionModeId(codex, "read-only")).toBe("read-only")
     expect(effectivePermissionModeId(codex, "plan")).toBe("workspace-write")
     expect(effectivePermissionModeId(cursor, "unsandboxed")).toBe("unsandboxed")
-  })
-
-  test("Cursor names no mode until one is chosen, because its own configured defaults decide", () => {
-    expect(effectivePermissionModeId(cursor, null)).toBeNull()
-    expect(effectivePermissionModeId(cursor, "plan")).toBeNull()
+    expect(effectivePermissionModeId(cursor, null)).toBe("auto-review")
+    expect(effectivePermissionModeId(cursor, "plan")).toBe("auto-review")
   })
 
   test("a declared default is one of the harness's own modes, and every table lands on the next turn", () => {

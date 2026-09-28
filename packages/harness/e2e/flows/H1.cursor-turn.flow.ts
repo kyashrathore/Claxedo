@@ -21,13 +21,10 @@ export async function run() {
     const api = new ClaxedoApi(stack.url)
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "cursor", modelId: "scripted" }
-    const policy = await api.createSession(workspace.directory, {
-      harness: { id: "cursor", access: "native" }, model, title: "Cursor permission setup",
-    })
-    await api.setPermissionMode(workspace.directory, policy.id, "unsandboxed")
     const session = await api.createSession(workspace.directory, {
       harness: { id: "cursor", access: "native" }, model, title: "Cursor scripted turn",
     })
+    await api.setPermissionMode(workspace.directory, session.id, "unsandboxed")
     await api.prompt(workspace.directory, session.id, "CURSOR_SCRIPT:proof", { model })
     const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id
       && (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "Cursor turn settlement" })

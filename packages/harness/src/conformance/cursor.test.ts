@@ -34,7 +34,7 @@ async function backend(): Promise<CursorBackend> {
   server.defaultScript("conformance")
   return {
     execution: "process", root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
-    harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
+    harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" }, permissionMode: "unsandboxed",
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance",
@@ -326,10 +326,11 @@ test("offers Cursor's permission modes and refuses an unknown one", async () => 
     const modes = await context.transport.config?.permissionModes({ session: context.session })
     expect(modes?.modes.map((mode) => mode.id)).toEqual(["review", "auto-review", "unsandboxed"])
     expect(modes?.modes.map((mode) => mode.level)).toEqual(["ask", "auto", "full"])
-    expect(modes).toEqual({ modes: modes!.modes, appliesFrom: "next-turn" })
-    expect(await context.transport.config?.permissionModes({ draft: draftOf(context) })).toEqual({ modes: modes!.modes, appliesFrom: "next-turn" })
+    expect(modes).toEqual({ modes: modes!.modes, currentModeId: "unsandboxed", appliesFrom: "next-turn" })
+    expect(await context.transport.config?.permissionModes({ draft: draftOf(context) })).toEqual({ modes: modes!.modes, currentModeId: "unsandboxed", appliesFrom: "next-turn" })
     await expect(context.transport.config!.setPermissionMode(context.session, "yolo")).rejects.toThrow("Unknown Cursor permission mode yolo")
-    expect((await context.transport.config!.read(context.session)).permissionMode).toBeUndefined()
+    expect((await context.transport.config!.setPermissionMode(context.session, "review")).currentModeId).toBe("review")
+    expect((await context.transport.config!.read(context.session)).permissionMode).toBe("review")
     expect((await context.transport.config!.setPermissionMode(context.session, "unsandboxed")).currentModeId).toBe("unsandboxed")
     expect((await context.transport.config!.read(context.session)).permissionMode).toBe("unsandboxed")
   } finally { await context.close() }
@@ -359,6 +360,19 @@ test("a session created in review mode is refused by the SDK's sandbox gate on i
     expect(await refusal(collect(context, context.turn("CURSOR_SCRIPT:conformance"), review))).toMatch(/sandboxing is not supported in this environment/)
     expect(state.server.requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE")).toHaveLength(0)
     expect((await collect(context, context.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a session that chose no mode reports auto-review and its first turn runs under it, at the SDK's sandbox gate", async () => {
+  const state = await backend()
+  const context = await setupConformance({ name: "default-mode", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const { permissionMode: _chosen, ...unchosen } = context.start.config
+    const session = await context.transport.start({ ...context.start, sessionId: "s2", config: unchosen },
+      { rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) } as unknown as SessionBroker)
+    expect((await context.transport.config!.permissionModes({ session })).currentModeId).toBe("auto-review")
+    expect(await refusal(collect(context, context.turn("CURSOR_SCRIPT:conformance"), session))).toMatch(/sandboxing is not supported in this environment/)
+    expect(state.server.requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE")).toHaveLength(0)
   } finally { await context.close() }
 }, 60_000)
 

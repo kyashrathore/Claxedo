@@ -17,13 +17,10 @@ export async function run() {
     const firstWorkspace = await stack.daemon.makeWorkspace("h25-cursor-first")
     const firstStream = await stack.events(firstWorkspace.directory)
     const model = { providerId: "cursor", modelId: "scripted" }
-    const firstPolicy = await api.createSession(firstWorkspace.directory, {
-      harness: { id: "cursor", access: "native" }, model, title: "First Cursor permission setup",
-    })
-    await api.setPermissionMode(firstWorkspace.directory, firstPolicy.id, "unsandboxed")
     const first = await api.createSession(firstWorkspace.directory, {
       harness: { id: "cursor", access: "native" }, model, title: "First Cursor backend",
     })
+    await api.setPermissionMode(firstWorkspace.directory, first.id, "unsandboxed")
     await api.prompt(firstWorkspace.directory, first.id, "CURSOR_SCRIPT:first", { model })
     await firstStream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === first.id, { label: "first Cursor session idle" })
     assert.match(assistantText(await api.messages(firstWorkspace.directory, first.id)), /CURSOR-FIRST-BACKEND/)
@@ -34,13 +31,10 @@ export async function run() {
     const secondStream = await stack.events(secondWorkspace.directory)
     let second: Awaited<ReturnType<typeof api.createSession>>
     try {
-      const secondPolicy = await api.createSession(secondWorkspace.directory, {
-        harness: { id: "cursor", access: "native" }, model, title: "Second Cursor permission setup",
-      })
-      await api.setPermissionMode(secondWorkspace.directory, secondPolicy.id, "unsandboxed")
       second = await api.createSession(secondWorkspace.directory, {
         harness: { id: "cursor", access: "native" }, model, title: "Second Cursor backend",
       })
+      await api.setPermissionMode(secondWorkspace.directory, second.id, "unsandboxed")
     } catch (error) {
       assert.match(String(error), /Cursor SDK froze|CursorBackendUrlFrozenError|credential binding cannot be used/)
       assert.equal(stack.cursor[1].requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE").length,
