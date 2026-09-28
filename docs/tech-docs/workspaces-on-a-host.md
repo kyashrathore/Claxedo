@@ -602,9 +602,14 @@ wire (B.4). `createTerminalsApi`
 daemon's `mountWorkspaceRuntimePtyWebSocketProxy`
 (`packages/claxedo-local-server/src/deployments/local/server-workspace-pty-proxy.ts`)
 carries that socket for a `/workspaces/<id>` route. The terminal store
-(`packages/claxedo-app/src/terminal/store.ts`) creates a terminal without a
-session id; only `recoverTerminal`, which recreates a lost terminal, passes
-the session id the lost one carried.
+(`packages/claxedo-app/src/terminal/store.ts`) creates a terminal with the
+session the route has open on that placement. `createPty`
+(`packages/claxedo-app/src/server/terminals.ts`) sends it only for a
+placement reached over the relay, and refuses such a placement with no open
+session before any request (`terminal_session_required`); the terminal
+creator shows "Open a session on this machine to start a terminal". A
+placement this machine serves creates terminals without a session, and
+`recoverTerminal` passes the session id the lost terminal carried.
 
 On the runtime, `PtyRoutes` (`packages/workspace-runtime/src/routes/pty.ts`)
 requires a relayed create on a managed runtime to name the session it
@@ -613,10 +618,8 @@ session; `denyWorkspaceViewers`
 (`packages/workspace-runtime/src/routes/workspace-role.ts`) refuses a
 viewer's PTY, process and Git writes by the role on the relay token (403
 `relay_role_denied`). A terminal's `pty.*` frames ride the workspace bus.
-So a terminal the app creates through the relay on a machine whose runtime is
-`managed-private` is refused with `pty_session_id_required`; the pty route
-test "requires and authorizes a persisted session identity for managed PTY
-creation" is that refusal.
+That is why the app never asks such a runtime for a terminal without a
+session; flow 24 proves both arms on a live sandbox.
 
 **G.2 Configuration** — provider configuration the owner pushed to a machine
 reaches the daemon over `PUT /api/claxedo/host-provider-config`

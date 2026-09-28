@@ -16,6 +16,7 @@ export type TerminalCreateInput = {
   readonly title: string
   readonly command?: string
   readonly sessionId?: SessionId
+  readonly openSessionId?: SessionId
   readonly previousTerminalId?: TerminalId
   readonly createRequestId: string
 }

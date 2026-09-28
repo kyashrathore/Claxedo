@@ -3,10 +3,11 @@ import type { WorkspaceFileFocusTarget } from "@/lib/workspace-file-focus"
 import type { PlacementId } from "@/server"
 import type { RendererBudget } from "./backend/renderer-budget"
 import type { TerminalPaneState } from "./model"
-import type { TerminalStore } from "./store"
+import type { OpenSession, TerminalStore } from "./store"
 
 export type Terminals = {
   readonly placementId: Accessor<PlacementId | undefined>
+  readonly openSession: () => OpenSession | undefined
   readonly renderers: RendererBudget
   readonly store: (placementId: PlacementId) => TerminalStore
   readonly retain: (placementId: PlacementId) => () => void

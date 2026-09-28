@@ -92,3 +92,29 @@ test("24 a live sandbox streams a turn as it runs", async ({ signedCloud, page }
   expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toEqual([])
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
 })
+
+test("24 a terminal on a live sandbox belongs to the open session, and with no session open the creator refuses before asking the sandbox", async ({ signedCloud, page, isMobile }) => {
+  test.skip(isMobile, "the terminal creator runs at desktop width")
+  test.setTimeout(150_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "Cloudy")
+  await startCloudWorkspace(signedCloud, workspace)
+  const sessionId = await cloudTurn(signedCloud, workspace, { title: "Terminal turn", script: "terminal", reply: "Ready for a shell" })
+  const creates: string[] = []
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/api/wr/pty")) creates.push(request.postData() ?? "")
+  })
+  await signedCloud.signIn(page, signedCloud.owner)
+
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await page.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await page.getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(page.getByText("Open a session on this machine to start a terminal")).toBeVisible()
+  expect(creates).toEqual([])
+
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id, sessionId)}`)
+  await expect(page.getByText("Ready for a shell")).toBeVisible()
+  await page.getByRole("button", { name: "New Terminal", exact: true }).click()
+  await page.getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(page).toHaveURL(/\/w\/[^/]+\/terminal\/pty_[^/?]+$/)
+  expect(creates.map((body) => (JSON.parse(body) as { sessionId?: string }).sessionId)).toEqual([sessionId])
+})
