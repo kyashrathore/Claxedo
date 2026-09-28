@@ -1,4 +1,4 @@
-import { createContext, createEffect, useContext, type JSX } from "solid-js"
+import { createContext, createEffect, createRenderEffect, useContext, type JSX } from "solid-js"
 import type { Store } from "solid-js/store"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { isRecord } from "@claxedo/helpers/guards"
@@ -43,7 +43,7 @@ export const TRANSCRIPT_DEFAULTS: TranscriptPreferences = {
   editToolPartsExpanded: false,
 }
 
-export const CONTRAST_DEFAULTS: ContrastLevels = { light: 40, dark: 100 }
+export const CONTRAST_DEFAULTS: ContrastLevels = { light: 80, dark: 40 }
 
 export function contrastLevel(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)))
@@ -123,7 +123,7 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
   const [alerts, setAlerts] = persistedStore(preferenceKey("alerts"), ALERT_DEFAULTS, readAlerts)
   createEffect(() => writeFont("--font-family-sans", appearance.uiFont, uiFontFamily))
   createEffect(() => writeFont("--font-family-mono", appearance.codeFont, codeFontFamily))
-  createEffect(() => {
+  createRenderEffect(() => {
     const style = document.documentElement.style
     style.setProperty("--claxedo-contrast-light", String(contrast.light))
     style.setProperty("--claxedo-contrast-dark", String(contrast.dark))

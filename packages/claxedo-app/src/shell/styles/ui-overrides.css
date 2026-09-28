@@ -549,11 +549,6 @@ html[data-theme="codex"] .claxedo-workspace-review .ui-file-icon {
   height: 14px;
 }
 
-:root {
-  --claxedo-contrast-light: 40;
-  --claxedo-contrast-dark: 100;
-}
-
 html[data-theme="codex"][data-color-scheme="light"] {
   --codex-surface: #ffffff;
   --codex-ink: #0d0d0d;
