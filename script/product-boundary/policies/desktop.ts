@@ -349,7 +349,7 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // 1,210 modules and 38 packages, no headroom. The Review tab's
+  // 1,223 modules and 38 packages, no headroom. The Review tab's
   // `review/loaded-diff-identity.ts` is its own module because the benchmark
   // driver imports it to compute the identity it waits for. The workbench
   // store's pane handover (`workbench/handover.ts`, `workbench/reveal-holds.ts`)
@@ -375,8 +375,12 @@ export const desktopRenderer: Policy = {
   // `shell/view/daemon-lost-banner.tsx` are the desktop's one alert that its
   // local service stopped. `server/model-choice.ts` is the one comparison of two
   // model choices, read by the composer's model selection and by the session
-  // list's rule for a row that changes only its selections.
-  ceilings: { modules: 1210, packages: 38 },
+  // list's rule for a row that changes only its selections. The Usage settings
+  // section (`usage/view/*`) is a renderer screen: its model owns the quota
+  // account groups, window risk, the cost estimate, the daily series and the
+  // token split, each a module its unit tests reach directly, and it draws the
+  // shared `lib/failure.tsx` notice and the kit's collapsible.
+  ceilings: { modules: 1223, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
