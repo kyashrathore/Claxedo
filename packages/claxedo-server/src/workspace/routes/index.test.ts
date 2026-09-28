@@ -103,7 +103,7 @@ vi.mock("@claxedo/server-core/agent-config/index", () => ({
     version: 1,
     mcp: {},
     runner: { type: "opencode" },
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
   })),
 }))
 
@@ -219,6 +219,8 @@ function services(): ControlPlaneServices {
       deleteCredentialsByProvider: vi.fn(async () => 1),
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => ({}),
     },
     relay: {},
     sandbox: {},
@@ -988,6 +990,7 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     expect(svc.credentials.putCredential).toHaveBeenCalledWith({
+      owner: null,
       provider_id: "vercel",
       kind: "sandbox_driver",
       source: "managed",
@@ -1952,6 +1955,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",
@@ -2039,6 +2043,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",
@@ -2517,6 +2522,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_2",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",
@@ -2848,6 +2854,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",

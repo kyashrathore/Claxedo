@@ -203,20 +203,20 @@ describe("agent config", () => {
       authMode: "api-key" as const,
       expiresAt: 1_800_000_000_000,
     }
-    mod.configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": projection }) })
+    mod.configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } }) })
 
     const snap = await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })
 
-    expect(snap.auth).toEqual({ "claude-sdk": projection })
+    expect(snap.auth.accounts.local).toEqual({ "claude-sdk": projection })
     expect(JSON.stringify(snap)).not.toContain("sk-openai-typed-into-the-config-file")
-    expect(normalizeRuntimeSnapshot(snap)?.auth).toEqual({ "claude-sdk": projection })
+    expect(normalizeRuntimeSnapshot(snap)?.auth.accounts.local).toEqual({ "claude-sdk": projection })
   })
 
   test("a composition with no authority sends no credentials at all", async () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
     mod.configureAgentConfig({})
 
-    expect((await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })).auth).toEqual({})
+    expect((await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })).auth).toEqual({ machineOwnerUserId: "", accounts: {} })
   })
 
   test("snapshot remains unresolved when no harness is configured", async () => {
@@ -272,14 +272,14 @@ describe("agent config", () => {
     mod.configureAgentConfig({
       projectAuth: async ({ scope }) => {
         scopes.push(scope)
-        return {
+        return { machineOwnerUserId: "local", accounts: { local: {
           "claude-sdk": {
             baseUrl: "https://api.anthropic.com",
             placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
             authMode: "api-key",
             apiPath: "/v1",
           },
-        }
+        } } }
       },
     })
 
@@ -292,7 +292,7 @@ describe("agent config", () => {
     expect(snap.version).toBe(4)
     expect(snap.connections).toEqual([])
     expect(scopes).toEqual(["shared"])
-    expect(snap.auth).toEqual({
+    expect(snap.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
         placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
@@ -300,7 +300,7 @@ describe("agent config", () => {
         apiPath: "/v1",
       },
     })
-    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn-placeholder" })?.auth).toEqual({
+    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn-placeholder" })?.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
         placeholder: "dtn-placeholder",
@@ -314,7 +314,7 @@ describe("agent config", () => {
   test("the snapshot retains its canonical version", async () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
     const config = await mod.getRuntimeConfigSnapshot()
-    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
+    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: { machineOwnerUserId: "", accounts: {} } })
   })
 
   // ── Commands ────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ createInterface({ input: process.stdin }).on("line", line => {
 function startInput(directory: string, id: string, access: "native" | "connection"): StartInput {
   return { sessionId: "s1", workspaceId: "w1", directory, locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id, access } }, projection: { generation: "g1", pluginRoots: [], mcpServers: [], notApplied: [] },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } }
 }
 
 function committed(directory: string, connectionId: string) {
@@ -49,7 +49,7 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
     claude: () => ({ executable: "claude", configRoot: path.join(root, "claude-homes"),
       userConfigRoot: path.join(root, "claude-owner"), env: process.env }),
     cursor: () => ({ env: process.env, homeRoot: path.join(root, "cursor-homes"), placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }),
-    opencode: () => ({ login: { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }, databasePath: path.join(root, "opencode.db"), configContent: JSON.stringify({ model: "proof/proof",
+    opencode: () => ({ databasePath: path.join(root, "opencode.db"), configContent: JSON.stringify({ model: "proof/proof",
       provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof", models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } } }) }) })
   const brokerFor = (connectionId: string) => ({ rebind: committed(root, connectionId) }) as unknown as SessionBroker
   try {

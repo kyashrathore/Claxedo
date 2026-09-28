@@ -9,7 +9,7 @@ const PUSHED = { baseUrl: "https://broker.owner.test/bindings/b1", placeholder: 
 const MACHINE = { baseUrl: "http://127.0.0.1/bindings/local", placeholder: "sk-machine", authMode: "api-key" as const }
 
 /** The sealed payload's plaintext, exactly as the control plane serialized it and the child opened it. */
-const opened = (providers: Record<string, unknown>) => JSON.stringify({ version: 1, providers })
+const opened = (providers: Record<string, unknown>) => JSON.stringify({ version: 1, credentials: { machineOwnerUserId: "local", accounts: { local: providers } } })
 
 async function put(body: unknown) {
   return HostProviderConfigRoutes().request("/", {
@@ -27,20 +27,20 @@ describe("the host provider-config route", () => {
 
   test("a pushed revision installs rows that the runtime's credential authority then answers with", async () => {
     configureAgentConfig({
-      projectAuth: hostProviderConfigProjectAuth(async () => ({ "claude-sdk": MACHINE, codex: MACHINE }), hostProviderConfig),
+      projectAuth: hostProviderConfigProjectAuth(async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": MACHINE, openai: MACHINE } } }), hostProviderConfig, () => "local", () => ({})),
     })
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ "claude-sdk": MACHINE, codex: MACHINE })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": MACHINE, openai: MACHINE } } })
 
     const response = await put({ revision: 3, providers: opened({ "claude-sdk": PUSHED }) })
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ revision: 3, providerCount: 1 })
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ "claude-sdk": PUSHED, codex: MACHINE })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": PUSHED, openai: MACHINE } } })
   })
 
   test("reports the held revision whether or not one was pushed", async () => {
     expect(await (await HostProviderConfigRoutes().request("/")).json()).toEqual({ revision: null, providerCount: 0 })
-    await put({ revision: 2, providers: opened({ "claude-sdk": PUSHED, codex: PUSHED }) })
+    await put({ revision: 2, providers: opened({ "claude-sdk": PUSHED, openai: PUSHED }) })
     expect(await (await HostProviderConfigRoutes().request("/")).json()).toEqual({ revision: 2, providerCount: 2 })
   })
 
@@ -49,7 +49,7 @@ describe("the host provider-config route", () => {
     const response = await put({ revision: 3, providers: opened({}) })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ revision: 3, providerCount: 0 })
-    expect(hostProviderConfig()).toEqual({})
+    expect(hostProviderConfig()?.accounts.local).toEqual({})
   })
 
   test("a push naming one unreadable row changes nothing", async () => {
@@ -57,23 +57,23 @@ describe("the host provider-config route", () => {
 
     const response = await put({
       revision: 3,
-      providers: opened({ codex: PUSHED, "claude-sdk": { baseUrl: "https://x", authMode: "api-key" } }),
+      providers: opened({ openai: PUSHED, "claude-sdk": { baseUrl: "https://x", authMode: "api-key" } }),
     })
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "invalid_provider_config" } })
-    expect(hostProviderConfig()).toEqual({ "claude-sdk": PUSHED })
+    expect(hostProviderConfig()).toEqual({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": PUSHED } } })
     expect(hostProviderConfigState()).toEqual({ revision: 2, providerCount: 1 })
   })
 
   test("a revision below the held one is refused whole; the same revision re-installs so main's re-push is a no-op", async () => {
     await put({ revision: 4, providers: opened({ "claude-sdk": PUSHED }) })
 
-    const rolledBack = await put({ revision: 3, providers: opened({ codex: MACHINE }) })
+    const rolledBack = await put({ revision: 3, providers: opened({ openai: MACHINE }) })
 
     expect(rolledBack.status).toBe(409)
     expect(await rolledBack.json()).toMatchObject({ error: { code: "provider_config_revision_stale" } })
-    expect(hostProviderConfig()).toEqual({ "claude-sdk": PUSHED })
+    expect(hostProviderConfig()).toEqual({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": PUSHED } } })
     expect(hostProviderConfigState()).toEqual({ revision: 4, providerCount: 1 })
 
     const again = await put({ revision: 4, providers: opened({ "claude-sdk": PUSHED }) })

@@ -12,11 +12,8 @@ export function ownerMayUseMachineLogin(owner: TurnActor, options: MachineLoginP
 }
 
 export function selectedProviderProjection(credentials: ResolvedCredentials, providerIds: readonly string[]): ProviderProjection | undefined {
-  for (const id of providerIds) {
-    const projection = credentials.providers[id]
-    if (projection !== undefined) return projection
-  }
-  return undefined
+  const bound = providerIds.flatMap((id) => Object.hasOwn(credentials.providers, id) ? [credentials.providers[id]!] : [])
+  return bound.find((projection) => !isProviderUnavailable(projection)) ?? bound[0]
 }
 
 export function providerPlaceholder(projection: ProviderProjection): { baseURL: string; apiKey: string } | ProviderUnavailable {

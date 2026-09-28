@@ -55,14 +55,14 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "26515973fee3e13a3f84e8cf29204f096a51d95a8cc88357bb79188bff6105d9",
+    "@claxedo/agent-sdk-runtime": "519f1499ce39448e33e474087f5e31c07bc76516f838c9dc11d6e5031f317684",
     "@claxedo/agent-sdk-runtime/compat-events": "65a84e13c8047078d51a4246884964de0feba488c4f69f991a31d812401f50f7",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
-    "@claxedo/agent-sdk-runtime/provider-projection": "11afd299eb610f71799cfe4466341be7a1a20e86a8b9763c078e89ef7cce6b52",
-    "@claxedo/agent-sdk-runtime/adapters": "592044d4de45dc2d980a5fee23c25c007df0569a687551f8361a0723456898b0",
-    "@claxedo/agent-sdk-runtime/message-page": "eb135029b11ccd077977389656c8804efadcef98c8a76295c0eb5f34ade142bf",
-    "@claxedo/agent-sdk-runtime/stores/memory": "7fea62bb1ae35bd706e3201ddf427ee4138773a66ababc0d29b26f707c28c8af",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "9f4469c42688db29ab43fa41d333978494c2837035ded3cd695ee12710980a9d",
+    "@claxedo/agent-sdk-runtime/provider-projection": "42ddc09dae742d18487b00bd475eb22a4c8c5286fdf955485b151c5a1c3b02c5",
+    "@claxedo/agent-sdk-runtime/adapters": "e6c89b5449166d11010db37f8d56bb6c036cb3572019315bb73dc15c47db424a",
+    "@claxedo/agent-sdk-runtime/message-page": "b4bf216c0ea1b3bcec217e61f99444c88e4c166755de4a480fba26a2e42fdee6",
+    "@claxedo/agent-sdk-runtime/stores/memory": "f3f2915b26eafe55e9245d1c9d420c8f2fd592e750fe92ab42d308f410acdcfd",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "f19c4d1a0631fa17a461712a2cb5ce32e583ae107a067ef21af4de1b6d9e8187",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
   },
   "valueExports": {
@@ -92,6 +92,7 @@
       "classifyFirstTurnError",
       "comparePermissionLevels",
       "connectionIdForHarness",
+      "credentialSnapshot",
       "defaultSessionModel",
       "deriveSessionTitle",
       "extractPromptTitleText",

@@ -39,14 +39,14 @@ test("the agent-config snapshot route serves the snapshot with its auth map remo
   // The composition's broker projects nothing for a call that names no
   // workspace, and this route names none; only a fake can put a placeholder
   // into the snapshot this route strips.
-  const projectAuth = vi.fn(async () => ({
+  const projectAuth = vi.fn(async () => ({ machineOwnerUserId: "local", accounts: { local: {
     "claude-sdk": {
       baseUrl: "http://127.0.0.1:2595/bindings/b1",
       placeholder: "placeholder-that-must-not-travel",
       authMode: "bearer" as const,
       expiresAt: Date.now() + 60 * 60 * 1000,
     },
-  }))
+  } } }))
   configureAgentConfig({ projectAuth })
 
   const response = await createAgentConfigRoutes().request("http://localhost/")

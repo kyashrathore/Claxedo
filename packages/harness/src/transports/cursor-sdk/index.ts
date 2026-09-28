@@ -62,7 +62,7 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   private credential(input: StartInput | DraftLaunch): CursorCredential {
-    return cursorCredential(input, this.env, this.options)
+    return cursorCredential(input, this.env)
   }
 
   private compose(input: StartInput | DraftLaunch, credential: CursorCredential, key: string) {

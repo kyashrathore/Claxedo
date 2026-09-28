@@ -35,10 +35,11 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
      */
     org_id: text().notNull().default(SINGLE_TENANT_ORG),
     /**
-     * The user whose account this is. NULL is the team/operator row, and it is
-     * a value rather than an absence: a team account is shared by everyone in
-     * the org, so it has to sort alongside personal rows in the same uniqueness
-     * rule instead of escaping it.
+     * The person whose account this is. NULL is the org's own row: a team
+     * account anyone in the org without their own account for that provider
+     * spends, or a connection, sandbox-driver or deployment secret no person
+     * owns. It is a value rather than an absence: it sorts alongside personal
+     * rows in the same uniqueness rule instead of escaping it.
      */
     owner: text(),
     provider_id: text().notNull(),

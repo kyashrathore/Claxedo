@@ -1,33 +1,34 @@
-import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * What the owner sealed for a host, once it is open again.
  *
- * The plaintext is a `projectAuth` answer and nothing else: the same
- * `ProviderProjectionSource` rows `createLocalCredentialBroker` already emits,
- * so a pushed credential reaches a harness through the one seam
- * (`configureAgentConfig({ projectAuth })`) rather than a second credential
- * path beside it. Nothing here decrypts — the process holding the machine's
- * sealing key does that and hands the text over.
+ * The plaintext is a `CredentialSnapshot` naming its owner as the machine
+ * owner: the same shape `projectAuth` answers, so a pushed credential reaches a
+ * harness through the one seam (`configureAgentConfig({ projectAuth })`)
+ * rather than a second credential path beside it. Nothing here decrypts — the
+ * process holding the machine's sealing key does that and hands the text over.
  *
  * Precedence, and it is the whole policy: a provider the owner pushed replaces
- * whatever this machine would have answered for that provider, and a provider
- * the owner did not push is untouched. A harness only falls back to the login
- * its own box holds when NO row names its provider, so naming one here is what
- * puts the owner's account ahead of the machine's.
+ * whatever this machine would have answered for their own account on that
+ * provider, and a provider the owner did not push, or chose the team account
+ * for, is untouched. A harness only falls back to the login its own box holds
+ * when NO row names its provider, so naming one here is what puts the owner's
+ * account ahead of the machine's.
  */
 
-import { providerProjectionRecord } from "@claxedo/agent-sdk-runtime/provider-projection"
+import { credentialSnapshot } from "@claxedo/agent-sdk-runtime/provider-projection"
+import type { AccountSources } from "./account-holder"
 
 /** Bumped when the sealed shape changes; a host that cannot read a version refuses the whole revision. */
 export const HOST_PROVIDER_CONFIG_VERSION = 1
 
 export type HostProviderConfig = {
   version: number
-  providers: Record<string, ProviderProjectionSource>
+  credentials: CredentialSnapshot
 }
 
-export function serializeHostProviderConfig(providers: Record<string, ProviderProjectionSource>): string {
-  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, providers })
+export function serializeHostProviderConfig(providers: Record<string, ProviderProjectionSource>, owner: string): string {
+  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, credentials: { machineOwnerUserId: owner, accounts: { [owner]: providers } } })
 }
 
 /**
@@ -61,22 +62,34 @@ export function parseHostProviderConfig(text: string): HostProviderConfig {
   // environment into an explicit refusal — a host has no sandbox provider to
   // fill such a variable, so the owner sees it disabled rather than silently
   // absent.
-  const providers = providerProjectionRecord(record.providers, {}, { onInvalid: "reject" })
-  if (!providers) throw new Error("pushed provider configuration names a provider row this host cannot read")
-  return { version: HOST_PROVIDER_CONFIG_VERSION, providers }
+  const credentials = credentialSnapshot(record.credentials, {})
+  if (!credentials) throw new Error("pushed provider configuration names a provider row this host cannot read")
+  return { version: HOST_PROVIDER_CONFIG_VERSION, credentials }
 }
 
 /**
  * The `projectAuth` a host composes: this machine's own answer with the
- * owner's pushed rows written over it.
+ * enrolled owner's pushed rows written over their accounts.
  *
- * `pushed` is read on every call rather than captured, because a revision can
- * land between two turns and the next one must resolve against it without the
+ * The enrolled owner is the one source of who owns this machine; a pushed
+ * snapshot that names anyone else is an earlier enrollment's and is ignored.
+ * Both are read on every call, because a revision or an enrollment can land
+ * between two turns and the next one must resolve against it without the
  * process being rebuilt.
  */
 export function hostProviderConfigProjectAuth<Input>(
-  base: ((input: Input) => Promise<Record<string, ProviderProjectionSource>>) | undefined,
-  pushed: () => Record<string, ProviderProjectionSource>,
-): (input: Input) => Promise<Record<string, ProviderProjectionSource>> {
-  return async (input) => ({ ...(await (base?.(input) ?? Promise.resolve({}))), ...pushed() })
+  base: ((input: Input) => Promise<CredentialSnapshot>) | undefined,
+  pushed: () => CredentialSnapshot | undefined,
+  enrolledOwner: () => string | undefined,
+  ownerSources: (owner: string, input: Input) => AccountSources,
+): (input: Input) => Promise<CredentialSnapshot> {
+  return async (input) => {
+    const owner = enrolledOwner()
+    const local = base ? await base(input) : { machineOwnerUserId: owner ?? "", accounts: {} }
+    const remote = pushed()
+    if (!owner || !remote || remote.machineOwnerUserId !== owner) return local
+    const sources = ownerSources(owner, input)
+    const own = Object.fromEntries(Object.entries(remote.accounts[owner] ?? {}).filter(([providerId]) => sources[providerId] !== "team"))
+    return { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } } }
+  }
 }

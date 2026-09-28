@@ -13,7 +13,6 @@ import { createRequestBroker, createSessionBroker, createTurnBroker } from "@cla
 import type { HarnessServices, StartInput, TurnInput } from "@claxedo/harness/contract"
 import { OpenCodeSdkTransport } from "@claxedo/harness/opencode-sdk"
 import { MemoryPorts, authority, origin } from "@claxedo/harness/testing"
-import { loopbackMachineLoginPolicy } from "../testing"
 
 type ChatRequest = { messages?: Array<{ role?: string }> }
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>
@@ -95,7 +94,6 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
   const endpoint = scriptedEndpoint(path.join(directory, "README.md"))
   const baseURL = await endpoint.listen()
   const transport = new OpenCodeSdkTransport(services(), {
-    login: loopbackMachineLoginPolicy(),
     databasePath: path.join(root, "opencode.db"),
     configContent: JSON.stringify({
       model: "proof/proof",
@@ -126,7 +124,7 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
     model: MODEL,
     config: { harness: { id: "opencode", access: "native" }, model: MODEL },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-    credentials: { providers: { proof: { baseUrl: baseURL, placeholder: "proof-key", authMode: "api-key" } }, secrets: {}, leaseGeneration: "one" },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { proof: { baseUrl: baseURL, placeholder: "proof-key", authMode: "api-key" } }, secrets: {}, leaseGeneration: "one" },
   }
   try {
     const session = await transport.start(start, sessionBroker)

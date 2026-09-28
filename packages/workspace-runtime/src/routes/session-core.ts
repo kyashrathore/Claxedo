@@ -76,6 +76,7 @@ import {
   type SessionTurnOrigin,
   type SessionAccessDecision,
   type SessionAccessOperation,
+  type SessionAccessContextReader,
   type SessionAccessPolicy,
   type SessionTurnGrantDecision,
 } from "../session-access-policy"
@@ -84,7 +85,8 @@ import {
   type ActiveSessionTurnLease,
 } from "./session-turn-lease"
 import { SessionRollbackError } from "../session-rollback-error"
-import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
+import { CredentialSelectionError } from "@claxedo/harness/registry"
+import { harnessUnavailableResponse } from "./session-harness-refusal"
 import { asRecord } from "@claxedo/helpers/guards"
 import { errorMessage as thrownMessage } from "@claxedo/helpers"
 
@@ -140,15 +142,28 @@ async function readSession(
   return await (await opts.runtime(c)).sessions.get(sessionId, directory) ?? undefined
 }
 
-/** Whose accounts a session created by this request spends: the verified actor, or the machine's own user. */
-function sessionOwner(c: Ctx): TurnActor {
+/**
+ * Whose accounts a session created by this request spends: the verified
+ * person, whoever relays it on their behalf, or this runtime's owner for a
+ * loopback caller and for a platform service that names nobody. A human the
+ * token does not name is refused.
+ */
+export function sessionOwner(c: SessionAccessContextReader): TurnActor {
   const actor = sessionAccessContext(c).actor
-  return actor ? { kind: "person", userId: actor.actorId } : { kind: "machine-owner" }
+  if (!actor) return { kind: "machine-owner" }
+  if (actor.userId) return { kind: "person", userId: actor.userId }
+  if (actor.actorKind === "agent") return { kind: "machine-owner" }
+  throw new CredentialSelectionError("account_unavailable", "Verified account owner is unavailable")
 }
 
-function turnOriginOf(origin: SessionTurnOrigin | undefined, owner: TurnActor): TurnOrigin {
-  if (origin?.provenance === "relay-replayed") return { actor: { kind: "person", userId: origin.actor.actorId }, via: "relay", reissued: false }
-  return { actor: owner, via: "loopback", reissued: false }
+/** Who sent a turn, for its record only: a turn spends its session's stored owner's accounts, never the sender's. */
+function turnSender(actor: { actorId: string; userId?: string } | undefined): TurnActor {
+  return actor ? { kind: "person", userId: actor.userId ?? actor.actorId } : { kind: "machine-owner" }
+}
+
+function turnOriginOf(origin: SessionTurnOrigin | undefined, c: Ctx): TurnOrigin {
+  if (origin?.provenance === "relay-replayed") return { actor: turnSender(origin.actor), via: "relay", reissued: false }
+  return { actor: turnSender(sessionAccessContext(c).actor), via: "loopback", reissued: false }
 }
 
 async function sessionConfigOf(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<SessionConfig> {
@@ -602,16 +617,6 @@ function goalRoute(
   }
 }
 
-/**
- * A runtime with no default harness, or a connection it cannot run, is a
- * configuration state and not a fault. Left to escape it is a 500, which
- * every caller reads as "the runtime broke" and the MCP tools show as a bare
- * `http_500`.
- */
-function harnessUnavailableResponse(c: Ctx, error: unknown) {
-  if (!(error instanceof WorkspaceHarnessUnavailableError)) return undefined
-  return c.json(errorBody(error.code, error.message), 409)
-}
 
 const rootsOnly = (c: Ctx) => c.req.query("roots") === "true" || c.req.query("roots") === "1"
 
@@ -1632,7 +1637,7 @@ export function createSessionRoutes(opts: Opts) {
           }
           const runtime = await opts.runtime(c)
           const requestedHarness = opts.requestedSessionHarness(c)
-          const owner = sessionOwner(c)
+          const owner = body.parentID ? runtime.reads.sessionOwner(body.parentID) : sessionOwner(c)
           const draft = { harness: requestedHarness ?? opts.defaultHarness(), directory: directory ?? "", owner } satisfies HarnessTarget
           const draftCapabilities = await runtime.reads.capabilities(draft)
           const refusal = admitSessionInstructions({
@@ -1739,7 +1744,7 @@ export function createSessionRoutes(opts: Opts) {
             directory,
             harness: draft.harness,
             owner,
-            origin: turnOriginOf(sessionTurnOrigin(c), owner),
+            origin: turnOriginOf(sessionTurnOrigin(c), c),
             ...(start ? { start } : {}),
             ...(body.parentID ? { parentID: body.parentID } : {}),
             ...(createModel ? { model: createModel } : {}),
@@ -2115,7 +2120,7 @@ export function createSessionRoutes(opts: Opts) {
                 sessionId: id,
                 directory,
                 body,
-                origin: turnOriginOf(sessionTurnOrigin(c), sessionOwner(c)),
+                origin: turnOriginOf(sessionTurnOrigin(c), c),
                 publishGlobal: opts.publishGlobal,
                 activeTurn,
                 onTurnTarget: lostTurn.set,
@@ -2499,7 +2504,7 @@ export function createSessionRoutes(opts: Opts) {
           sessionId: id,
           directory,
           body,
-          origin: turnOriginOf(sessionTurnOrigin(c), sessionOwner(c)),
+          origin: turnOriginOf(sessionTurnOrigin(c), c),
           publishGlobal: opts.publishGlobal,
           createActiveTurnScope: opts.createActiveTurnScope
             ? () => turnScope(opts.createActiveTurnScope?.({ c, directory, sessionId: id }), turnAdmission.lease)

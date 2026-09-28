@@ -1,14 +1,15 @@
 import { credentialByProvider, PROVIDER_AUTH_KINDS } from "@claxedo/server-core/credentials/registry"
+import { spentRowOwner } from "./account-holder"
+import { accountSelections } from "./account-source"
 import { piCredentialConnected, piCredentialProviderIDs } from "./pi-provider-projection"
 export { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "./pi-provider-projection"
 
-export function piRegistryCredentialProvider(providerID: string, org?: string) {
-  return piCredentialProviderIDs(providerID).find((id) => {
-    const credential = credentialByProvider(id, { onOutage: "throw", kind: PROVIDER_AUTH_KINDS }, org)
-    return piCredentialConnected(providerID, credential)
-  })
+export function piRegistryCredentialProvider(providerID: string, owner: string, org?: string) {
+  const sources = accountSelections(org)[owner] ?? {}
+  return piCredentialProviderIDs(providerID).find((id) => piCredentialConnected(providerID,
+    credentialByProvider(id, { onOutage: "throw", kind: PROVIDER_AUTH_KINDS, owner: spentRowOwner(sources, id, owner) }, org)))
 }
 
-export function piRegistryProviderConnected(providerID: string, org?: string) {
-  return piRegistryCredentialProvider(providerID, org) !== undefined
+export function piRegistryProviderConnected(providerID: string, owner: string, org?: string) {
+  return piRegistryCredentialProvider(providerID, owner, org) !== undefined
 }

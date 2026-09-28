@@ -42,12 +42,14 @@ export function ownerGrantIdentity(input: { key: WorkspaceRuntimeManagementVerif
       return undefined
     }
     const actorId = stringClaim(payload, "actor_id")
+    const userId = stringClaim(payload, "user_id")
     const orgId = stringClaim(payload, "org_id")
     const workspaceId = stringClaim(payload, "workspace_id")
-    if (!actorId || !orgId || workspaceId !== input.workspaceId) return undefined
+    if (!userId || !actorId || !orgId || workspaceId !== input.workspaceId) return undefined
     return {
       principal_kind: "user",
       actor_id: actorId,
+      user_id: userId,
       actor_kind: "human",
       actor_public_id: actorId,
       actor_name: "workspace owner",

@@ -449,7 +449,7 @@ void describe("RuntimeStore", () => {
     store.markPublished("parent", "create")
     const origin = {
       provenance: "relay-replayed" as const,
-      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const },
+      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const, userId: "bob" },
       authority: { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const },
     }
     store.recordSubagentOrigin("parent", "subagent_host", origin)
@@ -495,7 +495,7 @@ void describe("RuntimeStore", () => {
     const grant = "eyJ.deferred-grant-token.sig"
     const origin = {
       provenance: "relay-replayed" as const,
-      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const },
+      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const, userId: "bob" },
       authority: { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const },
       grant,
     }
@@ -522,7 +522,7 @@ void describe("RuntimeStore", () => {
     store.markPublished("parent", "create")
     const origin = {
       provenance: "relay-replayed" as const,
-      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const },
+      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const, userId: "bob" },
       authority: { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const },
     }
     store.recordSubagentOrigin("parent", "subagent_host", origin)

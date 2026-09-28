@@ -72,7 +72,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     const { host, create } = mountedHost(root, "ws-concurrent", { connectionProviders: [provider] })
     try {
-      await host.apply({ version: 4, mcp: {}, auth: {}, connections: [fixtureConnection()], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
+      await host.apply({ version: 4, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } }, connections: [fixtureConnection()], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
       const responses = await Promise.all([create("one"), create("two")])
       expect(responses.map((response) => response.status)).toEqual([201, 201])
       expect(created).toBe(1)
@@ -114,7 +114,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       mcp: {},
       connections: [fixtureConnection({ token: "credentials/fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
-      auth: {},
+      auth: { machineOwnerUserId: "local", accounts: { local: {} } },
     })
     expect(host.detail().harness).toEqual({ kind: "connection", connectionId: "fixture-primary" })
     expect(host.detail().connectionState).toEqual({ connectionId: "fixture-primary", state: "configured", processes: [] })
@@ -141,7 +141,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       mcp: {},
       connections: [fixtureConnection({ token: "credentials/fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
-      auth: {},
+      auth: { machineOwnerUserId: "local", accounts: { local: {} } },
     })
     const refused = await create("unresolved")
     expect(refused.status).toBe(409)
@@ -183,7 +183,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       mcp: {},
       connections: [fixtureConnection({ token: "credential:fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
-      auth: {},
+      auth: { machineOwnerUserId: "local", accounts: { local: {} } },
     })
 
     const first = await create("local-one")
@@ -218,7 +218,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       await host.apply({
         version: 4,
         mcp: {},
-        auth: {},
+        auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         connections: [fixtureConnection()],
         defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
       })
@@ -236,7 +236,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
   test("leaves default selection unresolved when policy omits it", async () => {
     const root = await workspaceRoot("workspace-runtime-unselected-")
     const { host } = mountedHost(root, "ws-unselected", {})
-    await host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
+    await host.apply({ version: 4, mcp: {}, connections: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } } })
     expect(host.detail().harness).toBeUndefined()
     await host.dispose()
   })

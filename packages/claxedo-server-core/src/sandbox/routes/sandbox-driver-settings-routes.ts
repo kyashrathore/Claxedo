@@ -88,6 +88,7 @@ export function SandboxDriverSettingsRoutes(options: SandboxDriverSettingsRouteO
       if (secret) {
         try {
           await options.credentials.putCredential({
+            owner: null,
             provider_id: id,
             kind: "sandbox_driver",
             source: "managed",

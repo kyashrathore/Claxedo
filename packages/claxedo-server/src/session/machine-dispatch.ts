@@ -99,9 +99,9 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
     const actor = runtimeOptions.runtimeActor
     const runtimeActor =
       actor?.actorKind === "human"
-        ? { actorId: actor.actorId, actorKind: "human" as const, principalKind: "user" as const }
+        ? { userId: actor.userId, actorId: actor.actorId, actorKind: "human" as const, principalKind: "user" as const }
         : actor?.actorKind === "agent"
-          ? { actorId: actor.actorId, actorKind: "agent" as const, principalKind: "service" as const }
+          ? { userId: actor.userId, actorId: actor.actorId, actorKind: "agent" as const, principalKind: "service" as const }
           : undefined
     return {
       workspace,
@@ -327,4 +327,3 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
 function signedCaller(caller: MachineSessionCaller | undefined): SignedControlPlaneAuth | undefined {
   return caller === undefined || "kind" in caller ? undefined : caller
 }
-

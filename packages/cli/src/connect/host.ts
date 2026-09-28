@@ -16,6 +16,7 @@ import {
 import {
   createHostRuntimeListener,
   installHostProviderConfigAuthority,
+  adoptConnectedHostOwner,
   setHostProviderConfig,
   type HostRuntimeListener,
 } from "@claxedo/host-serving/runtime"
@@ -25,6 +26,7 @@ import {
   hostServingState,
   type HostServingCredential,
 } from "@claxedo/host-serving/serving"
+import { createKeyedSerializer } from "@claxedo/helpers"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { errorMessage } from "../json"
@@ -263,6 +265,10 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const owned = new Map<string, { directory: string }>()
   let credential: HostServingCredential | null = null
 
+  // One update at a time: a credential, a withdrawal or a pushed provider
+  // configuration landing between another's steps would leave the older
+  // credential, owner or push in force.
+  const servingUpdates = createKeyedSerializer<"serving">()
   const serve = async (next: HostServingCredential | null) => {
     credential = next
     try {
@@ -271,9 +277,10 @@ export async function runHost(input: HostRunInput): Promise<number> {
       deps.log(`relay serving update failed: ${errorMessage(error)}`)
     }
   }
+  const stopServing = (workspaceId: string) => servingUpdates.run("serving", () => serve(credentialWithout(credential, workspaceId)))
 
   const retire = async (workspaceId: string) => {
-    await serve(credentialWithout(credential, workspaceId))
+    await stopServing(workspaceId)
     await listener.dispose(workspaceId)
     owned.delete(workspaceId)
   }
@@ -314,7 +321,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     }
     const current = owned.get(workspaceId)
     if (current && current.directory !== directory) await retire(workspaceId)
-    else if (current) await serve(credentialWithout(credential, workspaceId))
+    else if (current) await stopServing(workspaceId)
     owned.set(workspaceId, { directory })
     await listener.ensure({
       workspaceId,
@@ -364,11 +371,11 @@ export async function runHost(input: HostRunInput): Promise<number> {
     // Stored, then opened, then applied. The connector acks a revision only
     // when this resolves, so a write that fails throws here and the control
     // plane delivers the same revision on the next beat.
-    onProviderConfig: async (config) => {
+    onProviderConfig: (config) => servingUpdates.run("serving", async () => {
       await persistOrThrow({ ...state, provider_config: config })
       await installProviderConfig(config)
       await listener.applyRuntimeConfig()
-    },
+    }),
     onAssignments: async (descriptions) => {
       const wanted = new Set(descriptions.map((description) => description.workspaceId))
       for (const owner of listener.owners()) {
@@ -396,7 +403,22 @@ export async function runHost(input: HostRunInput): Promise<number> {
       }
     },
     onServing: (tunnel) => {
-      void serve(servingCredential(tunnel, state.relay?.url))
+      const credential = servingCredential(tunnel, state.relay?.url)
+      const owner = trimToUndefined(asRecordOrEmpty(tunnel).ownerUserId)
+      if (credential && !owner) deps.log("relay serving refused: the ack names no enrolled owner")
+      const next = owner ? credential : null
+      void servingUpdates.run("serving", async () => {
+        // Adopted before the tunnel serves, so the owner's first relayed
+        // request already resolves as the machine owner's.
+        if (next && owner) {
+          try {
+            await adoptConnectedHostOwner(owner, listener)
+          } catch (error) {
+            deps.log(`re-applying the runtimes under the enrolled owner failed; the next ack retries: ${errorMessage(error)}`)
+          }
+        }
+        await serve(next)
+      })
     },
     onLeaseRenewed: (renewed) => {
       const serving = deps.servingState(composition)

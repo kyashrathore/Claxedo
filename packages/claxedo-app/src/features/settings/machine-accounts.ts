@@ -21,6 +21,8 @@ import {
   removeCredential,
   runProviderDetect,
   patchCredentialScope,
+  setAccountSource,
+  type AccountSources,
   type EffectiveCredential,
   type HarnessAccount,
   type StoredCredential,
@@ -43,6 +45,9 @@ import { useLanguage } from "@/platform/i18n/provider"
 
 /** The entry key this computer's own login is listed under. */
 const MACHINE = "machine"
+
+/** The entry key the organization's team account is listed under. */
+const TEAM = "team"
 
 /**
  * How far a machine login that drives only part of its harness reaches, for the
@@ -109,6 +114,7 @@ const machineAccountsInput = {
     const [stored, setStored] = createSignal<readonly StoredCredential[]>([])
     const [machineLogins, setMachineLogins] = createSignal<readonly MachineLogin[]>([])
     const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
+    const [accountSources, setAccountSources] = createSignal<AccountSources>({ sources: new Map(), team: [] })
     const [scannedAt, setScannedAt] = createSignal<number>()
     /** Checks made here, by account id; they outrank the verdict the server stored. */
     const [accountChecks, setAccountChecks] = createSignal<Record<string, LiveCheck>>({})
@@ -127,6 +133,23 @@ const machineAccountsInput = {
 
     const accounts = (check: LocalHarnessCheck) =>
       harnessAccounts({ providerIds: check.providerIds, connectProviderId: check.connectProvider }, stored())
+
+    const teamAccount = (check: LocalHarnessCheck): HarnessAccount | undefined =>
+      harnessAccounts({ providerIds: check.providerIds, connectProviderId: check.connectProvider }, accountSources().team)[0]
+
+    const teamSelected = (check: LocalHarnessCheck) =>
+      check.providerIds.length > 0 && check.providerIds.every((id) => accountSources().sources.get(id) === "team")
+
+    /**
+     * The person's own stored row the server hands the harness. The effective
+     * read names the team's row instead while the person spends the team
+     * account, and that row is not one of theirs.
+     */
+    const ownInUse = (check: LocalHarnessCheck) => {
+      const known = effective()
+      const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
+      return inUse && stored().some((row) => row.id === inUse.id) ? inUse : undefined
+    }
 
     /** What this harness said about its own login, in whichever of the four states. */
     const machineLogin = (check: LocalHarnessCheck): MachineLogin | undefined =>
@@ -158,15 +181,17 @@ const machineAccountsInput = {
     /**
      * The entry the harness runs on.
      *
-     * The server's effective read is the authority — it names the row a session
-     * will be handed — and the stored mark answers only where the host cannot
-     * enumerate its store. With neither, the harness runs on whatever login its
-     * own CLI holds on this machine.
+     * The person's choice of the team account outranks everything of their own,
+     * because only the chosen side is ever spent. Among their own, the server's
+     * effective read is the authority — it names the row a session will be
+     * handed — and the stored mark answers only where the host cannot enumerate
+     * its store. With neither, the harness runs on whatever login its own CLI
+     * holds on this machine.
      */
     const selectedKey = (check: LocalHarnessCheck): string | undefined => {
+      if (teamSelected(check)) return TEAM
       const rows = accounts(check)
-      const known = effective()
-      const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
+      const inUse = ownInUse(check)
       const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined
       if (match) return match.id
       const active = rows.find((row) => row.isActive)
@@ -260,7 +285,7 @@ const machineAccountsInput = {
 
     const listedAccounts = (check: LocalHarnessCheck): AgentAccount[] => {
       const selected = selectedKey(check)
-      const entries = accounts(check).map((row) => {
+      const own = accounts(check).map((row) => {
         const live = accountCheck(row)
         const identity = accountIdentity(row)
         const label = accountLabel(row)
@@ -291,7 +316,10 @@ const machineAccountsInput = {
         }
       })
       const machine = machineLogin(check)
-      if (!machine) return entries
+      return [...own, ...(machine ? [machineEntry(machine, check, selected)] : []), teamEntry(check, selected)]
+    }
+
+    const machineEntry = (machine: MachineLogin, check: LocalHarnessCheck, selected: string | undefined): AgentAccount => {
       const detail = machineWords(machine, check)
       const stranded = machine.state === "absent" ? undefined : strandedBinding(machine, check)
       const note = [
@@ -304,9 +332,9 @@ const machineAccountsInput = {
       // sign in to it. The one state that cannot be chosen is a CLI that is not
       // there, which no choice of ours can make runnable.
       //
-      // Last by construction: every stored account is a choice the user made, and
-      // this login is the standing fallback underneath all of them.
-      return [...entries, {
+      // Last of the person's own entries: every stored account is a choice they
+      // made, and this login is what their side runs on when none is marked.
+      return {
         key: MACHINE,
         ids: [],
         label: machine.state === "signed_in" && machine.email
@@ -320,7 +348,45 @@ const machineAccountsInput = {
         selected: selected === MACHINE,
         machine: true,
         ...(machine.state === "absent" || stranded ? { disabled: true } : {}),
-      }]
+      }
+    }
+
+    /**
+     * Listed whether or not the organization holds one. A person who chose it
+     * while none exists spends nothing — their own account is never the
+     * fallback — so the entry has to say why the harness cannot run.
+     */
+    const teamEntry = (check: LocalHarnessCheck, selected: string | undefined): AgentAccount => {
+      const chosen = selected === TEAM
+      const row = teamAccount(check)
+      if (row === undefined) {
+        const unavailable = language.t("settings.providers.accountSource.unavailable", { name: check.label })
+        return {
+          key: TEAM,
+          ids: [],
+          label: language.t("settings.providers.accountSource.team"),
+          detail: chosen ? unavailable : language.t("settings.providers.accountSource.missing"),
+          ...(chosen ? { alert: unavailable } : {}),
+          selected: chosen,
+          team: true,
+          disabled: true,
+        }
+      }
+      const live = accountCheck(row)
+      const detail = detailWords(live, language.t("settings.providers.accountSource.team"))
+      const alert = unavailableWords(live)
+      return {
+        key: TEAM,
+        ids: [],
+        label: accountLabel(row),
+        ...(detail === undefined ? {} : { detail }),
+        ...(alert === undefined ? {} : { alert }),
+        ...(live === undefined ? {} : { checkedAt: live.at }),
+        ...(refused(live) ? { refused: true as const } : {}),
+        reach: accountReach(row.delivery),
+        selected: chosen,
+        team: true,
+      }
     }
 
     /**
@@ -334,8 +400,7 @@ const machineAccountsInput = {
     const strandedBinding = (login: MachineLogin, check: LocalHarnessCheck) => {
       const serves = login.serves
       if (serves === undefined) return false
-      const known = effective()
-      const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
+      const inUse = ownInUse(check)
       if (inUse === undefined) return false
       // A vendor key was never this login's to replace: withdrawing its mark hands
       // the harness back to the CLI login, which is the whole point of the row.
@@ -355,6 +420,7 @@ const machineAccountsInput = {
         const result = await runProviderDetect(input)
         setStored(result.stored)
         setEffective(result.effective)
+        setAccountSources(result.accountSources)
         setMachineLogins(result.machineLogins)
         setScannedAt(result.at)
         setAccountChecks({})
@@ -374,11 +440,16 @@ const machineAccountsInput = {
     const select = async (check: LocalHarnessCheck, account: AgentAccount) => {
       setSelecting(account.key)
       try {
-        const machine = account.machine ? machineLogin(check) : undefined
-        // Nothing is stored: the harness runs on its own login exactly when no
-        // stored account of its providers carries the mark.
-        if (machine) await activateMachineLogin(machine.providerIds)
-        else if (!account.machine) await activateCredential(account.ids)
+        if (account.team) {
+          await setAccountSource(check.providerIds, "team")
+        } else {
+          await setAccountSource(check.providerIds, "own")
+          const machine = account.machine ? machineLogin(check) : undefined
+          // Nothing is stored: the harness runs on its own login exactly when no
+          // stored account of its providers carries the mark.
+          if (machine) await activateMachineLogin(machine.providerIds)
+          else if (!account.machine) await activateCredential(account.ids)
+        }
         await scan({ fresh: true })
       } catch (err: unknown) {
         fail(err)
@@ -464,12 +535,17 @@ const machineAccountsInput = {
 
     /**
      * Whether the harness holds a login a turn can run on: the entry it runs
-     * on is a stored account its provider has not refused, or this computer's
-     * own login signed in and driving every binding the harness needs.
+     * on is a stored account — the person's or the team's — its provider has
+     * not refused, or this computer's own login signed in and driving every
+     * binding the harness needs.
      */
     const runnable = (check: LocalHarnessCheck) => {
       const selected = selectedKey(check)
       if (selected === undefined) return false
+      if (selected === TEAM) {
+        const team = teamAccount(check)
+        return team !== undefined && !refused(accountCheck(team))
+      }
       if (selected === MACHINE) {
         const login = machineLogin(check)
         return login?.state === "signed_in" && !strandedBinding(login, check)

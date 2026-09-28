@@ -11,7 +11,7 @@ import { SdkCredentialSyncError, syncCredentialsToSdk } from "@claxedo/server-co
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
-import { requestOrg } from "../../credentials/routes/credential"
+import { requestActor, requestOrg } from "../../credentials/routes/credential"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
 
@@ -49,9 +49,7 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
           // it surfaces as a failure rather than an empty picker.
           return c.json(await opencodeProviderCatalog({ org, engineModels: openCodeEngineModels }))
         }
-        // Signed callers see only their credential partition, never the host's local OAuth or environment.
-        const env = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled ? process.env : {}
-        return c.json(piProviderCatalog(env, org))
+        return c.json(piProviderCatalog(await requestActor(c.req.raw, authOptions), org))
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
         throw error

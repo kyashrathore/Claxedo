@@ -46,7 +46,7 @@ describe("runtime config secret scoping", () => {
    * authority, as a placeholder.
    */
   test("no runtime snapshot carries credential material, in either scope", async () => {
-    const put = (name: string, extra: object = {}, org = "org-a") => putCredential({
+    const put = (name: string, extra: object = {}, org = "org-a") => putCredential({ owner: "local",
       provider_id: name, kind: "api_key", source: "managed", secret: `${name}-secret`,
       scope: "shared", consent: { at: Date.now(), surface: "cli" }, ...extra,
     }, org)
@@ -71,8 +71,8 @@ describe("runtime config secret scoping", () => {
     const sharedSnapshot = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a" })
     const localSnapshot = await getRuntimeConfigSnapshot(undefined, { orgId: "org-a" })
 
-    expect(sharedSnapshot.auth).toEqual({})
-    expect(localSnapshot.auth).toEqual({})
+    expect(sharedSnapshot.auth).toEqual({ machineOwnerUserId: "", accounts: {} })
+    expect(localSnapshot.auth).toEqual({ machineOwnerUserId: "", accounts: {} })
     // The descriptor still names its references; an id is not secret material.
     expect(JSON.stringify([sharedSnapshot, localSnapshot])).not.toContain("-secret")
 
@@ -99,17 +99,17 @@ describe("runtime config secret scoping", () => {
     const calls: unknown[] = []
     await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({
-      projectAuth: async (input): Promise<Record<string, typeof projection>> => {
+      projectAuth: async (input): Promise<import("@claxedo/agent-runtime-contract").CredentialSnapshot<typeof projection>> => {
         calls.push(input)
-        return input.scope === "local" ? { "claude-sdk": projection } : {}
+        return { machineOwnerUserId: "local", accounts: { local: input.scope === "local" ? { "claude-sdk": projection } : {} } }
       },
     })
 
     const local = await getRuntimeConfigSnapshot(undefined, { orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
     const shared = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" })
 
-    expect(local.auth).toEqual({ "claude-sdk": projection })
-    expect(shared.auth).toEqual({})
+    expect(local.auth.accounts.local).toEqual({ "claude-sdk": projection })
+    expect(shared.auth.accounts.local).toEqual({})
     expect(calls).toEqual([
       { scope: "local", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" },
       { scope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" },
@@ -117,26 +117,26 @@ describe("runtime config secret scoping", () => {
   })
 
   test("the self-hosted authority projects an org's marked account to that org's sandboxes and to no other org", async () => {
-    const marked = await putCredential({
+    const marked = await putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-ant-api03-org-a",
       scope: "shared", consent: { at: Date.now(), surface: "cli" },
     }, "org-a")
-    expect(setActiveCredentials([marked.id], "org-a")).toMatchObject({ ok: true })
+    expect(setActiveCredentials([marked.id], "org-a", "local")).toMatchObject({ ok: true })
     await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({ projectAuth: selfHostedCredentialAuthority() })
 
-    const own = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
-    const foreign = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "native" })
+    const own = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native", sandboxOwner: "local" })
+    const foreign = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "native", sandboxOwner: "local" })
 
-    expect(own.auth).toEqual({
+    expect(own.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
-        placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
         authMode: "api-key",
         apiPath: "/v1",
       },
     })
-    expect(foreign.auth).toEqual({})
+    expect(foreign.auth.accounts).toEqual({})
     expect(JSON.stringify([own, foreign])).not.toContain("sk-ant-")
   })
 

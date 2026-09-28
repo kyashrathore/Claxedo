@@ -6,8 +6,8 @@ import path from "node:path"
 import type { PluginProjection, ResolvedCredentials } from "../../contract"
 import { prepareCodexProfile } from "."
 
-const brokered: ResolvedCredentials = { providers: { codex: { baseUrl: "http://127.0.0.1:47501/v1", placeholder: "first", authMode: "api-key" } }, secrets: {}, leaseGeneration: "first" }
-const ownLogin: ResolvedCredentials = { providers: {}, secrets: {}, leaseGeneration: "own" }
+const brokered: ResolvedCredentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { openai: { baseUrl: "http://127.0.0.1:47501/v1", placeholder: "first", authMode: "api-key" } }, secrets: {}, leaseGeneration: "first" }
+const ownLogin: ResolvedCredentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "own" }
 const machineOwner = { kind: "machine-owner" as const }
 const noPlugins: PluginProjection = { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }
 
@@ -98,7 +98,7 @@ test("a plugin generation change and an owner config change update the shared ho
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
-test("the home is shared by owner, credential binding and plugin set", async () => {
+test("the home is shared by account holder, credential binding and plugin set", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-key-"))
   try {
     const owner = await ownerHome(root)
@@ -106,9 +106,11 @@ test("the home is shared by owner, credential binding and plugin set", async () 
     const run = (input: Partial<Parameters<typeof prepareCodexProfile>[0]>) => prepareCodexProfile({ homeRoot, owner: machineOwner, credentials: ownLogin, projection: noPlugins, ownerHome: owner, ...input })
     const base = (await run({})).home
     expect((await run({})).home).toBe(base)
-    expect((await run({ owner: { kind: "person", userId: "member" } })).home).not.toBe(base)
+    expect((await run({ owner: { kind: "person", userId: "member" }, credentials: { ...brokered, accountOwner: "member" } })).home)
+      .not.toBe((await run({ credentials: brokered })).home)
     expect((await run({ credentials: brokered })).home).not.toBe(base)
-    expect((await run({ credentials: { ...brokered, leaseGeneration: "second", providers: { codex: { ...brokered.providers.codex!, placeholder: "rotated" } } } })).home)
+    expect((await run({ owner: { kind: "person", userId: ownLogin.accountOwner } })).home, "the machine owner over the relay is the same account holder").toBe(base)
+    expect((await run({ credentials: { ...brokered, leaseGeneration: "second", providers: { openai: { ...brokered.providers.openai!, placeholder: "rotated" } } } })).home)
       .toBe((await run({ credentials: brokered })).home)
     expect((await run({ credentials: brokered })).brokered).toBe(true)
     expect(await fs.readdir((await run({ credentials: brokered })).home)).not.toContain("auth.json")
@@ -156,7 +158,7 @@ test("a brokered home retains a projected plugin cache during credential rotatio
     const { home } = await prepareCodexProfile({ homeRoot, owner: machineOwner, projection, credentials: brokered })
     const cache = path.join(home, "plugins", "cache", "claxedo-agent-plugins", "sample", "2.0.0", "sentinel")
     expect(await fs.readFile(cache, "utf8")).toBe("sample retained")
-    const rotated = { ...brokered, providers: { codex: { ...brokered.providers.codex!, placeholder: "second" } } }
+    const rotated = { ...brokered, providers: { openai: { ...brokered.providers.openai!, placeholder: "second" } } }
     expect((await prepareCodexProfile({ homeRoot, owner: machineOwner, projection, credentials: rotated })).home).toBe(home)
     const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
     expect(config).toContain("Bearer second")

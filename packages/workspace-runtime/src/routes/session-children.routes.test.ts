@@ -15,7 +15,7 @@ import {
   type SessionTurnOrigin,
 } from "../session-access-policy"
 import { FakeTransport } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import { createHostFixture, sessionCreate, testLaunch, type HostFixture } from "../test-support/host-fixture"
 import type { EmbeddedRelayHostIdentity } from "../workspace-host-service-auth"
 import { SessionRoutes } from "./session"
 
@@ -115,7 +115,7 @@ function fixture(input: {
       return { execution: "terminal", cleanup: "verified_clear" }
     },
   })
-  const host = createHostFixture({ transports: { codex: transport }, workspaceId: "workspace-test" })
+  const host = createHostFixture({ transports: { codex: transport }, workspaceId: "workspace-test", launch: testLaunch("workspace-test", ["actor_owner", "actor_member", "actor_other"]) })
   hosts.push(host)
   const { store, runtime } = host
   const runtimeEvents: RuntimeEventEnvelope[] = []
@@ -151,7 +151,7 @@ function fixture(input: {
     app.use("*", async (c, next) => {
       const actor = c.req.header("x-test-actor")
       ;(c as unknown as { set(name: string, value: unknown): void })
-        .set("relayHostAuth", actor ? { ...identity, actor_id: actor, actor_public_id: actor } : identity)
+        .set("relayHostAuth", actor ? { ...identity, user_id: actor, actor_id: actor, actor_public_id: actor } : identity)
       await next()
     })
   }
@@ -472,6 +472,7 @@ describe("POST /session with parentID", () => {
 const OWNER: EmbeddedRelayHostIdentity = {
   principal_kind: "user",
   actor_id: "actor_owner",
+  user_id: "actor_owner",
   actor_kind: "human",
   actor_public_id: "actor_owner",
   actor_name: "workspace owner",
@@ -588,7 +589,7 @@ describe("a child created in-process under managed registration", () => {
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
     expect(item.origins.get(`parent\0${child.subagentKey}`)).toEqual({
       provenance: "relay-replayed",
-      actor: { actorId: "actor_owner", actorKind: "human" },
+      actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" },
       authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
     })
     item.replies.set(child.id, "Ship it.")
@@ -641,13 +642,13 @@ describe("a child created in-process under managed registration", () => {
       subjectSessionId: child.id,
       registrationOperationId: `session_registration_${child.id}`,
       credential: "Bearer owner-grant",
-      actor: { actorId: "actor_owner", actorKind: "human" },
+      actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" },
       authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
     })])
     expect(subagentsAtMint).toEqual([])
     expect(item.origins.get(`parent\0${child.subagentKey}`)).toEqual({
       provenance: "relay-replayed",
-      actor: { actorId: "actor_owner", actorKind: "human" },
+      actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" },
       authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
       grant: CHILD_GRANT,
     })
@@ -659,7 +660,7 @@ describe("a child created in-process under managed registration", () => {
 
     const wakeTurnId = wakeTurnFor(child.id, "child-turn")
     const wake = calls.acquired.find((turn) => turn.turnId === wakeTurnId)
-    expect(wake).toMatchObject({ sessionId: "parent", grant: CHILD_GRANT, actor: { actorId: "actor_owner", actorKind: "human" } })
+    expect(wake).toMatchObject({ sessionId: "parent", grant: CHILD_GRANT, actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" } })
     expect(wake).not.toHaveProperty("credential")
     expect(calls.acquired.find((turn) => turn.turnId === "child-turn")).not.toHaveProperty("grant")
     expect(calls.granted).toHaveLength(1)
@@ -733,7 +734,7 @@ describe("a child created in-process under managed registration", () => {
       parentSessionId: "parent",
       sessionTitle: "Reviewer",
       credential: "Bearer owner-grant",
-      actor: { actorId: "actor_owner", actorKind: "human" },
+      actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" },
       authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
     })])
     expect(calls.registered).toEqual([{ sessionId: child.id, registrationOperationId: `session_registration_${child.id}`, actorId: "actor_owner" }])
@@ -893,7 +894,7 @@ describe("a background turn a managed host refuses", () => {
     beforeAcquire?: () => Promise<void>
   }) {
     const transport = new FakeTransport({ kind: "codex-app-server" })
-    const fixtureHost = createHostFixture({ transports: { codex: transport }, workspaceId: "workspace-test" })
+    const fixtureHost = createHostFixture({ transports: { codex: transport }, workspaceId: "workspace-test", launch: testLaunch("workspace-test", ["actor_owner", "actor_member", "actor_other"]) })
     hosts.push(fixtureHost)
     const { store, runtime } = fixtureHost
     await runtime.sessions.create(sessionCreate({ id: "parent", workspaceId: "workspace-test", directory: DIRECTORY, harness: CODEX }))
@@ -1050,7 +1051,7 @@ describe("a background turn a managed host refuses", () => {
     // The stored actor string is not proof; on a plane that hands out grants,
     // the grant is the only thing a background turn may present.
     const item = await wakeOnlyHost({
-      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
+      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
       grantCapable: true,
     })
 
@@ -1066,7 +1067,7 @@ describe("a background turn a managed host refuses", () => {
 
   test("a relayed origin that carries a grant presents it to the authority in place of the credential it no longer has", async () => {
     const item = await wakeOnlyHost({
-      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" }, grant: CHILD_GRANT },
+      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" }, grant: CHILD_GRANT },
       grantCapable: true,
     })
 
@@ -1081,7 +1082,7 @@ describe("a background turn a managed host refuses", () => {
 
   test("provider setup failure returns the acquired wake lease to the authority", async () => {
     const item = await wakeOnlyHost({
-      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
+      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human", userId: "actor_owner" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
       failResolution: true,
     })
     try {

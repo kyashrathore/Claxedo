@@ -5,7 +5,7 @@ import path from "node:path"
 import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { piEnvironment, piProjectionArgs, preparePiProfile, selectPiProfile, type PiProfileOptions } from "./index"
 
-const credentials = { providers: {}, secrets: {}, leaseGeneration: "g1" }
+const credentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" }
 const owner = { kind: "machine-owner" as const }
 const member = { kind: "person" as const, userId: "member" }
 

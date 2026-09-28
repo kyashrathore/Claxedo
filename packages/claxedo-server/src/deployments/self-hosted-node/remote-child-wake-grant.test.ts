@@ -122,6 +122,7 @@ async function relayProof(relayKey: CryptoKey, bob: SignedControlPlaneAuth, orgI
   return await mintRelayHostToken({
     principalKind: "user",
     actorId: bob.user.tokenIdentifier,
+    userId: bob.user.subject,
     actorKind: "human",
     orgId,
     workspaceId: WORKSPACE,

@@ -36,7 +36,7 @@ const consent = { at: 1, surface: "desktop_discovery" } as const
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 
 async function shared(input: { provider_id: string; kind: "api_key" | "oauth_token"; secret: string; label?: string }) {
-  return await putCredential({
+  return await putCredential({ owner: "local",
     source: "managed",
     scope: "shared",
     consent,
@@ -62,23 +62,56 @@ describe("native provider delivery", () => {
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
   })
 
+  test("a sandbox is delivered the team account only for a provider its owner chose it for, and then not their own", async () => {
+    await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    const team = await putCredential({ owner: null, source: "managed", scope: "shared", consent,
+      provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-api03-team-key" })
+    const { setAccountSources, accountSelections } = await import("./account-source")
+    const delivered = async () => nativeProviderSecrets(await nativeProviderDeliveries({
+      owner: "local", machineOwnerUserId: "local", selections: accountSelections(), secretBrokering: "native",
+    })).map((secret) => secret.value)
+
+    expect(await delivered()).toEqual([API_KEY])
+    setAccountSources(["claude-sdk"], "team", undefined, "local")
+    expect(await delivered()).toEqual(["sk-ant-api03-team-key"])
+    await projectNativeProviderAuth({ scope: "shared", sandboxOwner: "local", machineOwnerUserId: "local", secretBrokering: "native" })
+      .then((auth) => expect(Object.keys(auth.accounts.local ?? {})).toEqual(["claude-sdk"]))
+    await deleteCredential(team.id)
+    expect(await delivered()).toEqual([])
+    await expect(projectNativeProviderAuth({ scope: "shared", sandboxOwner: "local", machineOwnerUserId: "local", secretBrokering: "native" }))
+      .resolves.toMatchObject({ accounts: { local: { "claude-sdk": { unavailable: true, reason: "team_account_unavailable" } } } })
+    setAccountSources(["claude-sdk"], "own", undefined, "local")
+  })
+
+  test("a Pi catalog shows connected exactly what the person would spend", async () => {
+    const { piProviderCatalog } = await import("./pi-provider-catalog")
+    const { setAccountSources } = await import("./account-source")
+    await putCredential({ owner: null, source: "managed", provider_id: "anthropic", kind: "api_key", secret: "sk-ant-api03-team-pi" })
+    const connected = () => piProviderCatalog("local").connected as readonly string[]
+    expect(connected()).not.toContain("anthropic")
+    setAccountSources(["anthropic"], "team", undefined, "local")
+    expect(connected()).toContain("anthropic")
+    setAccountSources(["anthropic"], "own", undefined, "local")
+    expect(connected()).not.toContain("anthropic")
+  })
+
   test("an active API key becomes one secret for the vendor host and a projection naming its variable", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(deliveries)).toEqual([{
-      name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+      name: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
       value: API_KEY,
       hosts: ["api.anthropic.com"],
       header: "x-api-key",
       methods: ["POST", "GET"],
       pathPrefixes: ["/v1/messages", "/v1/models"],
     }])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
-        placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
         authMode: "api-key",
         apiPath: "/v1",
       },
@@ -87,19 +120,19 @@ describe("native provider delivery", () => {
 
   test("the projection never carries the secret", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const auth = nativeProviderAuth(await nativeProviderDeliveries({ secretBrokering: "native" }))
+    const auth = nativeProviderAuth(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }), { owner: "local", machineOwnerUserId: "local", selections: {} })
     expect(JSON.stringify(auth)).not.toContain(API_KEY)
   })
 
   test("a subscription login is delivered as a bearer, scheme and all", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "oauth_token", secret: SUBSCRIPTION })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(deliveries)).toEqual([{
-      name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+      name: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
       value: "sk-ant-oat01-fixture",
       hosts: ["api.anthropic.com"],
       header: "Authorization",
@@ -107,17 +140,17 @@ describe("native provider delivery", () => {
       methods: ["POST", "GET"],
       pathPrefixes: ["/v1/messages", "/v1/models"],
     }])
-    expect(nativeProviderAuth(deliveries)["claude-sdk"]).toMatchObject({ authMode: "bearer" })
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local["claude-sdk"]).toMatchObject({ authMode: "bearer" })
   })
 
   test("a marked account the vendor rejected is projected unavailable and delivers no secret", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
     updateCredentialHealth(credential.id, "auth_failed", 2)
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "claude-sdk": { unavailable: true, reason: "auth_failed" },
     })
   })
@@ -130,24 +163,24 @@ describe("native provider delivery", () => {
       secret: SUBSCRIPTION,
       label: "second",
     })
-    setActiveCredentials([first.id])
-    expect(nativeProviderSecrets(await nativeProviderDeliveries({ secretBrokering: "native" }))).toEqual([
+    setActiveCredentials([first.id], undefined, "local")
+    expect(nativeProviderSecrets(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))).toEqual([
       expect.objectContaining({ value: API_KEY }),
     ])
 
-    setActiveCredentials([second.id])
-    expect(nativeProviderSecrets(await nativeProviderDeliveries({ secretBrokering: "native" }))).toEqual([
+    setActiveCredentials([second.id], undefined, "local")
+    expect(nativeProviderSecrets(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))).toEqual([
       expect.objectContaining({ value: "sk-ant-oat01-fixture" }),
     ])
   })
 
   test("a provider with no vendor destination is refused rather than dropped", async () => {
     const credential = await shared({ provider_id: "some-new-vendor", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "some-new-vendor": { unavailable: true, reason: "no_destination" },
     })
   })
@@ -158,22 +191,22 @@ describe("native provider delivery", () => {
       kind: "oauth_token",
       secret: JSON.stringify({ access_token: "chatgpt-fixture", account_id: "acct_1" }),
     })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "codex-app-server": { unavailable: true, reason: "native_delivery_needs_companion_header" },
     })
   })
 
   test("Cursor exchange credentials stay outside a cloud sandbox", async () => {
     const credential = await shared({ provider_id: "cursor-sdk", kind: "api_key", secret: "cursor-private-key" })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "cursor-sdk": { unavailable: true, reason: "native_delivery_needs_token_exchange" },
     })
     expect(JSON.stringify(deliveries)).not.toContain("cursor-private-key")
@@ -183,24 +216,24 @@ describe("native provider delivery", () => {
 
   test("a driver that cannot broker refuses the turn instead of the provisioning", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "none" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "none" })
     // Nothing for the manager to fail closed on: handing it a native secret a
     // "none" driver cannot carry leaves the workspace unprovisionable forever.
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
     })
   })
 
   test("an unstated broker capability refuses the same way an incapable driver does", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries()
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {} })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
     })
   })
@@ -209,11 +242,11 @@ describe("native provider delivery", () => {
     // A malformed external driver implementation can declare a value the
     // contract does not define; typed metadata cannot be the only gate.
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "proxy" as never })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "proxy" as never })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(nativeProviderAuth(deliveries)).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
       "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
     })
   })
@@ -221,7 +254,7 @@ describe("native provider delivery", () => {
   test("a secret backend that throws takes down its own row and no other", async () => {
     const first = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     const second = await shared({ provider_id: "openrouter", kind: "api_key", secret: "sk-or-fixture" })
-    setActiveCredentials([first.id, second.id])
+    setActiveCredentials([first.id, second.id], undefined, "local")
     const stored = backend
     setBackendOverride({
       ...stored,
@@ -232,30 +265,30 @@ describe("native provider delivery", () => {
       },
     })
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
 
-    expect(nativeProviderAuth(deliveries)["claude-sdk"]).toEqual({
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local["claude-sdk"]).toEqual({
       unavailable: true,
       reason: "unreadable_secret",
     })
     expect(nativeProviderSecrets(deliveries)).toEqual([expect.objectContaining({
-      name: "CLAXEDO_PROVIDER_OPENROUTER",
+      name: expect.stringMatching(/^CLAXEDO_PROVIDER_OPENROUTER_[0-9A-F]{24}$/),
     })])
   })
 
   test("the account marked most recently claims a shared vendor host, and the other is told so", async () => {
     const key = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     const subscription = await shared({ provider_id: "anthropic", kind: "oauth_token", secret: SUBSCRIPTION })
-    setActiveCredentials([key.id])
+    setActiveCredentials([key.id], undefined, "local")
     await tick()
-    setActiveCredentials([subscription.id])
+    setActiveCredentials([subscription.id], undefined, "local")
 
-    const first = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const first = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(first)).toEqual([expect.objectContaining({
-      name: "CLAXEDO_PROVIDER_ANTHROPIC",
+      name: expect.stringMatching(/^CLAXEDO_PROVIDER_ANTHROPIC_[0-9A-F]{24}$/),
       hosts: ["api.anthropic.com"],
     })])
-    expect(nativeProviderAuth(first)["claude-sdk"]).toEqual({
+    expect(nativeProviderAuth(first, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local["claude-sdk"]).toEqual({
       unavailable: true,
       reason: "duplicate_destination_host: api.anthropic.com is delivered for anthropic, marked more recently",
     })
@@ -263,13 +296,13 @@ describe("native provider delivery", () => {
     // The mark decides, not the provider id: marking the other one again moves
     // the host to it.
     await tick()
-    setActiveCredentials([key.id])
+    setActiveCredentials([key.id], undefined, "local")
 
-    const second = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const second = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
     expect(nativeProviderSecrets(second)).toEqual([expect.objectContaining({
-      name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+      name: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
     })])
-    expect(nativeProviderAuth(second).anthropic).toMatchObject({ unavailable: true })
+    expect(nativeProviderAuth(second, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local.anthropic).toMatchObject({ unavailable: true })
   })
 
   test("checking or renaming an account does not hand it a host another account claimed", async () => {
@@ -277,29 +310,29 @@ describe("native provider delivery", () => {
     // Check press the host away from the account the operator chose.
     const key = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     const subscription = await shared({ provider_id: "anthropic", kind: "oauth_token", secret: SUBSCRIPTION })
-    setActiveCredentials([key.id])
+    setActiveCredentials([key.id], undefined, "local")
     await tick()
-    setActiveCredentials([subscription.id])
+    setActiveCredentials([subscription.id], undefined, "local")
 
     await tick()
     updateCredentialHealth(key.id, "ok", Date.now())
     await registryModule.updateCredentialLabel(key.id, "work key")
 
-    expect(nativeProviderSecrets(await nativeProviderDeliveries({ secretBrokering: "native" }))).toEqual([expect.objectContaining({
-      name: "CLAXEDO_PROVIDER_ANTHROPIC",
+    expect(nativeProviderSecrets(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))).toEqual([expect.objectContaining({
+      name: expect.stringMatching(/^CLAXEDO_PROVIDER_ANTHROPIC_[0-9A-F]{24}$/),
     })])
   })
 
   test("the digest moves with a rotation and not with a re-read", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
-    const before = nativeDeliveryDigest(await nativeProviderDeliveries({ secretBrokering: "native" }))
-    expect(nativeDeliveryDigest(await nativeProviderDeliveries({ secretBrokering: "native" }))).toBe(before)
+    setActiveCredentials([credential.id], undefined, "local")
+    const before = nativeDeliveryDigest(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))
+    expect(nativeDeliveryDigest(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))).toBe(before)
     expect(before).not.toContain(API_KEY)
 
     await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-rotated")
 
-    expect(nativeDeliveryDigest(await nativeProviderDeliveries({ secretBrokering: "native" }))).not.toBe(before)
+    expect(nativeDeliveryDigest(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))).not.toBe(before)
   })
 
   test("the digest moves when the operator switches to another account at the same revision", async () => {
@@ -307,13 +340,13 @@ describe("native provider delivery", () => {
     // from the destination and the revision alone reads the switch as no
     // change and leaves the sandbox spending the account the operator left.
     const first = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY, label: "one" })
-    setActiveCredentials([first.id])
-    const before = nativeDeliveryDigest(await nativeProviderDeliveries({ secretBrokering: "native" }))
+    setActiveCredentials([first.id], undefined, "local")
+    const before = nativeDeliveryDigest(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))
     await tick()
     const second = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-api03-second", label: "two" })
-    setActiveCredentials([second.id])
+    setActiveCredentials([second.id], undefined, "local")
 
-    const after = nativeDeliveryDigest(await nativeProviderDeliveries({ secretBrokering: "native" }))
+    const after = nativeDeliveryDigest(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" }))
 
     expect(first.revision).toBe(second.revision)
     expect(after).not.toBe(before)
@@ -327,9 +360,9 @@ describe("native provider delivery", () => {
 
   test("every delivery names the account it resolved to", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
+    setActiveCredentials([credential.id], undefined, "local")
 
-    const deliveries = await nativeProviderDeliveries({ secretBrokering: "native" })
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
 
     expect(deliveries.map((row) => [row.providerId, row.credentialId]))
       .toEqual([["claude-sdk", credential.id]])
@@ -369,8 +402,8 @@ describe("native provider delivery", () => {
 
   test("a none-driver snapshot reaches the runtime saying the credential cannot be delivered", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
-    configureAgentConfig({ projectAuth: projectNativeProviderAuth })
+    setActiveCredentials([credential.id], undefined, "local")
+    configureAgentConfig({ projectAuth: (input) => projectNativeProviderAuth({ ...input, sandboxOwner: "local", machineOwnerUserId: "local" }) })
 
     const snapshot = await createClaxedoRuntimeConfig({
       secretScope: "shared",
@@ -381,7 +414,7 @@ describe("native provider delivery", () => {
     // The whole path, not the authority alone: a composition that answers
     // shared scope with nothing sends the harness no projection, and a harness
     // with no projection runs on the login its image carries.
-    expect(snapshot.auth).toEqual({
+    expect(snapshot.auth.accounts.local).toEqual({
       "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
     })
     expect(JSON.stringify(snapshot)).not.toContain(API_KEY)
@@ -389,8 +422,8 @@ describe("native provider delivery", () => {
 
   test("a native-driver snapshot reaches the runtime naming the variable its provider fills", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    setActiveCredentials([credential.id])
-    configureAgentConfig({ projectAuth: projectNativeProviderAuth })
+    setActiveCredentials([credential.id], undefined, "local")
+    configureAgentConfig({ projectAuth: (input) => projectNativeProviderAuth({ ...input, sandboxOwner: "local", machineOwnerUserId: "local" }) })
 
     const snapshot = await createClaxedoRuntimeConfig({
       secretScope: "shared",
@@ -398,10 +431,10 @@ describe("native provider delivery", () => {
       secretBrokering: "native",
     })
 
-    expect(snapshot.auth).toEqual({
+    expect(snapshot.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
-        placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
         authMode: "api-key",
         apiPath: "/v1",
       },
@@ -409,13 +442,13 @@ describe("native provider delivery", () => {
   })
 
   test("an account kept out of shared scope is delivered to nothing", async () => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
       secret: API_KEY,
     })
-    setActiveCredentials([credential.id])
-    expect(await nativeProviderDeliveries({ secretBrokering: "native" })).toEqual([])
+    setActiveCredentials([credential.id], undefined, "local")
+    expect(await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })).toEqual([])
   })
 })

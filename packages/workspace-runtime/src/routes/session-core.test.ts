@@ -13,7 +13,7 @@ import {
   type SessionAccessPolicy,
 } from "../session-access-policy"
 import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import { createHostFixture, sessionCreate, testLaunch, type HostFixture } from "../test-support/host-fixture"
 import { createSessionRoutes, type SessionLifecycleEvent } from "./session-core"
 import type { ChildSessionHost } from "./session-children"
 
@@ -33,7 +33,7 @@ afterEach(async () => {
 /** A real runtime host over one scripted Codex transport and a real store. */
 function harness(options: FakeTransportOptions = {}): Harness {
   const transport = new FakeTransport({ kind: "codex-app-server", ...options })
-  const host = createHostFixture({ transports: { codex: transport }, workspaceId: "ws_1" })
+  const host = createHostFixture({ transports: { codex: transport }, workspaceId: "ws_1", launch: testLaunch("ws_1", ["actor_1", "actor_verified", "actor_grantee", "creator", "other", "alice", "bob"]) })
   hosts.push(host)
   return Object.assign(host, { transport })
 }
@@ -96,7 +96,7 @@ const EDITOR_CLAIMS: RelayClaims = {
 function stamped(routes: ReturnType<typeof createSessionRoutes>, claims: (c: { req: { header(name: string): string | undefined } }) => RelayClaims = () => EDITOR_CLAIMS) {
   const app = new Hono()
   app.use("*", async (context, next) => {
-    ;(context as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", claims(context))
+    ;(context as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", { ...claims(context), user_id: claims(context).actor_id })
     await next()
   })
   return app.route("/", routes)

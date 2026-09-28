@@ -19,8 +19,8 @@ export function localControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     ...defaultControlPlaneCredentials(),
     machineLogins: (harnesses, options) => readMachineLogins(harnesses, { fresh: options?.fresh === true }),
-    clearActiveCredentials: async (providerIds, org) => {
-      const result = clearActiveCredentials(providerIds, org)
+    clearActiveCredentials: async (providerIds, org, actor) => {
+      const result = clearActiveCredentials(providerIds, org, actor)
       // The engine resolves auth from a store Claxedo does not otherwise write:
       // without this the next embedded turn still runs on the account just
       // withdrawn. Running sandboxes hold the same accounts at their provider

@@ -529,7 +529,7 @@ describe("workspace runtime host route auth", () => {
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
-          auth: {},
+          auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         }),
       })
       expect(config.status).toBe(401)
@@ -690,7 +690,7 @@ describe("workspace runtime host route auth", () => {
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
-          auth: {},
+          auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         }),
       })
       expect(config.status).toBe(200)
@@ -987,7 +987,7 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
       } },
     })
     try {
-      await runtime.host.apply({ version: 4, mcp: {}, auth: {}, connections: [{ connectionId: "health-acp", providerKey: "acp", configRevision: 1, enabled: true, secretRefs: { token: "vault/token" }, config: { label: "ACP", secretBindings: { env: { TOKEN: "token" } }, connection: { kind: "process", command: "/does-not-exist-health-must-not-launch" } } }], defaultHarness: { kind: "connection", connectionId: "health-acp" } })
+      await runtime.host.apply({ version: 4, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } }, connections: [{ connectionId: "health-acp", providerKey: "acp", configRevision: 1, enabled: true, secretRefs: { token: "vault/token" }, config: { label: "ACP", secretBindings: { env: { TOKEN: "token" } }, connection: { kind: "process", command: "/does-not-exist-health-must-not-launch" } } }], defaultHarness: { kind: "connection", connectionId: "health-acp" } })
       const initialReads = secretsRead
       const response = await runtime.app.request("http://localhost/api/wr/health")
       const body = await response.json()
@@ -1103,7 +1103,7 @@ describe("relay-host auth middleware (characterization)", () => {
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
-          auth: {},
+          auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         }),
       })
       expect(config.status).toBe(200)
@@ -1136,7 +1136,7 @@ describe("relay-host auth middleware (characterization)", () => {
           version: 1,
           mcp: {},
           runner: { type: "opencode" },
-          auth: {},
+          auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         }),
       })
       // The bypass requires a non-empty management-token header; without it the

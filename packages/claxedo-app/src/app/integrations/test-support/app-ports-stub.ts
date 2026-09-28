@@ -149,6 +149,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   Link: lazy("@/app/controls/link", "Link"),
   useSandboxOnboardingFunnel: () => () => ({ emit: () => {} }),
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
+  useServerProduct: lazy("@/app/connection/server-product", "useServerProduct"),
   useEnabledAcpHarnesses: () => () => () => [],
 }
 

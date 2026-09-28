@@ -18,7 +18,9 @@ import { createHarnessServices } from "../harness-services"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
-import { pluginProjectionFor, snapshotCredentials } from "../host/projection"
+import { sessionCredentials } from "../host/launch"
+import { harnessUnavailableResponse } from "../routes/session-harness-refusal"
+import { pluginProjectionFor } from "../host/projection"
 import { createAgentRuntime, type AgentRuntime, type AgentRuntimeHealth, type LaunchComposer } from "../host/runtime"
 import { Log } from "../log"
 import type { ProcessObserver } from "../managed-processes/process-observer"
@@ -26,7 +28,7 @@ import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "..
 import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
 import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
-import { isSessionRecoveryPath } from "../routes/session-core"
+import { isSessionRecoveryPath, sessionOwner } from "../routes/session-core"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { runGit } from "../git"
@@ -194,7 +196,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   let configApply: RuntimeConfigApplyStatus = { state: "idle", revision: 0 }
   let appliedSignature: string | undefined
   let currentMcp: Record<string, unknown> = {}
-  let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = {}
+  let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = { machineOwnerUserId: options.placement.machineOwnerUserId, accounts: {} }
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
   let applyQueue = Promise.resolve()
@@ -274,7 +276,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     projection: (harness) => pluginProjectionFor(harness, {
       generation: `runtime-config:${configApplyRevision}`, mcp: currentMcp, harnessLaunch: currentHarnessLaunch,
     }),
-    credentials: () => snapshotCredentials(currentAuthRaw, `runtime-config:${configApplyRevision}`),
+    credentials: () => ({ ...options.placement, ...currentAuthRaw, leaseGeneration: `runtime-config:${configApplyRevision}` }),
   }
 
   type Engine = {
@@ -318,8 +320,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const configuration = createSessionConfiguration({
       attached: () => engine?.runtime.attachments.entries() ?? [],
       projection: (attached) => launch.projection(attached.handle.runner),
-      credentials: () => launch.credentials(),
+      credentials: (attached) => sessionCredentials(launch, { owner: attached.owner, config: runtimeStore.getSessionConfig(attached.session.binding.sessionId)! }),
       onHeldFailure: (error) => { void failConfigApply(error) },
+      retire: async (attached, reason) => {
+        const sessionId = attached.session.binding.sessionId
+        log.warn("Retiring a session whose owner has no usable account", { sessionId, reason })
+        engine?.runtime.attachments.forget(sessionId)
+        await attached.handle.transport.close(attached.session)
+      },
     })
     const runtime = createAgentRuntime({
       store: runtimeStore, eventHub, transports, ports, ownerGeneration, launch,
@@ -533,7 +541,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         try {
           const runtime = await runtimeForSession()
           const requested = c.req.query("model") || undefined
-          const preview = await runtime.reads.configOptions({ harness: targetRunner, directory },
+          const preview = await runtime.reads.configOptions({ harness: targetRunner, directory, owner: sessionOwner(c) },
             requested ? { providerID: harnessKey(targetRunner), modelID: requested } : undefined)
           if (!preview) {
             return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id,
@@ -541,6 +549,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           }
           return c.json(preview)
         } catch (cause) {
+          const refused = harnessUnavailableResponse(c, cause)
+          if (refused) return refused
           return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id, message: errorMessage(cause) } }, 502)
         }
       })

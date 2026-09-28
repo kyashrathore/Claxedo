@@ -1,5 +1,5 @@
 import { getClaxedoServerUrl, isLoopbackHostname, normalizeUrl } from "@/platform/api/api"
-import { readField, readString } from "@/lib/record"
+import { readField, readString, readStringArray, recordOrEmpty } from "@/lib/record"
 
 /** Same-origin in desktop dev so Vite can proxy credential routes (no CORS). */
 export function credentialRequestOrigin(input?: ClaxedoCredentialRequestInput): string {
@@ -23,7 +23,16 @@ export type ClaxedoCredentialRequestInput = {
   providerId?: string
   /** One stored row: named alone it is the row itself, with an action its subpath. */
   credentialId?: string
-  action?: "discover" | "save-discovered" | "verify" | "scope" | "reconnect" | "effective" | "activate" | "machine-logins"
+  action?:
+    | "discover"
+    | "save-discovered"
+    | "verify"
+    | "scope"
+    | "reconnect"
+    | "effective"
+    | "activate"
+    | "machine-logins"
+    | "account-sources"
   /** Narrows a machine-login read to one harness. */
   harness?: string
   /** Asks the harness again rather than reusing the answer it last gave. */
@@ -58,7 +67,13 @@ function credentialRoute(input?: ClaxedoCredentialRequestInput) {
     const search = query.size > 0 ? `?${query.toString()}` : ""
     return `/api/claxedo/credentials/machine-logins${search}`
   }
-  if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective" || input?.action === "activate") {
+  if (
+    input?.action === "discover"
+    || input?.action === "save-discovered"
+    || input?.action === "effective"
+    || input?.action === "activate"
+    || input?.action === "account-sources"
+  ) {
     return `/api/claxedo/credentials/${input.action}`
   }
   if (input?.credentialId) return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}`
@@ -114,6 +129,63 @@ export async function putHostedProviderKey(input: {
     method: "PUT",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ auth: { key: input.key } }),
+  })
+  if (!res.ok) throw new Error(await claxedoCredentialErrorMessage(res))
+  await res.text().catch(() => undefined)
+}
+
+/**
+ * Whose account a person's sessions spend for one provider: their own, or the
+ * organization's team account. Only the chosen one is spent; a provider the
+ * person never chose for is "own".
+ */
+export type AccountSource = "own" | "team"
+
+/** The `sources` map both the local and the hosted routes answer with, by provider id. */
+export function readAccountSources(body: unknown): Map<string, AccountSource> {
+  const sources = new Map<string, AccountSource>()
+  for (const [providerId, source] of Object.entries(recordOrEmpty(readField(body, "sources")))) {
+    if (source !== "own" && source !== "team") throw new Error("Account source response is invalid")
+    sources.set(providerId, source)
+  }
+  return sources
+}
+
+function hostedSourcesUrl(serverUrl: string, path: string, harness: string) {
+  const url = new URL(path, serverUrl)
+  url.searchParams.set("harness", harness)
+  return url
+}
+
+/**
+ * The hosted plane's answer for one harness: which account the person chose
+ * per provider, and the providers the organization holds a team account for.
+ */
+export async function getHostedAccountSources(input: {
+  serverUrl: string
+  harness: string
+  request: (url: URL, init?: RequestInit) => Promise<Response>
+}) {
+  const res = await input.request(hostedSourcesUrl(input.serverUrl, "/auth/sources", input.harness), {
+    headers: { Accept: "application/json" },
+  })
+  if (!res.ok) throw new Error(await claxedoCredentialErrorMessage(res))
+  const body: unknown = await res.json()
+  return { sources: readAccountSources(body), team: new Set(readStringArray(body, "team") ?? []) }
+}
+
+export async function putHostedAccountSource(input: {
+  serverUrl: string
+  providerId: string
+  harness: string
+  source: AccountSource
+  request: (url: URL, init?: RequestInit) => Promise<Response>
+}) {
+  const url = hostedSourcesUrl(input.serverUrl, `/auth/${encodeURIComponent(input.providerId)}/source`, input.harness)
+  const res = await input.request(url, {
+    method: "PUT",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ source: input.source }),
   })
   if (!res.ok) throw new Error(await claxedoCredentialErrorMessage(res))
   await res.text().catch(() => undefined)

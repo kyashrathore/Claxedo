@@ -50,17 +50,17 @@ async function runtimeProjecting(input: { lifetimeMs: number; fail?: () => boole
   process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
   const projections: number[] = []
   configureAgentConfig({
-    projectAuth: async (): Promise<Record<string, ProviderProjection>> => {
+    projectAuth: async (): Promise<import("@claxedo/agent-runtime-contract").CredentialSnapshot<ProviderProjection>> => {
       if (input.fail?.()) throw new Error("authority unavailable")
       projections.push(Date.now())
-      return {
+      return { machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": {
           baseUrl: "http://127.0.0.1:2595/bindings/b1",
           placeholder: `placeholder-${projections.length}`,
           authMode: "bearer",
           expiresAt: Date.now() + input.lifetimeMs,
         },
-      }
+      } } }
     },
   })
   const workspace: Workspace = { id: "ws_renewal", directory: project, kind: "local", created_at: 1, updated_at: 1 }

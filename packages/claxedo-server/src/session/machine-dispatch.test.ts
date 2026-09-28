@@ -23,6 +23,7 @@ const identity = { channel: "telegram", externalUserId: "external", threadKey: "
 const caller = { kind: "channel" as const, identity }
 const actor = {
   actorId: "canonical-actor",
+  userId: "bound-person",
   actorKind: "human" as const,
   actorPublicId: "user-public",
   actorName: "Test User",
@@ -60,7 +61,7 @@ describe("machine session dispatch", () => {
     const session = await f.runtime.create({ workspaceId: "ws", harness: { id: "pi", access: "native" } }, caller)
     expect(f.authority.resolveChannelMachineAccess).toHaveBeenCalledWith(identity, "ws")
     expect(f.authority.reserveRuntimeSession).toHaveBeenCalledWith(
-      { actorId: actor.actorId, actorKind: "human", principalKind: "user" },
+      { actorId: actor.actorId, userId: "bound-person", actorKind: "human", principalKind: "user" },
       expect.objectContaining({ sessionId: session.id, workspaceId: "ws" }),
     )
     const [url, init] = mock.request.mock.calls[0]
@@ -70,9 +71,10 @@ describe("machine session dispatch", () => {
     )
     expect(mock.client.mock.calls[0][0].options).toMatchObject({
       channelIdentity: { ...identity, identityVersion: 1 },
-      runtimeActor: { actorId: actor.actorId },
+      runtimeActor: { actorId: actor.actorId, userId: "bound-person" },
       role: "editor",
     })
+    expect(JSON.parse(mock.client.mock.calls[0][0].headers()["x-claxedo-embedded-relay-host-auth"])).toMatchObject({ user_id: "bound-person" })
     expect(f.projectionStore.put_session_meta).toHaveBeenCalledWith(
       session.id,
       expect.objectContaining({ host: "workspace", workspaceID: "ws", tags: ["harness:pi"] }),
@@ -113,6 +115,7 @@ describe("machine session dispatch", () => {
     await f.runtime.request("session", "abort", { method: "POST" }, caller)
     expect(f.authority.authorizeRuntimeSession).toHaveBeenCalledWith({
       actorId: actor.actorId,
+      userId: "bound-person",
       actorKind: "human",
       principalKind: "user",
       workspaceId: "ws",

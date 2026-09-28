@@ -15,7 +15,7 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 
 
 export function hasManagedSandboxDriverAuth(id: SandboxDriverID) {
-  return !!credentialByProvider(id, { onOutage: "empty", kind: "sandbox_driver" })
+  return !!credentialByProvider(id, { onOutage: "empty", kind: "sandbox_driver", owner: null })
 }
 
 export function sandboxDriverAuthSync<T extends SandboxDriverID>(

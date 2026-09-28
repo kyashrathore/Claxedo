@@ -57,7 +57,7 @@ async function backend(): Promise<PiBackend> {
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     harness: { id: "pi", access: "native" }, expectedMcp: "none",
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
@@ -111,7 +111,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   const context = await setupConformance({
     name: "pi orphan dialog", backend: async () => ({ root, directory: root, harness: { id: "pi", access: "native" },
       model: { providerID: "pi", modelID: "openai/gpt-4.1" }, owner: { kind: "machine-owner" }, unrunnableTurn: withUndeliverableFile,
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" },
       close: async () => { await fs.rm(root, { recursive: true, force: true }) } }),
     makeTransport(services, state) {
       const pi = state as PiBackend
@@ -197,7 +197,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: root, locality: "local",
       owner: { kind: "machine-owner" }, config: { harness: { id: "pi", access: "native" } },
       projection: { generation: "g1", pluginRoots: [], mcpServers: [], notApplied: [] },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async (upstreamSessionId: string) =>
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } }, { rebind: async (upstreamSessionId: string) =>
         ({ sessionId: "s1", workspaceId: "w1", directory: root, connectionId: "pi-rpc", upstreamSessionId }) } as never)
     expect(session.binding.upstreamSessionId).toBe("composed-runtime")
     await transport.close(session)
@@ -211,7 +211,7 @@ runConformance({
     const state = await backend()
     const rotated: { port: number; server: Awaited<ReturnType<typeof startScriptedModelServer>> }[] = []
     const origin = { actor: { kind: "person" as const, userId: "member" }, via: "relay" as const, reissued: false }
-    const credentials = { providers: { openai: { baseUrl: state.server.url, apiPath: "/v1", placeholder: "pi-broker-placeholder", authMode: "api-key" as const } },
+    const credentials = { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { openai: { baseUrl: state.server.url, apiPath: "/v1", placeholder: "pi-broker-placeholder", authMode: "api-key" as const } },
       secrets: {}, leaseGeneration: "brokered" }
     const root = path.join(state.root, "plugin")
     await fs.mkdir(path.join(root, "extensions"), { recursive: true })

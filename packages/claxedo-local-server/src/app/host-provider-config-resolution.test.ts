@@ -9,7 +9,8 @@ import { getRuntimeConfigSnapshot, projectRuntimeAuth } from "@claxedo/server-co
 import { createTestBackend, setBackendOverride } from "@claxedo/server-core/credentials/backend-registry"
 import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
 import { providerProjection } from "@claxedo/agent-sdk-runtime"
-import { clearHostProviderConfig } from "../workspace/host-provider-config"
+import { adoptEnrolledOwner, clearHostProviderConfig } from "../workspace/host-provider-config"
+import { resetHostEnrolledOwner } from "@claxedo/host-serving/serving"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import { testDaemon } from "./test-support/daemon"
 
@@ -42,6 +43,7 @@ async function freePort() {
   })
 }
 
+const OWNER = "usr_owner"
 const PUSHED = { baseUrl: "https://broker.owner.test/bindings/owner-1", placeholder: "sk-owner-placeholder", authMode: "api-key" as const }
 
 beforeEach(async () => {
@@ -55,10 +57,12 @@ beforeEach(async () => {
   call = identity.call
   server = startLocalServer({ port, daemon: identity.daemon })
   await server.ready
+  await adoptEnrolledOwner(OWNER, async () => {})
 })
 
 afterEach(async () => {
   clearHostProviderConfig()
+  resetHostEnrolledOwner()
   await server?.stop()
   server = undefined
   setBackendOverride(undefined)
@@ -70,30 +74,30 @@ afterEach(async () => {
 })
 
 async function machineHolds(providerId: string) {
-  const credential = await putCredential({
+  const credential = await putCredential({ owner: "local",
     provider_id: providerId,
     kind: "api_key",
     source: "managed",
     account_id: `acc-${providerId}`,
     secret: `sk-machine-${providerId}`,
   })
-  expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
+  expect(setActiveCredentials([credential.id], undefined, "local")).toMatchObject({ ok: true })
 }
 
 async function push(revision: number, providers: Record<string, unknown>) {
   return call(`${origin}/api/claxedo/host-provider-config`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ revision, providers: JSON.stringify({ version: 1, providers }) }),
+    body: JSON.stringify({ revision, providers: JSON.stringify({ version: 1, credentials: { machineOwnerUserId: OWNER, accounts: { [OWNER]: providers } } }) }),
   })
 }
 
 describe("a workspace on this machine resolves the owner's pushed provider", () => {
   test("ahead of the machine's own broker answer, and only for the provider the owner named", async () => {
     await machineHolds("claude-sdk")
-    await machineHolds("codex")
+    await machineHolds("openai")
     const before = await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })
-    const machineRow = providerProjection(before["claude-sdk"], {})
+    const machineRow = providerProjection(before.accounts[OWNER]["claude-sdk"], {})
     if (!machineRow || "unavailable" in machineRow) throw new Error("expected the broker to bind the machine's own credential")
     expect(machineRow.baseUrl).toContain(`${origin}/bindings/`)
 
@@ -101,19 +105,19 @@ describe("a workspace on this machine resolves the owner's pushed provider", () 
     expect(response.status).toBe(200)
 
     const snapshot = await getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })
-    expect(snapshot.auth["claude-sdk"]).toEqual(PUSHED)
-    expect(providerProjection(snapshot.auth.codex, {})).toEqual(providerProjection(before.codex, {}))
+    expect(snapshot.auth.accounts[OWNER]["claude-sdk"]).toEqual(PUSHED)
+    expect(providerProjection(snapshot.auth.accounts[OWNER].openai, {})).toEqual(providerProjection(before.accounts[OWNER].openai, {}))
     expect(JSON.stringify(snapshot.auth)).not.toContain("sk-machine-claude-sdk")
   })
 
   test("a withdrawal hands the provider back to the machine's own answer", async () => {
     await machineHolds("claude-sdk")
     await push(1, { "claude-sdk": PUSHED })
-    expect((await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" }))["claude-sdk"]).toEqual(PUSHED)
+    expect((await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).accounts[OWNER]["claude-sdk"]).toEqual(PUSHED)
 
     expect((await push(2, {})).status).toBe(200)
 
-    const after = providerProjection((await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" }))["claude-sdk"], {})
+    const after = providerProjection((await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).accounts[OWNER]["claude-sdk"], {})
     if (!after || "unavailable" in after) throw new Error("expected the broker's own binding back")
     expect(after.baseUrl).toContain(`${origin}/bindings/`)
   })
@@ -121,10 +125,10 @@ describe("a workspace on this machine resolves the owner's pushed provider", () 
   test("a revision with one unreadable row leaves the previous rows answering", async () => {
     await push(1, { "claude-sdk": PUSHED })
 
-    const refused = await push(2, { "claude-sdk": PUSHED, codex: { baseUrl: "https://x", authMode: "bearer" } })
+    const refused = await push(2, { "claude-sdk": PUSHED, openai: { baseUrl: "https://x", authMode: "bearer" } })
 
     expect(refused.status).toBe(400)
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ "claude-sdk": PUSHED })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ machineOwnerUserId: OWNER, accounts: { [OWNER]: { "claude-sdk": PUSHED } } })
     expect(await (await call(`${origin}/api/claxedo/host-provider-config`)).json()).toEqual({ revision: 1, providerCount: 1 })
   })
 })

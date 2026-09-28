@@ -148,7 +148,7 @@ describe("embedded workspace runtime", () => {
     let prompt: Promise<Response> | undefined
     try {
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
-      await first.host.apply({ version: 4, mcp: {}, auth: {}, connections: [{
+      await first.host.apply({ version: 4, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } }, connections: [{
         connectionId: "held", providerKey: "held-producer", configRevision: 1, enabled: true, config: {},
       }], defaultHarness: { kind: "connection", connectionId: "held" } })
       const request = (pathname: string, body: unknown) => Promise.resolve(first.app.request(
@@ -382,9 +382,11 @@ describe("embedded workspace runtime", () => {
 
     try {
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_private", project), { config: "skip" })
+      await runtime.host.apply({ version: 4, connections: [], mcp: {}, auth: { machineOwnerUserId: "local", accounts: { alice: { openai: { baseUrl: "https://fixture.example", placeholder: "alice-key", authMode: "api-key" } } } } })
       const embeddedClaims = (actorId: string, actorName: string) => JSON.stringify({
         principal_kind: "user",
         actor_id: actorId,
+        user_id: actorId.replace("actor_", ""),
         actor_kind: "human",
         actor_public_id: actorId.replace("actor_", "usr_"),
         actor_name: actorName,

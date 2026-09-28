@@ -342,11 +342,12 @@ function storedTurnOrigin(row: {
   origin_provenance?: string | null
   origin_actor_id?: string | null
   origin_actor_kind?: string | null
+  origin_user_id?: string | null
   origin_authority_json?: string | null
   wake_grant?: string | null
 } | null | undefined): SessionTurnOrigin | undefined {
   if (row?.origin_provenance === "loopback-direct") {
-    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_authority_json ?? row.wake_grant
+    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_user_id ?? row.origin_authority_json ?? row.wake_grant
     return named ? undefined : { provenance: "loopback-direct" }
   }
   if (row?.origin_provenance !== "relay-replayed") return undefined
@@ -354,7 +355,7 @@ function storedTurnOrigin(row: {
   if (!row.origin_actor_id || !kind || !row.origin_authority_json) return undefined
   return {
     provenance: "relay-replayed",
-    actor: { actorId: row.origin_actor_id, actorKind: kind },
+    actor: { actorId: row.origin_actor_id, actorKind: kind, ...(row.origin_user_id ? { userId: row.origin_user_id } : {}) },
     authority: JSON.parse(row.origin_authority_json),
     ...(row.wake_grant ? { grant: row.wake_grant } : {}),
   }
@@ -1146,6 +1147,7 @@ export class RuntimeStore {
       ["origin_provenance", "TEXT"],
       ["origin_actor_id", "TEXT"],
       ["origin_actor_kind", "TEXT"],
+      ["origin_user_id", "TEXT"],
       ["origin_authority_json", "TEXT"],
       ["wake_grant", "TEXT"],
     ] as const) {
@@ -1579,6 +1581,8 @@ export class RuntimeStore {
       agentSessionId: this.getAgentSessionId(childSessionId) ?? childSessionId,
       parentSessionId,
     })
+    const owner = this.sessionOwner(parentSessionId)
+    if (owner) this.recordSessionOwner(childSessionId, owner)
   }
 
   private admitObservation(input: {
@@ -1766,11 +1770,12 @@ export class RuntimeStore {
       .prepare(
         `
       UPDATE session_subagent
-      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_authority_json = ?, wake_grant = ?, updated_at = ?
+      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_user_id = ?, origin_authority_json = ?, wake_grant = ?, updated_at = ?
       WHERE parent_session_id = ? AND subagent_key = ?
         AND origin_provenance IS NULL
         AND origin_actor_id IS NULL
         AND origin_actor_kind IS NULL
+        AND origin_user_id IS NULL
         AND origin_authority_json IS NULL
         AND wake_grant IS NULL
     `,
@@ -1779,6 +1784,7 @@ export class RuntimeStore {
         origin.provenance,
         relayed?.actor.actorId ?? null,
         relayed?.actor.actorKind ?? null,
+        relayed?.actor.userId ?? null,
         relayed ? JSON.stringify(relayed.authority) : null,
         relayed?.grant ?? null,
         Date.now(),
@@ -1803,11 +1809,12 @@ export class RuntimeStore {
         origin_provenance: string | null
         origin_actor_id: string | null
         origin_actor_kind: string | null
+        origin_user_id: string | null
         origin_authority_json: string | null
         wake_grant: string | null
       }>(
         `
-      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_authority_json, wake_grant
+      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_user_id, origin_authority_json, wake_grant
       FROM session_subagent
       WHERE parent_session_id = ? AND subagent_key = ?
     `,
@@ -4249,7 +4256,7 @@ export class RuntimeStore {
 
   recordSessionOwner(sessionId: string, owner: TurnActor) {
     this.db
-      .prepare("INSERT INTO session_owner (session_id, owner_json) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET owner_json = excluded.owner_json")
+      .prepare("INSERT INTO session_owner (session_id, owner_json) VALUES (?, ?) ON CONFLICT(session_id) DO NOTHING")
       .run(sessionId, JSON.stringify(owner))
   }
 

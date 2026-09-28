@@ -36,7 +36,21 @@ process.env.CLAXEDO_DATA_DIR = root
 const userConfigFile = path.join(root, "user-agent-config.json")
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
-const { putCredential, resolveSecret, deleteCredentialsByProvider, credentialByProvider } = await import("@claxedo/server-core/credentials/registry")
+const { putCredential, credentialByProvider, resolveSecretById, listCredentials, deleteCredential } = await import("@claxedo/server-core/credentials/registry")
+/** The local operator's own rows: person-path reads, since the by-provider helpers answer for the org's own rows. */
+const ownRow = (providerId: string) => credentialByProvider(providerId, { onOutage: "throw", owner: "local" })
+const ownSecret = async (providerId: string) => {
+  const row = ownRow(providerId)
+  return row && row.status === "available" ? await resolveSecretById(row.id) : null
+}
+const deleteOwn = async (providerId: string) => {
+  let count = 0
+  for (const row of listCredentials().filter((item) => item.provider_id === providerId && item.owner === "local")) {
+    if (await deleteCredential(row.id)) count++
+  }
+  return count
+}
+
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
 const { credentialDiscovery } = await import("./discovery")
 const { saveUserConfig } = await import("../../agent-config")
@@ -65,15 +79,15 @@ describe("syncLocalCredentials", () => {
     delete process.env.XDG_DATA_HOME
     execFileSyncCalls.length = 0
     await Promise.all([
-      deleteCredentialsByProvider("claude-sdk"),
-      deleteCredentialsByProvider("claude-sdk"),
-      deleteCredentialsByProvider("codex-app-server"),
-      deleteCredentialsByProvider("cursor-sdk"),
-      deleteCredentialsByProvider("openai"),
-      deleteCredentialsByProvider("daytona"),
-      deleteCredentialsByProvider("modal"),
-      deleteCredentialsByProvider("vercel"),
-      deleteCredentialsByProvider("cloudflare"),
+      deleteOwn("claude-sdk"),
+      deleteOwn("claude-sdk"),
+      deleteOwn("codex-app-server"),
+      deleteOwn("cursor-sdk"),
+      deleteOwn("openai"),
+      deleteOwn("daytona"),
+      deleteOwn("modal"),
+      deleteOwn("vercel"),
+      deleteOwn("cloudflare"),
     ])
     // Removed rather than overwritten: `saveUserConfig` reads the file first,
     // so a test that left an unreadable one behind would fail every test after it.
@@ -117,14 +131,14 @@ describe("syncLocalCredentials", () => {
       },
     })
 
-    const result = await syncLocalCredentials(["claude-sdk", "modal"])
+    const result = await syncLocalCredentials(["claude-sdk", "modal"], undefined, "local")
 
     expect(result.synced).toEqual(["claude-sdk", "modal"])
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("claude-sdk")).toBe("sk-ant-env")
-    expect(await resolveSecret("modal")).toBe(JSON.stringify({
+    expect(await ownSecret("claude-sdk")).toBe("sk-ant-env")
+    expect(await ownSecret("modal")).toBe(JSON.stringify({
       token_id: "modal-id",
       token_secret: "modal-secret",
     }))
@@ -133,15 +147,15 @@ describe("syncLocalCredentials", () => {
   test("syncs Claude Code OAuth env credentials for the native SDK harness", async () => {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-env"
 
-    const result = await syncLocalCredentials(["claude-sdk"])
-    const sdk = JSON.parse(await resolveSecret("claude-sdk") ?? "{}") as Record<string, any>
+    const result = await syncLocalCredentials(["claude-sdk"], undefined, "local")
+    const sdk = JSON.parse(await ownSecret("claude-sdk") ?? "{}") as Record<string, any>
 
     expect(result.synced).toEqual(["claude-sdk"])
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect((await credentialByProvider("claude-sdk", { onOutage: "throw" }))?.source).toBe("env")
-    expect((await credentialByProvider("claude-sdk", { onOutage: "throw" }))?.label).toBe("Synced from CLAUDE_CODE_OAUTH_TOKEN")
+    expect((await ownRow("claude-sdk"))?.source).toBe("env")
+    expect((await ownRow("claude-sdk"))?.label).toBe("Synced from CLAUDE_CODE_OAUTH_TOKEN")
     expect(sdk).toEqual({
       type: "claude_code_oauth",
       claudeAiOauth: { accessToken: "sk-ant-oat01-env" },
@@ -153,13 +167,13 @@ describe("syncLocalCredentials", () => {
     process.env.VERCEL_TEAM_ID = "team-id"
     process.env.VERCEL_PROJECT_ID = "project-id"
 
-    const result = await syncLocalCredentials(["vercel"])
+    const result = await syncLocalCredentials(["vercel"], undefined, "local")
 
     expect(result.synced).toEqual(["vercel"])
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("vercel")).toBe(JSON.stringify({
+    expect(await ownSecret("vercel")).toBe(JSON.stringify({
       access_token: "vercel-token",
       team_id: "team-id",
       project_id: "project-id",
@@ -170,59 +184,59 @@ describe("syncLocalCredentials", () => {
     process.env.VERCEL_TOKEN = "vercel-token"
     process.env.VERCEL_TEAM_ID = "team-id"
 
-    const result = await syncLocalCredentials(["vercel"])
+    const result = await syncLocalCredentials(["vercel"], undefined, "local")
 
     expect(result.synced).toEqual([])
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual(["vercel"])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("vercel")).toBeNull()
+    expect(await ownSecret("vercel")).toBeNull()
   })
 
   test("reports existing managed credentials when no local source is present", async () => {
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "codex-app-server",
       kind: "api_key",
       source: "managed",
       secret: "sk-openai-managed",
     })
 
-    const result = await syncLocalCredentials(["codex-app-server", "cursor-sdk"])
+    const result = await syncLocalCredentials(["codex-app-server", "cursor-sdk"], undefined, "local")
 
     expect(result.synced).toEqual([])
     expect(result.existing).toEqual(["codex-app-server"])
     expect(result.missing).toEqual(["cursor-sdk"])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("codex-app-server")).toBe("sk-openai-managed")
+    expect(await ownSecret("codex-app-server")).toBe("sk-openai-managed")
   })
 
   test("does not overwrite managed credentials with local or env sources", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-env"
 
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
       secret: "sk-ant-managed",
     })
 
-    const result = await syncLocalCredentials(["claude-sdk"])
+    const result = await syncLocalCredentials(["claude-sdk"], undefined, "local")
 
     expect(result.synced).toEqual([])
     expect(result.existing).toEqual(["claude-sdk"])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("claude-sdk")).toBe("sk-ant-managed")
+    expect(await ownSecret("claude-sdk")).toBe("sk-ant-managed")
   })
 
   test("syncs Cursor credentials from the CURSOR_API_KEY env var", async () => {
     process.env.CURSOR_API_KEY = "cursor-env-key"
 
-    const result = await syncLocalCredentials(["cursor-sdk"])
+    const result = await syncLocalCredentials(["cursor-sdk"], undefined, "local")
 
     expect(result.synced).toEqual(["cursor-sdk"])
     expect(result.missing).toEqual([])
-    expect(await resolveSecret("cursor-sdk")).toBe("cursor-env-key")
-    expect((await credentialByProvider("cursor-sdk", { onOutage: "throw" }))?.source).toBe("env")
+    expect(await ownSecret("cursor-sdk")).toBe("cursor-env-key")
+    expect((await ownRow("cursor-sdk"))?.source).toBe("env")
   })
 
   test("does not discover Cursor credentials from local Cursor state", async () => {
@@ -241,11 +255,11 @@ describe("syncLocalCredentials", () => {
       authInfo: { authId: "auth0|user_123" },
     }))
 
-    const result = await syncLocalCredentials(["cursor-sdk"])
+    const result = await syncLocalCredentials(["cursor-sdk"], undefined, "local")
 
     expect(result.synced).toEqual([])
     expect(result.missing).toEqual(["cursor-sdk"])
-    expect(await resolveSecret("cursor-sdk")).toBeNull()
+    expect(await ownSecret("cursor-sdk")).toBeNull()
   })
 
   test("an unreadable user agent config leaves every other source collectable", async () => {
@@ -295,7 +309,7 @@ describe("syncLocalCredentials", () => {
       last_refresh: "2026-04-01T00:00:00.000Z",
     }))
 
-    const discovery = await credentialDiscovery.discover()
+    const discovery = await credentialDiscovery.discover(undefined, "local")
 
     expect(discovery.items).toEqual([])
     expect(discovery.discovery_id).toEqual(expect.any(String))

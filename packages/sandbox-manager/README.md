@@ -130,6 +130,15 @@ never logged, and never captured in a driver snapshot.
 > for Authorization API-key clients. Modal remains `none`: its encrypted store
 > exposes credentials as readable environment variables inside the sandbox.
 
+**Never readable is not never spendable.** The placeholder sits in every
+process's environment, and the edge attaches the real value to any request to
+an allowlisted host that carries it, with no condition on which session or
+person sent it. Anything that runs in the sandbox can therefore spend what it
+was delivered. Claxedo delivers a workspace's sandbox only its owner's chosen
+provider accounts, never another person's, and treats the sandbox as shared
+trust among everyone admitted to that workspace: their sessions and shells can
+spend the owner's delivered accounts (owner ruling, 2026-09-28).
+
 ## Egress containment
 
 `SandboxManagerInput.net` restricts what the sandbox can reach on the network.

@@ -6,7 +6,7 @@ import { askClaudePermission } from "./requests"
 const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/workspace", locality: "local",
   owner: { kind: "person", userId: "owner" }, config: { harness: { id: "claude", access: "native" }, permissionMode: "default" },
   projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-  credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
+  credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } }
 
 test("Claude grants use identity fields, ignore display labels, and pass the SDK abort signal", async () => {
   const requests: TurnRequest[] = []

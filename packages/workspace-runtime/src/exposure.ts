@@ -180,6 +180,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       ? row.principal_kind
       : undefined
     const actor_id = trimToUndefined(row.actor_id)
+    const user_id = trimToUndefined(row.user_id)
     const actor_kind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
     const actor_public_id = trimToUndefined(row.actor_public_id)
     const actor_name = trimToUndefined(row.actor_name)
@@ -190,6 +191,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       : undefined
     if (
       !principal_kind
+      || (row.user_id !== undefined && !user_id)
       || !actor_id
       || !actor_kind
       || (principal_kind === "user" && actor_kind !== "human")
@@ -203,6 +205,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
     return {
       principal_kind,
       actor_id,
+      ...(user_id ? { user_id } : {}),
       actor_kind,
       actor_public_id,
       actor_name,

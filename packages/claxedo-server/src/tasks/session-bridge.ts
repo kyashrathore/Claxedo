@@ -114,15 +114,15 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
   return createTasksSessionBridge({
-    async target(workspaceId) {
+    async target(workspaceId, starter) {
       const workspace = await resolveWorkspace({ workspaceId }).catch(() => undefined)
-      return workspace ? dispatchTarget(workspace, input.runtimeClient) : null
+      return workspace ? dispatchTarget(workspace, startingAs(input, starter)) : null
     },
 
-    async projectTarget(projectId) {
+    async projectTarget(projectId, starter) {
       const chosen = chooseProjectWorkspace(projectId, await listWorkspaces().catch(() => []))
       if (!("workspace" in chosen)) return chosen
-      const target = dispatchTarget(chosen.workspace, input.runtimeClient)
+      const target = dispatchTarget(chosen.workspace, startingAs(input, starter))
       return target ? { target } : {
         detail: `Workspace ${chosen.workspace.id} is not reachable from this control plane`,
       }
@@ -282,7 +282,7 @@ function createTasksCloudTarget(
     } catch (error) {
       return { blocker: capabilityBlocker(origin, error) }
     }
-    const target = dispatchTarget(allocated.workspace, input.runtimeClient)
+    const target = dispatchTarget(allocated.workspace, startingAs(input, origin.actor))
     return target ? { target } : {
       blocker: {
         code: "source_unavailable",
@@ -359,6 +359,19 @@ function capabilityBlocker(origin: TasksCloudOrigin, error: unknown): StartBlock
     code: "capability_unavailable",
     detail: `The capability set for ${origin.task.id} (${origin.slot}, attempt ${origin.attempt}) could not be applied: ${error instanceof Error ? error.message : String(error)}`,
   }
+}
+
+/**
+ * The runtime client a Start dispatches through: the control plane's service
+ * actor, carrying the person it starts for, so a session it creates is theirs
+ * and spends their accounts. The signed caller, or the owner a grant resolved
+ * to; the reservation refuses a starter neither names before anything is
+ * created.
+ */
+function startingAs(input: HostedTasksSessionBridgeInput, starter: TasksActor | null): WorkspaceRuntimeClientOptions {
+  const userId = starter ? input.auth?.(starter)?.principal?.userId ?? input.owner?.(starter)?.userId : undefined
+  if (!userId || !input.runtimeClient.runtimeActor) return input.runtimeClient
+  return { ...input.runtimeClient, runtimeActor: { ...input.runtimeClient.runtimeActor, userId } }
 }
 
 function dispatchTarget(workspace: Workspace, options: WorkspaceRuntimeClientOptions): TasksRuntimeTarget | null {

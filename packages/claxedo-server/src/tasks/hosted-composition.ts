@@ -76,7 +76,8 @@ export type TasksGrantOwner = (actor: TasksActor) => TasksCapabilityOwner | unde
  * The runtime principal Tasks dispatches as. Start reserves and creates a
  * session before any human turn exists, so it acts as the one control-plane
  * service actor the D1 runtime authority mints service tokens for — the same
- * actor the checkpoint routes and the Agent Plugins provisioner use.
+ * actor the checkpoint routes and the Agent Plugins provisioner use — and the
+ * bridge names the person each Start acts for on it.
  */
 export function hostedTasksRuntimeClient(services: ControlPlaneServices): WorkspaceRuntimeClientOptions {
   return {

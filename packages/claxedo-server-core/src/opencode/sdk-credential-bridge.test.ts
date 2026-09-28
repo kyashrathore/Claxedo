@@ -74,7 +74,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     loaded.mockReturnValue(true)
     construct.mockImplementation(() => fake.runtime as never)
-    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": brokerProjection } } }) })
 
     await expect(syncCredentialsToSdk()).resolves.toEqual({ bound: ["anthropic"], removed: [] })
 
@@ -87,7 +87,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     loaded.mockReturnValue(true)
     construct.mockImplementation(() => fake.runtime as never)
-    const projectAuth = vi.fn(async () => ({ "claude-sdk": brokerProjection }))
+    const projectAuth = vi.fn(async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": brokerProjection } } }))
     configureAgentConfig({ projectAuth })
 
     await expect(syncCredentialsToSdk(undefined, ["cursor-sdk"])).resolves.toEqual({ bound: [], removed: [] })
@@ -100,7 +100,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     loaded.mockReturnValue(true)
     construct.mockImplementation(() => fake.runtime as never)
-    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": brokerProjection } } }) })
 
     await expect(syncCredentialsToSdk(undefined, ["cursor-sdk", "claude-sdk"])).resolves.toEqual({ bound: ["anthropic"], removed: [] })
     expect(fake.bound).toHaveLength(1)
@@ -110,7 +110,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     loaded.mockReturnValue(true)
     construct.mockImplementation(() => fake.runtime as never)
-    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": brokerProjection } } }) })
 
     await expect(syncCredentialsToSdk(undefined, undefined)).resolves.toEqual({ bound: ["anthropic"], removed: [] })
   })
@@ -119,7 +119,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime([{ id: "cred-old", label: "Claxedo managed: anthropic" }])
     construct.mockImplementation(() => fake.runtime as never)
     const auth: Record<string, ProviderProjection> = { "claude-sdk": brokerProjection }
-    configureAgentConfig({ projectAuth: async () => auth })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: auth } }) })
 
     await expect(reconcileCredentialsIntoSdk()).resolves.toEqual({ bound: ["anthropic"], removed: ["anthropic"] })
 
@@ -136,7 +136,7 @@ describe("OpenCode SDK credential bridge", () => {
     // which is a working account going dark with nothing failing.
     const registryIds = ["claude-sdk", "openai", "openrouter", "google", "groq", "xai"] as const
     const auth = Object.fromEntries(registryIds.map((id) => [id, brokerProjection])) as Record<string, ProviderProjection>
-    configureAgentConfig({ projectAuth: async () => auth })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: auth } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -151,7 +151,7 @@ describe("OpenCode SDK credential bridge", () => {
       "claude-sdk": { unavailable: true, reason: "auth_failed" },
       openai: brokerProjection,
     }
-    configureAgentConfig({ projectAuth: async () => auth })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: auth } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -167,10 +167,10 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)
     configureAgentConfig({
-      projectAuth: async () => ({
+      projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": { ...brokerProjection, authMode: "basic" },
         openai: brokerProjection,
-      } as unknown as Record<string, ProviderProjection>),
+      } as unknown as Record<string, ProviderProjection> } }),
     })
 
     await reconcileCredentialsIntoSdk()
@@ -193,7 +193,7 @@ describe("OpenCode SDK credential bridge", () => {
       "codex-app-server": { unavailable: true, reason: "revoked" },
       openai: brokerProjection,
     }
-    configureAgentConfig({ projectAuth: async () => auth })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: auth } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -210,7 +210,7 @@ describe("OpenCode SDK credential bridge", () => {
       "claude-sdk": { ...brokerProjection, placeholder: "alias-placeholder" },
       anthropic: { ...brokerProjection, placeholder: "exact-placeholder" },
     }
-    configureAgentConfig({ projectAuth: async () => auth })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: auth } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -226,7 +226,7 @@ describe("OpenCode SDK credential bridge", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-api03-operator-own"
     process.env.ANTHROPIC_AUTH_TOKEN = "operator-own-oauth"
     process.env.OPENAI_API_KEY = "sk-operator-openai"
-    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": brokerProjection } } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -242,7 +242,7 @@ describe("OpenCode SDK credential bridge", () => {
     construct.mockImplementation(() => fake.runtime as never)
     process.env.ANTHROPIC_API_KEY = "sk-ant-api03-operator-own"
     let auth: Record<string, ProviderProjection> = { "claude-sdk": brokerProjection }
-    configureAgentConfig({ projectAuth: async () => auth })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: auth } }) })
 
     await reconcileCredentialsIntoSdk()
     expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
@@ -259,9 +259,9 @@ describe("OpenCode SDK credential bridge", () => {
     loaded.mockReturnValue(true)
     const projectedAt = Date.now()
     configureAgentConfig({
-      projectAuth: async (): Promise<Record<string, ProviderProjection>> => ({
+      projectAuth: async (): Promise<import("@claxedo/agent-runtime-contract").CredentialSnapshot<ProviderProjection>> => ({ machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": { ...brokerProjection, expiresAt: Date.now() + 60 * 60 * 1000 },
-      }),
+      } } }),
     })
 
     await reconcileCredentialsIntoSdk()
@@ -287,7 +287,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)
     customProviders.mockReturnValue([acme])
-    configureAgentConfig({ projectAuth: async () => ({ acme: brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { acme: brokerProjection } } }) })
 
     await expect(reconcileCredentialsIntoSdk()).resolves.toEqual({ bound: ["acme"], removed: [] })
 
@@ -307,7 +307,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)
     customProviders.mockReturnValue([acme])
-    configureAgentConfig({ projectAuth: async () => ({ acme: { unavailable: true, reason: "auth_failed" } }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { acme: { unavailable: true, reason: "auth_failed" } } } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -335,7 +335,7 @@ describe("OpenCode SDK credential bridge", () => {
     customProviders.mockReturnValue([{ ...acme, env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"] }])
     process.env.CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY = "sk-env"
     let projected: Record<string, ProviderProjection> = { acme: brokerProjection }
-    configureAgentConfig({ projectAuth: async () => projected })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: projected } }) })
 
     await reconcileCredentialsIntoSdk()
     expect(process.env.CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY).toBeUndefined()
@@ -349,7 +349,7 @@ describe("OpenCode SDK credential bridge", () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)
     customProviders.mockReturnValue([{ ...acme, providerID: "anthropic" }])
-    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": brokerProjection } } }) })
 
     await reconcileCredentialsIntoSdk()
 
@@ -362,7 +362,7 @@ describe("OpenCode SDK credential bridge", () => {
     loaded.mockReturnValue(true)
     construct.mockImplementation(() => fake.runtime as never)
     customProviders.mockReturnValue([acme])
-    configureAgentConfig({ projectAuth: async () => ({ acme: brokerProjection }) })
+    configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { acme: brokerProjection } } }) })
 
     await expect(syncCredentialsToSdk(undefined, ["acme"])).resolves.toEqual({ bound: ["acme"], removed: [] })
     await expect(syncCredentialsToSdk(undefined, ["cursor-sdk"])).resolves.toEqual({ bound: [], removed: [] })

@@ -1,4 +1,4 @@
-import type { DraftLaunch, TransportCapabilities } from "../../contract"
+import type { TransportCapabilities } from "../../contract"
 import type { CodexModel } from "./models"
 
 export function codexCapabilities(models: readonly CodexModel[]): TransportCapabilities {
@@ -16,11 +16,4 @@ export function codexCapabilities(models: readonly CodexModel[]): TransportCapab
     mcpTransports: { stdio: true, http: true, sse: false },
     timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "after-active-turns" },
   }
-}
-
-export function codexCapabilityDraft(directory: string): DraftLaunch {
-  return { workspaceId: "capability-probe", directory, locality: "local", owner: { kind: "machine-owner" },
-    config: { harness: { id: "codex", access: "native" } },
-    projection: { generation: "capability-probe", mcpServers: [], pluginRoots: [], notApplied: [] },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "capability-probe" } }
 }

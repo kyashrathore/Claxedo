@@ -1,4 +1,4 @@
-import { isProviderUnavailable, type PlaceholderEnvironment, type ProviderBinding, type ProviderProjection } from "@claxedo/agent-runtime-contract"
+import { isRecord, isProviderUnavailable, type CredentialSnapshot, type PlaceholderEnvironment, type ProviderBinding, type ProviderProjection } from "@claxedo/agent-runtime-contract"
 
 const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
@@ -69,6 +69,21 @@ export function providerProjection(
 type ProviderProjectionRowPolicy = "reject" | "unavailable"
 
 const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
+
+export function credentialSnapshot(input: unknown, env: PlaceholderEnvironment): CredentialSnapshot<ProviderProjection> | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  if (Object.keys(row).some((key) => key !== "machineOwnerUserId" && key !== "accounts")) return undefined
+  if (typeof row.machineOwnerUserId !== "string" || typeof row.accounts !== "object" || row.accounts === null || Array.isArray(row.accounts)) return undefined
+  const accounts: Record<string, Record<string, ProviderProjection>> = Object.create(null)
+  for (const [userId, value] of Object.entries(row.accounts)) {
+    if (!userId) return undefined
+    const providers = providerProjectionRecord(value, env, { onInvalid: "reject" })
+    if (!providers) return undefined
+    accounts[userId] = providers
+  }
+  return { machineOwnerUserId: row.machineOwnerUserId, accounts }
+}
 
 export function providerProjectionRecord(
   input: unknown,

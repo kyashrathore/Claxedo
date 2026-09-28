@@ -247,6 +247,7 @@ async function serveWorkspace(workspaceId: string) {
         enrollmentId: "enr_this_machine",
         relayUrl: relay!.url,
         hostTunnelToken: "host-tunnel-token",
+        ownerUserId: "usr_machine_owner",
         tokenExpiresAt: Date.now() + 300_000,
         jti: "jti-1",
         workspaceIds: [workspaceId],

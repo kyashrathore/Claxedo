@@ -7,6 +7,7 @@ import {
   unreadableDeliveries,
   type SandboxSecretBrokering,
 } from "@claxedo/server-core/credentials/native-delivery"
+import { accountSelections } from "@claxedo/server-core/credentials/account-source"
 
 export type SandboxSecretPlan = {
   /** The whole desired set, or nothing when this deployment states none. */
@@ -34,6 +35,9 @@ export type SandboxSecretPlan = {
  * what separates "nothing to say" from "everything is gone".
  */
 export async function sandboxBrokeredSecrets(input: {
+  /** The person the sandbox serves; only the accounts they chose are installed on its edge. */
+  owner: string
+  machineOwnerUserId: string
   stated?: readonly SandboxBrokeredSecret[]
   org?: string
   secretBrokering?: SandboxSecretBrokering
@@ -47,6 +51,9 @@ export async function sandboxBrokeredSecrets(input: {
     return input.stated ? { secrets: [...input.stated] } : {}
   }
   const deliveries = await nativeProviderDeliveries({
+    owner: input.owner,
+    machineOwnerUserId: input.machineOwnerUserId,
+    selections: accountSelections(input.org),
     ...(input.org ? { org: input.org } : {}),
     secretBrokering: input.secretBrokering,
   })

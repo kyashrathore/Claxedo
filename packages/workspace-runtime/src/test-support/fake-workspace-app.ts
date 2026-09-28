@@ -9,6 +9,7 @@ import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
+import type { RuntimeSnapshot } from "../routes/config"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "../workspace/runtime"
@@ -23,6 +24,7 @@ export type FakeConnection = {
 }
 
 export type FakeWorkspaceAppOptions = {
+  auth?: RuntimeSnapshot["auth"]
   /** The script of the default `fake` connection's transport. */
   fakeTransport?: FakeTransportOptions
   /** Replaces the default connection's transport; the factory runs once per composition. */
@@ -93,7 +95,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
   await host.apply({
     version: 4,
     mcp: {},
-    auth: {},
+    auth: options.auth ?? { machineOwnerUserId: "local", accounts: {} },
     connections: connections.map((connection) => ({
       connectionId: connection.connectionId, providerKey: connection.connectionId, configRevision: 1, enabled: true, config: {},
     })),

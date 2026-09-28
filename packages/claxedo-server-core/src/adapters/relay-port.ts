@@ -36,6 +36,7 @@ export type RelayTokenInput = {
   orgId: string
   principalKind: "user" | "service"
   actorId: string
+  userId?: string
   actorKind: "human" | "agent"
   role: RelayRole
   actorPublicId?: string

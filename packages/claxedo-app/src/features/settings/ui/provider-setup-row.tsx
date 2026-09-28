@@ -1,7 +1,7 @@
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { createSignal, Show, type Component } from "solid-js"
+import { createSignal, Show, type Component, type JSX } from "solid-js"
 import { DialogProviderConnect } from "@/features/settings/ui/dialog-provider-connect"
 import { useLanguage } from "@/platform/i18n/provider"
 import { connectContextFor } from "@/platform/identity/harness-catalog"
@@ -17,6 +17,8 @@ export const ProviderSetupRow: Component<{
   scope?: string
   note?: string
   onConnected?: () => void | Promise<void>
+  /** Drawn under the row, inside its border. */
+  children?: JSX.Element
 }> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
@@ -64,6 +66,7 @@ export const ProviderSetupRow: Component<{
           </Show>
         </div>
       </div>
+      {props.children}
     </div>
   )
 }

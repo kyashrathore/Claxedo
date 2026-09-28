@@ -64,6 +64,7 @@ export type AuthoritySessionInventoryRow = {
 
 export type RuntimeActorIdentity = {
   actorId: string
+  userId?: string
   actorKind: "human" | "agent"
   actorPublicId?: string
   actorName?: string

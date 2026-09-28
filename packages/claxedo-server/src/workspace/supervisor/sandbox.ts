@@ -104,6 +104,8 @@ export async function resolveSandboxBindings(
   bindings?: SandboxBindings,
 ): Promise<SandboxAuthority> {
   const plan = await sandboxBrokeredSecrets({
+    owner: await needWorkspaceSupervisorOptions().sandboxOwner(state.ws.id),
+    machineOwnerUserId: needWorkspaceSupervisorOptions().machineOwnerUserId,
     ...(bindings?.secrets ? { stated: bindings.secrets } : {}),
     ...(state.ws.org_id ? { org: state.ws.org_id } : {}),
     ...(state.installed_secrets === undefined ? {} : { installed: state.installed_secrets }),

@@ -1,24 +1,13 @@
-import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, ProviderProjection } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
-import { ownerMayUseMachineLogin, type MachineLoginPolicy } from "../contract/credentials"
+import { ownerMayUseMachineLogin, selectedProviderProjection, type MachineLoginPolicy } from "../contract/credentials"
 
 export type CredentialProfile = "owner-login" | "brokered"
 
-export type SelectedAccount = {
-  projection: ProviderProjection
-  secrets: Readonly<Record<string, string>>
-}
-
-export type CredentialSelectionInput = MachineLoginPolicy & {
-  owner: TurnActor
-  profile: {
-    kind: "providers"
-    providerIds: readonly string[]
-    selectedAccounts: Readonly<Record<string, Readonly<Record<string, SelectedAccount>>>>
-    machineCredentials: Readonly<Record<string, SelectedAccount>>
-    leaseGeneration: string
-  }
+export type CredentialSelectionInput = CredentialSnapshot<ProviderProjection> & MachineLoginPolicy & {
+  leaseGeneration: string
+  providerIds?: readonly string[]
 }
 
 export class CredentialSelectionError extends Error {
@@ -29,34 +18,26 @@ export class CredentialSelectionError extends Error {
   }
 }
 
-function addCredentialSecrets(target: Record<string, string>, source: Readonly<Record<string, string>>): void {
-  for (const [name, value] of Object.entries(source)) {
-    if (Object.hasOwn(target, name) && target[name] !== value) {
-      throw new CredentialSelectionError("account_unavailable", `Conflicting secret binding ${name}`)
-    }
-    target[name] = value
+export type SessionAccountOwner = { userId: string; machineLoginAllowed: boolean }
+
+export function sessionAccountOwner(policy: MachineLoginPolicy, owner: TurnActor): SessionAccountOwner {
+  return {
+    userId: owner.kind === "machine-owner" ? policy.machineOwnerUserId : owner.userId,
+    machineLoginAllowed: ownerMayUseMachineLogin(owner, policy),
   }
 }
 
-export function selectSessionCredentials(input: CredentialSelectionInput): ResolvedCredentials {
-  const profile = input.profile
-  const ownerLocal = ownerMayUseMachineLogin(input.owner, input)
-
-  const owner = input.owner
-  const userId = owner.kind === "machine-owner" ? input.machineOwnerUserId : owner.userId
-  const selections = profile.selectedAccounts[userId] ?? {}
-  const providers: Record<string, ProviderProjection> = {}
-  const secrets: Record<string, string> = {}
-  for (const providerId of profile.providerIds) {
-    const selected = selections[providerId]
-    if (selected) {
-      providers[providerId] = selected.projection
-      addCredentialSecrets(secrets, selected.secrets)
-      continue
-    }
-    const machine = ownerLocal ? profile.machineCredentials[providerId] : undefined
-    providers[providerId] = machine?.projection ?? { unavailable: true, reason: "No selected account for this provider" }
-    if (machine && !("unavailable" in machine.projection)) addCredentialSecrets(secrets, machine.secrets)
+export function selectSessionCredentials(snapshot: CredentialSelectionInput, owner: TurnActor): ResolvedCredentials {
+  const { userId, machineLoginAllowed } = sessionAccountOwner(snapshot, owner)
+  const providers = Object.hasOwn(snapshot.accounts, userId) ? snapshot.accounts[userId]! : {}
+  const result = { accountOwner: userId, providers, secrets: {}, leaseGeneration: snapshot.leaseGeneration, machineLoginAllowed }
+  if (!snapshot.providerIds) return result
+  const selected = selectedProviderProjection(result, snapshot.providerIds)
+  if (selected && "unavailable" in selected) {
+    throw new CredentialSelectionError("account_unavailable", selected.reason)
   }
-  return { providers, secrets, leaseGeneration: profile.leaseGeneration }
+  if (!selected && !machineLoginAllowed) {
+    throw new CredentialSelectionError("account_unavailable", `No selected account for session owner ${userId}`)
+  }
+  return result
 }

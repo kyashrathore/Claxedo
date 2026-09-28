@@ -154,7 +154,7 @@ async function fixture(options: FixtureOptions = {}) {
     },
   })
   const snapshot = (name = "agent", revision = 1): RuntimeSnapshot => ({
-    version: 4, mcp: {}, auth: {},
+    version: 4, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } },
     connections: ["primary", "secondary"].map((connectionId) => ({
       connectionId, providerKey: "fixture", configRevision: revision, enabled: true, config: { name },
     })),
@@ -234,7 +234,7 @@ describe("workspace runtime public lifecycle", () => {
     expect(f.starts[0]).toMatchObject({
       config: { harness: { id: "primary", access: "connection" } },
       projection: { generation: "runtime-config:1", mcpServers: [], pluginRoots: [], notApplied: [] },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "runtime-config:1" },
+      credentials: { machineLoginAllowed: true, accountOwner: "local", providers: {}, secrets: {}, leaseGeneration: "runtime-config:1" },
     })
     expect((await f.request("/session", "POST", { id: "second" }, "&connectionId=primary")).status).toBe(201)
     expect(f.starts).toHaveLength(2)
@@ -758,6 +758,7 @@ function queuedPromptLeftBehind(storeRoot: string) {
     sessionId: "local", directory, workspaceId: "workspace-lifecycle",
     connectionId: "connection:primary", agentSessionId: "upstream-local", upstreamSessionId: "upstream-local",
   })
+  died.recordSessionOwner("local", { kind: "machine-owner" })
   died.updateSessionConfig("local", {
     harness: { id: "primary", access: "connection" }, model: null, variant: null, agent: null,
   }, { directory })

@@ -474,6 +474,9 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         // holding the credential, and the credential is all of the enrollment
         // it ever receives.
         enrollmentId: caller.enrollmentId,
+        // The person the enrollment belongs to, whom the relay authenticates
+        // as this machine's own owner.
+        ownerUserId: caller.ownerUserId,
         workspaceIds: ready,
         ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
       },
@@ -627,7 +630,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           ? null
           : await sealForMachine(
             target.sealing_public_key,
-            serializeHostProviderConfig(providers),
+            serializeHostProviderConfig(providers, auth.user.subject),
             machineSealAad({ enrollmentId, revision }),
           )
         const result = await authority.pushHostProviderConfig(auth, {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest"
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 
 import {
   HOST_PROVIDER_CONFIG_VERSION,
@@ -6,6 +7,8 @@ import {
   parseHostProviderConfig,
   serializeHostProviderConfig,
 } from "./host-provider-config"
+
+const snapshot = <T>(providers: Record<string, T>) => ({ machineOwnerUserId: "local", accounts: { local: providers } })
 
 const PUSHED = {
   baseUrl: "https://model.test",
@@ -15,13 +18,13 @@ const PUSHED = {
 
 describe("the sealed payload", () => {
   test("round trips through the shape the control plane writes", () => {
-    const text = serializeHostProviderConfig({ openai: PUSHED })
-    expect(JSON.parse(text)).toEqual({ version: HOST_PROVIDER_CONFIG_VERSION, providers: { openai: PUSHED } })
-    expect(parseHostProviderConfig(text).providers).toEqual({ openai: PUSHED })
+    const text = serializeHostProviderConfig({ openai: PUSHED }, "local")
+    expect(JSON.parse(text)).toEqual({ version: HOST_PROVIDER_CONFIG_VERSION, credentials: snapshot({ openai: PUSHED }) })
+    expect(parseHostProviderConfig(text).credentials.accounts.local).toEqual({ openai: PUSHED })
   })
 
   test("an empty configuration is a payload, not an absent one", () => {
-    expect(parseHostProviderConfig(serializeHostProviderConfig({})).providers).toEqual({})
+    expect(parseHostProviderConfig(serializeHostProviderConfig({}, "local")).credentials.accounts.local).toEqual({})
   })
 
   test("a version this host does not know refuses the whole payload and names both versions", () => {
@@ -31,7 +34,7 @@ describe("the sealed payload", () => {
   test("one unreadable row refuses the whole payload, so a half-applied credential set never reaches a turn", () => {
     const text = JSON.stringify({
       version: 1,
-      providers: { openai: PUSHED, anthropic: { baseUrl: "https://a.test", authMode: "nonsense" } },
+      credentials: snapshot({ openai: PUSHED, anthropic: { baseUrl: "https://a.test", authMode: "nonsense" } }),
     })
     expect(() => parseHostProviderConfig(text)).toThrow(/cannot read/)
   })
@@ -47,30 +50,44 @@ describe("the sealed payload", () => {
 })
 
 describe("what a host answers once a configuration is pushed", () => {
-  const broker = async () => ({
-    openai: { baseUrl: "https://broker.local", placeholder: "brokered", authMode: "api-key" } as const,
-    anthropic: { baseUrl: "https://broker.local", placeholder: "brokered", authMode: "api-key" } as const,
+  const brokered = { baseUrl: "https://broker.local", placeholder: "brokered", authMode: "api-key" } as const
+  const broker = async () => ({ machineOwnerUserId: "owner", accounts: { owner: { openai: brokered, anthropic: brokered } } })
+  const pushedBy = (person: string): CredentialSnapshot => JSON.parse(serializeHostProviderConfig({ openai: PUSHED }, person)).credentials
+
+  test("the enrolled owner's pushed provider replaces this machine's own answer for that provider alone", async () => {
+    const answer = await hostProviderConfigProjectAuth(broker, () => pushedBy("owner"), () => "owner", () => ({}))({})
+    expect(answer.accounts.owner).toEqual({ openai: PUSHED, anthropic: brokered })
   })
 
-  test("a pushed provider replaces this machine's own answer for that provider alone", async () => {
-    const answer = await hostProviderConfigProjectAuth(broker, () => ({ openai: PUSHED }))({})
-    expect(answer.openai).toEqual(PUSHED)
-    expect(answer.anthropic).toEqual({ baseUrl: "https://broker.local", placeholder: "brokered", authMode: "api-key" })
+  test("a provider the owner chose the team account for keeps it over their pushed account", async () => {
+    const team = { baseUrl: "https://broker.local", placeholder: "team", authMode: "api-key" } as const
+    const base = async () => ({ machineOwnerUserId: "owner", accounts: { owner: { openai: team, anthropic: brokered } } })
+    const answer = await hostProviderConfigProjectAuth(base, () => pushedBy("owner"), () => "owner", () => ({ openai: "team" }))({})
+    expect(answer.accounts.owner).toEqual({ openai: team, anthropic: brokered })
+  })
+
+  test("a push from anyone but the enrolled owner is an earlier enrollment's and answers for nobody", async () => {
+    expect(await hostProviderConfigProjectAuth(broker, () => pushedBy("earlier-owner"), () => "owner", () => ({}))({})).toEqual(await broker())
+  })
+
+  test("before an owner is enrolled a push is held but not spent", async () => {
+    expect(await hostProviderConfigProjectAuth(broker, () => pushedBy("owner"), () => undefined, () => ({}))({})).toEqual(await broker())
   })
 
   test("a withdrawal returns every provider to this machine's own answer", async () => {
-    expect(await hostProviderConfigProjectAuth(broker, () => ({}))({})).toEqual(await broker())
+    expect(await hostProviderConfigProjectAuth(broker, () => undefined, () => "owner", () => ({}))({})).toEqual(await broker())
   })
 
-  test("a host with no authority of its own answers the pushed rows alone", async () => {
-    expect(await hostProviderConfigProjectAuth(undefined, () => ({ openai: PUSHED }))({})).toEqual({ openai: PUSHED })
+  test("a host with no authority of its own answers the enrolled owner's pushed rows alone", async () => {
+    expect(await hostProviderConfigProjectAuth(undefined, () => pushedBy("owner"), () => "owner", () => ({}))({}))
+      .toEqual({ machineOwnerUserId: "owner", accounts: { owner: { openai: PUSHED } } })
   })
 
   test("the pushed rows are read per call, so a revision that lands between turns reaches the next one", async () => {
-    let pushed: Record<string, typeof PUSHED> = {}
-    const projectAuth = hostProviderConfigProjectAuth(undefined, () => pushed)
-    expect(await projectAuth({})).toEqual({})
-    pushed = { openai: PUSHED }
-    expect(await projectAuth({})).toEqual({ openai: PUSHED })
+    let pushed: CredentialSnapshot | undefined
+    const projectAuth = hostProviderConfigProjectAuth(undefined, () => pushed, () => "owner", () => ({}))
+    expect(await projectAuth({})).toEqual({ machineOwnerUserId: "owner", accounts: {} })
+    pushed = pushedBy("owner")
+    expect(await projectAuth({})).toEqual({ machineOwnerUserId: "owner", accounts: { owner: { openai: PUSHED } } })
   })
 })

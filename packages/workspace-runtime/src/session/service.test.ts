@@ -41,7 +41,7 @@ function host(options: FakeTransportOptions = {}): Host {
   const launch: LaunchComposer = {
     workspaceId: WORKSPACE,
     projection: () => ({ generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }),
-    credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "g1" }),
+    credentials: () => ({ accounts: {}, machineOwnerUserId: "local", placement: "loopback", canUseOwnLogin: true, leaseGeneration: "g1" }),
   }
   const ports = createStoreBrokerPorts(store, {
     ownerGeneration,

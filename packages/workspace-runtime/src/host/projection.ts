@@ -1,6 +1,6 @@
-import type { ProviderProjection, SessionHarness } from "@claxedo/agent-runtime-contract"
+import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { resolvedMcpServers } from "../mcp/resolver"
-import type { PluginProjection, ProjectedMcpServer, ResolvedCredentials, SkillRoot } from "@claxedo/harness/contract"
+import type { PluginProjection, ProjectedMcpServer, SkillRoot } from "@claxedo/harness/contract"
 import { isRecord } from "@claxedo/helpers/guards"
 
 export type ProjectionSource = {
@@ -41,9 +41,4 @@ export function pluginProjectionFor(harness: SessionHarness, source: ProjectionS
     pluginRoots: plugins.pluginRoots,
     notApplied: [],
   }
-}
-
-/** The snapshot's provider projections are the credentials every session of this runtime spends. */
-export function snapshotCredentials(auth: Record<string, ProviderProjection>, leaseGeneration: string): ResolvedCredentials {
-  return { providers: auth, secrets: {}, leaseGeneration }
 }

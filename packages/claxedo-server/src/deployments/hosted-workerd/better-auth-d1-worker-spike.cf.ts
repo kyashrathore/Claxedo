@@ -176,6 +176,8 @@ const NO_CREDENTIALS: ControlPlaneCredentials = {
   deleteCredentialsByProvider: () => noCredentials("deleteCredentialsByProvider"),
   updateCredentialStatus: () => noCredentials("updateCredentialStatus"),
   syncLocalCredentials: () => noCredentials("syncLocalCredentials"),
+  accountSelections: () => noCredentials("accountSelections"),
+  setAccountSources: () => noCredentials("setAccountSources"),
 }
 
 function noCredentials(member: string): never {

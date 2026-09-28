@@ -1,8 +1,8 @@
-import type { PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import { isAgentHarnessId, providerProjectionRecord, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
+import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
@@ -59,7 +59,7 @@ export type RuntimeSnapshot = {
    * with the authority that minted the binding; this carries only the broker
    * endpoint and a placeholder scoped to it.
    */
-  auth: Record<string, ProviderProjectionSource>
+  auth: CredentialSnapshot
   /**
    * Opaque per-harness launch options a containing product projects (Claxedo's
    * Agent Plugins module contributes plugin roots this way). Keyed by agent
@@ -76,7 +76,7 @@ export type RuntimeSnapshot = {
  * name as an environment variable its sandbox provider fills.
  */
 export type AppliedRuntimeSnapshot = Omit<RuntimeSnapshot, "auth"> & {
-  auth: Record<string, ProviderProjection>
+  auth: CredentialSnapshot<ProviderProjection>
 }
 
 export class RuntimeConfigApplyError extends Error {
@@ -89,6 +89,15 @@ export class RuntimeConfigApplyError extends Error {
     super(message)
     this.name = "RuntimeConfigApplyError"
   }
+}
+
+/**
+ * A harness refused a session's configuration. The runtime records it against
+ * the revision that asked, so a caller re-configuring many runtimes carries on
+ * rather than failing the change that triggered it.
+ */
+export function isSessionConfigRefusal(error: unknown): boolean {
+  return error instanceof RuntimeConfigApplyError && error.code === "runtime_config_refused"
 }
 
 export type ConfigRouteOptions = ManagementAccessOptions
@@ -178,7 +187,7 @@ export function normalizeRuntimeSnapshot(
     || !isRecord(input.mcp)
     || !Array.isArray(input.connections)
   ) return undefined
-  const auth = providerProjectionRecord(input.auth, env, { onInvalid: "reject" })
+  const auth = credentialSnapshot(input.auth, env)
   if (!auth) return undefined
   // Unknown fields are rejected rather than silently dropped: a producer that
   // sends a field this runtime does not model would otherwise believe it took.

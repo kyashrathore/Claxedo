@@ -3,6 +3,7 @@ import { errorBody } from "./routes/error-body"
 
 export type SessionAccessActor = {
   actorId: string
+  userId?: string
   actorKind: "human" | "agent"
 }
 
@@ -659,7 +660,7 @@ export function managedWorkspaceSessionAccessPolicy(
  * key it actually asks for, so the returned claims arrive already typed instead
  * of as a union the body then had to assert its way out of.
  */
-type SessionAccessContextReader = {
+export type SessionAccessContextReader = {
   get(name: "relayHostAuth"): RelayHostAuthContext["relayHostAuth"]
   req?: { header(name: string): string | undefined }
 }
@@ -716,7 +717,7 @@ export function sessionAccessContext(input: SessionAccessContextReader):
     : {}
   return {
     ...(input.req?.header("authorization") ? { credential: input.req.header("authorization") } : {}),
-    actor: { actorId: auth.actor_id, actorKind: auth.actor_kind },
+    actor: { actorId: auth.actor_id, actorKind: auth.actor_kind, ...(auth.user_id ? { userId: auth.user_id } : {}) },
     ...author,
     authority: {
       managed: true,

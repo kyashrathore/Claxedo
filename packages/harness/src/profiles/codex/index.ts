@@ -3,7 +3,9 @@ import os from "node:os"
 import path from "node:path"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
-import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
+import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
+import { selectedProviderProjection, type PluginProjection, type ResolvedCredentials, type TurnActor } from "../../contract"
+import { CredentialSelectionError } from "../../registry/credentials"
 import { CLAXEDO_MARKETPLACE, codexHomeKey, copyTreeAtomically, mirrorOwnerCodexHome } from "./home"
 
 const START = "# BEGIN CLAXEDO CODEX PROFILE"
@@ -91,11 +93,14 @@ function withoutClaxedoBlock(content: string): string {
 }
 
 export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {
-  const selected = input.credentials.providers.codex
-  if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
+  const selected = selectedProviderProjection(input.credentials, HARNESS_TABLE.codex.providerIds)
+  if (selected && "unavailable" in selected) throw new CredentialSelectionError("account_unavailable", `Codex account unavailable: ${selected.reason}`)
+  if (!selected && !input.credentials.machineLoginAllowed) {
+    throw new CredentialSelectionError("account_unavailable", "Codex requires a selected account for this session owner")
+  }
   const brokered = Boolean(selected)
   const ownerHome = input.ownerHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
-  const home = path.join(input.homeRoot, codexHomeKey(input.owner, selected && !("unavailable" in selected) ? selected : undefined, input.projection))
+  const home = path.join(input.homeRoot, codexHomeKey(input.credentials.accountOwner, selected && !("unavailable" in selected) ? selected : undefined, input.projection))
   const existing = await fs.lstat(home).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined
     throw error

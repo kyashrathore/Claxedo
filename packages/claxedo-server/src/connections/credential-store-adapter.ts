@@ -18,6 +18,7 @@ export function createCredentialStoreAdapter(credentials: ControlPlaneCredential
   return {
     async put(input) {
       await credentials.putCredential({
+        owner: null,
         provider_id: input.providerId,
         kind: input.kind,
         source: "managed",

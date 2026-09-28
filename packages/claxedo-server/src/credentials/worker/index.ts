@@ -1,6 +1,6 @@
 /**
- * Hosted provider credentials over D1 (`hosted_provider_credentials`,
- * migration 0039).
+ * Hosted provider credentials over D1 (`hosted_provider_credentials` and
+ * `hosted_provider_account_sources`, migration 0044).
  *
  * `hostedOrgCredentials(orgId, { database, env })` is the per-org
  * `ControlPlaneCredentials`; it exists only for a request whose org
@@ -11,7 +11,7 @@
  *
  * The secret column holds the `cenc1` envelope from
  * `@claxedo/server-core/credentials/envelope` (per-org HKDF subkey, AES-256-GCM
- * bound to the provider id), so the database holds ciphertext only and no
+ * bound to the credential id), so the database holds ciphertext only and no
  * path here can write a secret unsealed. Construction requires the KEK: a
  * hosted deployment that cannot encrypt is down, not open.
  *
@@ -47,6 +47,7 @@ import {
   type EnvelopeAdmin,
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/server-core/credentials/account-holder"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 
@@ -72,7 +73,7 @@ export type HostedCredentialStoreInput = {
 }
 
 const METADATA_COLUMNS =
-  "org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, created_at, updated_at"
+  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
@@ -95,6 +96,8 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
       deleteCredentialsByProvider: async () => unavailable(),
       updateCredentialStatus: async () => unavailable(),
       syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => unavailable(),
     }
   }
 
@@ -117,6 +120,8 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
     deleteCredentialsByProvider: async () => gated(),
     updateCredentialStatus: async () => gated(),
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => ({}),
+    setAccountSources: async () => gated(),
   }
 }
 
@@ -125,8 +130,8 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
  * org; construct it only after the caller's org resolution succeeded, from the
  * verified `org_id` claim, never a client-supplied value.
  *
- * One credential per provider: the metadata id IS the provider id, and
- * `updateCredentialStatus` receives it back.
+ * One credential per (owner, provider), under a random id that
+ * `updateCredentialStatus` receives back.
  */
 export function hostedOrgCredentials(
   orgId: string,
@@ -148,19 +153,70 @@ export function hostedOrgCredentials(
     const row = await database
       .prepare(
         `select ${METADATA_COLUMNS} from hosted_provider_credentials
-         where org_id = ? and provider_id = ?${kind ? " and kind = ?" : ""}`,
+         where org_id = ? and owner is null and provider_id = ?${kind ? " and kind = ?" : ""}`,
       )
       .bind(org, providerId, ...(kind ? [kind] : []))
       .first()
     return row ? credentialMetadataRow(row) : undefined
   }
 
-  const openSecret = async (providerId: string, statusScope: string) => {
+  const existingId = async (owner: string | null, providerId: string) => {
     const row = await database
-      .prepare(`select secret_envelope from hosted_provider_credentials where org_id = ? and provider_id = ?${statusScope}`)
-      .bind(org, providerId)
+      .prepare("select id from hosted_provider_credentials where org_id = ? and owner is ? and provider_id = ?")
+      .bind(org, owner, providerId)
       .first()
-    return row ? cipher.open(providerId, requiredTextColumn(row, "secret_envelope")) : null
+    return row ? requiredTextColumn(row, "id") : undefined
+  }
+
+  const openSecret = async (id: string, statusScope: string) => {
+    const row = await database
+      .prepare(`select secret_envelope from hosted_provider_credentials where org_id = ? and id = ?${statusScope}`)
+      .bind(org, id)
+      .first()
+    return row ? cipher.open(id, requiredTextColumn(row, "secret_envelope")) : null
+  }
+
+  const upsert = async (input: CredentialWrite, id: string) => {
+    const timestamp = now()
+    const owner = input.owner
+    const row = await database
+      .prepare(
+        `insert into hosted_provider_credentials (
+           id, owner, org_id, provider_id, kind, source, label, account_id, status, health,
+           expires_at, last_validated_at, last_error, secret_envelope, revision, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?)
+         on conflict (org_id, id) do update set
+           kind = excluded.kind,
+           source = excluded.source,
+           label = excluded.label,
+           account_id = excluded.account_id,
+           status = 'available',
+           health = null,
+           expires_at = excluded.expires_at,
+           last_validated_at = null,
+           last_error = null,
+           secret_envelope = excluded.secret_envelope,
+           revision = hosted_provider_credentials.revision + 1,
+           updated_at = excluded.updated_at
+         returning ${METADATA_COLUMNS}`,
+      )
+      .bind(
+        id,
+        owner,
+        org,
+        input.provider_id,
+        input.kind,
+        input.source,
+        input.label ?? null,
+        input.account_id ?? null,
+        input.expires_at ?? null,
+        await cipher.seal(id, input.secret),
+        timestamp,
+        timestamp,
+      )
+      .first()
+    if (!row) throw new Error(`hosted credential upsert for "${input.provider_id}" returned no row`)
+    return credentialMetadataRow(row)
   }
 
   const changed = async (statement: HostedCredentialStatement) => ((await statement.run()).meta.changes ?? 0) > 0
@@ -174,58 +230,39 @@ export function hostedOrgCredentials(
       return rows.results.map(credentialMetadataRow)
     },
     getCredentialByProvider: (providerId, kind) => metadataByProvider(providerId, kind),
-    getCredential: (id) => metadataByProvider(id),
+    getCredential: async (id) => {
+      const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
+      return row ? credentialMetadataRow(row) : undefined
+    },
     // Available-status-only, mirroring credentials/registry.ts resolveSecret;
     // the gate is in the same statement as the read, so a revocation landing
     // between two reads cannot hand out the secret.
-    resolveCredentialSecret: (providerId) => openSecret(providerId, " and status = 'available'"),
+    resolveCredentialSecret: async (providerId) => {
+      const id = await existingId(null, providerId)
+      return id ? openSecret(id, " and status = 'available'") : null
+    },
     // Verification retries must be able to re-check a prior failed result.
     resolveCredentialSecretById: (id) => openSecret(id, ""),
     putCredential: async (input: CredentialWrite) => {
-      const timestamp = now()
-      const row = await database
-        .prepare(
-          `insert into hosted_provider_credentials (
-             org_id, provider_id, kind, source, label, account_id, status, health,
-             expires_at, last_validated_at, last_error, secret_envelope, revision, created_at, updated_at
-           ) values (?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?)
-           on conflict (org_id, provider_id) do update set
-             kind = excluded.kind,
-             source = excluded.source,
-             label = excluded.label,
-             account_id = excluded.account_id,
-             status = 'available',
-             health = null,
-             expires_at = excluded.expires_at,
-             last_validated_at = null,
-             last_error = null,
-             secret_envelope = excluded.secret_envelope,
-             revision = hosted_provider_credentials.revision + 1,
-             updated_at = excluded.updated_at
-           returning ${METADATA_COLUMNS}`,
-        )
-        .bind(
-          org,
-          input.provider_id,
-          input.kind,
-          input.source,
-          input.label ?? null,
-          input.account_id ?? null,
-          input.expires_at ?? null,
-          await cipher.seal(input.provider_id, input.secret),
-          timestamp,
-          timestamp,
-        )
-        .first()
-      if (!row) throw new Error(`hosted credential upsert for "${input.provider_id}" returned no row`)
-      return credentialMetadataRow(row)
+      const found = await existingId(input.owner, input.provider_id)
+      try {
+        return await upsert(input, found ?? crypto.randomUUID())
+      } catch (error) {
+        // Two first writes for one (owner, provider) race to insert under two
+        // new ids; the loser is refused by the owner-provider index and joins
+        // the winner's row.
+        if (found || !isUniqueViolation(error)) throw error
+        const winner = await existingId(input.owner, input.provider_id)
+        if (!winner) throw error
+        return await upsert(input, winner)
+      }
     },
     deleteCredential: (id) =>
-      changed(database.prepare("delete from hosted_provider_credentials where org_id = ? and provider_id = ?").bind(org, id)),
+      changed(database.prepare("delete from hosted_provider_credentials where org_id = ? and id = ?").bind(org, id)),
     deleteCredentialsByProvider: async (providerId, kind) => {
       const result = await database
         .prepare(
-          `delete from hosted_provider_credentials where org_id = ? and provider_id = ?${kind ? " and kind = ?" : ""}`,
+          `delete from hosted_provider_credentials where org_id = ? and owner is null and provider_id = ?${kind ? " and kind = ?" : ""}`,
         )
         .bind(org, providerId, ...(kind ? [kind] : []))
         .run()
@@ -236,7 +273,7 @@ export function hostedOrgCredentials(
         .prepare(
           `update hosted_provider_credentials
            set status = ?, health = ?, last_error = ?, updated_at = ?
-           where org_id = ? and provider_id = ?`,
+           where org_id = ? and id = ?`,
         )
         .bind(status, status === "expired" ? "expired" : null, error ?? null, now(), org, id)
         .run()
@@ -251,7 +288,7 @@ export function hostedOrgCredentials(
                last_validated_at = ?,
                last_error = ?,
                updated_at = ?
-           where org_id = ? and provider_id = ?`,
+           where org_id = ? and id = ?`,
         )
         .bind(health, verdict, validatedAt, health === "ok" ? null : health, now(), org, id)
         .run()
@@ -273,19 +310,52 @@ export function hostedOrgCredentials(
                  status = case when status = 'revoked' then 'revoked' else 'available' end,
                  revision = revision + 1,
                  updated_at = ?
-             where org_id = ? and provider_id = ?`,
+             where org_id = ? and id = ?`,
           )
           .bind(await cipher.seal(id, secret), replaceExpiry, expiresAt ?? null, now(), org, id),
       )
     },
     // No local credential stores exist on a hosted worker.
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => {
+      const rows = await database
+        .prepare("select user_id, provider_id, source from hosted_provider_account_sources where org_id = ?")
+        .bind(org)
+        .all()
+      const selections: Record<string, Record<string, AccountSource>> = Object.create(null)
+      for (const row of rows.results) {
+        (selections[requiredTextColumn(row, "user_id")] ??= Object.create(null))[requiredTextColumn(row, "provider_id")] =
+          enumColumn(row, "source", ACCOUNT_SOURCES)
+      }
+      return selections
+    },
+    setAccountSources: async (providerIds, source, _org, person) => {
+      const at = now()
+      for (const providerId of new Set(providerIds)) {
+        await database
+          .prepare(
+            `insert into hosted_provider_account_sources (org_id, user_id, provider_id, source, updated_at) values (?, ?, ?, ?, ?)
+             on conflict (org_id, user_id, provider_id) do update set source = excluded.source, updated_at = excluded.updated_at`,
+          )
+          .bind(org, person, providerId, source, at)
+          .run()
+      }
+      const rows = await database
+        .prepare("select provider_id, source from hosted_provider_account_sources where org_id = ? and user_id = ?")
+        .bind(org, person)
+        .all()
+      return Object.fromEntries(rows.results.map((row) => [requiredTextColumn(row, "provider_id"), enumColumn(row, "source", ACCOUNT_SOURCES)]))
+    },
   }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("UNIQUE constraint failed")
 }
 
 /**
  * One org's secret column as a `SecretBackend`, for the KEK rotation sweep
- * (`credentials/operations/rotate.ts`). Refs are `d1:<providerId>`. `put`
+ * (`credentials/operations/rotate.ts`). Refs are `d1:<credential id>`. `put`
  * only ever updates an existing row, so the sweep can re-seal a secret but
  * never mint a credential; `delete` removes the whole row, since the secret has
  * no existence apart from it.
@@ -300,22 +370,22 @@ export function hostedCredentialSecretSlots(
   const column: SecretBackend = {
     async put(id, envelope) {
       await database
-        .prepare("update hosted_provider_credentials set secret_envelope = ? where org_id = ? and provider_id = ?")
+        .prepare("update hosted_provider_credentials set secret_envelope = ? where org_id = ? and id = ?")
         .bind(envelope, org, id)
         .run()
       return `d1:${id}`
     },
     async get(ref) {
       const row = await database
-        .prepare("select secret_envelope from hosted_provider_credentials where org_id = ? and provider_id = ?")
-        .bind(org, providerIdFromSlotRef(ref))
+        .prepare("select secret_envelope from hosted_provider_credentials where org_id = ? and id = ?")
+        .bind(org, credentialIdFromSlotRef(ref))
         .first()
       return row ? requiredTextColumn(row, "secret_envelope") : null
     },
     async delete(ref) {
       await database
-        .prepare("delete from hosted_provider_credentials where org_id = ? and provider_id = ?")
-        .bind(org, providerIdFromSlotRef(ref))
+        .prepare("delete from hosted_provider_credentials where org_id = ? and id = ?")
+        .bind(org, credentialIdFromSlotRef(ref))
         .run()
     },
     async probe() {
@@ -335,16 +405,17 @@ export async function listHostedCredentialSlots(
   database: HostedCredentialDatabase,
 ): Promise<Array<{ orgId: string; ref: string }>> {
   const rows = await database
-    .prepare("select org_id, provider_id from hosted_provider_credentials order by org_id, provider_id")
+    .prepare("select org_id, id from hosted_provider_credentials order by org_id, id")
     .all()
-  return rows.results.map((row) => ({ orgId: requiredTextColumn(row, "org_id"), ref: hostedCredentialSlotRef(requiredTextColumn(row, "provider_id")) }))
+  return rows.results.map((row) => ({ orgId: requiredTextColumn(row, "org_id"), ref: hostedCredentialSlotRef(requiredTextColumn(row, "id")) }))
 }
 
-export function hostedCredentialSlotRef(providerId: string): string {
-  return `d1:${providerId}`
+
+export function hostedCredentialSlotRef(credentialId: string): string {
+  return `d1:${credentialId}`
 }
 
-function providerIdFromSlotRef(ref: string): string {
+function credentialIdFromSlotRef(ref: string): string {
   if (!ref.startsWith("d1:")) throw new Error(`"${ref}" is not a hosted credential slot ref`)
   return ref.slice("d1:".length)
 }
@@ -352,7 +423,8 @@ function providerIdFromSlotRef(ref: string): string {
 function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata {
   const providerId = requiredTextColumn(row, "provider_id")
   return {
-    id: providerId,
+    id: requiredTextColumn(row, "id"),
+    owner: row.owner === null ? null : requiredTextColumn(row, "owner"),
     org_id: requiredTextColumn(row, "org_id"),
     provider_id: providerId,
     kind: enumColumn(row, "kind", CREDENTIAL_KINDS),

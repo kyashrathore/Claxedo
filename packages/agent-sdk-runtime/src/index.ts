@@ -114,6 +114,7 @@ export {
   providerProjection,
   providerProjectionKey,
   providerProjectionRecord,
+  credentialSnapshot,
   projectionRenewalDue,
   projectionRenewalDueAt,
   ProviderCredentialUnavailableError,

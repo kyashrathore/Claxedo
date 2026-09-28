@@ -34,6 +34,7 @@ function caught(run: () => unknown) {
 const base = {
   principalKind: "user" as const,
   actorId: "actor_1",
+  userId: "user_1",
   actorKind: "human" as const,
   actorPublicId: "usr_public_1",
   actorName: "Ada Lovelace",
@@ -58,6 +59,7 @@ describe("workspace relay auth", () => {
       aud: "workspace-relay",
       principal_kind: "user",
       actor_id: "actor_1",
+      user_id: "user_1",
       actor_kind: "human",
       actor_public_id: "usr_public_1",
       actor_name: "Ada Lovelace",
@@ -101,6 +103,7 @@ describe("workspace relay auth", () => {
       host_id: base.hostId,
       role: base.role,
       actor_id: "actor_1",
+      user_id: "user_1",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)

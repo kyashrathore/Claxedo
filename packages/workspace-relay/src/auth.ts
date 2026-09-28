@@ -57,6 +57,7 @@ export type RuntimeAccessTokenClaims = {
   aud: typeof runtimeAccessTokenAudience
   principal_kind: "user" | "service"
   actor_id: string
+  user_id?: string
   actor_kind: "human" | "agent"
   actor_public_id?: string
   actor_name?: string
@@ -76,6 +77,7 @@ export type RelayHostTokenClaims = {
   aud: typeof relayHostTokenAudience
   principal_kind: "user" | "service"
   actor_id: string
+  user_id?: string
   actor_kind: "human" | "agent"
   actor_public_id?: string
   actor_name?: string
@@ -129,6 +131,7 @@ export class WorkspaceRelayAuthError extends Error {
 type RuntimeInput = {
   principalKind: "user" | "service"
   actorId: string
+  userId?: string
   actorKind: ActorKind
   actorPublicId?: string
   actorName?: string
@@ -393,6 +396,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
   return await new SignJWT({
     principal_kind: input.principalKind,
     actor_id: input.actorId,
+    ...(input.userId ? { user_id: input.userId } : {}),
     actor_kind: input.actorKind,
     ...actorProfilePayload(input),
     ...channelIdentityPayload(input),
@@ -551,6 +555,7 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
   return await new SignJWT({
     principal_kind: input.principalKind,
     actor_id: input.actorId,
+    ...(input.userId ? { user_id: input.userId } : {}),
     actor_kind: input.actorKind,
     ...actorProfilePayload(input),
     ...channelIdentityPayload(input),
@@ -588,6 +593,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const iat = numberClaim(payload, "iat")
   const principal_kind = stringClaim(payload, "principal_kind")
   const actor_id = stringClaim(payload, "actor_id")
+  const user_id = stringClaim(payload, "user_id")
   const actor_kind = stringClaim(payload, "actor_kind")
   const jti = stringClaim(payload, "jti")
   const org_id = stringClaim(payload, "org_id")
@@ -596,6 +602,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const role = roleClaim(payload)
   if (
     !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id
+    || (payload.user_id !== undefined && !user_id)
     || (principal_kind !== "user" && principal_kind !== "service")
     || (actor_kind !== "human" && actor_kind !== "agent")
     || (principal_kind === "user" && actor_kind !== "human")
@@ -609,6 +616,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     aud: runtimeAccessTokenAudience,
     principal_kind,
     actor_id,
+    ...(user_id ? { user_id } : {}),
     actor_kind,
     ...actorProfile,
     ...(channel_identity ? { channel_identity } : {}),

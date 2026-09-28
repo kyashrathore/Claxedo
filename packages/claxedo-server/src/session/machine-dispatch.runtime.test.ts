@@ -54,7 +54,7 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     await runtime.host.apply({
       version: 4,
       mcp: {},
-      auth: {},
+      auth: { machineOwnerUserId: "local", accounts: { local: {} } },
       connections: [{ connectionId: CONNECTION, providerKey: CONNECTION, configRevision: 1, enabled: true, config: {} }],
       defaultHarness: { kind: "connection", connectionId: CONNECTION },
     })

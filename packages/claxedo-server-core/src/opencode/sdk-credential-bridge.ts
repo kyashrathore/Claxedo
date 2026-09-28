@@ -249,7 +249,7 @@ export async function reconcileCredentialsIntoSdk(
   // This map is this process's own authority rather than a snapshot from
   // another one, so a row that comes out malformed disables its own provider
   // instead of dropping every working account with it.
-  const auth = providerProjectionRecord(projected, process.env, { onInvalid: "unavailable" }) ?? {}
+  const auth = providerProjectionRecord(projected.accounts[projected.machineOwnerUserId] ?? {}, process.env, { onInvalid: "unavailable" }) ?? {}
   const overlays: Record<string, ProviderBindingOverlay> = {}
   for (const [registryID, providerID] of Object.entries(PROVIDER_BY_REGISTRY_ID)) {
     const projection = auth[registryID]

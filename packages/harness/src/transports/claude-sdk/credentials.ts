@@ -1,13 +1,13 @@
 import { HARNESS_TABLE, type ProviderBinding } from "@claxedo/agent-runtime-contract"
-import type { ResolvedCredentials, TurnActor } from "../../contract"
+import type { ResolvedCredentials } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { stringRecord } from "@claxedo/helpers"
 import { selectedProviderProjection } from "../../contract"
 
-export function claudeBinding(credentials: ResolvedCredentials, owner: TurnActor, now = Date.now()): ProviderBinding | undefined {
+export function claudeBinding(credentials: ResolvedCredentials, now = Date.now()): ProviderBinding | undefined {
   const projection = selectedProviderProjection(credentials, HARNESS_TABLE.claude.providerIds)
   if (!projection) {
-    if (owner.kind === "machine-owner") return undefined
+    if (credentials.machineLoginAllowed) return undefined
     throw new TransportError("claude", "configuration", "This person's Claude session has no selected credentials")
   }
   if ("unavailable" in projection) throw new TransportError("claude", "configuration", projection.reason)

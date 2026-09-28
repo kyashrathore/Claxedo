@@ -1,4 +1,4 @@
-import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { Log } from "../platform/runtime/lib/log"
 import {
   providerDestination,
@@ -12,6 +12,8 @@ import {
 } from "./registry"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { CredentialKind } from "./types"
+import type { AccountSelections } from "./account-holder"
+import { accountSelections } from "./account-source"
 
 import { nativeProviderDeliveriesFromRepository, nativeProviderAuth } from "./native-delivery-plan"
 import type { NativeProviderDelivery } from "./native-delivery-plan"
@@ -52,11 +54,17 @@ export function credentialReach(row: { provider_id: string; kind: CredentialKind
 const log = Log.create({ service: "native-delivery" })
 
 export async function nativeProviderDeliveries(input: {
+  owner: string
+  machineOwnerUserId: string
+  selections: AccountSelections
   org?: CredentialOrgScope
   secretBrokering?: SandboxSecretBrokering
-} = {}): Promise<NativeProviderDelivery[]> {
+}): Promise<NativeProviderDelivery[]> {
   const org = input.org ?? SINGLE_TENANT_ORG
   return nativeProviderDeliveriesFromRepository({
+    owner: input.owner,
+    machineOwnerUserId: input.machineOwnerUserId,
+    selections: input.selections,
     selected: activeCredentialsForScope("shared", { onOutage: "throw" }, org),
     readSecret: (credential) => readSecretById(credential.id, org),
     destination: ({ providerId, kind, secret }) => providerDestination({ providerId, kind, secret }),
@@ -79,13 +87,21 @@ export async function nativeProviderDeliveries(input: {
  * permission to run on whatever login its image carries.
  */
 export async function projectNativeProviderAuth(input: {
-  scope: "local" | "shared"
+  scope?: "local" | "shared"
+  /** The person the sandbox serves; only the accounts they chose reach it. */
+  sandboxOwner?: string
+  machineOwnerUserId: string
   orgId?: CredentialOrgScope
   secretBrokering?: SandboxSecretBrokering
-}): Promise<Record<string, ProviderProjectionSource>> {
-  if (input.scope !== "shared") return {}
+}): Promise<CredentialSnapshot> {
+  if (input.scope !== "shared") return { machineOwnerUserId: input.machineOwnerUserId, accounts: {} }
+  if (!input.sandboxOwner) throw new Error("a shared-scope projection needs the person its sandbox serves")
+  const selections = accountSelections(input.orgId)
   return nativeProviderAuth(await nativeProviderDeliveries({
+    owner: input.sandboxOwner,
+    machineOwnerUserId: input.machineOwnerUserId,
+    selections,
     ...(input.orgId ? { org: input.orgId } : {}),
     ...(input.secretBrokering ? { secretBrokering: input.secretBrokering } : {}),
-  }))
+  }), { owner: input.sandboxOwner, machineOwnerUserId: input.machineOwnerUserId, selections })
 }

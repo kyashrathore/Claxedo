@@ -88,6 +88,7 @@ export const localHostRelayActor: NonNullable<RuntimeProxyOptions["resolveRelayA
   if (!claims?.actor_public_id || !claims.actor_name) return undefined
   return {
     actorId: claims.actor_id,
+    ...(claims.user_id ? { userId: claims.user_id } : {}),
     actorKind: claims.actor_kind,
     actorPublicId: claims.actor_public_id,
     actorName: claims.actor_name,

@@ -47,17 +47,7 @@ export interface CredentialMetadata {
   id: string
   /** Owning tenant; `__local__` for the single-tenant self-host partition. */
   org_id?: string
-  /**
-   * The user whose account this is; null is the team/operator row. Optional
-   * because the hosted store holds one record per provider and has no owner
-   * dimension.
-   */
   owner?: string | null
-  /**
-   * The one account per (org, owner, provider) a harness runs on. Optional
-   * because the hosted store's single record per provider is that account by
-   * construction; the SQLite registry always populates it.
-   */
   is_active?: boolean
   /** When `is_active` was last set, for a reader that resolves between two marked accounts. */
   activated_at?: number | null
@@ -110,6 +100,8 @@ export type SetActiveCredentialsResult =
 
 /** Input for creating or updating a credential. */
 export interface CredentialWrite {
+  /** The person whose account this is; null for the org's own row. */
+  owner: string | null
   provider_id: string
   kind: CredentialKind
   source: CredentialSource

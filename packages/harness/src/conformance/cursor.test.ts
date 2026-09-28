@@ -33,7 +33,7 @@ async function backend(): Promise<CursorBackend> {
   return {
     execution: "process", root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
-    credentials: { providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance",
     unrunnableTurn: withUndeliverableFile,
@@ -121,7 +121,7 @@ test("keeps the machine owner's endpoint when no binding is selected and points 
 
 test("an unbound worker sends the SDK turn to the machine owner's endpoint", async () => {
   const state = await backend()
-  const unbound = { ...state, credentials: { providers: {}, secrets: {}, leaseGeneration: "owner" } }
+  const unbound = { ...state, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "owner" } }
   const context = await setupConformance({ name: "machine-owner", backend: async () => unbound,
     makeTransport: transportFor(state, { ...state.env, CURSOR_BACKEND_URL: state.server.url, CURSOR_API_KEY: "owner-placeholder" }) })
   try {
@@ -139,14 +139,14 @@ test.each([
 ])("an unbound session of %s cannot use the machine Cursor key", async (_label, owner, login) => {
   const state = await backend()
   await expect(setupConformance({ name: "unbound", backend: async () => ({ ...state, owner,
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "unbound" } }),
+    credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "unbound" } }),
     makeTransport: transportFor(state, { ...state.env, CURSOR_BACKEND_URL: state.server.url, CURSOR_API_KEY: "owner-placeholder" }, login) }))
     .rejects.toThrow("Cursor SDK requires an API key")
 })
 
 test("a person who is the machine owner uses the machine Cursor key at the desktop", async () => {
   const state = await backend()
-  const unbound = { ...state, owner: { kind: "person", userId: "owner" } as const, credentials: { providers: {}, secrets: {}, leaseGeneration: "owner" } }
+  const unbound = { ...state, owner: { kind: "person", userId: "owner" } as const, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "owner" } }
   const context = await setupConformance({ name: "owner-person", backend: async () => unbound,
     makeTransport: transportFor(state, { ...state.env, CURSOR_BACKEND_URL: state.server.url, CURSOR_API_KEY: "owner-placeholder" }, { placement: "desktop" }) })
   try {

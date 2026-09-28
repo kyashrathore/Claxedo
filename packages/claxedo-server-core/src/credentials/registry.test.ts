@@ -18,7 +18,7 @@ const {
   listCredentials,
   credentialByProvider,
   credentialById,
-  resolveSecret,
+
   resolveSecretById,
   updateCredentialStatus,
   updateCredentialHealth,
@@ -34,6 +34,20 @@ const {
   clearActiveCredentials,
 } = await import("./registry")
 const { ClaxedoProviderCredentialTable } = await import("./provider-credential.sql")
+/** The local operator's own rows: person-path reads, since the by-provider helpers answer for the org's own rows. */
+const ownRow = (providerId: string) => credentialByProvider(providerId, { onOutage: "throw", owner: "local" })
+const ownSecret = async (providerId: string) => {
+  const row = ownRow(providerId)
+  return row && row.status === "available" ? await resolveSecretById(row.id) : null
+}
+const deleteOwn = async (providerId: string) => {
+  let count = 0
+  for (const row of listCredentials().filter((item) => item.provider_id === providerId && item.owner === "local")) {
+    if (await deleteCredential(row.id)) count++
+  }
+  return count
+}
+
 
 // Force DB initialization
 const { ClaxedoDB } = await import("../platform/db")
@@ -59,7 +73,7 @@ describe("credential registry", () => {
   })
 
   test("putCredential creates metadata and stores secret in backend", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "test-provider",
       kind: "api_key",
       source: "managed",
@@ -81,7 +95,7 @@ describe("credential registry", () => {
   })
 
   test("requires consent for an explicitly shared credential", async () => {
-    await expect(putCredential({
+    await expect(putCredential({ owner: "local",
       provider_id: "shared-without-consent",
       kind: "api_key",
       source: "managed",
@@ -89,7 +103,7 @@ describe("credential registry", () => {
       secret: "must-not-store",
     })).rejects.toThrow("Shared credentials require explicit consent")
 
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "shared-with-consent",
       kind: "api_key",
       source: "managed",
@@ -104,14 +118,14 @@ describe("credential registry", () => {
   })
 
   test("stores multiple accounts for the same provider independently", async () => {
-    const first = await putCredential({
+    const first = await putCredential({ owner: "local",
       provider_id: "multi-account",
       kind: "oauth_token",
       source: "local_only",
       account_id: "account-one",
       secret: "first",
     })
-    const second = await putCredential({
+    const second = await putCredential({ owner: "local",
       provider_id: "multi-account",
       kind: "oauth_token",
       source: "local_only",
@@ -127,7 +141,7 @@ describe("credential registry", () => {
   })
 
   test("records scope changes and last use", async () => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "scope-and-use",
       kind: "api_key",
       source: "local_only",
@@ -148,19 +162,19 @@ describe("credential registry", () => {
   })
 
   test("Pi credential mapping validates aliases, status, and credential kind", async () => {
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "codex-app-server",
       kind: "api_key",
       source: "managed",
       secret: "wrong-kind",
     })
-    const oauth = await putCredential({
+    const oauth = await putCredential({ owner: "local",
       provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "managed",
       secret: "valid-oauth",
     })
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "anthropic",
       kind: "api_key",
       source: "managed",
@@ -170,30 +184,30 @@ describe("credential registry", () => {
     expect(piCredentialProviderIDs("openai-codex")).toEqual(["codex-app-server"])
     // The API key saved first holds the mark, and an API key is not a Codex
     // login however many other accounts the provider holds.
-    expect(piRegistryProviderConnected("openai-codex")).toBe(false)
+    expect(piRegistryProviderConnected("openai-codex", "local")).toBe(false)
 
-    setActiveCredentials([oauth.id])
-    expect(piRegistryCredentialProvider("openai-codex")).toBe("codex-app-server")
-    expect(piRegistryProviderConnected("openai-codex")).toBe(true)
+    setActiveCredentials([oauth.id], undefined, "local")
+    expect(piRegistryCredentialProvider("openai-codex", "local")).toBe("codex-app-server")
+    expect(piRegistryProviderConnected("openai-codex", "local")).toBe(true)
 
     updateCredentialStatus(oauth.id, "expired")
-    expect(piRegistryProviderConnected("openai-codex")).toBe(false)
+    expect(piRegistryProviderConnected("openai-codex", "local")).toBe(false)
 
-    expect(piRegistryCredentialProvider("anthropic")).toBe("anthropic")
-    expect(piRegistryProviderConnected("unknown")).toBe(false)
-    await deleteCredentialsByProvider("codex-app-server")
-    await deleteCredentialsByProvider("anthropic")
+    expect(piRegistryCredentialProvider("anthropic", "local")).toBe("anthropic")
+    expect(piRegistryProviderConnected("unknown", "local")).toBe(false)
+    await deleteOwn("codex-app-server")
+    await deleteOwn("anthropic")
   })
 
   test("re-saving the same key updates that account in place", async () => {
-    const first = await putCredential({
+    const first = await putCredential({ owner: "local",
       provider_id: "update-test",
       kind: "api_key",
       source: "managed",
       label: "first label",
       secret: "same-key",
     })
-    const again = await putCredential({
+    const again = await putCredential({ owner: "local",
       provider_id: "update-test",
       kind: "api_key",
       source: "managed",
@@ -204,17 +218,17 @@ describe("credential registry", () => {
     expect(again.id).toBe(first.id)
     expect(again.label).toBe("second label")
     expect(listCredentials().filter((c) => c.provider_id === "update-test")).toHaveLength(1)
-    await expect(resolveSecret("update-test")).resolves.toBe("same-key")
+    await expect(ownSecret("update-test")).resolves.toBe("same-key")
   })
 
   test("a second pasted key is a second account, identified by a fingerprint of its own", async () => {
-    const first = await putCredential({
+    const first = await putCredential({ owner: "local",
       provider_id: "second-paste-test",
       kind: "api_key",
       source: "managed",
       secret: "sk-first-aaaa",
     })
-    const second = await putCredential({
+    const second = await putCredential({ owner: "local",
       provider_id: "second-paste-test",
       kind: "api_key",
       source: "managed",
@@ -228,17 +242,17 @@ describe("credential registry", () => {
     // The first save took the mark and the second did not steal it.
     expect(first.is_active).toBe(true)
     expect(second.is_active).toBe(false)
-    await expect(resolveSecret("second-paste-test")).resolves.toBe("sk-first-aaaa")
+    await expect(ownSecret("second-paste-test")).resolves.toBe("sk-first-aaaa")
   })
 
   test("a connection secret keeps its single row per provider rather than gaining a fingerprint", async () => {
-    const first = await putCredential({
+    const first = await putCredential({ owner: "local",
       provider_id: "integration:notion",
       kind: "api_key",
       source: "managed",
       secret: "ntn-first",
     })
-    const second = await putCredential({
+    const second = await putCredential({ owner: "local",
       provider_id: "integration:notion",
       kind: "api_key",
       source: "managed",
@@ -248,11 +262,11 @@ describe("credential registry", () => {
     expect(second.id).toBe(first.id)
     expect(second.account_id).toBeNull()
     expect(second.is_active).toBe(false)
-    await expect(resolveSecret("integration:notion")).resolves.toBe("ntn-second")
+    await expect(ownSecret("integration:notion")).resolves.toBe("ntn-second")
   })
 
   test("putCredential keeps api key and oauth credentials mutually exclusive per account", async () => {
-    const oauth = await putCredential({
+    const oauth = await putCredential({ owner: "local",
       provider_id: "exclusive-auth-test",
       kind: "oauth_token",
       source: "managed",
@@ -260,7 +274,7 @@ describe("credential registry", () => {
       secret: JSON.stringify({ refresh: "old-refresh" }),
     })
 
-    const api = await putCredential({
+    const api = await putCredential({ owner: "local",
       provider_id: "exclusive-auth-test",
       kind: "api_key",
       source: "managed",
@@ -274,19 +288,19 @@ describe("credential registry", () => {
     // The replacement inherits the mark: destroying the active row must not
     // leave the provider with nothing to run on.
     expect(api.is_active).toBe(true)
-    expect(await resolveSecret("exclusive-auth-test")).toBe("new-api-key")
+    expect(await ownSecret("exclusive-auth-test")).toBe("new-api-key")
     expect(await backend.get(oauth.secure_ref!)).toBeNull()
   })
 
   test("a token and a key for different accounts of one provider both survive", async () => {
-    const token = await putCredential({
+    const token = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "oauth_token",
       source: "managed",
       label: "setup token",
       secret: "sk-ant-oat01-token",
     })
-    const key = await putCredential({
+    const key = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
@@ -297,18 +311,18 @@ describe("credential registry", () => {
     const rows = listCredentials().filter((cred) => cred.provider_id === "claude-sdk")
     expect(rows.map((row) => row.id).sort()).toEqual([token.id, key.id].sort())
     expect(rows.filter((row) => row.is_active).map((row) => row.id)).toEqual([token.id])
-    await deleteCredentialsByProvider("claude-sdk")
+    await deleteOwn("claude-sdk")
   })
 
   test("putCredential does not treat sandbox driver credentials as API or OAuth auth methods", async () => {
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "exclusive-sandbox-manager-test",
       kind: "sandbox_driver",
       source: "managed",
       secret: "sandbox-manager-token",
     })
 
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "exclusive-sandbox-manager-test",
       kind: "api_key",
       source: "managed",
@@ -323,8 +337,8 @@ describe("credential registry", () => {
   })
 
   test("listCredentials returns every row's metadata and never its secret", async () => {
-    const key = await putCredential({ provider_id: "list-a", kind: "api_key", source: "managed", secret: "sk-list-a" })
-    const token = await putCredential({ provider_id: "list-b", kind: "oauth_token", source: "managed", secret: "tok-list-b" })
+    const key = await putCredential({ owner: "local", provider_id: "list-a", kind: "api_key", source: "managed", secret: "sk-list-a" })
+    const token = await putCredential({ owner: "local", provider_id: "list-b", kind: "oauth_token", source: "managed", secret: "tok-list-b" })
 
     const creds = listCredentials()
 
@@ -337,35 +351,35 @@ describe("credential registry", () => {
   })
 
   test("credentialByProvider finds by provider ID", async () => {
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "lookup-test",
       kind: "api_key",
       source: "managed",
       secret: "my-key",
     })
 
-    const found = credentialByProvider("lookup-test", { onOutage: "throw" })
+    const found = ownRow("lookup-test")
     expect(found).toBeTruthy()
     expect(found!.provider_id).toBe("lookup-test")
   })
 
   test("resolveSecret returns raw secret only for available credentials", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "resolve-test",
       kind: "api_key",
       source: "managed",
       secret: "secret-value",
     })
 
-    expect(await resolveSecret("resolve-test")).toBe("secret-value")
+    expect(await ownSecret("resolve-test")).toBe("secret-value")
 
     // Mark as expired
     updateCredentialStatus(cred.id, "expired")
-    expect(await resolveSecret("resolve-test")).toBeNull()
+    expect(await ownSecret("resolve-test")).toBeNull()
   })
 
   test("persists provider verification health and keeps failed credentials retryable by id", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "verify-persistence-test",
       kind: "api_key",
       source: "managed",
@@ -380,12 +394,12 @@ describe("credential registry", () => {
       last_validated_at: 1234,
       last_error: "no_billing",
     })
-    expect(await resolveSecret("verify-persistence-test")).toBeNull()
+    expect(await ownSecret("verify-persistence-test")).toBeNull()
     expect(await resolveSecretById(cred.id)).toBe("verify-secret")
   })
 
   test("clears stale verification health when the same key is saved again", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "verify-reconnect-test",
       kind: "api_key",
       source: "managed",
@@ -393,7 +407,7 @@ describe("credential registry", () => {
     })
     updateCredentialHealth(cred.id, "auth_failed", 1234)
 
-    const reconnected = await putCredential({
+    const reconnected = await putCredential({ owner: "local",
       provider_id: "verify-reconnect-test",
       kind: "api_key",
       source: "managed",
@@ -407,7 +421,7 @@ describe("credential registry", () => {
 
   test("a setup token pasted into the key field is stored as the plan login it is", async () => {
     const token = "sk-ant-oat01-setup-token-pasted-as-a-key-xgAA"
-    const stored = await putCredential({
+    const stored = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
@@ -419,7 +433,7 @@ describe("credential registry", () => {
     expect(stored.account_id).toMatch(/^fp_[0-9a-f]{8}…xgAA$/)
     await expect(resolveSecretById(stored.id)).resolves.toBe(token)
 
-    const again = await putCredential({
+    const again = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
@@ -429,7 +443,7 @@ describe("credential registry", () => {
     expect(again.id).toBe(stored.id)
     expect(listCredentials().filter((c) => c.provider_id === "claude-sdk")).toHaveLength(1)
 
-    const key = await putCredential({
+    const key = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
@@ -441,7 +455,7 @@ describe("credential registry", () => {
   })
 
   test("reconnecting a key row with a setup token moves the row to the plan kind", async () => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
@@ -455,7 +469,7 @@ describe("credential registry", () => {
   })
 
   test("replacing the secret supersedes the verdict reached against the old one", async () => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "verify-refresh-test",
       kind: "oauth_token",
       source: "managed",
@@ -476,17 +490,17 @@ describe("credential registry", () => {
   })
 
   test.each(["ok", "expired", "auth_failed"] as const)("verification health %s preserves revocation until an explicit status change", async (health) => {
-    const credential = await putCredential({ provider_id: "revoked-health", kind: "api_key", source: "managed", secret: "synthetic-secret" })
+    const credential = await putCredential({ owner: "local", provider_id: "revoked-health", kind: "api_key", source: "managed", secret: "synthetic-secret" })
     updateCredentialStatus(credential.id, "revoked")
     updateCredentialHealth(credential.id, health, 1234)
     expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ status: "revoked", health })
-    expect(await resolveSecret(credential.provider_id)).toBeNull()
+    expect(await ownSecret(credential.provider_id)).toBeNull()
     updateCredentialStatus(credential.id, "available")
-    expect(await resolveSecret(credential.provider_id)).toBe("synthetic-secret")
+    expect(await ownSecret(credential.provider_id)).toBe("synthetic-secret")
   })
 
   test("revocation during the secret backend write survives token rotation", async () => {
-    const credential = await putCredential({ provider_id: "revoked-rotation", kind: "oauth_token", source: "managed", secret: "old-token" })
+    const credential = await putCredential({ owner: "local", provider_id: "revoked-rotation", kind: "oauth_token", source: "managed", secret: "old-token" })
     let release!: () => void
     let entered!: () => void
     const waiting = new Promise<void>((resolve) => { release = resolve })
@@ -498,12 +512,12 @@ describe("credential registry", () => {
     release()
     expect(await rotation).toBe(true)
     expect(credentialById(credential.id, { onOutage: "throw" })?.status).toBe("revoked")
-    expect(await resolveSecret(credential.provider_id)).toBeNull()
+    expect(await ownSecret(credential.provider_id)).toBeNull()
     expect(await resolveSecretById(credential.id)).toBe("new-token")
   })
 
   test.each(["before", "during"] as const)("OAuth Check cannot reactivate a credential revoked %s refresh", async (when) => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "codex-app-server", kind: "oauth_token", source: "managed", expires_at: 1,
       secret: JSON.stringify({ type: "codex_auth", access: "access_old", refresh: "refresh_old", account_id: "synthetic-account" }),
     })
@@ -528,12 +542,12 @@ describe("credential registry", () => {
     expect(result).toMatchObject({ status: "checked", health: "ok" })
     expect(seen).toHaveLength(2)
     expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ status: "revoked", health: "ok", revision: credential.revision + 1 })
-    expect(await resolveSecret(credential.provider_id)).toBeNull()
+    expect(await ownSecret(credential.provider_id)).toBeNull()
     expect(JSON.parse((await resolveSecretById(credential.id))!).access).toBe("access_new")
   })
 
   test("renaming a credential touches nothing the auth material is judged by", async () => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "rename-test",
       kind: "api_key",
       source: "managed",
@@ -554,7 +568,7 @@ describe("credential registry", () => {
   })
 
   test("renaming a credential another org owns writes nothing", async () => {
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "rename-org-test",
       kind: "api_key",
       source: "managed",
@@ -568,7 +582,7 @@ describe("credential registry", () => {
   })
 
   test("a rejected account keeps its verdict when another key is added beside it", async () => {
-    const rejected = await putCredential({
+    const rejected = await putCredential({ owner: "local",
       provider_id: "verify-second-account-test",
       kind: "api_key",
       source: "managed",
@@ -576,7 +590,7 @@ describe("credential registry", () => {
     })
     updateCredentialHealth(rejected.id, "auth_failed", 1234)
 
-    const added = await putCredential({
+    const added = await putCredential({ owner: "local",
       provider_id: "verify-second-account-test",
       kind: "api_key",
       source: "managed",
@@ -589,7 +603,7 @@ describe("credential registry", () => {
   })
 
   test("keeps lifecycle status updates from exposing stale provider health", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "verify-status-test",
       kind: "api_key",
       source: "managed",
@@ -605,14 +619,14 @@ describe("credential registry", () => {
   })
 
   test("keeps the quota windows a verification read, and leaves an unread row with none", async () => {
-    const read = await putCredential({
+    const read = await putCredential({ owner: "local",
       provider_id: "usage-test",
       kind: "oauth_token",
       source: "managed",
       account_id: "acct_usage",
       secret: "usage-secret",
     })
-    const unread = await putCredential({
+    const unread = await putCredential({ owner: "local",
       provider_id: "usage-test-none",
       kind: "oauth_token",
       source: "managed",
@@ -636,7 +650,7 @@ describe("credential registry", () => {
   })
 
   test("a quota read leaves the write clock that orders two accounts alone", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "usage-order",
       kind: "oauth_token",
       source: "managed",
@@ -660,7 +674,7 @@ describe("credential registry", () => {
   })
 
   test("deleteCredential removes metadata and backend secret", async () => {
-    const cred = await putCredential({
+    const cred = await putCredential({ owner: "local",
       provider_id: "delete-test",
       kind: "api_key",
       source: "managed",
@@ -673,8 +687,8 @@ describe("credential registry", () => {
     expect(await backend.get(cred.secure_ref!)).toBeNull()
   })
 
-  test("deleteCredentialsByProvider removes all for a provider", async () => {
-    await putCredential({
+  test("deleteCredentialsByProvider removes all of the org's own rows for a provider", async () => {
+    await putCredential({ owner: null,
       provider_id: "bulk-delete",
       kind: "api_key",
       source: "managed",
@@ -683,7 +697,7 @@ describe("credential registry", () => {
 
     const count = await deleteCredentialsByProvider("bulk-delete")
     expect(count).toBe(1)
-    expect(credentialByProvider("bulk-delete", { onOutage: "throw" })).toBeUndefined()
+    expect(credentialByProvider("bulk-delete", { onOutage: "throw", owner: null })).toBeUndefined()
   })
 
   describe("network policy is not a credential side effect", () => {
@@ -691,7 +705,7 @@ describe("credential registry", () => {
       const { listPolicies } = await import("../sandbox/network/policy")
       const before = listPolicies()
 
-      await putCredential({
+      await putCredential({ owner: "local",
         provider_id: "claude-sdk",
         kind: "api_key",
         source: "managed",
@@ -704,7 +718,7 @@ describe("credential registry", () => {
     test("deleting a credential removes no policy row", async () => {
       const { createPolicy, listPolicies } = await import("../sandbox/network/policy")
       createPolicy({ target: "api.no-withdraw.test", kind: "host" })
-      const cred = await putCredential({
+      const cred = await putCredential({ owner: "local",
         provider_id: "codex-app-server",
         kind: "api_key",
         source: "managed",
@@ -713,7 +727,7 @@ describe("credential registry", () => {
       const before = listPolicies()
 
       await deleteCredential(cred.id)
-      await deleteCredentialsByProvider("codex-app-server")
+      await deleteOwn("codex-app-server")
 
       expect(listPolicies()).toEqual(before)
     })
@@ -721,7 +735,7 @@ describe("credential registry", () => {
 
   describe("the active account", () => {
     async function twoAccounts(providerId: string) {
-      const first = await putCredential({
+      const first = await putCredential({ owner: "local",
         provider_id: providerId,
         kind: "oauth_token",
         source: "managed",
@@ -729,7 +743,7 @@ describe("credential registry", () => {
         label: "first",
         secret: "first-secret",
       })
-      const second = await putCredential({
+      const second = await putCredential({ owner: "local",
         provider_id: providerId,
         kind: "oauth_token",
         source: "managed",
@@ -755,7 +769,7 @@ describe("credential registry", () => {
     })
 
     test("a rejected active account yields the mark to the next key saved", async () => {
-      const rejected = await putCredential({
+      const rejected = await putCredential({ owner: "local",
         provider_id: "yield-test",
         kind: "api_key",
         source: "managed",
@@ -764,7 +778,7 @@ describe("credential registry", () => {
       expect(rejected.is_active).toBe(true)
       updateCredentialHealth(rejected.id, "auth_failed", 1234)
 
-      const replacement = await putCredential({
+      const replacement = await putCredential({ owner: "local",
         provider_id: "yield-test",
         kind: "api_key",
         source: "managed",
@@ -774,11 +788,11 @@ describe("credential registry", () => {
       expect(replacement.is_active).toBe(true)
       // The rejected account stays listed, with the verdict that is true of it.
       expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: false, status: "error", health: "auth_failed" })
-      await expect(resolveSecret("yield-test")).resolves.toBe("sk-working-bbbb")
+      await expect(ownSecret("yield-test")).resolves.toBe("sk-working-bbbb")
     })
 
     test("a rejected active account re-saved with the same key keeps the mark it holds", async () => {
-      const account = await putCredential({
+      const account = await putCredential({ owner: "local",
         provider_id: "yield-same-key-test",
         kind: "api_key",
         source: "managed",
@@ -786,7 +800,7 @@ describe("credential registry", () => {
       })
       updateCredentialHealth(account.id, "auth_failed", 1234)
 
-      const again = await putCredential({
+      const again = await putCredential({ owner: "local",
         provider_id: "yield-same-key-test",
         kind: "api_key",
         source: "managed",
@@ -799,7 +813,7 @@ describe("credential registry", () => {
     })
 
     test("two accounts imported together leave exactly one marked", async () => {
-      const saved = await Promise.all(["acc_a", "acc_b"].map((account) => putCredential({
+      const saved = await Promise.all(["acc_a", "acc_b"].map((account) => putCredential({ owner: "local",
         provider_id: "active-import",
         kind: "oauth_token",
         source: "local_only",
@@ -813,7 +827,7 @@ describe("credential registry", () => {
     })
 
     async function thirdAccount(providerId: string) {
-      return putCredential({
+      return putCredential({ owner: "local",
         provider_id: providerId,
         kind: "oauth_token",
         source: "managed",
@@ -832,7 +846,7 @@ describe("credential registry", () => {
 
       expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(true)
       expect(credentialById(third.id, { onOutage: "throw" })?.is_active).toBe(false)
-      expect(await resolveSecret("active-remove")).toBe("second-secret")
+      expect(await ownSecret("active-remove")).toBe("second-secret")
       expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-remove"))
         .toMatchObject([{ id: second.id }])
     })
@@ -846,7 +860,7 @@ describe("credential registry", () => {
 
       expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(credentialById(third.id, { onOutage: "throw" })?.is_active).toBe(true)
-      expect(await resolveSecret("active-remove-skip")).toBe("third-secret")
+      expect(await ownSecret("active-remove-skip")).toBe("third-secret")
     })
 
     test("removing every account of a provider leaves nothing marked", async () => {
@@ -889,7 +903,7 @@ describe("credential registry", () => {
       expect(credentialById(first.id, { onOutage: "throw" })).toMatchObject({ is_active: false, health: "auth_failed" })
       expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(true)
       expect(credentialById(third.id, { onOutage: "throw" })?.is_active).toBe(false)
-      expect(await resolveSecret("active-refused")).toBe("second-secret")
+      expect(await ownSecret("active-refused")).toBe("second-secret")
     })
 
     test("expiry and a missing subscription move the mark; a rate cap does not", async () => {
@@ -930,7 +944,7 @@ describe("credential registry", () => {
     test("clearActiveCredentials leaves the provider unmarked, so its harness runs on the machine login", async () => {
       const { first, second } = await twoAccounts("active-clear")
 
-      expect(clearActiveCredentials(["active-clear"])).toEqual({ cleared: [first.id] })
+      expect(clearActiveCredentials(["active-clear"], undefined, "local")).toEqual({ cleared: [first.id] })
 
       expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
@@ -938,7 +952,7 @@ describe("credential registry", () => {
     })
 
     test("clearActiveCredentials reaches only the org it was asked in", async () => {
-      const mine = await putCredential({
+      const mine = await putCredential({ owner: "local",
         provider_id: "active-clear-org",
         kind: "oauth_token",
         source: "managed",
@@ -946,7 +960,7 @@ describe("credential registry", () => {
         label: "mine",
         secret: "mine-secret",
       }, "org-a")
-      const theirs = await putCredential({
+      const theirs = await putCredential({ owner: "local",
         provider_id: "active-clear-org",
         kind: "oauth_token",
         source: "managed",
@@ -957,18 +971,18 @@ describe("credential registry", () => {
       expect(credentialById(mine.id, { onOutage: "throw" }, "org-a")?.is_active).toBe(true)
       expect(credentialById(theirs.id, { onOutage: "throw" }, "org-b")?.is_active).toBe(true)
 
-      expect(clearActiveCredentials(["active-clear-org"], "org-a")).toEqual({ cleared: [mine.id] })
+      expect(clearActiveCredentials(["active-clear-org"], "org-a", "local")).toEqual({ cleared: [mine.id] })
 
       expect(credentialById(mine.id, { onOutage: "throw" }, "org-a")?.is_active).toBe(false)
       expect(credentialById(theirs.id, { onOutage: "throw" }, "org-b")?.is_active).toBe(true)
       // And the default partition, which holds neither of them, is untouched by
       // a call naming the same provider.
-      expect(clearActiveCredentials(["active-clear-org"])).toEqual({ cleared: [] })
+      expect(clearActiveCredentials(["active-clear-org"], undefined, "local")).toEqual({ cleared: [] })
       expect(credentialById(theirs.id, { onOutage: "throw" }, "org-b")?.is_active).toBe(true)
     })
 
     test("a sandbox driver key neither holds the mark nor inherits it", async () => {
-      const driver = await putCredential({
+      const driver = await putCredential({ owner: "local",
         provider_id: "daytona",
         kind: "sandbox_driver",
         source: "managed",
@@ -978,7 +992,7 @@ describe("credential registry", () => {
       // Nothing a harness runs on, so the mark never lands on it at save time…
       expect(driver.is_active).toBe(false)
 
-      const mixed = await putCredential({
+      const mixed = await putCredential({ owner: "local",
         provider_id: "daytona",
         kind: "api_key",
         source: "managed",
@@ -986,14 +1000,14 @@ describe("credential registry", () => {
         secret: "sk-daytona-model",
       })
       expect(mixed.is_active).toBe(true)
-      expect(setActiveCredentials([driver.id])).toEqual({ ok: false, reason: "not_eligible" })
+      expect(setActiveCredentials([driver.id], undefined, "local")).toEqual({ ok: false, reason: "not_eligible" })
 
       // …nor when the account that did hold it is refused and looks for an heir.
       updateCredentialHealth(mixed.id, "auth_failed", 1234)
 
       expect(credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(credentialById(mixed.id, { onOutage: "throw" })?.is_active).toBe(true)
-      expect(clearActiveCredentials(["daytona"])).toEqual({ cleared: [mixed.id] })
+      expect(clearActiveCredentials(["daytona"], undefined, "local")).toEqual({ cleared: [mixed.id] })
     })
 
     test("clearActiveCredentials clears every binding named and nothing else", async () => {
@@ -1001,7 +1015,7 @@ describe("credential registry", () => {
       const other = await twoAccounts("active-clear-b")
       const untouched = await twoAccounts("active-clear-c")
 
-      expect(clearActiveCredentials(["active-clear-a", "active-clear-b", "active-clear-missing"]).cleared.toSorted())
+      expect(clearActiveCredentials(["active-clear-a", "active-clear-b", "active-clear-missing"], undefined, "local").cleared.toSorted())
         .toEqual([first.id, other.first.id].toSorted())
 
       expect(credentialById(untouched.first.id, { onOutage: "throw" })?.is_active).toBe(true)
@@ -1009,19 +1023,19 @@ describe("credential registry", () => {
 
     test("setActiveCredentials moves the mark, and the fanout sends the account it moved to", async () => {
       const { first, second } = await twoAccounts("active-switch")
-      expect(await resolveSecret("active-switch")).toBe("first-secret")
+      expect(await ownSecret("active-switch")).toBe("first-secret")
 
-      const result = setActiveCredentials([second.id])
+      const result = setActiveCredentials([second.id], undefined, "local")
 
       expect(result).toMatchObject({ ok: true, credentials: [{ id: second.id, is_active: true }] })
       expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
-      expect(await resolveSecret("active-switch")).toBe("second-secret")
+      expect(await ownSecret("active-switch")).toBe("second-secret")
       expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-switch"))
         .toMatchObject([{ id: second.id }])
     })
 
     test("setActiveCredentials refuses an id it cannot see and one that never reaches a harness", async () => {
-      const driver = await putCredential({
+      const driver = await putCredential({ owner: "local",
         provider_id: "active-driver",
         kind: "sandbox_driver",
         source: "managed",
@@ -1029,21 +1043,21 @@ describe("credential registry", () => {
       })
       const { first } = await twoAccounts("active-other-org")
 
-      expect(setActiveCredentials([randomUUID()])).toEqual({ ok: false, reason: "not_found" })
-      expect(setActiveCredentials([first.id], "some-other-org")).toEqual({ ok: false, reason: "not_found" })
-      expect(setActiveCredentials([driver.id])).toEqual({ ok: false, reason: "not_eligible" })
+      expect(setActiveCredentials([randomUUID()], undefined, "local")).toEqual({ ok: false, reason: "not_found" })
+      expect(setActiveCredentials([first.id], "some-other-org", "local")).toEqual({ ok: false, reason: "not_found" })
+      expect(setActiveCredentials([driver.id], undefined, "local")).toEqual({ ok: false, reason: "not_eligible" })
       expect(credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
     })
 
     test("every binding of one account is marked in a single call", async () => {
-      const bindings = await Promise.all(["binding-acp", "binding-sdk"].map((providerId) => putCredential({
+      const bindings = await Promise.all(["binding-acp", "binding-sdk"].map((providerId) => putCredential({ owner: "local",
         provider_id: providerId,
         kind: "oauth_token",
         source: "managed",
         account_id: "acc_old",
         secret: `${providerId}-old`,
       })))
-      const replacing = await Promise.all(["binding-acp", "binding-sdk"].map((providerId) => putCredential({
+      const replacing = await Promise.all(["binding-acp", "binding-sdk"].map((providerId) => putCredential({ owner: "local",
         provider_id: providerId,
         kind: "oauth_token",
         source: "managed",
@@ -1051,31 +1065,31 @@ describe("credential registry", () => {
         secret: `${providerId}-new`,
       })))
 
-      const result = setActiveCredentials(replacing.map((row) => row.id))
+      const result = setActiveCredentials(replacing.map((row) => row.id), undefined, "local")
 
       expect(result).toMatchObject({ ok: true })
       expect(replacing.every((row) => credentialById(row.id, { onOutage: "throw" })?.is_active === true)).toBe(true)
       expect(bindings.some((row) => credentialById(row.id, { onOutage: "throw" })?.is_active === true)).toBe(false)
-      expect(await resolveSecret("binding-acp")).toBe("binding-acp-new")
-      expect(await resolveSecret("binding-sdk")).toBe("binding-sdk-new")
+      expect(await ownSecret("binding-acp")).toBe("binding-acp-new")
+      expect(await ownSecret("binding-sdk")).toBe("binding-sdk-new")
     })
 
     test("one refused id leaves every partition in the call untouched", async () => {
-      const holder = await putCredential({
+      const holder = await putCredential({ owner: "local",
         provider_id: "atomic-binding",
         kind: "oauth_token",
         source: "managed",
         account_id: "acc_old",
         secret: "atomic-old",
       })
-      const account = await putCredential({
+      const account = await putCredential({ owner: "local",
         provider_id: "atomic-binding",
         kind: "oauth_token",
         source: "managed",
         account_id: "acc_new",
         secret: "atomic-new",
       })
-      const driver = await putCredential({
+      const driver = await putCredential({ owner: "local",
         provider_id: "atomic-driver",
         kind: "sandbox_driver",
         source: "managed",
@@ -1083,32 +1097,32 @@ describe("credential registry", () => {
       })
       expect(credentialById(account.id, { onOutage: "throw" })?.is_active).toBe(false)
 
-      expect(setActiveCredentials([account.id, driver.id])).toEqual({ ok: false, reason: "not_eligible" })
+      expect(setActiveCredentials([account.id, driver.id], undefined, "local")).toEqual({ ok: false, reason: "not_eligible" })
 
       expect(credentialById(account.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(credentialById(holder.id, { onOutage: "throw" })?.is_active).toBe(true)
-      expect(await resolveSecret("atomic-binding")).toBe("atomic-old")
+      expect(await ownSecret("atomic-binding")).toBe("atomic-old")
     })
 
     test("two ids competing for one provider are refused rather than one of them chosen", async () => {
       const { first, second } = await twoAccounts("ambiguous-mark")
 
-      expect(setActiveCredentials([first.id, second.id])).toEqual({ ok: false, reason: "ambiguous" })
-      expect(setActiveCredentials([second.id, second.id])).toEqual({ ok: false, reason: "ambiguous" })
+      expect(setActiveCredentials([first.id, second.id], undefined, "local")).toEqual({ ok: false, reason: "ambiguous" })
+      expect(setActiveCredentials([second.id, second.id], undefined, "local")).toEqual({ ok: false, reason: "ambiguous" })
 
       expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
       expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
     })
 
     test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {
-      await putCredential({
+      await putCredential({ owner: "local",
         provider_id: "active-scope",
         kind: "oauth_token",
         source: "managed",
         account_id: "acc_local",
         secret: "local-secret",
       })
-      const shared = await putCredential({
+      const shared = await putCredential({ owner: "local",
         provider_id: "active-scope",
         kind: "oauth_token",
         source: "managed",
@@ -1120,7 +1134,7 @@ describe("credential registry", () => {
 
       expect(usableCredentials(activeCredentialsForScope("shared", { onOutage: "throw" })).filter((row) => row.provider_id === "active-scope")).toEqual([])
 
-      setActiveCredentials([shared.id])
+      setActiveCredentials([shared.id], undefined, "local")
 
       expect(usableCredentials(activeCredentialsForScope("shared", { onOutage: "throw" })).filter((row) => row.provider_id === "active-scope"))
         .toMatchObject([{ id: shared.id }])
@@ -1136,7 +1150,7 @@ describe("credential registry", () => {
     })
 
     await expect(
-      putCredential({
+      putCredential({ owner: "local",
         provider_id: "fail-test",
         kind: "api_key",
         source: "managed",

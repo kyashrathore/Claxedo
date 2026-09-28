@@ -20,7 +20,7 @@ import type { HarnessHandle, TransportResolver } from "./transports"
 /** A harness read that names a live session or a draft on a harness in a directory. */
 export type HarnessTarget =
   | { sessionId: string; directory?: string }
-  | { harness: SessionHarness; directory: string; owner?: TurnActor }
+  | { harness: SessionHarness; directory: string; owner: TurnActor }
 
 type ResolvedTarget = { handle: HarnessHandle; target: ConfigTarget; sessionId?: string; directory: string }
 
@@ -39,7 +39,7 @@ export function createHarnessReads(input: {
     }
     const handle = await transports.forHarness(target.harness, target.directory)
     const draft = draftLaunch(launch, { harness: target.harness, directory: target.directory, locality: handle.locality,
-      owner: target.owner ?? { kind: "machine-owner" } })
+      owner: target.owner })
     return { handle, target: { draft }, directory: target.directory }
   }
 
@@ -47,6 +47,7 @@ export function createHarnessReads(input: {
     resolved.handle.transport.capabilities({ directory: resolved.directory, ...(resolved.sessionId ? { sessionId: resolved.sessionId } : {}) })
 
   return {
+    sessionOwner: (sessionId: string): TurnActor => attachments.owner(sessionId),
     async capabilities(target: HarnessTarget): Promise<HarnessCapabilities> {
       const resolved = await resolve(target)
       const declared = await declaredFor(resolved)

@@ -82,7 +82,7 @@ beforeAll(async () => {
     response.end(Buffer.from(await answer.arrayBuffer()))
   })
   const brokerOrigin = await listen(brokerServer)
-  const broker = createLocalCredentialBroker({ dataDir, brokerOrigin })
+  const broker = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir, brokerOrigin })
   handler = broker.handler
   configureAgentConfig({ projectAuth: (input) => broker.projectAuth(input) })
   configureEmbeddedWorkspaceRuntime({})
@@ -96,7 +96,7 @@ beforeAll(async () => {
     headers: { "X-Acme-Tenant": "prod" },
     models: { "acme-1": { name: "Acme One" } },
   })
-  await putCredential({ provider_id: "acme", kind: "api_key", source: "local_only", secret: "sk-acme-stored" })
+  await putCredential({ owner: "local", provider_id: "acme", kind: "api_key", source: "local_only", secret: "sk-acme-stored" })
 }, 60_000)
 
 afterAll(async () => {

@@ -400,6 +400,8 @@ const UNAVAILABLE_ROUTES: Record<string, number> = {
   // No Pi credential store is composed, and the route says so first.
   "DELETE /auth/:providerID": 503,
   "PUT /auth/:providerID": 503,
+  "GET /auth/sources": 503,
+  "PUT /auth/:providerID/source": 503,
   // The fixture's authority admits no machine caller and redeems no
   // invitation; none of these three takes an account credential, and each
   // says so before it looks at one. The beat is on this list because a

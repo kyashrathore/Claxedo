@@ -132,7 +132,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     app.use("*", async (c, next) => {
       c.set("relayHostAuth", {
         iss: "workspace-relay", aud: "workspace-host-service", principal_kind: "user",
-        actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+        actor_id: "actor_1", user_id: "user_1", actor_kind: "human", org_id: "org_1",
         workspace_id: target.workspaceId, host_id: "host_1", role: "editor", backing: "cloud-vm",
         exp: issued + 600, iat: issued, jti: "jti_1", parent_jti: "rat_1",
       })
@@ -155,7 +155,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
   })
 
   const snapshot: RuntimeSnapshot = {
-    version: 4, mcp: {}, auth: {},
+    version: 4, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { user_1: { openai: { baseUrl: "https://fixture.example", placeholder: "user-1-key", authMode: "api-key" } } } },
     connections: [{ connectionId: "primary", providerKey: "recovery-fixture", configRevision: 1, enabled: true, config: { name: "primary" } }],
     defaultHarness: { kind: "connection", connectionId: "primary" },
   }

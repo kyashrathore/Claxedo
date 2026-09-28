@@ -170,7 +170,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
       body: JSON.stringify({ status: "revoked", error: "cross-tenant revoke" }),
     }))
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(404)
     const after = registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)
     expect(after?.status).toBe("available")
     expect(after?.last_error).toBeNull()
@@ -204,7 +204,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
     await expect(response.json()).resolves.toEqual({ deleted: 1 })
     expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)).toBeDefined()
     await expect(registry.resolveSecretById(credA.id, ORG_A)).resolves.toBe("sk-org-a-secret")
-    expect(registry.credentialByProvider("openai", { onOutage: "throw" }, ORG_B)).toBeUndefined()
+    expect(registry.credentialByProvider("openai", { onOutage: "throw", owner: "local" }, ORG_B)).toBeUndefined()
   })
 
   // Verb 5 of 5: FORCE-VERIFY. Beyond the health overwrite, verification sends
@@ -311,7 +311,7 @@ describe("single-tenant self-host still works end to end", () => {
   })
 
   test("registry calls that pass no org read and write the named single-tenant partition", async () => {
-    const created = await registry.putCredential({
+    const created = await registry.putCredential({ owner: "local",
       provider_id: "openai",
       kind: "subscription_session",
       source: "local_only",
@@ -322,7 +322,7 @@ describe("single-tenant self-host still works end to end", () => {
     expect(registry.listCredentials().map((item) => item.id)).toContain(created.id)
     // Never a wildcard: the default partition sees only its own rows.
     expect(registry.listCredentials().every((item) => item.org_id === SINGLE_TENANT_ORG)).toBe(true)
-    expect(registry.credentialByProvider("openai", { onOutage: "throw", kind: "subscription_session" })?.id).toBe(created.id)
+    expect(registry.credentialByProvider("openai", { onOutage: "throw", kind: "subscription_session", owner: "local" })?.id).toBe(created.id)
     await expect(registry.deleteCredential(created.id)).resolves.toBe(true)
   })
 

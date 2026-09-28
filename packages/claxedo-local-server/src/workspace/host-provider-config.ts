@@ -1,4 +1,4 @@
-import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 /**
  * The provider rows the owner pushed to this machine, held in memory only.
  *
@@ -9,10 +9,23 @@ import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
  */
 
 import {
+  hostProviderConfigProjectAuth,
   parseHostProviderConfig,
 } from "@claxedo/server-core/credentials/host-provider-config"
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
+import { holderAccountSources } from "@claxedo/server-core/credentials/account-holder"
+import { accountSelections } from "@claxedo/server-core/credentials/account-source"
+import { adoptHostEnrolledOwner, hostEnrolledOwner } from "@claxedo/host-serving/serving"
+import { createKeyedSerializer } from "@claxedo/helpers"
 
-type HeldProviderConfig = { revision: number; providers: Record<string, ProviderProjectionSource> }
+type HeldProviderConfig = { revision: number; credentials: CredentialSnapshot }
+
+/**
+ * One serving change at a time: an ack adopting its owner, a withdrawal and a
+ * pushed revision landing between another's steps would leave the older
+ * credential, owner or push in force.
+ */
+export const hostServingUpdates = createKeyedSerializer<"serving">()
 
 let held: HeldProviderConfig | undefined
 
@@ -37,22 +50,43 @@ export class HostProviderConfigStaleError extends Error {
 export function installHostProviderConfigRevision(input: { revision: number; providers: string }) {
   if (held && input.revision < held.revision) throw new HostProviderConfigStaleError(held.revision, input.revision)
   const parsed = parseHostProviderConfig(input.providers)
-  held = { revision: input.revision, providers: parsed.providers }
+  held = { revision: input.revision, credentials: parsed.credentials }
   return hostProviderConfigState()
 }
 
 /** The pushed rows, read on every `projectAuth` call so a new revision reaches the next turn. */
-export function hostProviderConfig(): Record<string, ProviderProjectionSource> {
-  return held ? { ...held.providers } : {}
+export function hostProviderConfig(): CredentialSnapshot | undefined {
+  return held ? structuredClone(held.credentials) : undefined
 }
 
 export function hostProviderConfigState() {
   return {
     revision: held ? held.revision : null,
-    providerCount: held ? Object.keys(held.providers).length : 0,
+    providerCount: held ? Object.values(held.credentials.accounts).reduce((count, providers) => count + Object.keys(providers).length, 0) : 0,
   }
 }
 
 export function clearHostProviderConfig() {
   held = undefined
+}
+
+/** This machine's `projectAuth`: its own accounts under the enrolled owner's pushed rows. */
+export function hostCredentialProjectAuth<Input extends { orgId?: string }>(base: (input: Input) => Promise<CredentialSnapshot>) {
+  return hostProviderConfigProjectAuth(base, hostProviderConfig, hostEnrolledOwner,
+    (owner, input) => holderAccountSources(accountSelections(input.orgId), owner, owner))
+}
+
+/** Who this machine's owner is as a person: the enrolled owner, else the unsigned loopback operator. */
+export function localMachineOwnerUserId() {
+  return hostEnrolledOwner() ?? LOCAL_USER_ID
+}
+
+/** Adopt the enrolled owner a serving credential names, re-applying every runtime under them. */
+export async function adoptEnrolledOwner(owner: string, reapply: () => Promise<void>): Promise<void> {
+  await adoptHostEnrolledOwner(owner, {
+    forget: (next) => {
+      if (held && held.credentials.machineOwnerUserId !== next) held = undefined
+    },
+    reapply,
+  })
 }

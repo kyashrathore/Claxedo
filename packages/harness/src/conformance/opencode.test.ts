@@ -34,7 +34,7 @@ async function backend(): Promise<OpenCodeBackend> {
   return {
     execution: "in-process", root, directory, server, expectedMcp: "config", get rotated() { return rotated.map((item) => item.server) },
     harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "proof" },
-    credentials: { providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
+    credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "one" },
     owner: { kind: "person", userId: "owner" },
     origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
@@ -56,7 +56,7 @@ async function backend(): Promise<OpenCodeBackend> {
       const port = await reservePort()
       const next = await startScriptedModelServer({ port, red: false })
       rotated.push({ port, server: next })
-      return { credentials: { providers: { proof: { baseUrl: next.v1Url, placeholder: "opencode-placeholder-two",
+      return { credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { proof: { baseUrl: next.v1Url, placeholder: "opencode-placeholder-two",
         authMode: "api-key" as const } }, secrets: {}, leaseGeneration: "two" },
         observed: () => next.requests.some((request) => request.authorization === "Bearer opencode-placeholder-two") }
     },
@@ -86,7 +86,7 @@ function proofProvider(extra: Record<string, unknown> = {}, models: Record<strin
 
 function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[0], state: OpenCodeBackend,
   config: Record<string, unknown> = {}) {
-  return new OpenCodeSdkTransport(services, { login: { placement: "loopback", machineOwnerUserId: "machine", canUseOwnLogin: true },
+  return new OpenCodeSdkTransport(services, {
     databasePath: path.join(state.root, "opencode.db"),
     configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
       provider: { proof: proofProvider() },

@@ -40,7 +40,7 @@ async function backend(): Promise<CodexBackend> {
     root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
     harness: { id: "codex", access: "native" }, expectedMcp: "config",
     model: { providerID: "codex", modelID: "gpt-4.1" },
-    credentials: { providers: { codex: { baseUrl: server.v1Url, placeholder: "codex-conformance-placeholder", authMode: "api-key" } },
+    credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { openai: { baseUrl: server.v1Url, placeholder: "codex-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "person", userId: "member" },
     origin: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
@@ -264,19 +264,20 @@ test("Codex materializes every attachment into the workspace with a path line, a
   } finally { await context.close() }
 }, 60_000)
 
-test("Codex capabilities probe model/list before a session exists", async () => {
+test("Codex draft configuration probes model/list with the owner's resolved credentials", async () => {
   const state = await backend()
   const transport = new CodexAppServerTransport(createTestServices(), {
     binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env,
   })
   try {
-    const capabilities = await transport.capabilities({ directory: state.directory })
-    expect(capabilities.modelSelection.status).toBe("required")
-    if (capabilities.modelSelection.status !== "required") throw new Error("Codex model selection unavailable")
-    expect(capabilities.modelSelection.models.length).toBeGreaterThan(0)
+    const target = { draft: { workspaceId: "ws", directory: state.directory, locality: "local" as const,
+      owner: state.owner, credentials: state.credentials, config: { harness: { id: "codex", access: "native" as const } },
+      projection: { generation: "test", mcpServers: [], pluginRoots: [], notApplied: [] } } }
+    const preview = await transport.config.options(target, "probe")
+    expect(preview.options.length).toBeGreaterThan(0)
     const homes = await fs.readdir(path.join(state.root, "homes"))
     expect(homes).toHaveLength(1)
-    await transport.capabilities({ directory: state.directory })
+    expect(await transport.config.options(target, "probe")).toEqual(preview)
     expect(await fs.readdir(path.join(state.root, "homes"))).toEqual(homes)
   } finally { await transport.dispose(); await state.close() }
 }, 60_000)
@@ -300,7 +301,7 @@ async function ownLoginContext(name: string) {
     'wire_api = "responses"', "requires_openai_auth = true", "", "[mcp_servers.owner]",
     `url = ${JSON.stringify(`http:${String.fromCharCode(47, 47)}127.0.0.1:${mcpPort}/mcp`)}`, "",
   ].join("\n"))
-  const ownLogin: CodexBackend = { ...state, owner: { kind: "machine-owner" }, credentials: { providers: {}, secrets: {}, leaseGeneration: "own" },
+  const ownLogin: CodexBackend = { ...state, owner: { kind: "machine-owner" }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "own" },
     close: async () => {
       mcp.closeAllConnections()
       await new Promise<void>((resolve) => mcp.close(() => resolve()))

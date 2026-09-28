@@ -95,7 +95,7 @@ const scriptedModelAuth = scriptedModelUrl
   }
   : undefined
 if (scriptedModelAuth && backing === "local-worktree" && hostMode === "embedded") {
-  configureAgentConfig({ projectAuth: async () => scriptedModelAuth })
+  configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: browserSubject, accounts: { [browserSubject]: scriptedModelAuth } }) })
 }
 
 function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
@@ -213,7 +213,7 @@ async function startCloudRuntime(input) {
       mcp: {},
       connections: [],
       defaultHarness: { kind: "native", harnessId: "pi" },
-      auth: scriptedModelAuth,
+      auth: { machineOwnerUserId: browserSubject, accounts: { [browserSubject]: scriptedModelAuth } },
     })
   }
   // Every request the relay forwards to this cloud runtime passes through here.
@@ -410,6 +410,8 @@ if (hostMode === "connect") {
 }
 configureWorkspaceSupervisor({
   server_url: backendUrl,
+  sandboxOwner: async () => browserSubject,
+  machineOwnerUserId: "local",
 })
 
 // --- Real control-plane auth + authority ----------------------------------
@@ -480,7 +482,7 @@ const browserAuth = {
 }
 if (scriptedModelUrl) {
   await putCredential(
-    { provider_id: "openai", kind: "api_key", source: "local_only", secret: "test-key" },
+    { owner: browserSubject, provider_id: "openai", kind: "api_key", source: "local_only", secret: "test-key" },
     browserAuth.user.subject,
   )
 }

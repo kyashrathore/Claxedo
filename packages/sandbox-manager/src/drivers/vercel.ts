@@ -203,7 +203,8 @@ export function vercelBrokeredNetworkPolicy(
       const rules = (allow[host] ??= [])
       for (const prefix of methods.length ? pathPrefixes : []) {
         rules.push({
-          match: { path: { startsWith: prefix }, method: methods },
+          match: { path: { startsWith: prefix }, method: methods,
+            headers: [{ key: { exact: secret.header.toLowerCase() }, value: { exact: `${secret.scheme ? `${secret.scheme} ` : ""}claxedo-broker:${secret.name}` } }] },
           transform: [{ headers: { [secret.header]: value } }],
         })
       }

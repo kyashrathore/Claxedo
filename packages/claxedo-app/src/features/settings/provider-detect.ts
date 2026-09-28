@@ -1,5 +1,5 @@
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+import { claxedoCredentialRequest, readAccountSources, type AccountSource } from "@/platform/api/credential-request"
 import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { loadMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
 import type { QuotaWindow } from "@claxedo/usage-contract"
@@ -92,10 +92,8 @@ export type StoredCredential = EffectiveCredential & {
   consentSurface?: string
 }
 
-/** Every account the server holds, in the order the store listed them. */
-export async function listStoredCredentials(): Promise<StoredCredential[]> {
-  const res = await claxedoCredentialRequest(undefined)
-  const rows = readArray(await res.json(), "credentials") ?? []
+/** The list route's rows, and the team rows the account-sources route spells the same way. */
+function storedCredentialRows(rows: readonly unknown[]): StoredCredential[] {
   return rows.flatMap((row) => {
     const credential = credentialRow(row)
     if (credential === undefined) return []
@@ -112,6 +110,35 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
   })
 }
 
+/** Every account the server holds, in the order the store listed them. */
+export async function listStoredCredentials(): Promise<StoredCredential[]> {
+  const res = await claxedoCredentialRequest(undefined)
+  return storedCredentialRows(readArray(await res.json(), "credentials") ?? [])
+}
+
+/**
+ * Which account the person spends per provider, and the organization's team
+ * accounts. A provider missing from `sources` is "own".
+ */
+export type AccountSources = {
+  sources: ReadonlyMap<string, AccountSource>
+  team: StoredCredential[]
+}
+
+export async function listAccountSources(): Promise<AccountSources> {
+  const res = await claxedoCredentialRequest({ action: "account-sources" })
+  const body: unknown = await res.json()
+  return { sources: readAccountSources(body), team: storedCredentialRows(readArray(body, "team") ?? []) }
+}
+
+/** Every one of `providerIds` spends `source` from now on; the other of the two is never a fallback. */
+export async function setAccountSource(providerIds: readonly string[], source: AccountSource) {
+  await claxedoCredentialRequest({ action: "account-sources" }, {
+    method: "PUT",
+    body: JSON.stringify({ provider_ids: providerIds, source }),
+  })
+}
+
 /**
  * How an account names itself under a harness row: the identity its provider
  * gave it, or — for a pasted key the provider never named — the last characters
@@ -121,7 +148,7 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
  * reader can match to an account, and every real Codex row carries one, so a
  * surface shows it only where a full value belongs.
  */
-export function accountIdentity(row: StoredCredential): { text: string; readable: boolean } | undefined {
+export function accountIdentity(row: EffectiveCredential): { text: string; readable: boolean } | undefined {
   if (row.accountId === undefined) return undefined
   const fingerprint = /^fp_[0-9a-f]{8}(….+)$/.exec(row.accountId)
   if (fingerprint?.[1]) return { text: fingerprint[1], readable: true }
@@ -241,6 +268,7 @@ export type ProviderDetectResult = {
   effective: ReadonlyMap<string, EffectiveCredential> | undefined
   /** What each harness on this machine says about the login it would run on. */
   machineLogins: MachineLogin[]
+  accountSources: AccountSources
   /** When the harnesses were asked; a reused read keeps the time of the read it reuses. */
   at: number
 }
@@ -266,12 +294,13 @@ export async function runProviderDetect(input: { fresh?: boolean } = {}): Promis
   const result = await queryClient.fetchQuery({
     queryKey,
     queryFn: async () => {
-      const [machineLogins, stored, effective] = await Promise.all([
+      const [machineLogins, stored, effective, accountSources] = await Promise.all([
         loadMachineLogins({}),
         listStoredCredentials(),
         listEffectiveCredentials(),
+        listAccountSources(),
       ])
-      return { stored, effective, machineLogins }
+      return { stored, effective, machineLogins, accountSources }
     },
     staleTime: input.fresh ? 0 : PROVIDER_DETECT_FRESH_MS,
     gcTime: PROVIDER_DETECT_FRESH_MS,

@@ -9,7 +9,7 @@ import { attachedSessionEntry, draftProbeKey, DraftProbeCache, mergeStartInput }
 import { prepareCodexProfile } from "../../profiles/codex"
 import { projectCodexThreadConfig } from "./configuration"
 import { createCodexConfig } from "./config"
-import { codexCapabilities, codexCapabilityDraft } from "./capabilities"
+import { codexCapabilities } from "./capabilities"
 import { codexThreadResumeParams, codexThreadStartParams, codexTurnInput } from "./input"
 import { codexPermissionSettings } from "./modes"
 import { CodexEvents, publishCodexQuota } from "./events"
@@ -59,7 +59,7 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   async capabilities(context: { sessionId?: string; directory: string }) {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : [...this.entries.values()].find((item) => item.session.directory === context.directory)
-    const models = entry ? await this.models(entry) : await this.probeDraftModels(codexCapabilityDraft(context.directory), "probe")
+    const models = entry ? await this.models(entry) : []
     return codexCapabilities(models)
   }
 

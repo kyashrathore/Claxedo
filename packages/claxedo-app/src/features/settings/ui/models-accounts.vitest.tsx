@@ -59,6 +59,19 @@ const state = vi.hoisted(() => ({
   reconnected: [] as string[],
   /** What each harness on this machine says about its own login. */
   machineLogins: [] as Array<Record<string, unknown>>,
+  /** The person's stored account-source choices, by provider id. */
+  accountSources: {} as Record<string, "own" | "team">,
+  /** The organization's team accounts, as the account-sources route reports them. */
+  teamCredentials: [] as Array<Record<string, unknown>>,
+  /** Every account-source write's body, in order. */
+  sourceWrites: [] as unknown[],
+  /** Whether the server in view runs sessions on its own machine; false is the hosted plane. */
+  localExecution: true,
+  /** The hosted plane's Pi account sources, as `/auth/sources` answers. */
+  hostedSources: {} as Record<string, "own" | "team">,
+  hostedTeam: [] as string[],
+  /** Every hosted source write, as "<url> <body>". */
+  hostedSourceWrites: [] as string[],
   /** When set, the machine-login route answers 500 with this cause instead. */
   machineLoginFailure: undefined as string | undefined,
   /** When set, the verify route answers 500 with this cause instead. */
@@ -113,6 +126,7 @@ vi.mock("@/features/settings/app-ports", async () => {
       { key: "pi", label: "External Pi" },
     ],
     useGlobalSDK: () => ({ url: "http://127.0.0.1:2593" }),
+    useServerProduct: () => ({ localExecution: () => state.localExecution, known: () => true }),
     DialogCustomProvider: (props: { scope?: string }) => (
       <div data-testid="custom-provider-dialog" data-scope={props.scope ?? ""} />
     ),
@@ -182,6 +196,18 @@ vi.mock("@opencode-ai/ui/provider-icon", () => ({ ProviderIcon: () => null }))
 vi.mock("@/platform/api/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/platform/api/api")>()),
   authFetch: async (url: URL, init?: RequestInit) => {
+    if (url.pathname === "/auth/sources") {
+      state.authReads.push(url.toString())
+      return Response.json({ sources: state.hostedSources, team: state.hostedTeam })
+    }
+    if (init?.method === "PUT" && url.pathname.endsWith("/source")) {
+      const body = typeof init.body === "string" ? init.body : ""
+      state.hostedSourceWrites.push(`${url.toString()} ${body}`)
+      const id = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
+      const source = readString(body ? JSON.parse(body) : undefined, "source")
+      if (source === "own" || source === "team") state.hostedSources = { ...state.hostedSources, [id]: source }
+      return Response.json({})
+    }
     if (init?.method === "DELETE") {
       state.authDeletes.push(url.toString())
       const id = decodeURIComponent(url.pathname.split("/").at(-1) ?? "")
@@ -222,10 +248,26 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   if (url.pathname === "/api/claxedo/credentials") {
     return new Response(JSON.stringify({ credentials: state.storedCredentials }))
   }
+  if (url.pathname === "/api/claxedo/credentials/account-sources") {
+    if (init?.method === "PUT") {
+      const body = requestJson(init)
+      state.sourceWrites.push(body)
+      const source = readString(body, "source")
+      for (const id of readStringArray(body, "provider_ids") ?? []) {
+        if (source === "own" || source === "team") state.accountSources = { ...state.accountSources, [id]: source }
+      }
+      return Response.json({ sources: state.accountSources })
+    }
+    return Response.json({ sources: state.accountSources, team: state.teamCredentials })
+  }
   if (url.pathname === "/api/claxedo/credentials/effective") {
+    const spendsTeam = (row: Record<string, unknown>) => state.accountSources[String(row.provider_id)] === "team"
     return new Response(JSON.stringify({
       scope: "local",
-      credentials: state.storedCredentials.filter((row) => row.is_active !== false),
+      credentials: [
+        ...state.storedCredentials.filter((row) => row.is_active !== false && !spendsTeam(row)),
+        ...state.teamCredentials.filter(spendsTeam),
+      ],
     }))
   }
   if (url.pathname === "/api/claxedo/credentials/activate") {
@@ -391,6 +433,12 @@ function accountRow(id: string, key: string) {
   return row
 }
 
+function teamRadio(id: string) {
+  const input = accountRow(id, "team").querySelector<HTMLInputElement>('input[type="radio"]')
+  if (!input) throw new Error(`no team radio for ${id}`)
+  return input
+}
+
 /** The account key whose radio is checked, or "" when none is. */
 function selectedAccount(id: string) {
   return [...agentRow(id).querySelectorAll<HTMLElement>('[data-component="agent-account"]')]
@@ -452,6 +500,13 @@ beforeEach(() => {
   state.machineActivated.length = 0
   state.reconnected.length = 0
   state.machineLogins = []
+  state.accountSources = {}
+  state.teamCredentials = []
+  state.sourceWrites.length = 0
+  state.localExecution = true
+  state.hostedSources = {}
+  state.hostedTeam = []
+  state.hostedSourceWrites.length = 0
   state.machineLoginFailure = undefined
   state.machineLoginGate = undefined
   state.verifyFailure = undefined
@@ -627,10 +682,10 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     observer.disconnect()
     expect(section("agents").querySelector('[data-component="agents-scanning"]')).toBeNull()
-    expect(accountIds("anthropic")).toEqual(["sdk_work"])
-    expect(accountIds("openai")).toEqual(["machine"])
+    expect(accountIds("anthropic")).toEqual(["sdk_work", "team"])
+    expect(accountIds("openai")).toEqual(["machine", "team"])
     // One painted row set, and it is the answer.
-    expect([...new Set(painted)]).toEqual(["sdk_work,machine"])
+    expect([...new Set(painted)]).toEqual(["sdk_work,team,machine,team,team"])
   })
 
   test("Rescan runs under the rows, which stay on screen while it does", async () => {
@@ -648,7 +703,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     // Inline, not a loader: the answer already on screen is not taken away to
     // ask the same question again.
     expect(section("agents").querySelector('[data-component="agents-scanning"]')).toBeNull()
-    expect(accountIds("anthropic")).toEqual(["sdk_work"])
+    expect(accountIds("anthropic")).toEqual(["sdk_work", "team"])
 
     open()
 
@@ -657,20 +712,24 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins")
   })
 
-  test("a harness with no account and no machine login lists nothing and offers Connect", async () => {
+  test("a harness with no account and no machine login lists only a team entry it cannot choose, and offers Connect", async () => {
     mount()
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     expect(agentAction("cursor")).toBe("agent-add-account")
-    expect(accountIds("cursor")).toEqual([])
+    expect(accountIds("cursor")).toEqual(["team"])
+    expect(selectedAccount("cursor")).toBe("")
+    expect(teamRadio("cursor").disabled).toBe(true)
     // The row itself is headerless here — the section above already names the
     // harness and carries its one action — so it lists accounts and nothing else.
-    expect(agentRow("cursor").textContent).toBe("")
+    expect(agentRow("cursor").textContent).toBe(
+      "settings.providers.accountSource.teamsettings.providers.accountSource.missing",
+    )
   })
 
   test("a harness on a working stored account offers only Add an account, and the row carries the check", async () => {
     state.storedCredentials = claudeLogin.map((row) => ({ ...row, health: "ok", last_validated_at: Date.now() }))
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "team"]))
     expect(agentAction("anthropic")).toBe("agent-add-account")
     expect(accountRefused("anthropic", "sdk_work")).toBe(false)
     expect(accountChecked("anthropic", "sdk_work")).toBe("common.justNow")
@@ -690,7 +749,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     }))
     mount()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "team"]))
     // Two ages in the row, and the vendor's fraction of a percent is not one of
     // the figures: the line carries what the reader acts on, at whole percent.
     expect(accountDetail("anthropic", "sdk_work")).toBe([
@@ -729,7 +788,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     state.verifyFailure = "fetch failed"
     state.storedCredentials = [...claudeLogin]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "team"]))
 
     rowAction("anthropic", "sdk_work", "check").click()
 
@@ -748,7 +807,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     state.verifyResult = "auth_failed"
     state.storedCredentials = [...claudeLogin]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "team"]))
     expect(accountRefused("anthropic", "sdk_work")).toBe(false)
 
     rowAction("anthropic", "sdk_work", "check").click()
@@ -791,7 +850,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
     }]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine", "team"]))
     expect(accountRow("openai", "machine").textContent).toContain("machine@acme.com")
     expect(accountDetail("openai", "machine"))
       .toBe("settings.providers.live.window:settings.providers.window.weekly|64")
@@ -809,7 +868,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       usageAt: Date.now() - 5 * 60_000,
     }]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine", "team"]))
     expect(accountDetail("openai", "machine"))
       .toBe("settings.providers.live.window:settings.providers.window.weekly|64")
     expect(accountChecked("openai", "machine")).toBe("5m")
@@ -825,7 +884,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       org: "Acme",
     }]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine", "team"]))
     expect(accountDetail("anthropic", "machine")).toBe([
       "settings.providers.agents.machinePlan:max",
       "Acme",
@@ -842,7 +901,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_out" },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine", "team"]))
     const radio = accountRow("openai", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!
     expect(radio.disabled).toBe(false)
     expect(accountRow("openai", "machine").textContent).toContain("settings.providers.agents.machineLogin")
@@ -858,7 +917,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "absent" },
     ]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine", "team"]))
     expect(accountRow("anthropic", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
       .toBe(true)
     expect(accountDetail("anthropic", "machine")).toBe("settings.providers.agents.machineNotInstalled")
@@ -872,7 +931,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       detail: "Cursor did not answer with a login status.",
     }]
     mount()
-    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine", "team"]))
     expect(accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
       .toBe(false)
     expect(accountDetail("cursor", "machine")).toBe("Cursor did not answer with a login status.")
@@ -886,7 +945,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       state: "signed_in",
     }]
     mount()
-    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine", "team"]))
     expect(accountNote("cursor", "machine"))
       .toBe("settings.providers.agents.machineCursorAcp · settings.providers.agents.machineCursorSdkKey")
     expect(accountDetail("cursor", "machine")).toBe("")
@@ -899,7 +958,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine", "team"]))
     expect(accountRow("openai", "machine").querySelector('[data-component="agent-account-note"]')).toBeNull()
   })
 
@@ -921,7 +980,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_companion", "machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_companion", "machine", "team"]))
     expect(accountReachIcons("openai", "cred_codex")).toEqual(["monitor", "cloud"])
     expect(accountReachIcons("openai", "cred_codex_companion")).toEqual(["monitor"])
     expect(accountReachIcons("openai", "machine")).toEqual(["monitor"])
@@ -1000,7 +1059,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       state: "signed_in",
     }]
     mount()
-    await waitFor(() => expect(accountIds("cursor")).toEqual(["cred_cursor_key", "machine"]))
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["cred_cursor_key", "machine", "team"]))
     const radio = accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!
     expect(radio.disabled).toBe(true)
     // The reason travels with the reach it belongs to, behind the one hint.
@@ -1023,7 +1082,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       email: "machine@acme.com",
     }]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine", "team"]))
     expect(accountNote("anthropic", "machine")).toBe("")
     expect(accountRow("anthropic", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
       .toBe(false)
@@ -1040,7 +1099,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       state: "signed_in",
     }]
     mount()
-    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine", "team"]))
     expect(accountNote("cursor", "machine")).toBe("")
   })
 
@@ -1056,7 +1115,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       email: "machine@acme.com",
     }]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_anthropic", "machine"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_anthropic", "machine", "team"]))
     // Withdrawing the key's mark hands Claude Code back to its own login, which
     // is exactly what choosing this row means; nothing is left without auth.
     expect(accountRow("anthropic", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
@@ -1072,7 +1131,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine", "team"]))
     expect(accountRow("openai", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
       .toBe(false)
     expect(accountRow("openai", "machine").getAttribute("title")).toBe(null)
@@ -1083,7 +1142,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com", plan: "pro",
     }]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine", "team"]))
     state.machineLogins = [{
       harness: "codex",
       providerIds: ["codex-app-server", "openai"],
@@ -1107,7 +1166,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     mount()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "cred_key"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "cred_key", "team"]))
     expect(selectedAccount("anthropic")).toBe("sdk_work")
     // A pasted key is named by its last characters, not by the whole fingerprint.
     expect(accountRow("anthropic", "cred_key").textContent).toContain("…wxyz")
@@ -1121,7 +1180,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     mount()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_key", "sdk_home"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_key", "sdk_home", "team"]))
     expect(accountRow("anthropic", "cred_key").textContent).toContain("…wxyz")
     expect(accountRow("anthropic", "cred_key").textContent).not.toContain("claude-sdk")
   })
@@ -1150,7 +1209,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { id: "cred_codex_two", provider_id: "codex-app-server", kind: "oauth_token", label: "home@acme.com", account_id: "acc_2", is_active: false },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two", "team"]))
 
     accountRow("openai", "cred_codex_two")
       .querySelector<HTMLInputElement>('input[type="radio"]')!.click()
@@ -1166,7 +1225,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     }]
     mount()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "machine"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "machine", "team"]))
     expect(selectedAccount("anthropic")).toBe("sdk_work")
   })
 
@@ -1178,7 +1237,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com",
     }]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine", "team"]))
     expect(selectedAccount("openai")).toBe("cred_codex")
 
     accountRow("openai", "machine")
@@ -1197,7 +1256,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { id: "cred_codex_two", provider_id: "codex-app-server", kind: "oauth_token", label: "home@acme.com", account_id: "acc_2", is_active: false },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two", "team"]))
     // Nothing to say until the provider has been asked.
     expect(accountDetail("openai", "cred_codex")).toBe("")
 
@@ -1215,14 +1274,14 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { id: "acp_home", provider_id: "claude-acp", kind: "oauth_token", label: "home@acme.com", account_id: "acc_home", is_active: false },
     ]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "sdk_home"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "sdk_home", "team"]))
 
     rowAction("anthropic", "sdk_home", "remove").click()
     expect(state.removed).toEqual([])
 
     rowAction("anthropic", "sdk_home", "remove-confirm").click()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "team"]))
     expect(state.removed).toEqual(["sdk_home", "acp_home"])
   })
 
@@ -1242,7 +1301,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     home.is_active = true
     rowAction("anthropic", "sdk_work", "remove-confirm").click()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_home", "sdk_spare"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_home", "sdk_spare", "team"]))
     expect(selectedAccount("anthropic")).toBe("sdk_home")
   })
 
@@ -1251,13 +1310,13 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "work@acme.com", is_active: true },
     ]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token", "team"]))
     expect(agentAction("anthropic")).toBe("agent-add-account")
 
     rowAction("anthropic", "cred_token", "remove").click()
     rowAction("anthropic", "cred_token", "remove-confirm").click()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["team"]))
     expect(agentAction("anthropic")).toBe("agent-add-account")
   })
 
@@ -1292,5 +1351,133 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(section("agents").querySelector('[data-component="agents-scanning"]')).toBeNull()
     expect(section("agents").querySelector('[data-component="agents-scanned-at"]')?.textContent)
       .toBe("settings.providers.agents.scanFailed")
+  })
+})
+
+describe("Settings → Models: a person spends either their own account or the team's", () => {
+  const claudeIds = [...HARNESS_TABLE.claude.providerIds]
+  const codexIds = [...HARNESS_TABLE.codex.providerIds]
+  const claudeLogin = [
+    { id: "sdk_work", provider_id: "claude-sdk", kind: "oauth_token", label: "work@acme.com", account_id: "acc_work", is_active: true },
+    { id: "acp_work", provider_id: "claude-acp", kind: "oauth_token", label: "work@acme.com", account_id: "acc_work", is_active: true },
+  ]
+  const claudeTeam = [
+    { id: "team_sdk", provider_id: "claude-sdk", kind: "api_key", label: "Acme team", account_id: "acc_team", owner: null },
+    { id: "team_acp", provider_id: "claude-acp", kind: "api_key", label: "Acme team", account_id: "acc_team", owner: null },
+  ]
+  const onTeam = (ids: readonly string[]) => Object.fromEntries(ids.map((id) => [id, "team" as const]))
+  const choose = (id: string, key: string) =>
+    accountRow(id, key).querySelector<HTMLInputElement>('input[type="radio"]')!.click()
+
+  test("the team account is listed under the organization's name, after the person's own logins", async () => {
+    state.storedCredentials = [...claudeLogin]
+    state.teamCredentials = [...claudeTeam]
+    mount()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "team"]))
+    expect(selectedAccount("anthropic")).toBe("sdk_work")
+    expect(accountRow("anthropic", "team").textContent).toContain("Acme team")
+    expect(accountDetail("anthropic", "team")).toBe("settings.providers.accountSource.team")
+    expect(teamRadio("anthropic").disabled).toBe(false)
+  })
+
+  test("choosing the team account names every provider id of the harness, and marks nothing of the person's", async () => {
+    state.storedCredentials = [...claudeLogin]
+    state.teamCredentials = [...claudeTeam]
+    mount()
+    await waitFor(() => expect(selectedAccount("anthropic")).toBe("sdk_work"))
+
+    choose("anthropic", "team")
+
+    await waitFor(() => expect(selectedAccount("anthropic")).toBe("team"))
+    expect(state.sourceWrites).toEqual([{ provider_ids: claudeIds, source: "team" }])
+    expect(state.activated).toEqual([])
+    expect(state.machineActivated).toEqual([])
+  })
+
+  test("choosing one of the person's own accounts sets the harness back to own, then marks that account", async () => {
+    state.storedCredentials = [...claudeLogin]
+    state.teamCredentials = [...claudeTeam]
+    state.accountSources = onTeam(claudeIds)
+    mount()
+    await waitFor(() => expect(selectedAccount("anthropic")).toBe("team"))
+
+    choose("anthropic", "sdk_work")
+
+    await waitFor(() => expect(selectedAccount("anthropic")).toBe("sdk_work"))
+    expect(state.sourceWrites).toEqual([{ provider_ids: claudeIds, source: "own" }])
+    expect(state.activated).toEqual([["sdk_work", "acp_work"]])
+  })
+
+  test("choosing this computer's login sets the harness back to own as well", async () => {
+    state.machineLogins = [{ harness: "codex", providerIds: codexIds, state: "signed_in", email: "machine@acme.com" }]
+    state.teamCredentials = [{ id: "team_codex", provider_id: "codex-app-server", kind: "api_key", label: "Acme Codex", owner: null }]
+    state.accountSources = onTeam(codexIds)
+    mount()
+    await waitFor(() => expect(selectedAccount("openai")).toBe("team"))
+
+    choose("openai", "machine")
+
+    await waitFor(() => expect(selectedAccount("openai")).toBe("machine"))
+    expect(state.sourceWrites).toEqual([{ provider_ids: codexIds, source: "own" }])
+    expect(state.machineActivated).toEqual([codexIds])
+  })
+
+  test("team chosen while the organization holds no team account says the harness cannot run, and never falls back", async () => {
+    state.storedCredentials = [...claudeLogin]
+    state.accountSources = onTeam(claudeIds)
+    mount()
+
+    await waitFor(() => expect(selectedAccount("anthropic")).toBe("team"))
+    const unavailable = `settings.providers.accountSource.unavailable:${HARNESS_TABLE.claude.label}`
+    expect(accountDetail("anthropic", "team")).toBe(unavailable)
+    expect(accountRow("anthropic", "team").querySelector('[data-component="agent-account-alert"]')?.getAttribute("aria-label"))
+      .toBe(unavailable)
+    expect(teamRadio("anthropic").disabled).toBe(true)
+    // The person's own account is still there to choose, and is not what runs.
+    expect(accountRow("anthropic", "sdk_work").querySelector<HTMLInputElement>('input[type="radio"]')?.checked).toBe(false)
+  })
+
+  describe("on the hosted plane, per Pi provider", () => {
+    const choice = (provider: string) =>
+      section("pi").querySelector<HTMLElement>(`[data-provider="${provider}"] [data-component="account-source"]`)
+
+    test("a provider the organization holds a team account for offers the choice, and choosing writes the plane's route", async () => {
+      state.localExecution = false
+      state.connected = ["anthropic"]
+      state.hostedTeam = ["anthropic"]
+      mount()
+
+      await waitFor(() => expect(choice("anthropic")?.getAttribute("data-source")).toBe("own"))
+      expect(state.authReads).toContain("http://127.0.0.1:2593/auth/sources?harness=pi")
+      expect(choice("openai")).toBeNull()
+
+      choice("anthropic")!.querySelector<HTMLInputElement>('input[value="team"]')!.click()
+
+      await waitFor(() => expect(choice("anthropic")?.getAttribute("data-source")).toBe("team"))
+      expect(state.hostedSourceWrites).toEqual([
+        `http://127.0.0.1:2593/auth/anthropic/source?harness=pi ${JSON.stringify({ source: "team" })}`,
+      ])
+    })
+
+    test("a provider set to team with no team account says plainly that it cannot run", async () => {
+      state.localExecution = false
+      state.hostedSources = { openai: "team" }
+      mount()
+
+      await waitFor(() => expect(choice("openai")?.getAttribute("data-source")).toBe("team"))
+      expect(choice("openai")?.querySelector('[data-component="account-source-unavailable"]')?.textContent)
+        .toBe("settings.providers.accountSource.unavailable:openai")
+      expect(choice("anthropic")).toBeNull()
+    })
+
+    test("a machine of the person's own never asks the plane", async () => {
+      state.hostedTeam = ["anthropic"]
+      mount()
+
+      await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
+      expect(choice("anthropic")).toBeNull()
+      expect(state.authReads.filter((url) => url.includes("/auth/sources"))).toEqual([])
+    })
   })
 })

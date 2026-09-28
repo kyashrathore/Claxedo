@@ -29,6 +29,7 @@ describe("the owner grant as the runtime reads it", () => {
     expect(await identity(await grant(key.privateKey))).toEqual({
       principal_kind: "user",
       actor_id: "actor_alice",
+      user_id: "alice",
       actor_kind: "human",
       actor_public_id: "actor_alice",
       actor_name: "workspace owner",

@@ -1,6 +1,7 @@
 export {
   ConfigRoutes,
   RuntimeConfigApplyError,
+  isSessionConfigRefusal,
   normalizeRuntimeSnapshot,
 }
   from "./routes/config"

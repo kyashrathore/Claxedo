@@ -46,7 +46,7 @@ describe("workspace supervisor port", () => {
     // mid-response, with nothing in the logs to say why.
     vi.resetModules()
     const supervisor = await import("./supervisor")
-    supervisor.configureWorkspaceSupervisor({ server_url: "http://127.0.0.1:3001" })
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local", server_url: "http://127.0.0.1:3001" })
 
     const port = await import("@claxedo/server-core/workspace/supervisor-port")
     expect(port.workspaceSupervisorInstalled()).toBe(true)
@@ -65,7 +65,7 @@ describe("workspace store lease reader", () => {
     expect(store.workspaceSandboxLeaseInstalled()).toBe(false)
 
     const supervisor = await import("./supervisor")
-    supervisor.configureWorkspaceSupervisor({ server_url: "http://127.0.0.1:3001" })
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local", server_url: "http://127.0.0.1:3001" })
 
     expect(store.workspaceSandboxLeaseInstalled()).toBe(true)
   })

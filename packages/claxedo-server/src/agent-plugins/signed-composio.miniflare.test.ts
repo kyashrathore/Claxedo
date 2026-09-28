@@ -596,6 +596,8 @@ function credentialFake(): ControlPlaneCredentials & { secretOf(providerId: stri
     deleteCredentialsByProvider: async (providerId) => (rows.delete(providerId) ? 1 : 0),
     updateCredentialStatus: async () => {},
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => ({}),
+    setAccountSources: async () => ({}),
     secretOf: (providerId) => rows.get(providerId),
   }
 }

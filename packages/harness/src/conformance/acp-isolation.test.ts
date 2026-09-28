@@ -29,7 +29,7 @@ async function backend(kind: "websocket" | "streamable-http", restoreMode: "load
     directory, connection: { kind, url: peer.url }, locality: "remote",
     harness: { id: "scripted-acp", access: "connection" },
     model: { providerID: "scripted-acp", modelID: "default" }, owner: { kind: "machine-owner" },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "initial" },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "initial" },
     projection: { generation: "initial", pluginRoots: [], notApplied: [], mcpServers: [
       { kind: "http", name: "http", origin: "configured", url: "https://http.example.test/mcp", headers: { Authorization: "Bearer http-token" } },
       { kind: "sse", name: "sse", origin: "configured", url: "https://sse.example.test/sse" },

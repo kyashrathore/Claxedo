@@ -93,6 +93,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "The section registry reads the local server's harness-connection catalog (`createHarnessConnectionsCatalog` on `getClaxedoServerUrl()`) to decide whether the Connections section exists; every hosted account operation belongs to the section it renders, not to the registry.",
   "features/settings/ui/harness-providers-section.tsx":
     "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest, and the harness auth entry is dropped through the local server's own `/auth/:providerId`; hosted account identity stays on account-section.",
+  "features/settings/ui/hosted-account-source.tsx":
+    "Pi's own-or-team account choice reads `GET /auth/sources` and writes `PUT /auth/:providerID/source` on `getClaxedoServerUrl()` only while that server is the hosted plane (`localExecution` false), the same harness-auth routes `putHostedProviderKey` stores a Pi key on; they are the plane's per-org credential store, not a Hosted Server AccountPort operation.",
   "features/settings/ui/sandbox-section.tsx":
     "Sandbox driver settings talk only to the local sidecar `/api/workspace/drivers*`; not a Hosted Server AccountPort surface.",
   "features/settings/data/connected-apps-api.ts":

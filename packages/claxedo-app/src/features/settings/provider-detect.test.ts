@@ -6,11 +6,13 @@ import {
   agentInUse,
   forgetProviderDetect,
   harnessAccounts,
+  listAccountSources,
   listEffectiveCredentials,
   listStoredCredentials,
   PROVIDER_DETECT_FRESH_MS,
   removeCredential,
   runProviderDetect,
+  setAccountSource,
   type StoredCredential,
 } from "./provider-detect"
 import { localHarnessChecks } from "@/features/settings/app-ports"
@@ -305,6 +307,60 @@ describe("activateMachineLogin", () => {
   })
 })
 
+describe("listAccountSources / setAccountSource", () => {
+  test("the person's choice per provider, and the team rows in the list route's shape", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials/account-sources": {
+        sources: { "claude-acp": "team", "claude-sdk": "own" },
+        team: [{ id: "team_1", provider_id: "claude-sdk", label: "Acme", kind: "api_key", health: "ok", last_validated_at: 3, owner: null }],
+      },
+    })
+    const read = await listAccountSources()
+    expect([...read.sources]).toEqual([["claude-acp", "team"], ["claude-sdk", "own"]])
+    expect(read.team).toEqual([{
+      id: "team_1",
+      providerId: "claude-sdk",
+      label: "Acme",
+      kind: "api_key",
+      health: "ok",
+      lastValidatedAt: 3,
+      isActive: false,
+    }])
+  })
+
+  test("a source the contract does not name is a broken answer, not an own account", async () => {
+    stubNetwork({ "/api/claxedo/credentials/account-sources": { sources: { "claude-acp": "org" }, team: [] } })
+    await expect(listAccountSources()).rejects.toThrow("Account source response is invalid")
+  })
+
+  test("a choice names every provider id it covers in one write", async () => {
+    const sent: Array<{ method?: string; pathname: string; body: unknown }> = []
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      sent.push({ method: init?.method, pathname: url.pathname, body: requestJson(init) })
+      return new Response(JSON.stringify({ sources: { "claude-acp": "team", "claude-sdk": "team" } }))
+    }) as typeof globalThis.fetch
+
+    await setAccountSource(["claude-acp", "claude-sdk"], "team")
+
+    expect(sent).toEqual([{
+      method: "PUT",
+      pathname: "/api/claxedo/credentials/account-sources",
+      body: { provider_ids: ["claude-acp", "claude-sdk"], source: "team" },
+    }])
+  })
+
+  test("a refused choice throws the route's own sentence", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials/account-sources": new Response(
+        JSON.stringify({ error: { code: "invalid_body", message: "provider_ids must not be empty" } }),
+        { status: 400 },
+      ),
+    })
+    await expect(setAccountSource([], "own")).rejects.toThrow("provider_ids must not be empty")
+  })
+})
+
 describe("runProviderDetect", () => {
   test("one read answers every half a row needs: the store, the mark, and each harness's own login", async () => {
     const calls = stubNetwork({
@@ -318,14 +374,21 @@ describe("runProviderDetect", () => {
           { harness: "nameless" },
         ],
       },
+      "/api/claxedo/credentials/account-sources": {
+        sources: { "codex-app-server": "team" },
+        team: [{ id: "team_1", provider_id: "codex-app-server", label: "Acme Codex", owner: null }],
+      },
     })
     const result = await runProviderDetect()
 
     expect(calls.sort()).toEqual([
       "/api/claxedo/credentials",
+      "/api/claxedo/credentials/account-sources",
       "/api/claxedo/credentials/effective",
       "/api/claxedo/credentials/machine-logins",
     ])
+    expect([...result.accountSources.sources]).toEqual([["codex-app-server", "team"]])
+    expect(result.accountSources.team.map((row) => row.label)).toEqual(["Acme Codex"])
     expect(result.stored.map((row) => row.providerId)).toEqual(["claude-sdk"])
     expect(agentInUse(claude(), result.effective ?? new Map())?.label).toBe("Claude token")
     expect(result.machineLogins.map((row) => ({ harness: row.harness, state: row.state }))).toEqual([
@@ -340,6 +403,7 @@ describe("runProviderDetect", () => {
     "/api/claxedo/credentials": { credentials: [] },
     "/api/claxedo/credentials/effective": { scope: "local", credentials: [] },
     "/api/claxedo/credentials/machine-logins": { machine_logins: [] },
+    "/api/claxedo/credentials/account-sources": { sources: {}, team: [] },
   })
 
   test("a second surface within ten minutes takes the read the first one made, timed as that read", async () => {
@@ -349,13 +413,13 @@ describe("runProviderDetect", () => {
       const first = await runProviderDetect()
       now.mockReturnValue(1_000_000 + PROVIDER_DETECT_FRESH_MS - 1)
       const second = await runProviderDetect()
-      expect(calls).toHaveLength(3)
+      expect(calls).toHaveLength(4)
       expect(first.at).toBe(1_000_000)
       expect(second.at).toBe(1_000_000)
 
       now.mockReturnValue(1_000_000 + PROVIDER_DETECT_FRESH_MS)
       const third = await runProviderDetect()
-      expect(calls).toHaveLength(6)
+      expect(calls).toHaveLength(8)
       expect(third.at).toBe(1_000_000 + PROVIDER_DETECT_FRESH_MS)
     } finally {
       now.mockRestore()
@@ -366,11 +430,11 @@ describe("runProviderDetect", () => {
     const calls = stubNetwork(emptyMachine())
     await runProviderDetect()
     await runProviderDetect({ fresh: true })
-    expect(calls).toHaveLength(6)
+    expect(calls).toHaveLength(8)
 
     forgetProviderDetect()
     await runProviderDetect()
-    expect(calls).toHaveLength(9)
+    expect(calls).toHaveLength(12)
   })
 
   test("a failed read is not held: the next surface asks again", async () => {

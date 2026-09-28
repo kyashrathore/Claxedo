@@ -17,7 +17,7 @@ const validSnapshot: RuntimeSnapshot = {
   mcp: {},
   connections: [],
   defaultHarness: { kind: "native", harnessId: "codex" },
-  auth: {},
+  auth: { machineOwnerUserId: "local", accounts: { local: {} } },
 }
 
 async function mintManagementToken(privateKey: CryptoKey, opts: {

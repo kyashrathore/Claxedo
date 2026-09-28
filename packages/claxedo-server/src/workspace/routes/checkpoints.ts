@@ -203,6 +203,7 @@ function service(
   let principalPromise: Promise<{
     principalKind: "user" | "service"
     actorId: string
+    userId?: string
     actorKind: "human" | "agent"
     orgId: string | undefined
     role: RelayRole
@@ -241,6 +242,7 @@ function service(
       runtimeActor: {
         principalKind: identity.principalKind,
         actorId: identity.actorId,
+        ...("userId" in identity && identity.userId ? { userId: identity.userId } : {}),
         actorKind: identity.actorKind,
         ...("actorPublicId" in identity && identity.actorPublicId ? { actorPublicId: identity.actorPublicId } : {}),
         ...("actorName" in identity && identity.actorName ? { actorName: identity.actorName } : {}),

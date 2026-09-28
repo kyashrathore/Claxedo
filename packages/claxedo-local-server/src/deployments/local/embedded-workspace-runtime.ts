@@ -24,9 +24,10 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import type { MachineLoginPolicy } from "@claxedo/harness/contract"
+import { DESKTOP_PLACEMENT } from "./connection-secret-scope"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
@@ -219,13 +220,6 @@ export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionI
   return config
 }
 
-/**
- * This process is the machine's own desktop: whoever reaches it over loopback
- * is the machine owner and may spend its logins. A signed-in user reaching
- * their own machine through the relay is a person to the runtime, and no
- * user id is known at composition time, so that caller is brokered instead.
- */
-const DESKTOP_PLACEMENT: MachineLoginPolicy = { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true }
 let configuredConnectionProviders: readonly CustomHarnessProvider<unknown>[] = []
 let configuredConnectionSecretResolver: ConnectionSecretResolver = createLocalConnectionSecretResolver({
   async resolveReference({ reference }) {
@@ -433,7 +427,8 @@ async function apply(runtime: EmbeddedRuntime) {
     workspaceId: runtime.workspace.id,
   })
   await runtime.host.apply(snapshot)
-  runtime.renewAt = projectionRenewalDueAt(snapshot.auth, appliedAt)
+  const renewAt = Math.min(...Object.values(snapshot.auth.accounts).map((providers) => projectionRenewalDueAt(providers, appliedAt) ?? Infinity))
+  runtime.renewAt = Number.isFinite(renewAt) ? renewAt : undefined
   runtime.renewFailures = 0
 }
 
@@ -697,8 +692,19 @@ export async function attachEmbeddedWorkspacePty(input: {
   }
 }
 
+/**
+ * Every runtime is re-configured even when one fails; the failures are then
+ * reported together. A harness refusing a session is that runtime's recorded
+ * outcome, not a failure of the change that asked for the re-configure.
+ */
 export async function syncEmbeddedWorkspaceRuntimes() {
-  await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
+  const results = await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
+  const failed = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+  for (const refusal of failed.filter(isSessionConfigRefusal)) {
+    log.warn("a harness refused a session's configuration", { error: String(refusal) })
+  }
+  const broken = failed.filter((error) => !isSessionConfigRefusal(error))
+  if (broken.length > 0) throw new AggregateError(broken, `${broken.length} embedded runtime(s) failed to re-configure`)
 }
 
 /** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */

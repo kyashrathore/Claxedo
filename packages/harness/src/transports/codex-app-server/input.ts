@@ -1,4 +1,6 @@
 import type { JsonValue, v2 } from "./translate"
+import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
+import { selectedProviderProjection } from "../../contract"
 import type { StartInput, TurnInput } from "../../contract"
 import { CodexTransportError } from "./errors"
 import { flattenTurnPrompt } from "../../translate/prompt"
@@ -24,7 +26,7 @@ export async function codexTurnInput(turn: TurnInput, directory: string): Promis
 export function codexThreadStartParams(input: StartInput, config: ThreadConfig, mode: CodexPermissionSettings): ThreadStartParams {
   const model = input.model?.modelID === "default" ? undefined : input.model?.modelID
   return { cwd: input.directory, ...(model ? { model } : {}),
-    ...(input.credentials.providers.codex ? { modelProvider: "broker" } : {}),
+    ...(selectedProviderProjection(input.credentials, HARNESS_TABLE.codex.providerIds) ? { modelProvider: "broker" } : {}),
     approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, dynamicTools: codexDynamicTools,
     ...(input.instructions ? { developerInstructions: input.instructions } : {}) }
 }

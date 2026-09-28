@@ -162,7 +162,7 @@ async function backend(): Promise<ClaudeBackend> {
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     harness: { id: "claude", access: "native" }, expectedMcp: "session",
     model: { providerID: "anthropic", modelID: "default" },
-    credentials: { providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
     onSetup: ({ ports }) => configurePorts(ports, { config: { harness, model } }),
     unrunnableTurn: withUndeliverableFile,
@@ -338,7 +338,7 @@ test("a saved Claude grant survives transport recreation and stays in its sessio
   const input = (sessionId: string) => ({ sessionId, workspaceId: "w1", directory: "/work", locality: "local" as const,
     owner: origin.actor, config: { harness: { id: "claude" as const, access: "native" as const }, permissionMode: "default" },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } })
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } })
   const options = { signal: new AbortController().signal, blockedPath: "/work" } as Parameters<CanUseTool>[2]
   const transport = () => new ClaudeSdkTransport(services, { executable: PINNED_CLAUDE, configRoot: "/tmp/claude-grants",
     userConfigRoot: "/tmp/claude-owner", env: {} })
@@ -390,7 +390,7 @@ test("the deny floor is Claude's rule alone: a floor command Claude asks about s
   const input = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local" as const,
     owner: origin.actor, config: { harness: { id: "claude" as const, access: "native" as const } },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } }
   const reply = askClaudePermission(input, broker, "Bash", { command: "rm -rf ~mine" },
     { signal: new AbortController().signal } as Parameters<CanUseTool>[2])
   const pending = await pollUntil(() => owner.broker.list({ sessionId: "s1" })[0], Date.now() + 2_000)
@@ -497,7 +497,7 @@ function goalStream(messages: AsyncIterable<SDKMessage>): Query {
 const goalEntry = () => ({ session: { directory: "/work", locality: "local" as const, binding: { sessionId: "s1", workspaceId: "w1", directory: "/work",
   connectionId: "claude-sdk", upstreamSessionId: "up1" } }, input: { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local" as const,
   owner: { kind: "machine-owner" as const }, config: { harness: { id: "claude" as const, access: "native" as const } },
-  projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } } })
+  projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } } })
 
 function abortingLauncher(): ClaudeQueryLauncher {
   return { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => goalStream({ async *[Symbol.asyncIterator]() {

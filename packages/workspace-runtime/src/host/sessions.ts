@@ -11,6 +11,7 @@ import {
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { admitSessionInstructions, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { createSessionBroker, type createRequestBroker, type SessionBrokerContext } from "@claxedo/harness/broker"
+import { CredentialSelectionError, sessionAccountOwner } from "@claxedo/harness/registry"
 import { applySessionConfigUpdate, type HarnessSession, type SessionBroker, type TurnActor } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRuntimeStore } from "./contracts"
@@ -185,6 +186,12 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       if (refusal) throw new Error(refusal.message)
       const sessionId = create.id ?? `ses_${randomUUID()}`
       const existed = !!store.getSession(sessionId)
+      const owner = create.parentID ? attachments.owner(create.parentID) : create.owner
+      const recorded = store.sessionOwner(sessionId)
+      const holder = (actor: TurnActor) => sessionAccountOwner(launch.credentials(), actor).userId
+      if (recorded && holder(recorded) !== holder(owner)) {
+        throw new CredentialSelectionError("account_unavailable", `Session ${sessionId} belongs to another owner`)
+      }
       const config: SessionConfig = {
         harness: create.harness,
         ...(create.model ? { model: create.model } : {}),
@@ -193,7 +200,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         ...(create.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
         ...retainedFields(create),
       }
-      store.recordSessionOwner(sessionId, create.owner)
+      store.recordSessionOwner(sessionId, owner)
       store.bindSession({
         sessionId, workspaceId: create.workspaceId, directory,
         connectionId: connectionIdForHarness(create.harness), upstreamSessionId: sessionId, agentSessionId: sessionId,
@@ -206,7 +213,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       try {
         if (!store.updateSessionConfig(sessionId, config)) throw new Error(`Session ${sessionId} has no runtime config`)
         session = await handle.transport.start(startInput(launch, {
-          sessionId, directory, locality: handle.locality, config, owner: create.owner,
+          sessionId, directory, locality: handle.locality, config, owner,
           ...(create.title !== undefined ? { title: create.title } : {}),
           ...(create.instructions ? { instructions: create.instructions } : {}),
         }), broker)
@@ -219,7 +226,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         throw error
       }
       await endStart(context)
-      attachments.register(sessionId, { handle, session, broker, context, owner: create.owner })
+      attachments.register(sessionId, { handle, session, broker, context, owner })
       const persisted = store.getSession(sessionId)
       if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)
       return persisted
