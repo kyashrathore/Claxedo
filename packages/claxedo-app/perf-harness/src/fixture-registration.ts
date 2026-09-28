@@ -68,10 +68,12 @@ export async function registerCorpusSessions(input: { dataDirectory: string; cor
             createdAt: session.created,
             updatedAt: session.updated,
           })
-          store.updateSessionConfig(
-            session.id,
-            { harness: { id: "opencode", access: "native" }, variant: null, agent: null },
-            { directory: session.directory },
+          atRecordedTime(session.created, () =>
+            store.updateSessionConfig(
+              session.id,
+              { harness: { id: "opencode", access: "native" }, variant: null, agent: null },
+              { directory: session.directory },
+            ),
           )
           replayTurns(store, session.id, input.corpus.events(session.id))
         }
@@ -186,10 +188,12 @@ function replayTurns(store: RuntimeStore, sessionId: string, events: Iterable<Cl
 }
 
 /**
- * The store stamps a turn's start, the user message it projects and the answer's
- * completion with `Date.now()`. A replayed turn keeps the times it was recorded
- * at, or every user message would postdate its answer and each turn would read
- * as 0 s of work.
+ * The store stamps a session's harness selection, a turn's start, the user
+ * message it projects and the answer's completion with `Date.now()`, and a
+ * selection that changes value moves the session's updated time to that stamp.
+ * Replayed records keep the times they were recorded at, or every imported
+ * session would read as updated during the import, every user message would
+ * postdate its answer and each turn would read as 0 s of work.
  */
 function atRecordedTime<T>(time: number, write: () => T): T {
   const now = Date.now
