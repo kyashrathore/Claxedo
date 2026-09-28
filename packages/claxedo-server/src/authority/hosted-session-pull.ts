@@ -10,8 +10,10 @@ import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/g
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   messagesPayload,
+  projectPulledMessages,
   pulledCloudWorkspace,
   pulledSession,
+  pullStartOrdinal,
   relayRole,
   runtimePath,
   sessionIsIdle,
@@ -171,10 +173,8 @@ export async function pullHostedControlSessionMessages(
     sessionId: input.sessionId,
     workspaceId: input.workspaceId,
   })
-  const currentOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
-  if (input.expectedEventOrdinal !== undefined && input.expectedEventOrdinal < currentOrdinal) {
-    return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }
-  }
+  const currentOrdinal = pullStartOrdinal(services.projectionStore, input.sessionId, input.expectedEventOrdinal)
+  if (typeof currentOrdinal !== "number") return currentOrdinal
   const target = {
     ...workspace,
     ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
@@ -203,55 +203,15 @@ export async function pullHostedControlSessionMessages(
       intakeReady,
     })
   }
-  const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
-  if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: "older_snapshot_ordinal",
-      currentOrdinal,
-      snapshotOrdinal: payload.maxEventOrdinal,
-    }
-  }
-  if (
-    payload.maxEventOrdinal !== undefined &&
-    payload.maxEventOrdinal === currentOrdinal &&
-    currentMessages.length > 0 &&
-    payload.messages.length <= currentMessages.length
-  ) {
-    await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
-    return {
-      ok: true,
-      skipped: true,
-      reason: "older_snapshot_ordinal",
-      currentOrdinal,
-      snapshotOrdinal: payload.maxEventOrdinal,
-    }
-  }
-  if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: "shorter_snapshot",
-      currentMessages: currentMessages.length,
-      snapshotMessages: payload.messages.length,
-    }
-  }
-  const applied = payload.maxEventOrdinal === undefined
-    ? await services.projectionStore.sync_session_messages(target.ws, input.sessionId, payload.messages)
-    : await services.projectionStore.sync_session_messages(target.ws, input.sessionId, payload.messages, {
-      maxEventOrdinal: payload.maxEventOrdinal,
-    })
-  if (applied === false) {
-    const canonicalOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
-    return {
-      ok: true,
-      skipped: true,
-      reason: "older_snapshot_ordinal",
-      currentOrdinal: canonicalOrdinal,
-      ...(payload.maxEventOrdinal === undefined ? {} : { snapshotOrdinal: payload.maxEventOrdinal }),
-    }
-  }
+  const skipped = await projectPulledMessages({
+    store: services.projectionStore,
+    ws: target.ws,
+    sessionId: input.sessionId,
+    payload,
+    currentOrdinal,
+    refreshMetadata: () => syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session),
+  })
+  if (skipped) return skipped
   await syncAuthority(
     payload.messages,
     payload.maxEventOrdinal ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),

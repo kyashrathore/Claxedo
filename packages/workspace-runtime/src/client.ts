@@ -46,8 +46,6 @@ export type {
 export type {
   WorkspaceAgentClient,
   WorkspaceCommandClient,
-  WorkspaceMcpClient,
-  WorkspaceMcpStatus,
   WorkspaceVcsClient,
   WorkspaceVcsInfo,
 } from "./client/workspace"

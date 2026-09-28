@@ -1,11 +1,10 @@
 /**
  * The operations a renderer may ask Electron main to run, by name.
  *
- * Import-free on purpose: this is the contract a reviewer reads on its own, and
- * the account-port guard parses this union syntactically, so it must stay a
- * list of explicit string literals. A caller naming an absent operation fails
- * to compile, and no implementation that satisfies every member can quietly
- * gain a request-shaped passthrough.
+ * Import-free on purpose: this is the contract a reviewer reads on its own. A
+ * caller naming an absent operation fails to compile, and the tables that
+ * satisfy every member (this package's registry and Electron main's routes)
+ * cannot quietly gain a request-shaped passthrough.
  */
 export type HostedOperationName =
   | "account.mode"
@@ -48,7 +47,6 @@ export type HostedOperationName =
   | "workspace.assignHost"
   | "workspace.unassignHost"
   | "session.list"
-  | "session.navigationList"
   | "session.page"
   | "session.projection.register"
   | "session.projection.checkpoint"

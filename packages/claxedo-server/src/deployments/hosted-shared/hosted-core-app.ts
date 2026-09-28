@@ -12,7 +12,6 @@ import {
   deploymentMode,
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
-import type { FirstPartyServiceCatalog } from "@claxedo/service-contract"
 
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
@@ -95,7 +94,6 @@ export type HostedCoreAppOptions = {
   relayTargetLookup?: RelayTargetLookup
   liveSyncRoom: LiveSyncRoomNamespace
   sharedRateLimitStore: SharedRateLimitStore
-  serviceCatalog: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
   cloudWorkspaceAdmission: NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>
   product: StaticProductDescriptor
   requestGuardExemptions: readonly RouteGuardExemption[]
@@ -193,7 +191,6 @@ export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: P
   if (!plane.runtimeSessionAuthority) failures.push("runtime private-session authority is not composed")
   if (!options.liveSyncRoom) failures.push("LIVE_SYNC_ROOM is not bound")
   if (!options.sharedRateLimitStore) failures.push("CLAXEDO_REQUEST_LIMITER is not bound")
-  if (!options.serviceCatalog) failures.push("service catalog is not composed")
   if (!options.cloudWorkspaceAdmission) failures.push("cloud workspace admission policy is not composed")
   if (!options.product) failures.push("static product descriptor is not composed")
   if (!options.requestGuardExemptions) failures.push("product request-guard inventory is not composed")
@@ -312,7 +309,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
-      serviceCatalog: options.serviceCatalog,
       harnessStatus: hostedHarnessRuntimeStatus(services),
       ...hostedPiCredentials({ resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth), credentials: plane.orgCredentials }),
     }),

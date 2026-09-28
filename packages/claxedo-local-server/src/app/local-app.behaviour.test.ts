@@ -917,7 +917,7 @@ describe("local composition — session inventory", () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
+      view: { scope: "workspace", sort: "updated_desc", limit: 50 },
       items: [],
       totalKnown: 0,
     })

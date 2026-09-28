@@ -700,10 +700,6 @@ async function localVcsInfo(directory: string) {
   }
 }
 
-function mcpStatus(config: Record<string, unknown>) {
-  return Object.fromEntries(Object.keys(config).map((name) => [name, { status: "disabled" }]))
-}
-
 function sameRuntimeMcp(a: Record<string, unknown>, b: Record<string, unknown>) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
@@ -2073,8 +2069,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           }, 502)
         }
       })
-
-      app.get("/mcp", async (c) => c.json(mcpStatus(currentMcp)))
 
       app.get("/vcs", async (c) => {
         return c.json(await localVcsInfo(requestDirectory(c)))

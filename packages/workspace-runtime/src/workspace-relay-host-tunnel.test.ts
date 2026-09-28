@@ -1645,7 +1645,7 @@ describe("workspace relay host tunnel client", () => {
 
     try {
       await relay.observer.waitForPresence()
-      const res = await fetch(new URL("/workspaces/ws_1/file/raw?path=large.bin", relay.relay.url), {
+      const res = await fetch(new URL("/workspaces/ws_1/file/content?path=large.bin", relay.relay.url), {
         headers: {
           authorization: `Bearer ${relay.runtimeAccessToken}`,
         },

@@ -1971,9 +1971,9 @@ export function createSqliteWorkspaceAuthority(
         `).run(args.workspaceId)
         const assigned = db.prepare(`
           INSERT INTO host_workspace_assignments (
-            workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
+            workspace_id, host_id, owner_token_identifier, revision, assigned_at, updated_at
           )
-          SELECT workspace.workspace_id, ?, ?, NULL, workspace.host_assignment_revision, ?, ?
+          SELECT workspace.workspace_id, ?, ?, workspace.host_assignment_revision, ?, ?
           FROM workspaces workspace
           WHERE workspace.workspace_id = ?
             AND EXISTS (
@@ -2019,13 +2019,12 @@ export function createSqliteWorkspaceAuthority(
       const row = db.prepare<unknown[], {
         workspace_id: string
         host_id: string
-        second_device_open_at: number | null
         display_name: string | null
         expires_at: number
         last_seen_at: number
         session_authority: string | null
       }>(`
-        SELECT assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
+        SELECT assignment.workspace_id, assignment.host_id,
           enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
           enrollment.session_authority
         FROM host_workspace_assignments assignment
@@ -2041,7 +2040,6 @@ export function createSqliteWorkspaceAuthority(
         host_id: row.host_id,
         workspace_id: row.workspace_id,
         ...(row.display_name ? { display_name: row.display_name } : {}),
-        ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
         expires_at: row.expires_at,
         last_seen_at: row.last_seen_at,
         ...(sessionAuthority ? { session_authority: sessionAuthority } : {}),
@@ -2473,20 +2471,6 @@ export function createSqliteWorkspaceAuthority(
       },
     } satisfies MachineAuthAdapter,
 
-    async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
-      const now = Date.now()
-      const result = db.prepare(`
-        UPDATE host_workspace_assignments
-        SET second_device_open_at = COALESCE(second_device_open_at, ?), updated_at = ?
-        WHERE workspace_id = ? AND owner_token_identifier = ?
-      `).run(now, now, args.workspaceId, who.token_identifier)
-      return { recorded: result.changes > 0, second_device_open_at: now }
-    },
-
     async grantSessionShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const level = requestedSessionShareLevel(args.level)
@@ -2899,7 +2883,6 @@ export function createSqliteWorkspaceAuthority(
   return Object.assign(workspaceAuthority, privateSessions)
 }
 
-/** The host's acknowledged workspace ids, as persisted by `markSecondDeviceOpen`. */
 function ackedWorkspaceIds(json: string): string[] {
   try {
     const parsed: unknown = JSON.parse(json)

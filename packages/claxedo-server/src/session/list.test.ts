@@ -69,15 +69,6 @@ describe("signedSessionList", () => {
     })
   })
 
-  test("refuses a view the registry's rows cannot answer", async () => {
-    const listSessionPage = vi.fn(async () => [])
-    const error = await signedSessionList(services({ listSessionPage }), signed, query("scope=project&projectId=prj_1&groupBy=workspace"))
-      .then(() => undefined, (err: unknown) => err)
-
-    expect(sessionListErrorResponse(error)?.status).toBe(400)
-    expect(listSessionPage).not.toHaveBeenCalled()
-  })
-
   test("refuses a list that names neither a project nor a workspace", async () => {
     const error = await signedSessionList(services({ listSessionPage: vi.fn() }), signed, query("scope=global"))
       .then(() => undefined, (err: unknown) => err)

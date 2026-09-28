@@ -278,7 +278,6 @@ function services(): ControlPlaneServices {
       })),
       pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
       activeHostEnrollment: vi.fn(async () => ({ active: false as const, reason: "not-enrolled" as const })),
-      markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 1 })),
       activeWorkspaceHost: vi.fn(async () => ({
         active: true,
         host_id: "host_1",

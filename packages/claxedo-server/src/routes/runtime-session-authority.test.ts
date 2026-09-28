@@ -966,8 +966,8 @@ describe("reservation and adoption against a real private-session authority", ()
     const assignHost = (who: SignedControlPlaneAuth) => {
       seed().prepare(`
         INSERT INTO host_workspace_assignments (
-          workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
-        ) VALUES (?, ?, ?, NULL, 1, 1, 1)
+          workspace_id, host_id, owner_token_identifier, revision, assigned_at, updated_at
+        ) VALUES (?, ?, ?, 1, 1, 1)
         ON CONFLICT (workspace_id) DO UPDATE SET owner_token_identifier = excluded.owner_token_identifier
       `).run("ws_real", "host_real", who.user.tokenIdentifier)
     }

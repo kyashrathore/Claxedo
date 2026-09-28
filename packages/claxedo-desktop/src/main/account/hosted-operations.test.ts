@@ -81,18 +81,6 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
-  test("forwards the declared session-list sort without opening the query allowlist", () => {
-    expect(resolveHostedOperation("session.navigationList", {
-      scope: "workspace",
-      limit: 25,
-      sort: "created_desc",
-      unreviewed: "must-not-reach-the-server",
-    })).toEqual({
-      method: "GET",
-      path: "/api/control/session-list?scope=workspace&limit=25&sort=created_desc",
-    })
-  })
-
   test("a project's session page keeps its fixed scope and appends only the declared keys", () => {
     expect(resolveHostedOperation("session.page", {
       projectId: "prj_1",

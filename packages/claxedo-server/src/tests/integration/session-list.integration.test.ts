@@ -64,33 +64,33 @@ describe("current control-plane session-list integration", () => {
   })
 
   test("keeps the real session-list composition loopback-only in unsigned self-host mode", async () => {
-    const denied = await request("http://control.example.test/api/control/session-list?scope=workspace&groupBy=none")
+    const denied = await request("http://control.example.test/api/control/session-list?scope=workspace")
 
     expect(denied.status).toBe(403)
     await expect(denied.json()).resolves.toMatchObject({
       error: { code: "unsigned_local_loopback_required" },
     })
 
-    const allowed = await request("http://127.0.0.1/api/control/session-list?scope=workspace&groupBy=none&directory=%2Fwork%2Falpha")
+    const allowed = await request("http://127.0.0.1/api/control/session-list?scope=workspace&directory=%2Fwork%2Falpha")
     expect(allowed.status).toBe(200)
   })
 
-  test("returns the current empty ungrouped response shape", async () => {
+  test("returns the current empty response shape", async () => {
     const response = await request(
-      "http://127.0.0.1/api/control/session-list?scope=workspace&groupBy=none&directory=%2Fwork%2Fmissing&limit=10",
+      "http://127.0.0.1/api/control/session-list?scope=workspace&directory=%2Fwork%2Fmissing&limit=10",
     )
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 10 },
+      view: { scope: "workspace", sort: "updated_desc", limit: 10 },
       items: [],
       totalKnown: 0,
     })
   })
 
-  test("serves groupBy=none from the durable projection with active-only and current ordering semantics", async () => {
+  test("serves a workspace from the durable projection with active-only and current ordering semantics", async () => {
     const response = await request(
-      "http://127.0.0.1/api/control/session-list?scope=workspace&groupBy=none&directory=%2Fwork%2Falpha&limit=10",
+      "http://127.0.0.1/api/control/session-list?scope=workspace&directory=%2Fwork%2Falpha&limit=10",
     )
 
     expect(response.status).toBe(200)
@@ -105,9 +105,9 @@ describe("current control-plane session-list integration", () => {
     expect(body.totalKnown).toBe(2)
   })
 
-  test("applies the current archived selector before returning an ungrouped page", async () => {
+  test("applies the current archived selector before returning a page", async () => {
     const response = await request(
-      "http://127.0.0.1/api/control/session-list?scope=workspace&groupBy=none&directory=%2Fwork%2Falpha&archived=archived&limit=10",
+      "http://127.0.0.1/api/control/session-list?scope=workspace&directory=%2Fwork%2Falpha&archived=archived&limit=10",
     )
 
     expect(response.status).toBe(200)
@@ -117,45 +117,21 @@ describe("current control-plane session-list integration", () => {
     })
   })
 
-  test("serves groupBy=project for the requested project scope", async () => {
+  test("serves a project's sessions across its workspaces and none of another project's", async () => {
     const response = await request(
-      "http://127.0.0.1/api/control/session-list?scope=project&projectId=project_alpha&groupBy=project&archived=all&limit=10",
+      "http://127.0.0.1/api/control/session-list?scope=project&projectId=project_alpha&archived=all&limit=10",
     )
 
     expect(response.status).toBe(200)
-    const body = await response.json() as {
-      view: { scope: string; groupBy: string }
-      groups: Array<{ id: string; items: Array<{ sessionId: string }>; totalKnown: number }>
-    }
-    expect(body.view).toMatchObject({ scope: "project", groupBy: "project" })
-    expect(body.groups).toHaveLength(1)
-    expect(body.groups[0]?.id).toBe("project_alpha")
-    expect(body.groups[0]?.items.map((item) => item.sessionId)).toEqual([
+    const body = await response.json() as { view: { scope: string }; items: Array<{ sessionId: string }>; totalKnown: number }
+    expect(body.view).toMatchObject({ scope: "project" })
+    expect(body.items.map((item) => item.sessionId)).toEqual([
       "session_alpha_archived",
       "session_alpha_new",
       "session_beta",
       "session_alpha_old",
     ])
-    expect(body.groups[0]?.totalKnown).toBe(4)
-  })
-
-  test("serves groupBy=workspace inside a project without leaking another project", async () => {
-    const response = await request(
-      "http://127.0.0.1/api/control/session-list?scope=project&projectId=project_alpha&groupBy=workspace&archived=all&limit=10",
-    )
-
-    expect(response.status).toBe(200)
-    const body = await response.json() as {
-      groups: Array<{ id: string; items: Array<{ sessionId: string }> }>
-    }
-    expect(body.groups.map((group) => group.id)).toEqual(["ws_alpha", "ws_beta"])
-    expect(body.groups[0]?.items.map((item) => item.sessionId)).toEqual([
-      "session_alpha_archived",
-      "session_alpha_new",
-      "session_alpha_old",
-    ])
-    expect(body.groups[1]?.items.map((item) => item.sessionId)).toEqual(["session_beta"])
-    expect(body.groups.flatMap((group) => group.items).some((item) => item.sessionId === "session_gamma")).toBe(false)
+    expect(body.totalKnown).toBe(4)
   })
 })
 
