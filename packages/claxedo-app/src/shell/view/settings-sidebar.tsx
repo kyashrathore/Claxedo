@@ -26,7 +26,7 @@ export function SettingsSidebar(): JSX.Element {
   const sections = createMemo(() => byOrder(registries.settingsSections.list()))
   return (
     <div class="settings-nav" data-testid="settings-sidebar">
-      <A href={homePath} class="settings-nav-back">
+      <A href={homePath} class="sidebar-row settings-nav-row">
         <Icon name="arrow-left" />
         <span>{t("shell.back")}</span>
       </A>
@@ -35,10 +35,10 @@ export function SettingsSidebar(): JSX.Element {
         {(group) => (
           <Show when={sections().some((section) => section.group === group)}>
             <div class="settings-nav-group" role="group" aria-label={t(`shell.settingsGroup.${group}`)}>
-              <div class="settings-nav-group-title" aria-hidden="true">{t(`shell.settingsGroup.${group}`)}</div>
+              <div class="sidebar-section-label settings-nav-group-title" aria-hidden="true">{t(`shell.settingsGroup.${group}`)}</div>
               <For each={sections().filter((section) => section.group === group)}>
                 {(section) => (
-                  <A href={settingsPath(section.id)} class="settings-nav-row" aria-current={active() === section.id ? "page" : undefined}>
+                  <A href={settingsPath(section.id)} class="sidebar-row settings-nav-row" aria-current={active() === section.id ? "page" : undefined}>
                     {section.title()}
                   </A>
                 )}

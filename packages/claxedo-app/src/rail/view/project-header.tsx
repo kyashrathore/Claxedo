@@ -97,7 +97,7 @@ export function ProjectHeader(props: ProjectHeaderProps): JSX.Element {
       data-testid="project-header"
       data-active={props.active ? "true" : "false"}
       data-cloud-disconnected={props.section.dimmed ? "true" : undefined}
-      class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[colors,opacity] duration-100"
+      class="sidebar-row flex items-center gap-2 pl-3 py-0.5 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 transition-[colors,opacity] duration-100"
       classList={{ "opacity-60 hover:opacity-100": props.section.dimmed }}
       {...engagement.handlers}
       onClick={() => props.onSelect()}
@@ -106,7 +106,7 @@ export function ProjectHeader(props: ProjectHeaderProps): JSX.Element {
         <Disclosure open={props.open} active={props.active} onToggle={props.onToggle} />
         <span
           title={props.section.caption}
-          class="text-compact font-medium truncate min-w-0"
+          class="font-medium truncate min-w-0"
           classList={{ "text-text-strong": props.active, "text-text-base/85": !props.active }}
         >
           {props.section.label}

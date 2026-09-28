@@ -2,51 +2,42 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px;
+  padding: 6px 10px 12px;
   overflow: auto;
 }
 
-.settings-nav-back,
 .settings-nav-row {
   display: flex;
   gap: 8px;
   align-items: center;
-  min-height: 32px;
-  padding: 0 10px;
-  color: var(--v2-text-text-muted, #8a8686);
-  border-radius: 6px;
+  color: var(--text-base);
 }
 
-.settings-nav-back:hover,
 .settings-nav-row:hover {
-  background: var(--v2-overlay-simple-overlay-hover, rgb(255 255 255 / 6%));
+  background-color: var(--row-surface-hover);
 }
 
 .settings-nav-row[aria-current="page"] {
-  color: var(--v2-text-text-base, #e8e4e4);
-  background: var(--v2-background-bg-layer-03, #221e1e);
+  color: var(--text-strong);
+  background-color: var(--row-surface-selected);
 }
 
 .settings-nav-title {
-  padding: 12px 10px 4px;
-  font-size: var(--font-size-large, 15px);
-  font-weight: var(--font-weight-medium, 500);
+  padding: 10px 10px 0;
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
 }
 
 .settings-nav-group {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-top: 8px;
+  padding-top: 20px;
 }
 
 .settings-nav-group-title {
-  padding: 4px 10px;
-  font-size: var(--font-size-x-small, 11px);
-  font-weight: var(--font-weight-medium, 500);
-  color: var(--v2-text-text-muted, #8a8686);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  padding: 0 10px 6px;
 }
 
 .settings-page {

@@ -88,7 +88,7 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
     >
       <NavigationRowStatusGutter status={status()} />
       <div class="relative z-[1] pointer-events-none flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
-        <span class="ui-session-navigation-title text-compact leading-tight truncate flex-1 min-w-0">
+        <span class="ui-session-navigation-title leading-tight truncate flex-1 min-w-0">
           {props.row.title}
         </span>
         <Show when={props.marker}>{(marker) => <MarkerIcon marker={marker()} projectLabel={props.projectLabel} />}</Show>

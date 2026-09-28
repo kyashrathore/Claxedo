@@ -16,7 +16,7 @@ function UsageButton(): JSX.Element {
         type="button"
         aria-label={t("rail.account.usage")}
         data-testid="rail-usage"
-        class="flex size-9 shrink-0 items-center justify-center rounded-md text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+        class="flex size-[var(--sidebar-row-height)] shrink-0 items-center justify-center rounded-[var(--sidebar-row-radius)] text-icon-weak-base transition-colors hover:bg-[var(--row-surface-hover)] hover:text-icon-base"
         onClick={() => routing.navigate(settingsPath(USAGE_SECTION))}
       >
         <Icon name="gauge" size="small" />

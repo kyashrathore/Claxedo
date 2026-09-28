@@ -344,6 +344,9 @@ html[data-theme="codex"] {
   --menu-item-font-size: var(--font-size-base);
   --menu-item-font-weight: var(--font-weight-body);
   --menu-item-line-height: var(--line-height-large);
+  --sidebar-row-height: 30px;
+  --sidebar-row-radius: var(--radius-xl);
+  --sidebar-row-font-size: var(--font-size-base);
   --letter-spacing-ui: 0;
   --letter-spacing-navigation: 0;
   --letter-spacing-body-tight: 0;
@@ -399,35 +402,18 @@ html[data-theme="codex"] [data-testid="global-navigation"] {
 }
 
 html[data-theme="codex"] [data-testid="global-navigation"] button,
-html[data-theme="codex"] [data-testid="project-header"],
-html[data-theme="codex"] [data-testid="workspace-project-header"] {
-  font-size: var(--font-size-base);
+html[data-theme="codex"] [data-testid="project-header"] {
   font-weight: var(--font-weight-body);
   letter-spacing: var(--letter-spacing-navigation);
 }
 
 html[data-theme="codex"][data-color-scheme="light"] [data-testid="global-navigation"] button,
 html[data-theme="codex"][data-color-scheme="light"] [data-testid="project-header"],
-html[data-theme="codex"][data-color-scheme="light"] [data-testid="workspace-project-header"],
 html[data-theme="codex"][data-color-scheme="light"] .ui-session-navigation-title {
   color: var(--text-strong);
 }
 
-html[data-theme="codex"] [data-testid="global-navigation"] button,
-html[data-theme="codex"] [data-testid="project-header"],
-html[data-theme="codex"] [data-testid="workspace-project-header"],
-html[data-theme="codex"] [data-testid="rail-sidebar-session-row"],
-html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] {
-  min-height: 30px;
-  border-radius: var(--radius-xl);
-}
-
-html[data-theme="codex"] [data-testid="rail-sidebar-session-row"] .ui-navigation-row-activate,
-html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] .ui-navigation-row-activate {
-  border-radius: var(--radius-xl);
-}
-
-html[data-theme="codex"] .rail-section-label {
+html[data-theme="codex"] .sidebar-section-label {
   color: var(--text-weak);
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-body);
@@ -436,7 +422,6 @@ html[data-theme="codex"] .rail-section-label {
 }
 
 html[data-theme="codex"] .ui-session-navigation-title {
-  font-size: var(--font-size-base);
   font-weight: var(--font-weight-body);
   letter-spacing: var(--letter-spacing-navigation);
 }
@@ -456,8 +441,7 @@ html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"][data-active="
 
 html[data-theme="codex"] [data-testid="global-navigation"] button:hover,
 html[data-theme="codex"] .ui-navigation-row-activate:hover,
-html[data-theme="codex"] [data-testid="project-header"]:hover,
-html[data-theme="codex"] [data-testid="workspace-project-header"]:hover {
+html[data-theme="codex"] [data-testid="project-header"]:hover {
   background-color: var(--row-surface-hover);
 }
 
@@ -538,10 +522,6 @@ html[data-theme="codex"] [data-component="settings-content"] {
   background-color: var(--settings-surface-content);
 }
 
-html[data-theme="codex"] [data-component="settings-nav-item"][aria-current="page"] {
-  background-color: var(--row-surface-selected);
-}
-
 html[data-theme="codex"] [data-component="settings-content"] [class~="bg-surface-raised-base"] {
   background-color: var(--settings-surface-card);
 }
@@ -567,11 +547,6 @@ html[data-theme="codex"][data-color-scheme="dark"] .claxedo-workspace-review .ui
 html[data-theme="codex"] .claxedo-workspace-review .ui-file-icon {
   width: 14px;
   height: 14px;
-}
-
-:root {
-  --claxedo-contrast-light: 40;
-  --claxedo-contrast-dark: 100;
 }
 
 html[data-theme="codex"][data-color-scheme="light"] {

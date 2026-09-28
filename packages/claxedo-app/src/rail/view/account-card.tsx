@@ -41,21 +41,20 @@ function useAccountView() {
   })
 }
 
-function IdentityMark(props: { readonly view: AccountView; readonly size: "trigger" | "row" }): JSX.Element {
-  const box = () => (props.size === "trigger" ? "size-7" : "size-5")
+function IdentityMark(props: { readonly view: AccountView }): JSX.Element {
   return (
     <Show
       when={!props.view.resolving}
       fallback={
-        <span class={`flex ${box()} shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base`} aria-hidden="true">
-          <Spinner class={props.size === "trigger" ? "size-3.5" : "size-3"} />
+        <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
+          <Spinner class="size-3" />
         </span>
       }
     >
       <Show
         when={props.view.signed}
         fallback={
-          <span class={`flex ${box()} shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base`} aria-hidden="true">
+          <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
             <Icon name={props.view.local ? "monitor" : "arrow-right"} size="small" />
           </span>
         }
@@ -90,11 +89,11 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
         ref={(element) => (trigger = element)}
         aria-label={view().label}
         title={view().label}
-        class="group flex h-9 w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised-base px-2 text-left text-text-strong outline-none transition-colors hover:bg-surface-raised-base-hover focus-visible:border-border-focus data-[expanded]:bg-surface-raised-base-hover"
+        class="sidebar-row group flex w-full items-center gap-2 px-2 text-left text-text-strong outline-none transition-colors hover:bg-[var(--row-surface-hover)] focus-visible:bg-[var(--row-surface-hover)] focus-visible:ring-2 focus-visible:ring-border-interactive-base data-[expanded]:bg-[var(--row-surface-hover)]"
         data-testid="rail-account-trigger"
       >
-        <IdentityMark view={view()} size="trigger" />
-        <span class="min-w-0 flex-1 truncate text-13-medium">
+        <IdentityMark view={view()} />
+        <span class="min-w-0 flex-1 truncate">
           {view().label}
         </span>
         <Icon name="chevron-down" size="small" class={`shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100${open() ? " opacity-100" : ""}`} />
@@ -102,7 +101,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
       <DropdownMenu.Portal>
         <DropdownMenu.Content style={{ "max-width": "calc(100vw - 16px)" }}>
           <div class="flex items-center gap-2 px-2 py-1" aria-hidden="true">
-            <IdentityMark view={view()} size="row" />
+            <IdentityMark view={view()} />
             <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={view().label}>
               {view().label}
             </span>

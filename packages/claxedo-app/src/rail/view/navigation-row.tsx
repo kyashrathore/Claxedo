@@ -4,7 +4,7 @@ import type { HoverEngagement } from "../hover-engagement"
 import type { NavigationStatus } from "../model"
 
 const ROW_SHELL_CLASS =
-  "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40"
+  "sidebar-row relative flex items-center gap-2 py-0.5 mx-1 text-left outline-none hover:bg-surface-base-hover/40"
 
 export type NavigationRowProps = {
   readonly class?: string
@@ -51,7 +51,7 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
         aria-label={props.label}
         aria-current={props.active ? "page" : undefined}
         data-slot="navigation-row-activate"
-        class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
+        class="ui-navigation-row-activate absolute inset-0 rounded-[inherit] outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
         onClick={() => props.onActivate()}
       />
       {props.children}

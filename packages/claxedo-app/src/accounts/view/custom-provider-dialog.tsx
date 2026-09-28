@@ -119,7 +119,7 @@ export function DialogCustomProvider(props: { readonly existing: ReadonlySet<str
           <IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={() => dialog.close()} aria-label={t("common.goBack")} />
         </DialogTitle>
       </DialogHeader>
-      <DialogBody class="flex flex-col gap-6 overflow-y-auto max-h-[60vh] px-4 pb-4">
+      <DialogBody class="flex flex-col gap-6 px-4 pb-4">
         <div class="flex gap-4 items-center">
           <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
           <div class="text-16-medium text-text-strong">{t("provider.custom.title")}</div>

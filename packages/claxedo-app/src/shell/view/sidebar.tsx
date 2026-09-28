@@ -5,6 +5,7 @@ import { useShellLayout } from "../layout"
 import { trackRailPeek } from "./rail-peek"
 import { Region } from "./region"
 import { SidebarGrip } from "./sidebar-grip"
+import "./sidebar.css"
 import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 
 export type SidebarProps = {

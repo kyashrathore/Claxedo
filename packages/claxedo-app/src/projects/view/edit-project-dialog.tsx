@@ -1,7 +1,7 @@
-import { createMemo, Show } from "solid-js"
+import { createMemo, createUniqueId, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { toAppError, useServer, type Project } from "@/server"
-import { useDialog, Button, Dialog, Field, Textarea, TextField, DialogBody, DialogHeader, DialogTitle } from "@/ui"
+import { useDialog, Button, Dialog, Field, Textarea, TextField, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/ui"
 import { getFilename } from "@/ui/utils"
 import { useProjectsText } from "../i18n"
 import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
@@ -41,6 +41,7 @@ export function DialogEditProject(props: { project: Project }) {
   const t = useProjectsText()
   const { store, setStore, folderName, defaultName } = useEditProjectStore(props.project)
   const setIcon = (url: string) => setStore({ iconUrl: url, iconHover: false })
+  const formId = createUniqueId()
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault()
@@ -69,9 +70,8 @@ export function DialogEditProject(props: { project: Project }) {
       <DialogHeader>
         <DialogTitle>{t("projects.edit.title")}</DialogTitle>
       </DialogHeader>
-      <DialogBody class="px-4 pb-4">
-      <form onSubmit={handleSubmit} class="flex flex-col gap-6">
-        <div class="flex flex-col gap-4">
+      <DialogBody class="px-4">
+        <form id={formId} onSubmit={handleSubmit} class="flex flex-col gap-4">
           <TextField autofocus type="text" label={t("projects.edit.name")} placeholder={folderName()} value={store.name} onChange={(v) => setStore("name", v)} />
           <ProjectIconField
             state={{ iconUrl: store.iconUrl, iconHover: store.iconHover, dragOver: store.dragOver, color: store.color, label: store.name || defaultName() }}
@@ -122,20 +122,19 @@ export function DialogEditProject(props: { project: Project }) {
               <p class="text-12-regular text-icon-warning-base" role="alert">{store.environmentError}</p>
             </Show>
           </div>
-        </div>
-        <Show when={store.saveError}>
-          <p class="text-12-regular text-icon-warning-base" role="alert">{store.saveError}</p>
-        </Show>
-        <div class="flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
-            {t("projects.cancel")}
-          </Button>
-          <Button type="submit" variant="contrast" size="large" disabled={store.saving}>
-            {store.saving ? t("projects.saving") : t("projects.save")}
-          </Button>
-        </div>
-      </form>
+        </form>
       </DialogBody>
+      <DialogFooter>
+        <Show when={store.saveError}>
+          <p class="mr-auto self-center text-12-regular text-icon-warning-base" role="alert">{store.saveError}</p>
+        </Show>
+        <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
+          {t("projects.cancel")}
+        </Button>
+        <Button type="submit" form={formId} variant="contrast" size="large" disabled={store.saving}>
+          {store.saving ? t("projects.saving") : t("projects.save")}
+        </Button>
+      </DialogFooter>
     </Dialog>
   )
 }
