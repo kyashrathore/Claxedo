@@ -2,10 +2,8 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentToolPart, AgentToolState } from "./content"
 import { canonicalToolName, claxedoToolName } from "./tool-names"
 
-/** The reader's transcript settings that open shell and edit rows by default. */
 export type ToolOpenSettings = { readonly shell: boolean; readonly edit: boolean }
 
-/** Whether the reader's settings open this tool's row by default; undefined leaves it to the row. */
 export function toolOpensByDefault(tool: string, settings: ToolOpenSettings): boolean | undefined {
   const name = canonicalToolName(tool)
   if (name === "bash") return settings.shell

@@ -102,7 +102,6 @@ function projectedTurnRead(services: ControlPlaneServices, sessionId: string): T
   return (before) => storedTurn(projectedMessagePage(services, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }))
 }
 
-/** A loopback first read: the session's projected meta as the loopback inventory lists it, its replay's outline, and the projection's latest turns. */
 async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageQuery | undefined) {
   const meta = await services.projectionStore.session_meta(sessionId)
   if (!meta) return undefined
@@ -114,7 +113,7 @@ async function projectedFirstRead(services: ControlPlaneServices, sessionId: str
   )
 }
 
-/** A loopback read of one part, from the projection's replay: it offers no read of one message by id. */
+/** The projection has no read of one message by id, so a part is found in the session's replay. */
 async function projectedPart(services: ControlPlaneServices, sessionId: string, at: { messageId: string; partId: string }) {
   if (!(await services.projectionStore.session_meta(sessionId))) return undefined
   const message = services.projectionStore.read_session_messages(sessionId).find((item) => item.info.id === at.messageId)
@@ -122,7 +121,6 @@ async function projectedPart(services: ControlPlaneServices, sessionId: string, 
   return part ? { part } : {}
 }
 
-/** A loopback page of the projection's turns before the reader's cursor, for a session the projection holds. */
 async function projectedPage(services: ControlPlaneServices, sessionId: string, page: TurnPageQuery & { before: string }) {
   if (!(await services.projectionStore.session_meta(sessionId))) return undefined
   return await readTurnPage(projectedTurnRead(services, sessionId), page)
@@ -130,7 +128,6 @@ async function projectedPage(services: ControlPlaneServices, sessionId: string, 
 
 const sessionNotFound = { error: { code: "session_not_found", message: "Session not found" } } as const
 
-/** The refusals a transcript read throws, as the responses they answer; anything else propagates. */
 function transcriptReadError(c: Context, err: unknown) {
   if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
   if (err instanceof TurnPageQueryError) return c.json({ error: { code: "turn_page_query_error", message: err.message } }, 400)
