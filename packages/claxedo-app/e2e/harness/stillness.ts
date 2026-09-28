@@ -4,32 +4,35 @@ export type StillFrame = { readonly at: number; readonly scrollTop: number; read
 
 export type ScrollEvent = { readonly at: number; readonly scrollTop: number }
 
-export type TranscriptRead = { readonly at: number; readonly kind: "first" | "page" | "part" | "message" | "row"; readonly path: string }
+export type SessionRead = { readonly at: number; readonly kind: "first" | "outline" | "page" | "part" | "message" | "queue" | "row" | "open" | "other"; readonly path: string }
 
 export type Stillness = {
   readonly frames: readonly StillFrame[]
   readonly scrolls: readonly ScrollEvent[]
-  readonly reads: readonly TranscriptRead[]
+  readonly reads: readonly SessionRead[]
 }
 
-type StillnessWindow = Window & { __claxedoStillness?: { frames: StillFrame[]; scrolls: ScrollEvent[]; reads: TranscriptRead[] } }
+type StillnessWindow = Window & { __claxedoStillness?: { frames: StillFrame[]; scrolls: ScrollEvent[]; reads: SessionRead[] } }
 
 const SCROLLER = '[data-slot="session-timeline-scroll"] [data-scrollable]'
 
 function installStillness({ sessionId, marker, scroller: inner }: { readonly sessionId: string; readonly marker: string; readonly scroller: string }) {
   const scroller = `[data-session-id="${CSS.escape(sessionId)}"] ${inner}`
-  const state = { frames: [] as StillFrame[], scrolls: [] as ScrollEvent[], reads: [] as TranscriptRead[] }
+  const state = { frames: [] as StillFrame[], scrolls: [] as ScrollEvent[], reads: [] as SessionRead[] }
   ;(window as StillnessWindow).__claxedoStillness = state
-  const kindOf = (url: URL): TranscriptRead["kind"] | undefined => {
+  const kindOf = (url: URL): SessionRead["kind"] | undefined => {
     const prefix = `/session/${sessionId}`
-    if (!url.pathname.includes(prefix)) return undefined
-    const rest = url.pathname.slice(url.pathname.indexOf(prefix) + prefix.length)
-    if (rest === "/outline") return "first"
+    const at = url.pathname.indexOf(prefix)
+    if (at < 0) return undefined
+    const rest = url.pathname.slice(at + prefix.length)
+    if (rest !== "" && !rest.startsWith("/")) return undefined
+    if (rest === "/outline") return url.searchParams.has("rows") ? "first" : "outline"
     if (rest === "/page") return "page"
     if (/^\/message\/[^/]+\/part\/[^/]+$/.test(rest)) return "part"
     if (rest === "/message") return "message"
-    if (rest === "" && !url.searchParams.has("view")) return "row"
-    return undefined
+    if (rest === "/queue") return "queue"
+    if (rest === "") return url.searchParams.get("view") === "open" ? "open" : "row"
+    return "other"
   }
   const send = window.fetch.bind(window)
   window.fetch = (input, init) => {

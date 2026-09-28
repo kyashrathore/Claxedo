@@ -27,7 +27,7 @@ const now = (app: Page) => app.evaluate(() => performance.now())
 
 const top = async (app: Page, text: string) => (await app.getByText(text, { exact: false }).first().boundingBox())?.y ?? Number.NaN
 
-test(`12 a cold open reads nothing and moves nothing from its first page through ${IDLE_MS} ms of idle`, async ({ stack, api, app }) => {
+test(`12 a cold open reads its first page, its open view and its queue, then reads nothing and moves nothing through ${IDLE_MS} ms of idle`, async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("still", "Still")
   const session = await seedShellTurns(stack, api, workspace.directory, "Still", 8, true)
   await recordStillness(app, { sessionId: session.id, marker: "Still reply 8.6." })
@@ -37,7 +37,8 @@ test(`12 a cold open reads nothing and moves nothing from its first page through
   await writeFile(test.info().outputPath("stillness.json"), JSON.stringify(recorded))
   const still = sinceFirstReady(recorded)
   expect(still.watchedMs).toBeGreaterThanOrEqual(IDLE_MS - 100)
-  expect(recorded.reads.map((read) => read.kind), "the transcript reads of a cold open").toEqual(["first"])
+  expect(recorded.reads.map((read) => read.kind).sort(), "the session reads of a cold open").toEqual(["first", "open", "queue"])
+  expect(still.readsAfter, "session reads after the first paint").toEqual([])
   expect(still.scrolls, "scroll events on the transcript after its first paint").toBe(0)
   expect(still.scrollTopDelta, "scrollTop change after the first paint").toBe(0)
   expect(still.scrollHeightDelta, "scrollHeight change after the first paint").toBe(0)
@@ -156,7 +157,7 @@ test("12 opening a folded turn draws its tool headers without their output and m
   expect(reads, "reads the opened fold made").toEqual([])
 })
 
-test("12 a warm return to a session read open, with every fold, group and row opened and scrolled to its middle, paints as it was left and reads only its row", async ({ stack, api, app }) => {
+test("12 a warm return to a session read open, with every fold, group and row opened and scrolled to its middle, paints as it was left and reads nothing", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("warm-open", "Warm open")
   const session = await seedShellTurns(stack, api, workspace.directory, "Warm", 4, true)
   await seedTurns(stack, api, workspace.directory, "Elsewhere", 1)
@@ -212,7 +213,7 @@ test("12 a warm return to a session read open, with every fold, group and row op
   const still = sinceFirstReady(await stillnessAfter(app, IDLE_MS), from)
   expect(Math.abs(still.first.scrollTop - left.scrollTop), "scrollTop in the return's first frame against where the reader left it").toBeLessThanOrEqual(1)
   expect(still.first.opened, "opened folds, groups and rows in the return's first frame").toBe(left.opened)
-  expect(still.readsSince.filter((kind) => kind !== "row"), "transcript reads of the return").toEqual([])
+  expect(still.readsSince, "session reads of the return").toEqual([])
   expect(still.scrolls, "scroll events after the return's first frame").toBe(0)
   expect(still.scrollHeightDelta, "scrollHeight change after the return's first frame").toBe(0)
   expect(still.scrollTopDelta, "scrollTop change after the return's first frame").toBe(0)
