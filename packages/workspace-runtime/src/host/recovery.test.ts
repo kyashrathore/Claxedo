@@ -1229,7 +1229,7 @@ describe("cancellation outcomes", () => {
     const transport = new FakeTransport({ turn: async function* () { await gate }, cancel: async () => {
       release()
       await tick()
-      return { execution: "unknown", cleanup: "owned" }
+      return { execution: "unknown", cleanup: "unknown" }
     } })
     const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
     try {

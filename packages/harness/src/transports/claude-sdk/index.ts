@@ -209,7 +209,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (this.goalRuntime.turnId(entry.input.sessionId) === turn.turnId) {
       const settlement = await this.goalRuntime.cancel(entry.input.sessionId)
-      if (settlement?.state === "cancelled" || settlement?.state === "completed") return { execution: "terminal" as const, cleanup: "owned" as const }
+      if (settlement?.state === "cancelled" || settlement?.state === "completed") return { execution: "terminal" as const, cleanup: "unknown" as const }
       return { execution: "unknown" as const, cleanup: "unknown" as const,
         ...(settlement?.state === "failed" ? { error: { code: "internal_error" as const, message: settlement.error } } : {}) }
     }
@@ -217,7 +217,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     entry.active.abort.abort()
     if (!entry.active.launched) return { execution: "terminal" as const, cleanup: "verified_clear" as const }
     await Promise.all([...entry.processes].map((child) => child.retire(deadline)))
-    return { execution: "unknown" as const, cleanup: "owned" as const }
+    return { execution: "unknown" as const, cleanup: "unknown" as const }
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {

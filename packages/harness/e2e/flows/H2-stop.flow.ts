@@ -7,13 +7,13 @@ import { operation, readRecovery, stopRequest, submitRecovery, waitForTurnTarget
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
-type Case = { name: string; harness: { id: string; access: "native" | "connection" }; model?: { providerId: string; modelId: string }; state: "succeeded" | "needs_action"; command?: boolean; cleanup?: "owned" }
+type Case = { name: string; harness: { id: string; access: "native" | "connection" }; model?: { providerId: string; modelId: string }; state: "succeeded" | "needs_action"; stored: "completed" | "cancelled"; command?: boolean; cleanup?: "owned" }
 
 const CASES: Case[] = [
-  { name: "acp", harness: SCRIPTED_ACP_HARNESS, state: "needs_action" },
-  { name: "pi", harness: { id: "pi", access: "native" }, model: { providerId: "pi", modelId: "openai/gpt-4.1" }, state: "needs_action" },
-  { name: "claude", harness: { id: "claude", access: "native" }, model: { providerId: "claude", modelId: "sonnet" }, state: "needs_action" },
-  { name: "codex", harness: { id: "codex", access: "native" }, model: { providerId: "codex", modelId: "gpt-5.5" }, state: "succeeded" },
+  { name: "acp", harness: SCRIPTED_ACP_HARNESS, state: "needs_action", stored: "completed" },
+  { name: "pi", harness: { id: "pi", access: "native" }, model: { providerId: "pi", modelId: "openai/gpt-4.1" }, state: "needs_action", stored: "completed" },
+  { name: "claude", harness: { id: "claude", access: "native" }, model: { providerId: "claude", modelId: "sonnet" }, state: "needs_action", stored: "cancelled" },
+  { name: "codex", harness: { id: "codex", access: "native" }, model: { providerId: "codex", modelId: "gpt-5.5" }, state: "succeeded", stored: "cancelled" },
 ]
 
 export async function stopCase(stack: Stack, api: ClaxedoApi, item: Case) {
@@ -61,7 +61,7 @@ export async function stopCase(stack: Stack, api: ClaxedoApi, item: Case) {
     const stored = await api.messages(workspace.directory, session.id)
     assert.ok(stored.some((message) => message.info.role === "user" && message.parts.some((part) => part.text?.includes(marker))), `${item.name} stored user turn missing`)
     const sessionRead = await api.session(workspace.directory, session.id)
-    assert.equal(sessionRead.lastTurn?.status, "completed", JSON.stringify({ operation: stopped, session: sessionRead, frames: stream.frames.map(frameType) }))
+    assert.equal(sessionRead.lastTurn?.status, item.stored, JSON.stringify({ operation: stopped, session: sessionRead, frames: stream.frames.map(frameType) }))
     if (item.name === "acp") assert.match(assistantText(stored), /Holding H2STOPACP/)
 
     const refused = await submitRecovery(stack.url, workspace.directory, session.id, stopRequest({ ...target, turnId: "no-such-running-turn" }))

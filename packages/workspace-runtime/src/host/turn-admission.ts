@@ -178,7 +178,10 @@ export type TurnAdmissions = ReturnType<typeof createTurnAdmissions>
 /**
  * Acceptance and transcript incorporation are different facts. A refusal keeps
  * the input queued with its reason; an unknown outcome must be held for
- * reconciliation, never automatically resent by the caller.
+ * reconciliation, never automatically resent by the caller. A steer the
+ * harness has not answered by the time its target turn `ended` is unknown: the
+ * harness may hold it, and a reply that never comes must not keep the input
+ * dispatching for as long as the transport's request budget.
  */
 export async function deliverToBusySession(input: {
   running: ActiveTurn
@@ -189,9 +192,12 @@ export async function deliverToBusySession(input: {
   assistantMessageId: string
   directory: AgentRuntimeTurnStartResult["directory"]
   steer?: () => Promise<SteerResult>
+  ended?: Promise<void>
 }): Promise<AgentRuntimeTurnStartResult> {
+  const unanswered = input.ended?.then((): SteerResult =>
+    ({ ok: false, status: "unknown", message: "The turn ended before the harness answered the steer" }))
   const steering: SteerResult | undefined = input.requested !== "steer" ? undefined
-    : input.steer ? await input.steer().catch((error): SteerResult => ({
+    : input.steer ? await Promise.race([input.steer(), ...(unanswered ? [unanswered] : [])]).catch((error): SteerResult => ({
       ok: false, status: "unknown", message: error instanceof Error ? error.message : "Steering outcome is unknown",
     }))
     : { ok: false, status: "unsupported", message: "This harness does not support steering" }

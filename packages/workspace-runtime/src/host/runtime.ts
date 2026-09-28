@@ -98,7 +98,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       })
     },
   }))
-  const executing = new Map<string, { generation: object; attached: AttachedSession }>()
+  const executing = new Map<string, { generation: object; attached: AttachedSession; ended: Promise<void> }>()
   const attachments = new SessionAttachments({ store, transports: input.transports, launch: input.launch, broker, workspaceId,
     executing: (sessionId, generation) => {
       const current = executing.get(sessionId)
@@ -134,7 +134,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     producer: lifecycle.producer,
     providerTurn: (sessionId) => input.ports.currentTurnAuthority(sessionId)?.turnId,
     cancelTarget: async (sessionId) => {
-      const attached = executing.get(sessionId)?.attached ?? await attachments.for(sessionId)
+      const attached = await attachments.for(sessionId, undefined, executing.get(sessionId)?.generation)
       return { transport: attached.handle.transport, session: attached.session }
     },
     publish,
@@ -214,11 +214,13 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       if (controlTarget && running?.generation !== controlTarget.generation) return startTurn(turn)
       if (running) {
         if (!turn.delivery) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-        const live = executing.get(turn.sessionId)?.attached ?? attached
+        const live = await attachments.for(turn.sessionId, undefined, running.generation)
         const steer = live.handle.transport.steer
+        const target = executing.get(turn.sessionId)
         const delivered = await deliverToBusySession({
           running, turn, prompt, userMessageId, assistantMessageId, directory,
           requested: turn.delivery,
+          ...(target?.generation === running.generation ? { ended: target.ended } : {}),
           ...(steer ? { steer: () => steer.steer(live.session,
             { turnId: running.assistantMessageId, assistantMessageId: running.assistantMessageId },
             turnInputFor(prompt, store.getTodos(turn.sessionId), turn.origin)) } : {}),
@@ -254,9 +256,8 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
           commit: (event) => commitAndPublish(turn.sessionId, directory, event, { dir: "out", method: "session/handoff" }, turn.admission, publish),
           diagnose: (payload) => publish({ sessionId: turn.sessionId, directory, payload }),
         })
-        executing.set(turn.sessionId, { generation: claimed.generation, attached })
         launched = true
-        void track(() => runTurn(turnHost, {
+        const ended = track(() => runTurn(turnHost, {
           attached, binding, prompt, origin: turn.origin, capture, releaseAdmission,
           clearsHandoff: !!handoff, fence: turn.admission,
           ...(input.afterTurn ? { afterTurn: () => input.afterTurn!(turn.sessionId) } : {}),
@@ -264,6 +265,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
           if (executing.get(turn.sessionId)?.generation === claimed.generation) executing.delete(turn.sessionId)
           unpin()
         })
+        executing.set(turn.sessionId, { generation: claimed.generation, attached, ended })
       } catch (error) {
         releaseAdmission()
         throw error
