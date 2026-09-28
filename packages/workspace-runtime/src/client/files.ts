@@ -32,7 +32,6 @@ export type WorkspaceFileSearchQuery = {
 export type WorkspaceFileClient = {
   list(input: WorkspaceScope & { path: string }, options?: Options): Reply<WorkspaceFileNode[]>
   read(input: WorkspaceScope & { path: string }, options?: Options): Reply<WorkspaceFileContent>
-  raw(input: WorkspaceScope & { path: string }, options?: Options): Promise<Response>
   status(input?: WorkspaceScope, options?: Options): Reply<WorkspaceFileStatus[]>
   all(input?: WorkspaceScope & { path?: string }, options?: Options): Reply<{ paths: string[] }>
 }
@@ -43,7 +42,6 @@ export type WorkspaceFindClient = {
 
 /** The same routes as `file`/`find`, taken by path and answered with the body alone. */
 export type WorkspaceFilesClient = {
-  raw(path: string, options?: Options): Promise<Response>
   tree(path: string, options?: Options): Promise<WorkspaceFileNode[]>
   content(path: string, options?: Options): Promise<WorkspaceFileContent>
   status(options?: Options): Promise<WorkspaceFileStatus[]>
@@ -57,7 +55,6 @@ export function fileClient(caller: WorkspaceRuntimeCaller): WorkspaceFileClient 
   return {
     list: (input, options) => caller.call({ operation: "file.list", path: WorkspaceRuntimeRoutes.file, scope: input, query: { path: input.path }, options }),
     read: (input, options) => caller.call({ operation: "file.read", path: `${WorkspaceRuntimeRoutes.file}/content`, scope: input, query: { path: input.path }, options }),
-    raw: async (input, options) => (await caller.send({ operation: "file.raw", path: `${WorkspaceRuntimeRoutes.file}/raw`, scope: input, query: { path: input.path }, options })).response,
     status: (input = {}, options) => caller.call({ operation: "file.status", path: `${WorkspaceRuntimeRoutes.file}/status`, scope: input, options }),
     all: (input = {}, options) => caller.call({ operation: "file.all", path: `${WorkspaceRuntimeRoutes.file}/all`, scope: input, query: namedMembers(input, ["path"]), options }),
   }
@@ -71,7 +68,6 @@ export function findClient(caller: WorkspaceRuntimeCaller): WorkspaceFindClient 
 
 export function filesClient(file: WorkspaceFileClient, find: WorkspaceFindClient): WorkspaceFilesClient {
   return {
-    raw: (path, options) => file.raw({ path }, options),
     tree: async (path, options) => (await file.list({ path }, options)).data,
     content: async (path, options) => (await file.read({ path }, options)).data,
     status: async (options) => (await file.status({}, options)).data,

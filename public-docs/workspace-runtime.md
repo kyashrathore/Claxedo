@@ -211,7 +211,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |
 | `/lsp`, `/vcs` | Client-presentation compatibility surfaces backed by workspace services. |
 | `/global/health` | Control-plane health shape with `healthy`. |
-| `/find/file`, `/file`, `/file/content`, `/file/raw`, `/file/status`, `/file/all` | OpenCode-compatible file discovery and read routes. |
+| `/find/file`, `/file`, `/file/content`, `/file/status`, `/file/all` | OpenCode-compatible file discovery and read routes. |
 
 Product-specific route families are supplied through host route contributions
 and documented by their owning packages; they are not part of the Workspace

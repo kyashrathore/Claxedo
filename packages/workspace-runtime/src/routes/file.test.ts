@@ -9,10 +9,6 @@ import { FileRoutes } from "./file"
 let previousDirectory: string | undefined
 let tmp: string
 
-async function bytes(res: Response) {
-  return new Uint8Array(await res.arrayBuffer())
-}
-
 beforeEach(async () => {
   previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-file-"))
@@ -28,7 +24,7 @@ afterEach(async () => {
   await fs.rm(tmp, { recursive: true, force: true })
 })
 
-describe("FileRoutes raw file streaming", () => {
+describe("FileRoutes file reads", () => {
   test("lists all tracked or walked files", async () => {
     const app = new Hono().route("/", FileRoutes())
     await fs.mkdir(path.join(tmp, "src"), { recursive: true })
@@ -42,33 +38,9 @@ describe("FileRoutes raw file streaming", () => {
     })
   })
 
-  test("labels a raw image by its own type so a page can render it, and refuses to be sniffed", async () => {
-    const app = new Hono().route("/", FileRoutes())
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    await fs.mkdir(path.join(tmp, "docs"), { recursive: true })
-    await fs.writeFile(path.join(tmp, "docs", "shot.PNG"), png)
-    await fs.writeFile(path.join(tmp, "docs", "logo.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>")
-
-    const image = await app.request("http://localhost/file/raw?path=docs/shot.PNG")
-    expect(image.status).toBe(200)
-    expect(image.headers.get("content-type")).toBe("image/png")
-    expect(image.headers.get("x-content-type-options")).toBe("nosniff")
-    expect(await bytes(image)).toEqual(png)
-
-    const svg = await app.request("http://localhost/file/raw?path=docs/logo.svg")
-    expect(svg.headers.get("content-type")).toBe("image/svg+xml")
-    expect(svg.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox")
-  })
-
-  test("streams raw file bytes without changing the JSON content route", async () => {
+  test("answers a file of control bytes without a NUL as text on the content route", async () => {
     const app = new Hono().route("/", FileRoutes())
     await fs.writeFile(path.join(tmp, "large.bin"), new Uint8Array([1, 2, 3, 4, 5]))
-
-    const raw = await app.request("http://localhost/file/raw?path=large.bin")
-    expect(raw.status).toBe(200)
-    expect(raw.headers.get("content-type")).toBe("application/octet-stream")
-    expect(raw.headers.get("content-length")).toBe("5")
-    expect(await bytes(raw)).toEqual(new Uint8Array([1, 2, 3, 4, 5]))
 
     const json = await app.request("http://localhost/file/content?path=large.bin")
     expect(json.status).toBe(200)
@@ -78,10 +50,10 @@ describe("FileRoutes raw file streaming", () => {
     })
   })
 
-  test("rejects absolute and escaping raw file paths", async () => {
+  test("rejects absolute and escaping content paths", async () => {
     const app = new Hono().route("/", FileRoutes())
 
-    const absolute = await app.request(`http://localhost/file/raw?path=${encodeURIComponent(path.join(tmp, "x"))}`)
+    const absolute = await app.request(`http://localhost/file/content?path=${encodeURIComponent(path.join(tmp, "x"))}`)
     expect(absolute.status).toBe(400)
     await expect(absolute.json()).resolves.toEqual({
       error: {
@@ -90,7 +62,7 @@ describe("FileRoutes raw file streaming", () => {
       },
     })
 
-    const escaping = await app.request("http://localhost/file/raw?path=../x")
+    const escaping = await app.request("http://localhost/file/content?path=../x")
     expect(escaping.status).toBe(400)
     await expect(escaping.json()).resolves.toEqual({
       error: {
@@ -111,7 +83,6 @@ describe("FileRoutes raw file streaming", () => {
       for (const target of [
         "/file",
         "/file/content",
-        "/file/raw",
       ]) {
         const absolute = await app.request(
           `http://localhost${target}?path=${encodeURIComponent(path.join(outside, "secret.txt"))}`,
@@ -130,9 +101,6 @@ describe("FileRoutes raw file streaming", () => {
 
       const symlinkContent = await app.request("http://localhost/file/content?path=linked-out/secret.txt")
       expect(symlinkContent.status).toBe(400)
-
-      const symlinkRaw = await app.request("http://localhost/file/raw?path=linked-out/secret.txt")
-      expect(symlinkRaw.status).toBe(400)
     } finally {
       await fs.rm(outside, { recursive: true, force: true })
     }
@@ -147,7 +115,6 @@ describe("FileRoutes raw file streaming", () => {
         "/find/file",
         "/file",
         "/file/content",
-        "/file/raw",
         "/file/status",
         "/file/all",
       ]) {
@@ -167,18 +134,6 @@ describe("FileRoutes raw file streaming", () => {
     }
   })
 
-  test("returns structured missing raw file errors", async () => {
-    const app = new Hono().route("/", FileRoutes())
-
-    const missing = await app.request("http://localhost/file/raw?path=missing.txt")
-    expect(missing.status).toBe(404)
-    await expect(missing.json()).resolves.toEqual({
-      error: {
-        code: "file_not_found",
-        message: "File not found",
-      },
-    })
-  })
 })
 
 describe("FileRoutes file search", () => {
