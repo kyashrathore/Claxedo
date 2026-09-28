@@ -22,7 +22,7 @@ export interface RuntimeGoalControllerInput {
   /** Reads the turn a mutation may end, before the mutation's first await. */
   captureTurn: (sessionId: string, directory?: RuntimeDirectory) => RecoveryTurnCapture
   /** Ends exactly that turn; the runtime owns turn admission. */
-  cancelCapturedTurn: (capture: RecoveryTurnCapture, directory?: RuntimeDirectory) => void
+  cancelCapturedTurn: (capture: RecoveryTurnCapture, directory?: RuntimeDirectory) => void | Promise<void>
 }
 
 type GoalContext = {
@@ -138,10 +138,13 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
       }
     }
     const result = await perform(context, mutation)
-    if (result.ok && mutation !== "resume" && input.store.getSession(sessionId)?.status === "busy") {
-      input.cancelCapturedTurn(capture, context.directory)
-    }
     publishResult(sessionId, context.directory, result)
+    if (result.ok && mutation !== "resume" && input.store.getSession(sessionId)?.status === "busy") {
+      try { await input.cancelCapturedTurn(capture, context.directory) }
+      catch (error) {
+        return { ok: false, status: "failed", message: error instanceof Error ? error.message : "Goal turn did not stop" }
+      }
+    }
     return result
   }
 

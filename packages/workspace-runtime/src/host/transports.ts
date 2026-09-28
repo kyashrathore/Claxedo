@@ -26,4 +26,6 @@ export type TransportResolver = {
   forHarness(harness: SessionHarness, directory: string): Promise<HarnessHandle>
   /** Every transport currently composed, for reads that span harnesses. */
   composed(): readonly HarnessHandle[]
+  /** Calls `listener` with each handle as it is retired; the returned function unsubscribes. */
+  onRetire(listener: (handle: HarnessHandle) => void): () => void
 }

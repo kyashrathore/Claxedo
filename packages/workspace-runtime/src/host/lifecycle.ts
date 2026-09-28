@@ -5,12 +5,18 @@ export function createRuntimeLifecycle(input: { onTeardownFailure: (error: unkno
   let closing = false
   let disposal: Promise<RuntimeDisposeResult> | undefined
   const pendingTasks = new Set<Promise<void>>()
+  const producers = new Map<string, Promise<void>>()
 
-  function track<T>(operation: () => T): T {
+  function track<T>(operation: () => T, leaseId?: string): T {
     let finish!: () => void
     const pending = new Promise<void>((resolve) => { finish = resolve })
     pendingTasks.add(pending)
-    const done = () => { pendingTasks.delete(pending); finish() }
+    if (leaseId) producers.set(leaseId, pending)
+    const done = () => {
+      pendingTasks.delete(pending)
+      if (leaseId && producers.get(leaseId) === pending) producers.delete(leaseId)
+      finish()
+    }
     try {
       const result = operation()
       if (result instanceof Promise) void result.then(done, done)
@@ -33,6 +39,7 @@ export function createRuntimeLifecycle(input: { onTeardownFailure: (error: unkno
   return {
     get closing() { return closing },
     track,
+    producer: (leaseId: string) => producers.get(leaseId),
     resource,
     /**
      * A teardown failure is reported and returned as soon as it happens. It

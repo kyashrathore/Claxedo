@@ -2,13 +2,20 @@ import { AgentSideConnection, type McpCapabilities, type Stream } from "@agentcl
 import { reservePort, releasePort } from "../ports"
 import { ScriptedAgent } from "./agent"
 import { recordAcpRequest } from "./requests"
+import { holdReleaseFile } from "./script"
+import { existsSync } from "node:fs"
 
 type SocketState = { input: ReadableStreamDefaultController<StreamMessage>; headers: Record<string, string> }
 type StreamMessage = Stream["readable"] extends ReadableStream<infer Message> ? Message : never
 
 export type ScriptedAcpWebSocket = { url: string; close(): Promise<void> }
 
+async function released(file: string) {
+  while (!existsSync(file)) await new Promise((resolve) => setTimeout(resolve, 20))
+}
+
 export async function startScriptedAcpWebSocket(scriptDir: string, options: { restoreMode?: "load" | "resume"; dropMethod?: string; holdMethod?: string;
+  gate?: { method: string; name: string };
   startupQuestion?: boolean; source?: string; groups?: readonly string[]; mcpCapabilities?: McpCapabilities } = {}): Promise<ScriptedAcpWebSocket> {
   const port = await reservePort()
   const sockets = new Set<Bun.ServerWebSocket<SocketState>>()
@@ -39,6 +46,7 @@ export async function startScriptedAcpWebSocket(scriptDir: string, options: { re
             await recordAcpRequest(scriptDir, value.method, "params" in value ? value.params : {}, socket.data.headers, options.source)
             if (value.method === options.dropMethod) { socket.close(); return }
             if (value.method === options.holdMethod) return
+            if (value.method === options.gate?.method) await released(holdReleaseFile(scriptDir, options.gate.name))
           }
           if (sockets.has(socket)) socket.data.input.enqueue(value)
         },

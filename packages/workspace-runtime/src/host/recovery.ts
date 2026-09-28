@@ -25,7 +25,7 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
-import type { Deadline, HarnessSession, HarnessTransport, TurnRef } from "@claxedo/harness/contract"
+import type { Deadline } from "@claxedo/harness/contract"
 import { normalizeDirectory } from "./execution-binding"
 import type {
   AgentRuntimeEventEnvelope,
@@ -37,12 +37,12 @@ import type { ActiveTurn, TurnAdmissions } from "./turn-admission"
 import { createRecoveryFacts, messageOf } from "./recovery-facts"
 import { createRecoveryOperations, mayAct, sessionIdOf, type TrackedOperation } from "./recovery-operations"
 import type { AdmittedTurnCapture, FinalizeTurnOptions, RecoveryTurnCapture, TurnFinalization } from "./recovery-capture"
+import { createTurnStops, observeUntil, type CancelTarget, type Observed } from "./turn-stops"
+import type { LeasedTurnFailure } from "../broker-ports"
 
 export type { AdmittedTurnCapture, FinalizeTurnOptions, RecoveryTurnCapture, TurnFinalization } from "./recovery-capture"
 
-type Observed<T> = { status: "value"; value: T } | { status: "error"; error: unknown } | { status: "pending" }
-
-export type CancelTarget = { transport: Pick<HarnessTransport, "cancel">; session: HarnessSession }
+export type { CancelTarget } from "./turn-stops"
 
 export type RuntimeRecoveryInput = {
   store: AgentRuntimeStore
@@ -54,6 +54,8 @@ export type RuntimeRecoveryInput = {
   identity?: { workspaceId: string; machineId?: string }
   budgets?: Partial<RecoveryBudgets>
   now?: () => number
+  producer: (leaseId: string) => Promise<void> | undefined
+  providerTurn: (sessionId: string) => string | undefined
 }
 
 export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
@@ -98,6 +100,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     ...(input.identity?.machineId !== undefined ? { machineId: input.identity.machineId } : {}),
     ...(input.identity?.workspaceId !== undefined ? { workspaceId: input.identity.workspaceId } : {}),
     now,
+    isProducing: (leaseId: string) => input.producer(leaseId) !== undefined,
   })
   const registry = createRecoveryOperations({
     store,
@@ -107,6 +110,26 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     ...(input.identity?.machineId !== undefined ? { machineId: input.identity.machineId } : {}),
     sessionTarget,
     now,
+  })
+
+  /** Retains what the store refused, and ends a held turn's obligations once its admission is gone. */
+  const retainFailure = (capture: RecoveryTurnCapture, outcome: AgentTurnOutcome, result: TurnFinalization) => {
+    record.retainFailure(capture, outcome, result)
+    stops.settle(capture.sessionId)
+  }
+
+  const stops = createTurnStops({
+    store,
+    now,
+    producer: input.producer,
+    owns: (capture) => capture.admission !== undefined && admissions.owns(capture.sessionId, capture.admission),
+    finalize: (capture, outcome) => {
+      const result = finalizeTurn(capture, outcome)
+      retainFailure(capture, outcome, result)
+      return result
+    },
+    retain: retainFailure,
+    reportSessionFailure: (sessionId, error) => record.reportSessionFailure(sessionId, error),
   })
 
   const captureTurn = (sessionId: string, turn: ActiveTurn, directory?: RuntimeDirectory): AdmittedTurnCapture => ({
@@ -128,10 +151,12 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
    */
   const captureStoreTurn = (sessionId: string, directory?: RuntimeDirectory): RecoveryTurnCapture => {
     const leaseId = store.readTurnAuthority(sessionId)?.leaseId
+    const assistantMessageId = input.providerTurn(sessionId)
     return {
       sessionId,
       ...(directory !== undefined ? { directory } : {}),
       ...(leaseId !== undefined ? { leaseId } : {}),
+      ...(assistantMessageId !== undefined ? { assistantMessageId } : {}),
       target: sessionTarget(sessionId, leaseId ?? owner),
     }
   }
@@ -197,10 +222,11 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
           payload: { type: "finish", sessionId: capture.sessionId },
         })
       }
-        record.clearRetained(capture.sessionId)
+      record.clearRetained(capture.sessionId)
     }
     if (capture.admission) admissions.release(capture.sessionId, capture.admission)
     else if (capture.leaseId !== undefined) store.releaseTurnLease(capture.sessionId, capture.leaseId)
+    stops.settle(capture.sessionId)
     return { ok: true, wrote }
   }
 
@@ -226,8 +252,22 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       error: "The turn stopped producing without a recorded outcome",
     }
     const result = finalizeTurn(capture, outcome, { emit })
-    record.retainFailure(capture, outcome, result)
+    retainFailure(capture, outcome, result)
     return result
+  }
+
+  /**
+   * A provider-admitted or child turn whose terminal the store refused. No
+   * admission of this runtime's covers it, so its lease is the authority
+   * `reconcile_session` finishes it under; until then the session stays busy,
+   * as a host turn does.
+   */
+  const retainLeasedTurnFailure = (sessionId: string, turn: LeasedTurnFailure, error: unknown): boolean => {
+    retainFailure({
+      sessionId, leaseId: turn.leaseId, turnId: turn.assistantMessageId, assistantMessageId: turn.assistantMessageId,
+      target: sessionTarget(sessionId, turn.leaseId),
+    }, turn.outcome, { ok: false, reason: "persistence", error })
+    return true
   }
 
   /**
@@ -235,10 +275,12 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
    * before the mutation's own await. `directory` only routes the publication;
    * the identity the effect is checked against is the capture's.
    */
-  const cancelActiveTurn = (capture: RecoveryTurnCapture, directory?: RuntimeDirectory) => {
+  const cancelActiveTurn = (capture: RecoveryTurnCapture, directory?: RuntimeDirectory): TurnFinalization => {
     const routed = directory !== undefined ? { ...capture, directory } : capture
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
-    record.retainFailure(routed, outcome, finalizeTurn(routed, outcome, { announceIdle: true }))
+    const result = finalizeTurn(routed, outcome, { announceIdle: true })
+    retainFailure(routed, outcome, result)
+    return result
   }
 
   const refuse = (refusal: RecoveryRefusal): RecoveryOutcome => ({ kind: "refused", refusal })
@@ -247,18 +289,29 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const nextAction = (action: RecoveryAction, reason: string): RecoveryNextAction =>
     ({ action, scopePreviewRequired: false, reason })
 
-  const observe = <T>(work: Promise<T>, deadlineAt: number): Promise<Observed<T>> => {
-    const settled = work.then(
-      (value): Observed<T> => ({ status: "value", value }),
-      (error: unknown): Observed<T> => ({ status: "error", error }),
-    )
-    const remaining = deadlineAt - now()
-    if (remaining <= 0) return Promise.race([settled, Promise.resolve<Observed<T>>({ status: "pending" })])
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const expiry = new Promise<Observed<T>>((resolve) => {
-      timer = setTimeout(() => resolve({ status: "pending" }), remaining)
-    })
-    return Promise.race([settled, expiry]).finally(() => clearTimeout(timer))
+  const observe = <T>(work: Promise<T>, deadlineAt: number): Promise<Observed<T>> => observeUntil(work, deadlineAt, now)
+
+  const stopCapturedTurn = async (capture: RecoveryTurnCapture, directory?: RuntimeDirectory): Promise<void> => {
+    if (!capture.leaseId || store.readTurnAuthority(capture.sessionId)?.leaseId !== capture.leaseId) return
+    if (!input.producer(capture.leaseId)) throw new Error("The Goal turn has no local producer to drain")
+    const assistantMessageId = capture.assistantMessageId
+    if (!assistantMessageId) throw new Error("The Goal turn has no active producer identity")
+    const controller = new AbortController()
+    const deadlineAt = now() + budgets.gracefulCancelMs
+    try {
+      const resolved = await observe(input.cancelTarget(capture.sessionId), deadlineAt)
+      if (resolved.status !== "value") throw new Error("The Goal turn's harness did not resolve")
+      if (store.readTurnAuthority(capture.sessionId)?.leaseId !== capture.leaseId) return
+      const stopped = await stops.stop({ ...capture, leaseId: capture.leaseId, assistantMessageId }, resolved.value,
+        { at: deadlineAt, signal: controller.signal })
+      if (stopped.finished) return
+      if (stopped.answer.status === "error") throw stopped.answer.error
+      if (stopped.answer.status === "pending") throw new Error("The Goal turn cancellation exceeded its deadline")
+      if (stopped.answer.value.error) throw new Error(stopped.answer.value.error.message)
+      if (input.producer(capture.leaseId)) throw new Error("The Goal turn producer did not drain before its deadline")
+      if (stopped.answer.value.execution !== "terminal") throw new Error("The Goal turn execution is still uncertain")
+      cancelActiveTurn(capture, directory)
+    } finally { controller.abort() }
   }
 
   /**
@@ -270,7 +323,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     if (execution !== "terminal") return undefined
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
     const result = finalizeTurn(capture, outcome, { announceIdle: true })
-    record.retainFailure(capture, outcome, result)
+    retainFailure(capture, outcome, result)
     // A harness that honours the cancellation by ending its stream lets the
     // turn's own producer finalize before `cancelTurn` resolves, so this write
     // finds its admission gone. The store, not this call, says whether the
@@ -378,10 +431,8 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       if (!admissions.owns(sessionId, capture.admission)) {
         return answer(registry.close(tracked, finalizeRecoveryOperation(tracked.operation, record.sessionFacts(sessionId)), callerId))
       }
-      const turn: TurnRef = { turnId: capture.assistantMessageId, assistantMessageId: capture.assistantMessageId }
       const deadline: Deadline = { at: phaseDeadlineAt, signal: controller.signal }
-      const settling = target.transport.cancel(target.session, turn, deadline)
-      const observed = await observe(settling, phaseDeadlineAt)
+      const { answer: observed, settling, finished } = await stops.stop(capture, target, deadline)
       if (observed.status === "pending") {
         // Abandoned by this caller, not by its owner: the signal lets a
         // transport stop, and the promise stays watched so its late answer
@@ -389,7 +440,10 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
         controller.abort(new Error(`Cancellation of turn ${capture.turnId} exceeded its deadline`))
         const operationId = tracked.operation.operationId
         void settling.then(
-          (outcome) => registry.recordLateEvidence(operationId, cancelFacts(outcome, capture, finalizeCancelled(capture, outcome.execution))),
+          (outcome) => {
+            if (outcome.execution === "terminal") stops.confirm(capture)
+            registry.recordLateEvidence(operationId, cancelFacts(outcome, capture, finalizeCancelled(capture, outcome.execution)))
+          },
           () => registry.recordLateEvidence(operationId, {
             ...record.sessionFacts(sessionId),
             execution: record.fact<ExecutionFact>("unknown", "harness.cancelTurn", capture.leaseId),
@@ -426,8 +480,10 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
         }, callerId))
       }
       const outcome = observed.value
-      const finalized = finalizeCancelled(capture, outcome.execution)
-      const facts = cancelFacts(outcome, capture, finalized)
+      const finalized = finished ? { ok: true as const, wrote: true } : finalizeCancelled(capture, outcome.execution)
+      const facts = finished
+        ? { ...cancelFacts(outcome, capture, finalized), execution: record.fact<ExecutionFact>("terminal", "runtime.store", capture.leaseId) }
+        : cancelFacts(outcome, capture, finalized)
       const settled = finalizeRecoveryOperation({
         ...tracked.operation,
         ...(outcome.error
@@ -436,7 +492,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
               outcome.error.code,
               current,
               "graceful_cancel",
-              outcome.execution !== "terminal",
+              facts.execution.value !== "terminal",
               outcome.error.message,
             ),
           }
@@ -487,7 +543,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     const result = finalizeTurn(retained.capture, retained.outcome, {
       announceIdle: retained.outcome.status === "cancelled",
     })
-    record.retainFailure(retained.capture, retained.outcome, result)
+    retainFailure(retained.capture, retained.outcome, result)
     const facts = record.sessionFacts(sessionId)
     if (result.ok && result.wrote) {
       return answer(registry.close(tracked, { state: "succeeded", phase: "reconcile", facts }, callerId))
@@ -682,12 +738,15 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     captureStoreTurn,
     captureSessionTurn,
     abandonTurn,
+    stops,
     cancelActiveTurn,
+    stopCapturedTurn,
     finalizeTurn,
-    retainFailure: record.retainFailure,
+    retainFailure,
     reportTurnFailure: record.reportTurnFailure,
     reportOwnerFailure: record.reportOwnerFailure,
     reportSessionFailure: record.reportSessionFailure,
+    retainLeasedTurnFailure,
   }
 }
 

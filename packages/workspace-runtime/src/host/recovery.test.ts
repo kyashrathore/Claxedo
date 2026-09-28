@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs"
 import { afterEach, describe, expect, test } from "bun:test"
-import { RECOVERY_OPERATION_RETENTION_MS } from "@claxedo/agent-runtime-contract"
+import { RECOVERY_OPERATION_RETENTION_MS, turnStopped } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome, AgentExecutionBinding, RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { SessionBroker } from "@claxedo/harness/contract"
 import { RuntimeStore } from "../store"
@@ -17,8 +17,11 @@ import {
   tick,
   transportHandle,
   until,
+  type HostFixture,
   type TurnControl,
 } from "../test-support/host-fixture"
+import { createWorkspaceTransports, type WorkspaceTransportsInput } from "../workspace/transports"
+import type { RuntimeConnectionDescriptor } from "../routes/config"
 import { FakeTransport } from "../test-support/fake-transport"
 import type { AttachedSession } from "./attachments"
 import { createRuntimeGoalController } from "./goal-controller"
@@ -101,6 +104,8 @@ function owner(options: { store?: RuntimeStore } = {}) {
   const recovery = createRuntimeRecovery({
     store,
     admissions,
+    producer: () => undefined,
+    providerTurn: () => undefined,
     cancelTarget: () => Promise.reject(new Error("no harness in this test")),
     publish: (event) => published.push(event.payload.type),
     announceIdle: () => published.push("global-idle"),
@@ -234,6 +239,29 @@ describe("cancelling a turn across an asynchronous boundary", () => {
 })
 
 describe("a finalization the store refused", () => {
+  test("keeps the turn's lease until reconcile finishes it, and the session is admissible again after", async () => {
+    const store = openStore(BreakableStore)
+    const { runtime, turns, dispose } = fixture({ store })
+    const sessionId = await openSession(runtime, "ses_refused_finish")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_refused", text: "first", origin })
+    const leaseId = store.readTurnAuthority(sessionId)?.leaseId
+    store.broken = true
+    turns[0].finish()
+    await until(() => runtime.recovery.inspect(sessionId).failures.length > 0, "the refusal to reach the owner")
+    store.broken = false
+    expect(store.readTurnAuthority(sessionId)?.leaseId).toBe(leaseId)
+    expect(store.acquireTurnLease(sessionId)).toBeUndefined()
+    expect(runtime.recovery.inspect(sessionId).health).toMatchObject({ status: "degraded", reason: "persistence_unavailable" })
+    const reconciled = submittedOperation(await runtime.recovery.submit({
+      requestId: "req_reconcile_refused", action: "reconcile_session", target: started.target!, scopeRevision: "1", attempt: 1,
+    }, RECOVERY_TEST_CALLER))
+    expect(reconciled.state).toBe("succeeded")
+    expect(store.readTurnAuthority(sessionId)).toBeUndefined()
+    expect((await runtime.turns.start({ sessionId, messageId: "msg_next", text: "next", origin })).delivery).toBe("start")
+    turns[1].finish()
+    await dispose()
+  })
+
   test("a reconciliation that names a different generation is refused", async () => {
     const store = openStore(BreakableStore)
     const { runtime, turns, dispose } = fixture({ store })
@@ -268,6 +296,8 @@ describe("finalizing a turn this owner did not admit", () => {
     const recovery = createRuntimeRecovery({
       store,
       admissions,
+      producer: () => undefined,
+      providerTurn: () => undefined,
       cancelTarget: () => Promise.reject(new Error("no harness in this test")),
       publish: (event) => published.push(event.payload.type),
       announceIdle: () => published.push("global-idle"),
@@ -745,7 +775,7 @@ describe("a Goal mutation that outlives the turn it stops", () => {
       publish: () => {},
       subscribeRuntime: () => () => {},
       captureTurn: held.recovery.captureSessionTurn,
-      cancelCapturedTurn: held.recovery.cancelActiveTurn,
+      cancelCapturedTurn: (capture, directory) => { held.recovery.cancelActiveTurn(capture, directory) },
     })
     return { ...held, controller }
   }
@@ -954,5 +984,388 @@ describe("how long a settled operation stays readable", () => {
     turns[0].finish()
     cancels[0]?.settle({ execution: "unknown", cleanup: "unknown" })
     await dispose()
+  })
+})
+
+describe("cancellation outcomes", () => {
+  const budgets = { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 200, reconcileMs: 5_000 }
+
+  async function fixture(cancel: () => Promise<AdapterCancelOutcome>) {
+    const control = controlledTurn("s")
+    const transport = new FakeTransport({ turn: () => control.events, cancel })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+    return { ...f, control, transport, started, cancel: () => f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER) }
+  }
+
+  test.each(["error", "not_found"] as const)("failed cancellation %s keeps admission until the executing producer ends", async (kind) => {
+    const f = await fixture(async () => kind === "error"
+      ? { execution: "running", cleanup: "unknown", error: { code: "provider_unreachable", message: "refused" } }
+      : { execution: "unknown", cleanup: "unknown", error: { code: "provider_unreachable", message: "not found" } })
+    try {
+      const result = submittedOperation(await f.cancel())
+      expect(result.facts.execution.value).not.toBe("terminal")
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      await expect(f.runtime.turns.start({ sessionId: "s", text: "replacement", origin: LOOPBACK_ORIGIN })).rejects.toThrow()
+      expect(f.transport.turns).toHaveLength(1)
+      f.control.finish()
+      const idle = await f.runtime.turns.whenIdle("s")
+      idle.abandon()
+      expect((await f.runtime.turns.start({ sessionId: "s", text: "next", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
+    } finally { f.control.finish(); await f.dispose() }
+  })
+
+  test("a cancellation rejection reports provider_unreachable while preserving the open producer", async () => {
+    const f = await fixture(async () => { throw new Error("provider refused the cancel") })
+    try {
+      const result = submittedOperation(await f.cancel())
+      expect(result.facts.execution.value).toBe("running")
+      expect(result.initiatingError).toMatchObject({ code: "provider_unreachable", executionMayContinue: true })
+      expect(result.initiatingError?.message).toContain("provider refused the cancel")
+      expect(f.store.getSession("s")?.status).toBe("busy")
+    } finally { f.control.finish(); await f.dispose() }
+  })
+
+  test("a transient cancellation failure does not poison a subsequent stop", async () => {
+    let attempts = 0
+    const f = await fixture(async () => {
+      if (++attempts === 1) throw new Error("try again")
+      return { execution: "terminal", cleanup: "verified_clear" }
+    })
+    try {
+      expect(submittedOperation(await f.cancel()).initiatingError?.code).toBe("provider_unreachable")
+      expect(submittedOperation(await f.cancel()).facts.execution.value).toBe("terminal")
+      expect(attempts).toBe(2)
+      expect(f.store.getSession("s")?.status).toBe("idle")
+    } finally { f.control.finish(); await f.dispose() }
+  })
+
+  test("late stream completion preserves the already committed cancelled outcome", async () => {
+    const f = await fixture(async () => ({ execution: "terminal", cleanup: "verified_clear" }))
+    try {
+      await f.cancel()
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("cancelled")
+      const outcome = f.store.getSession("s")?.lastTurn
+      f.control.finish()
+      await f.runtime.dispose()
+      expect(f.store.getSession("s")?.lastTurn).toEqual(outcome)
+    } finally { f.control.finish(); await f.dispose() }
+  })
+
+  test("a stop acknowledgement leaves admission available to an immediate replacement", async () => {
+    const f = await fixture(async () => ({ execution: "terminal", cleanup: "verified_clear" }))
+    try {
+      await f.cancel()
+      f.control.finish()
+      expect((await f.runtime.turns.start({ sessionId: "s", text: "replacement", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
+      await tick()
+    } finally { f.control.finish(); await f.dispose() }
+  })
+
+  const refusedThenThrows = (after?: () => AdapterCancelOutcome) => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let attempts = 0
+    const transport = new FakeTransport({
+      turn: async function* () { await gate; throw new Error("ACP cancel failed; prompt outcome is uncertain") },
+      cancel: async () => {
+        if (++attempts > 1 && after) return after()
+        release()
+        await tick()
+        throw new Error("provider refused the abort")
+      },
+    })
+    return { transport, release: () => release() }
+  }
+
+  async function heldTurn(f: HostFixture) {
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+    const refused = submittedOperation(await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+    return { started, refused }
+  }
+
+  test("a producer that throws while its stop is unconfirmed is held degraded until reconcile ends it", async () => {
+    const { transport, release } = refusedThenThrows(() => ({ execution: "unknown", cleanup: "unknown" }))
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    try {
+      const { started, refused } = await heldTurn(f)
+      expect(refused.initiatingError).toMatchObject({ code: "provider_unreachable" })
+      expect(refused.facts.execution.value).toBe("unknown")
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      expect(f.store.getSession("s")?.lastTurn).toBeUndefined()
+      expect(f.runtime.recovery.inspect("s").health).toMatchObject({ status: "degraded", reason: "exit_unverified" })
+      await expect(f.runtime.turns.start({ sessionId: "s", text: "replacement", origin: LOOPBACK_ORIGIN })).rejects.toThrow()
+      const again = submittedOperation(await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+      expect(again.facts.execution.value).toBe("unknown")
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      const reconciled = submittedOperation(await f.runtime.recovery.submit({
+        ...cancelTurnRequest(started.target!), action: "reconcile_session",
+      }, RECOVERY_TEST_CALLER))
+      expect(reconciled.state).toBe("succeeded")
+      expect(f.store.getSession("s")?.status).toBe("error")
+      expect(f.store.getSession("s")?.lastTurn).toMatchObject({ status: "failed", error: "ACP cancel failed; prompt outcome is uncertain" })
+      expect(f.runtime.recovery.inspect("s").health.status).toBe("ok")
+      expect((await f.runtime.turns.start({ sessionId: "s", text: "next", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
+      expect(transport.turns).toHaveLength(2)
+    } finally { release(); await f.dispose() }
+  })
+
+  test("a held turn ends as soon as its connection's transport is retired", async () => {
+    const { transport, release } = refusedThenThrows()
+    const transports = createWorkspaceTransports({
+      composer: { connection: () => transport, builtIn: () => transport } as unknown as WorkspaceTransportsInput["composer"],
+      connections: () => new Map([["conn", { providerKey: "test", connectionId: "conn", configRevision: 1, enabled: true, config: {} } as unknown as RuntimeConnectionDescriptor]]),
+      resolveSecrets: () => ({ secrets: {}, secretLeaseGeneration: "none" }),
+    })
+    const f = createHostFixture({ transports, recovery: { budgets } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s", harness: { id: "conn", access: "connection" } }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+      await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      transports.retireConnection("conn")
+      expect(f.store.getSession("s")?.status).toBe("error")
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("failed")
+      expect(f.runtime.recovery.inspect("s").failures.some((failure) => failure.code === "exit_unverified")).toBe(false)
+    } finally { release(); await f.dispose(); await transports.disposeAll() }
+  })
+
+  test("disposal ends a held turn", async () => {
+    const { transport, release } = refusedThenThrows()
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    try {
+      await heldTurn(f)
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      await f.runtime.dispose()
+      expect(f.store.getSession("s")?.status).toBe("error")
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("failed")
+    } finally { release(); await f.dispose() }
+  })
+
+  test("a held parent keeps its foreground child until the hold ends", async () => {
+    const { transport, release } = refusedThenThrows()
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+      await until(() => transport.turns.length === 1)
+      const child = await transport.turns[0].broker.observeSubagent({
+        observationId: "fg", providerId: "fg", providerKind: "test", status: "running", mode: "foreground", transcript: { kind: "messages" },
+      })
+      const childLease = f.store.readTurnAuthority(child!.sessionId)?.leaseId
+      await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      expect(f.store.getSession(child!.sessionId)?.status).toBe("busy")
+      expect(f.store.readTurnAuthority(child!.sessionId)?.leaseId).toBe(childLease)
+      await f.runtime.recovery.submit({ ...cancelTurnRequest(started.target!), action: "reconcile_session" }, RECOVERY_TEST_CALLER)
+      expect(f.store.getSession("s")?.status).toBe("error")
+      expect(f.store.getSession(child!.sessionId)?.status).toBe("idle")
+      expect(f.store.readTurnAuthority(child!.sessionId)).toBeUndefined()
+    } finally { release(); await f.dispose() }
+  })
+
+  test("a held parent whose write authority is lost still ends its foreground child", async () => {
+    const { transport, release } = refusedThenThrows()
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    let valid = true
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN,
+        admission: { valid: () => valid, fencingToken: () => 1 } })
+      await until(() => transport.turns.length === 1)
+      const child = await transport.turns[0].broker.observeSubagent({
+        observationId: "fg", providerId: "fg", providerKind: "test", status: "running", mode: "foreground", transcript: { kind: "messages" },
+      })
+      await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+      expect(f.store.getSession(child!.sessionId)?.status).toBe("busy")
+      valid = false
+      await f.runtime.recovery.submit({ ...cancelTurnRequest(started.target!), action: "reconcile_session" }, RECOVERY_TEST_CALLER)
+      expect(f.runtime.recovery.inspect("s").failures.map((failure) => failure.code)).toContain("authority_lost")
+      expect(f.store.getSession(child!.sessionId)?.status).toBe("idle")
+      expect(f.store.readTurnAuthority(child!.sessionId)).toBeUndefined()
+    } finally { release(); await f.dispose() }
+  })
+
+  test("a producer that ends cleanly after its provider refuses cancellation is cancelled by that one stop", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const transport = new FakeTransport({ turn: async function* () { await gate }, cancel: async () => {
+      release()
+      await tick()
+      throw new Error("provider refused the abort")
+    } })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    try {
+      const { refused } = await heldTurn(f)
+      expect(refused.initiatingError).toMatchObject({ code: "provider_unreachable" })
+      await until(() => f.store.getSession("s")?.status === "idle")
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("cancelled")
+      expect(f.runtime.recovery.inspect("s").health.status).toBe("ok")
+    } finally { release(); await f.dispose() }
+  })
+
+  test("a Claude-shaped stop that aborts its stream and answers unknown ends the turn cancelled on the first stop", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const transport = new FakeTransport({ turn: async function* () { await gate }, cancel: async () => {
+      release()
+      await tick()
+      return { execution: "unknown", cleanup: "owned" }
+    } })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    try {
+      const { refused: stopped } = await heldTurn(f)
+      expect(turnStopped({ kind: "operation", operation: stopped })).toBe(true)
+      expect(stopped.facts.execution.value).toBe("terminal")
+      expect(stopped.facts.persistence.value).toBe("committed")
+      expect(stopped.nextActions?.map((next) => next.action)).not.toContain("reconcile_session")
+      expect(f.store.getSession("s")?.status).toBe("idle")
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("cancelled")
+      expect(transport.cancels).toHaveLength(1)
+      expect((await f.runtime.turns.start({ sessionId: "s", text: "next", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
+    } finally { release(); await f.dispose() }
+  })
+})
+
+describe("what makes a stop unconfirmed", () => {
+  const throwing = () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    return { gate, release: () => release() }
+  }
+
+  test("a stop that never reached the transport leaves a later producer failure to finalize as failed", async () => {
+    const { gate, release } = throwing()
+    const transport = new FakeTransport({ turn: async function* () { await gate; throw new Error("provider died") } })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets: { ackMs: 5_000, providerQueryMs: 0, gracefulCancelMs: 5_000, reconcileMs: 5_000 } } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+      const unresolved = submittedOperation(await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+      expect(unresolved.phase).toBe("provider_query")
+      expect(transport.cancels).toHaveLength(0)
+      release()
+      await until(() => f.store.getSession("s")?.status !== "busy")
+      expect(f.store.getSession("s")?.lastTurn).toMatchObject({ status: "failed", error: "provider died" })
+      expect(f.runtime.recovery.inspect("s").failures.map((failure) => failure.code)).not.toContain("exit_unverified")
+    } finally { release(); await f.dispose() }
+  })
+
+  test("a stop the transport confirmed is not held when the producer then fails", async () => {
+    const { gate, release } = throwing()
+    const store = openStore(BreakableStore)
+    const transport = new FakeTransport({
+      turn: async function* () { await gate; throw new Error("provider died after the stop") },
+      cancel: async () => { store.broken = true; return { execution: "terminal", cleanup: "verified_clear" } },
+    })
+    const f = createHostFixture({ store, transports: { pi: transport }, recovery: { budgets: { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 200, reconcileMs: 5_000 } } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+      await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+      expect(f.runtime.recovery.inspect("s").failures.map((failure) => failure.code)).toEqual(["persistence_unavailable"])
+      const refusedAt = f.runtime.recovery.inspect("s").failures[0].at
+      release()
+      await until(() => f.runtime.recovery.inspect("s").failures[0].at !== refusedAt, "the producer's own failure to be retained")
+      const codes = f.runtime.recovery.inspect("s").failures.map((failure) => failure.code)
+      expect(codes).toContain("persistence_unavailable")
+      expect(codes).not.toContain("exit_unverified")
+    } finally { store.broken = false; release(); await f.runtime.dispose() }
+  })
+})
+
+describe("a stop sent while the transport is still starting the turn", () => {
+  test.each([
+    ["unknown, as Codex and Pi answer before submission", { execution: "unknown", cleanup: "unknown" }],
+    ["terminal, as Claude and Cursor answer before submission", { execution: "terminal", cleanup: "unknown" }],
+  ] as const)("reaches the transport's pre-submission check when the cancel answers %s", async (_shape, answer) => {
+    let ready!: () => void
+    const starting = new Promise<void>((resolve) => { ready = resolve })
+    let submitted = 0
+    const transport = new FakeTransport({
+      turn: async function* ({ broker, session }) {
+        await starting
+        if (broker.signal.aborted) return
+        submitted++
+        yield { type: "finish", sessionId: session.binding.sessionId }
+      },
+      cancel: async () => { ready(); await tick(); return answer },
+    })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets: { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 5_000, reconcileMs: 5_000 } } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+      await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+      expect(submitted).toBe(0)
+      expect(transport.cancels).toHaveLength(1)
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("cancelled")
+      expect((await f.runtime.turns.start({ sessionId: "s", text: "next", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
+    } finally { ready(); await f.dispose() }
+  })
+})
+
+describe("a stop the transport confirms while output is still queued", () => {
+  test("the producer drains that output before the turn is finalized", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const transport = new FakeTransport({
+      turn: async function* () {
+        await gate
+        for (let chunk = 0; chunk < 3; chunk++) {
+          await tick()
+          yield { type: "text-delta", delta: `chunk${chunk} ` }
+        }
+        yield { type: "finish", sessionId: "s" }
+      },
+      cancel: async () => { release(); return { execution: "terminal", cleanup: "verified_clear" } },
+      drainsAfterAbort: true,
+    })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets: { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 5_000, reconcileMs: 5_000 } } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+      const stopped = submittedOperation(await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+      expect(stopped.facts.persistence.value).toBe("committed")
+      const assistant = f.store.getMessages("s").find((message) => message.info.role === "assistant")
+      expect(JSON.stringify(assistant?.parts)).toContain("chunk0 chunk1 chunk2 ")
+    } finally { release(); await f.dispose() }
+  })
+})
+
+describe("a provider turn the store refused to finish", () => {
+  test("keeps its lease and a degraded session until reconcile finishes it", async () => {
+    const brokers = new Map<string, SessionBroker>()
+    const transport = new FakeTransport({ beforeStart: async (input, broker) => { brokers.set(input.sessionId, broker) } })
+    const f = createHostFixture({ transports: { pi: transport } })
+    const finish = f.store.finishTurn.bind(f.store)
+    try {
+      await f.runtime.sessions.create({ ...sessionCreate({ id: "s" }), agent: "build", model: { providerID: "test", modelID: "test" } })
+      f.store.finishTurn = () => { throw new Error("finish write refused") }
+      const admitted = await brokers.get("s")!.admitProviderTurn({ reason: "goal" }, async function* () { yield { event: { type: "finish", sessionId: "s" } } })
+      if (!admitted.admitted) throw new Error("expected an admitted provider turn")
+      expect(await admitted.settled).toEqual({ state: "failed", error: "finish write refused" })
+      f.store.finishTurn = finish
+      const leaseId = f.store.readTurnAuthority("s")?.leaseId
+      expect(leaseId).toBeString()
+      expect(f.store.acquireTurnLease("s")).toBeUndefined()
+      expect(f.store.turnEvidence("s", admitted.turn.assistantMessageId).finished).toBe(false)
+      const inspection = f.runtime.recovery.inspect("s")
+      expect(inspection.health).toMatchObject({ status: "degraded", reason: "persistence_unavailable" })
+      const retained = inspection.failures.find((failure) => failure.code === "persistence_unavailable")
+      expect(retained?.target).toMatchObject({ scope: "session", sessionId: "s", ownerGeneration: leaseId })
+      const reconciled = submittedOperation(await f.runtime.recovery.submit({
+        requestId: "reconcile-provider-turn", action: "reconcile_session", target: retained!.target, scopeRevision: "1", attempt: 1,
+      }, RECOVERY_TEST_CALLER))
+      expect(reconciled.state).toBe("succeeded")
+      expect(f.store.turnEvidence("s", admitted.turn.assistantMessageId).finished).toBe(true)
+      expect(f.store.getSession("s")?.lastTurn?.status).toBe("completed")
+      expect(f.store.readTurnAuthority("s")).toBeUndefined()
+      expect(f.runtime.recovery.inspect("s").health.status).toBe("ok")
+      const next = await brokers.get("s")!.admitProviderTurn({ reason: "goal" }, async function* () { yield { event: { type: "finish", sessionId: "s" } } })
+      expect(next.admitted).toBe(true)
+      if (next.admitted) expect(await next.settled).toEqual({ state: "completed" })
+    } finally { f.store.finishTurn = finish; await f.dispose() }
   })
 })

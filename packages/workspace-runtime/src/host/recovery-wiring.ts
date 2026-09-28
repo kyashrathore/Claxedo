@@ -18,12 +18,13 @@ export function recoveryWiring(recovery: () => RuntimeRecovery) {
 
   return {
     reportOwnerFailure,
-    surface: (): AgentRuntimeRecovery => ({
+    surface: (): AgentRuntimeRecovery & Pick<RuntimeRecovery, "retainLeasedTurnFailure"> => ({
       inspect: recovery().inspect,
       submit: recovery().submit,
       read: recovery().read,
       reportContainmentFailure: recovery().reportContainmentFailure,
       reportOwnerFailure,
+      retainLeasedTurnFailure: recovery().retainLeasedTurnFailure,
     }),
   }
 }

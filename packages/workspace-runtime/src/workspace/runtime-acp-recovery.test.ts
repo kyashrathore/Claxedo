@@ -47,8 +47,8 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         const previousTimeout = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
         let operation: Record<string, any>
         try {
-          // The peer holds its prompt, so the cancel notification is never
-          // acknowledged inside this window.
+          // The peer takes the cancel notification but holds its prompt open,
+          // so the cancellation cannot settle inside this window.
           process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "50"
           const stopped = await active.request("/session/saved/recovery", "POST", {
             requestId: `req-${Date.now()}`,
@@ -65,16 +65,17 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
           if (previousTimeout === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
           else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = previousTimeout
         }
-        // Nothing established that the peer stopped, so the operation does not
-        // succeed and execution stays unknown. A "cancelled" answer here would
-        // be the exact lie this contract exists to prevent.
+        // The prompt is still open, so the operation does not succeed and the
+        // turn reads as still running. A "cancelled" answer here would be the
+        // exact lie this contract exists to prevent.
         expect(operation.state).not.toBe("succeeded")
-        expect(operation.facts.execution.value).toBe("unknown")
+        expect(operation.facts.execution.value).toBe("running")
+        expect(operation.initiatingError).toMatchObject({ code: "cancellation_timeout", executionMayContinue: true })
         expect(operation.action).toBe("cancel_turn")
 
         // The same operation is readable by its receipt, with the same facts.
         const reread = await (await active.request(`/session/saved/recovery/operations/${operation.operationId}`)).json()
-        expect(reread.operation.facts.execution.value).toBe("unknown")
+        expect(reread.operation.facts.execution.value).toBe("running")
 
         // An unresolved cancellation is retained where an owner can see it.
         const afterStop = await (await active.request("/session/saved/recovery")).json()

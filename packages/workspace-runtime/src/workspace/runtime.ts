@@ -314,6 +314,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       patternEvaluator,
       publishers: eventHub,
       reportOwnerFailure: (sessionId, error) => engine?.runtime.recovery.reportOwnerFailure(sessionId, error),
+      retainLeasedTurnFailure: (sessionId, turn, error) => {
+        if (engine) return engine.runtime.recovery.retainLeasedTurnFailure(sessionId, turn, error)
+        log.error("A refused turn terminal has no runtime left to retain it", { sessionId, error: String(error) })
+        return false
+      },
     })
     const configuration = createSessionConfiguration({
       attached: () => engine?.runtime.attachments.entries() ?? [],

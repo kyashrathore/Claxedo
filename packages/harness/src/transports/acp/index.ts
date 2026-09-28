@@ -8,12 +8,11 @@ import { attachedSessionEntry, configGenerationChanged, mergeStartInput } from "
 import type { AcpConnectionOptions, AcpPeer } from "./connection"
 import { AcpTransportError } from "./errors"
 import { acpTurnFailure } from "./outcome"
-import { AsyncPushQueue, errorMessage } from "@claxedo/helpers"
+import { AsyncPushQueue, errorMessage, type HoldableCountdown } from "@claxedo/helpers"
 import { acpMcp, acpPrompt, type AcpPromptDelivery } from "./protocol"
 import type { MissingSessionContext } from "./restore"
 import { claudeOptionsMeta } from "./extensions/claude-options"
 import type { AcpStartupDeadline } from "./deadline"
-import type { AcpQuiet } from "./quiet"
 import { acpReceiver } from "./events"
 import { acpConfig } from "./config"
 import { supportsAcpSubagents } from "./extensions/subagents"
@@ -48,11 +47,12 @@ export type AcpEntry = {
   phase: "ready" | "busy" | "uncertain"
   cancelled: boolean
   pendingRestart: boolean
-  quiet?: AcpQuiet
+  quiet?: HoldableCountdown
   startup?: AcpStartupDeadline
   startupAbort: AbortController
   pendingUpdates?: SessionNotification[]
-  cancelSent?: Promise<{ ok: true } | { ok: false; error: unknown }>
+  cancelSent?: Promise<{ ok: true } | { ok: false; error: unknown; running: boolean }>
+  prompt?: Promise<unknown>
   commands: { name: string; description?: string }[]
   options: SessionConfigOption[]
   modes: SessionMode[]
@@ -171,6 +171,7 @@ export class AcpTransport implements HarnessTransport {
     entry.phase = "busy"
     entry.cancelled = false
     entry.cancelSent = undefined
+    entry.prompt = undefined
     entry.turnBroker = broker
     const queue = new AsyncPushQueue<RoutedEvent>()
     entry.queue = queue
@@ -178,6 +179,7 @@ export class AcpTransport implements HarnessTransport {
     entry.receive = acpReceiver(entry.start.config.harness.id, session, queue)
     const aborted = () => { void trackedAcpCancel(entry, acpCancelDeadline()) }
     broker.signal.addEventListener("abort", aborted, { once: true })
+    if (broker.signal.aborted) aborted()
     const submission = { submitted: false }
     try {
       yield* this.prompted(entry, session, turn, queue, submission)
@@ -200,7 +202,13 @@ export class AcpTransport implements HarnessTransport {
   private async *prompted(entry: AcpEntry, session: HarnessSession, turn: TurnInput, queue: AsyncPushQueue<RoutedEvent>,
     submission: { submitted: boolean }): AsyncIterable<RoutedEvent> {
     await acpApplyTurnConfig(entry, turn)
-    const prompt = entry.peer.agent.prompt({ sessionId: session.binding.upstreamSessionId, prompt: await acpPrompt(turn, this.delivery(entry)) })
+    const content = await acpPrompt(turn, this.delivery(entry))
+    if (entry.cancelled) {
+      for (const event of translateStopReason("cancelled", session.binding.sessionId)) yield { event }
+      return
+    }
+    const prompt = entry.peer.agent.prompt({ sessionId: session.binding.upstreamSessionId, prompt: content })
+    entry.prompt = prompt
     submission.submitted = true
     void prompt.then((result) => {
       for (const event of translateStopReason(result.stopReason, session.binding.sessionId)) queue.push({ event })
@@ -218,9 +226,9 @@ export class AcpTransport implements HarnessTransport {
     if (entry.phase === "ready") return { execution: "terminal" as const, cleanup: "unknown" as const }
     if (entry.phase === "uncertain") return { execution: "unknown" as const, cleanup: "unknown" as const }
     const result = await trackedAcpCancel(entry, deadline)
-    if (!result.ok) return { execution: "unknown" as const, cleanup: "unknown" as const,
-      error: { code: "provider_unreachable" as const, message: errorMessage(result.error) } }
-    return { execution: "unknown" as const, cleanup: "unknown" as const }
+    if (!result.ok) return { execution: result.running ? "running" as const : "unknown" as const, cleanup: "unknown" as const,
+      error: { code: result.running ? "cancellation_timeout" as const : "provider_unreachable" as const, message: errorMessage(result.error) } }
+    return { execution: entry.prompt ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {

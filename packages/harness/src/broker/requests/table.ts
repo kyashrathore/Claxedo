@@ -28,6 +28,7 @@ type Entry = {
   cancelRequested?: "cancelled" | "expired"
   published?: Promise<void>
   termination?: Promise<void>
+  foreignReported?: true
 }
 
 export class RequestTable implements RequestBroker {
@@ -164,10 +165,7 @@ export class RequestTable implements RequestBroker {
       const prior = this.ports.readAnswer(sessionId, requestId)
       return requestRefusal(prior && prior.kind !== "cancelled" && prior.kind !== "expired" ? "duplicate" : "stale")
     }
-    if (!requestOwnerIsCurrent(this.ports, entry.authority)) {
-      try { await this.terminate(entry, "cancelled") } catch { return requestRefusal("persistence") }
-      return requestRefusal("foreign")
-    }
+    if (!requestOwnerIsCurrent(this.ports, entry.authority)) return this.refusePreviousOwner(entry, sessionId, requestId)
     if (!requestTargetMatchesOwner(this.ports, entry.authority, target)) return requestRefusal("foreign")
     if (answer.kind === "cancelled" || answer.kind === "expired") return requestRefusal("unoffered")
     try { await entry.published } catch { return requestRefusal("persistence") }
@@ -238,6 +236,15 @@ export class RequestTable implements RequestBroker {
     const results = await Promise.allSettled(entries.map((entry) => this.terminate(entry, "cancelled")))
     const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError(failures, `${failures.length} of ${entries.length} requests could not be cancelled`)
+  }
+
+  private async refusePreviousOwner(entry: Entry, sessionId: string, requestId: string): Promise<AnswerResult> {
+    try { await this.terminate(entry, "cancelled") } catch { return requestRefusal("persistence") }
+    if (!entry.foreignReported) {
+      entry.foreignReported = true
+      this.ports.reportOwnerFailure(sessionId, new Error(`Request ${requestId} belongs to a previous turn owner`))
+    }
+    return requestRefusal("foreign")
   }
 
   private async terminate(entry: Entry, kind: "cancelled" | "expired"): Promise<void> {

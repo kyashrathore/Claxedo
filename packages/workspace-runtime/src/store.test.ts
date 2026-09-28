@@ -331,6 +331,7 @@ void describe("RuntimeStore", () => {
       patternEvaluator: async () => {},
       publishers,
       reportOwnerFailure: (_sessionId, error) => { throw error },
+      retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error },
     })).subagents
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })

@@ -19,12 +19,7 @@ export class BrokerSessionState {
 
   async publishGoal(sessionId: string, snapshot: RuntimeGoalSnapshot | null): Promise<void> {
     if (!this.store.getSession(sessionId)) throw new Error(`Unknown goal session ${sessionId}`)
-    this.store.setGoal(sessionId, snapshot)
-    this.delivery.append(sessionId,
-      snapshot
-        ? { type: "goal.updated", properties: { sessionID: sessionId, goal: snapshot } }
-        : { type: "goal.cleared", properties: { sessionID: sessionId } },
-    )
+    for (const event of this.store.setGoal(sessionId, snapshot)) this.delivery.broadcast(sessionId, event)
   }
 
   config(sessionId: string): SessionConfig {

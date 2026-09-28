@@ -39,6 +39,7 @@ export function transportsById(transports: Record<string, HarnessTransport>): Tr
       return handle
     },
     composed: () => [...handles.values()],
+    onRetire: () => () => {},
   }
 }
 
@@ -93,6 +94,7 @@ export function createHostFixture(input: HostFixtureInput): HostFixture {
     patternEvaluator: async () => {},
     publishers: eventHub,
     reportOwnerFailure: (sessionId, error) => runtime?.recovery.reportOwnerFailure(sessionId, error),
+    retainLeasedTurnFailure: (sessionId, turn, error) => runtime?.recovery.retainLeasedTurnFailure(sessionId, turn, error) ?? false,
   })
   runtime = createAgentRuntime({
     store, eventHub, transports, ports, ownerGeneration,

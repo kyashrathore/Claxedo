@@ -41,6 +41,7 @@ export function createWorkspaceTransports(input: WorkspaceTransportsInput) {
   const building = new Map<string, Promise<Held>>()
   const retiring = new Map<string, { handle: Held; done: Promise<void> }>()
   const retired = new WeakSet<HarnessTransport>()
+  const retireListeners = new Set<(handle: HarnessHandle) => void>()
 
   const hold = (key: string, runner: SessionHarness, transport: HarnessTransport, locality: Locality, directory?: string): Held => {
     let pins = 0
@@ -72,6 +73,7 @@ export function createWorkspaceTransports(input: WorkspaceTransportsInput) {
     if (previous) return previous.done
     retired.add(handle.transport)
     if (held.get(key) === handle) held.delete(key)
+    for (const listener of retireListeners) listener(handle)
     const done = handle.unpinned()
       .then(() => handle.transport.dispose())
       .catch((error: unknown) => log.error("Transport retirement failed", { key, error }))
@@ -121,6 +123,10 @@ export function createWorkspaceTransports(input: WorkspaceTransportsInput) {
     },
     composed() {
       return [...held.values()]
+    },
+    onRetire(listener) {
+      retireListeners.add(listener)
+      return () => { retireListeners.delete(listener) }
     },
   }
 

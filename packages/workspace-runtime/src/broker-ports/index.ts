@@ -6,10 +6,12 @@ import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
 import { BrokerAuthority } from "./authority"
 import { admitChildSession, bindChildCorrelation } from "./child-sessions"
 import { BrokerEventDelivery } from "./delivery"
-import { BrokerProviderTurns } from "./provider-turns"
+import { BrokerProviderTurns, type LeasedTurnFailure } from "./provider-turns"
 import { BrokerRequestRows } from "./request-rows"
 import { BrokerSessionEvents } from "./session-events"
 import { BrokerSessionState } from "./session-state"
+
+export type { LeasedTurnFailure } from "./provider-turns"
 
 type TimerHandle = ReturnType<typeof setTimeout>
 
@@ -18,6 +20,8 @@ export type StoreBrokerPortOptions = {
   patternEvaluator: ElicitationPatternEvaluator
   publishers: RuntimeEventPublishers
   reportOwnerFailure(sessionId: string, error: unknown): void
+  /** Retains a refused terminal under its lease; `false` when no owner could take it, and the caller releases the lease instead. */
+  retainLeasedTurnFailure(sessionId: string, turn: LeasedTurnFailure, error: unknown): boolean
   clock?: Clock
 }
 
@@ -29,7 +33,9 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
   const requests = new BrokerRequestRows(store, delivery)
   const events = new BrokerSessionEvents(store, delivery)
   const state = new BrokerSessionState(store, delivery)
-  const providerTurns = new BrokerProviderTurns(store, events, delivery)
+  const providerTurns = new BrokerProviderTurns(store, events, delivery,
+    (sessionId, error) => options.reportOwnerFailure(sessionId, error),
+    (sessionId, turn, error) => options.retainLeasedTurnFailure(sessionId, turn, error))
   const timers = new Map<unknown, TimerHandle>()
   return {
     clock: options.clock ?? {

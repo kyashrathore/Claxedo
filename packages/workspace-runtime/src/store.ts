@@ -33,7 +33,7 @@ import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
-import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   type CompatEvent,
@@ -667,10 +667,6 @@ function subagentCorrelationKeys(observation: SubagentObservation) {
       : undefined,
     observation.toolCallId ? `tool:${observation.harnessExecutionId ?? ""}:${observation.toolCallId}` : undefined,
   ].filter((key): key is string => !!key)
-}
-
-function terminalSubagentStatus(status: string | undefined) {
-  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
 }
 
 function nullable(input: unknown): string | null | undefined {
@@ -1903,8 +1899,8 @@ export class RuntimeStore {
           .get(parentSessionId, event.subagentKey),
         "session_subagent",
       )
-      const currentTerminal = terminalSubagentStatus(current.status)
-      const incomingTerminal = terminalSubagentStatus(event.status)
+      const currentTerminal = isTerminalSubagentStatus(current.status)
+      const incomingTerminal = isTerminalSubagentStatus(event.status)
       if (
         (!currentTerminal && incomingTerminal) ||
         (currentTerminal === incomingTerminal && event.revision > current.status_revision)
@@ -5208,12 +5204,21 @@ export class RuntimeStore {
     return row?.goal_json ? JSON.parse(row.goal_json) : null
   }
 
-  setGoal(id: string, goal: RuntimeGoalSnapshot | null) {
-    if (!this.getSession(id)) return
-    this.commit({
-      seq: this.next(id), ts: Date.now(), sessionId: id, kind: "control",
-      control: { type: "goal.update", goal },
-    })
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null): CompatEvent[] {
+    this.assertProjectionCurrent(id)
+    this.settleDeltas(id)
+    return this.transaction(() => {
+      if (!this.getSession(id) || JSON.stringify(this.getGoal(id)) === JSON.stringify(goal)) return []
+      const payload: CompatEvent = goal
+        ? { type: "goal.updated", properties: { sessionID: id, goal } }
+        : { type: "goal.cleared", properties: { sessionID: id } }
+      this.commitInside({
+        seq: this.next(id), ts: Date.now(), sessionId: id, kind: "control",
+        control: { type: "goal.update", goal },
+      }, undefined)
+      this.brokerAppendInside(id, payload)
+      return [payload]
+    }, "immediate")
   }
 
   updateSessionConfig(id: string, update: SessionConfigUpdate, input: { directory?: string } = {}) {

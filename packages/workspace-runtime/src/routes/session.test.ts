@@ -1217,7 +1217,8 @@ it("retires a permission a previous owner asked and never settled, so the reopen
   const request = permission("persisted-permission", "permission-session", { options: [{ optionId, kind: "allow_once", name: "Accept for session" }] })
   if (request.kind !== "permission") throw new Error("expected a permission request")
   const pending = { sessionId: "permission-session", request, askedAt: 1, upstreamSessionId: "upstream-permission-session" }
-  const ports = createStoreBrokerPorts(wa.store(), { ownerGeneration: "previous-owner", patternEvaluator: async () => {}, publishers: wa.eventHub, reportOwnerFailure: (_sessionId, error) => { throw error } })
+  const ports = createStoreBrokerPorts(wa.store(), { ownerGeneration: "previous-owner", patternEvaluator: async () => {}, publishers: wa.eventHub, reportOwnerFailure: (_sessionId, error) => { throw error },
+    retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error } })
   await ports.publish({ id: "permission.asked:permission-session:persisted-permission", type: "permission.asked", properties: request.permission }, pending)
   expect(wa.store().listPermissions(wa.directory).map((row) => row.id)).toEqual(["persisted-permission"])
   await wa.dispose({ keepRoot: true })

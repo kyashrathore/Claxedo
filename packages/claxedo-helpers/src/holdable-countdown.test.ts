@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { AcpQuiet } from "./quiet"
+import { HoldableCountdown } from "./holdable-countdown"
 
 function clock() {
   const timers = new Map<number, () => void>()
@@ -12,10 +12,10 @@ function clock() {
     fire: () => { for (const [id, callback] of timers) { timers.delete(id); callback() } } }
 }
 
-test("ACP activity resets the quiet deadline", () => {
+test("activity resets the countdown", () => {
   const time = clock()
   let expired = 0
-  const quiet = new AcpQuiet(time, 10, () => { expired++ })
+  const quiet = new HoldableCountdown(time, 10, () => { expired++ })
   const first = [...time.timers.keys()][0]
   quiet.touch()
   expect(time.timers.has(first!)).toBe(false)
@@ -24,10 +24,10 @@ test("ACP activity resets the quiet deadline", () => {
   quiet.dispose()
 })
 
-test("a human-held permission pauses the deadline and release starts a fresh one", () => {
+test("a hold pauses the countdown and release starts a fresh one", () => {
   const time = clock()
   let expired = 0
-  const quiet = new AcpQuiet(time, 10, () => { expired++ })
+  const quiet = new HoldableCountdown(time, 10, () => { expired++ })
   const release = quiet.hold()
   expect(time.timers.size).toBe(0)
   time.fire()
@@ -42,7 +42,7 @@ test("a human-held permission pauses the deadline and release starts a fresh one
 test("disposal removes the deadline", () => {
   const time = clock()
   let expired = 0
-  const quiet = new AcpQuiet(time, 10, () => { expired++ })
+  const quiet = new HoldableCountdown(time, 10, () => { expired++ })
   quiet.dispose()
   time.fire()
   expect(expired).toBe(0)

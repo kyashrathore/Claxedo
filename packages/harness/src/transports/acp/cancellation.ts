@@ -1,8 +1,7 @@
 import { AcpTransportError } from "./errors"
 import type { AcpEntry } from "./index"
-import { AcpQuiet } from "./quiet"
 import type { Clock, Deadline, RoutedEvent } from "../../contract"
-import { settleAtRequestDeadline, type AsyncPushQueue } from "@claxedo/helpers"
+import { HoldableCountdown, settleAtRequestDeadline, type AsyncPushQueue } from "@claxedo/helpers"
 
 export const ACP_CANCEL_DEADLINE_MS = 5_000
 
@@ -13,20 +12,29 @@ export function acpCancelDeadline(): Deadline {
 export function trackedAcpCancel(entry: AcpEntry, deadline: Deadline): NonNullable<AcpEntry["cancelSent"]> {
   if (entry.cancelSent) return entry.cancelSent
   entry.cancelled = true
-  const request = Promise.resolve().then(() => entry.peer.agent.cancel({ sessionId: entry.session.binding.upstreamSessionId }))
+  let acknowledged = false
+  let timeout: AcpTransportError | undefined
+  const request = Promise.resolve().then(async () => {
+    await entry.peer.agent.cancel({ sessionId: entry.session.binding.upstreamSessionId })
+    acknowledged = true
+    await Promise.allSettled([entry.prompt])
+  })
   const tracked = settleAtRequestDeadline("session/cancel", { signal: deadline.signal, deadlineAt: deadline.at }, request, () => {},
-    (what: string, aborted: boolean) => new AcpTransportError("timeout", `ACP ${what} ${aborted ? "was abandoned" : "timed out"}`))
+    (what: string, aborted: boolean) => timeout = new AcpTransportError("timeout", `ACP ${what} ${aborted ? "was abandoned" : "timed out"}`))
     .then(() => ({ ok: true as const }), (error: unknown) => {
-      entry.phase = "uncertain"
-      entry.queue?.fail(new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error))
-      return { ok: false as const, error }
+      const running = acknowledged && timeout !== undefined && error === timeout
+      if (!running) {
+        entry.phase = "uncertain"
+        entry.queue?.fail(new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error))
+      }
+      return { ok: false as const, error, running }
     })
   entry.cancelSent = tracked
   return tracked
 }
 
-export function acpQuiet(entry: AcpEntry, queue: AsyncPushQueue<RoutedEvent>, clock: Clock, timeoutMs: number): AcpQuiet {
-  return new AcpQuiet(clock, timeoutMs, () => {
+export function acpQuiet(entry: AcpEntry, queue: AsyncPushQueue<RoutedEvent>, clock: Clock, timeoutMs: number): HoldableCountdown {
+  return new HoldableCountdown(clock, timeoutMs, () => {
     entry.phase = "uncertain"
     void trackedAcpCancel(entry, acpCancelDeadline())
     queue.fail(new AcpTransportError("timeout", "ACP prompt outcome is uncertain"))
