@@ -59,6 +59,19 @@ describe("turn recovery", () => {
       .toBe("You've reached your Fable 5 limit. It will reset at 3pm. Choose another model or account.")
   })
 
+  test("a rejected Claude weekly window reads its window and reset time", () => {
+    const reset = new Date(1_790_391_600_000).toLocaleString()
+    const error = failed(
+      `You've reached your Claude weekly limit. It will reset at ${reset}.\nYou've hit your weekly limit · resets Sep 26 at 8:30am (Asia/Calcutta)`,
+      "usage_limit",
+    )
+    const context = { providerID: "claude", modelID: "default" }
+    expect(sessionRecoveryClass(error)).toBe("usage_limit")
+    expect(sessionRecoveryTitle("usage_limit", error, context)).toBe("Claude Code usage limit reached")
+    expect(sessionRecoveryDescription("usage_limit", error, context))
+      .toBe(`You've reached your Claude weekly limit. It will reset at ${reset}. Choose another model or account.`)
+  })
+
   test("a rate limit with no provider status falls back to its class copy", () => {
     expect(sessionRecoveryTitle("rate_limit", failed(RATE_LIMITED, "rate_limit"))).toBeUndefined()
     expect(sessionRecoveryDescription("rate_limit", failed(RATE_LIMITED, "rate_limit"))).toBeUndefined()

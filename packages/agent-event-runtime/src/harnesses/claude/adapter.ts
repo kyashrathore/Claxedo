@@ -21,6 +21,7 @@ import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
 import { imageAttachment } from "../tool-attachments"
+import { formatRateLimitReset } from "../rate-limit-reset"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, own, pathFields, text } from "../../value"
 import { parseJsonRecord, readPartialJsonRecord } from "./partial-json"
@@ -72,11 +73,12 @@ export type ClaudeSdkAdapterState = {
   /** The request the main thread streamed last, which the context gauge reads. */
   lastMainRequest?: string
   /**
-   * The last `rate_limit_event` rejected a plan window (five-hour, seven-day
-   * and the like). The CLI reports a refusal inside that window with the same
-   * `rate_limit` code as a momentary 429, and this is what tells them apart.
+   * The plan window (five-hour, seven-day and the like) the last
+   * `rate_limit_event` rejected. The CLI reports a refusal inside that window
+   * with the same `rate_limit` code as a momentary 429, and this is what tells
+   * them apart and names the window.
    */
-  planWindowRejected?: boolean
+  rejectedWindow?: { limitName?: string; resetsAt?: number | null }
 }
 
 /**
@@ -968,7 +970,12 @@ function rateLimitResetMs(value: unknown) {
 
 function assistantErrorClass(code: string, state: ClaudeSdkAdapterState): FirstTurnErrorClass | undefined {
   if (code !== "rate_limit") return undefined
-  return state.planWindowRejected ? "usage_limit" : "rate_limit"
+  return state.rejectedWindow ? "usage_limit" : "rate_limit"
+}
+
+function windowLimitMessage(window: NonNullable<ClaudeSdkAdapterState["rejectedWindow"]>) {
+  const name = window.limitName?.replaceAll("_", " ")
+  return `You've reached your Claude ${name ? `${name} ` : "usage "}limit.${formatRateLimitReset(window.resetsAt)}`
 }
 
 function claudeRateLimitEvent(info: Record<string, unknown>) {
@@ -1308,11 +1315,14 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           if (message.error) {
             const explanation = assistantSnapshotText(rawMessage)
             const errorClass = assistantErrorClass(message.error, state)
+            const head = errorClass === "usage_limit" && state.rejectedWindow
+              ? windowLimitMessage(state.rejectedWindow)
+              : `Claude assistant message failed: ${message.error}`
             return [
               { type: "session-status", status: "error" },
               {
                 type: "error",
-                error: [`Claude assistant message failed: ${message.error}`, explanation].filter(Boolean).join("\n"),
+                error: [head, explanation].filter(Boolean).join("\n"),
                 ...(errorClass ? { errorClass } : {}),
               },
             ] satisfies AgentRuntimeEvent[]
@@ -1413,7 +1423,9 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
 
         case "rate_limit_event": {
           const event = claudeRateLimitEvent(asRecord(message.rate_limit_info) ?? {})
-          return { state: { ...state, planWindowRejected: event.status === "limited" }, events: [event] }
+          const { rejectedWindow: _, ...rest } = state
+          const rejectedWindow = { ...(event.limitName ? { limitName: event.limitName } : {}), resetsAt: event.resetsAt }
+          return { state: event.status === "limited" ? { ...rest, rejectedWindow } : rest, events: [event] }
         }
 
         case "prompt_suggestion":
