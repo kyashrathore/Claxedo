@@ -155,11 +155,11 @@ describe("prompt editor actions", () => {
       const harness = createHarness()
 
       harness.actions.handleSlashSelect({
-        id: "custom.deploy",
+        id: "custom.transport.deploy",
         trigger: "deploy",
         title: "deploy",
         type: "custom",
-        source: "deploy",
+        origin: "transport",
       })
       expect(harness.editor.textContent).toBe("/deploy ")
       expect(harness.prompt()).toEqual([{ type: "text", content: "/deploy ", start: 0, end: 8 }])

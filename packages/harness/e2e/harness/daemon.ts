@@ -56,6 +56,7 @@ export type DaemonInput = {
   piExecutable?: string
   claudeExecutable?: string
   cloud?: boolean
+  cloudMcpUrl?: string
   coldStartWithoutKeys?: boolean
   resistantChild?: boolean
   retirementFault?: boolean
@@ -82,6 +83,7 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
     CLAXEDO_SERVER_PORT: String(input.port),
     ...(input.cloud ? {
       CLAXEDO_E2E_MODEL_URL: input.scripted.url,
+      ...(input.cloudMcpUrl ? { CLAXEDO_E2E_MCP_URL: input.cloudMcpUrl } : {}),
       CLAXEDO_ENABLE_DOCKER_SANDBOX: "1",
       CLAXEDO_DOCKER_SANDBOX_DEFAULT: "1",
       CLAXEDO_EMBEDDED_AUTH: "1",

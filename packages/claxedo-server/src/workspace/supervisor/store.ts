@@ -14,6 +14,12 @@ export type WorkspaceRuntimeState = {
   active: number
   holds: string[]
   start?: Promise<WorkspaceRuntimeState>
+  /**
+   * A config change arrived while `start` was in flight. The start's own push
+   * may have read its snapshot before the change, so the start pushes once more
+   * when it becomes ready.
+   */
+  config_changed_during_start?: boolean
   stop?: ReturnType<typeof setTimeout>
   remote?: boolean
   sandbox_id?: string

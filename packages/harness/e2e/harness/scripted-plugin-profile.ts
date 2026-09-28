@@ -1,7 +1,7 @@
 import { inspectPluginTree } from "../../../claxedo-server-core/src/agent-plugins/artifacts/acquire"
 import { encodePluginTreeBase64 } from "../../../claxedo-server-core/src/agent-plugins/artifacts/codec"
 import { agentPluginTree } from "../../../claxedo-server-core/src/agent-plugins/artifacts/tree"
-import { directTransport, sendJson } from "./transport"
+import { directTransport, sendJson, type HttpTransport } from "./transport"
 
 export type ScriptedPluginHarness = "claude" | "codex" | "acp"
 
@@ -32,6 +32,7 @@ export async function applyScriptedPluginProfile(
     servers: Record<string, ScriptedPluginServer>
     revision?: number
   },
+  transport: HttpTransport = directTransport,
 ) {
   const encoder = new TextEncoder()
   const file = (path: string, value: unknown) => ({
@@ -45,7 +46,7 @@ export async function applyScriptedPluginProfile(
     { path: "skills/proof", kind: "directory" },
     file("skills/proof/SKILL.md", "---\nname: proof\ndescription: Calls the configured proof tool\n---\n\nUse the proof tool.\n"),
   ]))
-  const response = await sendJson(directTransport, "PUT", `${daemonUrl}/api/claxedo/plugins/signed-runtime`, {
+  const response = await sendJson(transport, "PUT", `${daemonUrl}/api/claxedo/plugins/signed-runtime`, {
     version: 1,
     identity: { mode: "signed", userId: "e2e-user", projectId: "e2e-project" },
     revision: input.revision ?? 1,

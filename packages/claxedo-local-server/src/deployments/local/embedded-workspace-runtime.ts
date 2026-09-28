@@ -75,6 +75,8 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   generation: string
   observed: MountedEmbeddedWorkspaceRuntime
   applying?: Promise<void>
+  /** A configure asked for after the running apply read its snapshot, which that apply therefore cannot answer. */
+  applyRequested?: boolean
   reconcilingSessionMetadata?: Promise<void>
   diagnosticsOwner?: ProcessOwnerHandle
   /** When this runtime's earliest placeholder must be replaced; absent when it holds none. */
@@ -437,11 +439,25 @@ async function apply(runtime: EmbeddedRuntime) {
   runtime.renewFailures = 0
 }
 
+/**
+ * Resolves only after an apply whose snapshot was read after this call: a
+ * mutation that lands while another apply is running is not in that apply's
+ * snapshot, so answering it with that apply would acknowledge configuration
+ * the runtime never received.
+ */
 function configure(runtime: EmbeddedRuntime) {
-  runtime.applying ??= apply(runtime).finally(() => {
+  runtime.applyRequested = true
+  runtime.applying ??= drainApplies(runtime).finally(() => {
     runtime.applying = undefined
   })
   return runtime.applying
+}
+
+async function drainApplies(runtime: EmbeddedRuntime) {
+  while (runtime.applyRequested) {
+    runtime.applyRequested = false
+    await apply(runtime)
+  }
 }
 
 function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
@@ -698,7 +714,9 @@ export async function attachEmbeddedWorkspacePty(input: {
 }
 
 export async function syncEmbeddedWorkspaceRuntimes() {
-  await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
+  const results = await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
+  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Workspace configuration delivery failed")
 }
 
 /** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */

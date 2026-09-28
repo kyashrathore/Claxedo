@@ -278,6 +278,7 @@ export const dict = {
   "prompt.dropzone.label": "Resimleri, PDF'leri veya metin dosyalarını buraya bırakın",
   "prompt.dropzone.file.label": "@bahsetmek için dosyayı bırakın",
   "prompt.slash.badge.custom": "özel",
+  "prompt.slash.badge.saved": "kayıtlı",
   "prompt.slash.badge.skill": "beceri",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Dosyayı bağlamdan çıkar",

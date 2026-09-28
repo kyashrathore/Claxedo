@@ -8,6 +8,7 @@ import {
   promptAtOptions,
   promptDocumentOptions,
   promptSlashCommands,
+  promptCustomCommands,
 } from "./prompt-options"
 
 describe("prompt popover controller", () => {
@@ -50,10 +51,10 @@ describe("prompt popover controller", () => {
 
   test("shows the agent's argument hint without changing the slash command text", () => {
     const list = promptSlashCommands({
-      customCommands: [{ name: "review", description: "Review changes", input: { hint: "<path>" } }],
+      customCommands: [{ origin: "transport", name: "review", description: "Review changes", input: { hint: "<path>" } }],
       commandOptions: [],
     })
-    expect(list.find((command) => command.id === "custom.review")).toMatchObject({
+    expect(list.find((command) => command.id === "custom.transport.review")).toMatchObject({
       trigger: "review", description: "Review changes · <path>", type: "custom",
     })
   })
@@ -61,7 +62,7 @@ describe("prompt popover controller", () => {
   test("builds slash commands as custom commands before enabled builtin commands", () => {
     expect(
       promptSlashCommands({
-        customCommands: [{ name: "deploy", description: "Ship it", source: "skill" }],
+        customCommands: [{ origin: "transport", name: "deploy", description: "Ship it", source: "skill" }],
         commandOptions: [
           { id: "suggested.ignore", title: "Ignore", slash: "ignore" },
           { id: "disabled.ignore", title: "Disabled", slash: "disabled", disabled: true },
@@ -78,7 +79,8 @@ describe("prompt popover controller", () => {
         type: "builtin",
       },
       {
-        id: "custom.deploy",
+        id: "custom.transport.deploy",
+        origin: "transport",
         trigger: "deploy",
         title: "deploy",
         description: "Ship it",
@@ -98,7 +100,7 @@ describe("prompt popover controller", () => {
 
   test("provider commands cannot shadow a reserved built-in Goal", () => {
     const commands = promptSlashCommands({
-      customCommands: [{ name: "goal", description: "Provider shadow" }],
+      customCommands: [{ origin: "transport", name: "goal", description: "Provider shadow" }],
       commandOptions: [{ id: "prompt.goal", title: "Goal", slash: "goal" }],
     })
 
@@ -109,12 +111,12 @@ describe("prompt popover controller", () => {
 
   test("leaves non-Goal provider command precedence unchanged", () => {
     const commands = promptSlashCommands({
-      customCommands: [{ name: "help", description: "Provider help" }],
+      customCommands: [{ origin: "transport", name: "help", description: "Provider help" }],
       commandOptions: [{ id: "session.help", title: "Help", slash: "help" }],
     })
 
     expect(commands.filter((command) => command.trigger === "help").map((command) => ({ id: command.id, type: command.type }))).toEqual([
-      { id: "custom.help", type: "custom" },
+      { id: "custom.transport.help", type: "custom" },
       { id: "session.help", type: "builtin" },
     ])
   })
@@ -142,7 +144,7 @@ describe("prompt popover controller", () => {
       { type: "file" as const, path: "src/a.ts", display: "src/a.ts" },
     ]
     const slashItems = [
-      { id: "custom.deploy", trigger: "deploy", title: "deploy", type: "custom" as const },
+      { id: "custom.transport.deploy", trigger: "deploy", title: "deploy", type: "custom" as const, origin: "transport" as const },
       { id: "session.help", trigger: "help", title: "Help", type: "builtin" as const },
     ]
 
@@ -152,4 +154,26 @@ describe("prompt popover controller", () => {
     expect(activeSlashCommand({ items: slashItems, active: "session.help" })).toBe(slashItems[1])
     expect(activeSlashCommand({ items: slashItems, active: "missing" })).toBe(slashItems[0])
   })
+})
+
+test("colliding saved and transport commands keep distinct identities and selection", () => {
+  const commands = promptSlashCommands({ commandOptions: [], customCommands: [
+    { name: "review", origin: "saved", content: "Review my saved instructions" },
+    { name: "review", origin: "transport", description: "Harness review" },
+  ] })
+  expect(commands.filter((command) => command.type === "custom").map((command) => command.id)).toEqual([
+    "custom.saved.review", "custom.transport.review",
+  ])
+  expect(activeSlashCommand({ items: commands, active: "custom.saved.review" })).toMatchObject({ origin: "saved", content: "Review my saved instructions" })
+  expect(activeSlashCommand({ items: commands, active: "custom.transport.review" })).toMatchObject({ origin: "transport", trigger: "review" })
+})
+
+test("session command announcements replace transport entries while retaining saved commands", () => {
+  expect(promptCustomCommands([
+    { name: "review", origin: "saved", content: "Saved review" },
+    { name: "old", origin: "transport" },
+  ], [{ name: "review", description: "Live harness command" }])).toEqual([
+    { name: "review", origin: "saved", content: "Saved review" },
+    { name: "review", origin: "transport", description: "Live harness command" },
+  ])
 })

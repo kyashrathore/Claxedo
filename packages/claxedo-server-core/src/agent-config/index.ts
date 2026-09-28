@@ -9,6 +9,7 @@
 
 import * as fs from "fs"
 import * as path from "path"
+import { isMissingFile } from "@claxedo/helpers/guards"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { SandboxDriverConfig } from "@claxedo/sandbox-contract"
@@ -77,6 +78,7 @@ export interface RuntimeConfigSnapshot {
   defaultHarness?: RuntimeHarnessSelection
   /** Broker endpoints and placeholders; the credential values stay with the authority. */
   auth: Record<string, ProviderProjectionSource>
+  commands: CommandItem[]
   /** Opaque per-harness launch options contributed by the product composition. */
   harnessLaunch?: Record<string, Record<string, unknown>>
 }
@@ -244,6 +246,7 @@ export async function getRuntimeConfigSnapshot(
     connections: Object.values(config.connections),
     ...(selected ? { defaultHarness: selected } : {}),
     auth,
+    commands: await listCommands(),
     ...(plugins && Object.keys(plugins.harnessLaunch).length ? { harnessLaunch: plugins.harnessLaunch } : {}),
   }
 }
@@ -251,20 +254,21 @@ export async function getRuntimeConfigSnapshot(
 // ── Commands ───────────────────────────────────────────────────────────────
 
 export async function listCommands(): Promise<CommandItem[]> {
-  try {
-    await fs.promises.mkdir(commandDir(), { recursive: true, mode: 0o755 })
-    const files = await fs.promises.readdir(commandDir())
-    const commands: CommandItem[] = []
-    for (const file of files) {
-      if (!file.endsWith(".md")) continue
-      const name = file.slice(0, -3)
-      const content = await fs.promises.readFile(path.join(commandDir(), file), "utf-8")
-      commands.push({ name, content })
+  await fs.promises.mkdir(commandDir(), { recursive: true, mode: 0o755 })
+  const files = await fs.promises.readdir(commandDir())
+  const commands: CommandItem[] = []
+  for (const file of files) {
+    if (!file.endsWith(".md")) continue
+    try {
+      commands.push({ name: file.slice(0, -3), content: await fs.promises.readFile(path.join(commandDir(), file), "utf-8") })
+    } catch (error) {
+      // A delete between the listing and this read removed the command; it is
+      // not in the list, and the delete publishes its own snapshot.
+      if (isMissingFile(error)) continue
+      throw error
     }
-    return commands
-  } catch {
-    return []
   }
+  return commands
 }
 
 export async function getCommand(name: string): Promise<CommandItem | null> {
@@ -272,8 +276,9 @@ export async function getCommand(name: string): Promise<CommandItem | null> {
   try {
     const content = await fs.promises.readFile(path.join(commandDir(), `${safe}.md`), "utf-8")
     return { name: safe, content }
-  } catch {
-    return null
+  } catch (error) {
+    if (isMissingFile(error)) return null
+    throw error
   }
 }
 
@@ -285,13 +290,12 @@ export async function saveCommand(name: string, content: string): Promise<string
   return safe
 }
 
-export async function deleteCommand(name: string): Promise<boolean> {
+export async function deleteCommand(name: string): Promise<void> {
   const safe = sanitizeName(name)
   try {
     await fs.promises.unlink(path.join(commandDir(), `${safe}.md`))
     log.info("Deleted command", { name: safe })
-    return true
-  } catch {
-    return false
+  } catch (error) {
+    if (!isMissingFile(error)) throw error
   }
 }

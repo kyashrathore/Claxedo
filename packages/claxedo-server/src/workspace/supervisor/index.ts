@@ -115,12 +115,18 @@ async function ensureRelayProtectedSandbox(
   return started
 }
 
+/**
+ * Resolves once every ready runtime holds the current snapshot. A start still
+ * in flight is not awaited, since a cold sandbox can take minutes; it is marked
+ * so it pushes the then-current snapshot when it becomes ready.
+ */
 export async function broadcastRuntimeConfig() {
-  await Promise.all(
-    [...runtimes.values()]
-      .filter((item) => item.status === "ready" && item.url)
-      .map((item) => pushRuntimeConfig(item)),
-  )
+  const results = await Promise.allSettled([...runtimes.values()].map(async (item) => {
+    if (item.start) item.config_changed_during_start = true
+    if (item.status === "ready" && item.url) await pushRuntimeConfig(item)
+  }))
+  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+  if (failures.length) throw new AggregateError(failures, `${failures.length} runtime config push(es) failed`)
 }
 
 /**
@@ -524,9 +530,15 @@ async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindin
     return state
   }
   if (state.start) return state.start
+  state.config_changed_during_start = false
   state.start = (async () => {
     try {
-      return await startSandbox(state, { scheduleStop }, authority)
+      const started = await startSandbox(state, { scheduleStop }, authority)
+      if (started.config_changed_during_start) {
+        started.config_changed_during_start = false
+        await pushRuntimeConfig(started)
+      }
+      return started
     } finally {
       state.start = undefined
     }

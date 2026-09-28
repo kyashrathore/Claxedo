@@ -273,6 +273,7 @@ export const dict = {
   "prompt.dropzone.label": "Ovdje prevucite slike, PDF-ove ili tekstualne datoteke",
   "prompt.dropzone.file.label": "Spusti za @spominjanje datoteke",
   "prompt.slash.badge.custom": "prilagođeno",
+  "prompt.slash.badge.saved": "sačuvano",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Ukloni datoteku iz konteksta",

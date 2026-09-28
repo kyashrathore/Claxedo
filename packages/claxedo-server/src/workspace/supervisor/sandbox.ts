@@ -408,6 +408,8 @@ async function attachRecordedSandbox(
         }
         : {}),
     }
+    // This push reads the current snapshot, so only a change after it needs another.
+    state.config_changed_during_start = false
     await pushRuntimeConfig(probed)
     const settled = await recordSupervisorRuntimeSnapshot(state.ws.id, { epoch: input.lease.epoch, ok: true })
     if (!settled.ok) {
@@ -757,6 +759,7 @@ async function markSandboxReady(
   state.sandbox_target = target
   state.installed_secrets = installedSecrets
 
+  state.config_changed_during_start = false
   await pushRuntimeConfig(state)
 
   const ws = await updateWorkspace(state.ws.id, {

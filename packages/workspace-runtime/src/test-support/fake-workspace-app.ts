@@ -91,7 +91,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
   options.before?.(app)
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   await host.apply({
-    version: 4,
+    version: 4, commands: [],
     mcp: {},
     auth: {},
     connections: connections.map((connection) => ({

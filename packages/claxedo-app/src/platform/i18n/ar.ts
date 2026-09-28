@@ -253,6 +253,7 @@ export const dict = {
   "prompt.dropzone.label": "أفلت الصور أو ملفات PDF أو الملفات النصية هنا",
   "prompt.dropzone.file.label": "أفلت لإشارة @ للملف",
   "prompt.slash.badge.custom": "مخصص",
+  "prompt.slash.badge.saved": "محفوظ",
   "prompt.slash.badge.skill": "مهارة",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "إزالة الملف من السياق",

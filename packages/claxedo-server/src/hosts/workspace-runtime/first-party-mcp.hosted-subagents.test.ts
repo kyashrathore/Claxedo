@@ -221,6 +221,7 @@ beforeAll(async () => {
   })
   await runtime.host.apply({
     version: 4,
+    commands: [],
     mcp: {},
     connections: [{ connectionId: CONNECTION, providerKey: "fake", configRevision: 1, enabled: true, config: {} }],
     auth: {},

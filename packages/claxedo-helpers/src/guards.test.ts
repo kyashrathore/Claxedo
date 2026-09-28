@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  isMissingFile,
   asArray,
   asArrayOrUndefined,
   asBoolean,
@@ -130,5 +131,15 @@ describe("asArray", () => {
     const source = [1]
     expect(asArray(source)).toBe(source)
     expect(asArray("x")).toEqual([])
+  })
+})
+
+describe("isMissingFile", () => {
+  test("names only an absent path, not every filesystem failure", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const { tmpdir } = await import("node:os")
+    expect(isMissingFile(await readFile(`${tmpdir()}/absent-${crypto.randomUUID()}`).catch((error: unknown) => error))).toBe(true)
+    expect(isMissingFile(await readFile(tmpdir()).catch((error: unknown) => error))).toBe(false)
+    expect(isMissingFile("ENOENT")).toBe(false)
   })
 })

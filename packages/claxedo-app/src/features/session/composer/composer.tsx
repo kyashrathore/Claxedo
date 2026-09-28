@@ -1,6 +1,7 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
 import { createEffect, Component, createMemo, createSignal, lazy, onCleanup } from "solid-js"
 import { composerCollapsed } from "@/features/session/composer/collapsed-state"
+import { promptCustomCommands } from "./ui/prompt-options"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
@@ -197,7 +198,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       enabled: hydrateDirectoryCommands(),
     }
   })
-  const customCommands = () => info()?.commands ?? customCommandsQuery.data
+  const customCommands = () => promptCustomCommands(customCommandsQuery.data, info()?.commands)
   const openComment = createPromptCommentRouter({
     comments,
     diffFiles: () => props.diffFiles?.(),

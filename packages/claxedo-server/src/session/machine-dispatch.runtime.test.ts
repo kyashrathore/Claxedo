@@ -53,6 +53,7 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     })
     await runtime.host.apply({
       version: 4,
+      commands: [],
       mcp: {},
       auth: {},
       connections: [{ connectionId: CONNECTION, providerKey: CONNECTION, configRevision: 1, enabled: true, config: {} }],

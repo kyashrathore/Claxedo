@@ -2678,7 +2678,7 @@ export function createSessionRoutes(opts: Opts) {
     app.get("/command", async (c) => {
       const directory = await opts.resolveDirectory(c)
       try {
-        return c.json(await (await opts.runtime(c)).reads.commands(draftTarget(opts, c, directory)) ?? [])
+        return c.json(await (await opts.runtime(c)).reads.commands(draftTarget(opts, c, directory)))
       } catch (error) {
         return engineRefusalResponse(c, error)
       }

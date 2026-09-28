@@ -200,10 +200,11 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
   }
 
   /**
-   * The three Claxedo selections upstream's machine cannot express. Returning a
-   * thunk tells `interaction.ts#dispatch` "the host handles this one"; returning
-   * undefined lets the machine's own draft write stand, which is what a custom
-   * slash command wants — it inserts `/trigger ` for further editing.
+   * Selections the upstream machine cannot express. Returning a thunk tells
+   * `interaction.ts#dispatch` "the host handles this one"; returning undefined
+   * lets the machine's own draft write stand, which inserts `/trigger ` — right
+   * for a harness command, which the harness expands. A saved command is known
+   * only to Claxedo, so the host inserts its content instead.
    */
   const onSuggestionSelect = (suggestion: PromptInputV2Suggestion) => {
     if (suggestion.kind === "resource") {
@@ -218,6 +219,12 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
     const command = slashCommands().find((entry) => entry.id === suggestion.id)
     if (!command) return undefined
     if (command.id === "documents.open") return () => documentPicker.show()
+    if (command.type === "custom" && command.origin === "saved") return () => {
+      const text = command.content
+      closePopover()
+      input.prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+      bridge.focusEditorEnd()
+    }
     if (command.type === "custom") return undefined
     return () => input.triggerSlashCommand(command.id)
   }

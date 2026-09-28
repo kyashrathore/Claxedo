@@ -2182,6 +2182,84 @@ describe("workspace-supervisor", () => {
     expect(supervisor.getSupervisorSandboxTarget("ws-discard-1")).toBeUndefined()
   })
 
+  describe("broadcastRuntimeConfig", () => {
+    const snapshotWith = (content: string) => async (): Promise<any> => ({
+      version: 4, mcp: {}, auth: {}, connections: [], commands: [{ name: "review", content }],
+    })
+    const pushedCommands = (url: string) => configPush
+      .filter((push) => push.url === `${url}/api/wr/config`)
+      .map((push) => (push.body as { commands: Array<{ content: string }> }).commands[0]?.content)
+
+    test("reports every refused push after all ready runtimes settled", async () => {
+      const runtimes = (await import("./store")).runtimes
+      const local = (id: string) => ({ ...workspace(id), kind: "local" as const, directory: `/tmp/${id}` })
+      for (const [id, port] of [["ws-broadcast-a", 2601], ["ws-broadcast-b", 2602]] as const) {
+        runtimes.set(id, {
+          ws: local(id) as never, status: "ready", url: `http://127.0.0.1:${port}`,
+          used_at: Date.now(), crashes: 0, retry_at: 0, active: 0, holds: [],
+        })
+      }
+      configPushResponse = () => new Response("refused", { status: 503 })
+      try {
+        const error = await supervisor.broadcastRuntimeConfig().then(() => undefined, (reason: unknown) => reason)
+        expect(error).toBeInstanceOf(AggregateError)
+        expect((error as AggregateError).errors).toHaveLength(2)
+      } finally {
+        runtimes.delete("ws-broadcast-a")
+        runtimes.delete("ws-broadcast-b")
+      }
+    })
+
+    test("a save during a slow sandbox start returns without waiting for it", async () => {
+      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      const entered = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+        entered.resolve()
+        await release.promise
+        return realLaunch(input)
+      })
+      try {
+        const starting = supervisor.ensureSupervisorSandbox("ws-broadcast-slow-start")
+        await entered.promise
+        mockGetRuntimeConfigSnapshot.mockImplementation(snapshotWith("saved during start"))
+        let broadcastDone = false
+        await supervisor.broadcastRuntimeConfig().then(() => { broadcastDone = true })
+        expect(broadcastDone).toBe(true)
+        release.resolve()
+        const entry = await starting
+        expect(pushedCommands(entry.url!)).toEqual(["saved during start"])
+      } finally {
+        release.resolve()
+        mockDaytonaLaunch.mockImplementation(realLaunch)
+      }
+    })
+
+    test("a runtime still starting when the save lands ends on the saved snapshot once ready", async () => {
+      const workspaceId = "ws-broadcast-attach"
+      leases.set(workspaceId, {
+        ...lease(workspaceId),
+        status: "ready",
+        sandbox_id: "daytona-existing-sb",
+        driver_resource_id: "daytona-existing-sb",
+        url: "http://existing-runtime.test",
+      })
+      store.set(workspaceId, { ...workspace(workspaceId), status: "ready" })
+      mockGetRuntimeConfigSnapshot.mockImplementation(snapshotWith("before save"))
+      let broadcast: Promise<void> | undefined
+      // Runs inside the attach's own config push, after it read "before save"
+      // and before the runtime is marked ready.
+      duringConfigPush = () => {
+        mockGetRuntimeConfigSnapshot.mockImplementation(snapshotWith("saved"))
+        broadcast = supervisor.broadcastRuntimeConfig()
+      }
+      const entry = await supervisor.ensureSupervisorSandbox(workspaceId)
+      await broadcast
+      expect(entry.status).toBe("ready")
+      expect(pushedCommands("http://existing-runtime.test")).toEqual(["before save", "saved"])
+    })
+  })
+
   // ── State transitions ──────────────────────────────────────────────
 
   describe("sandbox state transitions", () => {

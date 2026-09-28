@@ -5,6 +5,7 @@
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import { readWithoutSuspending } from "../suspense-safe-resource"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
+import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import {
   activeAtOption,
@@ -18,7 +19,6 @@ import {
   promptSlashCommands,
   type PromptAgentRow,
   type PromptCommandOption,
-  type PromptCustomCommand,
 } from "@/features/session/composer/ui/prompt-options"
 
 export function createPromptPopoverController(props: {
@@ -27,7 +27,7 @@ export function createPromptPopoverController(props: {
   recentFiles: Accessor<string[]>
   searchFilesAndDirectories: (query: string) => Promise<string[]>
   commandOptions: Accessor<PromptCommandOption[]>
-  customCommands: Accessor<PromptCustomCommand[] | undefined>
+  customCommands: Accessor<RuntimeCommand[] | undefined>
   documentPicker: Accessor<boolean>
   documents: Accessor<Parameters<typeof promptDocumentOptions>[0]>
   onAtSelect: (option: AtOption | undefined) => void

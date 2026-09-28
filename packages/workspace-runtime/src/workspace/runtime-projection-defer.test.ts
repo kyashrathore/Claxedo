@@ -30,7 +30,7 @@ const EXPIRES_AT = Date.now() + 60 * 60 * 1000
 
 function snapshot(placeholder: string, mcp: Record<string, unknown> = {}): RuntimeSnapshot {
   return {
-    version: 4,
+    version: 4, commands: [],
     mcp,
     connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
     defaultHarness: { kind: "connection", connectionId: "fixture" },

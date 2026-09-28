@@ -275,6 +275,7 @@ export const dict = {
   "prompt.dropzone.label": "將圖片、PDF 或文字檔案拖放到此處",
   "prompt.dropzone.file.label": "拖放以 @提及檔案",
   "prompt.slash.badge.custom": "自訂",
+  "prompt.slash.badge.saved": "已儲存",
   "prompt.slash.badge.skill": "技能",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "從上下文移除檔案",

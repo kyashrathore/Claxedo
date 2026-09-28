@@ -48,6 +48,7 @@ describe("applied runtime config", () => {
       version: 4,
       mcp: {},
       connections: [],
+      commands: [],
       auth: {
         "claude-sdk": bound,
         "codex-app-server": {

@@ -1,4 +1,4 @@
-import type { PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource, SavedCommand } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
@@ -42,11 +42,6 @@ export function requestedSessionHarness(req: { query(name: string): string | und
   return undefined
 }
 
-export type RuntimeCommandItem = {
-  name: string
-  content: string
-}
-
 export type { ProviderProjection, ProviderProjectionSource }
 
 export type RuntimeSnapshot = {
@@ -68,7 +63,7 @@ export type RuntimeSnapshot = {
    */
   harnessLaunch?: Record<string, Record<string, unknown>>
   workspaceHarnessEnabled?: boolean
-  commands?: RuntimeCommandItem[]
+  commands: SavedCommand[]
 }
 /**
  * The snapshot after this runtime resolved it: every projection carries the
@@ -145,7 +140,7 @@ function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, u
 }
 
 /** One command entry as the wire may carry it, or `undefined` when malformed. */
-function normalizeCommand(input: unknown): RuntimeCommandItem | undefined {
+function normalizeCommand(input: unknown): SavedCommand | undefined {
   if (!record(input)) return undefined
   const name = str(input.name)
   const content = str(input.content)
@@ -199,15 +194,12 @@ export function normalizeRuntimeSnapshot(
   const harnessLaunch = normalizeHarnessLaunch(input.harnessLaunch)
   if (!harnessLaunch) return undefined
   if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return undefined
-  let commands: RuntimeCommandItem[] | undefined
-  if (input.commands !== undefined) {
-    if (!Array.isArray(input.commands)) return undefined
-    commands = []
-    for (const row of input.commands) {
-      const command = normalizeCommand(row)
-      if (!command) return undefined
-      commands.push(command)
-    }
+  if (!Array.isArray(input.commands)) return undefined
+  const commands: SavedCommand[] = []
+  for (const row of input.commands) {
+    const command = normalizeCommand(row)
+    if (!command) return undefined
+    commands.push(command)
   }
   return {
     version: 4,
@@ -217,7 +209,7 @@ export function normalizeRuntimeSnapshot(
     auth,
     ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
-    ...(commands ? { commands } : {}),
+    commands,
   }
 }
 

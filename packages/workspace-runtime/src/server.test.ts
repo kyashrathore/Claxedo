@@ -526,6 +526,7 @@ describe("workspace runtime host route auth", () => {
         },
         body: JSON.stringify({
           version: 4,
+          commands: [],
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
@@ -687,6 +688,7 @@ describe("workspace runtime host route auth", () => {
         },
         body: JSON.stringify({
           version: 4,
+          commands: [],
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
@@ -987,7 +989,7 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
       } },
     })
     try {
-      await runtime.host.apply({ version: 4, mcp: {}, auth: {}, connections: [{ connectionId: "health-acp", providerKey: "acp", configRevision: 1, enabled: true, secretRefs: { token: "vault/token" }, config: { label: "ACP", secretBindings: { env: { TOKEN: "token" } }, connection: { kind: "process", command: "/does-not-exist-health-must-not-launch" } } }], defaultHarness: { kind: "connection", connectionId: "health-acp" } })
+      await runtime.host.apply({ version: 4, commands: [], mcp: {}, auth: {}, connections: [{ connectionId: "health-acp", providerKey: "acp", configRevision: 1, enabled: true, secretRefs: { token: "vault/token" }, config: { label: "ACP", secretBindings: { env: { TOKEN: "token" } }, connection: { kind: "process", command: "/does-not-exist-health-must-not-launch" } } }], defaultHarness: { kind: "connection", connectionId: "health-acp" } })
       const initialReads = secretsRead
       const response = await runtime.app.request("http://localhost/api/wr/health")
       const body = await response.json()
@@ -1100,6 +1102,7 @@ describe("relay-host auth middleware (characterization)", () => {
         },
         body: JSON.stringify({
           version: 4,
+          commands: [],
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },

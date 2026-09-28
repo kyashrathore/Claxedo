@@ -77,7 +77,11 @@ function Probe(props: { kind: ComposerEngineKind }) {
       { id: "model.choose", title: "Choose model", slash: "model" },
       { id: "session.new", title: "New session", slash: "new" },
     ],
-    customCommands: () => [{ name: "deploy", description: "Ship it" }],
+    customCommands: () => [
+      { name: "deploy", origin: "transport", description: "Ship it" },
+      { name: "review", origin: "saved", content: "Review my saved instructions" },
+      { name: "review", origin: "transport", description: "Harness review" },
+    ],
     triggerSlashCommand: (id) => triggered.push(id),
     documentDirectory: () => "/repo",
     listDocuments: async () => [
@@ -300,9 +304,23 @@ for (const kind of ["legacy", "controller"] as const) {
     test("a custom command inserts its trigger for editing instead of firing", async () => {
       harness.type("/dep")
       await waitFor(() => expect(harness.engine.popoverView.slashFlat().length).toBeGreaterThan(0))
-      const deploy = harness.engine.popoverView.slashFlat().find((command) => command.id === "custom.deploy")!
+      const deploy = harness.engine.popoverView.slashFlat().find((command) => command.id === "custom.transport.deploy")!
       harness.engine.popoverView.onSlashSelect(deploy)
       await waitFor(() => expect(harness.text()).toBe("/deploy "))
+      expect(triggered).toEqual([])
+    })
+
+    test("colliding command selections preserve saved content versus a harness invocation", async () => {
+      harness.type("/review")
+      await waitFor(() => expect(harness.engine.popoverView.slashFlat().filter((command) => command.trigger === "review")).toHaveLength(2))
+      const saved = harness.engine.popoverView.slashFlat().find((command) => command.id === "custom.saved.review")
+      expect(saved).toBeDefined()
+      harness.engine.popoverView.onSlashSelect(saved)
+      await waitFor(() => expect(harness.text()).toBe("Review my saved instructions"))
+      harness.type("/review")
+      await waitFor(() => expect(harness.engine.popoverView.slashFlat().find((command) => command.id === "custom.transport.review")).toBeDefined())
+      harness.engine.popoverView.onSlashSelect(harness.engine.popoverView.slashFlat().find((command) => command.id === "custom.transport.review"))
+      await waitFor(() => expect(harness.text()).toBe("/review "))
       expect(triggered).toEqual([])
     })
 

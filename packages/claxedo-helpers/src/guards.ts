@@ -23,6 +23,17 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
+/**
+ * A filesystem error meaning the path is simply not there.
+ *
+ * `catch` binds `unknown`, and Node's errno errors carry `code` without a type
+ * that says so. Testing the property is the check; asserting the shape only
+ * assumed it.
+ */
+export function isMissingFile(error: unknown): boolean {
+  return isRecord(error) && error.code === "ENOENT"
+}
+
 /** The same object reference, never a copy. */
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined

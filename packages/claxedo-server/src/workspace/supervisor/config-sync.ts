@@ -9,6 +9,7 @@ import { runtimeWorkspaceDir } from "./state"
 import { supervisorDriverIdentity } from "./driver-id"
 import type { WorkspaceRuntimeState } from "./store"
 import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { createKeyedSerializer } from "@claxedo/helpers"
 
 export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   const scope = state.remote || state.ws.kind === "cloud" ? "shared" : "local"
@@ -26,16 +27,28 @@ export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   })
 }
 
-export async function pushRuntimeConfig(state: WorkspaceRuntimeState, cfg?: RuntimeConfigSnapshot) {
-  if (!state.url) throw new Error("workspace runtime missing url")
-  const url = `${state.url}/api/wr/config`
+const pushes = createKeyedSerializer<WorkspaceRuntimeState>()
+
+/**
+ * Pushes run one at a time per runtime and each reads its snapshot inside its
+ * turn: two concurrent pushes that read first and posted after could land in
+ * either order, leaving the runtime on the older configuration.
+ */
+export function pushRuntimeConfig(state: WorkspaceRuntimeState) {
+  return pushes.run(state, async () => {
+    if (!state.url) throw new Error("workspace runtime missing url")
+    await postRuntimeConfig(`${state.url}/api/wr/config`, state, await runtimeConfigSnapshot(state))
+  })
+}
+
+async function postRuntimeConfig(url: string, state: WorkspaceRuntimeState, cfg: RuntimeConfigSnapshot) {
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...await supervisorBackplaneHeaders(state),
     },
-    body: JSON.stringify(cfg ?? await runtimeConfigSnapshot(state)),
+    body: JSON.stringify(cfg),
     signal: AbortSignal.timeout(5_000),
   }).catch((err) => {
     const message = err instanceof Error ? err.message : String(err)

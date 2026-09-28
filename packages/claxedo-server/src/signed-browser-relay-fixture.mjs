@@ -212,6 +212,7 @@ async function startCloudRuntime(input) {
       version: 4,
       mcp: {},
       connections: [],
+      commands: [],
       defaultHarness: { kind: "native", harnessId: "pi" },
       auth: scriptedModelAuth,
     })

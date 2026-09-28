@@ -360,7 +360,7 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
     if (url.pathname === "/mcp") return json(route, {})
     if (url.pathname === "/vcs") return json(route, {})
-    if (url.pathname === "/command") return json(route, [{ name: "build", description: "Build command" }])
+    if (url.pathname === "/command") return json(route, [{ name: "build", description: "Build command", origin: "transport" }])
     if (url.pathname === "/permission") return json(route, [])
     if (url.pathname === "/question") return json(route, [])
     if (isWorkspaceResolvePath(url.pathname) && url.searchParams.get("workspaceId") !== WORKSPACE_ID) {

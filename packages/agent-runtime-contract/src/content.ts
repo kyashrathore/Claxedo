@@ -326,7 +326,17 @@ export type AgentQuestion = {
   harnessPayload?: unknown
 }
 
-export type AgentCommand = { name: string; content?: string; description?: string; harnessPayload?: unknown }
+export type AgentCommand = {
+  name: string
+  content?: string
+  description?: string
+  input?: { hint: string } | null
+  source?: "command" | "mcp" | "skill"
+  harnessPayload?: unknown
+}
+/** A user's command as configuration carries it: its name and the prompt text it expands to. */
+export type SavedCommand = { name: string; content: string }
+export type RuntimeCommand = AgentCommand & ((SavedCommand & { origin: "saved" }) | { origin: "transport" })
 // `id` is the executable identity the prompt's `agent` field resolves; `name`
 // is the display label. Catalogs that split the two (OpenCode's `Agent.Info`
 // does) must carry `id` — a submission keyed by the label is rejected.

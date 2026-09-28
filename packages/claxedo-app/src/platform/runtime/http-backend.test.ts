@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
-import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
-import type { ClaxedoCommand as Command, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { AgentPresentationSession as Session, RuntimeCommand as Command } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
   createHttpSessionBackend,
   createHttpWorkspaceRuntimeBackend,
@@ -25,8 +25,7 @@ function project(id: string, worktree: string): Project {
 function command(name: string): Command {
   return {
     name,
-    template: "",
-    hints: [],
+    origin: "transport",
   }
 }
 

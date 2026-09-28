@@ -57,16 +57,6 @@ export type ClaxedoPath = {
   directory: string
 }
 
-export type ClaxedoCommand = {
-  name: string
-  description?: string
-  agent?: string
-  model?: string
-  source?: "command" | "mcp" | "skill"
-  template: string
-  subtask?: boolean
-  hints: string[]
-}
 
 export type ClaxedoProviderAuthorization = {
   url: string

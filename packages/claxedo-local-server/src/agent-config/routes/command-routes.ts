@@ -3,6 +3,7 @@ import { deleteCommand, getCommand, listCommands, saveCommand } from "@claxedo/s
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../route-options"
+import { fanOutConfig } from "../fanout"
 
 export function agentConfigCommandRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -15,7 +16,7 @@ export function agentConfigCommandRoutes(options: AgentConfigRouteOptions = {}) 
       })
       if (localOnly) return localOnly
       const commands = await listCommands()
-      return c.json(commands)
+      return c.json(commands.map((command) => ({ ...command, origin: "saved" as const })))
     })
 
     .get("/commands/:name", async (c) => {
@@ -44,6 +45,7 @@ export function agentConfigCommandRoutes(options: AgentConfigRouteOptions = {}) 
         return c.json(errorBody("agent_config_command_invalid_body", "name and content are required"), 400)
       }
       const saved = await saveCommand(body.name, body.content)
+      await fanOutConfig()
       return c.json({ ok: true, name: saved }, 201)
     })
 
@@ -55,8 +57,8 @@ export function agentConfigCommandRoutes(options: AgentConfigRouteOptions = {}) 
         label: "Local command config",
       })
       if (localOnly) return localOnly
-      const deleted = await deleteCommand(c.req.param("name"))
-      if (!deleted) return c.json(errorBody("agent_config_command_not_found", "Command not found"), 404)
+      await deleteCommand(c.req.param("name"))
+      await fanOutConfig()
       return c.json({ ok: true })
     })
 }

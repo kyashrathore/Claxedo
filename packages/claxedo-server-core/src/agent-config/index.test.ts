@@ -1,6 +1,6 @@
-import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
-import { realpathSync } from "fs"
+import nodeFs, { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -175,7 +175,7 @@ describe("agent config", () => {
 
   // ── getRuntimeConfigSnapshot ────────────────────────────────────────
 
-  test("snapshot includes v4 connections, explicit default, and no command side channel", async () => {
+  test("snapshot includes v4 connections, explicit default, and saved commands", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       defaultConnectionId: "conn-primary",
     })
@@ -185,8 +185,11 @@ describe("agent config", () => {
     expect(snap.mcp).toEqual({})
     expect(snap.connections).toEqual([trustedConnection()])
     expect(snap.defaultHarness).toEqual({ kind: "connection", connectionId: "conn-primary" })
-    expect("commands" in snap).toBe(false)
+    expect(snap).toHaveProperty("commands", [{ name: "triage", content: "Triage $ARGUMENTS" }])
+    expect(normalizeRuntimeSnapshot(snap)?.commands).toEqual([{ name: "triage", content: "Triage $ARGUMENTS" }])
     expect(await mod.listCommands()).toContainEqual({ name: "triage", content: "Triage $ARGUMENTS" })
+    await mod.deleteCommand("triage")
+    expect(await mod.getRuntimeConfigSnapshot()).toHaveProperty("commands", [])
   })
 
   /**
@@ -314,7 +317,13 @@ describe("agent config", () => {
   test("the snapshot retains its canonical version", async () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
     const config = await mod.getRuntimeConfigSnapshot()
-    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
+    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {}, commands: [] })
+  })
+
+  test("refuses to publish an empty command set when command storage cannot be read", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {} })
+    await fs.writeFile(path.join(root, "commands"), "not a directory")
+    await expect(mod.getRuntimeConfigSnapshot()).rejects.toMatchObject({ code: "EEXIST" })
   })
 
   // ── Commands ────────────────────────────────────────────────────────
@@ -342,16 +351,37 @@ describe("agent config", () => {
 
   test("deletes an existing command", async () => {
     await mod.saveCommand("temp-cmd", "temporary")
-    const deleted = await mod.deleteCommand("temp-cmd")
-    expect(deleted).toBe(true)
+    await mod.deleteCommand("temp-cmd")
 
     const after = await mod.getCommand("temp-cmd")
     expect(after).toBeNull()
   })
 
-  test("delete returns false for nonexistent command", async () => {
-    const deleted = await mod.deleteCommand("nonexistent-" + randomUUID())
-    expect(deleted).toBe(false)
+  test("delete propagates filesystem failures instead of claiming absence", async () => {
+    await mod.saveCommand("blocked", "content")
+    await fs.unlink(path.join(root, "commands", "blocked.md"))
+    await fs.mkdir(path.join(root, "commands", "blocked.md"))
+    await expect(mod.deleteCommand("blocked")).rejects.toThrow()
+  })
+
+  test("get propagates filesystem failures instead of claiming absence", async () => {
+    await fs.mkdir(path.join(root, "commands", "unreadable.md"), { recursive: true })
+    await expect(mod.getCommand("unreadable")).rejects.toMatchObject({ code: "EISDIR" })
+  })
+
+  test("deleting a nonexistent command succeeds", async () => {
+    await expect(mod.deleteCommand("nonexistent-" + randomUUID())).resolves.toBeUndefined()
+  })
+
+  test("a command removed between listing and reading is left out of the list", async () => {
+    await mod.saveCommand("kept", "Kept")
+    const listed = await nodeFs.promises.readdir(path.join(root, "commands"))
+    const readdir = vi.spyOn(nodeFs.promises, "readdir").mockResolvedValueOnce([...listed, "vanished.md"] as never)
+    try {
+      expect(await mod.listCommands()).toEqual([{ name: "kept", content: "Kept" }])
+    } finally {
+      readdir.mockRestore()
+    }
   })
 
   test("get returns null for nonexistent command", async () => {

@@ -1,6 +1,7 @@
 import type {
   AgentAgent,
-  AgentCommand,
+  RuntimeCommand,
+  SavedCommand,
   AgentMessage,
   AgentPermissionModeState,
   AgentTodo,
@@ -29,6 +30,7 @@ export function createHarnessReads(input: {
   transports: TransportResolver
   launch: LaunchComposer
   attachments: SessionAttachments
+  savedCommands: () => readonly SavedCommand[]
 }) {
   const { store, transports, launch, attachments } = input
 
@@ -73,9 +75,15 @@ export function createHarnessReads(input: {
       if (declared.configOwner === "runtime" && !state.unsupported) store.updateSessionConfig(sessionId, { permissionMode: state.currentModeId ?? null })
       return state
     },
-    async commands(target: HarnessTarget): Promise<readonly AgentCommand[] | undefined> {
+    async commands(target: HarnessTarget): Promise<readonly RuntimeCommand[]> {
       const resolved = await resolve(target)
-      return await resolved.handle.transport.commands?.list(resolved.target)
+      const commands = resolved.handle.transport.commands
+      const declared = commands ? await commands.list(resolved.target) : []
+      const saved = input.savedCommands()
+      return [
+        ...saved.map((command) => ({ ...command, origin: "saved" as const })),
+        ...declared.map((command) => ({ ...command, origin: "transport" as const })),
+      ]
     },
     async agents(target: HarnessTarget): Promise<readonly AgentAgent[] | undefined> {
       const resolved = await resolve(target)

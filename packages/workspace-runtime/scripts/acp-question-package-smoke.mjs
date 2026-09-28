@@ -19,7 +19,7 @@ const request = (route, body) => app.request(`http://localhost${route}`, body ==
   method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
 })
 try {
-  await host.apply({ version: 4, mcp: {}, auth: {}, connections: [{
+  await host.apply({ version: 4, mcp: {}, auth: {}, commands: [], connections: [{
     connectionId: "package-agent", providerKey: "acp", configRevision: 1, enabled: true,
     config: { label: "Package fixture", modelSelection: { status: "unsupported" }, connection: {
       kind: "process", command: process.execPath,

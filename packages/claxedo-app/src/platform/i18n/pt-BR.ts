@@ -253,6 +253,7 @@ export const dict = {
   "prompt.dropzone.label": "Arraste imagens, PDFs ou arquivos de texto aqui",
   "prompt.dropzone.file.label": "Solte para @mencionar arquivo",
   "prompt.slash.badge.custom": "personalizado",
+  "prompt.slash.badge.saved": "salvo",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Remover arquivo do contexto",
