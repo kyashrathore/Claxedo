@@ -12,9 +12,15 @@ export class AcpStartupDeadline {
     this.countdown = new HoldableCountdown(clock, ms, () => rejectTimeout(new AcpTransportError("timeout", `ACP ${operation} timed out`)))
   }
 
-  async run<T>(work: Promise<T>): Promise<T> {
-    try { return await Promise.race([work, this.timeout]) }
-    finally { this.countdown.dispose() }
+  async run<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+    let abort!: () => void
+    const aborted = new Promise<never>((_, reject) => {
+      abort = () => reject(new AcpTransportError("connection", "ACP operation was abandoned", signal?.reason))
+      if (signal?.aborted) abort()
+      else signal?.addEventListener("abort", abort, { once: true })
+    })
+    try { return await Promise.race([work, this.timeout, aborted]) }
+    finally { this.countdown.dispose(); signal?.removeEventListener("abort", abort) }
   }
 
   async request<T>(work: () => T | Promise<T>): Promise<T> {

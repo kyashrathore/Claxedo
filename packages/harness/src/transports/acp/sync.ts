@@ -1,6 +1,7 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { AgentPermissionModeState, PromptModel, SessionConfig } from "@claxedo/agent-runtime-contract"
-import type { TurnInput } from "../../contract"
+import type { Clock, TurnInput } from "../../contract"
+import { AcpStartupDeadline } from "./deadline"
 import { AcpTransportError } from "./errors"
 import type { AcpEntry } from "./index"
 import { acpMatchChoice, acpOptionValue, acpPermissionModes, acpPickOption, acpSelectChoices, type AcpOptionKind } from "./options"
@@ -79,14 +80,28 @@ async function applyEffort(entry: AcpEntry, effort: string | undefined): Promise
   if (acpOptionValue(option) !== wanted) await acpSetOption(entry, option!, wanted, "thought_level")
 }
 
-export async function acpApplyTurnConfig(entry: AcpEntry, turn: TurnInput): Promise<void> {
+export async function acpPrepareTurnConfig(entry: AcpEntry, turn: TurnInput, clock: Clock, timeoutMs: number): Promise<void> {
+  const deadline = new AcpStartupDeadline(clock, timeoutMs, "turn configuration")
+  const abort = new AbortController()
+  entry.startup = deadline
+  try { await deadline.run(acpApplyTurnConfig(entry, turn, abort.signal), entry.startupAbort.signal) }
+  catch (error) {
+    if (!(error instanceof AcpTransportError) || error.code !== "timeout") throw error
+    entry.phase = "uncertain"
+    throw new AcpTransportError("timeout", error.message, error, { acpOutcome: "not_started" })
+  } finally { abort.abort(); entry.startup = undefined }
+}
+
+async function acpApplyTurnConfig(entry: AcpEntry, turn: TurnInput, signal: AbortSignal): Promise<void> {
   const mode = turn.prompt.permissionMode
   if (mode) {
     const applied = await acpSetPermissionMode(entry, mode)
+    signal.throwIfAborted()
     if (applied.currentModeId !== mode) throw new AcpTransportError("configuration", `ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${mode}`)
   }
   const effort = turn.effort ?? undefined
   const effortInModel = await applyModel(entry, turn.model, effort)
+  signal.throwIfAborted()
   if (!effortInModel) await applyEffort(entry, effort)
 }
 

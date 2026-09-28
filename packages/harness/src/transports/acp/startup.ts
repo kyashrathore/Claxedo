@@ -46,10 +46,12 @@ export async function acpSideElicitation(entry: AcpEntry | undefined, broker: Se
   finally { release?.() }
 }
 
-export async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBroker): Promise<AcpEntry> {
+async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBroker, signal?: AbortSignal): Promise<AcpEntry> {
   if (host.disposed()) throw new AcpTransportError("connection", "ACP transport disposed")
   let entry: AcpEntry | undefined
   const startupAbort = new AbortController()
+  if (signal?.aborted) startupAbort.abort()
+  else signal?.addEventListener("abort", () => startupAbort.abort(), { once: true })
   host.startingAborts.add(startupAbort)
   let peer: AcpPeer
   try { peer = await connectAcp(input, host.connection, host.services, {
@@ -70,12 +72,13 @@ export async function openAcpEntry(host: AcpHost, input: StartInput, broker: Ses
 }
 
 async function adopt(host: AcpHost, entry: AcpEntry, restored: AcpRestored, what: string): Promise<HarnessSession> {
+  if (entry.startupAbort.signal.aborted) throw new AcpTransportError("connection", "ACP startup was abandoned")
   entry.startup = undefined
   if (restored.configOptions != null) entry.options = restored.configOptions
   if (restored.modes !== undefined) Object.assign(entry, { currentModeId: undefined }, acpModeState(restored.modes))
   entry.session = { ...entry.session, binding: await entry.broker.rebind(restored.upstreamSessionId) }
   await acpFlushUpdates(entry, (update) => acpObserveSubagent(entry, update))
-  if (host.disposed()) throw new AcpTransportError("connection", `ACP transport disposed during ${what}`)
+  if (host.disposed() || entry.startupAbort.signal.aborted) throw new AcpTransportError("connection", `ACP transport closed during ${what}`)
   host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
   host.entries.set(entry.session.binding.sessionId, entry)
@@ -109,30 +112,27 @@ export async function startAcpEntry(host: AcpHost, input: StartInput, broker: Se
   } catch (error) { return abandon(host, entry, error) }
 }
 
-export async function attachAcpEntry(host: AcpHost, input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
-  const entry = await openAcpEntry(host, input, broker)
+export async function attachAcpEntry(host: AcpHost, input: AttachInput, broker: SessionBroker, prior?: AcpEntry, signal?: AbortSignal): Promise<HarnessSession> {
+  const entry = await openAcpEntry(host, input, broker, signal)
+  if (prior) {
+    entry.options = prior.options
+    entry.commands = prior.commands
+    entry.modes = prior.modes
+    entry.currentModeId = prior.currentModeId
+  }
   try {
     entry.startup = acpStartupDeadline(host, "session restore")
     const restored = await entry.startup.run(restoreAcp(entry.peer, input, host.mcp(entry).map(acpMcp), broker, host.missingContext,
-      claudeOptionsMeta(entry.peer.handshake, input).meta))
+      claudeOptionsMeta(entry.peer.handshake, input).meta), entry.startupAbort.signal)
     return await adopt(host, entry, restored, "attach")
   } catch (error) { return abandon(host, entry, error) }
 }
 
-export async function restartAcpEntry(host: AcpHost, entry: AcpEntry): Promise<void> {
+export async function restartAcpEntry(host: AcpHost, entry: AcpEntry, signal: AbortSignal): Promise<void> {
   entry.pendingRestart = false
   entry.startupAbort.abort()
   await entry.peer.retire()
   host.entries.delete(entry.session.binding.sessionId)
-  const next = await openAcpEntry(host, entry.start, entry.broker)
-  try {
-    next.startup = acpStartupDeadline(host, "session restore")
-    const restored = await next.startup.run(restoreAcp(next.peer, { ...entry.start, binding: entry.session.binding },
-      host.mcp(next).map(acpMcp), entry.broker, host.missingContext, claudeOptionsMeta(next.peer.handshake, entry.start).meta))
-    next.options = entry.options
-    next.commands = entry.commands
-    next.modes = entry.modes
-    next.currentModeId = entry.currentModeId
-    await adopt(host, next, restored, "restart")
-  } catch (error) { await abandon(host, next, error) }
+  if (signal.aborted || host.disposed()) return
+  await attachAcpEntry(host, { ...entry.start, binding: entry.session.binding }, entry.broker, entry, signal)
 }

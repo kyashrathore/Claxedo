@@ -577,7 +577,7 @@ test("ACP HTTP retirement closes a connection with a write in flight", async () 
   const writing = new Promise<void>((resolve) => { entered = resolve })
   const held = new Promise<void>((resolve) => { release = resolve })
   globalThis.fetch = ((input, init) => {
-    if (init?.method === "DELETE") deletes++
+    if (init?.method === "DELETE") return fetchRequest(input, init).then((response) => { deletes++; return response })
     if (hold && init?.method === "POST") {
       entered()
       return held.then(() => fetchRequest(input, init))
@@ -966,7 +966,8 @@ test("a timed-out ACP config restore quarantines that session while its sibling 
     const refused = async () => {
       for await (const _event of context.transport.send(context.session, context.turn("refused"), context.turnBroker())) {}
     }
-    await expect(refused()).rejects.toThrow("not attached")
+    await expect(refused()).rejects.toThrow("ACP session restart failed: ACP session restore timed out")
+    await expect(context.transport.close(context.session)).resolves.toBeUndefined()
     const siblingBroker = createTurnBroker(context.owner, { authority: context.ports.current.get("s2")!, origin,
       signal: new AbortController().signal })
     const events = []
