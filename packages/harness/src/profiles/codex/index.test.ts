@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { spawn } from "node:child_process"
 import type { PluginProjection, ResolvedCredentials } from "../../contract"
-import { ensurePinnedCodex, PINNED_CODEX } from "../../../e2e/harness/pinned-codex"
+import { PINNED_CODEX } from "../../../e2e/harness/pinned-codex"
 import { releasePort, reservePort } from "../../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../../e2e/harness/scripted-model-server"
 import { prepareCodexProfile } from "."
@@ -90,7 +90,6 @@ async function codexLogin(codexHome: string, home: string, apiKey: string): Prom
 }
 
 test("only the own-login home links the owner's auth, and a login in a brokered home stays in that home", async () => {
-  await ensurePinnedCodex()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-auth-boundary-"))
   try {
     const owner = await ownerHome(root)
@@ -122,7 +121,6 @@ async function codexExec(codexHome: string, home: string, cwd: string, args: str
 }
 
 test("a plugin version bump in a selected execution keeps the home, so a thread started before it resumes after", async () => {
-  await ensurePinnedCodex()
   const port = await reservePort()
   const model = await startScriptedModelServer({ port, red: false })
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-bump-"))

@@ -10,7 +10,7 @@ import { promisify } from "node:util"
 import { runConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
-import { ensurePinnedClaude, PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
+import { PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
 import { ClaudeSdkTransport } from "../transports/claude-sdk"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
@@ -125,7 +125,6 @@ async function attachedClaude(state: ClaudeBackend, previous?: { ports: MemoryPo
 }
 
 async function backend(): Promise<ClaudeBackend> {
-  await ensurePinnedClaude()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-conformance-"))
   const directory = path.join(root, "work")
   const userConfigRoot = path.join(root, "user-claude")

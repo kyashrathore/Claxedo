@@ -11,7 +11,7 @@ import { materializeAgentHooks } from "../../../workspace-runtime/src/agent-hook
 import { AgentHookRoutes } from "../../../workspace-runtime/src/routes/agent-hook"
 import { Pty } from "../../../workspace-runtime/src/pty/index"
 import { startScriptedCursorBackend } from "./cursor/backend"
-import { ensurePinnedCodex, PINNED_CODEX } from "./pinned-codex"
+import { PINNED_CODEX } from "./pinned-codex"
 import { releasePort, reservePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
@@ -100,7 +100,6 @@ afterAll(async () => {
 })
 
 test("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and ~/.codex is untouched", async () => {
-  await ensurePinnedCodex()
   const modelPort = await reservePort()
   const model = await startScriptedModelServer({ port: modelPort, red: false })
   const home = path.join(root, "codex-person")

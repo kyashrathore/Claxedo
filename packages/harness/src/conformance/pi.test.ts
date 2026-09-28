@@ -6,7 +6,7 @@ import { createTestServices } from "./test-support/services"
 import { processAlive } from "../../e2e/harness/process-alive"
 import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { assertListedCommandsRun } from "./test-support/commands"
-import { ensurePinnedPi, PINNED_PI } from "../../e2e/harness/pinned-pi"
+import { PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PiRpcTransport } from "../transports/pi-rpc"
@@ -37,7 +37,6 @@ const extension = `export default function (pi) {
 `
 
 async function backend(): Promise<PiBackend> {
-  await ensurePinnedPi()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-conformance-"))
   const directory = path.join(root, "work")
   const agentDir = path.join(root, "pi-agent")

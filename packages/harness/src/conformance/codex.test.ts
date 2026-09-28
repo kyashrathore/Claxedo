@@ -7,7 +7,7 @@ import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
-import { ensurePinnedCodex, PINNED_CODEX } from "../../e2e/harness/pinned-codex"
+import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { listenOnLoopback } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
@@ -29,7 +29,6 @@ type CodexBackend = ConformanceBackend & {
 }
 
 async function backend(): Promise<CodexBackend> {
-  await ensurePinnedCodex()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-conformance-"))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
