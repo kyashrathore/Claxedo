@@ -38,6 +38,10 @@ function build(entitled: boolean) {
       usersMe: vi.fn(async () => ({ subject: "user_1" })),
       authorizeWorkspaceCreate: vi.fn(async () => {}),
       createCloudWorkspace,
+      openWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => ({
+        allowed: true,
+        workspace: { workspace_id: args.workspaceId, project_id: "p1", backing: "cloud-vm" },
+      })),
       auditAllow: vi.fn(async () => ({})),
     },
     sandbox: { sandboxManager: { ensure } as unknown as SandboxManager },
