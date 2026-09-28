@@ -2,7 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { isRecord, numberField, textField } from "./json-fields";
 import path from "node:path";
 import net from "node:net";
-import { installAgentBrowserObserver, measureSessionActivation, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
+import { installAgentBrowserObserver, measureSessionActivation, settleFrameLog, type FrameLog, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
 import { readProcessTable, sameProcessIdentity, toIdleRows, type ProcessSnapshot } from "./agent-process-family";
 import { IdleProcessFamilyTracker } from "./idle-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
@@ -39,6 +39,7 @@ export type ClaxedoLaunch = {
     reloadCount: number;
     crashCount: number;
     semantic: PaintedMessage;
+    frameLog: FrameLog;
   };
   inspect(): Promise<{
     surface: { visibilityState: string; focused: boolean; hidden: boolean; viewport: { width: number; height: number } };
@@ -514,7 +515,8 @@ export async function launchPackagedClaxedo(input: {
     // The start clock ends at the renderer's settle frame, not when the
     // confirmation window after it closes.
     const rendererTimeOrigin = readNumber(await connectedPage.evaluate(() => performance.timeOrigin));
-    const endTimestamp = rendererTimeOrigin + semanticReadiness.paintedAtMs - performance.timeOrigin;
+    const rendererOffsetMs = rendererTimeOrigin - performance.timeOrigin;
+    const endTimestamp = semanticReadiness.endAtMs + rendererOffsetMs;
     if (ownershipTimer) clearInterval(ownershipTimer);
     ownershipTimer = undefined;
     await refreshKnown();
@@ -572,6 +574,7 @@ export async function launchPackagedClaxedo(input: {
         reloadCount,
         crashCount,
         semantic: semanticReadiness.paintedMessage,
+        frameLog: settleFrameLog(startTimestamp - rendererOffsetMs, semanticReadiness.paintStabilityFrames, rendererOffsetMs),
       },
       async inspect() {
         const [surface, processes] = await Promise.all([

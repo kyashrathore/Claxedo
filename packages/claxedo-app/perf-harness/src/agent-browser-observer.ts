@@ -50,7 +50,7 @@ type ActionResult =
       state: "exact";
       durationMs: number;
       trustedEventAtMs: number;
-      paintedAtMs: number;
+      endAtMs: number;
     }
   | { state: "invalid"; reason: string };
 
@@ -62,8 +62,19 @@ type TimelineCoverage = {
   rowCount: number;
 };
 
+/** The benchmark's clock rule: a frame is ready only when all six gates hold on it. */
+export type ReadyGates = {
+  displayedDestination: boolean;
+  latestTurnPainted: boolean;
+  noPlaceholder: boolean;
+  firstFoldComplete: boolean;
+  composerEditable: boolean;
+  windowVisibleFocused: boolean;
+};
+
 export type PaintSettleFrame = {
   paintedAtMs: number;
+  gates: ReadyGates;
   ready: boolean;
   signature?: Record<string, unknown>;
   /** A childList or characterData mutation inside the timeline root arrived since the previous frame. */
@@ -145,7 +156,34 @@ type SessionActionResult =
   | (Extract<ActionResult, { state: "exact" }> & {
       paintedMessage: PaintedMessage;
       paintStabilityFrames: PaintStabilityFrame[];
+      frameLog: FrameLog;
     });
+
+/**
+ * The frames an activation's clock was derived from, in the shape the
+ * benchmark re-derives the settle from (settle-31-frames/v1). The observer is
+ * installed before the click, so frames before the trusted input are dropped.
+ */
+export type FrameLog = {
+  startAt: number;
+  offsetMs: number;
+  frames: Array<{ at: number; gates: ReadyGates; signature: string | null; mutated: boolean }>;
+};
+
+export function settleFrameLog(startAt: number, frames: readonly PaintSettleFrame[], offsetMs = 0): FrameLog {
+  return {
+    startAt,
+    offsetMs,
+    frames: frames
+      .filter((frame) => frame.paintedAtMs > startAt)
+      .map((frame) => ({
+        at: frame.paintedAtMs,
+        gates: frame.gates,
+        signature: frame.ready && frame.signature ? JSON.stringify(frame.signature) : null,
+        mutated: frame.mutated,
+      })),
+  };
+}
 
 type StreamEvidence = {
   startedAtMs: number;
@@ -185,7 +223,7 @@ type BrowserBenchmark = {
   armAction(token: string): void;
   finishAction(
     token: string,
-    observedPaintAtMs?: number,
+    settledAtMs?: number,
   ): Promise<ActionResult>;
   beginStream(): void;
   finishStream(): StreamEvidence;
@@ -269,8 +307,17 @@ function readPaintedMessage(value: unknown): PaintedMessage {
 
 function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
   const record = readRecord(value);
+  const gates = readRecord(record.gates);
   return {
     ...readNumberFields(record, ["paintedAtMs", "observerSampleMs"]),
+    gates: {
+      displayedDestination: readBoolean(gates.displayedDestination),
+      latestTurnPainted: readBoolean(gates.latestTurnPainted),
+      noPlaceholder: readBoolean(gates.noPlaceholder),
+      firstFoldComplete: readBoolean(gates.firstFoldComplete),
+      composerEditable: readBoolean(gates.composerEditable),
+      windowVisibleFocused: readBoolean(gates.windowVisibleFocused),
+    },
     ready: readBoolean(record.ready),
     mutated: readBoolean(record.mutated),
     signature: optionalRecord(record.signature),
@@ -280,7 +327,7 @@ function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
 function readStablePaint(value: unknown) {
   const record = readRecord(value);
   return {
-    paintedAtMs: readNumber(record.paintedAtMs),
+    settledAtMs: readNumber(record.settledAtMs),
     paintedMessage: readPaintedMessage(record.paintedMessage),
     frames: readList(record.frames).map(readPaintStabilityFrame),
   };
@@ -298,7 +345,7 @@ function readActionResult(value: unknown): ActionResult {
   }
   return {
     state: "exact",
-    ...readNumberFields(record, ["durationMs", "trustedEventAtMs", "paintedAtMs"]),
+    ...readNumberFields(record, ["durationMs", "trustedEventAtMs", "endAtMs"]),
   };
 }
 
@@ -474,7 +521,7 @@ export async function measureSessionActivation(
       confirmationFrames: number;
     }) =>
       new Promise<{
-        paintedAtMs: number;
+        settledAtMs: number;
         paintedMessage: PaintedMessage;
         frames: PaintStabilityFrame[];
       }>(
@@ -637,36 +684,37 @@ export async function measureSessionActivation(
               })),
             };
           };
-          const sample = ():
-            | {
-                signature: string;
-                signatureValue: Record<string, unknown>;
-                paintedMessage: PaintedMessage;
-              }
-            | undefined => {
+          const sample = (): {
+            gates: ReadyGates;
+            ready?: {
+              signature: string;
+              signatureValue: Record<string, unknown>;
+              paintedMessage: PaintedMessage;
+            };
+          } => {
+            const gates: ReadyGates = {
+              displayedDestination: false,
+              latestTurnPainted: false,
+              noPlaceholder: false,
+              firstFoldComplete: false,
+              composerEditable: false,
+              windowVisibleFocused: document.visibilityState === "visible" && document.hasFocus(),
+            };
             const candidate = document.querySelector<HTMLElement>(
               `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
             );
-            if (!candidate) return undefined;
+            if (!candidate) return { gates };
             const surface = candidate.closest<HTMLElement>(
               "[data-workbench-content]",
             );
-            if (
-              !surface ||
-              surface.getAttribute("aria-hidden") === "true" ||
-              surface.hasAttribute("inert")
-            )
-              return undefined;
             // Left/right sync: the rail's selected row and the painted session
             // root must agree on this activation. A draft or previous session
             // still owning the pane while another row looks selected is a fail.
-            const activeRows = [
+            const activeIds = [
               ...document.querySelectorAll<HTMLElement>(
                 '[data-testid="rail-sidebar-session-row"][data-active="true"]',
               ),
-            ];
-            const activeIds = activeRows.map((row) => row.dataset.sessionId ?? "");
-            if (activeIds.length !== 1 || activeIds[0] !== id) return undefined;
+            ].map((row) => row.dataset.sessionId ?? "");
             const visibleSessionRoots = [
               ...document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"),
             ].filter((root) => {
@@ -684,19 +732,20 @@ export async function measureSessionActivation(
                 bounds.height > 0
               );
             });
-            if (
-              visibleSessionRoots.length !== 1 ||
-              visibleSessionRoots[0]?.dataset.sessionId !== id ||
-              visibleSessionRoots.some((root) => root.dataset.sessionId === "new")
-            ) {
-              return undefined;
-            }
+            gates.displayedDestination =
+              !!surface &&
+              surface.getAttribute("aria-hidden") !== "true" &&
+              !surface.hasAttribute("inert") &&
+              activeIds.length === 1 &&
+              activeIds[0] === id &&
+              visibleSessionRoots.length === 1 &&
+              visibleSessionRoots[0]?.dataset.sessionId === id;
             const composer = candidate.querySelector<HTMLElement>(
               '[data-component="prompt-input"]',
             );
             const composerStyle = composer ? getComputedStyle(composer) : undefined;
             const composerBounds = composer?.getBoundingClientRect();
-            const composerVisibleAndEnabled = !!(
+            gates.composerEditable = !!(
               composer &&
               composerStyle &&
               composerBounds &&
@@ -708,23 +757,21 @@ export async function measureSessionActivation(
               composer.getAttribute("aria-disabled") !== "true" &&
               composer.getAttribute("contenteditable") === "true"
             );
-            const surfaceFocused = document.visibilityState === "visible" && document.hasFocus();
-            if (!composerVisibleAndEnabled || !surfaceFocused) return undefined;
             // KTD11: app-specific progressive and staged-ready markers never
             // end the neutral clock. Canonical DOM content, generic geometry,
             // composer usability, focus, and an unchanged run of frames are
             // sufficient. A loading placeholder only holds the clock open.
-            if (candidate.querySelector("[data-session-timeline-loading]"))
-              return undefined;
             const timeline = candidate.querySelector<HTMLElement>(
               "[data-session-timeline-root]",
             );
-            if (!timeline || timeline.querySelector('[data-slot="skeleton"]'))
-              return undefined;
-            const viewport = timeline.querySelector<HTMLElement>(
+            gates.noPlaceholder =
+              !candidate.querySelector("[data-session-timeline-loading]") &&
+              !!timeline &&
+              !timeline.querySelector('[data-slot="skeleton"]');
+            const viewport = timeline?.querySelector<HTMLElement>(
               '[data-slot="session-timeline-scroll"] [data-scrollable]',
             );
-            if (!viewport) return undefined;
+            if (!timeline || !viewport) return { gates };
             const view = viewport.getBoundingClientRect();
             const visible = (element: HTMLElement) => {
               const style = getComputedStyle(element);
@@ -763,6 +810,10 @@ export async function measureSessionActivation(
               virtualKeyCount: Number(timeline.dataset.sessionTimelineKeyCount),
               rowCount: Number(timeline.dataset.sessionTimelineRowCount),
             };
+            gates.firstFoldComplete =
+              timelineCoverage.overflowPx <= 100 ||
+              (timelineCoverage.visibleRowCount > 0 &&
+                timelineCoverage.topGapPx <= 96);
             const row = [
               ...candidate.querySelectorAll<HTMLElement>(
                 '[data-timeline-row="UserMessage"][data-content-message-id], [data-timeline-row="AssistantPart"][data-content-message-id]',
@@ -787,25 +838,21 @@ export async function measureSessionActivation(
                     )
                   : undefined;
             const text = (content ?? row)?.innerText.trim() ?? "";
-            const completeFirstFold =
-              timelineCoverage.overflowPx <= 100 ||
-              (timelineCoverage.visibleRowCount > 0 &&
-                timelineCoverage.topGapPx <= 96);
-            if (
-              !row ||
-              !messageId ||
-              (kind !== "UserMessage" && kind !== "AssistantPart") ||
-              text.length === 0 ||
-              !completeFirstFold
-            )
-              return undefined;
+            gates.latestTurnPainted =
+              !!row &&
+              !!messageId &&
+              (kind === "UserMessage" || kind === "AssistantPart") &&
+              text.length > 0;
+            if (!Object.values(gates).every(Boolean) || !messageId || (kind !== "UserMessage" && kind !== "AssistantPart")) {
+              return { gates };
+            }
             const paintedMessage: PaintedMessage = {
               messageId,
               kind,
               partId,
               textLength: text.length,
-              composerVisibleAndEnabled,
-              surfaceFocused,
+              composerVisibleAndEnabled: gates.composerEditable,
+              surfaceFocused: gates.windowVisibleFocused,
               timelineCoverage,
             };
             const signatureValue = {
@@ -837,7 +884,7 @@ export async function measureSessionActivation(
                 ];
               }),
             };
-            return { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage };
+            return { gates, ready: { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage } };
           };
           const paintedFrames = window.__claxedoPaintedFrames;
           if (!paintedFrames) {
@@ -847,17 +894,19 @@ export async function measureSessionActivation(
           paintedFrames({
             sample: () => {
               const sampledAtMs = performance.now();
-              const current = sample();
+              const { gates, ready: current } = sample();
               return {
+                gates,
                 current,
                 observerSampleMs: performance.now() - sampledAtMs,
                 mutated: takeTimelineMutations() > 0,
               };
             },
-            painted: ({ current, observerSampleMs, mutated }, paintedAtMs) => {
+            painted: ({ gates, current, observerSampleMs, mutated }, paintedAtMs) => {
               const index = frames.length;
               frames.push({
                 paintedAtMs,
+                gates,
                 ready: !!current,
                 mutated,
                 observerSampleMs,
@@ -876,7 +925,7 @@ export async function measureSessionActivation(
               if (run && index - run.startIndex >= confirmationFrames) {
                 mutations.disconnect();
                 resolve({
-                  paintedAtMs: run.startedAtMs,
+                  settledAtMs: run.startedAtMs,
                   paintedMessage: run.paintedMessage,
                   frames,
                 });
@@ -908,15 +957,15 @@ export async function measureSessionActivation(
   const paintedMessage = stablePaint?.paintedMessage;
   const timing = readActionResult(
     await page.evaluate(
-      async (input: { token: string; paintedAtMs?: number }) =>
+      async (input: { token: string; settledAtMs?: number }) =>
         (await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(
           input.token,
-          input.paintedAtMs,
+          input.settledAtMs,
         )) ?? {
           state: "invalid",
           reason: "browser-observer-missing",
         },
-      { token, paintedAtMs: stablePaint.paintedAtMs },
+      { token, settledAtMs: stablePaint.settledAtMs },
     ),
   );
   if (timing.state !== "exact") return timing;
@@ -926,10 +975,10 @@ export async function measureSessionActivation(
       reason: "visible-real-message-missing-after-stable-paint",
     };
   const settle = paintSettle(stablePaint.frames, PAINT_SETTLE_CONFIRMATION_FRAMES);
-  if (settle?.settledAtMs !== stablePaint.paintedAtMs) {
+  if (settle?.settledAtMs !== stablePaint.settledAtMs) {
     return {
       state: "invalid",
-      reason: `paint-settle-mismatch:${JSON.stringify({ reported: stablePaint.paintedAtMs, verified: settle })}`,
+      reason: `paint-settle-mismatch:${JSON.stringify({ reported: stablePaint.settledAtMs, verified: settle })}`,
     };
   }
   if (!paintedMessage || !semanticTimelinePaintReady(paintedMessage, target)) {
@@ -938,7 +987,12 @@ export async function measureSessionActivation(
       reason: `invalid-semantic-paint:${JSON.stringify(paintedMessage)}`,
     };
   }
-  return { ...timing, paintedMessage, paintStabilityFrames: stablePaint.frames };
+  return {
+    ...timing,
+    paintedMessage,
+    paintStabilityFrames: stablePaint.frames,
+    frameLog: settleFrameLog(timing.trustedEventAtMs, stablePaint.frames),
+  };
 }
 
 async function clickVisibleSessionActivation(page: Page, sessionId: string) {
@@ -1405,7 +1459,7 @@ function installBrowserBenchmark() {
     armAction(token) {
       action = { token };
     },
-    async finishAction(token, observedPaintAtMs) {
+    async finishAction(token, settledAtMs) {
       if (!action || action.token !== token)
         return { state: "invalid", reason: "action-token-mismatch" };
       const trustedEventAtMs = action.trustedEventAtMs;
@@ -1416,16 +1470,16 @@ function installBrowserBenchmark() {
       // the trusted row click is dispatched. That observation cannot timestamp
       // the click's presentation; wait for the canonical post-input paint
       // instead of returning an impossible negative interval.
-      const paintedAtMs = observedPaintAtMs !== undefined && observedPaintAtMs >= trustedEventAtMs
-        ? observedPaintAtMs
+      const endAtMs = settledAtMs !== undefined && settledAtMs >= trustedEventAtMs
+        ? settledAtMs
         : await afterPaint();
-      if (!Number.isFinite(paintedAtMs) || paintedAtMs < trustedEventAtMs)
-        return { state: "invalid", reason: "invalid-paint-timestamp" };
+      if (!Number.isFinite(endAtMs) || endAtMs < trustedEventAtMs)
+        return { state: "invalid", reason: "invalid-end-timestamp" };
       return {
         state: "exact",
-        durationMs: paintedAtMs - trustedEventAtMs,
+        durationMs: endAtMs - trustedEventAtMs,
         trustedEventAtMs,
-        paintedAtMs,
+        endAtMs,
       };
     },
     beginStream() {

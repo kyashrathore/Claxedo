@@ -245,7 +245,7 @@ async function measureNavigation(
         kind: "single-monotonic-clock" as const,
         clock: "performance.now" as const,
         start: session.trustedEventAtMs,
-        end: session.paintedAtMs,
+        end: session.endAtMs,
       },
     }
   }
@@ -265,11 +265,11 @@ async function measureNavigation(
     const session = await activateExact(page, destination, hooks)
     if (!panelReadyPromise) throw new Error("Claxedo session activation did not arm the panel readiness observer")
     const panelReady = await panelReadyPromise
-    const end = Math.max(session.paintedAtMs, panelReady)
+    const end = Math.max(session.endAtMs, panelReady)
     await addMilestones(page, [
-      { id: "session-ready", at: session.paintedAtMs },
+      { id: "session-ready", at: session.endAtMs },
       { id: "panel-ready", at: panelReady },
-      { id: "content-identity", at: session.paintedAtMs },
+      { id: "content-identity", at: session.endAtMs },
       { id: "above-fold-painted", at: end },
     ])
     await markActionEnd(page, end)

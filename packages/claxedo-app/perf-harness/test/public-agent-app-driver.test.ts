@@ -70,13 +70,17 @@ function harness(extraSessionIds: string[] = []) {
         processes: [{ pid: 21, startTimeMs: 1_000, owner: "application", category: "claxedo-root" }],
         readiness: receipt,
         clock: { kind: "single-monotonic-clock", clock: "test", start: 1, end: 5 },
+        frameLog: { startAt: 1, offsetMs: 0, frames: [] },
       }
     },
     activate: async (target) => {
       activations.push(target.logicalSessionId)
       const start = clock
       clock += 2
-      return { kind: "single-monotonic-clock", clock: "test-renderer", start, end: clock }
+      return {
+        clock: { kind: "single-monotonic-clock", clock: "test-renderer", start, end: clock },
+        frameLog: { startAt: start, offsetMs: 0, frames: [] },
+      }
     },
     listedSessionIds: async () => listed.ids,
     executeSessionNavigation: async (benchmarkCase, source, destination, preset) => {

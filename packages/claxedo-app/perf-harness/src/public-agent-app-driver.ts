@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { serveDriver, type DriverHandlers, type PrepareParams } from "agent-app-benchmark/driver-sdk"
 import type { WorkspaceFixtureManifest, WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
-import { measureSessionActivation } from "./agent-browser-observer"
+import { measureSessionActivation, type FrameLog } from "./agent-browser-observer"
 import { ensureFrontWindow } from "./front-window"
 import { readFlag, readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
@@ -137,13 +137,17 @@ type ActiveLaunch = {
   processes: OwnedProcess[]
   readiness: ReadinessReceipt
   clock: Clock
+  frameLog: FrameLog
 }
+
+/** A measured activation: its clock and the frames the clock was derived from. */
+type Activation = { clock: Clock; frameLog: FrameLog }
 
 type DriverDependencies = {
   hello: Record<string, unknown>
   prepare(params: PrepareParams): Promise<Prepared>
   launch(stateHandle: string, initialSessionId: string): Promise<ActiveLaunch>
-  activate(target: Target, readinessTimeoutMs?: number): Promise<Clock>
+  activate(target: Target, readinessTimeoutMs?: number): Promise<Activation>
   /** Native session ids of the rail's session rows, top to bottom. */
   listedSessionIds(): Promise<readonly string[]>
   executePanelAction?(
@@ -303,7 +307,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         requireStateHandle(params.stateHandle)
         const launch = await dependencies.launch(params.stateHandle, "control")
         active = true
-        return execution(params.case.caseId, launch.clock, withTimingEvidence(launch.readiness, launch.clock.end))
+        return { ...execution(params.case.caseId, launch.clock, withTimingEvidence(launch.readiness, launch.clock.end)), frameLog: launch.frameLog }
       }
       if (
         !SESSION_SWITCH_SCENARIO_IDS.includes(params.scenarioId) ||
@@ -328,20 +332,20 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
             throw new Error(`Claxedo lists ${destination.logicalSessionId} ${sourceRow < 0 ? "without" : "not directly below"} ${source.logicalSessionId}`)
           }
         }
-        const clock = await dependencies.activate(destination)
+        const measured = await dependencies.activate(destination)
         walkedSessions.add(destination.logicalSessionId)
-        return execution(benchmarkCase.caseId, clock, readinessReceipt(clock.end))
+        return activationExecution(benchmarkCase.caseId, measured)
       }
       const control = resolveTarget(benchmarkCase.sourceSessionId ?? "control")
       if (benchmarkCase.workload !== "resource-control") {
         if (benchmarkCase.sessionState === "warm") await dependencies.activate(destination)
         await dependencies.activate(control)
       }
-      const clock = await dependencies.activate(
+      const measured = await dependencies.activate(
         destination,
         benchmarkCase.workload === "resource-control" ? RESOURCE_CONTROL_READINESS_TIMEOUT_MS : undefined,
       )
-      return execution(benchmarkCase.caseId, clock, readinessReceipt(clock.end))
+      return activationExecution(benchmarkCase.caseId, measured)
     },
     shutdown: async () => {
       const { terminated, survivors } = await dependencies.shutdown()
@@ -355,6 +359,10 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
 
 function execution(caseId: string, clock: Clock, readiness: ReadinessReceipt) {
   return { caseId, durationMs: clock.end - clock.start, clock, readiness }
+}
+
+function activationExecution(caseId: string, measured: Activation) {
+  return { ...execution(caseId, measured.clock, readinessReceipt(measured.clock.end)), frameLog: measured.frameLog }
 }
 
 function panelExecution(caseId: string, measured: PanelMeasurement) {
@@ -504,6 +512,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
         start: launch.coldReady.startTimestamp,
         end: launch.coldReady.endTimestamp,
       },
+      frameLog: launch.coldReady.frameLog,
     }
   }
 
@@ -595,10 +604,13 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
       const result = await measureSessionActivation(current.page, target, { readinessTimeoutMs })
       if (result.state !== "exact") throw new Error(`Claxedo session activation failed: ${result.reason}`)
       return {
-        kind: "single-monotonic-clock",
-        clock: "claxedo-renderer-performance",
-        start: result.trustedEventAtMs,
-        end: result.paintedAtMs,
+        clock: {
+          kind: "single-monotonic-clock",
+          clock: "claxedo-renderer-performance",
+          start: result.trustedEventAtMs,
+          end: result.endAtMs,
+        },
+        frameLog: result.frameLog,
       }
     },
     listedSessionIds: async () => {
