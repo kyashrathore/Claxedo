@@ -3,7 +3,6 @@
 export * from "@claxedo/server-core/session/navigation-list"
 import {
   buildSessionListResponse,
-  sessionListIsKeysetPageable,
   sessionListKeysetPage,
   type SessionListQuery,
   type SessionListResponse,
@@ -13,7 +12,7 @@ import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../authority/services"
 
-type SessionListRequestErrorCode = "session_list_view_unsupported" | "session_list_scope_required"
+type SessionListRequestErrorCode = "session_list_scope_required"
 
 export class SessionListRequestError extends ClaxedoError<SessionListRequestErrorCode> {
   constructor(code: SessionListRequestErrorCode, message: string) {
@@ -37,18 +36,13 @@ export function sessionInventoryResponse(sessions: unknown) {
  * `ControlPlaneSessionRoutes`), so every route asks it.
  *
  * Each page is one keyset read of the registry, filtered by the caller's
- * session access in the same query. A grouped or environment- or git-filtered
- * view is refused: registry rows carry neither, and answering it would mean
- * reading every row to filter them in memory.
+ * session access in the same query.
  */
 export async function signedSessionList(
   services: ControlPlaneServices,
   auth: SignedControlPlaneAuth,
   query: SessionListQuery,
 ): Promise<SessionListResponse> {
-  if (!sessionListIsKeysetPageable(query)) {
-    throw new SessionListRequestError("session_list_view_unsupported", "The signed session list is flat and unfiltered by environment or git")
-  }
   const sessions = await requireAuthority(services).listSessionPage(auth, {
     ...sessionListKeysetPage(query),
     ...sessionPageScope(query),

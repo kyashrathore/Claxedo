@@ -55,7 +55,7 @@ function retiredName(root: string, node: ts.Node, checker: ts.TypeChecker): stri
   if (contractFields.has(node.text) && isPropertyKey(node)) return undefined
   const { declarations, reference } = lookup(node, checker)
   const files = declarations.map((declaration) => declaration.getSourceFile().fileName)
-  if (files.some((file) => isExempt(root, file))) return undefined
+  if (!isJsxPropName(node) && files.some((file) => isExempt(root, file))) return undefined
   if (reference && files.some((file) => under(root, file, "src") || under(root, file, "plugins"))) return undefined
   return `${node.text} is an OpenCode name; use ${claxedoName(node.text)}`
 }
@@ -107,6 +107,10 @@ function isPropertyKey(node: ts.Identifier): boolean {
   if (ts.isPropertyAccessExpression(parent)) return parent.name === node
   if (ts.isPropertyAssignment(parent) || ts.isShorthandPropertyAssignment(parent)) return parent.name === node
   return ts.isBindingElement(parent) && parent.propertyName === node
+}
+
+function isJsxPropName(node: ts.Identifier): boolean {
+  return ts.isJsxAttribute(node.parent) && node.parent.name === node
 }
 
 function isDeclarationName(node: ts.Identifier): boolean {

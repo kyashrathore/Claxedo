@@ -51,8 +51,8 @@ body [data-component="menu-v2-content"] {
       [role="button"][aria-label],
       [data-component="icon-button"]
     ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *) {
-    min-width: 40px;
-    min-height: 40px;
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
 
   [data-claxedo]

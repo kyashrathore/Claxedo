@@ -34,6 +34,7 @@ import type {
 import { useData } from "./data"
 import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, Tooltip, IconButton, Button, TextShimmer, type IconProps } from "@/ui"
 import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
+import { copyText } from "@/lib/clipboard"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -60,30 +61,6 @@ import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
-
-async function writeClipboard(text: string): Promise<boolean> {
-  const body = typeof document === "undefined" ? undefined : document.body
-  if (body) {
-    const textarea = document.createElement("textarea")
-    textarea.value = text
-    textarea.setAttribute("readonly", "")
-    textarea.style.position = "fixed"
-    textarea.style.opacity = "0"
-    textarea.style.pointerEvents = "none"
-    body.appendChild(textarea)
-    textarea.select()
-    const copied = document.execCommand("copy")
-    body.removeChild(textarea)
-    if (copied) return true
-  }
-
-  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-  if (!clipboard?.writeText) return false
-  return clipboard.writeText(text).then(
-    () => true,
-    () => false,
-  )
-}
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
@@ -697,10 +674,6 @@ function ExaOutput(props: { output?: string }) {
   )
 }
 
-export function registerPartComponent(type: string, component: PartComponent) {
-  PART_MAPPING[type] = component
-}
-
 function userMessage(message: AgentPresentationMessage): AgentUserMessage | undefined {
   if (message.role === "user") return message
   return undefined
@@ -923,7 +896,6 @@ export function UserMessageDisplay(props: {
   parts: AgentContentPart[]
   actions?: UserActions
 }) {
-  const data = useData()
   const i18n = useTranscriptI18n()
   const [state, setState] = createStore({
     copied: false,
@@ -955,8 +927,7 @@ export function UserMessageDisplay(props: {
     const providerId = props.message.model?.providerID
     const modelId = props.message.model?.modelID
     if (!providerId || !modelId) return ""
-    const match = data.store.provider?.all?.get(providerId)
-    return match?.models?.[modelId]?.name ?? modelId
+    return modelId
   })
   const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.intlTag(), { timeStyle: "short" }))
 
@@ -979,7 +950,7 @@ export function UserMessageDisplay(props: {
   const handleCopy = async () => {
     const content = text()
     if (!content) return
-    if (await writeClipboard(content)) {
+    if ((await copyText(content)).copied) {
       setState("copied", true)
       setTimeout(() => setState("copied", false), 2000)
     }
@@ -1449,7 +1420,6 @@ PART_MAPPING["compaction"] = function CompactionPartDisplay() {
 }
 
 PART_MAPPING["text"] = function TextPartDisplay(props) {
-  const data = useData()
   const i18n = useTranscriptI18n()
   const numfmt = createMemo(() => new Intl.NumberFormat(i18n.intlTag()))
   const part = () => {
@@ -1466,9 +1436,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const model = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const message = props.message
-    if (!message.modelID) return ""
-    const match = message.providerID ? data.store.provider?.all?.get(message.providerID) : undefined
-    return match?.models?.[message.modelID]?.name ?? message.modelID
+    return message.modelID ?? ""
   })
 
   const duration = createMemo(() => {
@@ -1511,25 +1479,14 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       typeof part().time?.end !== "number" &&
       props.turnInterrupted !== true,
   )
-  const text = () => readPartText(data.store.part_text_accum_delta, part())
-  const isLastTextPart = createMemo(() => {
-    const last = (data.store.part?.[props.message.id] ?? [])
-      .filter((item): item is AgentTextPart => item?.type === "text" && !!item.text?.trim())
-      .at(-1)
-    return last?.id === part().id
-  })
-  const showCopy = createMemo(() => {
-    if (props.message.role !== "assistant") return isLastTextPart()
-    if (props.showAssistantCopyPartId === null) return false
-    if (typeof props.showAssistantCopyPartId === "string") return props.showAssistantCopyPartId === part().id
-    return isLastTextPart()
-  })
+  const text = () => readPartText(part())
+  const showCopy = createMemo(() => props.message.role === "assistant" && props.showAssistantCopyPartId === part().id)
   const [copied, setCopied] = createSignal(false)
 
   const handleCopy = async () => {
     const content = text()
     if (!content) return
-    if (await writeClipboard(content)) {
+    if ((await copyText(content)).copied) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
@@ -1563,7 +1520,6 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 }
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
-  const data = useData()
   const part = () => {
     const value = props.part
     if (value.type !== "reasoning") throw wrongPartType("reasoning", value)
@@ -1575,7 +1531,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
       typeof props.message.time.completed !== "number" &&
       props.turnInterrupted !== true,
   )
-  const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const text = () => readPartText(part())
   const durationMs = createMemo(() => {
     const time = part().time
     if (time?.start && time?.end) return Math.max(0, time.end - time.start)
@@ -2003,7 +1959,7 @@ ToolRegistry.register({
     const handleCopy = async () => {
       const content = text()
       if (!content) return
-      if (await writeClipboard(content)) {
+      if ((await copyText(content)).copied) {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       }

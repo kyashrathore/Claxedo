@@ -132,13 +132,9 @@ export class D1ServiceInstallationStore implements ServiceInstallationStore {
       .all<InstallationRow>()
     // Rows for a RETIRED service are skipped, not rejected. The table's CHECK
     // constraint is part of an append-only migration ledger, so it still admits
-    // service ids this build no longer implements — and this list is read on
-    // every signed request through `serviceCatalog()`. Validating the whole set
-    // would turn one orphaned row from a retired install into a 500 on the app
-    // shell for that entire deployment. An id this build cannot render is not a
-    // service; it is residue, and residue must not be able to take down a
-    // deployment that never used it. Everything that survives the filter is
-    // still validated in full.
+    // service ids this build no longer implements, and validating the whole set
+    // would let one orphaned row from a retired install fail every list for that
+    // deployment. Everything that survives the filter is still validated in full.
     const live = result.results.filter((row) => isFirstPartyServiceId(row.serviceId))
     requireServiceCatalog(live.map((row) => descriptorFromRow(row)))
     return live.map(revisionFromRow)

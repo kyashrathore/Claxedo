@@ -231,7 +231,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
     }
     const urls = [
       "http://localhost/session?workspaceId=ws_frontend_contract&roots=true&limit=55",
-      "http://localhost/mcp?workspaceId=ws_frontend_contract",
       "http://localhost/file/status?workspaceId=ws_frontend_contract",
       "http://localhost/find/file?workspaceId=ws_frontend_contract",
       "http://localhost/api/wr/process?workspaceId=ws_frontend_contract",
@@ -355,7 +354,6 @@ describe("embedded workspace runtime config hydration", () => {
       "/question",
       "/api/wr/config",
       "/api/wr/harness-config-options",
-      "/mcp",
       "/agent",
       "/command",
       "/api/wr/hook/agent-lifecycle",

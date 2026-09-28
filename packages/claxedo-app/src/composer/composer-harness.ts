@@ -86,6 +86,6 @@ function permissionModeFor(input: {
         configError: !!input.selection().configError,
         harness: permissionHarness(),
       }),
-    onWriteFailed: (description) => showToast({ title: input.t("common.requestFailed"), description }),
+    onWriteFailed: (description) => showToast({ title: input.t("composer.requestFailed"), description }),
   }).permissionMode
 }

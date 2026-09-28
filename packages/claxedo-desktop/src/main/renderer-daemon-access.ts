@@ -31,8 +31,10 @@
  * `Origin` header went out, so rewriting that header cannot help. The daemon
  * answers its credential routes to no other origin, the development renderer's
  * included, so main names the document's origin on the daemon's responses to
- * this same trusted top frame and to no one else. A packaged `file://`
- * document's daemon reads already succeed, and it gets nothing.
+ * this same trusted top frame, only for a request whose `Origin` is exactly
+ * that origin, and to no one else. Preflights pass through both listeners
+ * like any other request. A packaged `file://` document's daemon reads
+ * already succeed, and it gets nothing.
  *
  * WHAT LEAVES. The listener covers every http(s)/ws(s) request of the session,
  * not only the daemon's, because its first act is to strip any capability
@@ -61,6 +63,7 @@ export const DEFAULT_SESSION_REQUEST_URLS = [...HTTP_REQUEST_URLS, "ws://*/*", "
 const SOCKET_SCHEME: Record<string, string> = { "ws:": "http:", "wss:": "https:" }
 
 type RendererRequestDetails = {
+  id: number
   url: string
   webContentsId?: number
   frame?: { url: string; parent: unknown } | null
@@ -118,24 +121,37 @@ export function daemonRequestHeaders(
   return headers
 }
 
-export function daemonResponseHeaders(
-  details: DaemonResponseDetails,
-  policy: RendererDaemonPolicy,
-): Record<string, string[]> | undefined {
+/**
+ * The origin a daemon response may name for this request: the trusted top
+ * frame's own, and only when that is exactly the `Origin` it sent.
+ */
+export function daemonReaderOrigin(details: BeforeSendHeadersDetails, policy: RendererDaemonPolicy): string | undefined {
   if (!isDaemonDestination(details.url, policy.daemonOrigin)) return undefined
   const document = trustedRendererDocument(details, policy)
   if (!document) return undefined
   const documentOrigin = new URL(document).origin
   if (OPAQUE_ORIGINS.has(documentOrigin)) return undefined
-  const kept = Object.entries(details.responseHeaders ?? {}).filter(([name]) => name.toLowerCase() !== "access-control-allow-origin")
-  return { ...Object.fromEntries(kept), "Access-Control-Allow-Origin": [documentOrigin] }
+  const sent = Object.entries(details.requestHeaders).find(([name]) => name.toLowerCase() === "origin")?.[1]
+  return sent === documentOrigin ? documentOrigin : undefined
 }
+
+export function withAllowedOrigin(headers: Record<string, string[]> | undefined, origin: string): Record<string, string[]> {
+  const kept = Object.entries(headers ?? {}).filter(([name]) => name.toLowerCase() !== "access-control-allow-origin")
+  return { ...Object.fromEntries(kept), "Access-Control-Allow-Origin": [origin] }
+}
+
+export type DaemonResponseHeaders = (details: DaemonResponseDetails) => Record<string, string[]> | undefined
 
 /**
  * Electron wiring for the policy above, kept as a callback seam so the policy
  * stays loadable outside an Electron process — the split `navigation-guard.ts`
  * and `ipc-caller-guard.ts` use. `onBeforeSendHeaders` holds one listener per
  * session, so the strip and the stamp have to be that one listener.
+ *
+ * A response listener is not handed the request's headers, so the origin each
+ * request was judged by is kept under Electron's request id until its response
+ * arrives. A hop to anywhere else, a redirect included, is judged again and
+ * forgets it.
  */
 export function grantMainRendererDaemonAccess(input: {
   policy: RendererDaemonPolicy
@@ -146,10 +162,20 @@ export function grantMainRendererDaemonAccess(input: {
       callback: (response: { requestHeaders: Record<string, string> }) => void,
     ) => void,
   ) => void
-}) {
+}): DaemonResponseHeaders {
+  const readers = new Map<number, string>()
   input.onBeforeSendHeaders({ urls: DEFAULT_SESSION_REQUEST_URLS }, (details, callback) => {
+    const reader = daemonReaderOrigin(details, input.policy)
+    if (reader) readers.set(details.id, reader)
+    else readers.delete(details.id)
     callback({ requestHeaders: daemonRequestHeaders(details, input.policy) })
   })
+  return (details) => {
+    const reader = readers.get(details.id)
+    if (!reader) return undefined
+    readers.delete(details.id)
+    return withAllowedOrigin(details.responseHeaders, reader)
+  }
 }
 
 type HeadersReceivedListener<Details> = (
@@ -163,12 +189,11 @@ type HeadersReceivedListener<Details> = (
  * known, so the daemon's responses join that listener rather than replace it.
  */
 export function daemonResponseListener<Details extends DaemonResponseDetails>(input: {
-  policy: () => RendererDaemonPolicy | undefined
+  daemonResponses: () => DaemonResponseHeaders | undefined
   otherwise: HeadersReceivedListener<Details>
 }): HeadersReceivedListener<Details> {
   return (details, callback) => {
-    const policy = input.policy()
-    const headers = policy && daemonResponseHeaders(details, policy)
+    const headers = input.daemonResponses()?.(details)
     if (headers) callback({ responseHeaders: headers })
     else input.otherwise(details, callback)
   }

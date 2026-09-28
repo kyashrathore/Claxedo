@@ -85,7 +85,6 @@ const options = {
     get: () => ({ fetch: async () => new Response(null, { status: 503 }) }),
   },
   sharedRateLimitStore: { periodSeconds: 60, check: async () => ({ allowed: true }) },
-  serviceCatalog: async () => [],
   cloudWorkspaceAdmission: async () => ({
     status: 403 as const,
     body: { error: { code: "cloud_workspace_capability_unavailable", message: "Capability unavailable" } },
@@ -229,7 +228,6 @@ describe("resource-closed hosted core app", () => {
       "/api/claxedo/auth/descriptor",
       "/api/claxedo/auth/bootstrap-owner",
       "/api/claxedo/auth/profile",
-      "/api/claxedo/services",
       "/api/cp/events",
       "/api/control/sessions",
       "/api/control/session-list",
@@ -508,12 +506,11 @@ describe("resource-closed hosted core app", () => {
     ).toEqual([])
   })
 
-  test("requires the cross-isolate limiter, LiveSyncRoom, catalog, and admission policy", () => {
+  test("requires the cross-isolate limiter, LiveSyncRoom, and admission policy", () => {
     for (const missing of [
       "liveSyncRoom",
       "authentication",
       "sharedRateLimitStore",
-      "serviceCatalog",
       "cloudWorkspaceAdmission",
       "product",
       "requestGuardExemptions",
@@ -526,15 +523,13 @@ describe("resource-closed hosted core app", () => {
         : missing === "sharedRateLimitStore"
           ? /CLAXEDO_REQUEST_LIMITER/
           : new RegExp(
-              missing === "serviceCatalog"
-                ? "service catalog"
-                : missing === "cloudWorkspaceAdmission"
-                  ? "admission policy"
-                  : missing === "userDeployedIdentityAdmission"
-                    ? "identity admission"
-                  : missing === "product"
-                    ? "product descriptor"
-                    : "request-guard inventory",
+              missing === "cloudWorkspaceAdmission"
+                ? "admission policy"
+                : missing === "userDeployedIdentityAdmission"
+                  ? "identity admission"
+                : missing === "product"
+                  ? "product descriptor"
+                  : "request-guard inventory",
             ))
     }
   })
@@ -549,11 +544,8 @@ describe("resource-closed hosted core app", () => {
     expect(() => createHostedCoreApp(missingRuntime, options)).toThrow(/runtime private-session authority is not composed/)
   })
 
-  test("returns an empty service catalog to anonymous and signed callers", async () => {
+  test("answers the auth descriptor and the product mode to an anonymous caller", async () => {
     const app = createHostedCoreApp(plane(), options)
-    const anonymous = await app.fetch(new Request("https://core.test/api/claxedo/services"))
-    expect(await anonymous.json()).toEqual({ authenticated: false, services: [] })
-    // The auth descriptor is its own route; the service catalog never restates it.
     const descriptor = await app.fetch(new Request("https://core.test/api/claxedo/auth/descriptor"))
     expect(await descriptor.json()).toMatchObject({
       adapter: "better-auth",
@@ -563,14 +555,6 @@ describe("resource-closed hosted core app", () => {
         desktop: { flow: "authorization-code-pkce", clientId: "claxedo-desktop" },
       },
     })
-    const signed = await app.fetch(new Request("https://core.test/api/claxedo/services", {
-      headers: { authorization: "Bearer user-1" },
-    }))
-    expect(await signed.json()).toMatchObject({ authenticated: true, services: [] })
-    const cookieSigned = await app.fetch(new Request("https://core.test/api/claxedo/services", {
-      headers: { cookie: "__Secure-claxedo.session_token=browser-session" },
-    }))
-    expect(await cookieSigned.json()).toMatchObject({ authenticated: true, services: [] })
     const mode = await app.fetch(new Request("https://core.test/api/claxedo/mode"))
     expect(await mode.json()).toMatchObject({
       product: { productPosture: "user-deployed", organizationPolicy: "single-org", billing: "absent", multiplayer: true },
@@ -631,51 +615,6 @@ describe("resource-closed hosted core app", () => {
       "content-type": "application/json",
     })
     expect([403, 415]).not.toContain(accepted.status)
-  })
-
-  test("projects operator service metadata out of the signed service catalog JSON", async () => {
-    const app = createHostedCoreApp(plane(), {
-      ...options,
-      serviceCatalog: async () => [{
-        serviceId: "documents",
-        protocolVersion: "claxedo.service.v1",
-        schemaVersion: 1,
-        state: "installed_disabled",
-        bindingName: "DOCUMENTS_SERVICE",
-        entrypoint: "https://operator-only.internal",
-        trust: {
-          environmentId: "environment-secret",
-          deploymentId: "deployment-secret",
-          bindingProvenance: "binding-secret",
-        },
-        lastHealthProbe: {
-          status: "ready",
-          checkedAt: "2026-08-28T00:00:00.000Z",
-          serviceBuildId: "build-secret",
-        },
-      }],
-    })
-    const response = await app.fetch(new Request("https://core.test/api/claxedo/services", {
-      headers: { authorization: "Bearer user-1" },
-    }))
-    const body = await response.text()
-    expect(JSON.parse(body)).toMatchObject({
-      services: [{
-        serviceId: "documents",
-        protocolVersion: "claxedo.service.v1",
-        schemaVersion: 1,
-        state: "installed_disabled",
-      }],
-    })
-    for (const operatorOnly of [
-      "entrypoint",
-      "bindingName",
-      "environment-secret",
-      "deployment-secret",
-      "binding-secret",
-      "build-secret",
-      "lastHealthProbe",
-    ]) expect(body).not.toContain(operatorOnly)
   })
 })
 

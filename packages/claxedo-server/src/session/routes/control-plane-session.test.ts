@@ -563,7 +563,7 @@ describe("control plane session routes", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 10 },
+      view: { scope: "workspace", sort: "updated_desc", limit: 10 },
       items: [{ sessionId: "ses_visible", type: "session", title: "Visible" }],
       totalKnown: 1,
     })
@@ -700,31 +700,6 @@ describe("control plane session routes", () => {
     })
   })
 
-  test("session-list groups durable sessions deterministically", async () => {
-    const svc = services()
-    svc.projectionStore.list_session_metas = vi.fn(async () => [
-      sessionMeta({ id: "ses_b", workspaceID: "ws_b", directory: "/b", updatedAt: 20 }),
-      sessionMeta({ id: "ses_a", workspaceID: "ws_a", directory: "/a", updatedAt: 10 }),
-    ])
-
-    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "http://127.0.0.1/session-list?scope=workspace&groupBy=workspace&archived=all&limit=10",
-      {
-        headers: {
-          Origin: "http://127.0.0.1:4444",
-        },
-      },
-    )
-
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toMatchObject({
-      groups: [
-        { id: "ws_a", items: [{ sessionId: "ses_a" }] },
-        { id: "ws_b", items: [{ sessionId: "ses_b" }] },
-      ],
-    })
-  })
-
   test("serves signed session-list through the same logical response shape", async () => {
     const svc = services()
     const authority = {
@@ -750,7 +725,7 @@ describe("control plane session routes", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+      view: { scope: "workspace", sort: "updated_desc", limit: 5 },
       items: [
         {
           type: "session",
@@ -795,21 +770,6 @@ describe("control plane session routes", () => {
       expect.objectContaining({ token: "signed-token" }),
       expect.objectContaining({ projectId: "proj_alpha" }),
     )
-  })
-
-  test("refuses a signed session-list filtered by environment or git", async () => {
-    const svc = services()
-    const authority = { listSessionPage: vi.fn(async () => []) }
-    svc.authority = authority as never
-
-    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
-      "https://control.example.test/session-list?scope=workspace&workspaceId=ws_1&environment=driver:daytona&limit=10",
-      { headers: { Authorization: "Bearer signed-token" } },
-    )
-
-    expect(res.status).toBe(400)
-    await expect(res.json()).resolves.toMatchObject({ error: { code: "session_list_view_unsupported" } })
-    expect(authority.listSessionPage).not.toHaveBeenCalled()
   })
 
   test("serves loopback session messages from the local projection", async () => {

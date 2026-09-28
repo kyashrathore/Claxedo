@@ -111,8 +111,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
       "/vcs",
       "/question",
       "/session/status",
-      "/mcp",
-      "/mcp/",
       "/experimental/worktree",
       "/experimental/worktree/",
     ],

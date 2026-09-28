@@ -768,10 +768,6 @@ function sessionHarness(input: {
   return identity ?? undefined
 }
 
-/**
- * A session row's selections, each as the session runs it: what was stored,
- * else what its harness runs when nothing was.
- */
 function sessionRowConfig(harness: SessionHarness, row: {
   model_provider_id?: string | null
   model_id?: string | null
@@ -2188,7 +2184,6 @@ export class RuntimeStore {
     }
   }
 
-  /** When and why an assistant message ended; nothing while the message can still progress. */
   private messageClose(info: AgentMessage["info"]): MessageClose | undefined {
     const infoRecord = info as Record<string, unknown>
     const time = asRecord(info.time)
@@ -4344,7 +4339,6 @@ export class RuntimeStore {
     return this.db.prepare<{ session_id: string }>("SELECT session_id FROM message WHERE id = ?").get(messageId)?.session_id
   }
 
-  /** One stored part whole, as the message it belongs to hydrates it; nothing when the session has no such message or the message no such part. */
   getPart(sessionId: string, messageId: string, partId: string): AgentContentPart | undefined {
     this.settleDeltas(sessionId)
     const row = this.db

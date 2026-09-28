@@ -242,8 +242,8 @@ describe("workspace assignment revision counter", () => {
     for (const id of ["ws-assigned", "ws-free"]) await seedWorkspace(target, id, "user-hosted", null)
     await target.prepare(
       `insert into host_workspace_assignments
-         (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, second_device_open_at, assigned_at, updated_at, revision)
-       values ('ws-assigned', 'host-a', 'org-a', 'user-a', 'actor-a', null, 1, 1, 3)`,
+         (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at, revision)
+       values ('ws-assigned', 'host-a', 'org-a', 'user-a', 'actor-a', 1, 1, 3)`,
     ).run()
     return target
   }

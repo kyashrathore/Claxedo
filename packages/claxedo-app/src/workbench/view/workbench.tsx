@@ -5,7 +5,6 @@ import { handoverPresence } from "../handover"
 import { createWorkbenchDropTarget } from "../drag/drop-target"
 import { DropTargetOverlay } from "../drag/drop-target-overlay"
 import { workbenchDictionary } from "../i18n"
-import { createSurfaceKeyRouter } from "../keyboard"
 import { useWorkbench } from "../provider"
 import { computePaneRects } from "../reducers/tree-helpers"
 import type { KeyMap } from "../types"
@@ -52,8 +51,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   const index = createContentIndex(wb.layout, displayRects)
   const mounted = createMountedContents(wb.layout, index.assigned)
   const handover = handoverPresence(wb.handing, index.isDisplayed)
-  const surfaceKeys = createSurfaceKeyRouter(() => wb.layout().focusedPaneId)
-  useWorkbenchChords({ wb, keyMap: props.keyMap, surfaceKeys, onCloseFocusedPane: props.onCloseFocusedPane })
+  useWorkbenchChords({ wb, keyMap: props.keyMap, onCloseFocusedPane: props.onCloseFocusedPane })
   const dropTarget = createWorkbenchDropTarget({
     drag: wb.drag,
     root: () => rootEl,
@@ -98,7 +96,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 heldBy={handover.heldBy}
                 holds={wb.holds}
                 displayRects={displayRects}
-                surfaceKeys={surfaceKeys}
               />
             )}
           </For>

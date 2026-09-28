@@ -87,7 +87,7 @@ export type TimelineFocus =
     }
   | { readonly kind: "subagent"; readonly sessionId: string; readonly label?: string; readonly description?: string }
 
-export type TimelineNavigation = {
+type TimelineNavigation = {
   readonly toSession: (sessionId: string) => void
 }
 

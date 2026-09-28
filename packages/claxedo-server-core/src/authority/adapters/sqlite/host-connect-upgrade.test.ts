@@ -66,10 +66,10 @@ function preConnectDatabase() {
        NULL, NULL, NULL, 1, 5);
     UPDATE host_enrollments SET revoked_at = 7 WHERE enrollment_id = 'enr_gone';
     INSERT INTO host_workspace_assignments
-      (workspace_id, host_id, owner_token_identifier, second_device_open_at, assigned_at, updated_at)
+      (workspace_id, host_id, owner_token_identifier, assigned_at, updated_at)
     VALUES
-      ('ws_served', 'host_live', '${OWNER}', 3, 2, 2),
-      ('ws_idle', 'host_live', '${OWNER}', NULL, 2, 2);
+      ('ws_served', 'host_live', '${OWNER}', 2, 2),
+      ('ws_idle', 'host_live', '${OWNER}', 2, 2);
     INSERT INTO session_registration_operations
       (operation_id, session_id, workspace_id, creator_actor_id, operation_kind, state, created_at, updated_at)
     VALUES ('op_1', 'ses_1', 'ws_served', '${OWNER}', 'create', 'registered', 1, 1);
@@ -124,10 +124,10 @@ describe("SQLite host-connect upgrade", () => {
       },
     ])
     expect(db.prepare(`
-      SELECT workspace_id, host_id, revision, second_device_open_at FROM host_workspace_assignments ORDER BY workspace_id
+      SELECT workspace_id, host_id, revision FROM host_workspace_assignments ORDER BY workspace_id
     `).all()).toEqual([
-      { workspace_id: "ws_idle", host_id: "host_live", revision: 1, second_device_open_at: null },
-      { workspace_id: "ws_served", host_id: "host_live", revision: 1, second_device_open_at: 3 },
+      { workspace_id: "ws_idle", host_id: "host_live", revision: 1 },
+      { workspace_id: "ws_served", host_id: "host_live", revision: 1 },
     ])
     expect(db.prepare(`SELECT workspace_id, org_member_visible, remote_directory, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
       .toEqual([

@@ -5,7 +5,6 @@ import type { SessionListSort, SessionOrderKey } from "./navigation-order"
 
 export type { SessionListSort, SessionOrderKey } from "./navigation-order"
 export type SessionListScope = "global" | "project" | "workspace"
-export type SessionListGroupBy = "none" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
 export type SessionListQuery = {
@@ -13,11 +12,8 @@ export type SessionListQuery = {
   projectId?: string
   workspaceId?: string
   directory?: string
-  groupBy: SessionListGroupBy
   archived: SessionListArchiveMode
   status: string[]
-  environment: string[]
-  git: string[]
   search?: string
   sort: SessionListSort
   limit: number
@@ -50,8 +46,6 @@ export type SessionNavigationRow = {
   archivedAt?: number
   tags: string[]
   attachments: Array<{ kind: string; targetId?: string }>
-  environment?: { kind?: string; driver?: string }
-  git?: { repo?: string; branch?: string; remote?: string }
   /** Session creator — used for owner favicon on shared/other-user rows. */
   owner?: {
     name?: string
@@ -76,18 +70,10 @@ export type SessionRowStatusKind = "idle" | "busy" | "retry" | "recovering"
 export type SessionListResponse = {
   view: {
     scope: SessionListScope
-    groupBy: SessionListGroupBy
     sort: SessionListSort
     limit: number
   }
-  items?: SessionNavigationRow[]
-  groups?: Array<{
-    id: string
-    label: string
-    items: SessionNavigationRow[]
-    nextCursor?: string
-    totalKnown?: number
-  }>
+  items: SessionNavigationRow[]
   nextCursor?: string
   /** The `after` that reads the next page; present only when more rows follow. */
   nextAfter?: string
@@ -111,17 +97,13 @@ export type SessionListKeysetPage = {
 
 export function parseSessionListQuery(url: URL): SessionListQuery {
   const scope = scopeValue(url.searchParams.get("scope"))
-  const groupBy = groupByValue(url.searchParams.get("groupBy"))
   return {
     scope,
     ...(trimToUndefined(url.searchParams.get("projectId")) ? { projectId: trimToUndefined(url.searchParams.get("projectId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("workspaceId")) ? { workspaceId: trimToUndefined(url.searchParams.get("workspaceId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("directory")) ? { directory: trimToUndefined(url.searchParams.get("directory")) } : {}),
-    groupBy,
     archived: archivedValue(url.searchParams.get("archived")),
-    status: list(url.searchParams.get("status") ?? url.searchParams.get("filter.status")),
-    environment: list(url.searchParams.get("environment") ?? url.searchParams.get("filter.environment")),
-    git: list(url.searchParams.get("git") ?? url.searchParams.get("filter.git")),
+    status: list(url.searchParams.get("status")),
     ...(trimToUndefined(url.searchParams.get("search")) ? { search: trimToUndefined(url.searchParams.get("search")) } : {}),
     sort: sortValue(url.searchParams.get("sort")),
     limit: limitValue(url.searchParams.get("limit")),
@@ -142,14 +124,8 @@ export function buildSessionListResponse(input: {
     .filter((row) => rowInScope(row, input.query))
     .filter((row) => rowMatchesArchive(row, input.query.archived))
     .filter((row) => valuesMatch(input.query.status, rowStatusValues(row)))
-    .filter((row) => valuesMatch(input.query.environment, rowEnvironmentValues(row)))
-    .filter((row) => valuesMatch(input.query.git, rowGitValues(row)))
     .filter((row) => !input.query.search || row.title.toLowerCase().includes(input.query.search.toLowerCase()))
     .sort((a, b) => compareRows(a, b, input.query.sort))
-
-  if (input.query.groupBy !== "none") {
-    return groupedResponse(input.query, rows)
-  }
 
   const page = pageRows(input.query, rows, input.cursorApplied)
   return {
@@ -180,11 +156,6 @@ export function sessionListKeysetPage(query: SessionListQuery): SessionListKeyse
   }
 }
 
-/** Whether a store's keyset page answers the query whole, leaving nothing to filter in memory. */
-export function sessionListIsKeysetPageable(query: SessionListQuery) {
-  return query.groupBy === "none" && query.environment.length === 0 && query.git.length === 0
-}
-
 export function sessionListStorePageFilter(query: SessionListQuery) {
   const page = sessionListKeysetPage(query)
   return {
@@ -198,22 +169,6 @@ export function sessionListStorePageFilter(query: SessionListQuery) {
     limit: page.limit,
     sort: page.sort,
     ...(page.after ? { cursor: page.after } : {}),
-  }
-}
-
-function groupedResponse(query: SessionListQuery, rows: SessionNavigationRow[]): SessionListResponse {
-  return {
-    view: view(query),
-    groups: [...groupRows(rows, query.groupBy).entries()].map(([id, items]) => {
-      const page = pageRows(query, items)
-      return {
-        id,
-        label: id,
-        items: page.items,
-        totalKnown: items.length,
-        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-      }
-    }),
   }
 }
 
@@ -235,19 +190,9 @@ function pageRows(query: SessionListQuery, rows: SessionNavigationRow[], cursorA
 function view(query: SessionListQuery) {
   return {
     scope: query.scope,
-    groupBy: query.groupBy,
     sort: query.sort,
     limit: query.limit,
   }
-}
-
-function groupRows(rows: SessionNavigationRow[], groupBy: SessionListGroupBy) {
-  const groups = new Map<string, SessionNavigationRow[]>()
-  for (const row of rows) {
-    const id = groupBy === "project" ? row.projectId ?? row.directory : row.workspaceId ?? row.directory
-    groups.set(id, [...(groups.get(id) ?? []), row])
-  }
-  return new Map([...groups.entries()].sort(([a], [b]) => a.localeCompare(b)))
 }
 
 function sessionNavigationRow(session: unknown): SessionNavigationRow | undefined {
@@ -262,8 +207,6 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
   const updatedAt = numberValue(item.updatedAt) ?? numberValue(item.updated_at) ?? createdAt
   const lastHumanTurnAt = numberValue(item.lastHumanTurnAt) ?? numberValue(item.last_human_turn_at)
   const archivedAt = numberValue(item.archived) ?? numberValue(item.archived_at)
-  const environment = record(item.environment)
-  const git = record(item.git)
   return {
     type: "session",
     sessionRef: stringValue(item.sessionRef) ?? stringValue(item.session_ref) ?? sessionRef({ sessionId, workspaceId, directory }),
@@ -286,15 +229,6 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
         targetId: trimToUndefined(row.targetID) ?? trimToUndefined(row.target_id),
       }]
     }),
-    ...(Object.keys(environment).length ? { environment: {
-      ...(trimToUndefined(environment.kind) ? { kind: trimToUndefined(environment.kind) } : {}),
-      ...(trimToUndefined(environment.driver) ? { driver: trimToUndefined(environment.driver) } : {}),
-    } } : {}),
-    ...(Object.keys(git).length ? { git: {
-      ...(trimToUndefined(git.repo) ? { repo: trimToUndefined(git.repo) } : {}),
-      ...(trimToUndefined(git.branch) ? { branch: trimToUndefined(git.branch) } : {}),
-      ...(trimToUndefined(git.remote) ? { remote: trimToUndefined(git.remote) } : {}),
-    } } : {}),
     ...ownerFromSession(item),
     ...statusFromSession(item),
   }
@@ -397,21 +331,6 @@ function rowStatusValues(row: SessionNavigationRow) {
     ...row.attachments.map((item) => item.kind),
     row.archivedAt ? "archived" : "active",
   ]
-}
-
-function rowEnvironmentValues(row: SessionNavigationRow) {
-  return [
-    row.environment?.kind,
-    row.environment?.driver ? `driver:${row.environment.driver}` : undefined,
-  ].filter((item): item is string => !!item)
-}
-
-function rowGitValues(row: SessionNavigationRow) {
-  return [
-    row.git?.repo ? `repo:${row.git.repo}` : undefined,
-    row.git?.branch ? `branch:${row.git.branch}` : undefined,
-    row.git?.remote,
-  ].filter((item): item is string => !!item)
 }
 
 function valuesMatch(filters: string[], values: string[]) {
@@ -536,11 +455,8 @@ function querySignature(query: SessionListQuery) {
     projectId: query.projectId,
     workspaceId: query.workspaceId,
     directory: query.directory,
-    groupBy: query.groupBy,
     archived: query.archived,
     status: query.status,
-    environment: query.environment,
-    git: query.git,
     search: query.search,
     sort: query.sort,
     limit: query.limit,
@@ -550,11 +466,6 @@ function querySignature(query: SessionListQuery) {
 function scopeValue(input: string | null): SessionListScope {
   if (input === "project" || input === "workspace") return input
   return "global"
-}
-
-function groupByValue(input: string | null): SessionListGroupBy {
-  if (input === "project" || input === "workspace") return input
-  return "none"
 }
 
 function sortValue(input: string | null): SessionListSort {

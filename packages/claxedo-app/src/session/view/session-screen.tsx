@@ -21,7 +21,6 @@ import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
-import { registerSessionCommands } from "./session-commands"
 import { createScreenTurnRecovery } from "./turn-recovery-actions"
 import { createFloatingPeek } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
@@ -104,7 +103,6 @@ function SessionBody(props: {
   })
   const commands = useCommands()
   createMessageLinks({ turns, scroll, active: driving, commands, t })
-  registerSessionCommands({ commands, placementId: () => props.view.ref.placementId, active: driving, navigate: (path) => routing.navigate(path), t })
   const recovery = createScreenTurnRecovery(() => props.view, (path) => routing.navigate(path))
   const setDock = createDockFollow(scroll)
   return (
@@ -215,7 +213,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
             )}
           </Match>
           <Match when={view().state().kind === "loading" && !view().conversation()}>
-            <SessionTimelineSkeleton centered={!phone()} sessionId={props.sessionRef.sessionId} />
+            <SessionTimelineSkeleton centered={!phone()} />
           </Match>
         </Switch>
       </FailureBoundary>

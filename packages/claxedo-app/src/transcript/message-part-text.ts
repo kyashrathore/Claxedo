@@ -1,5 +1,5 @@
-export function readPartText(accum: Record<string, string> | undefined, part: { id: string; text?: string }): string {
-  return (accum?.[part.id] ?? part.text ?? "").trim()
+export function readPartText(part: { text?: string }): string {
+  return (part.text ?? "").trim()
 }
 
 export function clampLabel(value: string, max = 72) {

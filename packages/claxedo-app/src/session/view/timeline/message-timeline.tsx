@@ -1267,8 +1267,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 text={errorRow().text}
                 summary={errorRow().summary}
                 error={errorRow().error}
-                providerID={errorRow().providerID}
-                modelID={errorRow().modelID}
+                providerId={errorRow().providerID}
+                modelId={errorRow().modelID}
                 onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageId)}
                 t={host.t}
               />

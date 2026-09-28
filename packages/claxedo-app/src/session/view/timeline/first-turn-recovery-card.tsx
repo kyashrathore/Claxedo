@@ -84,7 +84,7 @@ function InlineErrorStatus(props: ParentProps<{
   )
 }
 
-export function TurnAdmissionStatus(props: { summary?: string }) {
+function TurnAdmissionStatus(props: { summary?: string }) {
   return (
     <InlineErrorStatus
       testId="turn-admission-status-message"
@@ -100,9 +100,11 @@ export function TimelineErrorPresentation(props: {
   text: string
   summary?: string
   error?: unknown
+  providerId?: string
+  modelId?: string
   onAction: (value: SessionErrorClass) => unknown
   t: TimelineTranslate
-} & DispatchContext) {
+}) {
   return (
     <Show
       when={props.presentation === "turn-conflict"}
@@ -117,8 +119,8 @@ export function TimelineErrorPresentation(props: {
               detail={props.text}
               summary={props.summary}
               error={props.error}
-              providerID={props.providerID}
-              modelID={props.modelID}
+              providerId={props.providerId}
+              modelId={props.modelId}
               onAction={props.onAction}
               t={props.t}
             />
@@ -131,19 +133,21 @@ export function TimelineErrorPresentation(props: {
   )
 }
 
-export function FirstTurnRecoveryCard(props: {
+function FirstTurnRecoveryCard(props: {
   kind: SessionErrorClass
   detail?: string
   summary?: string
   error?: unknown
+  providerId?: string
+  modelId?: string
   onAction: (kind: SessionErrorClass) => unknown
   t: TimelineTranslate
-} & DispatchContext) {
-  const context = () => ({ providerID: props.providerID, modelID: props.modelID })
+}) {
+  const dispatch = (): DispatchContext => ({ providerID: props.providerId, modelID: props.modelId })
   const text = () => turnRecoveryKeys(props.kind)
-  const title = () => sessionRecoveryTitle(props.kind, props.error, context()) ?? props.t(text().title)
+  const title = () => sessionRecoveryTitle(props.kind, props.error, dispatch()) ?? props.t(text().title)
   const description = () =>
-    props.summary ?? sessionRecoveryDescription(props.kind, props.error, context()) ?? props.t(text().description)
+    props.summary ?? sessionRecoveryDescription(props.kind, props.error, dispatch()) ?? props.t(text().description)
   const account = () => {
     const named = sessionRecoveryAccount(props.error)
     return named && props.t(named.key, named.params)

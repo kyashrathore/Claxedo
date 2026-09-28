@@ -507,12 +507,11 @@ export function Markdown(
     text: string
     cacheKey?: string
     streaming?: boolean
-    richAfterMs?: number
     class?: string
     classList?: Record<string, boolean>
   },
 ) {
-  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
+  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
   const marked = useMarked()
   const i18n = useTranscriptI18n()
   const dialog = useDialog()

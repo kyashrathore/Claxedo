@@ -112,7 +112,6 @@ export function betterAuthD1CandidateCompositionInput(env: BetterAuthD1Candidate
     env: stringEnvironment(env),
     authDatabase: env.AUTH_DB,
     controlPlaneDatabase: env.CONTROL_PLANE_DB,
-    environmentId: requiredReleaseIdentifier(env.CLAXEDO_ENVIRONMENT_ID, "CLAXEDO_ENVIRONMENT_ID"),
     descriptorExpiresAt: futureTimestamp(env.CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT, "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT"),
     product: {
       kind: "user-deployed",

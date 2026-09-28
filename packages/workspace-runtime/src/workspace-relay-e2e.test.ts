@@ -85,6 +85,12 @@ async function waitForMessage(ws: WebSocket, predicate: (message: string) => boo
   })
 }
 
+function binaryContent(body: Uint8Array) {
+  const content = JSON.parse(new TextDecoder().decode(body)) as { type: string; encoding: string; content: string }
+  expect({ type: content.type, encoding: content.encoding }).toEqual({ type: "binary", encoding: "base64" })
+  return new Uint8Array(Buffer.from(content.content, "base64"))
+}
+
 async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>, first?: Uint8Array) {
   const chunks = first ? [first] : []
   for (;;) {
@@ -467,7 +473,7 @@ async function processSeparatedRelayHarness() {
 }
 
 describe("workspace relay composed runtime path", () => {
-  test("forwards HTTP raw file streams and PTY WebSockets through a Relay Host Token guarded runtime", async () => {
+  test("forwards streamed file bodies and PTY WebSockets through a Relay Host Token guarded runtime", async () => {
     const relay = await relayHarness()
     let ws: WebSocket | undefined
 
@@ -532,20 +538,19 @@ describe("workspace relay composed runtime path", () => {
 
       const large = Uint8Array.from({ length: 128 * 1024 }, (_, index) => index % 251)
       await fs.writeFile(path.join(relay.workspaceDir, "large.bin"), large)
-      const raw = await relayFetch("/file/raw?path=large.bin")
-      expect(raw.status).toBe(200)
-      expect(raw.headers.get("content-type")).toBe("application/octet-stream")
-      const rawReader = raw.body!.getReader()
-      const first = await rawReader.read()
+      const streamed = await relayFetch("/file/content?path=large.bin")
+      expect(streamed.status).toBe(200)
+      expect(streamed.headers.get("content-type")).toContain("application/json")
+      const streamedReader = streamed.body!.getReader()
+      const first = await streamedReader.read()
       expect(first.done).toBe(false)
       expect(first.value!.byteLength).toBeGreaterThan(0)
-      expect(first.value).toEqual(large.slice(0, first.value!.byteLength))
-      expect(await readAll(rawReader, first.value)).toEqual(large)
+      expect(binaryContent(await readAll(streamedReader, first.value))).toEqual(large)
 
       // A relay 503 here is `upstream_unavailable`: its proxied fetch to the
       // runtime child threw at that instant (a reused keep-alive socket the
       // child had already dropped) — transient by construction, since the
-      // raw-file stream above just round-tripped through the same runtime.
+      // file stream above just round-tripped through the same runtime.
       // Retry that one case briefly instead of failing the suite on it.
       const createPty = () =>
         relayFetch("/api/wr/pty", {
@@ -628,7 +633,7 @@ describe("workspace relay composed runtime path", () => {
     }
   }, 15_000)
 
-  test("forwards raw file streams and PTY bytes to a process-separated Workspace Runtime", async () => {
+  test("forwards streamed file bodies and PTY bytes to a process-separated Workspace Runtime", async () => {
     const relay = await processSeparatedRelayHarness()
     let ws: WebSocket | undefined
 
@@ -674,19 +679,18 @@ describe("workspace relay composed runtime path", () => {
 
       const large = Uint8Array.from({ length: 96 * 1024 }, (_, index) => (index * 7) % 251)
       await fs.writeFile(path.join(relay.workspaceDir, "process-separated.bin"), large)
-      const raw = await relayFetch("/file/raw?path=process-separated.bin")
-      expect(raw.status).toBe(200)
-      const rawReader = raw.body!.getReader()
-      const first = await rawReader.read()
+      const streamed = await relayFetch("/file/content?path=process-separated.bin")
+      expect(streamed.status).toBe(200)
+      const streamedReader = streamed.body!.getReader()
+      const first = await streamedReader.read()
       expect(first.done).toBe(false)
       expect(first.value!.byteLength).toBeGreaterThan(0)
-      expect(first.value).toEqual(large.slice(0, first.value!.byteLength))
-      expect(await readAll(rawReader, first.value)).toEqual(large)
+      expect(binaryContent(await readAll(streamedReader, first.value))).toEqual(large)
 
       // A relay 503 here is `upstream_unavailable`: its proxied fetch to the
       // runtime child threw at that instant (a reused keep-alive socket the
       // child had already dropped) — transient by construction, since the
-      // raw-file stream above just round-tripped through the same runtime.
+      // file stream above just round-tripped through the same runtime.
       // Retry that one case briefly instead of failing the suite on it.
       const createPty = () =>
         relayFetch("/api/wr/pty", {

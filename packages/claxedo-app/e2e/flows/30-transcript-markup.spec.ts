@@ -60,3 +60,17 @@ test("30 a markdown block's committed markup parses to the same DOM as a separat
   expect(blocks.filter((block) => block.key === "mermaid")).toHaveLength(1)
   expect(blocks.filter((block) => !block.same)).toEqual([])
 })
+
+test("30 copy response puts the reply's markdown on the clipboard", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "the copy button is revealed by hover")
+  await app.context().grantPermissions(["clipboard-read", "clipboard-write"])
+  const workspace = await stack.daemon.makeWorkspace("copy")
+  await stack.acp.write("copy", { steps: [{ kind: "text", text: "A **copied** reply." }] })
+  const session = await api.createSession(workspace.directory, { title: "Copy", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, session.id, `Reply. ${acpScriptToken("copy")}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await app.getByText("copied", { exact: true }).hover()
+  await app.getByRole("button", { name: "Copy response" }).click()
+  await expect(app.getByRole("button", { name: "Copied" })).toBeVisible()
+  expect(await app.evaluate(() => navigator.clipboard.readText())).toBe("A **copied** reply.")
+})

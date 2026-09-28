@@ -98,14 +98,10 @@ describe("D1 service installation ledger", () => {
     ])
   })
 
-  test("skips a retired service's row instead of failing the whole catalog read", async () => {
+  test("skips a retired service's row instead of failing the whole list", async () => {
     // `service_installations`'s CHECK constraint is part of an append-only
-    // migration ledger, so it still admits `workgraph` — a service this build
-    // no longer implements. `list()` is read on EVERY signed request through
-    // `serviceCatalog()`, so validating the whole set would turn one orphaned
-    // row from a retired install into a 500 on the app shell for that entire
-    // deployment. Residue must not be able to take down a deployment that never
-    // used it.
+    // migration ledger, so it still admits `workgraph`, a service this build
+    // no longer implements.
     const { database, store } = await createStore()
     const registered = await store.registerDisabled(identity("op-register", "2026-08-28T01:00:00Z"), descriptor)
     await database

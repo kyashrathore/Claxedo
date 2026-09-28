@@ -1,54 +1,5 @@
 import { createContext, useContext, type ParentProps } from "solid-js"
-import type {
-  AgentContentPart,
-  AgentFilePart,
-  AgentPresentationMessage,
-  AgentPresentationProvider,
-  AgentPresentationSession,
-  AgentRuntimeStatus,
-  AgentSnapshotFileDiff,
-  AgentToolPart,
-} from "@claxedo/agent-runtime-contract"
-import type { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
-
-export type NormalizedProviderListResponse = {
-  all: Map<string, AgentPresentationProvider>
-  default: {
-    [key: string]: string
-  }
-  connected: Array<string>
-}
-
-type DataSession =
-  & Omit<AgentPresentationSession, "slug" | "version">
-  & Partial<Pick<AgentPresentationSession, "slug" | "version">>
-
-type Data = {
-  agent?: {
-    name: string
-    color?: string
-  }[]
-  provider?: NormalizedProviderListResponse
-  session: DataSession[]
-  session_status: {
-    [sessionId: string]: AgentRuntimeStatus
-  }
-  session_diff: {
-    [sessionId: string]: AgentSnapshotFileDiff[]
-  }
-  session_diff_preload?: {
-    [sessionId: string]: PreloadMultiFileDiffResult<any, undefined>[]
-  }
-  message: {
-    [sessionId: string]: AgentPresentationMessage[]
-  }
-  part: {
-    [messageId: string]: AgentContentPart[]
-  }
-  part_text_accum_delta?: {
-    [partId: string]: string
-  }
-}
+import type { AgentFilePart, AgentToolPart } from "@claxedo/agent-runtime-contract"
 
 export type NavigateToSessionFn = (sessionId: string) => void
 
@@ -72,7 +23,6 @@ export type SubagentView = {
 }
 
 export type DataProviderProps = {
-  data: Data
   directory: string
   onNavigateToSession?: NavigateToSessionFn
   onSessionHref?: SessionHrefFn
@@ -86,9 +36,6 @@ export type DataProviderProps = {
 
 function transcriptData(props: DataProviderProps) {
   return {
-    get store() {
-      return props.data
-    },
     get directory() {
       return props.directory
     },

@@ -86,7 +86,6 @@ export type ClaxedoToolViewInput = {
   input: Record<string, unknown> | undefined
   output: string | undefined
   i18n: TranscriptI18n
-  sessionTitle?: (sessionId: string) => string | undefined
 }
 
 const TASK_STATUS_KEYS: Record<string, TranscriptTextKey> = {
@@ -115,7 +114,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
   const result = claxedoToolResult(view.output)
   const base: ClaxedoToolView = { name, title: claxedoToolTitle(name, i18n), facts: [], rows: [] }
   const session = (id: string | undefined, label?: string): ClaxedoLink | undefined =>
-    id ? { kind: "session", id, label: label ?? view.sessionTitle?.(id) ?? clampLabel(id, 28) } : undefined
+    id ? { kind: "session", id, label: label ?? clampLabel(id, 28) } : undefined
   const count = (n: number, one: TranscriptTextKey, other: TranscriptTextKey) => `${n} ${i18n.t(n === 1 ? one : other)}`
 
   switch (name) {

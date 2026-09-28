@@ -21,7 +21,7 @@ function useLayoutCommands(): () => CommandOption[] {
     if (placement) routing.navigate(draftPath(placement))
   }
   return () => [
-    { id: NEW_SESSION_COMMAND, title: t("shell.command.newSession"), category: t("shell.category.session"), keybind: "mod+shift+s", onSelect: newSession },
+    { id: NEW_SESSION_COMMAND, title: t("shell.command.newSession"), category: t("shell.category.session"), keybind: "mod+shift+s", slash: "new", onSelect: newSession },
     { id: "shell.sidebar.toggle", title: t("shell.command.sidebarToggle"), category: t("shell.category.view"), keybind: "mod+b", onSelect: () => layout.send({ type: "toggleSidebar" }) },
     { id: "shell.panel.toggle", title: t("shell.command.panelToggle"), category: t("shell.category.view"), keybind: "mod+shift+b", onSelect: () => layout.send({ type: "togglePanel" }) },
     { id: "shell.home", title: t("shell.command.home"), category: t("shell.category.view"), onSelect: () => routing.navigate(homePath) },

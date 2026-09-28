@@ -7,7 +7,7 @@ type MessageWithAuthor = {
   claxedo?: unknown
 }
 
-export function messageAuthor(message: MessageWithAuthor): ClaxedoMessageAuthor | undefined {
+function messageAuthor(message: MessageWithAuthor): ClaxedoMessageAuthor | undefined {
   if (message.role !== "user") return undefined
   const author = asRecord(asRecord(message.claxedo)?.author)
   if (!author) return undefined
@@ -29,7 +29,7 @@ export function messageAuthorInitials(name: string) {
   return (first + last).toUpperCase()
 }
 
-export function MessageAuthorAvatar(props: { author: ClaxedoMessageAuthor }) {
+function MessageAuthorAvatar(props: { author: ClaxedoMessageAuthor }) {
   const [failedImage, setFailedImage] = createSignal<string>()
   const initials = createMemo(() => messageAuthorInitials(props.author.name))
   const image = createMemo(() => failedImage() === props.author.avatarUrl ? undefined : props.author.avatarUrl)
