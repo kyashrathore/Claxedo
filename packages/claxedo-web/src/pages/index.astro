@@ -7,7 +7,7 @@ import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
 import { requireClaim } from "../content/claims"
 import { home, site } from "../content/site"
 
-for (const point of home.points) point.claims.forEach(requireClaim)
+for (const id of [...home.trust.claims, ...home.points.flatMap((point) => point.claims)]) requireClaim(id)
 ---
 
 <Layout title={`Claxedo — ${site.headline}`} description={site.description}>
@@ -20,6 +20,9 @@ for (const point of home.points) point.claims.forEach(requireClaim)
           <DownloadMenu placement="hero" />
           <a class="btn-secondary" href={home.openInBrowser.href}>{home.openInBrowser.label}</a>
         </div>
+        <ul class="trust">
+          {home.trust.items.map((item) => <li>{item}</li>)}
+        </ul>
       </div>
       <dl class="points">
         {home.points.map((point) => (
@@ -27,7 +30,7 @@ for (const point of home.points) point.claims.forEach(requireClaim)
             <dt>{point.title}</dt>
             <dd>
               {point.line}
-              {point.link && <a href={point.link.href}>{point.link.label}</a>}
+              {point.link && <> <a href={point.link.href}>{point.link.label}</a></>}
             </dd>
           </div>
         ))}
@@ -44,32 +47,35 @@ for (const point of home.points) point.claims.forEach(requireClaim)
   .home { --home-width: min(100% - 2 * var(--gutter), 75rem); }
   .intro {
     display: grid;
-    grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
     gap: clamp(2.5rem, 5vw, 5rem);
     align-items: start;
     width: var(--home-width);
     margin: 0 auto;
-    padding-block: clamp(2rem, 5vh, 3rem) clamp(2rem, 4.5vh, 2.75rem);
+    padding-block: clamp(1.5rem, 3.5vh, 2.25rem) clamp(1.75rem, 3.5vh, 2.25rem);
   }
   h1 {
     margin: 0;
-    font: var(--display-weight) clamp(2.1rem, 3.3vw, 2.9rem)/1.08 var(--font-display);
+    font: var(--display-weight) clamp(2.1rem, 3vw, 2.6rem)/1.08 var(--font-display);
     letter-spacing: var(--display-tracking);
     font-feature-settings: var(--display-features);
     text-wrap: balance;
   }
   .actions { margin-top: 1.75rem; }
+  .trust { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; margin: 1.1rem 0 0; padding: 0; list-style: none; color: var(--ink-faint); font-size: .8rem; }
+  .trust li { display: flex; align-items: center; gap: .45rem; }
+  .trust li::before { content: ""; width: .3rem; height: .3rem; border-radius: 50%; background: var(--success); }
   .points { margin: 0; border-bottom: 1px solid var(--line); }
   .points > div {
     display: grid;
-    grid-template-columns: 13.5rem minmax(0, 1fr);
+    grid-template-columns: 11.5rem minmax(0, 1fr);
     gap: 1.5rem;
-    padding: .7rem 0;
+    padding: .5rem 0;
     border-top: 1px solid var(--line);
   }
-  dt { color: var(--ink); font-size: .9rem; font-weight: 500; line-height: 1.45; }
-  dd { margin: 0; color: var(--ink-soft); font-size: .9rem; line-height: 1.45; text-wrap: pretty; }
-  dd a { margin-left: .35em; color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); }
+  dt { color: var(--ink); font-size: .875rem; font-weight: 500; line-height: 1.45; }
+  dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.45; text-wrap: pretty; }
+  dd a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); }
   dd a:hover { text-decoration-color: currentColor; }
   .preview { width: var(--home-width); margin: 0 auto clamp(4rem, 8vw, 6rem); }
 

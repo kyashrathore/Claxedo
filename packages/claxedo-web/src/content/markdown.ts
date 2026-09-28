@@ -40,6 +40,8 @@ export const homeMarkdown = `# ${site.name}
 
 ${site.description}
 
+${home.trust.items.join(". ")}.
+
 ${home.points.map((point) => `- **${point.title}.** ${point.line}${point.link ? ` ${point.link.label}: ${point.link.href}` : ""}`).join("\n")}
 
 - Download the desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}

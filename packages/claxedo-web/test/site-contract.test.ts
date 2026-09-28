@@ -17,11 +17,12 @@ describe("public site contract", () => {
     expect(new URL(publicOrigin).origin).toBe(publicOrigin)
   })
 
-  test("leads with the set-up-once story and five evidenced points", () => {
-    expect(site.headline).toBe("Set up your coding agents once. Run them anywhere.")
+  test("leads with the owner's headline and six evidenced points", () => {
+    expect(site.headline).toBe("Every coding agent. One fast app. Anywhere you work.")
     expect(site.description).toContain("Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent")
-    expect(home.points).toHaveLength(5)
+    expect(home.points).toHaveLength(6)
     const publishable = new Set<string>(publishableClaims.map((item) => item.id))
+    for (const id of home.trust.claims) expect(publishable.has(id)).toBe(true)
     for (const point of home.points) {
       expect(point.claims.length).toBeGreaterThan(0)
       for (const id of point.claims) expect(publishable.has(id)).toBe(true)
