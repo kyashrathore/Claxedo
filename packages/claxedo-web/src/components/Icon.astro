@@ -1,0 +1,12 @@
+---
+import { iconId, type IconName } from "../icons"
+
+interface Props {
+  name: IconName
+  class?: string
+}
+
+const { name, class: className } = Astro.props
+---
+
+<svg class:list={["icon", className]} data-icon={name} viewBox="0 0 20 20" fill="none" aria-hidden="true"><use href={`#${iconId(name)}`} /></svg>

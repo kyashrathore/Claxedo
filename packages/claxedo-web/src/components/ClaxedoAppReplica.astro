@@ -1,7 +1,7 @@
 ---
 import HarnessMark from "./HarnessMark.astro"
-import CodexIcon from "./CodexIcon.astro"
-import CodexIconSprite from "./CodexIconSprite.astro"
+import Icon from "./Icon.astro"
+import IconSprite from "./IconSprite.astro"
 
 export interface ReplicaSession { id: string; title: string; user: string; responses: readonly string[]; tools: readonly string[]; context: string; branch: string; place?: string; surface?: "chat" | "terminal"; harness?: "codex" | "claude" | "cursor" | "pi" | "opencode"; project?: "formlink" }
 const demoSessions = [
@@ -45,12 +45,12 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
 
 <section class="hero canvas-only" aria-label="Interactive preview of the Claxedo app">
   <div class="app-window" data-app-replica data-demo data-sidebar="open" data-surface="chat" data-panel="closed" data-panel-width="split" data-panel-view-active="changes" data-environment="expanded" data-account="closed" data-composer-menu="closed" data-active-session={canvasSessions[0].id} data-demo-sessions={JSON.stringify(canvasSessions)}>
-    <CodexIconSprite />
+    <IconSprite />
     <header class="shell-header">
       <div class="rail-titlebar">
         <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
         <button type="button" class="icon-button rail-hide" data-sidebar-toggle aria-label="Hide Sidebar" aria-pressed="true">
-          <CodexIcon name="layout-left-partial" />
+          <Icon name="layout-left-partial" />
         </button>
       </div>
       <div class="header-columns">
@@ -58,7 +58,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
           <div class="closed-chrome">
             <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
             <button type="button" class="icon-button" data-sidebar-toggle aria-label="Show Sidebar" aria-pressed="false">
-              <CodexIcon name="layout-left-partial" />
+              <Icon name="layout-left-partial" />
             </button>
             <span class="drag-gap"></span>
           </div>
@@ -67,29 +67,29 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
               <div class="compact-tab" data-selected={index === 0 ? "true" : "false"}>
                 <button type="button" class="tab-prefix" tabindex="-1" aria-label={`Claxedo / ${session.title}`} data-session-tab-id={session.id}>{session.harness ? <span class="tab-harness-mark"><HarnessMark name={session.harness} /></span> : <span class="tab-project-mark">C</span>}<i></i></button>
                 <button type="button" class="tab-title" role="tab" aria-selected={index === 0 ? "true" : "false"} data-session-tab-id={session.id}>{session.title}</button>
-                <button type="button" class="tab-close" aria-label={`Close ${session.title}`}><CodexIcon name="close-small" /></button>
+                <button type="button" class="tab-close" aria-label={`Close ${session.title}`}><Icon name="close-small" /></button>
               </div>
             ))}
           </nav>
           <div class="header-drag"></div>
           <div class="scope-actions">
-            <button type="button" class="icon-button" data-surface-button="new" aria-label="New Session"><CodexIcon name="plus-small" /></button>
-            <button type="button" class="icon-button" data-surface-button="terminal" data-spot-target="terminal" aria-label="New Terminal"><CodexIcon name="terminal" /></button>
-            <button type="button" class="icon-button" aria-label="More actions"><CodexIcon name="chevron-down" /></button>
+            <button type="button" class="icon-button" data-surface-button="new" aria-label="New Session"><Icon name="plus-small" /></button>
+            <button type="button" class="icon-button" data-surface-button="terminal" data-spot-target="terminal" aria-label="New Terminal"><Icon name="terminal" /></button>
+            <button type="button" class="icon-button" aria-label="More actions"><Icon name="chevron-down" /></button>
           </div>
           <button type="button" class="icon-button workspace-toggle" data-workspace-toggle aria-label="Open workspace panel" aria-pressed="false">
-            <CodexIcon name="layout-right-partial" />
+            <Icon name="layout-right-partial" />
           </button>
         </div>
         <div class="workspace-l1">
           <div class="workspace-tabs">
-            <button type="button" class="workspace-tab active" data-panel-button="changes"><CodexIcon name="review" /><span>Review</span><i><CodexIcon name="close-small" /></i></button>
-            <button type="button" class="workspace-tab" data-panel-button="files"><CodexIcon name="file" /><span>Files</span></button>
-            <button type="button" class="icon-button" aria-label="New workspace tab"><CodexIcon name="plus-small" /></button>
+            <button type="button" class="workspace-tab active" data-panel-button="changes"><Icon name="review" /><span>Review</span><i><Icon name="close-small" /></i></button>
+            <button type="button" class="workspace-tab" data-panel-button="files"><Icon name="file" /><span>Files</span></button>
+            <button type="button" class="icon-button" aria-label="New workspace tab"><Icon name="plus-small" /></button>
           </div>
           <span></span>
-          <button type="button" class="icon-button panel-width-toggle" data-panel-maximize aria-label="Maximize workspace panel" aria-pressed="false"><CodexIcon name="expand" class="panel-expand-icon" /><CodexIcon name="collapse" class="panel-restore-icon" /></button>
-          <button type="button" class="icon-button" data-panel-close aria-label="Close workspace panel"><CodexIcon name="layout-right-full" /></button>
+          <button type="button" class="icon-button panel-width-toggle" data-panel-maximize aria-label="Maximize workspace panel" aria-pressed="false"><Icon name="expand" class="panel-expand-icon" /><Icon name="collapse" class="panel-restore-icon" /></button>
+          <button type="button" class="icon-button" data-panel-close aria-label="Close workspace panel"><Icon name="layout-right-full" /></button>
         </div>
       </div>
     </header>
@@ -97,34 +97,34 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
     <div class="app-body">
       <aside class="project-rail" aria-label="Projects and sessions">
         <div class="rail-global">
-          <button type="button"><CodexIcon name="folder-add" /><span>New Project</span></button>
-          <button type="button" data-surface-button="marketplace" data-spot-target="tools"><CodexIcon name="marketplace" /><span>Marketplace</span></button>
-          <button type="button" data-surface-button="tasks"><CodexIcon name="checklist" /><span>Tasks</span></button>
-          <button type="button" data-demo-open="standup" data-spot-target="prompt"><CodexIcon name="document-text" /><span>Standup</span></button>
+          <button type="button"><Icon name="folder-add" /><span>New Project</span></button>
+          <button type="button" data-surface-button="marketplace" data-spot-target="tools"><Icon name="marketplace" /><span>Marketplace</span></button>
+          <button type="button" data-surface-button="tasks"><Icon name="checklist" /><span>Tasks</span></button>
+          <button type="button" data-demo-open="standup" data-spot-target="prompt"><Icon name="document-text" /><span>Standup</span></button>
         </div>
         <div class="rail-divider"></div>
         <div class="rail-scroll">
           <span class="rail-label">Projects</span>
-          <button type="button" class="project-row"><CodexIcon name="folder" /><b>agent-app-benchmark</b></button>
-          <button type="button" class="project-row"><CodexIcon name="folder" /><b>Claxedo</b></button>
+          <button type="button" class="project-row"><Icon name="folder" /><b>agent-app-benchmark</b></button>
+          <button type="button" class="project-row"><Icon name="folder" /><b>Claxedo</b></button>
           <div class="session-list">
             {claxedoSessions.map((session, index) => <button type="button" class:list={["session-row", { active: index === 0 }]} data-session-id={session.id}><span>{session.title}</span><small>{index === 0 ? "now" : `${index + 7}h`}</small></button>)}
-            {terminalRows.map((session) => <button type="button" class="session-row terminal-row" data-session-id={session.id}><CodexIcon name="terminal" /><span>{session.title.toLowerCase()}</span></button>)}
+            {terminalRows.map((session) => <button type="button" class="session-row terminal-row" data-session-id={session.id}><Icon name="terminal" /><span>{session.title.toLowerCase()}</span></button>)}
             <button type="button" class="load-row">Load more</button>
           </div>
-          <button type="button" class="project-row second-project"><CodexIcon name="folder" /><b>formlink</b></button>
+          <button type="button" class="project-row second-project"><Icon name="folder" /><b>formlink</b></button>
           <div class="session-list">{formlinkSessions.length > 0 ? formlinkSessions.map((session) => <button type="button" class="session-row" data-session-id={session.id}><span>{session.title}</span><small>1d</small></button>) : <button type="button" class="session-row"><span>Project overview</span><small>9h</small></button>}</div>
         </div>
         <div class="workspace-account-wrap">
           <div class="workspace-account-menu" aria-label="Workspace menu">
-            <div class="account-identity"><span><CodexIcon name="monitor" /></span><b>Acme · self-hosted on Cloudflare</b></div>
+            <div class="account-identity"><span><Icon name="monitor" /></span><b>Acme · self-hosted on Cloudflare</b></div>
             <i></i>
-            <button type="button"><CodexIcon name="warning" /><span>Diagnostics</span></button>
-            <button type="button"><CodexIcon name="gauge" /><span>Usage</span></button>
-            <button type="button"><CodexIcon name="settings-gear" /><span>Settings</span></button>
-            <button type="button"><CodexIcon name="help" /><span>Help</span></button>
+            <button type="button"><Icon name="warning" /><span>Diagnostics</span></button>
+            <button type="button"><Icon name="gauge" /><span>Usage</span></button>
+            <button type="button"><Icon name="settings-gear" /><span>Settings</span></button>
+            <button type="button"><Icon name="help" /><span>Help</span></button>
           </div>
-          <button type="button" class="workspace-account" data-account-toggle data-spot-target="team" aria-expanded="false"><span class="account-device"><CodexIcon name="monitor" /></span><span>Acme</span><CodexIcon name="chevron-down" class="account-chevron" /></button>
+          <button type="button" class="workspace-account" data-account-toggle data-spot-target="team" aria-expanded="false"><span class="account-device"><Icon name="monitor" /></span><span>Acme</span><Icon name="chevron-down" class="account-chevron" /></button>
         </div>
       </aside>
 
@@ -134,52 +134,52 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
             <div class="session-content">
               <div class="timeline-scroll">
                 <div class="timeline-column">
-                  <div class="session-name-row"><h2 data-session-title>{canvasSessions[0].title}</h2><button type="button" aria-label="Session options"><CodexIcon name="three-dots" /></button></div>
+                  <div class="session-name-row"><h2 data-session-title>{canvasSessions[0].title}</h2><button type="button" aria-label="Session options"><Icon name="three-dots" /></button></div>
                   <article class="message user-message"><div data-transcript-user>{canvasSessions[0].user}</div></article>
                   <article class="message assistant-message"><p data-transcript-response="0">{canvasSessions[0].responses[0]}</p></article>
-                  <button type="button" class="turn-fold" data-tool-card="0" aria-expanded="false"><CodexIcon name="chevron-right" /><b data-transcript-tool="0">{canvasSessions[0].tools[0]}</b><i></i></button>
-                  <button type="button" class="tool-summary" data-tool-card="1" aria-expanded="false"><CodexIcon name="terminal" /><b data-transcript-tool="1">{canvasSessions[0].tools[1]}</b><span><CodexIcon name="chevron-down" /></span></button>
+                  <button type="button" class="turn-fold" data-tool-card="0" aria-expanded="false"><Icon name="chevron-right" /><b data-transcript-tool="0">{canvasSessions[0].tools[0]}</b><i></i></button>
+                  <button type="button" class="tool-summary" data-tool-card="1" aria-expanded="false"><Icon name="terminal" /><b data-transcript-tool="1">{canvasSessions[0].tools[1]}</b><span><Icon name="chevron-down" /></span></button>
                   <article class="message assistant-message"><p data-transcript-response="1">{canvasSessions[0].responses[1]}</p></article>
-                  <button type="button" class="tool-summary" data-tool-card="2" aria-expanded="false"><CodexIcon name="document-text" /><b data-transcript-tool="3">{canvasSessions[0].tools[3] ?? "Read config defaults"}</b><span><CodexIcon name="chevron-down" /></span></button>
+                  <button type="button" class="tool-summary" data-tool-card="2" aria-expanded="false"><Icon name="document-text" /><b data-transcript-tool="3">{canvasSessions[0].tools[3] ?? "Read config defaults"}</b><span><Icon name="chevron-down" /></span></button>
                   <article class="message assistant-message"><p data-transcript-response="2">{canvasSessions[0].responses[2]}</p></article>
-                  <button type="button" class="tool-summary running" data-tool-card="3" aria-expanded="false"><i></i><b data-transcript-tool="2">{canvasSessions[0].tools[2]}</b><span><CodexIcon name="chevron-down" /></span></button>
+                  <button type="button" class="tool-summary running" data-tool-card="3" aria-expanded="false"><i></i><b data-transcript-tool="2">{canvasSessions[0].tools[2]}</b><span><Icon name="chevron-down" /></span></button>
                 </div>
               </div>
 
               <aside class="environment-card" aria-label="Session environment">
                 <div class="environment-expanded">
-                  <header><b data-session-place data-spot-target="place">{canvasSessions[0].place ?? "Environment"}</b><button type="button" data-environment-toggle aria-label="Collapse Environment"><CodexIcon name="chevron-double-right" /></button></header>
+                  <header><b data-session-place data-spot-target="place">{canvasSessions[0].place ?? "Environment"}</b><button type="button" data-environment-toggle aria-label="Collapse Environment"><Icon name="chevron-double-right" /></button></header>
                   <div class="env-facts">
-                    <div><CodexIcon name="folder" /><span data-session-context>{canvasSessions[0].context}</span></div>
-                    <div><CodexIcon name="branch" /><span data-session-branch>{canvasSessions[0].branch}</span></div>
+                    <div><Icon name="folder" /><span data-session-context>{canvasSessions[0].context}</span></div>
+                    <div><Icon name="branch" /><span data-session-branch>{canvasSessions[0].branch}</span></div>
                   </div>
-                  <section><small>Workspace</small><button type="button" data-panel-button="changes"><CodexIcon name="changes" /><span>Changes</span><em><b>+34</b> −8</em></button><button type="button" data-panel-button="files"><CodexIcon name="folder" /><span>Files</span></button><button type="button" data-panel-button="processes"><CodexIcon name="terminal" /><span>Processes</span><i></i><em>2</em></button></section>
-                  <section><small>Repository</small><button type="button"><CodexIcon name="github" /><span>claxedo/claxedo</span><em><CodexIcon name="open-external" /></em></button></section>
+                  <section><small>Workspace</small><button type="button" data-panel-button="changes"><Icon name="changes" /><span>Changes</span><em><b>+34</b> −8</em></button><button type="button" data-panel-button="files"><Icon name="folder" /><span>Files</span></button><button type="button" data-panel-button="processes"><Icon name="terminal" /><span>Processes</span><i></i><em>2</em></button></section>
+                  <section><small>Repository</small><button type="button"><Icon name="github" /><span>claxedo/claxedo</span><em><Icon name="open-external" /></em></button></section>
                 </div>
-                <div class="environment-collapsed"><button type="button" data-panel-button="changes" aria-label="Open changes"><CodexIcon name="changes" /></button><button type="button" data-panel-button="files" aria-label="Open files"><CodexIcon name="folder" /></button><button type="button" data-panel-button="processes" aria-label="Open processes"><CodexIcon name="terminal" /></button><i></i><button type="button" data-environment-toggle aria-label="Expand Environment"><CodexIcon name="chevron-double-left" /></button></div>
+                <div class="environment-collapsed"><button type="button" data-panel-button="changes" aria-label="Open changes"><Icon name="changes" /></button><button type="button" data-panel-button="files" aria-label="Open files"><Icon name="folder" /></button><button type="button" data-panel-button="processes" aria-label="Open processes"><Icon name="terminal" /></button><i></i><button type="button" data-environment-toggle aria-label="Expand Environment"><Icon name="chevron-double-left" /></button></div>
               </aside>
 
               <div class="composer-zone">
-                <button type="button" class="scroll-latest" data-scroll-latest aria-label="Scroll to latest message"><CodexIcon name="scroll-to-latest" /></button>
+                <button type="button" class="scroll-latest" data-scroll-latest aria-label="Scroll to latest message"><Icon name="scroll-to-latest" /></button>
                 <form class="composer" data-composer-form>
                   <textarea class="composer-input" data-composer-input aria-label="Session prompt" rows="2" placeholder="Ask anything, / for commands, @ for context..."></textarea>
-                  <div class="composer-context-chip" data-composer-context-chip hidden><span>＠</span><b data-composer-context-label>Files</b><button type="button" data-context-remove aria-label="Remove context"><CodexIcon name="close-small" /></button></div>
+                  <div class="composer-context-chip" data-composer-context-chip hidden><span>＠</span><b data-composer-context-label>Files</b><button type="button" data-context-remove aria-label="Remove context"><Icon name="close-small" /></button></div>
                   <div class="composer-controls">
                     <div class="composer-left">
                       <div class="composer-popover add-popover" data-composer-popover="context" hidden><small>Add</small><button type="button" data-context-option="Images and files"><b>Images and files</b><em>⌘U</em></button><button type="button" data-context-option="Commands"><b>Commands</b><em>/</em></button><button type="button" data-context-option="Context"><b>Context</b><em>@</em></button><button type="button" data-context-option="Shell command"><b>Shell command</b><em>!</em></button></div>
-                      <div class="composer-popover permission-popover" data-composer-popover="permission" hidden><small>Codex</small><button type="button" data-permission="Read only"><CodexIcon name="shield" /><span><b>Read only</b><i>Never asks; the sandbox permits reads only, so writes fail</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-permission="Workspace write" class="selected"><CodexIcon name="shield" /><span><b>Workspace write</b><i>Runs commands inside the workspace without asking; escalates outside it</i></span><em><CodexIcon name="check" /></em></button><button type="button" data-permission="Untrusted"><CodexIcon name="shield" /><span><b>Untrusted</b><i>Only trusted commands run without asking; anything else escalates</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-permission="Full access"><CodexIcon name="shield" /><span><b>Full access</b><i>Never asks; full filesystem and network access</i></span><em hidden><CodexIcon name="check" /></em></button></div>
-                      <button type="button" class="round-control" data-composer-menu-trigger="context" aria-label="Add context" aria-expanded="false"><CodexIcon name="plus" /></button><button type="button" class="permission-control" data-composer-menu-trigger="permission" aria-label="Select permission mode" aria-expanded="false"><CodexIcon name="shield" /><b data-permission-label>Workspace write</b></button>
+                      <div class="composer-popover permission-popover" data-composer-popover="permission" hidden><small>Codex</small><button type="button" data-permission="Read only"><Icon name="shield" /><span><b>Read only</b><i>Never asks; the sandbox permits reads only, so writes fail</i></span><em hidden><Icon name="check" /></em></button><button type="button" data-permission="Workspace write" class="selected"><Icon name="shield" /><span><b>Workspace write</b><i>Runs commands inside the workspace without asking; escalates outside it</i></span><em><Icon name="check" /></em></button><button type="button" data-permission="Untrusted"><Icon name="shield" /><span><b>Untrusted</b><i>Only trusted commands run without asking; anything else escalates</i></span><em hidden><Icon name="check" /></em></button><button type="button" data-permission="Full access"><Icon name="shield" /><span><b>Full access</b><i>Never asks; full filesystem and network access</i></span><em hidden><Icon name="check" /></em></button></div>
+                      <button type="button" class="round-control" data-composer-menu-trigger="context" aria-label="Add context" aria-expanded="false"><Icon name="plus" /></button><button type="button" class="permission-control" data-composer-menu-trigger="permission" aria-label="Select permission mode" aria-expanded="false"><Icon name="shield" /><b data-permission-label>Workspace write</b></button>
                     </div>
                     <div class="composer-right">
                       <div class="composer-popover harness-popover" data-composer-popover="harness" data-picker-open="model" hidden>
-                        <button type="button" class="picker-section" data-harness-section="harness"><CodexIcon name="chevron-right" /><b>Harness</b><span data-current-harness>Codex</span></button>
-                        <div class="picker-options harness-options" data-harness-panel="harness" hidden><small>Native SDK</small><button type="button" data-hero-harness="Claude" data-hero-model="Opus 5"><span class="harness-logo"><HarnessMark name="claude" /></span><b>Claude</b><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-harness="Codex" data-hero-model="GPT-5.6-Luna" class="selected"><span class="harness-logo"><HarnessMark name="codex" /></span><b>Codex</b><em><CodexIcon name="check" /></em></button><button type="button" data-hero-harness="Cursor" data-hero-model="Composer 1"><span class="harness-logo"><HarnessMark name="cursor" /></span><b>Cursor</b><em hidden><CodexIcon name="check" /></em></button><small>Direct</small><button type="button" data-hero-harness="Pi" data-hero-model="Pi"><span class="harness-logo"><HarnessMark name="pi" /></span><b>Pi</b><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-harness="OpenCode" data-hero-model="GPT-5.4"><span class="harness-logo"><HarnessMark name="opencode" /></span><b>OpenCode</b><em hidden><CodexIcon name="check" /></em></button></div>
-                        <button type="button" class="picker-section active" data-harness-section="model"><CodexIcon name="chevron-down" /><b>Model</b><span data-hero-model-label>GPT-5.6-Luna</span></button>
-                        <div class="picker-options model-options" data-harness-panel="model"><label><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search models" placeholder="Search models" /></label><div class="model-provider"><span>Codex App Server</span><b>Configured</b></div><button type="button" data-hero-model-choice="GPT-5.5"><span><b>GPT-5.5</b><i>Frontier model for complex coding, research, and real-world work.</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Luna" class="selected"><span><b>GPT-5.6-Luna</b><i>Fast and affordable agentic coding model.</i></span><em><CodexIcon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Sol"><span><b>GPT-5.6-Sol</b><i>Latest frontier agentic coding model.</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Terra"><span><b>GPT-5.6-Terra</b><i>Balanced agentic coding model for everyday work.</i></span><em hidden><CodexIcon name="check" /></em></button></div>
-                        <button type="button" class="picker-section" data-harness-section="effort"><CodexIcon name="chevron-right" /><b>Effort</b><span data-hero-effort-label>Low</span></button>
-                        <div class="picker-options effort-options" data-harness-panel="effort" hidden>{['Low','Medium','High','Xhigh','Max','Ultra'].map((effort) => <button type="button" data-hero-effort={effort} class:list={{ selected: effort === 'Low' }}><b>{effort}</b><em hidden={effort !== 'Low'}><CodexIcon name="check" /></em></button>)}</div>
+                        <button type="button" class="picker-section" data-harness-section="harness"><Icon name="chevron-right" /><b>Harness</b><span data-current-harness>Codex</span></button>
+                        <div class="picker-options harness-options" data-harness-panel="harness" hidden><small>Native SDK</small><button type="button" data-hero-harness="Claude" data-hero-model="Opus 5"><span class="harness-logo"><HarnessMark name="claude" /></span><b>Claude</b><em hidden><Icon name="check" /></em></button><button type="button" data-hero-harness="Codex" data-hero-model="GPT-5.6-Luna" class="selected"><span class="harness-logo"><HarnessMark name="codex" /></span><b>Codex</b><em><Icon name="check" /></em></button><button type="button" data-hero-harness="Cursor" data-hero-model="Composer 1"><span class="harness-logo"><HarnessMark name="cursor" /></span><b>Cursor</b><em hidden><Icon name="check" /></em></button><small>Direct</small><button type="button" data-hero-harness="Pi" data-hero-model="Pi"><span class="harness-logo"><HarnessMark name="pi" /></span><b>Pi</b><em hidden><Icon name="check" /></em></button><button type="button" data-hero-harness="OpenCode" data-hero-model="GPT-5.4"><span class="harness-logo"><HarnessMark name="opencode" /></span><b>OpenCode</b><em hidden><Icon name="check" /></em></button></div>
+                        <button type="button" class="picker-section active" data-harness-section="model"><Icon name="chevron-down" /><b>Model</b><span data-hero-model-label>GPT-5.6-Luna</span></button>
+                        <div class="picker-options model-options" data-harness-panel="model"><label><Icon name="magnifying-glass" /><input type="search" aria-label="Search models" placeholder="Search models" /></label><div class="model-provider"><span>Codex App Server</span><b>Configured</b></div><button type="button" data-hero-model-choice="GPT-5.5"><span><b>GPT-5.5</b><i>Frontier model for complex coding, research, and real-world work.</i></span><em hidden><Icon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Luna" class="selected"><span><b>GPT-5.6-Luna</b><i>Fast and affordable agentic coding model.</i></span><em><Icon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Sol"><span><b>GPT-5.6-Sol</b><i>Latest frontier agentic coding model.</i></span><em hidden><Icon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Terra"><span><b>GPT-5.6-Terra</b><i>Balanced agentic coding model for everyday work.</i></span><em hidden><Icon name="check" /></em></button></div>
+                        <button type="button" class="picker-section" data-harness-section="effort"><Icon name="chevron-right" /><b>Effort</b><span data-hero-effort-label>Low</span></button>
+                        <div class="picker-options effort-options" data-harness-panel="effort" hidden>{['Low','Medium','High','Xhigh','Max','Ultra'].map((effort) => <button type="button" data-hero-effort={effort} class:list={{ selected: effort === 'Low' }}><b>{effort}</b><em hidden={effort !== 'Low'}><Icon name="check" /></em></button>)}</div>
                       </div>
-                      <button type="button" class="harness-control" data-composer-menu-trigger="harness" aria-label="Select harness and model" aria-expanded="false"><span class="harness-logo" data-hero-harness-mark><HarnessMark name="codex" /></span><span data-hero-model-trigger>GPT-5.6-Luna</span><small data-hero-effort-trigger>Low</small><CodexIcon name="chevron-down" /></button><button type="submit" class="send" aria-label="Send"><CodexIcon name="send" /></button>
+                      <button type="button" class="harness-control" data-composer-menu-trigger="harness" aria-label="Select harness and model" aria-expanded="false"><span class="harness-logo" data-hero-harness-mark><HarnessMark name="codex" /></span><span data-hero-model-trigger>GPT-5.6-Luna</span><small data-hero-effort-trigger>Low</small><Icon name="chevron-down" /></button><button type="submit" class="send" aria-label="Send"><Icon name="send" /></button>
                     </div>
                   </div>
                 </form>
@@ -194,7 +194,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
           </section>
           <section class="session-surface marketplace-surface" aria-label="Claxedo marketplace">
             <header class="market-head">
-              <label class="file-search market-search"><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search plugins" placeholder="Search plugins, skills, MCP servers…" /></label>
+              <label class="file-search market-search"><Icon name="magnifying-glass" /><input type="search" aria-label="Search plugins" placeholder="Search plugins, skills, MCP servers…" /></label>
               <div class="market-sources" role="tablist" aria-label="Marketplace sources">
                 <button type="button" role="tab" aria-selected="true">All</button>
                 <button type="button" role="tab" aria-selected="false">Claxedo<span>2</span></button>
@@ -253,7 +253,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
         </main>
 
         <aside class="workspace-panel" aria-label="Workspace panel">
-          <div class="workspace-l2"><div class="review-toolbar"><button type="button" class="commit-scope"><span>Uncommitted</span><span>136</span><CodexIcon name="chevron-down" /></button><b>+335</b><i>−10,008</i><span></span><button type="button" aria-label="Sort changes"><CodexIcon name="expand-all" /></button><button type="button" data-panel-button="changes" aria-label="Open review"><CodexIcon name="split" /></button><button type="button" data-panel-button="files" aria-label="Open files"><CodexIcon name="file" /></button><button type="button" aria-label="Open changed file"><CodexIcon name="open-external" /></button><button type="button" data-panel-button="processes" aria-label="Open processes"><CodexIcon name="terminal" /></button></div></div>
+          <div class="workspace-l2"><div class="review-toolbar"><button type="button" class="commit-scope"><span>Uncommitted</span><span>136</span><Icon name="chevron-down" /></button><b>+335</b><i>−10,008</i><span></span><button type="button" aria-label="Sort changes"><Icon name="expand-all" /></button><button type="button" data-panel-button="changes" aria-label="Open review"><Icon name="split" /></button><button type="button" data-panel-button="files" aria-label="Open files"><Icon name="file" /></button><button type="button" aria-label="Open changed file"><Icon name="open-external" /></button><button type="button" data-panel-button="processes" aria-label="Open processes"><Icon name="terminal" /></button></div></div>
           <div class="panel-view review-view" data-panel-view="changes">
             <div class="change-list">
               <div class="file-change removed"><span>YML</span><b>.github/workflows/docs-links.yml</b><small>Removed</small></div>
@@ -276,13 +276,13 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
               <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/concepts/credentials.mdx</b><small>Removed</small></div>
             </div>
             <aside class="repo-tree">
-              <label class="file-search"><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search files" placeholder="Search files..." /></label>
-              {['.agents','.artifacts','.claude','.claxedo','.codex','.context','.crabbox','.cursor','.github','.husky','.opencode','.turborepo','.vercel','.vscode','.workspace-runtime','.worktrees','.wrangler','docs','packages'].map((name) => <button type="button" class:list={["repo-row", { changed: name === '.github', active: name === 'docs' }]} data-repo-folder={name} aria-expanded="false"><CodexIcon name="chevron-right" class="repo-chevron" /><CodexIcon name="folder" class="repo-folder" /><b>{name}</b><i></i></button>)}
+              <label class="file-search"><Icon name="magnifying-glass" /><input type="search" aria-label="Search files" placeholder="Search files..." /></label>
+              {['.agents','.artifacts','.claude','.claxedo','.codex','.context','.crabbox','.cursor','.github','.husky','.opencode','.turborepo','.vercel','.vscode','.workspace-runtime','.worktrees','.wrangler','docs','packages'].map((name) => <button type="button" class:list={["repo-row", { changed: name === '.github', active: name === 'docs' }]} data-repo-folder={name} aria-expanded="false"><Icon name="chevron-right" class="repo-chevron" /><Icon name="folder" class="repo-folder" /><b>{name}</b><i></i></button>)}
               <div class="repo-children" data-repo-children hidden><span>README.md</span><span>index.ts</span></div>
               <button type="button" class="show-more">Show 24 more</button>
             </aside>
           </div>
-          <div class="panel-view" data-panel-view="files" hidden><label class="file-search"><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search files" placeholder="Search files" /></label><div class="tree-row"><span><CodexIcon name="chevron-down" /></span><CodexIcon name="folder" /><b>packages</b></div><div class="tree-row indent"><span><CodexIcon name="chevron-down" /></span><CodexIcon name="folder" /><b>claxedo-app</b></div><div class="tree-row indent-2"><span></span><small>TS</small><b>session-selection.ts</b></div><div class="tree-row indent-2"><span></span><small>TSX</small><b>composer.tsx</b></div></div>
+          <div class="panel-view" data-panel-view="files" hidden><label class="file-search"><Icon name="magnifying-glass" /><input type="search" aria-label="Search files" placeholder="Search files" /></label><div class="tree-row"><span><Icon name="chevron-down" /></span><Icon name="folder" /><b>packages</b></div><div class="tree-row indent"><span><Icon name="chevron-down" /></span><Icon name="folder" /><b>claxedo-app</b></div><div class="tree-row indent-2"><span></span><small>TS</small><b>session-selection.ts</b></div><div class="tree-row indent-2"><span></span><small>TSX</small><b>composer.tsx</b></div></div>
           <div class="panel-view" data-panel-view="processes" hidden><div class="process-head">Running processes <span>2</span></div><div class="process-row"><i></i><div><b>bun run dev</b><small>localhost:4321</small></div><button type="button">•••</button></div><div class="process-row"><i></i><div><b>Claxedo daemon</b><small>pid 2593</small></div><button type="button">•••</button></div></div>
         </aside>
       </div>

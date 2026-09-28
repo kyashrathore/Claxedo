@@ -3,7 +3,7 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
-import CodexIcon from "../components/CodexIcon.astro"
+import Icon from "../components/Icon.astro"
 import { requireClaim } from "../content/claims"
 import { home, site, type HomeLine } from "../content/site"
 
@@ -61,7 +61,7 @@ const words = (text: string) => text.trim().split(/\s+/)
       <div class="rail-row">
         <a class="proof slot" data-link-slot hidden>
           <span data-link-label></span>
-          <CodexIcon name="open-external" />
+          <Icon name="open-external" />
         </a>
         <div class="controls" data-stage-controls hidden>
           <div class="steps" role="group" aria-label="Choose a line">
