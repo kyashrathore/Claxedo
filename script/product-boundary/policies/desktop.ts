@@ -379,8 +379,12 @@ export const desktopRenderer: Policy = {
   // section (`usage/view/*`) is a renderer screen: its model owns the quota
   // account groups, window risk, the cost estimate, the daily series and the
   // token split, each a module its unit tests reach directly, and it draws the
-  // shared `lib/failure.tsx` notice and the kit's collapsible.
-  ceilings: { modules: 1223, packages: 38 },
+  // shared `lib/failure.tsx` notice and the kit's collapsible. The rail and
+  // settings rows take their height, radius and type size from one stylesheet
+  // (`shell/view/sidebar.css`), and `notifications/unseen-failures.ts` owns
+  // which failed sessions the reader has not opened, the one fact the rail's
+  // failure dot reads.
+  ceilings: { modules: 1225, packages: 38 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
