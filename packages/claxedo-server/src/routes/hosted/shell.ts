@@ -16,8 +16,10 @@
  *   PUT    /auth/:providerID?harness=pi         store an org Pi credential
  *   DELETE /auth/:providerID?harness=pi         remove an org Pi credential
  *   GET    /api/claxedo/agent-config/connections  always unsupported on a central
- *   GET    /api/claxedo/agent-config/harness    a machine-placed workspace's harness
- *                                               health, read over the relay
+ *   GET    /api/claxedo/agent-config/harness    a placement's harness health, read over
+ *                                               the relay
+ *   GET    /api/claxedo/agent-config/harness/options  a placement's model options, read
+ *                                               over the relay
  */
 
 import { Hono } from "hono"
@@ -50,6 +52,7 @@ import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
+import { AGENT_HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -109,6 +112,14 @@ export type HostedShellRouteOptions = {
     auth: SignedControlPlaneAuth,
     input: { workspaceId: string; sessionId?: string },
   ) => Promise<HostedHarnessProbe | undefined>
+  /**
+   * Relays a runtime options read (`path`) for a workspace on a machine or in a
+   * sandbox; `undefined` for a workspace the caller cannot open.
+   */
+  harnessOptions?: (
+    auth: SignedControlPlaneAuth,
+    input: { workspaceId: string; path: string },
+  ) => Promise<Response | undefined>
 }
 
 /** `/api/wr/health`'s shape, trimmed to the fields the harness probe reports. */
@@ -349,44 +360,59 @@ async function harnessRuntimeJson(
   return await res.json().catch(() => undefined)
 }
 
+type HarnessRelayTarget = Parameters<typeof harnessRelayFetch>[2]
+
+/** The relay target of a workspace the caller may open, or nothing when the authority refuses it. */
+async function openHarnessTarget(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  workspaceId: string,
+): Promise<HarnessRelayTarget | undefined> {
+  const authority = requireAuthority(services)
+  const opened = await authority.openWorkspace(auth, { workspaceId }).catch((err) => {
+    if (err instanceof ControlPlaneAuthError) return undefined
+    throw err
+  })
+  const role = relayRole(opened?.role)
+  if (!opened || !role) return undefined
+  const workspaceRecord = opened.workspace
+  const orgId = asString(workspaceRecord?.org_id) ?? asString(await authority.resolveOrgId(auth))
+  const stamp = Date.now()
+  const ws: Workspace = {
+    id: workspaceId,
+    ...(orgId ? { org_id: orgId } : {}),
+    directory: `workspace:${workspaceId}`,
+    kind: "cloud",
+    status: "ready",
+    created_at: stamp,
+    updated_at: stamp,
+  }
+  return { workspaceId, ws, authorityWorkspace: workspaceRecord, authorityRole: role, path: WORKSPACE_RUNTIME_IDENTITY_PATH }
+}
+
+/** A relay target that does not answer for the workspace asked about is not trusted with a read. */
+async function verifyHarnessRuntime(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  target: HarnessRelayTarget,
+  runtimeFetch: HarnessRuntimeFetch | undefined,
+) {
+  const identity = asRecord(await harnessRuntimeJson(services, auth, { ...target, path: WORKSPACE_RUNTIME_IDENTITY_PATH }, runtimeFetch))
+  if (txt(identity?.workspaceId) !== target.workspaceId) {
+    throw new Error("Workspace runtime identity does not match requested workspace")
+  }
+}
+
 export function hostedHarnessRuntimeStatus(
   services: ControlPlaneServices,
   /** Test seam only — production composition passes none and every fetch goes through the relay. */
   testOptions: { runtimeFetch?: HarnessRuntimeFetch } = {},
 ): NonNullable<HostedShellRouteOptions["harnessStatus"]> {
   return async (auth, input) => {
-    const authority = requireAuthority(services)
-    const opened = await authority.openWorkspace(auth, { workspaceId: input.workspaceId }).catch((err) => {
-      if (err instanceof ControlPlaneAuthError) return undefined
-      throw err
-    })
-    const role = relayRole(opened?.role)
-    if (!opened || !role) return undefined
-    const workspaceRecord = opened.workspace
-    const orgId = asString(workspaceRecord?.org_id) ?? asString(await authority.resolveOrgId(auth))
-    const stamp = Date.now()
-    const ws: Workspace = {
-      id: input.workspaceId,
-      ...(orgId ? { org_id: orgId } : {}),
-      directory: `workspace:${input.workspaceId}`,
-      kind: "cloud",
-      status: "ready",
-      created_at: stamp,
-      updated_at: stamp,
-    }
-    const target = { workspaceId: input.workspaceId, ws, authorityWorkspace: workspaceRecord, authorityRole: role }
+    const target = await openHarnessTarget(services, auth, input.workspaceId)
+    if (!target) return undefined
     try {
-      // The identity probe first: refuse to trust a relay target that does
-      // not answer for the workspace we asked about.
-      const identity = asRecord(await harnessRuntimeJson(
-        services,
-        auth,
-        { ...target, path: WORKSPACE_RUNTIME_IDENTITY_PATH },
-        testOptions.runtimeFetch,
-      ))
-      if (txt(identity?.workspaceId) !== input.workspaceId) {
-        throw new Error("Workspace runtime identity does not match requested workspace")
-      }
+      await verifyHarnessRuntime(services, auth, target, testOptions.runtimeFetch)
       // MUTATION-CHECK: runtime health call short-circuited on purpose.
       const health = asRecord(await harnessRuntimeJson(
         services,
@@ -401,6 +427,22 @@ export function hostedHarnessRuntimeStatus(
     } catch (err) {
       return { ok: false, status: "error", error: err instanceof Error ? err.message : String(err) }
     }
+  }
+}
+
+/** Production `harnessOptions`: the runtime's own options answer, relayed as it answered. */
+export function hostedHarnessRuntimeOptions(
+  services: ControlPlaneServices,
+  /** Test seam only — production composition passes none and every fetch goes through the relay. */
+  testOptions: { runtimeFetch?: HarnessRuntimeFetch } = {},
+): NonNullable<HostedShellRouteOptions["harnessOptions"]> {
+  return async (auth, input) => {
+    const target = await openHarnessTarget(services, auth, input.workspaceId)
+    if (!target) return undefined
+    await verifyHarnessRuntime(services, auth, target, testOptions.runtimeFetch)
+    return testOptions.runtimeFetch
+      ? await testOptions.runtimeFetch({ workspaceId: input.workspaceId, path: input.path })
+      : await harnessRelayFetch(services, auth, { ...target, path: input.path })
   }
 }
 
@@ -443,6 +485,32 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
       return c.json({ error: { code: "workspace_not_found", message: "Workspace not found" } }, 404)
     }
     return c.json(hostedHarnessStatusBody(probe, workspaceId!, sessionId))
+  } catch (err) {
+    return authErrorResponse(c, err)
+  }
+}
+
+function harnessSelectionParams(c: Context): Record<string, string> | undefined {
+  const nativeHarness = c.req.query("nativeHarness")
+  if (nativeHarness && AGENT_HARNESS_IDS.some((id) => id === nativeHarness)) return { nativeHarness }
+  const connectionId = c.req.query("connectionId")?.trim()
+  return connectionId ? { connectionId } : undefined
+}
+
+async function relayedHarnessOptionsResponse(c: Context, options: HostedShellRouteOptions) {
+  try {
+    const auth = await signedAuth(c, options)
+    if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+    const selection = harnessSelectionParams(c)
+    if (!selection) return c.json({ error: { code: "agent_config_harness_required", message: "Select an agent connection first" } }, 400)
+    const workspaceId = harnessWorkspaceId(directoryInput(c))
+    const sessionId = c.req.query("sessionId")?.trim() || undefined
+    const model = c.req.query("model")?.trim() || undefined
+    const query = new URLSearchParams({ ...selection, ...(model ? { model } : {}) })
+    const path = `${sessionId ? `/session/${encodeURIComponent(sessionId)}/config-options` : "/api/wr/harness-config-options"}?${query}`
+    const answer = workspaceId && options.harnessOptions ? await options.harnessOptions(auth, { workspaceId, path }) : undefined
+    if (!answer) return c.json({ error: { code: "workspace_not_found", message: "Workspace not found" } }, 404)
+    return new Response(answer.body, { status: answer.status, headers: { "content-type": answer.headers.get("content-type") ?? "application/json" } })
   } catch (err) {
     return authErrorResponse(c, err)
   }
@@ -677,4 +745,5 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Every session's harness store polls this unconditionally and swallows a
     // 404, so an absent route leaves readiness on its initial state forever.
     .get("/api/claxedo/agent-config/harness", (c) => harnessStatusResponse(c, options))
+    .get("/api/claxedo/agent-config/harness/options", (c) => relayedHarnessOptionsResponse(c, options))
 }

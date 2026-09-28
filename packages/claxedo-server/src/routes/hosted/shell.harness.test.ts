@@ -20,7 +20,7 @@
  *      just the route's response shaping) fails a test here too.
  */
 import { describe, expect, test, vi } from "vitest"
-import { HostedShellRoutes, hostedHarnessRuntimeStatus, type HostedHarnessProbe } from "./shell"
+import { HostedShellRoutes, hostedHarnessRuntimeOptions, hostedHarnessRuntimeStatus, type HostedHarnessProbe } from "./shell"
 import type { ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -296,6 +296,45 @@ describe("hostedHarnessRuntimeStatus — the production relay call", () => {
     const harnessStatus = hostedHarnessRuntimeStatus(services, { runtimeFetch })
     const result = await harnessStatus(signed, { workspaceId: "ws_1" })
     expect(result).toBeUndefined()
+    expect(runtimeFetch).not.toHaveBeenCalled()
+  })
+})
+
+describe("GET /api/claxedo/agent-config/harness/options — the model options of a placement on this control plane", () => {
+  const options = { options: [{ id: "model", currentValue: "m" }] }
+
+  test("reads the runtime's options over the relay, per session when one is named, after checking the runtime is the workspace's", async () => {
+    const services = fakeServices({ openWorkspace: vi.fn(async () => ({ role: "editor", workspace: { org_id: "org_1" } })) as never })
+    const paths: string[] = []
+    const harnessOptions = hostedHarnessRuntimeOptions(services, {
+      runtimeFetch: async ({ path }) => {
+        paths.push(path)
+        return Response.json(path === "/global/health" ? { workspaceId: "ws_1" } : options)
+      },
+    })
+    const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessOptions })
+
+    const workspace = await get(app, "/api/claxedo/agent-config/harness/options?workspaceId=ws_1&nativeHarness=pi&model=m", "token-a")
+    expect(workspace.status).toBe(200)
+    expect(await workspace.json()).toEqual(options)
+    const session = await get(app, "/api/claxedo/agent-config/harness/options?workspaceId=ws_1&connectionId=external-opencode&sessionId=ses_1", "token-a")
+    expect(session.status).toBe(200)
+    expect(paths).toEqual([
+      "/global/health",
+      "/api/wr/harness-config-options?nativeHarness=pi&model=m",
+      "/global/health",
+      "/session/ses_1/config-options?connectionId=external-opencode",
+    ])
+  })
+
+  test("refuses a request with no harness, and a workspace the caller cannot open", async () => {
+    const services = fakeServices({ openWorkspace: vi.fn(async () => undefined) as never })
+    const runtimeFetch = vi.fn()
+    const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessOptions: hostedHarnessRuntimeOptions(services, { runtimeFetch }) })
+
+    expect((await get(app, "/api/claxedo/agent-config/harness/options?workspaceId=ws_1", "token-a")).status).toBe(400)
+    expect((await get(app, "/api/claxedo/agent-config/harness/options?workspaceId=ws_1&nativeHarness=pi", "token-a")).status).toBe(404)
+    expect((await get(app, "/api/claxedo/agent-config/harness/options?workspaceId=ws_1&nativeHarness=pi")).status).toBe(401)
     expect(runtimeFetch).not.toHaveBeenCalled()
   })
 })
