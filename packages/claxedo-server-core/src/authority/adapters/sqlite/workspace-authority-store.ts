@@ -197,7 +197,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   owner_token_identifier TEXT NOT NULL,
   backing TEXT NOT NULL,
   display_name TEXT,
-  second_device_open_at INTEGER,
   home_region TEXT,
   repo_url TEXT,
   repo_name TEXT,
@@ -316,7 +315,6 @@ CREATE TABLE IF NOT EXISTS host_workspace_assignments (
   workspace_id TEXT PRIMARY KEY,
   host_id TEXT NOT NULL,
   owner_token_identifier TEXT NOT NULL,
-  second_device_open_at INTEGER,
   -- Strictly increasing per workspace for the workspace's whole life (the
   -- counter is workspaces.host_assignment_revision), written in the same
   -- transaction as the directory it describes; a host acks a revision, never
@@ -1055,7 +1053,6 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
       owner_token_identifier TEXT NOT NULL,
       backing TEXT NOT NULL,
       display_name TEXT,
-      second_device_open_at INTEGER,
       home_region TEXT,
       repo_url TEXT,
       repo_name TEXT,
@@ -1067,10 +1064,10 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
     );
     INSERT INTO workspaces_tenant_v2
       (workspace_id, org_id, project_id, owner_token_identifier, backing, display_name,
-       second_device_open_at, home_region, repo_url, repo_name, git_branch, remote_directory,
+       home_region, repo_url, repo_name, git_branch, remote_directory,
        created_at, updated_at, deleted_at)
     SELECT workspace_id, org_id, project_id, owner_token_identifier, backing, display_name,
-       second_device_open_at, home_region, repo_url, repo_name, git_branch, remote_directory,
+       home_region, repo_url, repo_name, git_branch, remote_directory,
        created_at, updated_at, deleted_at FROM workspaces;
     DROP TABLE workspaces;
     ALTER TABLE workspaces_tenant_v2 RENAME TO workspaces;

@@ -619,8 +619,8 @@ describe("a workspace's row carries its placement", () => {
     ).bind(owner!.owner_user_id, owner!.actor_id).run()
     await database.prepare(
       `insert into host_workspace_assignments
-         (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, second_device_open_at, assigned_at, updated_at, revision)
-       values ('ws_machine', 'host-a', ?, ?, ?, null, 1, 1, 1)`,
+         (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at, revision)
+       values ('ws_machine', 'host-a', ?, ?, ?, 1, 1, 1)`,
     ).bind(orgId, owner!.owner_user_id, owner!.actor_id).run()
 
     await expect(authority.openWorkspace(alice, { workspaceId: "ws_machine" })).resolves.toMatchObject({

@@ -18,7 +18,6 @@ create table host_workspace_assignments (
   org_id text not null,
   owner_user_id text not null references users (user_id) deferrable initially deferred,
   owner_actor_id text not null references actors (actor_id) deferrable initially deferred,
-  second_device_open_at integer,
   assigned_at integer not null,
   updated_at integer not null
 );

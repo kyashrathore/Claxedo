@@ -608,21 +608,6 @@ describe("workspace assignments", () => {
     await expect(api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).rejects.toThrow("Workspace not found")
     expect(await api.listWorkspaces(owner)).toEqual([])
   })
-
-  test("marking a second device open lands on the assignment", async () => {
-    const api = authority()
-    const { hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
-    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
-
-    const marked = await api.markSecondDeviceOpen(owner, { workspaceId: "ws_alpha" })
-
-    expect(marked.recorded).toBe(true)
-    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({
-      active: true,
-      second_device_open_at: marked.second_device_open_at,
-    })
-  })
 })
 
 describe("pause", () => {
