@@ -464,6 +464,7 @@ describe("a turn whose route lease was taken away", () => {
     })
     expect(f.cancels).toEqual([{ sessionId: "ses_lost", turnId: "msg_lost" }])
     await lost.catch(() => undefined)
+    await until(async () => (await inspect(f, "ses_lost")).operations[0]?.state !== "running", "the containment to drain its producer")
 
     const { prompt: replacement } = await promptHeldTurn(f, "ses_lost", "msg_kept")
     const live = (await inspect(f, "ses_lost")).target!

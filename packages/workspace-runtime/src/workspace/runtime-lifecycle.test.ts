@@ -14,6 +14,8 @@ import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
 
+import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN } from "../test-support/host-fixture"
+
 const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []
 afterEach(async () => {
@@ -31,6 +33,7 @@ type FixtureOptions = {
   cancelNeverSettles?: boolean
   /** The first transport's held turn asks a permission the test answers. */
   permission?: boolean
+  question?: boolean
   /** Runs against the store root before the first host opens it. */
   seed?: (storeRoot: string) => void
 }
@@ -61,6 +64,7 @@ async function fixture(options: FixtureOptions = {}) {
     turnReleases.clear()
   }
   const controls: Array<{ instance: number; action: string }> = []
+  const answers: Array<{ kind: string }> = []
   const storeLifecycle = { opened: 0, recovered: 0, closed: 0 }
   const capabilities = {
     abort: !!options.hold, reconnect: false, replay: true, permissions: !!options.hold, questions: false,
@@ -110,7 +114,12 @@ async function fixture(options: FixtureOptions = {}) {
             void broker.ask({
               kind: "permission", requestId: "pending",
               permission: { id: "pending", sessionID: session.binding.sessionId, permission: "tool", patterns: [], metadata: {}, always: [] },
-            }).then(() => { controls.push({ instance, action: "permission" }) }, () => {})
+            }).then((answer) => { answers.push(answer); controls.push({ instance, action: "permission" }) })
+          }
+          if (options.question && instance === 1) {
+            void broker.ask({ kind: "question", requestId: "question", question: {
+              id: "question", sessionID: session.binding.sessionId, questions: [{ header: "Q", question: "Continue?", options: [] }],
+            } }).then((answer) => { answers.push(answer); controls.push({ instance, action: "question" }) })
           }
           started()
           if (options.hold && !released) await new Promise<void>((resolve) => { turnReleases.set(`${instance}:${session.binding.sessionId}`, resolve) })
@@ -183,7 +192,7 @@ async function fixture(options: FixtureOptions = {}) {
       ))
     return { host, request }
   }
-  return { ...open(), open, snapshot, rotateSecretLease, target, storeRoot, executions, prompts, starts, configures, disposed, resolvedDirectories, startedTurn, release, controls, storeLifecycle, creates: () => creates, transports: () => transports }
+  return { ...open(), open, snapshot, rotateSecretLease, target, storeRoot, executions, prompts, starts, configures, disposed, resolvedDirectories, startedTurn, release, controls, answers, storeLifecycle, creates: () => creates, transports: () => transports }
 }
 
 /**
@@ -776,3 +785,214 @@ async function until(condition: () => boolean) {
   }
   if (!condition()) throw new Error("condition never held")
 }
+
+
+test("workspace shutdown closes the producer, cancels its permission and question, and closes its store once", async () => {
+  const f = await fixture({ hold: true, permission: true, question: true, releaseOnDispose: true })
+  await f.host.apply(f.snapshot())
+  await f.request("/session", "POST", { id: "local" })
+  const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
+  await f.startedTurn
+  try {
+    await f.host.dispose()
+    await prompt
+    expect(f.answers).toEqual([{ kind: "cancelled" }, { kind: "cancelled" }])
+    expect(f.controls.filter((item) => item.action === "permission")).toHaveLength(1)
+    expect(f.controls.filter((item) => item.action === "question")).toHaveLength(1)
+    expect(f.disposed).toEqual([1])
+    expect(f.storeLifecycle.closed).toBe(1)
+    const reopened = new RuntimeStore(f.storeRoot)
+    try {
+      expect(reopened.listPermissions(f.target.directory)).toEqual([])
+      expect(reopened.listQuestions(f.target.directory)).toEqual([])
+    } finally { reopened.close() }
+    await f.host.dispose()
+    expect(f.storeLifecycle.closed).toBe(1)
+  } finally { f.release(); await prompt }
+})
+
+describe("host lifecycle", () => {
+  const origin = LOOPBACK_ORIGIN
+
+  test("disposing a runtime leaves its injected store and borrowed transport open", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.dispose()
+    await f.runtime.dispose()
+    expect(f.store.getSession("s")?.id).toBe("s")
+    expect(transport.disposed).toBe(false)
+    await expect(f.runtime.sessions.create(sessionCreate())).rejects.toThrow("disposed")
+    await f.dispose()
+  })
+
+  test("disposal drains the full producer and refuses later work", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const transport = new FakeTransport({ turn: async function* () { yield { type: "finish", sessionId: "s" }; await gate } })
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
+    await hostUntil(() => transport.activeTurns === 1)
+    let disposed = false
+    const pending = f.runtime.dispose().then(() => { disposed = true })
+    await tick()
+    expect(disposed).toBe(false)
+    await expect(f.runtime.turns.start({ sessionId: "s", text: "late", origin })).rejects.toThrow("disposed")
+    release()
+    await pending
+    expect(transport.activeTurns).toBe(0)
+    await f.dispose()
+  })
+
+  test("model selection belongs to each start and an unset model cannot inherit it", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create({ ...sessionCreate({ id: "first" }), model: { providerID: "test", modelID: "chosen" } })
+    await f.runtime.sessions.create(sessionCreate({ id: "second" }))
+    expect(transport.starts[0]?.config.model).toEqual({ providerID: "test", modelID: "chosen" })
+    expect(transport.starts[1]?.config.model).toBeUndefined()
+    expect(transport.configures).toHaveLength(0)
+    await f.dispose()
+  })
+
+  test("missing canonical config and unbound sessions never derive a transport", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    f.store.bindSession({ sessionId: "bound", workspaceId: "ws", connectionId: "native:pi", directory: "/repo", agentSessionId: "up", upstreamSessionId: "up" })
+    await expect(f.runtime.transportFor("bound")).rejects.toThrow("no runtime config")
+    await expect(f.runtime.transportFor("missing")).rejects.toThrow("no runtime config")
+    expect(transport.attaches).toEqual([])
+    expect(f.store.getSessionConfig("bound")).toBeNull()
+    expect(f.store.getSession("missing")).toBeNull()
+    await f.dispose()
+  })
+
+  test("concurrent lazy attachment shares one transport attach", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    f.runtime.attachments.forget("s")
+    const [a, b] = await Promise.all([f.runtime.transportFor("s"), f.runtime.transportFor("s")])
+    expect(a.session).toBe(b.session)
+    expect(transport.attaches).toHaveLength(1)
+    await f.dispose()
+  })
+
+  test("missing execution binding rejects before a turn can become busy", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    f.store.brokerDatabase().prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run("s")
+    await expect(f.runtime.turns.start({ sessionId: "s", text: "work", origin })).rejects.toMatchObject({ detail: { code: "invalid_execution_binding" } })
+    expect(transport.turns).toEqual([])
+    expect(f.store.getSession("s")?.status).not.toBe("busy")
+    expect(f.store.getMessages("s")).toEqual([])
+    await f.dispose()
+  })
+
+  test("busy publishes before a slow producer and a rejected concurrent turn writes nothing", async () => {
+    const control = controlledTurn("s")
+    const transport = new FakeTransport({ turn: () => control.events })
+    const f = createHostFixture({ transports: { pi: transport } })
+    const statuses: unknown[] = []
+    f.eventHub.subscribeGlobal(({ payload }) => { if (payload.type === "session.status") statuses.push(payload.properties.status) })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.turns.start({ sessionId: "s", messageId: "first", text: "work", origin })
+    const before = f.store.getMessages("s")
+    expect(statuses).toContainEqual({ type: "busy" })
+    await expect(f.runtime.turns.start({ sessionId: "s", messageId: "second", text: "rejected", origin })).rejects.toThrow()
+    expect(f.store.getMessages("s")).toEqual(before)
+    expect(transport.turns).toHaveLength(1)
+    control.finish()
+    await f.dispose()
+  })
+
+  test("completion is withheld until producer cleanup and the next turn can start", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let cleaned = false
+    const transport = new FakeTransport({ turn: async function* () { yield { type: "finish", sessionId: "s" }; await gate; cleaned = true } })
+    const f = createHostFixture({ transports: { pi: transport } })
+    const completions: boolean[] = []
+    f.eventHub.subscribeGlobal(({ payload }) => { if (payload.type === "session.idle") completions.push(cleaned) })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
+    await tick()
+    expect(completions).toEqual([])
+    release()
+    const idle = await f.runtime.turns.whenIdle("s")
+    await tick()
+    expect(completions).toEqual([true])
+    idle.abandon()
+    expect((await f.runtime.turns.start({ sessionId: "s", text: "next", origin })).delivery).toBe("start")
+    await f.dispose()
+  })
+
+  test("a harness switch holds admission until the target has started", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const target = new FakeTransport({ beforeStart: () => gate })
+    const f = createHostFixture({ transports: { pi: new FakeTransport(), target } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    const switching = f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })
+    await hostUntil(() => target.activeStarts === 1)
+    const rejected = f.runtime.turns.start({ sessionId: "s", text: "during switch", origin })
+    await expect(rejected).rejects.toThrow()
+    release()
+    await switching
+    expect(f.store.getMessages("s")).toEqual([])
+    await f.dispose()
+  })
+
+  test("a running turn refuses a harness switch without launching the target", async () => {
+    const control = controlledTurn("s")
+    const target = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: new FakeTransport({ turn: () => control.events }), target } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
+    await expect(f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })).rejects.toThrow()
+    expect(target.starts).toEqual([])
+    expect(f.store.getSessionConfig("s")?.harness.id).toBe("pi")
+    control.finish()
+    await f.dispose()
+  })
+
+  test("idle subscriptions return immediately and overflow closes with an explicit notice", async () => {
+    const f = createHostFixture({ transports: { pi: new FakeTransport() }, subscriberBufferSize: 1 })
+    const idle = f.runtime.events.subscribe()[Symbol.asyncIterator]()
+    expect(await idle.return?.()).toMatchObject({ done: true })
+    const slow = f.runtime.events.subscribe()[Symbol.asyncIterator]()
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
+    await tick()
+    const seen = []
+    for (;;) { const next = await slow.next(); if (next.done) break; seen.push(next.value.payload) }
+    expect(seen).toContainEqual(expect.objectContaining({ type: "harness-notice", code: "runtime.subscription_overflow" }))
+    await f.dispose()
+  })
+
+  test("a bound session naming an unavailable transport refuses a turn before writing", async () => {
+    const f = createHostFixture({ transports: {} })
+    try {
+      f.store.bindSession({ sessionId: "s", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "up", agentSessionId: "up", directory: "/repo" })
+      f.store.updateSessionConfig("s", { harness: { id: "pi", access: "native" } })
+      await expect(f.runtime.turns.start({ sessionId: "s", text: "work", origin })).rejects.toThrow("No transport is composed")
+      expect(f.store.getMessages("s")).toEqual([])
+      expect(f.store.getSession("s")?.status).not.toBe("busy")
+    } finally { await f.dispose() }
+  })
+
+  test("borrowed transports resolved by a lazy handoff survive host disposal", async () => {
+    const source = new FakeTransport()
+    const target = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: source, target } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      await f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })
+      await f.runtime.dispose()
+      expect(source.disposed).toBe(false)
+      expect(target.disposed).toBe(false)
+    } finally { await f.dispose() }
+  })
+})

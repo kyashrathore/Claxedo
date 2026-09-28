@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import { settleAtRequestDeadline } from "./deadline"
 
 const expired = (what: string) => new Error(`${what} expired`)
@@ -34,4 +34,21 @@ test("an expired request never starts waiting", async () => {
   }, Promise.resolve("late"), () => { abandoned++ }, expired)
   await expect(result).rejects.toThrow("read expired")
   expect(abandoned).toBe(1)
+})
+
+test.each(["abort", "timeout"] as const)("the losing deadline resource is released when %s wins", async (winner) => {
+  const controller = new AbortController()
+  const clear = spyOn(globalThis, "clearTimeout")
+  const remove = spyOn(controller.signal, "removeEventListener")
+  let abandoned = 0
+  try {
+    const pending = settleAtRequestDeadline("stop", { signal: controller.signal, deadlineAt: Date.now() + (winner === "abort" ? 60_000 : 10) },
+      new Promise<never>(() => {}), () => { abandoned++ }, (_what, aborted) => new Error(aborted ? "aborted" : "timed out"))
+    if (winner === "abort") controller.abort()
+    await expect(pending).rejects.toThrow(winner === "abort" ? "aborted" : "timed out")
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(remove.mock.calls[0]?.[0]).toBe("abort")
+    expect(abandoned).toBe(1)
+  } finally { clear.mockRestore(); remove.mockRestore() }
 })

@@ -43,6 +43,7 @@ export type RecoveryFactsInput = {
   machineId?: string
   workspaceId?: string
   now: () => number
+  isProducing: (leaseId: string) => boolean
 }
 
 /**
@@ -83,7 +84,8 @@ export function createRecoveryFacts(input: RecoveryFactsInput) {
     const retained = failures.get(sessionId)
     const busy = store.getSession(sessionId)?.status === "busy"
     const generation = turn?.leaseId ?? retained?.capture.leaseId ?? store.readTurnAuthority(sessionId)?.leaseId ?? owner
-    const execution: ExecutionFact = turn ? "running" : busy ? "unknown" : "terminal"
+    const producing = turn && input.isProducing(turn.leaseId)
+    const execution: ExecutionFact = producing ? "running" : busy ? "unknown" : "terminal"
     return {
       execution: fact(execution, turn ? "runtime.admission" : "runtime.store", generation),
       cleanup: fact<CleanupFact>(turn || retained ? "owned" : "unknown", "runtime.admission", generation),
@@ -107,23 +109,26 @@ export function createRecoveryFacts(input: RecoveryFactsInput) {
   }
 
 
-  const RETAINED_CODES: Readonly<Record<"no_authority" | "authority_lost" | "persistence", RecoveryErrorCode>> = {
+  const RETAINED_CODES: Readonly<Record<"no_authority" | "authority_lost" | "persistence" | "outcome_unknown", RecoveryErrorCode>> = {
     no_authority: "ownership_unverified",
     authority_lost: "authority_lost",
     persistence: "persistence_unavailable",
+    outcome_unknown: "exit_unverified",
   }
 
   /**
-   * Hold a failed finalization where an owner can see it. A storage failure is
-   * retryable, so the turn keeps its admission and its lease: releasing either
-   * admits conflicting work over a session the store still records as busy. A
+   * Hold a failed finalization where an owner can see it. A storage failure, or
+   * a producer that failed while its stop was unconfirmed, is retryable, so the
+   * turn keeps its admission and its lease: releasing either admits conflicting
+   * work over a session the store still records as busy, or over a provider
+   * that may still be running the turn. A
    * lease that moved to another owner is not — this owner can never write that
    * turn again, so it gives up the admission slot it is still holding while
    * keeping the obligation to report what it may have left running.
    */
   const retainFailure = (capture: RecoveryTurnCapture, outcome: AgentTurnOutcome, result: TurnFinalization) => {
     if (result.ok || result.reason === "superseded") return
-    const retryable = result.reason === "persistence"
+    const retryable = result.reason === "persistence" || result.reason === "outcome_unknown"
     if (!retryable && capture.admission) admissions.release(capture.sessionId, capture.admission)
     const detail = "error" in result && result.error !== undefined
       ? messageOf(result.error)

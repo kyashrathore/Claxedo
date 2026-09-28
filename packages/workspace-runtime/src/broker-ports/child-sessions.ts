@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
-import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
+import { isTerminalSubagentStatus, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 
-type ChildRow = { assistant_message_id: string | null; created_at: number }
+type ChildRow = { assistant_message_id: string | null; created_at: number; status: string | null }
 
 export function bindChildCorrelation(
   store: RuntimeStore, parentSessionId: string, correlationKey: string, childSessionId: string,
@@ -27,11 +27,11 @@ export function bindChildCorrelation(
 
 export async function admitChildSession(
   store: RuntimeStore, parentSessionId: string, childSessionId: string,
-  _observation: SubagentObservation,
+  observation: SubagentObservation,
 ): Promise<ChildSessionRef> {
   const db = store.brokerDatabase()
   const read = () => db.prepare<ChildRow>(`
-    SELECT assistant_message_id, created_at FROM session_subagent
+    SELECT assistant_message_id, created_at, status FROM session_subagent
     WHERE parent_session_id = ? AND child_session_id = ?
   `).get(parentSessionId, childSessionId)
   const row = read()
@@ -40,6 +40,11 @@ export async function admitChildSession(
     db.prepare(`UPDATE session_subagent SET assistant_message_id = ?
       WHERE parent_session_id = ? AND child_session_id = ? AND assistant_message_id IS NULL`)
       .run(`msg_${randomUUID()}`, parentSessionId, childSessionId)
+  } else if (!isTerminalSubagentStatus(observation.status) && !isTerminalSubagentStatus(row.status ?? undefined)
+    && store.turnEvidence(childSessionId, row.assistant_message_id).finished) {
+    db.prepare(`UPDATE session_subagent SET assistant_message_id = ?
+      WHERE parent_session_id = ? AND child_session_id = ? AND assistant_message_id = ?`)
+      .run(`msg_${randomUUID()}`, parentSessionId, childSessionId, row.assistant_message_id)
   }
   const committed = read()
   if (!committed?.assistant_message_id) throw new Error(`Child ${childSessionId} has no assistant message`)

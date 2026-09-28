@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { PromptInput, SubagentObservation } from "@claxedo/agent-runtime-contract"
+import { isTerminalSubagentStatus, type PromptInput, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { BrokerPorts } from "@claxedo/harness/broker"
@@ -7,6 +7,8 @@ import type { ChildSessionRef } from "@claxedo/harness/contract"
 import type { ChildProjectionTarget } from "../projection/child-event-routing"
 import type { RuntimeAppendSource } from "../projection/turn-projection"
 import type { AgentRuntimeStore } from "./contracts"
+import { AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
+import type { LeasedTurnFailure } from "../broker-ports"
 
 type ChildLifecycleEvent =
   | { type: "session-status"; status: "busy" }
@@ -23,13 +25,14 @@ export type ParentTurnContext = {
 }
 
 type SeededChild = {
+  parent: ParentTurnContext
+  mode: SubagentObservation["mode"]
   target: ChildProjectionTarget
   leaseId: string
   fencingToken?: number
   settled: boolean
 }
 
-const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["completed", "failed", "killed", "interrupted"])
 const SOURCE: RuntimeAppendSource = { dir: "in", method: "subagent" }
 
 export class TurnAuthorityUnavailableError extends Error {
@@ -40,7 +43,7 @@ export class TurnAuthorityUnavailableError extends Error {
   }
 }
 
-function childOutcome(event: SubagentUpdatedEvent) {
+function childOutcome(event: Pick<SubagentUpdatedEvent, "status" | "label">) {
   const completedAt = Date.now()
   if (event.status === "failed") return { status: "failed" as const, completedAt, error: event.label ?? "Subagent failed" }
   if (event.status === "completed") return { status: "completed" as const, completedAt }
@@ -54,7 +57,12 @@ function childOutcome(event: SubagentUpdatedEvent) {
  * arrives; both steps project through the same router its routed events use,
  * so a reader watching the child sees it start, work and stop.
  */
-export function createChildTurns(input: { store: AgentRuntimeStore; publish: (parentSessionId: string, event: CompatEvent) => void }) {
+export function createChildTurns(input: {
+  store: AgentRuntimeStore
+  publish: (parentSessionId: string, event: CompatEvent) => void
+  /** Retains a child terminal the store refused under the child's lease; `false` when nothing could, and the lease is released. */
+  retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean
+}) {
   const parents = new Map<string, ParentTurnContext>()
   const children = new Map<string, SeededChild>()
 
@@ -90,24 +98,32 @@ export function createChildTurns(input: { store: AgentRuntimeStore; publish: (pa
       throw failure
     }
     parent.projectChild(target, { type: "session-status", status: "busy" }, SOURCE)
-    const seeded: SeededChild = { target, leaseId, settled: false,
+    const seeded: SeededChild = { target, leaseId, settled: false, parent, mode: observation.mode,
       ...(parent.fencingToken === undefined ? {} : { fencingToken: parent.fencingToken }) }
     children.set(ref.sessionId, seeded)
     return seeded
   }
 
-  const settle = (child: SeededChild, event: SubagentUpdatedEvent, parent: ParentTurnContext | undefined) => {
+  const settle = (child: SeededChild, event: Pick<SubagentUpdatedEvent, "status" | "label">, parent: ParentTurnContext | undefined) => {
     if (child.settled) return
     child.settled = true
     const outcome = childOutcome(event)
-    parent?.projectChild(child.target,
-      outcome.status === "failed" ? { type: "error", error: outcome.error } : { type: "finish", sessionId: child.target.sessionId },
-      SOURCE)
+    let finished
     try {
-      const finished = input.store.finishTurn({
+      finished = input.store.finishTurn({
         sessionId: child.target.sessionId, assistantMessageId: child.target.assistantMessageId, outcome, leaseId: child.leaseId,
         ...(child.fencingToken === undefined ? {} : { fencingToken: child.fencingToken }),
       })
+    } catch (error) {
+      const retained = !(error instanceof AgentRuntimeStaleTurnError) && input.retainLeasedTurnFailure(child.target.sessionId,
+        { leaseId: child.leaseId, assistantMessageId: child.target.assistantMessageId, outcome }, error)
+      if (!retained) input.store.releaseTurnLease(child.target.sessionId, child.leaseId)
+      throw error
+    }
+    try {
+      parent?.projectChild(child.target,
+        outcome.status === "failed" ? { type: "error", error: outcome.error } : { type: "finish", sessionId: child.target.sessionId },
+        SOURCE)
       for (const payload of finished.events) input.publish(child.target.sessionId, payload)
     } finally {
       input.store.releaseTurnLease(child.target.sessionId, child.leaseId)
@@ -117,7 +133,16 @@ export function createChildTurns(input: { store: AgentRuntimeStore; publish: (pa
   return {
     beginTurn(parentSessionId: string, context: ParentTurnContext) {
       parents.set(parentSessionId, context)
-      return () => { if (parents.get(parentSessionId) === context) parents.delete(parentSessionId) }
+      return () => {
+        if (parents.get(parentSessionId) !== context) return
+        parents.delete(parentSessionId)
+        const failures: unknown[] = []
+        for (const child of children.values()) {
+          if (child.parent !== context || child.mode === "background" || child.settled) continue
+          try { settle(child, { status: "interrupted" }, context) } catch (error) { failures.push(error) }
+        }
+        if (failures.length) throw new AggregateError(failures, "Foreground child settlement failed")
+      }
     },
     /** The ports every broker call reaches, with the child lifecycle a host turn owes layered over the store's persistence. */
     ports(base: BrokerPorts): BrokerPorts {
@@ -126,7 +151,8 @@ export function createChildTurns(input: { store: AgentRuntimeStore; publish: (pa
         admitChildSession: async (parentSessionId, childSessionId, observation) => {
           const ref = await base.admitChildSession(parentSessionId, childSessionId, observation)
           const parent = parents.get(parentSessionId)
-          if (parent && !children.has(childSessionId)) seed(parentSessionId, ref, observation, parent)
+          const known = children.get(childSessionId)
+          if (parent && (!known || known.settled && ref.assistantMessageId !== known.target.assistantMessageId)) seed(parentSessionId, ref, observation, parent)
           return ref
         },
         bindChildCorrelation: (parentSessionId, correlationKey, childSessionId) => {
@@ -138,7 +164,7 @@ export function createChildTurns(input: { store: AgentRuntimeStore; publish: (pa
         publishSubagent: async (parentSessionId, event) => {
           await base.publishSubagent(parentSessionId, event)
           const child = event.childSessionId ? children.get(event.childSessionId) : undefined
-          if (child && event.status && TERMINAL_STATUSES.has(event.status)) settle(child, event, parents.get(parentSessionId))
+          if (child && isTerminalSubagentStatus(event.status)) settle(child, event, parents.get(parentSessionId))
         },
       }
     },

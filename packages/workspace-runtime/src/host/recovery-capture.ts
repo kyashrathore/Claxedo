@@ -39,6 +39,7 @@ export type TurnFinalization =
   | { ok: false; reason: "no_authority" }
   | { ok: false; reason: "authority_lost"; error?: unknown }
   | { ok: false; reason: "persistence"; error: unknown }
+  | { ok: false; reason: "outcome_unknown"; error: unknown }
 
 export type FinalizeTurnOptions = {
   emit?: (event: AgentRuntimeEventEnvelope) => void

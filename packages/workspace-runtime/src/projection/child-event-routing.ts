@@ -116,7 +116,7 @@ export function createChildEventRouter(options: {
 
   const childProjector = (target: ChildProjectionTarget) => {
     const existing = projectors.get(target.sessionId)
-    if (existing) {
+    if (existing && sameChildTurn(existing.target, target)) {
       if (!sameTarget(existing.target, target)) {
         throw new Error(`conflicting child projection target for Session ${target.sessionId}`)
       }
@@ -152,7 +152,7 @@ export function createChildEventRouter(options: {
     }
     const target = bindings.get(correlationKey)
     if (target) {
-      childProjector(target).project(event, source)
+      childProjector(projectors.get(target.sessionId)?.target ?? target).project(event, source)
       return
     }
     if (poisoned.has(correlationKey)) {
@@ -228,7 +228,7 @@ export function createChildEventRouter(options: {
       if (disposed) throw new Error("child event router is disposed")
       if (!correlationKey) throw new Error("child projection correlation key is required")
       const existing = bindings.get(correlationKey)
-      if (existing && !sameTarget(existing, target)) {
+      if (existing && !sameTarget(existing, target) && (existing.sessionId !== target.sessionId || sameChildTurn(existing, target))) {
         diagnose(
           "child_event_route_binding_conflict",
           "Rejected a conflicting child projection correlation binding",
@@ -240,9 +240,9 @@ export function createChildEventRouter(options: {
         )
         return
       }
-      if (existing) return
+      if (existing && sameTarget(existing, target)) return
       const existingProjector = projectors.get(target.sessionId)
-      if (existingProjector && !sameTarget(existingProjector.target, target)) {
+      if (existingProjector && sameChildTurn(existingProjector.target, target) && !sameTarget(existingProjector.target, target)) {
         diagnose(
           "child_event_route_binding_conflict",
           "Rejected a conflicting child projection target",
@@ -300,6 +300,11 @@ function survivingUsage(events: readonly BufferedChildEvent[]) {
   return metered
     .filter((item) => item.event.observation.kind === "delta" || latestCumulative.get(item.event.observation.scope) === item.sequence)
     .sort((left, right) => left.sequence - right.sequence)
+}
+
+/** A child session's later turn has its own assistant message, and replaces the projector of the one before it. */
+function sameChildTurn(left: ChildProjectionTarget, right: ChildProjectionTarget) {
+  return left.sessionId === right.sessionId && left.assistantMessageId === right.assistantMessageId
 }
 
 function sameTarget(left: ChildProjectionTarget, right: ChildProjectionTarget) {

@@ -76,6 +76,8 @@ export type FakeTransportOptions = {
   beforeStart?: (input: StartInput, session: SessionBroker) => Promise<void>
   /** Awaited inside every `capabilities` read; a test parks a caller between its admission read and its harness read here. */
   beforeCapabilities?: () => Promise<void>
+  /** Keeps yielding what the turn already queued after its broker signal aborts, as ACP and Codex deliver output behind a stop. */
+  drainsAfterAbort?: boolean
   /** What a cancel answers; the default reports the turn terminal and its cleanup verified. */
   cancel?: (input: FakeCancel) => Promise<AdapterCancelOutcome>
   /** What a configuration push answers; the default applies it. */
@@ -173,7 +175,7 @@ export class FakeTransport implements HarnessTransport {
     this.activeTurns++
     try {
       for await (const event of (this.options.turn ?? ackTurn)(input)) {
-        if (broker.signal.aborted) return
+        if (broker.signal.aborted && !this.options.drainsAfterAbort) return
         yield { event }
       }
     } finally {

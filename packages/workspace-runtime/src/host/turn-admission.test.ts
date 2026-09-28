@@ -9,9 +9,14 @@ import {
   sessionCreate,
   until,
   type TurnControl,
+  tempStoreRoot,
+  LOOPBACK_ORIGIN,
+  tick,
 } from "../test-support/host-fixture"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createTurnAdmissions } from "./turn-admission"
+import { rmSync } from "node:fs"
+import { RuntimeStore } from "../store"
 
 function open(controls: TurnControl[]) {
   const control = controlledTurn("ses_busy")
@@ -327,5 +332,84 @@ describe("scoping a cancellation to the turn the caller was looking at", () => {
     expect(runtime.recovery.inspect(sessionId).target).toMatchObject({ turnId: "msg_second" })
     control.finish()
     await dispose()
+  })
+})
+
+describe("durable turn authority", () => {
+  const record = { sessionId: "s", userMessageId: "u", assistantMessageId: "a", agent: "build", parts: [{ type: "text" as const, text: "work" }] }
+
+  test("the same active assistant turn starts once with the same durable receipt", async () => {
+    const f = createHostFixture({ transports: { pi: new FakeTransport() } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const first = f.store.startTurn(record)
+      const replay = f.store.startTurn(record)
+      expect(replay).toMatchObject({ sessionId: first.sessionId, seq: first.seq, createdAt: first.createdAt, events: [] })
+      expect(f.store.getMessages("s")).toHaveLength(2)
+    } finally { await f.dispose() }
+  })
+
+  test("a competing domain receives no lease and double release cannot strand a session", async () => {
+    const f = createHostFixture({ transports: { pi: new FakeTransport() } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      const owner = createTurnAdmissions(f.store)
+      const competing = createTurnAdmissions(f.store)
+      const first = owner.claim("s", { turnId: "u", assistantMessageId: "a" })!
+      expect(competing.claim("s", { turnId: "other", assistantMessageId: "other" })).toBeUndefined()
+      expect(f.store.readTurnAuthority("s")?.leaseId).toBe(first.leaseId)
+      first.release()
+      first.release()
+      const next = competing.claim("s", { turnId: "next", assistantMessageId: "next" })!
+      expect(next).toBeDefined()
+      first.release()
+      expect(f.store.readTurnAuthority("s")?.leaseId).toBe(next.leaseId)
+      next.release()
+    } finally { await f.dispose() }
+  })
+
+  test("a persisted unfinished turn is unknown to a replacement host and refuses stale cancellation", async () => {
+    const root = tempStoreRoot()
+    let store = new RuntimeStore(root)
+    const transport = new FakeTransport()
+    let f = createHostFixture({ store, transports: { pi: transport } })
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      store.startTurn(record)
+      await f.runtime.dispose()
+      store.close()
+      store = new RuntimeStore(root)
+      f = createHostFixture({ store, transports: { pi: transport } })
+      const inspection = f.runtime.recovery.inspect("s")
+      expect(inspection.target).toBeUndefined()
+      expect(inspection.facts).toMatchObject({ execution: { value: "unknown" }, persistence: { value: "pending" } })
+      expect(await f.runtime.recovery.submit(cancelTurnRequest({ scope: "turn", workspaceId: "ws", sessionId: "s", turnId: "u", ownerGeneration: "previous" }), RECOVERY_TEST_CALLER))
+        .toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
+      expect(transport.cancels).toEqual([])
+      expect(store.getSession("s")?.status).toBe("busy")
+      await f.runtime.turns.start({ sessionId: "s", text: "continue", origin: LOOPBACK_ORIGIN })
+      await f.runtime.dispose()
+      expect(store.getSession("s")?.lastTurn?.status).toBe("completed")
+    } finally { await f.runtime.dispose(); store.close(); rmSync(root, { recursive: true, force: true }) }
+  })
+
+  test("a durable fence takeover rejects stale producer completion without ending its replacement", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const transport = new FakeTransport({ turn: async function* () { await gate; yield { type: "finish", sessionId: "s" } } })
+    const f = createHostFixture({ transports: { pi: transport } })
+    let valid = true
+    try {
+      await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+      await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN, admission: { valid: () => valid, fencingToken: () => 1 } })
+      f.store.startTurn({ ...record, assistantMessageId: "replacement", fencingToken: 2 })
+      valid = false
+      release()
+      await tick()
+      await f.runtime.dispose()
+      expect(f.store.getSession("s")?.status).toBe("busy")
+      expect(f.store.getSession("s")?.lastTurn).toBeUndefined()
+      expect(f.store.getMessages("s").map((row) => row.info.id)).toContain("replacement")
+    } finally { release(); await f.dispose() }
   })
 })

@@ -1,18 +1,18 @@
-import type { PendingRequest } from "../../contract/broker"
+import type { RequestAnswer, TurnRequest, PendingRequest } from "../../contract/broker"
 import { describe, expect, test } from "bun:test"
 import { ElicitationValidationError, type AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../index"
 import { type MemoryPorts, authority, origin } from "../../conformance/test-support/memory-ports"
 import { chooseBrokerPermissionOption } from "../options"
 
-const permission = (id: string, grantKey?: string, options?: { optionId: string; kind: "allow_once" | "allow_always" | "reject_once" | "reject_always"; name: string }[]) => ({
+const permission = (id: string, grantKey?: string, options?: { optionId: string; kind: "allow_once" | "allow_always" | "reject_once" | "reject_always"; name: string }[], sessionID = "s1") => ({
   kind: "permission" as const, requestId: id, grantKey, options,
-  permission: { id, sessionID: "s1", permission: "execute", patterns: [], always: [], metadata: {},
+  permission: { id, sessionID, permission: "execute", patterns: [], always: [], metadata: {},
     ...(options === undefined ? {} : { options: options.map((option) => ({ id: option.optionId, label: option.name })) }) },
 })
-const question = (id: string) => ({
+const question = (id: string, sessionID = "s1") => ({
   kind: "question" as const, requestId: id,
-  question: { id, sessionID: "s1", questions: [{ header: "Question", question: "Continue?", options: [], custom: true }] },
+  question: { id, sessionID, questions: [{ header: "Question", question: "Continue?", options: [], custom: true }] },
 })
 const tick = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
 
@@ -24,7 +24,91 @@ export function registerBrokerBehaviorCases(name: string, make: () => MemoryPort
     const turn = createTurnBroker(owner, { authority, origin, signal: controller.signal })
     return { ports, owner, controller, turn }
   }
+const request = (kind: "permission" | "question", id: string, sessionID = "s1"): TurnRequest => kind === "question"
+  ? question(id, sessionID)
+  : permission(id, undefined, undefined, sessionID)
+
 describe(`${name} request broker`, () => {
+    test.each(["permission", "question"] as const)("%s answer survives failed persistence and reports its owner once", async (kind) => {
+      const { ports, owner, turn } = setup()
+      const failures: { sessionId: string; error: unknown }[] = []
+      ports.reportOwnerFailure = (sessionId, error) => { failures.push({ sessionId, error }) }
+      const waiting = turn.ask(request(kind, "retry"))
+      let released = false
+      void waiting.then(() => { released = true })
+      await tick()
+      ports.failPersist = true
+      const answer: RequestAnswer = kind === "question" ? { kind: "answers", answers: [["yes"]] } : { kind: "permission", decision: "allow_once" }
+      expect(await owner.broker.answer("retry", answer, { sessionId: "s1" })).toMatchObject({ ok: false, refusal: "persistence", retryable: true })
+      expect(released).toBe(false)
+      expect(ports.readAnswer("s1", "retry")).toBeUndefined()
+      expect(ports.readPending({ sessionId: "s1" })).toHaveLength(1)
+      expect(failures).toHaveLength(1)
+      expect(failures[0]?.sessionId).toBe("s1")
+      ports.failPersist = false
+      expect(await owner.broker.answer("retry", answer, { sessionId: "s1" })).toMatchObject({ ok: true })
+      expect(await waiting).toEqual(answer)
+      expect(ports.readPending({ sessionId: "s1" })).toHaveLength(0)
+      expect(ports.saved).toHaveLength(1)
+    })
+
+    test.each(["permission", "question"] as const)("%s cancellation retains failed durable requests and leaves sibling requests live", async (kind) => {
+      const { ports, owner, turn } = setup()
+      const sibling = { ...authority, sessionId: "s2", turnId: "t2" }
+      ports.current.set("s2", sibling)
+      const other = createTurnBroker(owner, { authority: sibling, origin, signal: new AbortController().signal })
+      const first = turn.ask(request(kind, "cancel"))
+      const second = other.ask(request(kind, "sibling", "s2"))
+      let released = false
+      void first.then(() => { released = true })
+      await tick()
+      ports.failPersist = true
+      await expect(owner.endTurn(authority)).rejects.toThrow("could not be cancelled")
+      expect(released).toBe(false)
+      expect(ports.readPending({ sessionId: "s1" })).toHaveLength(1)
+      expect(ports.readPending({ sessionId: "s2" })).toHaveLength(1)
+      expect(ports.saved).toHaveLength(0)
+      ports.failPersist = false
+      await owner.endTurn(authority)
+      expect(await first).toEqual({ kind: "cancelled" })
+      expect(ports.readPending({ sessionId: "s1" })).toHaveLength(0)
+      expect(ports.readPending({ sessionId: "s2" })).toHaveLength(1)
+      expect(ports.saved.map((row) => row.pending.sessionId)).toEqual(["s1"])
+      await owner.endTurn(sibling)
+      expect(await second).toEqual({ kind: "cancelled" })
+    })
+
+    test.each([
+      ["permission", "allow"], ["question", "answer"], ["question", "reject"],
+    ] as const)("foreign session cannot %s %s or consume the owner's request", async (kind, action) => {
+      const { ports, owner, turn } = setup()
+      const waiting = turn.ask(request(kind, "owned"))
+      await tick()
+      const answer: RequestAnswer = action === "allow" ? { kind: "permission", decision: "allow_once" }
+        : action === "answer" ? { kind: "answers", answers: [["yes"]] } : { kind: "rejected" }
+      expect(await owner.broker.answer("owned", answer, { sessionId: "other" })).toMatchObject({ ok: false, refusal: "foreign" })
+      expect(ports.saved).toHaveLength(0)
+      expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+      expect(await owner.broker.answer("owned", answer, { sessionId: "s1" })).toMatchObject({ ok: true })
+      expect(await waiting).toEqual(answer)
+    })
+    test.each(["permission", "question", "reject"] as const)("another workspace broker cannot consume a %s request", async (kind) => {
+      const { ports, owner, turn } = setup()
+      const waiting = turn.ask(request(kind === "permission" ? "permission" : "question", "workspace-owned"))
+      await tick()
+      const foreignPorts = make()
+      foreignPorts.current.set("s1", { ...authority, workspaceId: "w2", directory: "/other-workspace" })
+      const foreign = createRequestBroker(foreignPorts)
+      const answer: RequestAnswer = kind === "permission" ? { kind: "permission", decision: "allow_once" }
+        : kind === "reject" ? { kind: "rejected" } : { kind: "answers", answers: [["yes"]] }
+      expect(await foreign.broker.answer("workspace-owned", answer, { sessionId: "s1" })).toMatchObject({ ok: false, refusal: "stale" })
+      expect(ports.saved).toEqual([])
+      expect(foreignPorts.saved).toEqual([])
+      expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
+      expect(await owner.broker.answer("workspace-owned", answer, { sessionId: "s1" })).toMatchObject({ ok: true })
+      expect(await waiting).toEqual(answer)
+    })
+
   test("save before release and retry after persistence failure", async () => {
     const { ports, owner, turn } = setup()
     const waiting = turn.ask(permission("p1"))

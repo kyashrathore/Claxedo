@@ -100,6 +100,7 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
   const { publish: publishTurn, finish: finishPublication } = createTurnPublication(sessionId, host.publish, run.releaseAdmission)
   const router = projectors(host, run, publishTurn, admitted)
   const controller = new AbortController()
+  const untrackStop = recovery.stops.track(capture, controller)
   const authority: TurnAuthority = { ...binding, ownerGeneration: host.ownerGeneration, turnId: prompt.assistantMessageId }
   const turnBroker = createTurnBroker(host.broker, { authority, origin: run.origin, signal: controller.signal })
   const endChildTurns = host.beginChildTurns(sessionId, {
@@ -125,6 +126,10 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
       router.project(payload, appendSource(routed), routed.route)
     }
     if (!admitted()) return
+    if (!terminal && recovery.stops.sent(capture)) {
+      finalized = recovery.cancelActiveTurn(capture)
+      return
+    }
     if (!terminal) {
       const payload = sessionIdle(sessionId)
       outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
@@ -145,12 +150,21 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
       error: err instanceof Error ? err.message : "turn failed",
       ...(err instanceof TransportError && err.detail ? { detail: err.detail } : {}),
     }
+    if (recovery.stops.unconfirmed(capture)) {
+      finalized = recovery.stops.hold(capture, failure, { handle: run.attached.handle, endChildren: () => {
+        try { endChildTurns() } finally { router.dispose() }
+      } })
+      return
+    }
     finalized = recovery.finalizeTurn(capture, failure, { emit: publishTurn })
     recovery.retainFailure(capture, failure, finalized)
   } finally {
     controller.abort()
-    endChildTurns()
-    router.dispose()
+    untrackStop()
+    if (finalized?.ok || finalized?.reason !== "outcome_unknown") {
+      try { endChildTurns() } catch (error) { recovery.reportSessionFailure(sessionId, error) }
+      router.dispose()
+    }
     try {
       await host.broker.endTurn(authority)
     } catch (error) {

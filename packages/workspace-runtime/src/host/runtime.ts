@@ -80,8 +80,23 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const childTurns = createChildTurns({
     store,
     publish: (sessionId, payload) => publish({ sessionId, directory: store.getSession(sessionId)?.directory, payload }),
+    retainLeasedTurnFailure: (sessionId, turn, error) => recovery.retainLeasedTurnFailure(sessionId, turn, error),
   })
-  const broker = createRequestBroker(childTurns.ports(input.ports))
+  const broker = createRequestBroker(childTurns.ports({
+    ...input.ports,
+    admitProviderTurn: (sessionId, turn, run) => {
+      if (lifecycle.closing) return Promise.resolve({ admitted: false, reason: "closed" })
+      return track(async () => {
+        const result = await input.ports.admitProviderTurn(sessionId, turn, run)
+        if (result.admitted) {
+          const current = input.ports.currentTurnAuthority(sessionId)
+          const leaseId = current?.turnId === result.turn.turnId ? store.readTurnAuthority(sessionId)?.leaseId : undefined
+          void track(() => result.settled, leaseId)
+        }
+        return result
+      })
+    },
+  }))
   const attachments = new SessionAttachments({ store, transports: input.transports, launch: input.launch, broker, workspaceId })
   const executing = new Map<string, AttachedSession>()
 
@@ -110,6 +125,8 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const recovery = createRuntimeRecovery({
     store,
     admissions,
+    producer: lifecycle.producer,
+    providerTurn: (sessionId) => input.ports.currentTurnAuthority(sessionId)?.turnId,
     cancelTarget: async (sessionId) => {
       const attached = executing.get(sessionId) ?? await attachments.for(sessionId)
       return { transport: attached.handle.transport, session: attached.session }
@@ -121,13 +138,15 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     ...(input.recovery?.now ? { now: input.recovery.now } : {}),
   })
 
+  const unsubscribeRetire = input.transports.onRetire((handle) => recovery.stops.releaseRetired(handle))
+
   const goals = createRuntimeGoalController({
     store,
     attached: (sessionId) => attachments.for(sessionId),
     publish,
     subscribeRuntime: eventHub.subscribeRuntime,
     captureTurn: recovery.captureSessionTurn,
-    cancelCapturedTurn: recovery.cancelActiveTurn,
+    cancelCapturedTurn: recovery.stopCapturedTurn,
   })
 
   const sessions = createSessionLifecycle({
@@ -227,7 +246,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
           attached, binding, prompt, origin: turn.origin, capture, releaseAdmission,
           clearsHandoff: !!handoff, fence: turn.admission,
           ...(input.afterTurn ? { afterTurn: () => input.afterTurn!(turn.sessionId) } : {}),
-        })).catch((error: unknown) => recovery.reportTurnFailure(capture, error)).finally(() => {
+        }), capture.leaseId).catch((error: unknown) => recovery.reportTurnFailure(capture, error)).finally(() => {
           if (executing.get(turn.sessionId) === attached) executing.delete(turn.sessionId)
           unpin()
         })
@@ -300,9 +319,11 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     dispose() {
       return lifecycle.dispose(
         async () => {
+          recovery.stops.releaseAll()
           for (const attached of attachments.entries()) broker.broker.closeSession(attached.session.binding.sessionId)
         },
         () => {
+          unsubscribeRetire()
           admissions.clear()
           goals.dispose()
           for (const subscriber of subscribers) subscriber.close()

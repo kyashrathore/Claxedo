@@ -20,6 +20,10 @@ export function isRuntimeGoalStatus(value: unknown): value is RuntimeGoalStatus 
 }
 
 export type SubagentStatus = "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
+
+export function isTerminalSubagentStatus(status: string | undefined): boolean {
+  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
+}
 export type SubagentMode = "foreground" | "background"
 export type SubagentToolCallRole = "spawn" | "interaction"
 /**

@@ -48,10 +48,11 @@ function host(options: FakeTransportOptions = {}): Host {
     patternEvaluator: async () => {},
     publishers: eventHub,
     reportOwnerFailure: (sessionId, error) => runtime.recovery.reportOwnerFailure(sessionId, error),
+    retainLeasedTurnFailure: (sessionId, turn, error) => runtime.recovery.retainLeasedTurnFailure(sessionId, turn, error),
   })
   const runtime = createAgentRuntime({
     store, eventHub, ports, ownerGeneration, launch,
-    transports: { forHarness: async () => handle, composed: () => [handle] },
+    transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} },
     identity: { workspaceId: WORKSPACE },
   })
   const created = { store, runtime, transport, eventHub }
