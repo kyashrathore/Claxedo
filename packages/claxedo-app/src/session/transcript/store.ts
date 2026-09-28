@@ -88,7 +88,7 @@ function sessionView(context: TranscriptContext): SessionView {
 
 export function createSessionTranscript(server: Server, ref: SessionRef, deps: TranscriptDeps, seed?: TranscriptSeed): SessionTranscript {
   const context = createTranscriptContext(server, ref, deps)
-  onCleanup(server.attachPlacement(ref.placementId))
+  onCleanup(server.attachPlacement(ref))
   void readSnapshot(context, seed)
   void context.queue.reread()
   return {

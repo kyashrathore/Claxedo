@@ -83,3 +83,27 @@ test("a stream outlives two missed heartbeats and a beat of jitter, and drops wh
   expect(stream.state()).toMatchObject({ kind: "reconnecting", afterLive: true })
   stream.close()
 })
+
+test("a 403 ends the stream: it reports the refusal once, goes offline and never reopens", async () => {
+  jest.useFakeTimers()
+  let opens = 0
+  const refusals: Array<string | undefined> = []
+  const stream = openStream({
+    open: async () => {
+      opens += 1
+      return Response.json({ error: { code: "workspace_event_stream_denied", message: "denied" } }, { status: 403 })
+    },
+    onFrame: () => undefined,
+    onGap: () => undefined,
+    onRefused: (error) => refusals.push(error.code),
+  })
+  await settle()
+  jest.advanceTimersByTime(60_000)
+  await settle()
+  stream.retry()
+  await settle()
+  expect(opens).toBe(1)
+  expect(refusals).toEqual(["workspace_event_stream_denied"])
+  expect(stream.state().kind).toBe("offline")
+  stream.close()
+})

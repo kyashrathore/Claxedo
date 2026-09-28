@@ -11,6 +11,7 @@ export type StreamOptions = {
   readonly onFrame: (frame: unknown) => void
   readonly onGap: () => void
   readonly onState?: (state: ConnectionState) => void
+  readonly onRefused?: (error: ServerError) => void
 }
 
 export type Stream = {
@@ -20,7 +21,7 @@ export type Stream = {
   readonly close: () => void
 }
 
-type ConnectionEvent = { readonly type: "opened" } | { readonly type: "dropped" }
+type ConnectionEvent = { readonly type: "opened" } | { readonly type: "dropped" } | { readonly type: "refused"; readonly reason: string }
 
 type StreamRun = {
   readonly options: StreamOptions
@@ -49,6 +50,8 @@ function connectionTransition(state: ConnectionState, event: ConnectionEvent): C
       const afterLive = state.kind === "connected" || (state.kind === "reconnecting" && state.afterLive)
       return { kind: "reconnecting", attempt, afterLive }
     }
+    case "refused":
+      return { kind: "offline", reason: event.reason }
     default:
       return unreachable(event)
   }
@@ -126,19 +129,25 @@ async function openStreamAttempt(run: StreamRun) {
     await readBody(run, body)
     scheduleReconnect(run)
   } catch (error) {
-    if (!run.closed && run.attempt === controller) {
-      console.error("The event stream dropped", toAppError(error))
-      scheduleReconnect(run)
-    }
+    if (run.closed || run.attempt !== controller) return
+    const reason = toAppError(error)
+    if (reason.status === 403) return endRefusedStream(run, reason)
+    console.error("The event stream dropped", reason)
+    scheduleReconnect(run)
   } finally {
     if (run.watchdog) clearTimeout(run.watchdog)
     run.watchdog = undefined
   }
 }
 
+function endRefusedStream(run: StreamRun, reason: ServerError) {
+  send(run, { type: "refused", reason: reason.message })
+  run.options.onRefused?.(reason)
+}
+
 function retry(run: StreamRun) {
   const state = run.connection.state()
-  if (run.closed || state.kind === "connected" || state.kind === "connecting") return
+  if (run.closed || state.kind === "connected" || state.kind === "connecting" || state.kind === "offline") return
   if (state.kind === "reconnecting" && !run.reconnectTimer) return
   if (run.reconnectTimer) clearTimeout(run.reconnectTimer)
   run.reconnectTimer = undefined
