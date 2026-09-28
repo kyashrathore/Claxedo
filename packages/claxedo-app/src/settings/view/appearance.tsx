@@ -3,7 +3,7 @@ import { Select, Switch, useTheme, type ColorScheme, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
-import { usePreferences, type AppearancePreferences, type NavigatorSide } from "../preferences"
+import { NAVIGATOR_SIDES, usePreferences, type AppearancePreferences, type NavigatorSide } from "../preferences"
 import { ContrastRow } from "./contrast"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
 import { TranscriptRows } from "./transcript-rows"
@@ -15,8 +15,6 @@ const SCHEME_KEY = {
   light: "settings.appearance.scheme.light",
   dark: "settings.appearance.scheme.dark",
 } as const satisfies Record<ColorScheme, string>
-
-const SIDES: readonly NavigatorSide[] = ["left", "right"]
 
 const SIDE_KEY = {
   left: "settings.appearance.navigatorSide.left",
@@ -130,7 +128,7 @@ export function AppearanceSection() {
           <SettingsRow title={t("settings.appearance.navigatorSide")} description={t("settings.appearance.navigatorSide.description")}>
             <Select
               data-action="settings-navigator-side"
-              options={[...SIDES]}
+              options={[...NAVIGATOR_SIDES]}
               current={preferences.appearance.navigatorSide}
               value={(side) => side}
               label={(side) => t(SIDE_KEY[side])}

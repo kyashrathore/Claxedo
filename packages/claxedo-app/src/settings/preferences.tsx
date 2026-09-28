@@ -15,7 +15,13 @@ export type TranscriptPreferences = {
   readonly editToolPartsExpanded: boolean
 }
 
-export type NavigatorSide = "left" | "right"
+export const NAVIGATOR_SIDES = ["left", "right"] as const
+
+export type NavigatorSide = (typeof NAVIGATOR_SIDES)[number]
+
+function isNavigatorSide(value: unknown): value is NavigatorSide {
+  return NAVIGATOR_SIDES.some((side) => side === value)
+}
 
 export type AppearancePreferences = {
   readonly navigatorSide: NavigatorSide
@@ -69,7 +75,7 @@ function readTranscript(value: unknown): TranscriptPreferences | undefined {
 }
 
 export const APPEARANCE_DEFAULTS: AppearancePreferences = {
-  navigatorSide: "right",
+  navigatorSide: "left",
   uiFont: "",
   codeFont: "",
   terminalFont: "",
@@ -80,7 +86,7 @@ function readAppearance(value: unknown): AppearancePreferences | undefined {
   if (!isRecord(value)) return undefined
   const text = (key: "uiFont" | "codeFont" | "terminalFont") => (typeof value[key] === "string" ? value[key] : APPEARANCE_DEFAULTS[key])
   return {
-    navigatorSide: value.navigatorSide === "left" ? "left" : "right",
+    navigatorSide: isNavigatorSide(value.navigatorSide) ? value.navigatorSide : APPEARANCE_DEFAULTS.navigatorSide,
     uiFont: text("uiFont"),
     codeFont: text("codeFont"),
     terminalFont: text("terminalFont"),

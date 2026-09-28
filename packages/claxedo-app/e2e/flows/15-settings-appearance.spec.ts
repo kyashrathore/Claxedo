@@ -45,17 +45,19 @@ test("15 settings: a fresh profile wears Codex at light contrast 80 and dark con
   expect([await contrast("light"), await contrast("dark")]).toEqual(["79", "40"])
 })
 
-test("15 settings: a code font applies at once, and the files navigator side is kept", async ({ stack, app, isMobile }) => {
+test("15 settings: a code font applies at once, and the files navigator side starts on the left and a chosen side is kept", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("appearance-settings")
   const draft = `${stack.url}${sessionRoute(workspace.id)}`
   await app.goto(draft)
   await openSettings(app, isMobile)
   await app.locator('[data-action="settings-code-font"]').first().fill("Courier New")
   await expect.poll(() => app.evaluate(() => document.documentElement.style.getPropertyValue("--font-family-mono"))).toContain('"Courier New"')
-  await app.locator('[data-action="settings-navigator-side"]').first().click()
-  await app.getByRole("option", { name: "Left", exact: true }).click()
+  const side = app.locator('[data-action="settings-navigator-side"]').first()
+  await expect(side).toContainText("Left")
+  await side.click()
+  await app.getByRole("option", { name: "Right", exact: true }).click()
   await app.goto(draft)
   await openSettings(app, isMobile)
-  await expect(app.locator('[data-action="settings-navigator-side"]').first()).toContainText("Left")
+  await expect(side).toContainText("Right")
   await expect(app.locator('[data-action="settings-code-font"]').first()).toHaveValue("Courier New")
 })

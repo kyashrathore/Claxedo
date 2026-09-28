@@ -32,7 +32,7 @@ async function expectWhole(app: Page, step: string) {
 for (const side of ["left", "right"] as const) {
   test(`14 a ${side} files navigator in a panel narrower than 622 px shows its rows whole after a reveal, arrow focus and search`, async ({ stack, api, app }) => {
     await app.setViewportSize({ width: 1100, height: 760 })
-    if (side === "left") await app.addInitScript(() => localStorage.setItem("claxedo:appearance:fonts", JSON.stringify({ navigatorSide: "left" })))
+    if (side === "right") await app.addInitScript(() => localStorage.setItem("claxedo:appearance:fonts", JSON.stringify({ navigatorSide: "right" })))
     const workspace = await stack.daemon.makeWorkspace(`width-${side}`)
     await fs.mkdir(path.join(workspace.directory, "source"))
     for (const name of ["alpha.ts", "beta.ts", "gamma.ts"]) await fs.writeFile(path.join(workspace.directory, "source", name), "export const value = 0\n")
