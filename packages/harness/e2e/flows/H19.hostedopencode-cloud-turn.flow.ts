@@ -18,7 +18,7 @@ export async function run() {
     assert.equal(stored.status, 200, `hosted OpenCode credential: ${await stored.text()}`)
     const workspace = await hostedWorkspace(stack, owner, "H19 hosted OpenCode")
     const target = JSON.parse(await fs.readFile(path.join(stack.root, "local-broker-targets", `${workspace.id}.json`), "utf8")) as { secretNames: string[]; home: string }
-    assert.ok(target.secretNames.includes("CLAXEDO_PROVIDER_OPENAI"), `C-11: hosted OpenCode sandbox has no OpenAI broker registration: ${JSON.stringify(target.secretNames)}`)
+    assert.ok(target.secretNames.some((name) => name.startsWith("CLAXEDO_PROVIDER_OPENAI_")), `C-11: hosted OpenCode sandbox has no OpenAI broker registration: ${JSON.stringify(target.secretNames)}`)
     const offered = await fetch(`${stack.relayUrl}/workspaces/${workspace.id}/api/wr/harness-config-options?nativeHarness=opencode`, {
       headers: { authorization: `Bearer ${workspace.runtimeAccessToken}` },
     })
