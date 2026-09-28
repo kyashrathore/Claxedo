@@ -14,7 +14,8 @@ import {
   mintSupervisorBackplaneToken, supervisorBackplaneTokenAudience, supervisorBackplaneTokenIssuer,
 } from "../../../claxedo-server-core/src/platform/auth/runtime-access-token"
 import { createWorkspaceRuntimeClient } from "../../../workspace-runtime/src/client"
-import type { RuntimeSnapshot } from "../../../workspace-runtime/src/routes/config"
+import type { RuntimeNativeHarnessId } from "../../../workspace-runtime/src/routes/config"
+import { snapshotDefaultHarness } from "../../../claxedo-server-core/src/agent-config/connections"
 import { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } from "./hosted-keys"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
 import { releasePort, reservePort } from "./ports"
@@ -37,7 +38,7 @@ async function ownerAccountDelivery(owner: string) {
   })
 }
 
-export async function startCloudProductHost(nativeHarness?: string, options: { accountOwner?: string } = {}) {
+export async function startCloudProductHost(nativeHarness?: RuntimeNativeHarnessId, options: { accountOwner?: string } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "h19-product-host-"))
   const directory = path.join(root, "workspace")
   const storeRoot = path.join(root, "store")
@@ -77,12 +78,13 @@ export async function startCloudProductHost(nativeHarness?: string, options: { a
     await close()
     throw error
   }
-  const provisionOwnerAccount = async (config: Pick<RuntimeSnapshot, "defaultHarness">) => {
+  const provisionOwnerAccount = async () => {
     if (!options.accountOwner) throw new Error("startCloudProductHost was given no account owner")
     const token = await mintSupervisorBackplaneToken({ workspaceId: WORKSPACE_ID, hostId: WORKSPACE_ID, subject: "workspace-supervisor" },
       { CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: HOSTED_SIGNING_PRIVATE_KEY, CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: HOSTED_SIGNING_PUBLIC_KEY })
+    const defaultHarness = snapshotDefaultHarness({}, nativeHarness)
     await createWorkspaceRuntimeClient({ baseUrl: url }).applyConfig({
-      version: 4, commands: [], mcp: {}, connections: [], ...config,
+      version: 4, commands: [], mcp: {}, connections: [], ...(defaultHarness ? { defaultHarness } : {}),
       auth: nativeProviderAuth(deliveries, { owner: options.accountOwner, machineOwnerUserId: options.accountOwner, selections: {} }),
     }, { token: token.supervisorBackplaneToken })
   }

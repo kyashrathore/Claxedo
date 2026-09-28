@@ -100,6 +100,7 @@ function composition() {
     settings: {} as never,
     credentials: () => ({}) as never,
     signingEnv: {},
+    provisionedRunner: undefined,
   })
   const env = { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" }
   const secrets = [{ name: "ANTHROPIC_API_KEY", value: "sk-ant", hosts: ["api.anthropic.com"] }]

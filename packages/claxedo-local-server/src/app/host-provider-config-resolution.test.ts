@@ -104,7 +104,7 @@ describe("a workspace on this machine resolves the owner's pushed provider", () 
     const response = await push(1, { "claude-sdk": PUSHED })
     expect(response.status).toBe(200)
 
-    const snapshot = await getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })
+    const snapshot = await getRuntimeConfigSnapshot({ workspaceId: "ws_1" })
     expect(snapshot.auth.accounts[OWNER]["claude-sdk"]).toEqual(PUSHED)
     expect(providerProjection(snapshot.auth.accounts[OWNER].openai, {})).toEqual(providerProjection(before.accounts[OWNER].openai, {}))
     expect(JSON.stringify(snapshot.auth)).not.toContain("sk-machine-claude-sdk")

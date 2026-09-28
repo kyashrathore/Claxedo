@@ -2,7 +2,8 @@ import type { SandboxBrokeredSecret, SandboxDriver, SandboxManager, SandboxManag
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
-import { explicitDefaultHarness } from "@claxedo/server-core/agent-config/connections"
+import { snapshotDefaultHarness } from "@claxedo/server-core/agent-config/connections"
+import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import type { AcpRuntimeMcpServer } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
 import {
@@ -40,6 +41,7 @@ export function createHostedRuntimeDelivery(input: {
   settings: UserAgentConfigRepository
   credentials(orgId: string): ControlPlaneCredentials
   signingEnv: Record<string, string | undefined>
+  provisionedRunner: RuntimeNativeHarnessId | undefined
 }) {
   const owner = async (workspaceId: string) => {
     const person = await input.authority.resolveWorkspaceOwner?.(workspaceId)
@@ -72,12 +74,13 @@ export function createHostedRuntimeDelivery(input: {
     const config = await userAgentConfigStore(input.settings, person.userId).read()
     const { delivered, selections } = await deliveries(person)
     const auth = nativeProviderAuth(delivered, { owner: person.userId, machineOwnerUserId: person.userId, selections })
+    const defaultHarness = snapshotDefaultHarness(config, input.provisionedRunner)
     await hostedRuntimeConfigApply(input.services, workspaceId, {
       version: 4 as const,
       commands: [],
       mcp: await hooks.acpMcp?.(workspaceId, preparation) ?? {},
       connections: Object.values(config.connections),
-      ...(explicitDefaultHarness(config) ? { defaultHarness: explicitDefaultHarness(config) } : {}),
+      ...(defaultHarness ? { defaultHarness } : {}),
       auth,
     }, input.signingEnv)
   }

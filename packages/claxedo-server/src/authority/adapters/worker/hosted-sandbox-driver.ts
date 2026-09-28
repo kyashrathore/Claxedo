@@ -16,6 +16,7 @@ import {
   type HostedWorkerEnv,
 } from "../../provider-neutral-hosted-services"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { provisionedRunnerOption } from "@claxedo/server-core/agent-config/connections"
 
 /** Convert millisecond lifecycle knobs to the whole minutes Daytona accepts. */
 export function lifecycleMinutes(env: HostedWorkerEnv, key: string, fallbackMs: number) {
@@ -83,7 +84,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       runtimePort: workspaceRuntimePort(env),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...provisionedRunnerOption(env),
       controlEnv: sandboxRuntimeControlEnv(env),
       env: sandboxRuntimeManagementEnv,
     })
@@ -103,7 +104,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       ...(trimToUndefined(env.DAYTONA_TARGET) ? { target: trimToUndefined(env.DAYTONA_TARGET) } : {}),
       runtimePort: workspaceRuntimePort(env),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...provisionedRunnerOption(env),
       controlEnv: sandboxRuntimeControlEnv(env),
       env: sandboxRuntimeManagementEnv,
     })
@@ -127,7 +128,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       runtimePort: workspaceRuntimePort(env),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...provisionedRunnerOption(env),
       ...(Object.keys(runtimeEnv).length ? { env: () => runtimeEnv } : {}),
     })
   }

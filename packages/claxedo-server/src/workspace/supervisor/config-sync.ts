@@ -6,6 +6,7 @@ import {
   supervisorBackplaneHeaders,
 } from "./control-token"
 import { runtimeWorkspaceDir } from "./state"
+import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
 import { supervisorDriverIdentity } from "./driver-id"
 import { needWorkspaceSupervisorOptions } from "./options"
 import type { WorkspaceRuntimeState } from "./store"
@@ -14,6 +15,7 @@ import { createKeyedSerializer } from "@claxedo/helpers"
 
 export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   const scope = state.remote || state.ws.kind === "cloud" ? "shared" : "local"
+  const runner = scope === "shared" ? provisionedRunner(process.env) : undefined
   return createClaxedoRuntimeConfig({
     secretScope: scope,
     orgId: state.ws.org_id,
@@ -28,6 +30,7 @@ export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
           sandboxOwner: await needWorkspaceSupervisorOptions().sandboxOwner(state.ws.id),
         }
       : {}),
+    ...(runner ? { provisionedRunner: runner } : {}),
   })
 }
 

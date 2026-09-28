@@ -19,7 +19,7 @@ export async function run() {
       const refusal = await unprovisioned.text()
       assert.equal(unprovisioned.status, 409, `a cloud session started before its owner's account arrived: ${refusal}`)
       assert.equal((JSON.parse(refusal) as { error?: { code?: string } }).error?.code, "account_unavailable")
-      await host.provisionOwnerAccount({ defaultHarness: { kind: "native", harnessId: "pi" } })
+      await host.provisionOwnerAccount()
       const created = await create()
       const body = await created.text()
       assert.equal(created.status, 201, `H19 default session failed: ${body}`)

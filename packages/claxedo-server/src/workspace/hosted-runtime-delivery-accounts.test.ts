@@ -26,7 +26,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
       driver: { metadata: { secretBrokering: "native" } } as Input["driver"],
       sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
       settings: { read: async () => ({ version: 3, connections: {}, sandbox_driver: {} }), write: async () => {} },
-      credentials: () => credentials, signingEnv: {},
+      credentials: () => credentials, signingEnv: {}, provisionedRunner: undefined,
     })
     const deliveredTo = async (workspaceId: string) => {
       const preparation = await delivery.prepareRuntime({ workspaceId })
