@@ -2,9 +2,10 @@ import type { RuntimeGoalSnapshot, AgentGoalMutationResult } from "@claxedo/agen
 import { goalSnapshotFromRecord } from "../../../contract/goals"
 import type { AcpEntry } from "../index"
 import { AcpTransportError } from "../errors"
+import { applyAcpGoal } from "../provider-turn"
 import { errorMessage } from "@claxedo/helpers"
 
-function goalSnapshot(sessionId: string, response: Record<string, unknown>): RuntimeGoalSnapshot | null {
+export function goalSnapshot(sessionId: string, response: Record<string, unknown>): RuntimeGoalSnapshot | null {
   if (response.goal === null) return null
   const goal = response.goal
   if (!goal || typeof goal !== "object" || Array.isArray(goal)) throw new AcpTransportError("protocol", "ACP Goal response is invalid")
@@ -16,8 +17,10 @@ function goalSnapshot(sessionId: string, response: Record<string, unknown>): Run
 export function acpGoalOperations(entry: (session: AcpEntry["session"]) => AcpEntry) {
   const request = async (session: AcpEntry["session"], method: string, extra: Record<string, unknown> = {}) => {
     const current = entry(session)
-    return goalSnapshot(session.binding.sessionId, await current.peer.agent.extMethod(method,
+    const goal = goalSnapshot(session.binding.sessionId, await current.peer.agent.extMethod(method,
       { sessionId: session.binding.upstreamSessionId, ...extra }))
+    await applyAcpGoal(current, goal)
+    return goal
   }
   const mutate = async (session: AcpEntry["session"], method: string, extra: Record<string, unknown> = {}): Promise<AgentGoalMutationResult> => {
     try {

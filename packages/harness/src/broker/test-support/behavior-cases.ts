@@ -24,7 +24,7 @@ export function registerBrokerBehaviorCases(name: string, make: () => MemoryPort
     const turn = createTurnBroker(owner, { authority, origin, signal: controller.signal })
     return { ports, owner, controller, turn }
   }
-const request = (kind: "permission" | "question", id: string, sessionID = "s1"): TurnRequest => kind === "question"
+const turnRequest = (kind: "permission" | "question", id: string, sessionID = "s1"): TurnRequest => kind === "question"
   ? question(id, sessionID)
   : permission(id, undefined, undefined, sessionID)
 
@@ -33,7 +33,7 @@ describe(`${name} request broker`, () => {
       const { ports, owner, turn } = setup()
       const failures: { sessionId: string; error: unknown }[] = []
       ports.reportOwnerFailure = (sessionId, error) => { failures.push({ sessionId, error }) }
-      const waiting = turn.ask(request(kind, "retry"))
+      const waiting = turn.ask(turnRequest(kind, "retry"))
       let released = false
       void waiting.then(() => { released = true })
       await tick()
@@ -57,8 +57,8 @@ describe(`${name} request broker`, () => {
       const sibling = { ...authority, sessionId: "s2", turnId: "t2" }
       ports.current.set("s2", sibling)
       const other = createTurnBroker(owner, { authority: sibling, origin, signal: new AbortController().signal })
-      const first = turn.ask(request(kind, "cancel"))
-      const second = other.ask(request(kind, "sibling", "s2"))
+      const first = turn.ask(turnRequest(kind, "cancel"))
+      const second = other.ask(turnRequest(kind, "sibling", "s2"))
       let released = false
       void first.then(() => { released = true })
       await tick()
@@ -82,7 +82,7 @@ describe(`${name} request broker`, () => {
       ["permission", "allow"], ["question", "answer"], ["question", "reject"],
     ] as const)("foreign session cannot %s %s or consume the owner's request", async (kind, action) => {
       const { ports, owner, turn } = setup()
-      const waiting = turn.ask(request(kind, "owned"))
+      const waiting = turn.ask(turnRequest(kind, "owned"))
       await tick()
       const answer: RequestAnswer = action === "allow" ? { kind: "permission", decision: "allow_once" }
         : action === "answer" ? { kind: "answers", answers: [["yes"]] } : { kind: "rejected" }
@@ -94,7 +94,7 @@ describe(`${name} request broker`, () => {
     })
     test.each(["permission", "question", "reject"] as const)("another workspace broker cannot consume a %s request", async (kind) => {
       const { ports, owner, turn } = setup()
-      const waiting = turn.ask(request(kind === "permission" ? "permission" : "question", "workspace-owned"))
+      const waiting = turn.ask(turnRequest(kind === "permission" ? "permission" : "question", "workspace-owned"))
       await tick()
       const foreignPorts = make()
       foreignPorts.current.set("s1", { ...authority, workspaceId: "w2", directory: "/other-workspace" })
@@ -397,10 +397,12 @@ describe(`${name} request broker`, () => {
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
     const admission = await session.admitProviderTurn({ reason: "goal" }, async function* () {
       yield { event: { type: "text-delta", delta: "hello" } }
+      yield { event: { type: "finish", sessionId: "s1" } }
     })
-    expect(admission).toMatchObject({ admitted: true, turn: { turnId: expect.any(String), assistantMessageId: expect.any(String) } })
-    if (admission.admitted) expect(await admission.settled).toEqual({ state: "completed" })
-    expect(ports.drained).toHaveLength(1)
+    if (!admission.admitted) throw new Error("Provider turn was not admitted")
+    expect([typeof admission.turn.turnId, typeof admission.turn.assistantMessageId]).toEqual(["string", "string"])
+    expect(await admission.settled).toEqual({ state: "completed" })
+    expect(ports.drained).toHaveLength(2)
   })
 
   test("a provider turn hands its run the admitted identity and drains under it", async () => {
@@ -408,11 +410,22 @@ describe(`${name} request broker`, () => {
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
     const result = await session.admitProviderTurn({ reason: "goal" }, async function* (_broker, turn) {
       yield { event: { type: "text-delta", delta: turn.assistantMessageId } }
+      yield { event: { type: "finish", sessionId: "s1" } }
     })
     expect(result.admitted).toBe(true)
     if (!result.admitted) return
     expect(await result.settled).toEqual({ state: "completed" })
-    expect(ports.drained).toEqual([{ event: { type: "text-delta", delta: result.turn.assistantMessageId } }])
+    expect(ports.drained).toEqual([{ event: { type: "text-delta", delta: result.turn.assistantMessageId } }, { event: { type: "finish", sessionId: "s1" } }])
+  })
+
+  test("a provider turn exhausted without a parent terminal fails", async () => {
+    const { owner } = setup()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    const result = await session.admitProviderTurn({ reason: "goal" }, async function* () {
+      yield { event: { type: "text-delta", delta: "unfinished" } }
+    })
+    expect(result.admitted).toBe(true)
+    if (result.admitted) expect(await result.settled).toEqual({ state: "failed", error: "Harness stream ended without a terminal event" })
   })
 
   test("a provider turn the runtime cancels before its run ends settles cancelled", async () => {

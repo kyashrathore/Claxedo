@@ -15,7 +15,6 @@ function methods(value: unknown, version: number): ReadonlySet<string> {
 
 export function acpGroups(handshake: InitializeResponse) {
   const meta = acpMetadataRecord(handshake._meta)
-  const claxedoExtension = acpMetadataRecord(meta?.claxedo)
   const claxedo = methods(meta?.claxedo, 1)
   const goal = acpMetadataRecord(meta?.goal)
   const goalMethods = methods(goal, 1)
@@ -31,6 +30,5 @@ export function acpGroups(handshake: InitializeResponse) {
   const goals: GoalCapabilities = goalsAvailable
     ? { implemented: true, available: true, actions, recovery: "reconcile", optionalFields }
     : { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] }
-  return { steer: claxedo.has("session/steer"), agents: claxedo.has("session/agents/list"),
-    health: claxedoExtension?.version === 1 && claxedoExtension.health === true, goals }
+  return { steer: claxedo.has("session/steer"), agents: claxedo.has("session/agents/list"), goals }
 }

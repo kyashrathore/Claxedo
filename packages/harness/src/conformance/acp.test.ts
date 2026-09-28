@@ -924,7 +924,7 @@ test("a stalled ACP resume times out without disturbing a sibling peer", async (
     expect(timers.size).toBe(1)
     timers.values().next().value!()
     await expect(attaching).rejects.toThrow("session restore timed out")
-    expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("disconnected")
+    expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("failed")
     expect(context.transport.health?.connection(context.backend.directory, "s2").state).toBe("ready")
     const siblingBroker = createTurnBroker(context.owner, { authority: context.ports.current.get("s2")!, origin,
       signal: new AbortController().signal })
@@ -963,7 +963,7 @@ test("a timed-out ACP config restore quarantines that session while its sibling 
     expect(timers.size).toBe(1)
     timers.values().next().value!()
     await expect(restarting).rejects.toThrow("session restore timed out")
-    expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("disconnected")
+    expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("failed")
     expect(context.transport.health?.connection(context.backend.directory, "s2").state).toBe("ready")
     const refused = async () => {
       for await (const _event of context.transport.send(context.session, context.turn("refused"), context.turnBroker())) {}
@@ -1016,7 +1016,7 @@ test("ACP prompt-result usage reaches the turn as a cumulative observation befor
     expect(usage).toBeGreaterThanOrEqual(0)
     expect(usage).toBeLessThan(events.findIndex((event) => event.type === "finish"))
     expect(events[usage]).toEqual({
-      type: "usage", contextSize: 16, contextUsed: 16,
+      type: "usage", contextSize: 0, contextUsed: 0,
       observation: { kind: "cumulative", nativeSessionId: context.session.binding.upstreamSessionId,
         tokens: { input: 11, output: 5, reasoning: 2, cache: { read: 1, write: 0 } } },
     })
@@ -1033,7 +1033,7 @@ runConformance({
   },
 })
 
-for (const group of ["steer", "agents", "goals", "health"] as const) {
+for (const group of ["steer", "agents", "goals"] as const) {
   for (const present of [true, false]) {
     test(`ACP scripted handshake ${present ? "declares" : "omits"} ${group}`, async () => {
       const context = await setupConformance({
@@ -1071,7 +1071,7 @@ for (const group of ["steer", "agents", "goals", "health"] as const) {
             ? [{ name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }]
             : [{ name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }])
           expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/agents/list")).toBe(present)
-        } else if (group === "goals") {
+        } else {
           expect(caps.goals.available).toBe(present)
           expect(context.transport.goals !== undefined).toBe(present)
           if (present) {
@@ -1079,9 +1079,6 @@ for (const group of ["steer", "agents", "goals", "health"] as const) {
             expect(await context.transport.goals?.start(context.session, "Ship the change", context.sessionBroker))
               .toMatchObject({ ok: true, goal: { sessionId: "s1", status: "active" } })
           }
-        } else {
-          expect(context.transport.health !== undefined).toBe(present)
-          if (present) expect(context.transport.health?.runtime(context.backend.directory).status).toBe("ok")
         }
       } finally { await context.close() }
     })

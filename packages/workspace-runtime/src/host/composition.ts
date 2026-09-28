@@ -1,11 +1,12 @@
 import { mkdirSync } from "node:fs"
-import fs from "node:fs/promises"
 import path from "node:path"
+import { sweepHarnessHomeRoot } from "./home-use"
 import { userHomeDir } from "@claxedo/helpers/path"
 import type { HarnessCompositionOptions } from "@claxedo/harness/compose"
 import type { AttachInput, MachineLoginPolicy } from "@claxedo/harness/contract"
 import type { AgentRuntimeStore } from "./contracts"
 import { missingSessionHandoff } from "./handoff"
+import { requireCursorWorker } from "./executables/cursor"
 import { requireClaudeExecutable } from "./executables/claude"
 import { requireCodexExecutable } from "./executables/codex"
 import { piRuntime, requirePiExecutable } from "./executables/pi"
@@ -20,9 +21,6 @@ export type HarnessCompositionInput = {
   store: () => AgentRuntimeStore
 }
 
-/** Codex and Cursor homes are keyed by owner, credential and plugin set; one unused for this long is removed at the next composition. */
-export const HARNESS_HOME_MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000
-
 export function defaultHarnessStateRoot(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(userHomeDir(env), ".claxedo", "harness")
 }
@@ -34,8 +32,8 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
     acp: () => ({
       missingContext: async (attach: AttachInput) => missingSessionHandoff(input.store().getMessages(attach.sessionId), attach.config.harness),
     }),
-    pi: () => ({
-      binary: requirePiExecutable(env),
+    pi: (command) => ({
+      binary: command ?? requirePiExecutable(env),
       runtime: piRuntime(),
       env,
       ...placement,
@@ -57,6 +55,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
     cursor: () => ({
       env,
       homeRoot: path.join(harnessStateRoot, "cursor", "homes"),
+      worker: requireCursorWorker(env),
       ...placement,
     }),
     opencode: () => {
@@ -66,26 +65,8 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
   }
 }
 
-/**
- * Removes Codex and Cursor homes nobody launched for `HARNESS_HOME_MAX_IDLE_MS`.
- * A home is rebuilt from its owner's real home and the projection on every
- * start, so removing an idle one loses nothing that a launch does not restore.
- */
 export async function sweepIdleHarnessHomes(harnessStateRoot: string, now = Date.now()): Promise<string[]> {
   const removed: string[] = []
-  for (const root of [path.join(harnessStateRoot, "codex", "homes"), path.join(harnessStateRoot, "cursor", "homes")]) {
-    const entries = await fs.readdir(root, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return []
-      throw error
-    })
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const home = path.join(root, entry.name)
-      const stat = await fs.stat(home)
-      if (now - stat.mtimeMs < HARNESS_HOME_MAX_IDLE_MS) continue
-      await fs.rm(home, { recursive: true, force: true })
-      removed.push(home)
-    }
-  }
+  for (const kind of ["codex", "cursor"]) removed.push(...await sweepHarnessHomeRoot(path.join(harnessStateRoot, kind, "homes"), now))
   return removed
 }

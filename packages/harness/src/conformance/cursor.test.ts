@@ -16,6 +16,8 @@ import { createTestServices } from "./test-support/services"
 import { pollUntil } from "./test-support/poll"
 import type { RoutedEvent, SessionBroker, TurnInput } from "../contract"
 
+const CURSOR_WORKER = { file: process.execPath, args: [path.join(import.meta.dirname, "../transports/cursor-sdk/host.ts")] }
+
 type CursorBackend = ConformanceBackend & { root: string; env: NodeJS.ProcessEnv; server: Awaited<ReturnType<typeof startScriptedCursorBackend>> }
 
 type Context = Awaited<ReturnType<typeof setupConformance>>
@@ -58,7 +60,7 @@ const LOGIN = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLog
 
 function transportFor(state: CursorBackend, env: NodeJS.ProcessEnv = state.env, login: Partial<CursorSdkTransportOptions> = {}) {
   return (services: ConstructorParameters<typeof CursorSdkTransport>[0]) =>
-    new CursorSdkTransport(services, { homeRoot: homeRoot(state), env, ...LOGIN, ...login })
+    new CursorSdkTransport(services, { homeRoot: homeRoot(state), worker: CURSOR_WORKER, env, ...LOGIN, ...login })
 }
 
 async function claxedoHomes(state: CursorBackend): Promise<string[]> {
@@ -185,7 +187,7 @@ test("a silent run expires by inactivity, is cancelled alone, and the shared hos
   const state = await backend()
   state.server.script("held", { steps: [], hold: true })
   const services = createTestServices()
-  const registry = new CursorHostRegistry(services, state.env, new AbortController().signal)
+  const registry = new CursorHostRegistry(services, CURSOR_WORKER, state.env, new AbortController().signal)
   const home = path.join(state.root, "deadline-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "deadline", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",
@@ -214,7 +216,7 @@ test("a run that keeps streaming outlives its inactivity window", async () => {
     { kind: "text", text: "THREE" }, { kind: "wait", ms: 600 }, { kind: "text", text: "FOUR" },
   ] })
   const services = createTestServices()
-  const registry = new CursorHostRegistry(services, state.env, new AbortController().signal)
+  const registry = new CursorHostRegistry(services, CURSOR_WORKER, state.env, new AbortController().signal)
   const home = path.join(state.root, "slow-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "slow", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",

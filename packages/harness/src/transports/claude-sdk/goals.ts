@@ -77,6 +77,7 @@ export class ClaudeGoals {
     const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, runtime,
       assistantMessageId, ...(turn ? { turnId: turn.turnId } : {}), clear })
     let sawResult = false
+    let stopped = false
     try {
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
         const observed = await observeClaudeSessionMessage(message, entry, broker, abort.signal)
@@ -92,12 +93,15 @@ export class ClaudeGoals {
         if (turnBroker) for (const event of await translateClaude(current, runtime, tasks, turnBroker)) yield event
       }
       if (!sawResult && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
+      stopped = !sawResult
     } catch (error) {
       if (!abort.signal.aborted || !(error instanceof AbortError)) throw error
+      stopped = true
     } finally {
       turnBroker?.signal.removeEventListener("abort", onAbort)
       stream.close()
       await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }
+    if (stopped && turnBroker) yield { event: { type: "finish", sessionId: entry.session.binding.sessionId } }
   }
 }

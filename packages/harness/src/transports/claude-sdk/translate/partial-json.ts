@@ -89,7 +89,6 @@ export function readPartialJsonRecord(partial: string): Record<string, unknown> 
   return parseJsonRecord(`${head}${closers}`)
 }
 
-/** A complete JSON object, or `undefined` for anything else — including a document still streaming. */
 export function parseJsonRecord(value: string): Record<string, unknown> | undefined {
   try {
     return asRecord(JSON.parse(value))

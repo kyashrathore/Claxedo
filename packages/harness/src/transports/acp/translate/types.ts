@@ -8,7 +8,6 @@ import type {
   StopReason as AcpStopReason,
   ToolCallContent as AcpToolCallContent,
   ToolKind as AcpToolKind,
-  Usage as AcpUsage,
 } from "@agentclientprotocol/sdk"
 
 export type ToolKind = AcpToolKind
@@ -29,4 +28,3 @@ export type { ContentBlock }
 
 export type SessionUpdate = SessionNotification["update"]
 export type StopReason = AcpStopReason
-export type PromptUsage = AcpUsage

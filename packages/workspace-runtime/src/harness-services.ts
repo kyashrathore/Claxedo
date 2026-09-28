@@ -1,3 +1,4 @@
+import { recordHarnessHomeUse } from "./host/home-use"
 import type { HarnessServices } from "@claxedo/harness/contract"
 import type { LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import { firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp"
@@ -31,6 +32,7 @@ function transcriptRegistrar(transcripts: WorkspaceTranscriptRoutesOptions | und
 
 export function createHarnessServices(input: ServiceInputs): HarnessServices {
   return {
+    recordHomeUse: async (home) => recordHarnessHomeUse(home),
     spawn: createSpawnService(input.ownership, input.observation),
     transcripts: transcriptRegistrar(input.transcripts),
     firstPartyMcp(sessionId, locality) {

@@ -8,7 +8,6 @@ import { runConformance, setupConformance, type ConformanceBackend, withUndelive
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { ensurePinnedCodex, PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
-import { eventually } from "../../e2e/harness/eventually"
 import { listenOnLoopback } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -567,8 +566,10 @@ test("Codex starts a projected configured MCP server", async () => {
   const state = await backend()
   const port = await reservePort()
   const requests: string[] = []
+  const contacted = Promise.withResolvers<void>()
   const server = createServer((request, response) => {
     requests.push(request.url ?? "")
+    contacted.resolve()
     response.writeHead(404).end()
   })
   await listenOnLoopback(server, port)
@@ -586,7 +587,8 @@ test("Codex starts a projected configured MCP server", async () => {
     ] } }
   try {
     await transport.start(input, broker)
-    await eventually("the projected MCP server's first request", async () => requests.length > 0 ? requests : undefined)
+    await contacted.promise
+    expect(requests).toContain("/mcp")
   } finally {
     await transport.dispose()
     server.closeAllConnections()

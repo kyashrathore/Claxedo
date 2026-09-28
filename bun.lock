@@ -572,6 +572,7 @@
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
+        "esbuild": "0.25.12",
         "openai": "6.26.0",
         "typescript": "catalog:",
         "typescript-5": "npm:typescript@5.9.3",

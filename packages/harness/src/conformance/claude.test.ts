@@ -157,14 +157,14 @@ async function backend(): Promise<ClaudeBackend> {
   const model = { providerID: "anthropic", modelID: "default" }
   return {
     root, directory, userConfigRoot, configRoot, env, attempts, sockets, samples, sampledPids, listener, authFile, server,
-    config: { harness, model }, alternateModel: { providerID: "anthropic", modelID: "sonnet" },
+    config: { harness, model, permissionMode: "default" }, alternateModel: { providerID: "anthropic", modelID: "sonnet" },
     owner: { kind: "person", userId: "owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     harness: { id: "claude", access: "native" }, expectedMcp: "session",
     model: { providerID: "anthropic", modelID: "default" },
     credentials: { providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
-    onSetup: ({ ports }) => configurePorts(ports, { config: { harness, model } }),
+    onSetup: ({ ports }) => configurePorts(ports, { config: { harness, model, permissionMode: "default" } }),
     unrunnableTurn: withUndeliverableFile,
     hold: (marker) => {
       const release = server.holdTextReplies(marker)

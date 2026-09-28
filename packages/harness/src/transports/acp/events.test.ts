@@ -1,14 +1,18 @@
 import { expect, test } from "bun:test"
-import { acpUnknown } from "./events"
+import { AsyncPushQueue } from "@claxedo/helpers"
+import type { RoutedEvent } from "../../contract"
 import type { AcpEntry } from "./index"
+import { acpReceiver, acpUpdate } from "./events"
 
-test("ACP translator publishes an unrecognized session update outside a turn", async () => {
-  const published: unknown[] = []
-  const entry = { session: { binding: { upstreamSessionId: "up1" } }, broker: {
-    publish: async (event: unknown) => { published.push(event) },
-  } } as AcpEntry
-  await acpUnknown(entry, "up1", "session/update", { sessionUpdate: "future_update" })
-  expect(published[0]).toMatchObject({ type: "diagnostic", diagnostic: {
-    code: "unrecognized-event", source: "acp.jsonrpc", method: "session/update",
-  } })
-})
+for (const owner of ["prompt", "provider"] as const) {
+  test(`child output enters the active ${owner} receiver with its correlation key`, async () => {
+    const queue = new AsyncPushQueue<RoutedEvent>()
+    const session = { binding: { upstreamSessionId: "parent" } } as AcpEntry["session"]
+    const receive = acpReceiver("acp", session, queue)
+    const entry = { session, sideSessions: new Map(), ...(owner === "prompt" ? { receive } : { providerTurn: { receive } }) } as AcpEntry
+    await acpUpdate(entry, { sessionId: "child", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "child evidence" } } }, async () => {})
+    queue.end()
+    const events = await Array.fromAsync(queue)
+    expect(events).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ type: "text-delta", delta: "child evidence" }), route: { kind: "child", correlationKey: "child" } }))
+  })
+}

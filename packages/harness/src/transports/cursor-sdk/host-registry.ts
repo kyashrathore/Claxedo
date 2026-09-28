@@ -1,6 +1,5 @@
-import { fileURLToPath } from "node:url"
 import { HoldableCountdown, createKeyedSerializer, errorMessage, settleAtRequestDeadline, singleFlightUntil, stringRecord } from "@claxedo/helpers"
-import type { Clock, Deadline, HarnessServices, Logger, OwnedProcess } from "../../contract"
+import type { Clock, Deadline, HarnessServices, Logger, OwnedProcess, SpawnCommand } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
@@ -8,9 +7,8 @@ import { isHostReply, type HostReply, type HostRequest } from "./protocol"
 
 export type CursorHostKey = { binding: string; home: string; backendUrl?: string }
 
-const HOST_ARGS = import.meta.url.endsWith(".ts")
-  ? [...process.execArgv, fileURLToPath(new URL("./host.ts", import.meta.url))]
-  : [fileURLToPath(new URL("./host.js", import.meta.url))]
+export type CursorWorker = Pick<SpawnCommand, "file" | "args">
+
 const RUN_IDLE_MS = 600_000
 const COMMAND_MS = 30_000
 
@@ -119,7 +117,7 @@ export class CursorHostRegistry {
   private readonly disposal = new AbortController()
   private readonly signal: AbortSignal
 
-  constructor(private readonly services: HarnessServices, private readonly env: NodeJS.ProcessEnv, signal: AbortSignal) {
+  constructor(private readonly services: HarnessServices, private readonly worker: CursorWorker, private readonly env: NodeJS.ProcessEnv, signal: AbortSignal) {
     this.signal = AbortSignal.any([signal, this.disposal.signal])
   }
 
@@ -128,8 +126,8 @@ export class CursorHostRegistry {
   }
 
   private async spawn(key: CursorHostKey, signal: AbortSignal): Promise<CursorHost> {
-    const owned = await this.services.spawn({ file: process.execPath, args: HOST_ARGS, cwd: key.home,
-      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", signal })
+    const owned = await this.services.spawn({ file: this.worker.file, args: this.worker.args, cwd: key.home,
+      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", home: key.home, signal })
     const host = new CursorHost(owned, this.services.clock, this.services.log)
     if (signal.aborted) {
       try { await host.retire() }

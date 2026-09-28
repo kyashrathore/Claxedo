@@ -13,7 +13,7 @@ import { TransportError } from "../../contract/errors"
 import { ClaudeGoals } from "./goals"
 import type { ClaudeSdkOptions } from "./launch-context"
 import { ClaudeModelCatalog, modelOptions, requiredClaudeEffort } from "./models"
-import { modes, requireClaudeMode } from "./permissions"
+import { modes, requireClaudeMode, claudeModeId } from "./permissions"
 import { claudeStreamEndedWithoutResult } from "./errors"
 import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
@@ -26,7 +26,7 @@ type Entry = {
   session: HarnessSession
   broker: SessionBroker
   processes: Set<ClaudeProcess>
-  active?: { id: string; abort: AbortController; input: ClaudeTurnInput }
+  active?: { id: string; abort: AbortController; input?: ClaudeTurnInput; launched: boolean }
 }
 
 function claudeEffort(value: string | null | undefined): EffortLevel | undefined {
@@ -98,6 +98,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
     runtime: ReturnType<typeof claudeTranslator>["runtime"], abort: AbortController) {
     const model = turn.model?.modelID ?? "default"
     const effort = claudeEffort(requiredClaudeEffort(turn.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, turn.effort))
+    if (abort.signal.aborted || !entry.active) return undefined
+    entry.active.launched = true
     return this.launcher.launch({ session: entry.session, input: entry.input, broker: entry.broker, turnBroker: broker,
       prompt: input.stream, abort, processes: entry.processes, runtime, assistantMessageId: turn.assistantMessageId, turnId: turn.turnId,
       model, effort, system: turn.system, agent: turn.prompt.agent, partialMessages: true })
@@ -106,10 +108,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
     if (entry.active) throw new TransportError("claude", "session", "Claude turn already active")
-    const input = new ClaudeTurnInput(await claudePrompt(turn, entry.input.directory))
-    const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
     const abort = new AbortController()
-    entry.active = { id: turn.turnId, abort, input }
+    const active: NonNullable<Entry["active"]> = { id: turn.turnId, abort, launched: false }
+    entry.active = active
     const onAbort = () => abort.abort()
     if (broker.signal.aborted) onAbort()
     else broker.signal.addEventListener("abort", onAbort, { once: true })
@@ -117,7 +118,12 @@ export class ClaudeSdkTransport implements HarnessTransport {
     let settled = false
     let result: SDKMessage | undefined
     try {
+      if (abort.signal.aborted) return
+      const input = new ClaudeTurnInput(await claudePrompt(turn, entry.input.directory))
+      active.input = input
+      const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
       const stream = await this.launch(entry, turn, broker, input, runtime, abort)
+      if (!stream) return
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
         const observed = await observeClaudeSessionMessage(message, entry, entry.broker, abort.signal)
         if (observed.kind === "active-goal") continue
@@ -134,7 +140,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
       if (!aborted() || !(error instanceof AbortError)) throw error
     } finally {
       broker.signal.removeEventListener("abort", onAbort)
-      input.settle(settled ? "ended" : "failed")
+      active.input?.settle(settled ? "ended" : "failed")
       entry.active = undefined
       await Promise.all([...entry.processes].map(async (child) => { await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal }); entry.processes.delete(child) }))
     }
@@ -142,7 +148,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   readonly steer = { steer: async (session: HarnessSession, ref: TurnRef, input: TurnInput) => {
     const active = this.entry(session).active
-    return active?.id === ref.turnId ? active.input.steer(await claudePrompt(input, session.directory))
+    return active?.id === ref.turnId && active.input ? active.input.steer(await claudePrompt(input, session.directory))
       : { ok: false as const, status: "no_active_turn" as const, message: "Claude turn is idle" }
   } }
 
@@ -176,7 +182,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     },
     permissionModes: async (target: import("../../contract").ConfigTarget) => {
       const selected = "session" in target ? this.entry(target.session).broker.config().permissionMode : target.draft.config.permissionMode
-      return { modes, currentModeId: selected ?? "default", appliesFrom: "next-turn" as const }
+      return { modes, currentModeId: claudeModeId(selected), appliesFrom: "next-turn" as const }
     },
     setPermissionMode: async (session: HarnessSession, modeId: string) => {
       this.entry(session)
@@ -209,6 +215,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     }
     if (!entry.active || entry.active.id !== turn.turnId) return { execution: "terminal" as const, cleanup: "unknown" as const }
     entry.active.abort.abort()
+    if (!entry.active.launched) return { execution: "terminal" as const, cleanup: "verified_clear" as const }
     await Promise.all([...entry.processes].map((child) => child.retire(deadline)))
     return { execution: "unknown" as const, cleanup: "owned" as const }
   }

@@ -112,7 +112,7 @@ for (const kind of ["run", "title"] as const) for (const fails of [false, true])
     ? { id, kind: "error", message: "cancel failed" } : { id, kind: "result" })
 })
 
-test("a pre-aborted turn sends no host command", async () => {
+test("a pre-aborted turn ends cleanly and sends no host command", async () => {
   const commands: unknown[] = []
   const controller = new AbortController()
   controller.abort(new Error("turn cancelled"))
@@ -120,7 +120,7 @@ test("a pre-aborted turn sends no host command", async () => {
     host: { call: async (command: unknown) => { commands.push(command); return { kind: "result", value: { agentId: "agent", runId: "run", status: "finished" } } } },
   } as unknown as CursorRun
   const consume = async () => { for await (const _event of streamCursorRun(input)) {} }
-  await expect(consume()).rejects.toThrow("turn cancelled")
+  await consume()
   expect(commands).toEqual([])
 })
 

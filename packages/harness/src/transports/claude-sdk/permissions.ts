@@ -16,6 +16,10 @@ export const modes: AgentPermissionMode[] = [
   { id: "bypassPermissions", name: "Bypass permissions", level: "full" },
 ]
 
+export function claudeModeId(selected: string | undefined): string {
+  return selected ?? "auto"
+}
+
 export function requireClaudeMode(modeId: string): typeof sdkModes[number] {
   const selected = sdkModes.find((value) => value === modeId)
   if (!selected) throw new TransportError("claude", "configuration", `Unknown Claude permission mode ${modeId}`)
@@ -23,7 +27,7 @@ export function requireClaudeMode(modeId: string): typeof sdkModes[number] {
 }
 
 export function permissionOptions(config: SessionConfig, grantKeys: readonly string[] = []) {
-  const modeId = config.permissionMode ?? "default"
+  const modeId = claudeModeId(config.permissionMode)
   const selected = requireClaudeMode(modeId)
   const rules = replayClaudePermissionUpdates(persistedClaudeRules(config.permissionState), claudeGrantUpdates(grantKeys))
   return { permissionMode: selected, allowDangerouslySkipPermissions: modeId === "bypassPermissions" ? true as const : undefined,

@@ -4,6 +4,7 @@ import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { singleFlightUntil } from "@claxedo/helpers"
 import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
 import type { ProcessObserver } from "./managed-processes/process-observer"
+import { homeHoldingOwnership } from "./host/home-use"
 
 export type SpawnObservation = { observer: ProcessObserver; workspaceId?: string }
 
@@ -27,7 +28,7 @@ export function createSpawnService(ownership: LaunchOwnershipStore, observation?
   return async (command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess> => {
     if (options.signal.aborted) throw new Error(`Spawn of ${options.label} was aborted before it started`)
     const launch = await launchOwnedProcess({
-      ownership,
+      ownership: options.home ? homeHoldingOwnership(ownership, options.home) : ownership,
       role: "harness",
       ...(options.sessionId ? { scope: { sessionId: options.sessionId, directory: command.cwd } } : { scope: { directory: command.cwd } }),
       payload: { command: command.file, args: [...command.args] },

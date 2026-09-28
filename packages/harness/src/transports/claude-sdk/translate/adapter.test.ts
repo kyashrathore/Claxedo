@@ -50,7 +50,6 @@ function resultFrame(usage: Record<string, unknown>, extra: Record<string, unkno
   return { type: "result", subtype: "success", is_error: false, uuid: "result", session_id: "sdk-session-1", usage, ...extra }
 }
 
-/** A request as the CLI streams it: the assistant frame repeats the opening usage, and only `message_delta` has the final output. */
 function streamedRequest(id: string, opening: Record<string, unknown>, finalOutput: number) {
   return [
     messageStart(id, opening),
@@ -720,8 +719,8 @@ describe("claudeSdkAdapter", () => {
 
     expect(part).toMatchObject({
       type: "tool",
-      /* Canonicalised at the projection: Claude sends `Read`, every downstream
-         vocabulary matches lowercase. */
+
+
       tool: "read",
       state: {
         status: "completed",
@@ -1737,8 +1736,6 @@ describe("claudeSdkAdapter rate limits", () => {
   test("omits the percentage and the window name the vendor left out", () => {
     const [event] = emitted({ status: "allowed" })
     expect(event).toEqual({ type: "rate-limit", status: "ok", resetsAt: null })
-    // `toEqual` passes over a key whose value is `undefined`, which is exactly
-    // what an unconditional spread of an absent window would produce.
     expect(Object.keys(event ?? {}).sort()).toEqual(["resetsAt", "status", "type"])
   })
 

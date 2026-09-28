@@ -25,7 +25,9 @@ export function trackedAcpCancel(entry: AcpEntry, deadline: Deadline): NonNullab
       const running = acknowledged && timeout !== undefined && error === timeout
       if (!running) {
         entry.phase = "uncertain"
-        entry.queue?.fail(new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error))
+        const failure = new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error)
+        entry.queue?.fail(failure)
+        entry.providerTurn?.queue.fail(failure)
       }
       return { ok: false as const, error, running }
     })

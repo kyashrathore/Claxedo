@@ -325,7 +325,7 @@ describe("session service", () => {
     expect(starts[1]).not.toHaveProperty("actorKind")
   })
 
-  it("does not synthesize prompt events when the transport yields none", async () => {
+  it("fails without synthesizing prompt events when the transport yields none", async () => {
     const fixture = host({ async *turn() {} })
     await createSession(fixture, "s1")
     const events: CompatEnvelope[] = []
@@ -342,7 +342,7 @@ describe("session service", () => {
     expect(fixture.transport.turns).toHaveLength(1)
     expect(events).toEqual([])
     expect(turn.assistantId).toBe("msg-user_r")
-    expect(turn.error).toBeUndefined()
+    expect(turn.error).toBe("Harness stream ended without a terminal event")
   })
 
   it("closes runtime event streams when starting a turn fails", async () => {

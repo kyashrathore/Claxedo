@@ -108,8 +108,6 @@ function contentKey(item: ToolCallContent): string {
   try {
     return `${item.type}:${JSON.stringify(item)}`
   } catch {
-    // Content that cannot be serialized (cycles) has no comparable identity:
-    // give it a unique key so dedupe never drops it.
     unserializableContentSeq += 1
     return `${item.type}:unserializable:${unserializableContentSeq}`
   }
@@ -355,8 +353,6 @@ function pick(state: ToolState) {
       call === "read_mcp_resource"
     )
   ) nextIntent = "mcp"
-  // Upgrade search → list when parsed command proves it's a file listing
-  // but only when no search command also exists (search wins over list)
   if (nextIntent === "search" && list && !search) nextIntent = "list"
   const nextMode =
     mode(title) ??
@@ -431,9 +427,6 @@ function pick(state: ToolState) {
     ...(cmd ? { description: cmd } : {}),
     ...(raw !== undefined ? { input: raw } : {}),
   } satisfies ToolDisplay
-  // `metadata.acp` rides on every tool event: it carries the derived view the
-  // client-presentation projection reads, never the provider's raw input,
-  // output, or private `_meta` bag — those stay in state for `pick()` itself.
   const metadata = {
     ...(diffValue ? { filediff: diffValue } : {}),
     ...(patchValue.length > 0 ? { files: patchValue } : {}),

@@ -31,10 +31,6 @@ export type {
 }
   from "./management-auth"
 export {
-  loadManagedMcpState,
-  harnessAgent,
-  mcpControl,
-  resolveEffectiveMcp,
   resolveUserMcp,
   type ResolvedMcpServer,
 } from "./mcp/resolver"

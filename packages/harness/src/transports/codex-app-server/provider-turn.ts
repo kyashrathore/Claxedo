@@ -1,7 +1,8 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { HarnessSession, RoutedEvent, SessionBroker, TurnBroker } from "../../contract"
+import { admitQueuedProviderTurn } from "../../contract"
 import { CodexEvents } from "./events"
-import { AsyncPushQueue } from "@claxedo/helpers"
+import type { AsyncPushQueue } from "@claxedo/helpers"
 import { CodexTransportError } from "./errors"
 import type { RpcMessage } from "./rpc"
 import type { CodexUsageLedger } from "./usage"
@@ -12,23 +13,21 @@ export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker
 export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMessage): void {
   const id = asString(asRecordOrEmpty(asRecordOrEmpty(message.params).turn).id)
   if (!id) return
-  const queue = new AsyncPushQueue<RoutedEvent>()
-  const providerTurn: CodexProviderTurn = { id, queue, events: new CodexEvents(entry.session.binding.upstreamSessionId) }
-  entry.providerTurn = providerTurn
-  for (const event of providerTurn.events.ingest(message)) queue.push(event)
-  void entry.broker.admitProviderTurn({ reason: "goal" }, async function* (turnBroker, turn) {
-    providerTurn.turnBroker = turnBroker
-    entry.usage.attach({ sessionId: entry.session.binding.sessionId, directory: entry.session.directory, assistantMessageId: turn.assistantMessageId })
-    for (;;) {
-      const next = await queue.next()
-      if (next.done) return
-      yield next.value
-    }
-  }).then((result) => {
-    if (!result.admitted) { queue.end(); entry.providerTurn = undefined }
-    else void result.settled.then((settlement) => {
+  const events = new CodexEvents(entry.session.binding.upstreamSessionId)
+  const clear = () => { if (entry.providerTurn === providerTurn) entry.providerTurn = undefined }
+  const { queue } = admitQueuedProviderTurn(entry.broker, {
+    started: (turnBroker, turn) => {
+      providerTurn.turnBroker = turnBroker
+      entry.usage.attach({ sessionId: entry.session.binding.sessionId, directory: entry.session.directory, assistantMessageId: turn.assistantMessageId })
+    },
+    ended: () => {},
+    refused: clear,
+    settled: (settlement) => {
       if (settlement.state === "failed") entry.broker.reportFailure(new CodexTransportError("session", settlement.error))
-      if (settlement.state !== "completed") { queue.end(); entry.providerTurn = undefined }
-    })
-  }, (error: unknown) => { queue.fail(error); entry.broker.reportFailure(error) })
+      if (settlement.state !== "completed") { queue.end(); clear() }
+    },
+  })
+  const providerTurn: CodexProviderTurn = { id, queue, events }
+  entry.providerTurn = providerTurn
+  for (const event of events.ingest(message)) queue.push(event)
 }

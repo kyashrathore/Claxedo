@@ -13,7 +13,7 @@ function fixture() {
   } as unknown as HarnessServices
   const process = (pid: number): OwnedProcess => ({ pid, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
     exited: new Promise(() => {}), retire: async () => { retired.push(pid); return { stopped: true } } })
-  return { registry: new CursorHostRegistry(services, {}, new AbortController().signal), launches, retired, process }
+  return { registry: new CursorHostRegistry(services, { file: "node", args: ["cursor-worker.js"] }, {}, new AbortController().signal), launches, retired, process }
 }
 const key = { binding: "owner", home: "/tmp" }
 

@@ -13,7 +13,7 @@ import { composeCursorHome, cursorHomeKey } from "../../profiles/cursor"
 import { cursorCredential, type CursorCredential } from "./credentials"
 import { CursorEntryLifecycle, type CursorEntry as Entry } from "./entry"
 import { CursorGoals } from "./goals"
-import { CursorHostRegistry, type CursorHost, type CursorHostKey } from "./host-registry"
+import { CursorHostRegistry, type CursorWorker, type CursorHost, type CursorHostKey } from "./host-registry"
 import { cursorModelId, hostSession } from "./launch"
 import { CursorModelCatalog, catalogKey, cursorCatalogModels, cursorModelOptions } from "./models"
 import { cursorPermissionModeState } from "./permission-modes"
@@ -21,7 +21,9 @@ import type { HostModel } from "./protocol"
 import { cursorSessionTitle } from "./title"
 import { cursorPrompt, streamCursorRun } from "./turn"
 
-export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; env?: NodeJS.ProcessEnv }
+export { CURSOR_WORKER_FILE } from "./worker-file"
+
+export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; worker: CursorWorker; env?: NodeJS.ProcessEnv }
 
 function cursorCapabilities(models: readonly HostModel[] | undefined): TransportCapabilities {
   return {
@@ -53,7 +55,7 @@ export class CursorSdkTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly options: CursorSdkTransportOptions) {
     this.env = options.env ?? process.env
-    this.registry = new CursorHostRegistry(services, this.env, this.disposeAbort.signal)
+    this.registry = new CursorHostRegistry(services, options.worker, this.env, this.disposeAbort.signal)
   }
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
@@ -65,7 +67,8 @@ export class CursorSdkTransport implements HarnessTransport {
     return cursorCredential(input, this.env, this.options)
   }
 
-  private compose(input: StartInput | DraftLaunch, credential: CursorCredential, key: string) {
+  private async compose(input: StartInput | DraftLaunch, credential: CursorCredential, key: string) {
+    await this.services.recordHomeUse(path.join(this.options.homeRoot, key))
     const personal = credential.ownerLogin ? path.join(this.env.HOME ?? os.homedir(), ".cursor") : undefined
     return composeCursorHome({ root: this.options.homeRoot, key, projection: input.projection, ...(personal ? { personalCursorDir: personal } : {}) })
   }
@@ -130,6 +133,8 @@ export class CursorSdkTransport implements HarnessTransport {
     try {
       const host = await this.current(entry)
       if (entry.reopen) await this.closeAgent(entry)
+      if (broker.signal.aborted || entry.starting?.abort.signal.aborted) return
+      if (entry.starting) entry.starting.launched = true
       yield* streamCursorRun({ host, broker, prompt, services: this.services, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins, entry.session.binding.upstreamSessionId, turn?.model?.modelID) })
     } finally {
@@ -139,9 +144,16 @@ export class CursorSdkTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (entry.busy) throw new TransportError("cursor", "session", "Cursor turn already active")
-    const prompt = await cursorPrompt(turn, entry.input.directory)
-    yield* this.run(entry, broker, prompt, turn)
+    if (entry.busy || entry.starting) throw new TransportError("cursor", "session", "Cursor turn already active")
+    const starting = { turnId: turn.turnId, launched: false, abort: new AbortController() }
+    entry.starting = starting
+    try {
+      if (broker.signal.aborted) return
+      const prompt = await cursorPrompt(turn, entry.input.directory)
+      yield* this.run(entry, broker, prompt, turn)
+    } finally {
+      if (entry.starting === starting) entry.starting = undefined
+    }
   }
 
   readonly goals = {
@@ -211,6 +223,10 @@ export class CursorSdkTransport implements HarnessTransport {
       if (settlement?.state === "cancelled") return { execution: "terminal" as const, cleanup: "unknown" as const }
       return { execution: "unknown" as const, cleanup: "unknown" as const,
         ...(settlement?.state === "failed" ? { error: { code: "internal_error" as const, message: settlement.error } } : {}) }
+    }
+    if (entry.starting?.turnId === turn.turnId && !entry.starting.launched) {
+      entry.starting.abort.abort()
+      return { execution: "terminal" as const, cleanup: "verified_clear" as const }
     }
     if (!entry.busy) return { execution: "terminal" as const, cleanup: "unknown" as const }
     try {

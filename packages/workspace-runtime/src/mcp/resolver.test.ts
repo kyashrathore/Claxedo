@@ -1,62 +1,20 @@
-import { realpathSync } from "fs"
-import fs from "fs/promises"
-import os from "os"
-import path from "path"
-import { randomUUID } from "crypto"
-import { afterAll, beforeEach, describe, expect, test } from "bun:test"
-import { loadManagedMcpState, resolveEffectiveMcp, harnessAgent } from "./resolver"
+import { expect, test } from "bun:test"
+import { resolveUserMcp, resolvedMcpServers } from "./resolver"
 
-const root = path.join(realpathSync(os.tmpdir()), `agent-sdk-mcp-resolver-test-${randomUUID().slice(0, 8)}`)
-const prev = process.env.WORKSPACE_RUNTIME_DATA_DIR
-process.env.WORKSPACE_RUNTIME_DATA_DIR = root
+test("MCP exports only the live user resolver and decoder", async () => {
+  expect(Object.keys(await import("./resolver")).sort()).toEqual(["resolveUserMcp", "resolvedMcpServers"])
+})
 
-describe("mcp resolver", () => {
-  beforeEach(async () => {
-    await fs.rm(root, { recursive: true, force: true })
+test("resolves configured user servers and omits disabled entries", () => {
+  const resolved = resolveUserMcp({
+    remote: { type: "remote", url: "https://mcp.example.com", headers: { Authorization: "Bearer test" } },
+    process: { type: "stdio", command: "server", args: ["argument"], env: { VALUE: "test" } },
+    disabled: { type: "remote", url: "https://disabled.example.com", disabled: true },
   })
-
-  afterAll(async () => {
-    await fs.rm(root, { recursive: true, force: true })
-    if (prev === undefined) delete process.env.WORKSPACE_RUNTIME_DATA_DIR
-    else process.env.WORKSPACE_RUNTIME_DATA_DIR = prev
-  })
-
-  test("keeps managed MCP defaults explicitly empty while preserving user MCP", async () => {
-    const state = await loadManagedMcpState(4310)
-    const resolved = resolveEffectiveMcp({
-      state,
-      agent: "claude",
-      control: "generated-config",
-      userMcp: {
-        remote: {
-          type: "remote",
-          url: "https://mcp.example.com",
-          headers: { Authorization: "Bearer test" },
-        },
-      },
-      strict: true,
-    })
-
-    expect(state.defaults).toEqual({})
-    expect(state.servers).toEqual({})
-    expect(resolved.status).toEqual({})
-    expect(resolved.mcp.remote).toMatchObject({
-      transport: "remote",
-      url: "https://mcp.example.com",
-    })
-  })
-
-  test("reports malformed persisted state", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(path.join(root, "managed-mcp-overrides.json"), "not-json")
-
-    await expect(loadManagedMcpState(4310)).rejects.toBeInstanceOf(SyntaxError)
-  })
-
-  test("maps harness identities to MCP agents through harness metadata", () => {
-    expect(harnessAgent("claude")).toBe("claude")
-    expect(harnessAgent("codex")).toBe("codex")
-    expect(harnessAgent("cursor")).toBe("cursor")
-    expect(harnessAgent("connection:openclaw")).toBeNull()
-  })
+  expect(resolved.remote).toMatchObject({ source: "user", transport: "remote", url: "https://mcp.example.com" })
+  expect(resolved.process).toMatchObject({ source: "user", transport: "stdio", command: "server", args: ["argument"], env: { VALUE: "test" } })
+  expect(resolved.disabled).toBeUndefined()
+  expect(resolvedMcpServers(resolved)).toEqual(resolved)
+  expect(resolvedMcpServers(null)).toBeUndefined()
+  expect(resolvedMcpServers({ malformed: { name: "malformed", transport: "stdio" } })).toEqual({})
 })

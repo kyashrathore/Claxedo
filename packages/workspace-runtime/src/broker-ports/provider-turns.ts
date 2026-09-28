@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto"
-import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
-import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, TurnRef } from "@claxedo/harness/contract"
+import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, TurnRef } from "@claxedo/harness/contract"
+import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "../host/turn-outcome"
 import type { RuntimeStore } from "../store"
 import type { BrokerSessionEvents } from "./session-events"
 import type { BrokerEventDelivery } from "./delivery"
@@ -11,6 +12,7 @@ export type LeasedTurnFailure = { leaseId: string; assistantMessageId: string; o
 
 export class BrokerProviderTurns {
   private readonly controllers = new Map<string, AbortController>()
+  private readonly streams = new Map<string, { terminal?: boolean; outcome?: AgentTurnOutcome }>()
 
   constructor(
     private readonly store: RuntimeStore,
@@ -19,6 +21,20 @@ export class BrokerProviderTurns {
     private readonly reportOwnerFailure: (sessionId: string, error: unknown) => void,
     private readonly retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean,
   ) {}
+
+  observe(turnId: string, routed: RoutedEvent): void {
+    const stream = this.streams.get(turnId)
+    if (!stream || routed.route?.kind === "child") return
+    stream.terminal ||= isTerminalRuntimePayload(routed.event)
+    stream.outcome = mergeOutcome(stream.outcome, outcomeFromPayload(routed.event))
+  }
+
+  private outcome(turnId: string): AgentTurnOutcome {
+    const stream = this.streams.get(turnId)
+    if (stream?.terminal && stream.outcome) return stream.outcome
+    return { status: "failed", error: "Harness stream ended without a terminal event", completedAt: Date.now(),
+      detail: { code: "missing_terminal_event" } }
+  }
 
   abort(sessionId: string): void {
     this.controllers.get(sessionId)?.abort()
@@ -51,34 +67,31 @@ export class BrokerProviderTurns {
       throw error
     }
     this.controllers.set(sessionId, controller)
+    this.streams.set(turnId, {})
     const settled: Promise<ProviderTurnSettlement> = Promise.resolve().then(async () => {
-      let state: "completed" | "failed" | "cancelled" = "completed"
-      let failure: string | undefined
+      let outcome: AgentTurnOutcome
       try {
         await run(turn, controller.signal)
+        outcome = this.outcome(turnId)
       } catch (error) {
-        state = "failed"
-        failure = errorMessage(error)
+        outcome = { status: "failed", error: errorMessage(error), completedAt: Date.now() }
       }
-      if (controller.signal.aborted) state = "cancelled"
-      const outcome: AgentTurnOutcome = state === "failed"
-        ? { status: "failed", error: failure ?? "Provider turn failed", completedAt: Date.now() }
-        : { status: state, completedAt: Date.now() }
+      if (controller.signal.aborted) outcome = { status: "cancelled", completedAt: Date.now() }
       let retained = false
       try {
         const finished = this.store.finishTurn({ sessionId, assistantMessageId: turnId, leaseId, outcome })
         for (const event of finished.events) this.delivery.broadcast(sessionId, event)
       } catch (error) {
-        state = "failed"
-        failure = errorMessage(error)
         retained = this.retainLeasedTurnFailure(sessionId, { leaseId, assistantMessageId: turnId, outcome }, error)
         if (!retained) this.reportOwnerFailure(sessionId, error)
+        outcome = { status: "failed", error: errorMessage(error), completedAt: Date.now() }
       } finally {
+        this.streams.delete(turnId)
         this.events.releaseProviderTurn(sessionId, turnId)
         this.controllers.delete(sessionId)
         if (!retained) this.store.releaseTurnLease(sessionId, leaseId)
       }
-      return state === "failed" ? { state, error: failure ?? "Provider turn failed" } : { state }
+      return outcome.status === "failed" ? { state: "failed", error: outcome.error } : { state: outcome.status }
     })
     return { admitted: true, turn, settled }
   }

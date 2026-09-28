@@ -28,7 +28,7 @@ function fixture() {
       if (host === replacement) users--
     },
   }
-  const transport = new CursorSdkTransport({} as HarnessServices, { homeRoot: "/tmp", env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false })
+  const transport = new CursorSdkTransport({} as HarnessServices, { homeRoot: "/tmp", worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false })
   const session = { binding: { sessionId: "s1" } } as HarnessSession
   const entry = { session, input: { config: {}, credentials: { leaseGeneration: "g1" }, owner: { kind: "machine-owner" } } as StartInput,
     credential: { key: "key", apiKey: "test", bound: false, ownerLogin: false },

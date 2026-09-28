@@ -75,6 +75,7 @@ function scriptedEndpoint(readme: string) {
 function services(): HarnessServices {
   return {
     spawn: async (_command, options) => { throw new Error(`The embedded engine spawns nothing (${options.label})`) },
+    recordHomeUse: async () => {},
     firstPartyMcp: () => undefined,
     transcripts: { register: async () => ({ state: "unavailable", reason: "no transcripts in this test" }) },
     patternEvaluator: async () => {},

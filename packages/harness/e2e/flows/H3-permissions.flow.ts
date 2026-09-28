@@ -57,9 +57,9 @@ export async function run() {
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), afterOnce, "duplicate reply reached the agent")
 
     await stack.acp.write("h3-always", { steps: [
-      { kind: "permission", tool: "execute", title: "Same command", text: "first allowed" },
-      { kind: "permission", tool: "execute", title: "Same command", text: "second allowed" },
-      { kind: "permission", tool: "execute", title: "Different command", text: "third allowed" },
+      { kind: "permission", tool: "execute", title: "Same command", input: { command: "make check" }, text: "first allowed" },
+      { kind: "permission", tool: "execute", title: "Same command", input: { command: "make check" }, text: "second allowed" },
+      { kind: "permission", tool: "execute", title: "Different command", input: { command: "make clean" }, text: "third allowed" },
     ] })
     const alwaysSince = stream.frames.length
     await api.promptAsync(directory, session.id, acpScriptToken("h3-always"))

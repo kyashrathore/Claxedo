@@ -1,3 +1,4 @@
+import { claudeModeId } from "./permissions"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
@@ -29,7 +30,7 @@ export async function askClaudePermission(input: StartInput, broker: TurnBroker,
     return { behavior: protocolPermissionMap.allow, updatedInput: { ...toolInput,
       answers: Object.fromEntries(answers.map((value, index) => [questions[index]?.question, value.join(", ")])) } }
   }
-  const grant = claudeGrant({ directory: input.directory, permissionMode: input.config.permissionMode }, toolName, toolInput, options)
+  const grant = claudeGrant({ directory: input.directory, permissionMode: claudeModeId(input.config.permissionMode) }, toolName, toolInput, options)
   const answer = await broker.ask(permissionRequest({ sessionId: input.sessionId, permission: toolName, title: options.title ?? toolName,
     ...(grant ? { grantKey: grant.key } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId },
     harnessPayload: { toolName, toolInput, suggestions: options.suggestions },

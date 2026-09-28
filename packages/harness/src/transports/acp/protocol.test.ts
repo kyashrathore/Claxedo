@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { acpElicitation, acpGrantKey, acpPermission, acpPrompt } from "./protocol"
+import type { ToolCallUpdate } from "@agentclientprotocol/sdk"
 import type { RequestAnswer, TurnBroker, TurnInput } from "../../contract"
 
 test("ACP delivers URL references using its mandatory resource-link block", async () => {
@@ -11,20 +12,30 @@ test("ACP delivers URL references using its mandatory resource-link block", asyn
 })
 
 describe("ACP grant identity", () => {
+  const call = (input: Partial<ToolCallUpdate>): ToolCallUpdate => ({ toolCallId: "call", title: "Run command", kind: "execute",
+    rawInput: { command: "npm test", description: "Runs the tests" }, ...input })
+
+  test("a grant is a digest of the tool's kind and its input, never its display title", () => {
+    const key = acpGrantKey(call({}))
+    expect(key).toMatch(/^[0-9a-f]{64}$/)
+    expect(key).not.toContain("npm test")
+    expect(key).toBe(acpGrantKey(call({ toolCallId: "another", title: "Run the test suite" })))
+    expect(key).not.toBe(acpGrantKey(call({ rawInput: { command: "rm -rf build", description: "Runs the tests" } })))
+    expect(key).not.toBe(acpGrantKey(call({ kind: "edit" })))
+  })
+
   test("an absent kind is other, never a wildcard", () => {
-    expect(acpGrantKey(undefined, "Read file")).toBe(JSON.stringify(["other", "Read file"]))
-    expect(acpGrantKey(undefined, "Read file")).not.toBe(acpGrantKey("read", "Read file"))
+    expect(acpGrantKey(call({ kind: undefined }))).not.toBe(acpGrantKey(call({})))
+    expect(acpGrantKey(call({ kind: undefined }))).toBe(acpGrantKey(call({ kind: "other" })))
   })
 
-  test("an untitled request cannot acquire a grant", () => {
-    expect(acpGrantKey("read", undefined)).toBeUndefined()
-    expect(acpGrantKey("read", "")).toBeUndefined()
+  test("the locations a call names are part of its identity", () => {
+    const edit = call({ kind: "edit", rawInput: { content: "x" }, locations: [{ path: "/repo/a.ts" }] })
+    expect(acpGrantKey(edit)).not.toBe(acpGrantKey({ ...edit, locations: [{ path: "/repo/b.ts" }] }))
   })
 
-  test("a grant matches only its kind and exact title", () => {
-    const key = acpGrantKey("read", "Read file")
-    expect(key).not.toBe(acpGrantKey("edit", "Read file"))
-    expect(key).not.toBe(acpGrantKey("read", "Read File"))
+  test("a request with no input and no locations cannot acquire a grant", () => {
+    expect(acpGrantKey(call({ rawInput: undefined }))).toBeUndefined()
   })
 })
 

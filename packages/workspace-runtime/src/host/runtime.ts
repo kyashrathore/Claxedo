@@ -181,7 +181,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     const controlTarget = turn.delivery ? admissions.active(turn.sessionId) : undefined
     if (!turn.delivery && admissions.active(turn.sessionId)) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
     const authority = turnSecretAuthority(turn)
-    const attached = controlTarget
+    let attached = controlTarget
       ? await attachments.for(turn.sessionId, undefined, controlTarget.generation)
       : await attachments.admit(turn.sessionId, authority)
     // Pinned before the first yield: a lease rotation or a removed connection
@@ -189,6 +189,9 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     const unpin = attached.handle.pin()
     let launched = false
     try {
+      if (!controlTarget && !admissions.active(turn.sessionId) && attached.handle.transport.restore) {
+        attached = { ...attached, session: await attached.handle.transport.restore(attached.session) }
+      }
       const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId: turn.sessionId })
       if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
       if (turn.admission && !turn.admission.valid()) throw new Error("Durable session turn admission is no longer valid")

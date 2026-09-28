@@ -144,3 +144,8 @@ test("a translator is held to no comments, size and no policy like the rest of i
   fails("no-policy-in-transports", "src/transports/claude-sdk/translate/adapter.ts", translator, /Move the request decision/)
   fails("no-comments", "src/translate/runtime.ts", "// explanation\nconst value = 1\n", /Remove the comment/)
 })
+
+test("no-comments resumes correctly after template substitutions and regular expressions", () => {
+  fails("no-comments", "src/contract/template.ts", 'const text = `hello ${name}`\n// missed explanation\nconst end = 1\n', /Remove the comment/)
+  fails("no-comments", "src/contract/regex.ts", 'const pattern = /[\\/]foo/\n// missed explanation\n', /Remove the comment/)
+})

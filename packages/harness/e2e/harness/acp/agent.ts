@@ -64,7 +64,7 @@ export class ScriptedAgent implements Agent {
 
   constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true,
     private readonly restoreMode: "load" | "resume" = "resume", private readonly startupQuestion = process.env.SCRIPTED_ACP_START_QUESTION === "1",
-    private readonly groups: readonly string[] = process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals", "health"],
+    private readonly groups: readonly string[] = process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals"],
     private readonly mcpCapabilities: McpCapabilities = { http: true, sse: true }) {
     this.goalRequest = scriptedGoals(dir)
   }
@@ -76,7 +76,7 @@ export class ScriptedAgent implements Agent {
       authMethods: [],
       _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } },
         ...(this.groups.includes("goals") ? { goal: scriptedGoalExtension } : {}),
-        claxedo: { version: 1, health: this.groups.includes("health"), methods: [
+        claxedo: { version: 1, methods: [
           ...(this.groups.includes("steer") ? ["session/steer"] : []),
           ...(this.groups.includes("agents") ? ["session/agents/list"] : []),
         ] } },

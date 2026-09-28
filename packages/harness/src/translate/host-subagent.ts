@@ -19,14 +19,6 @@ export type HostSubagentBinding = {
   summary?: string
 }
 
-/**
- * The child binding carried by a `create_subagent` tool result. The tool
- * answers with JSON `{ kind: "claxedo.subagent", subagentKey, sessionId,
- * status?, summary? }`; MCP hosts deliver it as text content blocks, as
- * `structuredContent`, or already parsed, so every wrapping is unwrapped here.
- * The `kind` marker is what makes the shape self-identifying: a result is only
- * a binding when it says so.
- */
 export function hostSubagentBinding(result: unknown): HostSubagentBinding | undefined {
   for (const candidate of candidates(result)) {
     const row = asRecord(candidate)
@@ -89,12 +81,6 @@ export type HostSubagentObservation = {
   transcript: { kind: "live" }
 }
 
-/**
- * The observation a bound `create_subagent` result raises on the parent, the
- * same on every harness: it names the host-minted row and binds the tool call
- * to it as the spawn edge. The row exists only once the runtime has minted
- * the key, so the call itself raises nothing until its result arrives.
- */
 export function hostSubagentObservation(input: {
   observationId: string
   harnessExecutionId?: string
