@@ -232,7 +232,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="session-review"] {
+[data-component="session-review"] {
   [data-slot="session-review-large-diff"] {
     background: var(--background-stronger);
   }

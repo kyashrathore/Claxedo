@@ -83,12 +83,10 @@
   );
 }
 
-body:not([data-new-layout]) {
-  .ui-work-group-list {
-    [data-slot="basic-tool-tool-title"],
-    [data-slot="message-part-title-text"] {
-      color: var(--transcript-tool-color, var(--text-weak));
-    }
+.ui-work-group-list {
+  [data-slot="basic-tool-tool-title"],
+  [data-slot="message-part-title-text"] {
+    color: var(--transcript-tool-color, var(--text-weak));
   }
 }
 

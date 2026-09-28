@@ -1512,228 +1512,231 @@
   }
 }
 
-body:not([data-new-layout]) {
-  .ui-user-message {
-    color: var(--transcript-prose-color, var(--text-strong));
+.ui-user-message {
+  color: var(--transcript-prose-color, var(--text-strong));
 
-    [data-slot="user-message-attachments"] + .ui-user-message-body {
-      margin-top: 8px;
-    }
-
-    .ui-user-message-attachment {
-      background: var(--surface-weak);
-      border: 1px solid var(--border-weak-base);
-
-      &:hover {
-        border-color: var(--border-strong-base);
-      }
-
-      &[data-type="image"] {
-        width: 48px;
-        height: 48px;
-        border: 1px solid var(--border-weak-base);
-
-        &::after {
-          content: none;
-        }
-      }
-    }
-
-    .ui-user-message-attachment-name {
-      color: var(--text-base);
-    }
-
-    .ui-user-message-text {
-      background: var(--surface-base);
-      border: 1px solid var(--border-weak-base);
-      border-radius: var(--radius-md);
-    }
-
-    .text-text-strong {
-      color: var(--text-strong);
-    }
+  [data-slot="user-message-attachments"] + .ui-user-message-body {
+    margin-top: 8px;
   }
 
-  [data-slot="compaction-part-line"] {
-    background: var(--border-weak-base);
-  }
-
-  .ui-reasoning-part {
-    color: var(--transcript-reasoning-color, var(--text-base));
-
-    .ui-markdown,
-    [data-component="markdown"] strong,
-    [data-component="markdown"] b {
-      color: var(--transcript-reasoning-color, var(--text-weak));
-    }
-  }
-
-  .ui-bash-output {
+  .ui-user-message-attachment {
+    background: var(--surface-weak);
     border: 1px solid var(--border-weak-base);
-  }
 
-  [data-component="edit-trigger"],
-  .ui-write-trigger {
-    color: var(--text-weak);
-
-    [data-slot="message-part-title"],
-    [data-slot="message-part-title-spinner"],
-    [data-slot="message-part-directory"],
-    [data-slot="message-part-title-text"],
-    [data-slot="message-part-title-filename"],
-    [data-slot="message-part-filename"] {
-      color: var(--text-weak);
-      transition: color 0.15s ease;
+    &:hover {
+      border-color: var(--border-strong-base);
     }
-  }
 
-  @media (hover: hover) {
-    [data-slot="collapsible-trigger"]:hover
-      :is([data-component="edit-trigger"], [data-component="write-trigger"]) {
-      [data-slot="message-part-title-text"],
-      [data-slot="message-part-title-filename"],
-      [data-slot="message-part-filename"] {
-        color: var(--text-strong);
+    &[data-type="image"] {
+      width: 48px;
+      height: 48px;
+      border: 1px solid var(--border-weak-base);
+
+      &::after {
+        content: none;
       }
     }
   }
 
-  [data-slot="collapsible-trigger"]:focus-visible
-    :is([data-component="edit-trigger"], [data-component="write-trigger"]) {
-    [data-slot="message-part-title-text"],
-    [data-slot="message-part-title-filename"] {
-      color: var(--text-strong);
-    }
-  }
-
-  .ui-edit-content,
-  .ui-write-content {
-    border-top: 1px solid var(--border-weaker-base);
-  }
-
-  .ui-exa-tool-output {
+  .ui-user-message-attachment-name {
     color: var(--text-base);
   }
 
-  .ui-exa-tool-link,
-  .ui-exa-tool-link:hover,
-  .ui-exa-tool-link:visited {
-    color: var(--text-interactive-base);
+  .ui-user-message-text {
+    background: var(--surface-base);
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-md);
   }
 
-  .ui-message-part-todo-content[data-completed="completed"] {
+  .text-text-strong {
+    color: var(--text-strong);
+  }
+}
+
+[data-component="compaction-part"] [data-slot="compaction-part-line"] {
+  background: var(--border-weak-base);
+}
+
+.ui-reasoning-part {
+  color: var(--transcript-reasoning-color, var(--text-base));
+
+  .ui-markdown,
+  [data-component="markdown"] strong,
+  [data-component="markdown"] b {
+    color: var(--transcript-reasoning-color, var(--text-weak));
+  }
+}
+
+.ui-bash-output {
+  border: 1px solid var(--border-weak-base);
+}
+
+[data-component="edit-trigger"],
+.ui-write-trigger {
+  color: var(--text-weak);
+
+  [data-slot="message-part-title"],
+  [data-slot="message-part-title-spinner"],
+  [data-slot="message-part-directory"],
+  [data-slot="message-part-title-text"],
+  [data-slot="message-part-title-filename"],
+  [data-slot="message-part-filename"] {
+    color: var(--text-weak);
+    transition: color 0.15s ease;
+  }
+}
+
+@media (hover: hover) {
+  [data-slot="collapsible-trigger"]:hover
+    :is([data-component="edit-trigger"], [data-component="write-trigger"]) {
+    [data-slot="message-part-title-text"],
+    [data-slot="message-part-title-filename"],
+    [data-slot="message-part-filename"] {
+      color: var(--text-strong);
+    }
+  }
+}
+
+[data-slot="collapsible-trigger"]:focus-visible
+  :is([data-component="edit-trigger"], [data-component="write-trigger"]) {
+  [data-slot="message-part-title-text"],
+  [data-slot="message-part-title-filename"] {
+    color: var(--text-strong);
+  }
+}
+
+.ui-edit-content,
+.ui-write-content {
+  border-top: 1px solid var(--border-weaker-base);
+}
+
+.ui-exa-tool-output {
+  color: var(--text-base);
+}
+
+.ui-exa-tool-link,
+.ui-exa-tool-link:hover,
+.ui-exa-tool-link:visited {
+  color: var(--text-interactive-base);
+}
+
+.ui-todos .ui-message-part-todo-content[data-completed="completed"] {
+  color: var(--text-weaker);
+}
+
+.ui-diagnostics {
+  background-color: transparent;
+  border-top: 1px solid var(--border-weak-base);
+
+  .ui-diagnostic-icon {
+    color: var(--icon-critical-base);
+  }
+
+  .ui-diagnostic-message {
+    color: var(--text-base);
+  }
+
+  .ui-diagnostic-location {
     color: var(--text-weaker);
   }
 
-  .ui-diagnostics {
-    background-color: transparent;
-    border-top: 1px solid var(--border-weak-base);
+  .ui-diagnostic-overflow {
+    color: var(--text-weaker);
+  }
+}
 
-    .ui-diagnostic-icon {
-      color: var(--icon-critical-base);
+.ui-dock-prompt[data-kind="permission"] {
+  .ui-permission-header-title {
+    color: var(--text-strong);
+  }
+
+  .ui-permission-hint {
+    color: var(--text-weak);
+  }
+}
+
+.ui-dock-prompt[data-kind="question"] {
+  .ui-question-header-title,
+  .ui-question-text,
+  [data-slot="option-label"] {
+    color: var(--text-strong);
+  }
+
+  [data-slot="question-hint"] {
+    color: var(--text-weak);
+  }
+
+  [data-slot="question-option"] {
+    background-color: var(--surface-raised-stronger-non-alpha);
+    border: 1px solid var(--border-weak-base);
+
+    &:hover:not([data-picked="true"]) {
+      background-color: var(--background-base);
     }
 
-    .ui-diagnostic-message {
-      color: var(--text-base);
-    }
-
-    .ui-diagnostic-location {
-      color: var(--text-weaker);
-    }
-
-    .ui-diagnostic-overflow {
-      color: var(--text-weaker);
+    &[data-picked="true"] {
+      background-color: var(--surface-interactive-weak);
+      border-color: var(--border-weak-base);
     }
   }
 
-  .ui-dock-prompt[data-kind="permission"] {
-    .ui-permission-header-title {
-      color: var(--text-strong);
+  .ui-question-option-box {
+    border: 1px solid var(--border-weak-base);
+
+    &[data-picked="true"] {
+      border-color: var(--border-weak-base);
     }
 
-    .ui-permission-hint {
-      color: var(--text-weak);
-    }
-  }
-
-  .ui-dock-prompt[data-kind="question"] {
-    .ui-question-header-title,
-    .ui-question-text,
-    [data-slot="option-label"] {
-      color: var(--text-strong);
-    }
-
-    [data-slot="question-hint"] {
-      color: var(--text-weak);
-    }
-
-    [data-slot="question-option"] {
-      background-color: var(--surface-raised-stronger-non-alpha);
-      border: 1px solid var(--border-weak-base);
-
-      &:hover:not([data-picked="true"]) {
-        background-color: var(--background-base);
-      }
-
-      &[data-picked="true"] {
-        background-color: var(--surface-interactive-weak);
-      }
-    }
-
-    .ui-question-option-box {
-      border: 1px solid var(--border-weak-base);
-
-      .ui-question-option-radio-dot {
-        background-color: var(--background-stronger);
-      }
-    }
-
-    [data-slot="option-description"],
-    .ui-question-custom-input {
-      color: var(--text-base);
-    }
-
-    .ui-question-custom-input {
-      &::placeholder {
-        color: var(--text-weak);
-      }
-
-      &:focus-visible {
-        outline: 1px solid var(--border-interactive-base);
-      }
+    .ui-question-option-radio-dot {
+      background-color: var(--background-stronger);
     }
   }
 
-  .ui-question-answers {
-    .ui-question-text {
+  [data-slot="option-description"],
+  .ui-question-custom-input {
+    color: var(--text-base);
+  }
+
+  .ui-question-custom-input {
+    &::placeholder {
       color: var(--text-weak);
     }
 
-    .ui-answer-text {
-      color: var(--text-strong);
+    &:focus-visible {
+      outline: 1px solid var(--border-interactive-base);
     }
   }
+}
 
-  :is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
-    > [data-component="collapsible"]
-    > .ui-collapsible-trigger[aria-expanded="true"],
-  [data-component="accordion-v2"][data-scope="apply-patch"] .ui-accordion-v2-trigger {
-    background-color: var(--background-stronger) !important;
+.ui-question-answers [data-slot="question-answer-item"] {
+  .ui-question-text {
+    color: var(--text-weak);
   }
 
-  [data-component="accordion-v2"][data-scope="apply-patch"] {
-    [data-slot="apply-patch-directory"] {
-      color: var(--text-base);
-    }
+  .ui-answer-text {
+    color: var(--text-strong);
+  }
+}
 
-    [data-slot="apply-patch-filename"] {
-      color: var(--text-strong);
-    }
+:is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
+  > [data-component="collapsible"]
+  > .ui-collapsible-trigger[aria-expanded="true"],
+[data-component="accordion-v2"][data-scope="apply-patch"] .ui-accordion-v2-trigger {
+  background-color: var(--background-stronger) !important;
+}
+
+[data-component="accordion-v2"][data-scope="apply-patch"] {
+  [data-slot="apply-patch-directory"] {
+    color: var(--text-base);
   }
 
-  .ui-tool-loaded-file {
-    color: var(--transcript-meta-color, var(--text-weak));
+  [data-slot="apply-patch-filename"] {
+    color: var(--text-strong);
   }
+}
+
+.ui-tool-loaded-file {
+  color: var(--transcript-meta-color, var(--text-weak));
 }
 
 .ui-scrollable-output,
