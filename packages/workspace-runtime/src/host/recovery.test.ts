@@ -1277,13 +1277,16 @@ describe("what makes a stop unconfirmed", () => {
       turn: async function* () { await gate; throw new Error("provider died after the stop") },
       cancel: async () => { store.broken = true; return { execution: "terminal", cleanup: "verified_clear" } },
     })
-    const f = createHostFixture({ store, transports: { pi: transport }, recovery: { budgets: { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 200, reconcileMs: 5_000 } } })
+    let clock = Date.now()
+    const f = createHostFixture({ store, transports: { pi: transport },
+      recovery: { budgets: { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 200, reconcileMs: 5_000 }, now: () => clock } })
     try {
       await f.runtime.sessions.create(sessionCreate({ id: "s" }))
       const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
       await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
       expect(f.runtime.recovery.inspect("s").failures.map((failure) => failure.code)).toEqual(["persistence_unavailable"])
       const refusedAt = f.runtime.recovery.inspect("s").failures[0].at
+      clock += 1
       release()
       await until(() => f.runtime.recovery.inspect("s").failures[0].at !== refusedAt, "the producer's own failure to be retained")
       const codes = f.runtime.recovery.inspect("s").failures.map((failure) => failure.code)
