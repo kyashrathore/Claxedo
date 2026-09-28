@@ -1,10 +1,14 @@
-import { createEffect, createSignal, Show, untrack } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show, untrack } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui"
 
 export function TimelineJumpButton(props: { shown: boolean; working: boolean; label: string; onClick: () => void }) {
   const [fadedOut, setFadedOut] = createSignal(untrack(() => !props.shown))
   createEffect(() => {
     if (props.shown) setFadedOut(false)
+  })
+  let fade: HTMLDivElement | undefined
+  onCleanup(() => {
+    for (const animation of fade?.getAnimations() ?? []) animation.cancel()
   })
   const settleFade = (event: TransitionEvent) => {
     if (event.target === event.currentTarget && event.propertyName === "opacity" && !props.shown) setFadedOut(true)
@@ -15,6 +19,7 @@ export function TimelineJumpButton(props: { shown: boolean; working: boolean; la
       class="pointer-events-none absolute inset-x-0 bottom-6 z-[60] flex justify-center"
     >
       <div
+        ref={fade}
         class="transition-all duration-200 ease-out"
         classList={{
           "opacity-100 translate-y-0 scale-100 pointer-events-auto": props.shown,
