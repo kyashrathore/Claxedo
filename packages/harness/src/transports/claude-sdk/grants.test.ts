@@ -25,3 +25,12 @@ test("suggestions become session updates and malformed grants fail before launch
   expect(() => claudeGrantUpdates([JSON.stringify({ updates: [1] })])).toThrow("Invalid persisted Claude grant updates")
   expect(() => persistedClaudeRules({ deny: [1] })).toThrow("Invalid Claude deny permission state")
 })
+
+test("rule replacement preserves parenthesized contents and other behaviors", () => {
+  const state = persistedClaudeRules({ allow: ["Read", "Bash(old)"], deny: ["Write"], additionalDirectories: ["/old"] })
+  expect(replayClaudePermissionUpdates(state, [
+    { type: "replaceRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "echo (hello)" }, { toolName: "Read" }] },
+    { type: "removeRules", behavior: "allow", destination: "session", rules: [{ toolName: "Read" }] },
+    { type: "removeDirectories", destination: "session", directories: ["/old"] },
+  ])).toEqual({ allow: ["Bash(echo (hello))"], deny: ["Write"], ask: [], additionalDirectories: [] })
+})

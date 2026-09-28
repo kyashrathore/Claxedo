@@ -2,10 +2,11 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { PassThrough } from "node:stream"
-import type { Clock, DraftLaunch, HarnessServices, OwnedProcess, SessionBroker, StartInput, TurnBroker, TurnInput } from "../../contract"
+import type { DraftLaunch, HarnessServices, SessionBroker, StartInput, TurnBroker, TurnInput } from "../../contract"
+import { ScriptedProcess } from "../../test-support/scripted-process"
 import { projectCodexThreadConfig } from "./configuration"
 import { CodexAppServerTransport } from "."
+import { scriptedTransport, type Frame } from "./test-support/transport"
 
 const input: StartInput = {
   workspaceId: "w1",
@@ -17,10 +18,6 @@ const input: StartInput = {
     { kind: "http", name: "plugin", url: "http://127.0.0.1:47502", headers: { Authorization: "Bearer sentinel" }, origin: "plugin" },
   ] },
   credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
-}
-
-function rebindTo(directory: string) {
-  return async (upstreamSessionId: string) => Object.freeze({ sessionId: "s1", workspaceId: "w1", directory, connectionId: "codex-app-server", upstreamSessionId })
 }
 
 test("Codex receives every projected MCP server and local first-party server", () => {
@@ -36,74 +33,21 @@ test("Codex receives every projected MCP server and local first-party server", (
 
 test("disposing during pending initialize retires the process before start rejects", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-initialize-"))
-  const stdin = new PassThrough()
-  let exit!: (value: { code: number | null; signal: string | null }) => void
-  const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => { exit = resolve })
-  let retired = false
-  const process: OwnedProcess = { pid: 5_000_000, stdin, stdout: new PassThrough(), stderr: new PassThrough(), exited,
-    retire: async () => { retired = true; exit({ code: 0, signal: null }); return { stopped: true } } }
-  const services = { spawn: async () => process,
-    clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
-  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root })
   let initialized!: () => void
   const sent = new Promise<void>((resolve) => { initialized = resolve })
-  stdin.on("data", (chunk) => { if (String(chunk).includes('"initialize"')) initialized() })
+  const wire = new ScriptedProcess<Frame>((frame) => { if (frame.method === "initialize") initialized() })
+  const services = { spawn: async () => wire.owned(), clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
+  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root })
   const starting = transport.start({ ...input, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } },
     {} as SessionBroker)
   try {
     await sent
     await transport.dispose()
     await expect(starting).rejects.toThrow()
-    expect(retired).toBe(true)
-    expect(await exited).toEqual({ code: 0, signal: null })
+    expect(wire.retirements).toBeGreaterThan(0)
+    expect(await wire.exited).toEqual({ code: 0, signal: null })
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
-
-type Frame = { id?: number; method?: string; params?: Record<string, unknown> }
-
-async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clock } = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-scripted-"))
-  const frames: Frame[] = []
-  const processes: { stdout: PassThrough; exit: (value: { code: number | null; signal: string | null }) => void }[] = []
-  let turnStarted!: () => void
-  const started = new Promise<void>((resolve) => { turnStarted = resolve })
-  let retired = 0
-  let heldTurnStart: number | undefined
-  const spawn = async (): Promise<OwnedProcess> => {
-    const stdin = new PassThrough()
-    const stdout = new PassThrough()
-    let exit!: (value: { code: number | null; signal: string | null }) => void
-    const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => { exit = resolve })
-    processes.push({ stdout, exit })
-    stdin.on("data", (chunk) => {
-      for (const line of String(chunk).trim().split("\n")) {
-        const frame = JSON.parse(line) as Frame
-        frames.push(frame)
-        if (frame.id === undefined) continue
-        if (frame.method === "turn/start" && options.holdTurnStart) { heldTurnStart = frame.id; turnStarted(); continue }
-        const result = frame.method === "thread/start" ? { thread: { id: "thread-1" } }
-          : frame.method === "model/list" ? { data: [{ model: "test-model", isDefault: true }] }
-            : frame.method === "turn/start" ? { turn: { id: "turn-current" } } : {}
-        stdout.write(`${JSON.stringify({ id: frame.id, result })}\n`)
-        if (frame.method === "turn/start") turnStarted()
-      }
-    })
-    return { pid: 5_000_002 + processes.length, stdin, stdout, stderr: new PassThrough(), exited,
-      retire: async () => { retired++; exit({ code: 0, signal: null }); return { stopped: true } } }
-  }
-  const services = { spawn, firstPartyMcp: () => undefined,
-    clock: options.clock ?? { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
-  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner") })
-  const startInput = { ...input, directory: root, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }
-  const close = async () => { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
-  const releaseTurnStart = () => {
-    if (heldTurnStart === undefined) throw new Error("No held turn/start")
-    processes.at(-1)!.stdout.write(`${JSON.stringify({ id: heldTurnStart, result: { turn: { id: "turn-current" } } })}\n`)
-  }
-  const liveBroker = () => ({ rebind: rebindTo(root), goal: { publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker)
-  return { transport, startInput, started, frames, releaseTurnStart, liveBroker, retired: () => retired,
-    get stdout() { return processes.at(-1)!.stdout }, spawned: () => processes.length, exitLatest: () => processes.at(-1)!.exit({ code: 1, signal: null }), close }
-}
 
 const turnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
   prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
@@ -113,7 +57,7 @@ test("Codex refuses the external-auth token refresh request as an unsupported me
   const responses = new Map<number, (value: Frame & { result?: unknown; error?: { code: number } }) => void>()
   const send = (id: number, method: string, params: unknown) => new Promise<Frame & { result?: unknown; error?: { code: number } }>((resolve) => {
     responses.set(id, resolve)
-    peer.stdout.write(`${JSON.stringify({ id, method, params })}\n`)
+    peer.request(id, method, params)
   })
   try {
     await peer.transport.start(peer.startInput, peer.liveBroker())
@@ -152,10 +96,10 @@ test("a preceding Codex turn completion cannot end the current streamed turn", a
     const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
       .finally(() => { settled = true })
     await peer.started
-    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-previous", status: "completed" } } })}\n`)
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-previous", status: "completed" } } })
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(settled).toBe(false)
-    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })}\n`)
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
     await running
   } finally { await peer.close() }
 })
@@ -180,7 +124,7 @@ test("a Codex turn without a resolved model starts the default model, not the th
       config: { ...peer.startInput.config, model: { providerID: "codex", modelID: "config-model" } } }, peer.liveBroker())
     const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
     await peer.started
-    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })}\n`)
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
     await running
     expect(peer.frames.find((frame) => frame.method === "thread/start")?.params).toMatchObject({ model: "start-model" })
     expect(peer.frames.find((frame) => frame.method === "turn/start")?.params).toMatchObject({ model: "test-model" })
@@ -210,7 +154,7 @@ test("a cancel that lands before turn/start answers still interrupts the turn on
     peer.releaseTurnStart()
     for (let attempt = 0; attempt < 50 && !peer.frames.some((frame) => frame.method === "turn/interrupt"); attempt++) await new Promise((resolve) => setTimeout(resolve, 2))
     expect(peer.frames.find((frame) => frame.method === "turn/interrupt")?.params).toEqual({ threadId: "thread-1", turnId: "turn-current" })
-    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "interrupted" } } })}\n`)
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "interrupted" } } })
     await running
   } finally { await peer.close() }
 })

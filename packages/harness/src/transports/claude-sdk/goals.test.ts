@@ -28,8 +28,9 @@ function broker(initial: "active" | "absent" = "absent") {
   let goal: { sessionId: string; objective: string; status: "active" | "paused" | "blocked"; createdAt: number; updatedAt: number; lastReason?: string } | null =
     initial === "active" ? { sessionId: "s1", objective: "Ship", status: "active", createdAt: 1, updatedAt: 1 } : null
   let settled: Promise<unknown> | undefined
+  const published: (typeof goal)[] = []
   const value = { sessionId: "s1", config: () => input.config, rebind: async (upstreamSessionId: string) => ({ ...session().binding, upstreamSessionId }),
-    goal: { read: () => goal, publish: async (next: typeof goal) => { goal = next } },
+    goal: { read: () => goal, publish: async (next: typeof goal) => { published.push(next); goal = next } },
     admitProviderTurn: async (_request: unknown, run: (turn: TurnBroker, ref: TurnRef) => AsyncIterable<unknown>) => {
       settled = (async () => {
         try { for await (const _event of run({ signal: new AbortController().signal } as TurnBroker, admitted)) {} return { state: "completed" as const } }
@@ -37,7 +38,7 @@ function broker(initial: "active" | "absent" = "absent") {
       })()
       return { admitted: true as const, turn: admitted, settled }
     } } as unknown as SessionBroker
-  return { value, settled: () => settled }
+  return { value, published, settled: () => settled }
 }
 
 test("a native Goal runs under the admitted turn's identity", async () => {
@@ -68,6 +69,9 @@ test("a dead native Goal query settles failed and blocks the active Goal", async
   await state.settled()
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(state.value.goal.read()).toMatchObject({ status: "blocked", lastReason: "query died" })
+  expect(state.published).toMatchObject([{ status: "active" }, { status: "blocked", lastReason: "query died" }])
+  expect(state.published).toHaveLength(2)
+  expect(state.value.goal.read()).toBe(state.published.at(-1)!)
   expect(goals.turnId("s1")).toBeUndefined()
 })
 

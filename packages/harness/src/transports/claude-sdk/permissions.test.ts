@@ -1,11 +1,16 @@
 import { expect, test } from "bun:test"
 import { connectionGrantKeys } from "../../contract"
 import { modeParity, modes, permissionOptions, sdkModes } from "./permissions"
+import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
+
+type IsAny<T> = 0 extends (1 & T) ? true : false
+const sdkModeIsARealUnion: IsAny<PermissionMode> extends true ? false : string extends PermissionMode ? false : true = true
 
 const config = { harness: { id: "claude", access: "native" } } as const
 
 test("the selectable SDK mode set is pinned and unique", () => {
   expect(modeParity).toBe(true)
+  expect(sdkModeIsARealUnion).toBe(true)
   expect(sdkModes).toEqual(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"])
   expect(new Set(modes.map((mode) => mode.id)).size).toBe(modes.length)
 })

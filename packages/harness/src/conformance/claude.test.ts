@@ -1,5 +1,7 @@
+import { scriptedClaude } from "../transports/claude-sdk/test-support/transport"
+import { claudeTranslator } from "../transports/claude-sdk/events"
 import { createServer, type Server } from "node:http"
-import { expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -11,14 +13,14 @@ import { startScriptedModelServer } from "../../e2e/harness/scripted-model-serve
 import { ensurePinnedClaude, PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
 import { ClaudeSdkTransport } from "../transports/claude-sdk"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
-import { MemoryPorts, authority } from "./test-support/memory-ports"
+import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
 import type { TestServices } from "./test-support/services"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import { AbortError, type CanUseTool, type Query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { HarnessBinding, RoutedEvent, TurnInput } from "../contract"
+import { AbortError, type CanUseTool, type Query, type SDKMessage, type PermissionUpdate, type query } from "@anthropic-ai/claude-agent-sdk"
+import type { HarnessBinding, HarnessServices, SessionBroker, SpawnCommand, StartInput, RoutedEvent, TurnInput } from "../contract"
 import { ClaudeGoals } from "../transports/claude-sdk/goals"
-import type { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
+import { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
 import { askClaudePermission } from "../transports/claude-sdk/requests"
 import { sdkModes } from "../transports/claude-sdk/permissions"
 import { pollUntil } from "./test-support/poll"
@@ -33,6 +35,7 @@ type ClaudeBackend = ConformanceBackend & {
   sockets: string[]
   samples: Promise<void>[]
   sampledPids: number[]
+  commands: SpawnCommand[]
   listener: Server
   server: Awaited<ReturnType<typeof startScriptedModelServer>>
 }
@@ -56,6 +59,7 @@ async function sampleSockets(pid: number, sockets: string[]): Promise<void> {
 function watchedServices(services: TestServices, state: ClaudeBackend): TestServices {
   return { ...services, spawn: async (command, options) => {
     const owned = await services.spawn(command, options)
+    state.commands.push(command)
     state.sampledPids.push(owned.pid)
     for (const delay of [25, 250, 750]) state.samples.push(new Promise<void>((resolve, reject) => {
       setTimeout(() => { void sampleSockets(owned.pid, state.sockets).then(resolve, reject) }, delay)
@@ -140,6 +144,7 @@ async function backend(): Promise<ClaudeBackend> {
   const sockets: string[] = []
   const samples: Promise<void>[] = []
   const sampledPids: number[] = []
+  const commands: SpawnCommand[] = []
   const listener = createServer((request, response) => {
     attempts.push(`${request.method} ${request.url}`)
     response.writeHead(503).end()
@@ -156,7 +161,7 @@ async function backend(): Promise<ClaudeBackend> {
   const harness = { id: "claude" as const, access: "native" as const }
   const model = { providerID: "anthropic", modelID: "default" }
   return {
-    root, directory, userConfigRoot, configRoot, env, attempts, sockets, samples, sampledPids, listener, authFile, server,
+    root, directory, userConfigRoot, configRoot, env, attempts, sockets, samples, sampledPids, commands, listener, authFile, server,
     config: { harness, model }, alternateModel: { providerID: "anthropic", modelID: "sonnet" },
     owner: { kind: "person", userId: "owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
@@ -456,6 +461,37 @@ test("the config preview names the runtime's current model, not the start model"
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
+test("Claude offers no model before a live probe of the real CLI and marks the CLI's default", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  try {
+    expect((await context.transport.config.options({ session: context.session() }, "peek")).options).toEqual([])
+    expect(context.services.processes).toHaveLength(0)
+    const [model] = (await context.transport.config.options({ session: context.session() }, "probe")).options
+    expect(context.services.processes).toHaveLength(1)
+    expect(model?.currentValue).toBe("default")
+    expect(model?.selectOptions?.map((row) => row.id)).toContain("default")
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test.each(["api-key", "bearer"] as const)("a live Claude %s projection authenticates every real CLI model request without the operator credentials", async (authMode) => {
+  const state = await backend()
+  state.env = { ...state.env, ANTHROPIC_API_KEY: "operator-own", ANTHROPIC_AUTH_TOKEN: "operator-own",
+    CLAUDE_CODE_OAUTH_TOKEN: "operator-own", CLAUDE_CODE_OAUTH_SCOPES: "operator-own" }
+  state.credentials = { ...state.credentials, providers: {
+    anthropic: { baseUrl: state.server.url, placeholder: "live-placeholder", authMode, expiresAt: Date.now() + 60_000 },
+  } }
+  const context = await attachedClaude(state)
+  try {
+    await context.collect("t1", "Reply with exactly this one token: LIVEPROJECTION")
+    expect(state.server.requests.some((row) => row.prompt.includes("LIVEPROJECTION"))).toBe(true)
+    expect(state.commands.map((command) => command.env.ANTHROPIC_BASE_URL)).toEqual([state.server.url])
+    expect(state.commands.flatMap((command) => Object.entries(command.env)).filter(([, value]) => value === "operator-own")).toEqual([])
+    expect(new Set(state.server.requests.map((row) => row.authorization)))
+      .toEqual(new Set([authMode === "api-key" ? "live-placeholder" : "Bearer live-placeholder"]))
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
 test("Always allow persists Claude's suggested rules through the broker's grants and replays them on the next launch", async () => {
   const state = await backend()
   const first = await attachedClaude(state)
@@ -469,7 +505,7 @@ test("Always allow persists Claude's suggested rules through the broker's grants
     const running = first.collect("t1", "Run the scripted Bash tool")
     const pending = await first.awaitPending()
     expect(JSON.parse(pending.request.kind === "permission" ? pending.request.grantKey ?? "null" : "null"))
-      .toMatchObject({ tool: "Bash", directory: state.directory, updates: [{ type: "addRules", behavior: "allow", destination: "session",
+      .toMatchObject({ identity: expect.stringMatching(/^[0-9a-f]{64}$/), updates: [{ type: "addRules", behavior: "allow", destination: "session",
         rules: [{ toolName: "Bash", ruleContent: command }] }] })
     expect(await first.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
       .toMatchObject({ ok: true })
@@ -537,4 +573,202 @@ test("the transport's own Goal abort ends the run as a cancellation, not a failu
   expect(await goals.cancel("s1")).toEqual({ state: "completed" })
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(broker.goal.read()?.status).toBe("active")
+})
+
+describe("Claude permission persistence", () => {
+  const suggestions: PermissionUpdate[] = [
+    { type: "addRules", behavior: "allow", destination: "localSettings", rules: [{ toolName: "Bash", ruleContent: "printf approved-write *" }] },
+    { type: "addDirectories", destination: "session", directories: ["/tmp/approved"] },
+  ]
+  type Decision = "allow_always" | "allow_once" | "deny" | "reject_always"
+  type Overrides = { directory?: string; mode?: string; tool?: string; input?: Record<string, unknown>; context?: Record<string, unknown> }
+
+  function fixture() {
+    const ports = new MemoryPorts()
+    let owner = createRequestBroker(ports)
+    let decision: Decision = "deny"
+    let count = 0
+    const answers: Promise<unknown>[] = []
+    ports.publish = async (event, pending) => {
+      await MemoryPorts.prototype.publish.call(ports, event, pending)
+      if (!pending) return
+      count++
+      answers.push(owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: pending.sessionId }))
+    }
+    const input = (sessionId: string, overrides: Overrides = {}): StartInput => ({
+      sessionId, workspaceId: "w1", directory: overrides.directory ?? "/work", locality: "local", owner: origin.actor,
+      config: { harness: { id: "claude", access: "native" }, permissionMode: overrides.mode ?? "default", permissionState: ports.states.get(sessionId) },
+      credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+      projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
+    })
+    const run = async (sessionId: string, answer: Decision, overrides: Overrides = {}) => {
+      decision = answer
+      const start = input(sessionId, overrides)
+      const current = { ...authority, sessionId, directory: start.directory, connectionId: "claude-sdk", turnId: `turn-${count}` }
+      ports.current.set(sessionId, current)
+      ports.directories.set(sessionId, start.directory)
+      owner = createRequestBroker(ports)
+      const broker = createTurnBroker(owner, { authority: current, origin, signal: new AbortController().signal })
+      return askClaudePermission(start, broker, overrides.tool ?? "Bash", overrides.input ?? { command: "printf approved-write > /tmp/approved/result" }, {
+        signal: new AbortController().signal, toolUseID: `tool-${count}`, requestId: `request-${count}`, suggestions, blockedPath: "/tmp/approved/result", ...overrides.context,
+      } as Parameters<CanUseTool>[2])
+    }
+    const options = async (sessionId: string) => {
+      const start = input(sessionId)
+      let captured: Parameters<typeof query>[0] | undefined
+      const launch = new ClaudeQueryLauncher({ firstPartyMcp: () => undefined } as unknown as HarnessServices,
+        { executable: "claude", configRoot: "/tmp/claude-permissions", userConfigRoot: "/tmp/claude-permissions-owner", env: {} },
+        ((call) => { captured = call; return {} as Query }) as typeof query)
+      await launch.launch({ input: start, session: { directory: start.directory, locality: start.locality,
+        binding: { ...authority, sessionId, connectionId: "claude-sdk" } },
+        broker: { sessionId, config: () => start.config } as SessionBroker, abort: new AbortController(), processes: new Set(),
+        prompt: "hello", runtime: claudeTranslator("a1").runtime, assistantMessageId: "a1" })
+      const value = captured!.options!
+      return { allow: (value.settings as { permissions: { allow: string[]; deny: string[] } }).permissions.allow,
+        deny: (value.settings as { permissions: { deny: string[] } }).permissions.deny, directories: value.additionalDirectories }
+    }
+    return { ports, run, options, count: () => count, answers }
+  }
+
+  test.each(["allow_always", "allow_once", "deny"] as const)("%s recreates only accepted Claude rules and directories", async (decision) => {
+    const f = fixture()
+    expect((await f.run("s1", decision)).behavior).toBe(decision === "deny" ? "deny" : "allow")
+    expect(await Promise.all(f.answers)).toEqual([{ ok: true, events: [] }])
+    expect((await f.options("s1")).allow).toEqual(decision === "allow_always" ? ["Bash(printf approved-write *)"] : [])
+    expect((await f.options("s1")).directories).toEqual(decision === "allow_always" ? ["/tmp/approved"] : [])
+    expect((await f.options("s2")).allow).toEqual([])
+    expect((await f.options("s2")).directories).toEqual([])
+    expect((await f.options("s1")).deny).toEqual((await f.options("s2")).deny)
+  })
+
+  test("a failed Claude grant write releases no approval and leaves no reconstructed rules", async () => {
+    const ports = new MemoryPorts()
+    ports.failGrant = true
+    const current = { ...authority, connectionId: "claude-sdk" }
+    ports.current.set("s1", current)
+    const owner = createRequestBroker(ports)
+    const broker = createTurnBroker(owner, { authority: current, origin, signal: new AbortController().signal })
+    const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local", owner: origin.actor,
+      config: { harness: { id: "claude", access: "native" } }, credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+      projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
+    let published!: () => void
+    const ready = new Promise<void>((resolve) => { published = resolve })
+    ports.publish = async (event, pending) => { await MemoryPorts.prototype.publish.call(ports, event, pending); published() }
+    let released = false
+    const asking = askClaudePermission(input, broker, "Bash", { command: "echo approved" }, {
+      signal: broker.signal, suggestions, toolUseID: "tool-1", requestId: "request-1", blockedPath: "/work",
+    }).then((answer) => { released = true; return answer })
+    await ready
+    const row = owner.broker.list({ sessionId: "s1" })[0]!
+    expect(await owner.broker.answer(row.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
+      .toMatchObject({ ok: false, refusal: "persistence", retryable: true })
+    expect(released).toBe(false)
+    expect(ports.states.size).toBe(0)
+    expect(ports.saved).toHaveLength(0)
+    await owner.endTurn(current)
+    expect((await asking).behavior).toBe("deny")
+  })
+
+  test.each(["allow_always", "allow_once", "deny", "reject_always"] as const)("%s reuses only a persistent identical Claude request after broker recreation", async (decision) => {
+    const f = fixture()
+    const initial = await f.run("s1", decision)
+    expect(initial.behavior).toBe(decision.startsWith("allow") ? "allow" : "deny")
+    expect(f.count()).toBe(1)
+    await f.run("s1", decision)
+    expect(f.count()).toBe(decision === "allow_always" ? 1 : 2)
+    await f.run("s1", decision, { input: { command: "printf approved-write > /tmp/approved/result", description: "new display label" },
+      context: { title: "Claude wants to write the result", displayName: "Run command", description: "Writes the approved result" } })
+    expect(f.count()).toBe(decision === "allow_always" ? 1 : 3)
+  })
+
+  test.each([
+    ["mcp__notes__create", { description: "APPROVED-NOTE-BODY", target: "/work/note" }, { description: "CHANGED-NOTE-BODY", target: "/work/note" }],
+    ["Task", { description: "APPROVED-TASK-SUMMARY", prompt: "Inspect the workspace", subagent_type: "general-purpose" },
+      { description: "CHANGED-TASK-SUMMARY", prompt: "Inspect the workspace", subagent_type: "general-purpose" }],
+    ["Write", { file_path: "/work/note.txt", content: "APPROVED-FILE-CONTENT" }, { file_path: "/work/note.txt", content: "CHANGED-FILE-CONTENT" }],
+    ["Edit", { file_path: "/work/note.txt", old_string: "before", new_string: "APPROVED-EDIT-TEXT" },
+      { file_path: "/work/note.txt", old_string: "before", new_string: "CHANGED-EDIT-TEXT" }],
+  ] satisfies [string, Record<string, unknown>, Record<string, unknown>][])("a persisted %s grant stores none of its input and re-asks when that input changes", async (tool, input, changed) => {
+    const f = fixture()
+    const context = { suggestions: [{ type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: tool }] }] }
+    expect((await f.run("s1", "allow_always", { tool, context, input })).behavior).toBe("allow")
+    expect((await f.run("s1", "deny", { tool, context, input })).behavior).toBe("allow")
+    expect(f.count()).toBe(1)
+    const stored = JSON.stringify([f.ports.states.get("s1"), f.ports.saved.map((row) => row.pending.request.kind === "permission" ? row.pending.request.grantKey : undefined),
+      f.ports.published.filter((event) => event.type === "permission.auto-answered")])
+    expect(stored).toContain("identity")
+    expect(stored).not.toContain("APPROVED")
+    expect((await f.run("s1", "deny", { tool, context, input: changed })).behavior).toBe("deny")
+    expect(f.count()).toBe(2)
+  })
+
+  test.each([
+    ["session", "s2", {}], ["directory", "s1", { directory: "/other" }], ["mode", "s1", { mode: "plan" }],
+    ["tool", "s1", { tool: "Write", input: { file_path: "/tmp/result", content: "changed" } }],
+    ["command", "s1", { input: { command: "rm /tmp/result" } }],
+    ["blocked path", "s1", { context: { blockedPath: "/tmp/other" } }],
+    ["agent", "s1", { context: { agentID: "child" } }],
+    ["unknown policy", "s1", { context: { futurePolicy: "new" } }],
+    ["ask rule", "s1", { context: { matchedAskRule: { toolName: "Bash" } } }],
+    ["decision reason", "s1", { context: { decisionReason: "new safety check" } }],
+  ] satisfies [string, string, Overrides][])("a saved Claude suggestion grant asks again when %s changes", async (_name, sessionId, overrides) => {
+    const f = fixture()
+    await f.run("s1", "allow_always")
+    const result = await f.run(sessionId, "deny", overrides)
+    expect(f.count()).toBe(2)
+    expect(result.behavior).toBe("deny")
+  })
+})
+
+describe("Claude SDK protocol", () => {
+  const models = [
+    { value: "haiku", displayName: "Haiku", description: "Fast", supportsEffort: false },
+    { value: "default", displayName: "Default", description: "Default", supportsEffort: true, supportedEffortLevels: ["high", "max"] },
+    { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus", description: "Deep", supportsEffort: true, supportedEffortLevels: ["high", "max"] },
+  ]
+
+  const fixture = (settings: { steering?: boolean } = {}) => scriptedClaude({ models, ...settings })
+
+  test.each(["default", "claude-opus-5-5"])("a cold first Claude turn resolves %s and sends its effort through the SDK", async (model) => {
+    const f = await fixture()
+    try {
+      await f.run(model, "high")
+      expect(f.launches.map((row) => row.role)).toEqual(["probe", "harness"])
+      const args = f.launches[1]!.command.args
+      expect(args[args.indexOf("--model") + 1]).toBe(model)
+      expect(args[args.indexOf("--effort") + 1]).toBe("high")
+    } finally { await f.close() }
+  })
+
+  test("an unsupported Claude effort refuses the turn before a harness launch", async () => {
+    const f = await fixture()
+    try {
+      await expect(f.run("haiku", "high")).rejects.toMatchObject({ code: "configuration", message: "Claude does not run haiku at effort high" })
+      expect(f.launches.map((row) => row.role)).toEqual(["probe"])
+    } finally { await f.close() }
+  })
+
+  test.each([true, false])("the Claude SDK consumes a steer and accepts it only with replay=%s", async (replay) => {
+    const f = await fixture({ steering: true })
+    try {
+      const running = f.run("default")
+      expect(await pollUntil(() => f.users.length === 1 ? true : undefined, Date.now() + 2000)).toBe(true)
+      let accepted = false
+      const input: TurnInput = { turnId: "steer", userMessageId: "u2", assistantMessageId: "a2", todos: [],
+        origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false },
+        prompt: { agent: "", assistantMessageId: "a2", parts: [{ type: "text", text: "more" }] } }
+      const steering = f.transport.steer.steer(f.session, { turnId: "t1", assistantMessageId: "a1" }, input)
+        .then((result) => { accepted = true; return result })
+      expect(await pollUntil(() => f.users.length === 2 ? true : undefined, Date.now() + 2000)).toBe(true)
+      expect(accepted).toBe(false)
+      expect(f.users[1]?.uuid).toBeString()
+      expect(f.launches[0]!.command.args).toContain("--replay-user-messages")
+      if (replay) f.replay(1)
+      f.finish()
+      await running
+      expect(await steering).toMatchObject(replay ? { ok: true } : { ok: false, status: "declined" })
+      expect(f.users).toHaveLength(2)
+    } finally { await f.close() }
+  })
+
 })

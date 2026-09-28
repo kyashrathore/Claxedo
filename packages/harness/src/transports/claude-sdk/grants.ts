@@ -1,5 +1,6 @@
 import type { CanUseTool, PermissionUpdate } from "@anthropic-ai/claude-agent-sdk"
 import { TransportError } from "../../contract/errors"
+import { grantIdentity } from "../../contract/grant-identity"
 
 export type ClaudePermissionRules = { allow: string[]; deny: string[]; ask: string[]; additionalDirectories: string[] }
 
@@ -17,15 +18,22 @@ export function sessionPermissionUpdates(suggestions: PermissionUpdate[] | undef
   return suggestions.map((update) => ({ ...update, destination: "session" as const }))
 }
 
+function grantToolInput(toolName: string, toolInput: Record<string, unknown>): Record<string, unknown> {
+  if (toolName !== "Bash") return toolInput
+  const { description: _description, ...input } = toolInput
+  return input
+}
+
 export function claudeGrant(context: GrantContext, toolName: string, toolInput: Record<string, unknown>,
   options: Parameters<CanUseTool>[2]): ClaudeGrant | undefined {
   if (options.matchedAskRule) return undefined
   const updates = sessionPermissionUpdates(options.suggestions)
-  if (updates) return { key: JSON.stringify({ tool: toolName, directory: context.directory, updates }), updates }
-  if (toolName !== "Bash" || typeof toolInput.command !== "string" || !toolInput.command || !options.blockedPath) return undefined
-  return { key: JSON.stringify({ tool: toolName, directory: context.directory, identity: {
-    toolInput: Object.fromEntries(Object.entries(toolInput).filter(([key]) => key !== "description")),
-    mode: context.permissionMode ?? "default", blockedPath: options.blockedPath, agentID: options.agentID } }) }
+  if (!updates && (toolName !== "Bash" || typeof toolInput.command !== "string" || !toolInput.command || !options.blockedPath)) return undefined
+  const { signal: _signal, toolUseID: _toolUseID, requestId: _requestId, title: _title, displayName: _displayName,
+    description: _description, suggestions: _suggestions, ...permissionContext } = options
+  const identity = grantIdentity({ tool: toolName, directory: context.directory,
+    toolInput: grantToolInput(toolName, toolInput), mode: context.permissionMode ?? "default", context: permissionContext })
+  return { key: JSON.stringify({ identity, ...(updates ? { updates } : {}) }), ...(updates ? { updates } : {}) }
 }
 
 function isPermissionUpdate(value: unknown): value is PermissionUpdate {

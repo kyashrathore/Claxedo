@@ -19,7 +19,8 @@ test("Claude grants use identity fields, ignore display labels, and pass the SDK
   } } as TurnBroker
   const options = { signal: controller.signal, description: "first", blockedPath: "/blocked", agentID: "agent-a" } as Parameters<CanUseTool>[2]
   expect((await askClaudePermission(input, broker, "Bash", { command: "echo hello" }, options)).behavior).toBe("allow")
-  await askClaudePermission(input, broker, "Bash", { command: "echo hello" }, { ...options, description: "second" })
+  await askClaudePermission(input, broker, "Bash", { command: "echo hello", description: "Print a greeting" },
+    { ...options, title: "Claude wants to run echo", displayName: "Run command", description: "second" })
   await askClaudePermission(input, broker, "Bash", { command: "echo hello" }, { ...options, blockedPath: "/other" })
   await askClaudePermission(input, broker, "Bash", { command: "echo hello" }, { ...options, agentID: "agent-b" })
   await askClaudePermission({ ...input, directory: "/other" }, broker, "Bash", { command: "echo hello" }, options)
@@ -59,7 +60,7 @@ test("Claude questions require text and one answer per question", async () => {
     { signal } as Parameters<CanUseTool>[2])).rejects.toThrow("answer each question")
 })
 
-test("Always allow keys the grant by the SDK's suggestions and returns them as session updates", async () => {
+test("Always allow keys the grant by the request identity and returns the SDK's suggestions as session updates", async () => {
   const requests: TurnRequest[] = []
   const broker = { signal: new AbortController().signal, ask: async (request: TurnRequest) => {
     requests.push(request)
@@ -75,7 +76,7 @@ test("Always allow keys the grant by the SDK's suggestions and returns them as s
   const keys = requests.map((request) => request.kind === "permission" ? request.grantKey : undefined)
   expect(keys[0]).toBeDefined()
   expect(keys[0]).toBe(keys[1])
-  expect(JSON.parse(keys[0]!)).toEqual({ tool: "Bash", directory: "/workspace", updates: [{ ...suggestions[0], destination: "session" }] })
+  expect(JSON.parse(keys[0]!)).toEqual({ identity: expect.stringMatching(/^[0-9a-f]{64}$/), updates: [{ ...suggestions[0], destination: "session" }] })
   const once = { signal: new AbortController().signal, suggestions } as Parameters<CanUseTool>[2]
   const onceBroker = { signal: once.signal, ask: async () => ({ kind: "permission" as const, decision: "allow_once" as const }) } as unknown as TurnBroker
   expect(await askClaudePermission(input, onceBroker, "Bash", { command: "npm test" }, once)).toEqual({ behavior: "allow", updatedInput: { command: "npm test" } })

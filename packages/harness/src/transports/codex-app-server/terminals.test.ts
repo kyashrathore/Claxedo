@@ -72,3 +72,25 @@ test("a completion that never arrives before the deadline leaves execution and c
   expect(await terminals.stop("turn-1", { at: Date.now() + 50, signal: new AbortController().signal }))
     .toEqual({ execution: "unknown", cleanup: "unknown" })
 })
+
+test("each page receives a fresh request budget during a paged terminal stop", async () => {
+  const reads: number[] = []
+  let terminated = false
+  const rpc = { request: async (method: string, params: { cursor?: string }, budget: number) => {
+    const started = Date.now()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    if (method === "thread/backgroundTerminals/terminate") { terminated = true; return {} }
+    if (method !== "thread/backgroundTerminals/list") return {}
+    reads.push(started + budget)
+    if (terminated) return { data: [] }
+    return params.cursor ? { data: [{ processId: "owned" }] } : { data: [], nextCursor: "second" }
+  } } as unknown as CodexRpc
+  const terminals = new CodexTerminals(rpc, "thread-1")
+  commandTurn(terminals, "turn-1", "owned")
+  terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } })
+  expect(await terminals.stop("turn-1", { at: Date.now() + 60_000, signal: new AbortController().signal }))
+    .toEqual({ execution: "terminal", cleanup: "verified_clear" })
+  expect(reads).toHaveLength(3)
+  expect(new Set(reads).size).toBe(3)
+  expect(reads.at(-1)!).toBeGreaterThan(reads[0]!)
+})
