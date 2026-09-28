@@ -25,6 +25,7 @@ export type PanelShowOptions = { readonly navigator?: WorkspacePanelNavigator | 
 export type Panel = {
   readonly placementId: Accessor<PlacementId | undefined>
   readonly sessionId: Accessor<string>
+  readonly allowed: Accessor<boolean>
   readonly open: Accessor<boolean>
   readonly phone: Accessor<boolean>
   readonly tabs: Accessor<readonly ReviewWorkspaceTab[]>
@@ -89,7 +90,7 @@ function createOpenRules(input: {
   return {
     openingNavigator,
     toggle: () => {
-      if (layout.panelShown()) setFullWidth(false)
+      if (layout.panelOpen()) setFullWidth(false)
       else if (onReview()) tabs.setNavigator(openingNavigator())
       layout.send({ type: "togglePanel" })
     },
@@ -124,12 +125,12 @@ function createSessionMemory(
       return current.kind === "session" ? current.sessionId : undefined
     },
     snapshot: (): SessionPanelSnapshot =>
-      layout.panelShown()
+      layout.panelOpen()
         ? { open: true, navigator: tabs.navigator(), activeTabId: tabs.activeTab().id }
         : { open: false },
     restore: (snapshot) => {
       if (!snapshot?.open) {
-        if (layout.panelShown()) layout.send({ type: "hidePanel" })
+        if (layout.panelOpen()) layout.send({ type: "hidePanel" })
         return
       }
       tabs.setNavigator(snapshot.navigator)
@@ -154,6 +155,7 @@ export function PanelProvider(props: ParentProps): JSX.Element {
     ...tabs,
     placementId,
     sessionId,
+    allowed: layout.panelAllowed,
     open: layout.panelShown,
     maximized: () => layout.panelShown() && (size.phone() || size.fullWidth()),
     inset: () =>

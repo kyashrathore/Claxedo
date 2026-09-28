@@ -1,7 +1,8 @@
 import { createContext, createEffect, createSignal, on, useContext, type Accessor, type JSX } from "solid-js"
 import { usePhone } from "@/lib/viewport"
-import { createShellLayout, panelShown, persistedSidebar, sidebarPinned, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
+import { createShellLayout, panelOpen, persistedSidebar, sidebarPinned, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
 import { clampWidth, createShellPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "./store"
+import { usePageTabFocused } from "./view/page-tab"
 
 export type ShellLayout = {
   readonly state: Accessor<ShellLayoutState>
@@ -11,6 +12,8 @@ export type ShellLayout = {
   readonly sidebarPinned: Accessor<boolean>
   readonly peekMuted: Accessor<boolean>
   readonly unmutePeek: () => void
+  readonly panelOpen: Accessor<boolean>
+  readonly panelAllowed: Accessor<boolean>
   readonly panelShown: Accessor<boolean>
   readonly sidebarWidth: Accessor<number>
   readonly setSidebarWidth: (width: number) => void
@@ -24,6 +27,8 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
   const machine = createShellLayout(phone(), { sidebar: prefs.sidebar, panel: prefs.panel })
 
   const [peekMuted, setPeekMuted] = createSignal(false)
+  const pageTabFocused = usePageTabFocused()
+  const panelAllowed = () => !pageTabFocused()
 
   const send = (event: ShellLayoutEvent) => {
     if (event.type === "toggleSidebar") setPeekMuted(sidebarPinned(machine.state()))
@@ -45,7 +50,9 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
     sidebarPinned: () => sidebarPinned(machine.state()),
     peekMuted,
     unmutePeek: () => setPeekMuted(false),
-    panelShown: () => panelShown(machine.state()),
+    panelOpen: () => panelOpen(machine.state()),
+    panelAllowed,
+    panelShown: () => panelAllowed() && panelOpen(machine.state()),
     sidebarWidth: () => prefs.sidebarWidth,
     setSidebarWidth: (width) => setPrefs("sidebarWidth", clampWidth(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)),
   }

@@ -119,6 +119,6 @@ export function persistedSidebar(region: SidebarRegion): SideRegion {
   return region === "open" ? "open" : "collapsed"
 }
 
-export function panelShown(state: ShellLayoutState): boolean {
+export function panelOpen(state: ShellLayoutState): boolean {
   return state.kind === "wide" ? state.panel === "open" : state.sheet === "open"
 }

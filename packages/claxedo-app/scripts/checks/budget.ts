@@ -26,7 +26,7 @@ const parts: readonly Part[] = [
   { name: "Marketplace (re-based to its measured size: v1's directory ported under the parity rule; DECISIONS 2026-09-26)", budget: 2353, folders: ["src/marketplace"] },
   { name: "Tasks, an app domain (re-based to its measured size; the plan's 2.5k was the Tasks plugin's; DECISIONS 2026-09-26)", budget: 4419, folders: ["src/tasks"] },
   { name: "Notifications (no plan number; re-based to its measured size: the reader's unseen failures, which the rail's failed dot reads)", budget: 168, folders: ["src/notifications"] },
-  { name: "Workspace panel (re-based to its measured size: the navigator's exposed-view hold shared with the panel frame, the open control's press-time root listing, and the navigator width both the column and its content read; DECISIONS 2026-09-27)", budget: 1761, folders: ["src/panel"] },
+  { name: "Workspace panel (re-based to its measured size: the navigator's exposed-view hold shared with the panel frame, the open control's press-time root listing, and the navigator width both the column and its content read; DECISIONS 2026-09-27; no panel on a page tab)", budget: 1764, folders: ["src/panel"] },
   { name: "Moved in from the session feature (lands in rail and review)", budget: 600, folders: [] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit (src/ui) and kept transcript renderers (src/transcript)", budget: 20000, folders: ["src/ui", "src/transcript"] },

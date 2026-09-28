@@ -162,6 +162,43 @@ test("12 Tasks and Marketplace share one page tab that shows the last one opened
   await expect(app).toHaveURL(/\/tasks$/)
 })
 
+test("12 Tasks and Marketplace show no workspace panel and no panel toggle, and a session keeps its panel as it was", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  const toggles = app.getByRole("button", { name: /^(Open|Close) workspace panel$/ })
+  const expectNoPanel = async () => {
+    await expect(panel).toHaveCount(0)
+    await expect(app.getByText("Select a workspace to use this panel.")).toHaveCount(0)
+    await expect(toggles).toHaveCount(0)
+  }
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  await expect(panel).toBeVisible()
+  await app.getByTestId("sidebar-tasks-entry").click()
+  await expect(app).toHaveURL(/\/tasks$/)
+  await expectNoPanel()
+  await app.keyboard.press("ControlOrMeta+Shift+B")
+  await app.getByTestId("sidebar-marketplace-entry").click()
+  await expect(app).toHaveURL(/\/marketplace$/)
+  await expectNoPanel()
+
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
+  await expect(panel).toBeVisible()
+  await app.getByRole("button", { name: "Close workspace panel" }).first().click()
+  await expect(panel).toHaveCount(0)
+  await app.getByTestId("sidebar-tasks-entry").click()
+  await expect(app).toHaveURL(/\/tasks$/)
+  await expectNoPanel()
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
+  await expect(app.getByRole("button", { name: UI.openPanel })).toBeVisible()
+  await expect(panel).toHaveCount(0)
+  expect((await api.session(workspace.directory, first.id)).title).toBe("First")
+})
+
 test("12 the page tab never splits: its pane has no drag handle, a row dropped on it opens instead, and mod+\\ skips it", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
