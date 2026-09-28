@@ -197,7 +197,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |
 | `GET /api/wr/harness-config-options` | Probe config options for the selected harness when it advertises that capability. |
 | `GET /api/wr/events` | The workspace runtime's one stream: projected presentation frames, subagent/goal revisions, and control frames (pty, process, agent lifecycle, session lifecycle) as `{ directory, payload }`. Admitted principals read unscoped under the session authority's per-session decision; refused principals reopen with `?sessionID=` under a lease. |
-| `/api/wr/file/*` | File metadata, content, raw content, status, and list routes. |
+| `/api/wr/file/*` | File metadata, content, status, and list routes. |
 | `/api/wr/find/file` | Workspace file search. |
 | `/api/wr/diff/*` | Git diff and refs routes. |
 | `/api/wr/git/*` | Git source snapshot and commit routes. |
@@ -208,8 +208,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command` | Compatibility and session support routes. |
-| `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |
-| `/lsp`, `/vcs` | Client-presentation compatibility surfaces backed by workspace services. |
+| `/vcs` | Client-presentation compatibility surface backed by workspace services. |
 | `/global/health` | Control-plane health shape with `healthy`. |
 | `/find/file`, `/file`, `/file/content`, `/file/status`, `/file/all` | OpenCode-compatible file discovery and read routes. |
 
