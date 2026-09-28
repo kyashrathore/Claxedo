@@ -19,6 +19,7 @@
  * see another org's rows".
  */
 
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import { createHash, randomUUID } from "crypto"
 import { eq, and, asc, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
@@ -31,14 +32,13 @@ import {
   type CredentialHealth,
   type CredentialKind,
   type CredentialMetadata,
-  type CredentialScope,
   type CredentialUsageWindow,
   type CredentialWrite,
   type CredentialStatus,
   type SetActiveCredentialsResult,
 } from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
+import { credentialSecretInScope } from "./secret-scope"
 import { storedCredentialKind } from "./secret-material"
 import { parseUsageWindows, serializeUsageWindows } from "./usage-windows"
 
@@ -618,7 +618,7 @@ export async function updateCredentialSecret(
 
 export function updateCredentialScope(
   id: string,
-  scope: CredentialScope,
+  scope: AccountScope,
   consentAt: number,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ) {
@@ -977,7 +977,7 @@ export type ScopedCredentialSelection = {
  * `usableCredentials`.
  */
 export function activeCredentialsForScope(
-  scope: CredentialSecretScope,
+  scope: AccountScope,
   { onOutage }: CredentialRead,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): ScopedCredentialSelection[] {
@@ -1002,7 +1002,7 @@ export function usableCredentials(rows: readonly ScopedCredentialSelection[]): C
  */
 export function credentialUnavailableForScope(
   credential: CredentialMetadata,
-  scope: CredentialSecretScope,
+  scope: AccountScope,
 ): string | undefined {
   if (!credential.secure_ref) return "no_secret"
   if (credential.health === "expired") return "expired"

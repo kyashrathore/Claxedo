@@ -3,8 +3,8 @@ import { HARNESS_TABLE, type AgentPermissionMode, type AgentPermissionModeState,
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import { PermissionModeRefusedError } from "@claxedo/agent-sdk-runtime"
 import { FakeTransport } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
-import type { ConfigPreviewTarget, HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
+import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import type { ConfigPreviewTarget, HarnessSession, HarnessTransport, KeptPermissionMode } from "@claxedo/harness/contract"
 import type { SessionAttachments } from "./attachments"
 import type { AgentRuntimeStore } from "./contracts"
 import type { HarnessHandle } from "./transports"
@@ -25,7 +25,7 @@ test("runtime-owned previews read the current saved model on every request", asy
     attachments: { for: async () => ({ handle, session }) } as unknown as SessionAttachments,
     transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} },
     savedCommands: () => [],
-    writeRow: (_sessionId, write) => write(),
+    writeMode: async () => {},
     launch: { workspaceId: "workspace", credentials: () => ({ placement: "loopback", machineOwnerUserId: "fixture", canUseOwnLogin: true, accounts: {}, leaseGeneration: "one" }),
       projection: () => ({ generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }) },
   })
@@ -106,6 +106,37 @@ describe("a selection write publishes the session's row", () => {
     expect(kept.currentModeId).toBe("code")
     expect(rowConfig(published.at(-1))).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
     expect(fixture.store.getSessionConfig(sessionId)).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
+  })
+
+  test("a turn's own mode is set on the harness and stored through the same write, and a turn naming the stored mode sets and publishes nothing", async () => {
+    const config = modeConfig(HARNESS_TABLE.claude.permissionModes.modes)
+    const asked: string[] = []
+    const { fixture, published, sessionId } = await hostWith(CLAUDE, new FakeTransport({
+      config: { ...config, setPermissionMode: async (session, modeId) => { asked.push(modeId); return await config.setPermissionMode(session, modeId) } },
+    }))
+
+    for (const text of ["first", "second"]) {
+      await fixture.runtime.turns.start({ sessionId, text, permissionMode: "plan", origin: LOOPBACK_ORIGIN })
+      await fixture.runtime.turns.whenIdle(sessionId)
+    }
+
+    expect(asked).toEqual(["plan"])
+    expect(fixture.store.getSessionConfig(sessionId)?.permissionMode).toBe("plan")
+    expect(published.filter((event) => rowConfig(event)?.permissionMode === "plan")).toHaveLength(1)
+  })
+
+  test("a mode the harness reports keeping on its own is stored under its listed name, and the same report again publishes nothing", async () => {
+    let report: ((mode: KeptPermissionMode) => Promise<void>) | undefined
+    const { fixture, published, sessionId } = await hostWith(LISTED, new FakeTransport({
+      beforeStart: async (input) => { report = input.permissionModeKept },
+    }))
+
+    await report!({ modeId: "code", label: "Write code" })
+    await report!({ modeId: "code", label: "Write code" })
+
+    expect(fixture.store.getSessionConfig(sessionId)).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
+    expect(published).toHaveLength(1)
+    expect(rowConfig(published[0])).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
   })
 
   test("a model change through updateConfig publishes the row, and an unchanged one publishes nothing", async () => {

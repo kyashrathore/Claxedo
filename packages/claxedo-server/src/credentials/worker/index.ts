@@ -47,7 +47,7 @@ import {
   type EnvelopeAdmin,
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/server-core/credentials/account-holder"
+import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 

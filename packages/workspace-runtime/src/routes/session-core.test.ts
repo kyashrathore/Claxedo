@@ -5,7 +5,7 @@ import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, Runtim
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
 import { sessionIdle, type CompatEnvelope } from "../compat-events"
-import type { TurnOutline } from "../session/turn-outline"
+import type { TurnOutline } from "@claxedo/agent-sdk-runtime/turn-outline"
 import { AgentRuntimeTurnAdmissionError, type AgentRuntime } from "../host/runtime"
 import {
   managedWorkspaceSessionAccessPolicy,
@@ -1329,7 +1329,7 @@ describe("createSessionRoutes directory-less sessions", () => {
             { id: "question_other", sessionID: "session_other", questions: [] },
           ] as AgentQuestion[],
         },
-        reads: { capabilities: async () => ({ harness: "codex", todos: true }) },
+        reads: { declaredCapabilities: async () => ({ harness: "codex", todos: true }) },
         goals: { capabilities: async () => ({ implemented: false, available: false, actions: [], optionalFields: [], recovery: "blocked" }) },
       }),
       getSession: (_c, _directory, sessionId) => ({ id: sessionId, title: "Open", time: { created: 1, updated: 1 } }) as AgentSession,
@@ -1388,6 +1388,21 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "unknown_permission_mode" } })
+  })
+
+  test("a prompt naming a mode its harness does not offer, or naming one to a harness with no modes, is refused as bad input and runs no turn", async () => {
+    const offered: AgentPermissionModeState = { modes: [{ id: "default", name: "Default" }], currentModeId: "default", appliesFrom: "next-turn" }
+    const withModes = harness({ config: configOps({ permissionModes: async () => offered, setPermissionMode: async () => offered }) })
+    const withoutModes = harness({ config: configOps() })
+    for (const [h, code] of [[withModes, "unknown_permission_mode"], [withoutModes, "permission_mode_unsupported"]] as const) {
+      await seed(h, "session_modes")
+      for (const path of ["/session/session_modes/message", "/session/session_modes/prompt_async"]) {
+        const response = await post(sessionRoutes(h), path, { permissionMode: "nope", parts: [{ type: "text", text: "go" }] })
+        expect(response.status, `${code} ${path}`).toBe(400)
+        expect(await response.json()).toMatchObject({ error: { code } })
+      }
+      expect(h.transport.turns).toEqual([])
+    }
   })
 
   test("threads immutable actor attribution from verified relay claims and ignores body spoofing", async () => {
@@ -1558,11 +1573,14 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(h.transport.turns).toEqual([])
   })
 
-  test("can run message turns through the agent runtime facade", async () => {
+  test("can run message turns through the agent runtime facade, which sets the turn's own mode on the harness once and stores it", async () => {
     const events: CompatEnvelope[] = []
+    const set: string[] = []
+    const winner: AgentPermissionModeState = { modes: [{ id: "winner-mode", name: "Winner" }], currentModeId: "winner-mode", appliesFrom: "next-turn" }
     const h = harness({
       config: configOps({
-        setPermissionMode: async () => { throw new Error("permission mode must be applied by AgentRuntime") },
+        permissionModes: async () => winner,
+        setPermissionMode: async (_session, modeId) => { set.push(modeId); return winner },
       }),
     })
     await seed(h, "session_1")
@@ -1588,6 +1606,8 @@ describe("createSessionRoutes directory-less sessions", () => {
       model: { providerID: "test", modelID: "fixture" },
       permissionMode: "winner-mode",
     }])
+    expect(set).toEqual(["winner-mode"])
+    expect(h.store.getSessionConfig("session_1")?.permissionMode).toBe("winner-mode")
     expect(events).toEqual([])
   })
 
@@ -1640,6 +1660,7 @@ describe("createSessionRoutes directory-less sessions", () => {
           throw new AgentRuntimeTurnAdmissionError("session_1")
         },
       },
+      reads: { permissionModes: async (): Promise<AgentPermissionModeState> => ({ modes: [{ id: "loser-mode", name: "Loser" }], appliesFrom: "next-turn" }) },
       events: {
         subscribe: () => (async function* () {})(),
         list: async () => [],
@@ -1853,7 +1874,11 @@ describe("createSessionRoutes directory-less sessions", () => {
     })
     const modes: string[] = []
     let activeScopes = 0
+    const offered = (current?: string): AgentPermissionModeState => ({
+      modes: [{ id: "winner-mode", name: "Winner" }, { id: "loser-mode", name: "Loser" }], ...(current ? { currentModeId: current } : {}), appliesFrom: "next-turn",
+    })
     const h = harness({
+      config: configOps({ permissionModes: async () => offered(), setPermissionMode: async (_session, modeId) => offered(modeId) }),
       turn: async function* ({ session, turn }) {
         if (turn.prompt.permissionMode) modes.push(turn.prompt.permissionMode)
         markStarted?.()
@@ -2295,7 +2320,7 @@ describe("createSessionRoutes engine refusals", () => {
       runtime: runtimeDouble({
         permissions: { list },
         questions: { list },
-        reads: { capabilities: async () => ({ harness: "codex", todos: true }) },
+        reads: { declaredCapabilities: async () => ({ harness: "codex", todos: true }) },
         goals: { capabilities: async () => ({ implemented: false, available: false, actions: [], optionalFields: [], recovery: "blocked" }) },
       }),
     })

@@ -161,7 +161,7 @@ function close(run: StreamRun) {
   if (run.watchdog) clearTimeout(run.watchdog)
 }
 
-export function openStream(options: StreamOptions): Stream {
+export function openEventStream(options: StreamOptions): Stream {
   const run: StreamRun = {
     options,
     connection: machine<ConnectionState, ConnectionEvent>({ kind: "connecting" }, connectionTransition),

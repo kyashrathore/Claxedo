@@ -85,7 +85,6 @@
       "version": "0.0.59",
       "dependencies": {
         "@claxedo/account-contract": "workspace:*",
-        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/plugin-api": "workspace:*",
@@ -293,6 +292,7 @@
       "name": "@claxedo/local-server",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
@@ -398,6 +398,7 @@
         "@better-auth/core": "1.7.1",
         "@better-auth/kysely-adapter": "1.7.1",
         "@better-auth/oauth-provider": "1.7.1",
+        "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
@@ -452,6 +453,7 @@
       "name": "@claxedo/server-core",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",

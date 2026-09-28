@@ -1,3 +1,4 @@
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
 import { getRuntimeConfigSnapshot, type RuntimeConfigSnapshot, type RuntimeNativeHarnessId } from "../../agent-config"
 import type { SandboxSecretBrokering } from "../../credentials/native-delivery"
@@ -5,7 +6,7 @@ import type { SandboxSecretBrokering } from "../../credentials/native-delivery"
 type ClaxedoRuntimeConfigInput = {
   workspaceDir?: string
   workspaceId?: string
-  secretScope?: "local" | "shared"
+  secretScope?: AccountScope
   orgId?: string
   secretBrokering?: SandboxSecretBrokering
   provisionedRunner?: RuntimeNativeHarnessId

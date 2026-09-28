@@ -167,6 +167,7 @@ function durableQueue() {
       completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
       sessionDirectory: () => "/workspace",
       sessionArchived: () => false,
+      messageSessionId: () => undefined,
     }),
     whenIdle: (sessionId) => runtime.turns.whenIdle(sessionId),
     startTurn: ({ origin: _origin, ...turn }) => new Promise<void>((resolve, reject) => {

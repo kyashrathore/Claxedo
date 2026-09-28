@@ -6,7 +6,7 @@ import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
-import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
+import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
@@ -24,7 +24,7 @@ function isSessionInfo(value: unknown): value is AgentSession {
   return isRecord(value) && typeof value.id === "string"
 }
 
-export function frameOf(input: unknown): Frame | undefined {
+export function frameFromWire(input: unknown): Frame | undefined {
   if (!isRecord(input)) return undefined
   const payload = isRecord(input.payload) ? input.payload : input
   const type = nonEmptyString(payload.type)
@@ -61,7 +61,7 @@ function framePlacementId(frame: Frame, address: Address) {
   return frame.directory ? address.placementFor(frame.directory, frame.workspaceId)?.placementId : undefined
 }
 
-function todosOf(value: unknown): Todo[] | undefined {
+function todosFromWire(value: unknown): Todo[] | undefined {
   if (!Array.isArray(value)) return undefined
   return value.filter((item): item is Todo => isRecord(item) && typeof item.content === "string" && typeof item.status === "string")
 }
@@ -136,7 +136,7 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
       return subagent ? { type: "subagentUpdated", ref, subagent } : undefined
     }
     case "todo.updated": {
-      const todos = todosOf(properties.todos)
+      const todos = todosFromWire(properties.todos)
       return todos ? { type: "todosChanged", ref, todos } : undefined
     }
     case "harness.health":
@@ -150,9 +150,9 @@ function requestEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "permission.asked":
-      return isPermissionWire(properties) ? { type: "requestOpened", ref, request: permissionRequest(properties) } : undefined
+      return isPermissionWire(properties) ? { type: "requestOpened", ref, request: requestFromPermission(properties) } : undefined
     case "question.asked":
-      return isQuestionWire(properties) ? { type: "requestOpened", ref, request: questionRequest(properties) } : undefined
+      return isQuestionWire(properties) ? { type: "requestOpened", ref, request: requestFromQuestion(properties) } : undefined
     case "permission.replied":
     case "permission.expired":
     case "question.replied":

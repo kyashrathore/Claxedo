@@ -36,11 +36,11 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
     const superseded = () => input.cache.getSeq(scope) !== request.id || !sameHarnessSelection(input.currentHarness(scope), type)
     try {
       const payload = await input.fetch(type, params, input.selectedModel(scope) || undefined)
-      if (superseded()) return abandon(input, request)
+      if (superseded()) return abandonOptionsRequest(input, request)
       applyOptions(input, request, payload)
       return payload
     } catch (error) {
-      if (superseded()) return abandon(input, request)
+      if (superseded()) return abandonOptionsRequest(input, request)
       input.applyPatch(scope, {
         dynamicModels: [],
         selectedModel: "",
@@ -55,7 +55,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
   return { load }
 }
 
-function abandon<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request) {
+function abandonOptionsRequest<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request) {
   if (input.cache.getSeq(request.scope) === request.id) input.setOptionsLoading(request.scope, false)
   return undefined
 }

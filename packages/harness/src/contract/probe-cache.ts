@@ -1,5 +1,8 @@
 import fs from "node:fs/promises"
+import type { Clock } from "./services"
 import type { DraftLaunch } from "./transport"
+
+export type ProbeInputs = Readonly<{ files: readonly string[]; maxAge?: Readonly<{ ms: number; clock: Pick<Clock, "now"> }> }>
 
 export function draftProbeKey(draft: DraftLaunch, ...extra: unknown[]): string {
   return JSON.stringify([draft.workspaceId, draft.directory, draft.locality, draft.owner, draft.config.harness, draft.model,
@@ -20,7 +23,13 @@ export async function probeInputSignature(files: readonly string[]): Promise<str
   return JSON.stringify(await Promise.all(files.map(async (file) => [file, await stamp(file)])))
 }
 
-type ProbeEntry<T> = { result: Promise<T>; kept?: { signature: string; value: T } }
+type Expiry = { at: number; clock: Pick<Clock, "now"> }
+type Kept<T> = { signature: string; expires?: Expiry; value: T }
+type ProbeEntry<T> = { result: Promise<T>; kept?: Kept<T> }
+
+function fresh(kept: Kept<unknown>, signature: string): boolean {
+  return kept.signature === signature && (!kept.expires || kept.expires.clock.now() < kept.expires.at)
+}
 
 export class DraftProbeCache<T> {
   private readonly entries = new Map<string, ProbeEntry<T>>()
@@ -35,19 +44,20 @@ export class DraftProbeCache<T> {
     return this.entries.size
   }
 
-  async read(key: string, files: readonly string[], probe: () => Promise<T>): Promise<T> {
+  async read(key: string, inputs: ProbeInputs, probe: () => Promise<T>): Promise<T> {
     const running = this.entries.get(key)
     if (running && !running.kept) return running.result
-    const before = await probeInputSignature(files)
+    const before = await probeInputSignature(inputs.files)
     const held = this.entries.get(key)
-    if (held && (!held.kept || held.kept.signature === before)) return held.result
+    if (held && (!held.kept || fresh(held.kept, before))) return held.result
+    const expires = inputs.maxAge && { at: inputs.maxAge.clock.now() + inputs.maxAge.ms, clock: inputs.maxAge.clock }
     const entry: ProbeEntry<T> = { result: probe() }
     this.remember(key, entry)
     try {
       const value = await entry.result
-      const after = await probeInputSignature(files)
+      const after = await probeInputSignature(inputs.files)
       if (this.entries.get(key) === entry) {
-        if (after === before) entry.kept = { signature: after, value }
+        if (after === before) entry.kept = { signature: after, value, ...(expires ? { expires } : {}) }
         else this.entries.delete(key)
       }
       return value
@@ -57,11 +67,11 @@ export class DraftProbeCache<T> {
     }
   }
 
-  async peek(key: string, files: readonly string[]): Promise<T | undefined> {
+  async peek(key: string, inputs: ProbeInputs): Promise<T | undefined> {
     const held = this.entries.get(key)
     if (!held) return undefined
     if (!held.kept) return held.result
-    if (held.kept.signature === await probeInputSignature(files)) return held.kept.value
+    if (fresh(held.kept, await probeInputSignature(inputs.files))) return held.kept.value
     if (this.entries.get(key) === held) this.entries.delete(key)
     return undefined
   }

@@ -1,4 +1,4 @@
-import { claudeModeId } from "./permissions"
+import { claudeModeId, claudeModeKept } from "./permissions"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
@@ -41,6 +41,8 @@ export async function askClaudePermission(input: StartInput, broker: TurnBroker,
   if (!decision) return { behavior: protocolPermissionMap.deny, message: "Permission dismissed" }
   if (decision === protocolPermissionMap.allowOnce) return { behavior: protocolPermissionMap.allow, updatedInput: toolInput }
   if (decision === protocolPermissionMap.allowAlways) {
+    const kept = claudeModeKept(grant?.updates)
+    if (kept) await input.permissionModeKept?.(kept)
     return { behavior: protocolPermissionMap.allow, updatedInput: toolInput, ...(grant?.updates ? { updatedPermissions: grant.updates } : {}) }
   }
   return { behavior: protocolPermissionMap.deny, message: "Permission denied", interrupt: decision === protocolPermissionMap.rejectAlways }

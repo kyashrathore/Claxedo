@@ -26,7 +26,7 @@ function statusFromLastTurn(outcome: AgentTurnOutcome | undefined): SessionStatu
   return { kind: "failed", error: new ServerError({ class: "internal", message: outcome.error }) }
 }
 
-function settledStatus(live: SessionStatus | undefined, lastTurn: AgentTurnOutcome | undefined): SessionStatus {
+function liveOrLastTurnStatus(live: SessionStatus | undefined, lastTurn: AgentTurnOutcome | undefined): SessionStatus {
   return live && live.kind !== "idle" ? live : statusFromLastTurn(lastTurn)
 }
 
@@ -51,7 +51,7 @@ export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
   const read = (ref: SessionRef, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => {
     if ("error" in live) throw live.error
-    const read = settledStatus(live.value, lastTurn)
+    const read = liveOrLastTurnStatus(live.value, lastTurn)
     const known = failures.get(ref)
     if (!known) return read
     if (read.kind === "failed") return known

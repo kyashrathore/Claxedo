@@ -1,12 +1,12 @@
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import { installPiExtension, runPiExtensionCommand } from "./extension"
+import { installPiExtension, piExtensionPath, runPiExtensionCommand } from "./extension"
 import type { PiRpc } from "./rpc"
 
 export const PI_TITLE_COMMAND = "claxedo-title"
 const EXTENSION_FILE = "claxedo-session-title.ts"
 const TITLE_REQUEST_TIMEOUT_MS = 45_000
 
-export const PI_TITLE_EXTENSION_SOURCE = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+const PI_TITLE_EXTENSION_SOURCE = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand(${JSON.stringify(PI_TITLE_COMMAND)}, {
@@ -37,11 +37,12 @@ export function installPiTitleExtension(stateRoot: string): Promise<string> {
   return installPiExtension(stateRoot, EXTENSION_FILE, PI_TITLE_EXTENSION_SOURCE)
 }
 
-export async function piSessionTitle(rpc: PiRpc, request: SessionTitleRequest): Promise<string | null> {
+export async function piSessionTitle(rpc: PiRpc, stateRoot: string, request: SessionTitleRequest): Promise<string | null> {
   let name: string | null = null
-  await runPiExtensionCommand(rpc, "Pi title", PI_TITLE_COMMAND, JSON.stringify({ system: request.system, user: request.user }),
-    { at: Date.now() + TITLE_REQUEST_TIMEOUT_MS, signal: request.signal }, (event) => {
-      if (event.type === "session_info_changed" && typeof event.name === "string") name = event.name
-    })
+  await runPiExtensionCommand(rpc, { what: "Pi title", command: PI_TITLE_COMMAND, extension: piExtensionPath(stateRoot, EXTENSION_FILE),
+    argument: JSON.stringify({ system: request.system, user: request.user }),
+    deadline: { at: Date.now() + TITLE_REQUEST_TIMEOUT_MS, signal: request.signal } }, (event) => {
+    if (event.type === "session_info_changed" && typeof event.name === "string") name = event.name
+  })
   return name
 }

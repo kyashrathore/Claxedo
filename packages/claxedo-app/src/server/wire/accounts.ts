@@ -1,6 +1,7 @@
+import { isAccountScope, isAccountSource, type AccountScope, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import type { QuotaWindow } from "@claxedo/usage-contract"
-import type { Account, AccountCheck, AccountDelivery, AccountScope, AccountSource, AccountSources, AccountVerdict, HostedAccountSources, MachineLogin, MachineLoginState } from "../account-types"
+import type { Account, AccountCheck, AccountDelivery, AccountSources, AccountVerdict, HostedAccountSources, MachineLogin, MachineLoginState } from "../account-types"
 
 function texts(value: unknown) {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : undefined
@@ -30,7 +31,7 @@ function definedFields<T extends object>(fields: T): Partial<T> {
 }
 
 export function accountScopeFromWire(value: unknown): AccountScope | undefined {
-  return value === "local" || value === "shared" ? value : undefined
+  return isAccountScope(value) ? value : undefined
 }
 
 export function accountFromWire(value: unknown): Account | undefined {
@@ -110,7 +111,7 @@ function sourcesFromWire(value: unknown): ReadonlyMap<string, AccountSource> | u
   if (!row) return undefined
   const sources = new Map<string, AccountSource>()
   for (const [providerId, source] of Object.entries(row)) {
-    if (source !== "own" && source !== "team") return undefined
+    if (!isAccountSource(source)) return undefined
     sources.set(providerId, source)
   }
   return sources

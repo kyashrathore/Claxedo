@@ -18,7 +18,7 @@ export const TURN_PAGE_TURN_CAP = 24
 
 export const TURN_PAGE_BYTE_CAP = 256 * 1024
 
-export const TURN_PAGE_FILL_SCREENS = 2
+const TURN_PAGE_FILL_SCREENS = 2
 
 const TURN_CHROME_LINES = 3
 const FOLD_ROW_LINES = 2
@@ -48,7 +48,7 @@ export type TurnPage = { turns: PageTurn[] }
 
 export type FirstRead<Session> = { session: Session; outline: TurnOutline; page?: TurnPage }
 
-export const TURN_PAGE_MAX_EXTENT = 2000
+const TURN_PAGE_MAX_EXTENT = 2000
 
 /** A read named some but not all of its query parameters, or one of them out of range; every producer answers it with a 400. */
 export class TurnPageQueryError extends Error {
@@ -74,7 +74,7 @@ function settingOf(query: Query, name: keyof ReaderSettings): boolean {
   return value === "1"
 }
 
-export function parseReaderSettings(query: Query): ReaderSettings {
+function parseReaderSettings(query: Query): ReaderSettings {
   return { reasoning: settingOf(query, "reasoning"), shell: settingOf(query, "shell"), edit: settingOf(query, "edit") }
 }
 
@@ -156,7 +156,7 @@ function drawnGroupLines(assistants: readonly AgentMessage[], cols: number, reas
   }, 0)
 }
 
-export type LineRequest = Pick<TurnPageRequest, "cols" | "reasoning" | "cancelledAssistantMessageId">
+type LineRequest = Pick<TurnPageRequest, "cols" | "reasoning" | "cancelledAssistantMessageId">
 
 function drawnAssistants(assistants: readonly AssistantEntry[], request: LineRequest, compaction: boolean): { assistants: readonly AgentMessage[]; folded: boolean } {
   const last = assistants.at(-1)

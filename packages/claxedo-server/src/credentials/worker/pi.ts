@@ -1,8 +1,9 @@
+import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { HTTPException } from "hono/http-exception"
 import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, piProviderTakesApiKey, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import { holderAccountSources, spendsAccount, type AccountSource, type AccountSources } from "@claxedo/server-core/credentials/account-holder"
+import { holderAccountSources, spendsAccount, type AccountSources } from "@claxedo/server-core/credentials/account-holder"
 
 function credentialError(status: 400 | 503, code: string, message: string) {
   return new HTTPException(status, { res: Response.json({ error: { code, message } }, { status }) })

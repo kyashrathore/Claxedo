@@ -566,9 +566,11 @@ test("ACP abort handles rejected cancellation and releases the turn", async () =
   } finally { await context.close() }
 })
 
-test("ACP draft probe cache excludes credentials, keeps an answer for its launch identity, and probes again for a new projection or lease", async () => {
+test("ACP draft probe cache excludes credentials, keeps an answer for its launch identity for 30 seconds, and probes again for a new projection or lease", async () => {
   const state = await backend("process")
   const services = createTestServices()
+  let elapsed = 0
+  services.clock.now = () => Date.now() + elapsed
   const transport = new AcpTransport(services, state.connection, filterMcpServers,
     async () => { throw new Error("No saved transcript in this conformance scenario") })
   const draft = { workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
@@ -581,11 +583,15 @@ test("ACP draft probe cache excludes credentials, keeps an answer for its launch
     expect([...probes.cache.keys()].join(" ")).not.toContain("probe-secret-sentinel")
     await transport.config.options({ draft }, "probe")
     expect((await readAcpRequests(state.directory)).filter((row) => row.method === "session/new")).toHaveLength(1)
+    elapsed = 30_000
+    expect((await transport.config.options({ draft }, "peek")).options).toEqual([])
+    await transport.config.options({ draft }, "probe")
+    expect((await readAcpRequests(state.directory)).filter((row) => row.method === "session/new")).toHaveLength(2)
     await transport.config.options({ draft: { ...draft, workspaceId: "w2" } }, "probe")
     await transport.config.options({ draft: { ...draft, projection: { ...draft.projection, generation: "g2" } } }, "probe")
     await transport.config.options({ draft: { ...draft, credentials: { ...draft.credentials, leaseGeneration: "rotated" } } }, "probe")
     expect(probes.cache.size).toBe(4)
-    expect((await readAcpRequests(state.directory)).filter((row) => row.method === "session/new")).toHaveLength(4)
+    expect((await readAcpRequests(state.directory)).filter((row) => row.method === "session/new")).toHaveLength(5)
   } finally { await transport.dispose(); await state.close() }
 })
 

@@ -1,3 +1,5 @@
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
+
 // The runtime lists below are the single source for these unions: the SQLite
 // column declarations are built from them, so a row reads back already typed
 // instead of being asserted into shape at every boundary.
@@ -25,9 +27,6 @@ export type CredentialUsageWindow = {
   usedPercent: number
   resetsAt: number | null
 }
-
-export const CREDENTIAL_SCOPES = ["local", "shared"] as const
-export type CredentialScope = (typeof CREDENTIAL_SCOPES)[number]
 
 export const CREDENTIAL_CONSENT_SURFACES = [
   "desktop_discovery",
@@ -62,7 +61,7 @@ export interface CredentialMetadata {
   health?: CredentialHealth | null
   expires_at?: number | null
   last_validated_at?: number | null
-  scope?: CredentialScope
+  scope?: AccountScope
   consent?: CredentialConsent | null
   last_used_at?: number | null
   last_error?: string | null
@@ -115,7 +114,7 @@ export interface CredentialWrite {
   account_id?: string
   secret: string
   expires_at?: number
-  scope?: CredentialScope
+  scope?: AccountScope
   consent?: CredentialConsent
 }
 

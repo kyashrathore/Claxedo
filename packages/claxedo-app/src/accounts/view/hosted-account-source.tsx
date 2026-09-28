@@ -1,10 +1,9 @@
+import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { useQuery } from "@tanstack/solid-query"
 import { createSignal, For, Show } from "solid-js"
-import { toAppError, useServer, type AccountSource, type HostedAccountSources } from "@/server"
+import { toAppError, useServer, type HostedAccountSources } from "@/server"
 import { RadioGroup, RadioItem, showToast } from "@/ui"
 import { useAccountsText } from "../i18n"
-
-const SOURCES: readonly AccountSource[] = ["own", "team"]
 
 const SOURCE_KEY = { own: "settings.providers.accountSource.own", team: "settings.providers.accountSource.team" } as const
 
@@ -49,11 +48,11 @@ export function HostedAccountSourceChoice(props: { readonly providerId: string; 
           value={source()}
           disabled={props.sources.writing() !== undefined}
           onChange={(value: string) => {
-            const chosen = SOURCES.find((candidate) => candidate === value)
+            const chosen = ACCOUNT_SOURCES.find((candidate) => candidate === value)
             if (chosen && chosen !== source()) props.sources.choose(props.providerId, chosen)
           }}
         >
-          <For each={SOURCES}>{(option) => <RadioItem value={option} label={t(SOURCE_KEY[option])} />}</For>
+          <For each={ACCOUNT_SOURCES}>{(option) => <RadioItem value={option} label={t(SOURCE_KEY[option])} />}</For>
         </RadioGroup>
         <Show when={source() === "team" && !props.sources.teamHeld(props.providerId)}>
           <p class="text-12-regular text-text-weak" role="alert">

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import type { ServerEvent } from "../events"
 import { placementId, projectId, requestId, sessionId } from "../ids"
-import { frameOf, serverEventFromFrame } from "./frames"
+import { frameFromWire, serverEventFromFrame } from "./frames"
 import type { Address } from "./session-row"
 
 const address: Address = {
@@ -12,7 +12,7 @@ const address: Address = {
 const ref = { projectId: projectId("j1"), placementId: placementId("p1"), sessionId: sessionId("s1") }
 
 test("frames: a harness.health frame becomes the session's harnessHealthChanged", () => {
-  const frame = frameOf({
+  const frame = frameFromWire({
     directory: "/work",
     payload: {
       type: "harness.health",
@@ -32,13 +32,13 @@ test("frames: a harness.health frame becomes the session's harnessHealthChanged"
 })
 
 test("frames: a harness.health frame without a known health status is dropped", () => {
-  const frame = frameOf({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
+  const frame = frameFromWire({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
   expect(frame && serverEventFromFrame(frame, address)).toBeUndefined()
 })
 
 test("frames: an expired permission or question closes the request exactly as its reply does", () => {
   const settled = (type: string) => {
-    const frame = frameOf({ directory: "/work", payload: { type, properties: { sessionID: "s1", requestID: "req-1" } } })
+    const frame = frameFromWire({ directory: "/work", payload: { type, properties: { sessionID: "s1", requestID: "req-1" } } })
     return frame && serverEventFromFrame(frame, address)
   }
   const closed: ServerEvent = { type: "requestClosed", ref, requestId: requestId("req-1") }

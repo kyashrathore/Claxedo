@@ -8,7 +8,7 @@ import { parseLivePlugins } from "./wire/live-plugins"
 
 const LIVE_PLUGINS_PATH = "/api/claxedo/live-plugins"
 
-function pluginPath(pluginId: string) {
+function livePluginPath(pluginId: string) {
   return `${LIVE_PLUGINS_PATH}/${encodeURIComponent(pluginId)}`
 }
 
@@ -22,7 +22,7 @@ export function livePluginQueries(transport: Transport) {
 export function createLivePluginsApi(transport: Transport): LivePluginsApi {
   return {
     bundle: async (pluginId, hash) => {
-      const response = await transport.request(`${pluginPath(pluginId)}/${encodeURIComponent(hash)}/app.js`, { headers: { Accept: "text/javascript" } })
+      const response = await transport.request(`${livePluginPath(pluginId)}/${encodeURIComponent(hash)}/app.js`, { headers: { Accept: "text/javascript" } })
       if (!response.ok) throw await responseError(response, `The bundle of ${pluginId}`)
       try {
         return await response.text()
@@ -31,7 +31,7 @@ export function createLivePluginsApi(transport: Transport): LivePluginsApi {
       }
     },
     remove: async (pluginId) => {
-      await transport.json<unknown>(pluginPath(pluginId), { method: "DELETE" })
+      await transport.json<unknown>(livePluginPath(pluginId), { method: "DELETE" })
     },
   }
 }

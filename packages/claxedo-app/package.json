@@ -43,7 +43,6 @@
   },
   "dependencies": {
     "@claxedo/account-contract": "workspace:*",
-    "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/plugin-api": "workspace:*",

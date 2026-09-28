@@ -1,6 +1,6 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { queryKeys } from "./query-keys"
-import { openStream, type Stream } from "./stream"
+import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
@@ -68,7 +68,7 @@ function reconcileStreams(state: StreamsState) {
   for (const id of want.workspace) {
     const route = liveRemoteRoute(input.workspaces, id)
     if (!route || open.has(id)) continue
-    open.set(id, openStream({
+    open.set(id, openEventStream({
       open: ({ headers, signal }) => input.transport.runtime(route, RUNTIME_EVENTS_PATH, { headers, signal }),
       onFrame: input.onFrame,
       onGap: input.onGap,
@@ -83,7 +83,7 @@ function reconcileStreams(state: StreamsState) {
     const route = liveRemoteRoute(input.workspaces, placement)
     if (!route || sessions.has(key)) continue
     const path = `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`
-    sessions.set(key, openStream({
+    sessions.set(key, openEventStream({
       open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
       onFrame: input.onFrame,
       onGap: input.onGap,

@@ -24,6 +24,7 @@ export type SessionLaunch = {
   owner: TurnActor
   title?: string
   instructions?: string
+  permissionModeKept?: StartInput["permissionModeKept"]
 }
 
 export function startInput(launch: LaunchComposer, session: SessionLaunch): StartInput {
@@ -40,6 +41,7 @@ export function startInput(launch: LaunchComposer, session: SessionLaunch): Star
     credentials: sessionCredentials(launch, session),
     providerDefinitions: launch.providerDefinitions?.(),
     owner: session.owner,
+    ...(session.permissionModeKept ? { permissionModeKept: session.permissionModeKept } : {}),
   }
 }
 

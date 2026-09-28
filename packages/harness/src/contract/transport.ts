@@ -34,7 +34,7 @@ export type ConfigApplied =
   | { state: "deferred"; until: "after-active-turns" | "next-session" }
   | { state: "refused"; reason: string }
 
-export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions">
+export type DraftLaunch = Omit<StartInput, "sessionId" | "title" | "instructions" | "permissionModeKept">
 
 export type ConfigTarget = { session: HarnessSession } | { draft: DraftLaunch }
 

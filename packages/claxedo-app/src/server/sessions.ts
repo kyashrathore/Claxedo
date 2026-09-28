@@ -7,7 +7,7 @@ import { createSessionQueue } from "./session-queue"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
-import { readSession } from "./session-reads"
+import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
 import { cancelRunningTurn } from "./session-stop"
@@ -89,7 +89,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
-    read: (ref, shape, held) => readSession(context, ref, shape, held),
+    read: (ref, shape, held) => startSessionReads(context, ref, shape, held),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),
     turn: (ref, turnId) => readTurn(context, ref, turnId),

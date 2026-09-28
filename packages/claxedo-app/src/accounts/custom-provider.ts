@@ -64,7 +64,7 @@ function headerErrors(rows: readonly HeaderRow[], t: AccountsText): HeaderErr[] 
   })
 }
 
-function draftOf(form: FormState): CustomProviderDraft {
+function providerDraftOf(form: FormState): CustomProviderDraft {
   const apiKey = form.apiKey.trim()
   const env = apiKey.match(/^\{env:([^}]+)\}$/)?.[1]?.trim()
   const key = apiKey && !env ? apiKey : undefined
@@ -90,7 +90,7 @@ export function validateCustomProvider(form: FormState, t: AccountsText, existin
   const headers = headerErrors(form.headers, t)
   const clean = (errors: readonly object[]) => errors.every((entry) => Object.values(entry).every((value) => value === undefined))
   const ok = clean([err]) && clean(models) && clean(headers)
-  return { err, models, headers, ...(ok ? { result: draftOf(form) } : {}) }
+  return { err, models, headers, ...(ok ? { result: providerDraftOf(form) } : {}) }
 }
 
 export const modelRow = (): ModelRow => ({ row: uuid(), id: "", name: "", err: {} })

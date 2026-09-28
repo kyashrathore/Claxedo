@@ -41,6 +41,7 @@ export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
     settleQueuedPromptDelivery: (sessionId, seq, steering) => store.settleQueuedPromptDelivery(sessionId, seq, steering),
     sessionDirectory: (sessionId) => store.getSession(sessionId)?.directory,
     sessionArchived: (sessionId) => store.getSession(sessionId)?.time?.archived !== undefined,
+    messageSessionId: (messageId) => store.messageSessionId(messageId),
   }
 }
 

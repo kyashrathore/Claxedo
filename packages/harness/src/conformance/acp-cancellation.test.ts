@@ -10,7 +10,7 @@ import { writeAcpScript, acpScriptToken, releaseAcpHold } from "../../e2e/harnes
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { pollUntil } from "./test-support/poll"
 
-test("ACP acknowledged cancellation with a still-open prompt reaches its deadline without claiming terminal", async () => {
+test("ACP acknowledged cancellation with a still-open prompt reaches its deadline without claiming terminal, and reads degraded until the turn ends", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "acp-cancellation-"))
   const directory = path.join(root, "work")
   await mkdir(directory)
@@ -32,6 +32,9 @@ test("ACP acknowledged cancellation with a still-open prompt reaches its deadlin
   const drained = running.then(() => { finished = true; return "completed" }, (error: unknown) => { finished = true; return String(error) })
   try {
     expect(await pollUntil(async () => (await readAcpRequests(directory)).some((row) => row.method === "session/prompt") || undefined, Date.now() + 2_000)).toBe(true)
+    const health = () => context.transport.health!.runtime(directory, context.session.binding.sessionId)
+    expect(health()).toEqual({ status: "ok" })
+    const changesBeforeStop = context.services.healthChanges.count
     const startedAt = Date.now()
     const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" },
       { at: Date.now() + 40, signal: new AbortController().signal })
@@ -40,8 +43,13 @@ test("ACP acknowledged cancellation with a still-open prompt reaches its deadlin
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(30)
     expect(finished).toBe(false)
     expect((await readAcpRequests(directory)).filter((row) => row.method === "session/cancel")).toHaveLength(1)
+    expect(health()).toMatchObject({ status: "degraded", reason: "harness_process_lost" })
+    expect(context.transport.health!.runtime(directory)).toMatchObject({ status: "degraded", reason: "harness_process_lost" })
+    expect(context.services.healthChanges.count).toBe(changesBeforeStop + 1)
     await releaseAcpHold(directory, "never")
     expect(await drained).toBe("completed")
+    expect(health()).toEqual({ status: "ok" })
+    expect(context.services.healthChanges.count).toBe(changesBeforeStop + 2)
     expect(await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" },
       { at: Date.now() + 40, signal: new AbortController().signal })).toEqual({ execution: "terminal", cleanup: "unknown" })
   } finally { await context.close(); await drained }

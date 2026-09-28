@@ -3,7 +3,7 @@ import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } 
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { draftProbeKey, DraftProbeCache, modelAndEffortOptions } from "../../contract"
+import { draftProbeKey, DraftProbeCache, modelAndEffortOptions, type ProbeInputs } from "../../contract"
 import { CLAUDE_SETTINGS_FILES } from "../../profiles/claude-code"
 import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { ClaudeProcess } from "./process"
@@ -23,10 +23,12 @@ export class ClaudeModelCatalog {
     return this.cache.read(draftProbeKey(input), this.probeInputs(input), () => this.discover(input, sessionId, (stream) => stream.supportedModels()))
   }
 
-  private probeInputs(input: StartInput | DraftLaunch): string[] {
+  private probeInputs(input: StartInput | DraftLaunch): ProbeInputs {
     const project = path.join(path.resolve(input.directory), ".claude")
-    return [...CLAUDE_SETTINGS_FILES.map((name) => path.join(this.options.userConfigRoot, name)), path.join(this.options.userConfigRoot, ".credentials.json"),
-      path.join(project, "settings.json"), path.join(project, "settings.local.json")]
+    const root = this.options.userConfigRoot
+    const account = path.join(this.options.env.CLAUDE_CONFIG_DIR ? root : path.dirname(root), ".claude.json")
+    return { files: [...CLAUDE_SETTINGS_FILES.map((name) => path.join(root, name)), path.join(root, ".credentials.json"), account,
+      path.join(project, "settings.json"), path.join(project, "settings.local.json")] }
   }
 
   async commands(input: StartInput | DraftLaunch, sessionId?: string): Promise<SlashCommand[]> {

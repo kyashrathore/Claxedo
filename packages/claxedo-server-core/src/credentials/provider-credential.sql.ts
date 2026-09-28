@@ -1,9 +1,9 @@
+import { ACCOUNT_SCOPES } from "@claxedo/account-contract/vocabulary"
 import { sql } from "drizzle-orm"
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core"
 import {
   CREDENTIAL_HEALTHS,
   CREDENTIAL_KINDS,
-  CREDENTIAL_SCOPES,
   CREDENTIAL_SOURCES,
   CREDENTIAL_STATUSES,
 } from "./types"
@@ -52,7 +52,7 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     health: text({ enum: CREDENTIAL_HEALTHS }),
     expires_at: integer(),
     last_validated_at: integer(),
-    scope: text({ enum: CREDENTIAL_SCOPES }).notNull().default("local"),
+    scope: text({ enum: ACCOUNT_SCOPES }).notNull().default("local"),
     consent_json: text(),
     /** The account a harness runs on; at most one per (org_id, owner, provider_id). */
     is_active: integer({ mode: "boolean" }).notNull().default(false),

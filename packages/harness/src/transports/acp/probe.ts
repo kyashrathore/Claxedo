@@ -18,6 +18,8 @@ import { acpAgents, acpModeState, type AcpCatalog } from "./options"
 type Commands = Extract<SessionNotification["update"], { sessionUpdate: "available_commands_update" }>["availableCommands"]
 type ProbeResult = { catalog: AcpCatalog; commands: Commands; agents: AgentAgent[] }
 
+export const ACP_DRAFT_PROBE_MAX_AGE_MS = 30_000
+
 export class AcpDraftProbes {
   private readonly cache: DraftProbeCache<ProbeResult>
   private readonly disposeAbort = new AbortController()
@@ -43,10 +45,11 @@ export class AcpDraftProbes {
   private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean, needAgents: boolean): Promise<ProbeResult> {
     if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed")
     const key = draftProbeKey(draft, needCommands, needAgents)
+    const inputs = { files: [], maxAge: { ms: ACP_DRAFT_PROBE_MAX_AGE_MS, clock: this.services.clock } }
     if (mode === "peek") {
-      return this.cache.peek(key, []).then((result) => result ?? { catalog: { options: [], modes: [] }, commands: [], agents: [] })
+      return this.cache.peek(key, inputs).then((result) => result ?? { catalog: { options: [], modes: [] }, commands: [], agents: [] })
     }
-    return this.cache.read(key, [], () => this.run(draft, needCommands, needAgents))
+    return this.cache.read(key, inputs, () => this.run(draft, needCommands, needAgents))
   }
 
   private async run(draft: DraftLaunch, needCommands: boolean, needAgents: boolean): Promise<ProbeResult> {

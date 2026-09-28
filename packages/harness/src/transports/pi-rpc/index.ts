@@ -264,7 +264,7 @@ export class PiRpcTransport implements HarnessTransport {
     generateTitle: async (session: HarnessSession, request: SessionTitleRequest) => {
       const entry = this.entry(session)
       if (entry.busy) return null
-      return piSessionTitle(entry.rpc, request)
+      return piSessionTitle(entry.rpc, this.options.stateRoot, request)
     },
     rename: async (session: HarnessSession, title: string) => {
       await this.entry(session).rpc.request("set_session_name", { name: title })

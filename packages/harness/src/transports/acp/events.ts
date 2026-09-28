@@ -7,6 +7,7 @@ import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, RoutedEvent } from "../../contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import type { AcpEntry } from "./index"
+import { acpKeptPermissionMode } from "./options"
 import { unrecognizedEvent } from "../../translate/unrecognized"
 import { routedIngest } from "../../translate/ingest"
 import { acpSubagentObservation, supportsAcpSubagents } from "./extensions/subagents"
@@ -43,6 +44,14 @@ export async function acpFlushUpdates(entry: AcpEntry,
   if (!pending) return
   while (pending.length) await deliverAcpUpdate(entry, pending.shift()!, observe)
   entry.pendingUpdates = undefined
+  await entry.start.permissionModeKept?.(acpKeptPermissionMode(entry))
+}
+
+export async function acpReportModeMove(entry: AcpEntry, change: () => Promise<void> | void): Promise<void> {
+  const before = acpKeptPermissionMode(entry)
+  await change()
+  const after = acpKeptPermissionMode(entry)
+  if (after.modeId !== before.modeId || after.label !== before.label) await entry.start.permissionModeKept?.(after)
 }
 
 function acpCatalogUpdate(entry: AcpEntry, update: SessionNotification["update"]): void {
@@ -81,7 +90,7 @@ async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotificati
   }
   const meta = notification.update._meta?.goal
   const goal = meta === undefined ? undefined : goalSnapshot(entry.session.binding.sessionId, { goal: meta })
-  acpCatalogUpdate(entry, notification.update)
+  await acpReportModeMove(entry, () => acpCatalogUpdate(entry, notification.update))
   const deliver = async () => {
     await observe(notification.update)
     entry.quiet?.touch()

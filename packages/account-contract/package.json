@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The closed set of hosted operations a renderer may ask Electron main to run, and their result decoders",
+  "description": "The account vocabulary the app and the servers share, and the closed set of hosted operations a renderer may ask Electron main to run with their result decoders",
   "types": "./src/index.ts",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./vocabulary": {
+      "types": "./src/vocabulary.ts",
+      "default": "./src/vocabulary.ts"
     }
   },
   "scripts": {

@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import type { HostedAccount } from "./account"
 import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
-import { readSession } from "./session-reads"
+import { startSessionReads } from "./session-reads"
 import { readTurnPageBefore } from "./transcript-reads"
 import { centralRow, fakeServer, firstPath, firstRead, openPath, openView, ref, shape, stored } from "./test-session-server"
 
@@ -11,7 +11,7 @@ const centralFirstPath = "/api/control/sessions/ses_1/outline?workspaceId=ws_clo
 
 test("session reads: a stopped cloud workspace's session opens from one control-plane first read and reads nothing from its runtime", async () => {
   const server = fakeServer({ reachable: () => false })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
 
   const first = await reads.first
   expect(first.row).toMatchObject({ ref, title: "Ship it", createdAt: 10, updatedAt: 20, lastHumanTurnAt: 15 })
@@ -44,7 +44,7 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
     },
   } as HostedAccount
   const context = { ...server.context, account }
-  const reads = readSession(context, ref, shape)
+  const reads = startSessionReads(context, ref, shape)
 
   const first = await reads.first
   expect(first.row).toMatchObject({ ref, title: "Ship it", lastHumanTurnAt: 15 })
@@ -68,7 +68,7 @@ test("session reads: a runtime that answers it has stopped re-homes the session 
       return Response.json({ error: { code: "workspace_stopped" } }, { status: 409 })
     },
   })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
 
   const first = await reads.first
   expect(first.transcript.entries).toHaveLength(2)
@@ -87,7 +87,7 @@ test("session reads: a running cloud workspace's session reads its outline and p
       return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
     },
   })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
 
   const first = await reads.first
   expect(first.outline, "the outline comes from the control plane, whose history the transcript pages").toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
@@ -100,7 +100,7 @@ test("session reads: a running cloud workspace's session reads its outline and p
 
 test("session reads: an offline machine's session renders its published row, reads nothing from the machine, and refuses an older page", async () => {
   const server = fakeServer({ reachable: () => false, machine: true })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
 
   const first = await reads.first
   expect(first.row).toMatchObject({ ref, title: "Ship it", lastHumanTurnAt: 15 })
@@ -125,7 +125,7 @@ test("session reads: a machine session's first read lands while its open view is
       return Response.json([])
     },
   })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
   try {
     expect((await reads.first).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   } finally {
@@ -146,13 +146,13 @@ test("session reads: a failed first read rejects the first read and the status i
         return Response.json([])
       },
     })
-  const firstFailed = readSession(failing("first").context, ref, shape)
+  const firstFailed = startSessionReads(failing("first").context, ref, shape)
   expect(await Promise.allSettled([firstFailed.first, firstFailed.status, firstFailed.todos])).toEqual([
     { status: "rejected", reason: failure },
     { status: "rejected", reason: failure },
     { status: "fulfilled", value: [] },
   ])
-  const openFailed = readSession(failing("open").context, ref, shape)
+  const openFailed = startSessionReads(failing("open").context, ref, shape)
   const [first, ...facts] = await Promise.allSettled([openFailed.first, openFailed.status, openFailed.requests, openFailed.todos, openFailed.goal, openFailed.subagents])
   expect(first?.status).toBe("fulfilled")
   for (const fact of facts) expect(fact).toEqual({ status: "rejected", reason: failure })
@@ -161,7 +161,7 @@ test("session reads: a failed first read rejects the first read and the status i
 test("session reads: a failed placement lookup rejects every read without an unhandled rejection", async () => {
   const failure = new Error("catalog unavailable")
   const server = fakeServer({ reachable: () => { throw failure } })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
   const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
   for (const result of results) expect(result).toEqual({ status: "rejected", reason: failure })
 })
@@ -178,7 +178,7 @@ test("session reads: a held latest turn and outline answer the page and outline,
   })
   const latestTurn = { entries: [], olderCursor: "before-latest" }
   const outline = { turns: [], complete: true }
-  const first = await readSession(server.context, ref, shape, { latestTurn, outline }).first
+  const first = await startSessionReads(server.context, ref, shape, { latestTurn, outline }).first
   expect(first.transcript).toBe(latestTurn)
   expect(first.latestTurn).toBe(latestTurn)
   expect(first.outline).toBe(outline)
@@ -197,8 +197,8 @@ test("session reads: a harness without todos reads as no todos, and any other to
     },
   })
   const unsupported = { error: { status: 409, code: "unsupported_operation", message: "opencode does not support getTodos" } }
-  expect(await readSession(opened(unsupported).context, ref, shape).todos).toEqual([])
+  expect(await startSessionReads(opened(unsupported).context, ref, shape).todos).toEqual([])
 
   const refused = { error: { status: 403, code: "session_access_denied", message: "Not yours" } }
-  await expect(readSession(opened(refused).context, ref, shape).todos).rejects.toMatchObject({ class: "auth", code: "session_access_denied" })
+  await expect(startSessionReads(opened(refused).context, ref, shape).todos).rejects.toMatchObject({ class: "auth", code: "session_access_denied" })
 })

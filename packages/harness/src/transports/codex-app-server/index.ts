@@ -147,9 +147,9 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   private probeDraftModels(draft: DraftLaunch, mode: "probe" | "peek"): Promise<CodexModel[]> {
     const key = draftProbeKey(draft)
-    const files = codexProbeInputs(draft.credentials, draft.directory, this.options.ownerHome)
-    if (mode === "peek") return this.probes.peek(key, files).then((models) => models ?? [])
-    return this.probes.read(key, files, () => this.probeModels({ ...draft, sessionId: prefixedRandomId("probe", "-") }))
+    const inputs = { files: codexProbeInputs(draft.credentials, draft.directory, this.options.ownerHome) }
+    if (mode === "peek") return this.probes.peek(key, inputs).then((models) => models ?? [])
+    return this.probes.read(key, inputs, () => this.probeModels({ ...draft, sessionId: prefixedRandomId("probe", "-") }))
   }
 
   private async probeModels(input: StartInput): Promise<CodexModel[]> {

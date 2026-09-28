@@ -1,6 +1,6 @@
 import type { ServerConfig } from "./config"
 import type { ConnectionState } from "./events"
-import { openStream, type Stream } from "./stream"
+import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
 import type { BootstrapDeclaration } from "./wire/placements"
 
@@ -75,7 +75,7 @@ type StreamsInput = {
 
 function openEventsAt(input: StreamsInput, path: string, socket: boolean, report: () => void): Stream {
   const { transport } = input
-  return openStream({
+  return openEventStream({
     open: ({ headers, signal }) => {
       if (socket) return eventSocketResponse(new URL(path, `${transport.serverUrl}/`), headers, signal)
       return transport.request(path, { headers, signal })

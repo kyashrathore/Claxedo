@@ -40,16 +40,30 @@ type PromptPopoverProps = {
   documentNotice?: string
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
+  atFailed?: string
   atActive?: string
   atKey: (item: AtOption) => string
   setAtActive: (id: string) => void
   onAtSelect: (item: AtOption) => void
   slashFlat: SlashCommand[]
+  slashFailed?: string
   slashActive?: string
   setSlashActive: (id: string) => void
   onSlashSelect: (item: SlashCommand) => void
   commandKeybind: (id: string) => string | undefined
   t: (key: ComposerTextKey) => string
+}
+
+function PopoverFailure(props: { label: string; message: string | undefined }) {
+  return (
+    <Show when={props.message}>
+      {(message) => (
+        <div role="alert" class="text-icon-warning-base px-2 py-1">
+          {props.label} {message()}
+        </div>
+      )}
+    </Show>
+  )
 }
 
 export const PromptPopover: Component<PromptPopoverProps> = (props) => {
@@ -70,6 +84,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
       >
         <Switch>
           <Match when={props.popover === "at"}>
+            <PopoverFailure label={props.t("prompt.popover.filesFailed")} message={props.atFailed} />
             <Show
               when={props.atFlat.length > 0}
               fallback={<div class="text-text-weak px-2 py-1">{props.documentPicker ? props.documentNotice ?? "No documents found." : props.t("prompt.popover.emptyResults")}</div>}
@@ -91,6 +106,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
             </Show>
           </Match>
           <Match when={props.popover === "slash"}>
+            <PopoverFailure label={props.t("prompt.popover.commandsFailed")} message={props.slashFailed} />
             <Show
               when={props.slashFlat.length > 0}
               fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyCommands")}</div>}

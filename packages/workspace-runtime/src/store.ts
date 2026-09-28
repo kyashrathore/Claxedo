@@ -1,5 +1,6 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
-import { readTurnOutline, type TurnOutline } from "./session/turn-outline"
+import type { TurnOutline } from "@claxedo/agent-sdk-runtime/turn-outline"
+import { readTurnOutline } from "./session/turn-outline"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { randomBytes } from "crypto"
 import fs from "fs"

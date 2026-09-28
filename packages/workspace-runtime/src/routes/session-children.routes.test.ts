@@ -937,6 +937,25 @@ describe("permission mode changes retain session ceilings", () => {
   }
 })
 
+describe("a mode write to a harness that cannot take one", () => {
+  test("a harness with no mode surface refuses a mode write as bad input", async () => {
+    const item = fixture()
+    await item.seedParent("s1")
+    item.surface.session = async () => NO_MODE_SURFACE
+    const published = item.globalEvents.length
+
+    const response = await item.app.request(`http://localhost/session/s1/permission-mode?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ modeId: "read-only" }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "permission_modes_unsupported", message: NO_MODE_SURFACE.unsupported } })
+    expect(item.calls.modes).toEqual([])
+    expect(item.store.getSessionConfig("s1")?.permissionMode).toBeUndefined()
+    expect(item.globalEvents.slice(published).filter((event) => event.payload.type === "session.updated")).toEqual([])
+  })
+})
+
 describe("prompt permission overrides respect child ceilings", () => {
   for (const endpoint of ["message", "prompt_async"]) {
     test(endpoint, async () => {

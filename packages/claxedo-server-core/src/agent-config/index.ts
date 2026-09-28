@@ -7,6 +7,7 @@
  * Command .md files at:     ~/.claxedo/commands/<name>.md
  */
 
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import * as fs from "fs"
 import * as path from "path"
@@ -88,8 +89,6 @@ export interface RuntimeConfigSnapshot {
   harnessLaunch?: Record<string, Record<string, unknown>>
 }
 
-export type RuntimeConfigSecretScope = "local" | "shared"
-
 /** What Agent Plugins contributes to a runtime snapshot: native launch rows and the ACP MCP map. */
 export type AgentPluginRuntimeContribution = {
   harnessLaunch: Record<string, Record<string, unknown>>
@@ -115,7 +114,7 @@ export type AgentConfigOptions = {
    * credentials, and every harness runs on whatever login its own machine holds.
    */
   projectAuth?: (input: {
-    scope: RuntimeConfigSecretScope
+    scope: AccountScope
     orgId?: string
     workspaceId?: string
     /** How this workspace's sandbox can carry a credential, when it has one. */
@@ -139,7 +138,7 @@ export function disposeAgentConfig() {
  * authority is installed, which means every harness runs on its machine's login.
  */
 export function projectRuntimeAuth(input: {
-  scope: RuntimeConfigSecretScope
+  scope: AccountScope
   orgId?: string
   workspaceId?: string
   secretBrokering?: SandboxSecretBrokering
@@ -223,7 +222,7 @@ export function defaultHarness(
 
 export async function getRuntimeConfigSnapshot(
   options: {
-    secretScope?: RuntimeConfigSecretScope
+    secretScope?: AccountScope
     orgId?: string
     workspaceDir?: string
     workspaceId?: string

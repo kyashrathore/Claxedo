@@ -5,6 +5,7 @@
  * managed credentials. Used by the UI settings panels.
  */
 
+import { ACCOUNT_SCOPES, ACCOUNT_SOURCES } from "@claxedo/account-contract/vocabulary"
 import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { Hono } from "hono"
 import { z } from "zod"
@@ -23,7 +24,7 @@ import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
 import { fanoutEligible } from "@claxedo/server-core/credentials/registry"
-import { ACCOUNT_SOURCES, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
+import { spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -47,7 +48,7 @@ const putBody = z.object({
   account_id: z.string().optional(),
   secret: z.string().min(1),
   expires_at: z.number().optional(),
-  scope: z.enum(["local", "shared"]).optional(),
+  scope: z.enum(ACCOUNT_SCOPES).optional(),
 })
 
 const statusBody = z.object({
@@ -64,11 +65,11 @@ const saveDiscoveredBody = z.object({
   items: z.array(z.object({
     provider_id: z.string().min(1),
     kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
-    scope: z.enum(["local", "shared"]),
+    scope: z.enum(ACCOUNT_SCOPES),
   })),
 })
 
-const scopeBody = z.object({ scope: z.enum(["local", "shared"]) })
+const scopeBody = z.object({ scope: z.enum(ACCOUNT_SCOPES) })
 
 const reconnectBody = z.object({ secret: z.string().min(1) })
 

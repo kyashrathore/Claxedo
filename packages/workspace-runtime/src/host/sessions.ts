@@ -18,7 +18,7 @@ import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRu
 import { assertSessionCreateBindingScope, normalizeDirectory, requireExecutionBinding } from "./execution-binding"
 import { executeHandoffTransaction, releaseKeptHandoffSource, type OpenedTarget } from "./handoff"
 import { attachInput, startInput, type LaunchComposer } from "./launch"
-import type { SessionRowWrite } from "./session-row"
+import type { PermissionModeWrite, SessionRowWrite } from "./session-row"
 import type { createSessionTitleOwner } from "./session-titles"
 import type { TurnAdmissions } from "./turn-admission"
 import type { TransportResolver } from "./transports"
@@ -36,6 +36,7 @@ export type SessionLifecycleInput = {
   forgetGoal: (sessionId: string) => void
   pushTitle: ReturnType<typeof createSessionTitleOwner>["push"]
   writeRow: SessionRowWrite
+  writeMode: PermissionModeWrite
 }
 
 function key(input: Pick<SessionConfig, "harness">["harness"]) {
@@ -247,6 +248,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         if (!store.updateSessionConfig(sessionId, config)) throw new Error(`Session ${sessionId} has no runtime config`)
         session = await handle.transport.start(startInput(launch, {
           sessionId, directory, locality: handle.locality, config, owner,
+          permissionModeKept: (mode) => input.writeMode(sessionId, mode),
           ...(create.title !== undefined ? { title: create.title } : {}),
           ...(create.instructions ? { instructions: create.instructions } : {}),
         }), startupBroker)

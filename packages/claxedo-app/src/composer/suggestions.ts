@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, type Accessor } from "solid-js"
+import { createMemo, createResource, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import fuzzysort from "fuzzysort"
 import type { PlacementId } from "@/server"
@@ -57,21 +57,19 @@ function createHarnessCommands(input: SuggestionInput, slashQuery: Accessor<stri
     const options = server.queries.harnesses.commands(placementId ?? asPlacementId(""), harness ?? "")
     return { ...options, enabled: placementId !== undefined && harness !== undefined && slashQuery() !== undefined }
   })
-  createEffect(() => {
-    if (commands.error) console.warn(`The commands of harness ${input.harness()} in placement ${input.placementId()} could not be read`, commands.error)
-  })
-  return () => commands.data
+  return { commands: () => commands.data, failed: () => commands.error ?? undefined }
 }
 
 function createSlashItems(input: SuggestionInput, slashQuery: Accessor<string | undefined>) {
-  const customCommands = createHarnessCommands(input, slashQuery)
-  return createMemo((): SlashItem[] => {
+  const harnessCommands = createHarnessCommands(input, slashQuery)
+  const items = createMemo((): SlashItem[] => {
     const query = slashQuery()
     if (query === undefined) return []
-    const all = promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: customCommands() }).filter((command) => command.id !== DOCUMENTS_COMMAND)
+    const all = promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: harnessCommands.commands() }).filter((command) => command.id !== DOCUMENTS_COMMAND)
     if (!query) return all
     return fuzzysort.go(query, all, { keys: ["trigger", "title"] }).map((result) => result.obj)
   })
+  return { items, failed: harnessCommands.failed }
 }
 
 export function createSuggestions(input: SuggestionInput) {
@@ -81,6 +79,7 @@ export function createSuggestions(input: SuggestionInput) {
       return current.kind === kind ? current.query : undefined
     })
   const at = createAtItems(input, queryOf("at"))
-  return { atItems: at.items, slashItems: createSlashItems(input, queryOf("slash")), loading: at.loading, failed: at.failed }
+  const slash = createSlashItems(input, queryOf("slash"))
+  return { atItems: at.items, atLoading: at.loading, atFailed: at.failed, slashItems: slash.items, slashFailed: slash.failed }
 }
 

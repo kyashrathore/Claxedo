@@ -47,12 +47,12 @@ function optionsBase(input: OptionsResponseInput) {
   } satisfies HarnessOptionsStatePatch
 }
 
-function settled(patch: HarnessOptionsStatePatch): HarnessOptionsDecision {
+function loadedDecision(patch: HarnessOptionsStatePatch): HarnessOptionsDecision {
   return { patch: { ...patch, optionsLoading: false } }
 }
 
 function unresolvedDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch, dynamicModels: HarnessOptionsStatePatch["dynamicModels"]): HarnessOptionsDecision {
-  return settled({ ...base, dynamicModels, selectedModel: "", configError: modelOptionsUnavailableMessage({ stale: input.payload.stale }) })
+  return loadedDecision({ ...base, dynamicModels, selectedModel: "", configError: modelOptionsUnavailableMessage({ stale: input.payload.stale }) })
 }
 
 function modellessDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch): HarnessOptionsDecision {
@@ -61,21 +61,21 @@ function modellessDecision(input: OptionsResponseInput, base: HarnessOptionsStat
     return unresolvedDecision(input, base, [])
   }
   const resolved = payload.resolvedModel
-  return settled({ ...base, dynamicModels: resolved ? [resolved] : [], selectedModel: resolved?.id ?? "", configError: undefined })
+  return loadedDecision({ ...base, dynamicModels: resolved ? [resolved] : [], selectedModel: resolved?.id ?? "", configError: undefined })
 }
 
 function listedModelsDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch, models: ListedModels): HarnessOptionsDecision {
   if (isStaticCatalogOptions(input.payload) && isNativeSdkHarness(input.type)) {
-    return settled({ ...base, dynamicModels: [], selectedModel: "", configError: modelOptionsUnavailableMessage({ stale: true }) })
+    return loadedDecision({ ...base, dynamicModels: [], selectedModel: "", configError: modelOptionsUnavailableMessage({ stale: true }) })
   }
   const current = input.selectedModel ?? ""
   const listed = models.choices.some((item) => item.id === current || item.resolvedModel === current)
   if ((input.preserveSelectedModel || input.sessionModel) && current && !listed) {
-    return settled({ ...base, dynamicModels: models.choices, selectedModel: current, configError: "Selected model unavailable" })
+    return loadedDecision({ ...base, dynamicModels: models.choices, selectedModel: current, configError: "Selected model unavailable" })
   }
   const next = listed ? current : (models.current ?? models.choices[0]?.id ?? "")
   if (!next) return unresolvedDecision(input, base, models.choices)
-  return settled({
+  return loadedDecision({
     ...base,
     optionsStale: shouldShowModelOptionsStaleWarning({ stale: input.payload.stale, models: models.choices }),
     dynamicModels: models.choices,

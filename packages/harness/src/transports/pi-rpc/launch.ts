@@ -36,7 +36,7 @@ async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role:
 
 export async function launchPi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined, launch: PiLaunch): Promise<PiRpc> {
   if (host.disposed()) throw new TransportError("pi", "process", "Pi transport disposed")
-  await host.unsettled.sweep()
+  host.unsettled.retryHeld()
   await preparePiProfile(profile, input.model)
   const mcp = launch.role === "harness" ? host.services.firstPartyMcp(input.sessionId, input.locality) : undefined
   const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
@@ -53,7 +53,7 @@ export async function launchPi(host: PiLaunchHost, input: StartInput, profile: P
   })
   await retiringOnFailure(host, rpc, async () => {
     await rpc.request("get_state")
-    if (mcp) await connectPiMcp(rpc, host.services.clock, mcp)
+    if (mcp) await connectPiMcp(rpc, host.services.clock, host.options.stateRoot, mcp)
   })
   return rpc
 }
@@ -73,7 +73,7 @@ export async function resumePi(host: PiLaunchHost, input: StartInput, profile: P
   throw new TransportError("pi", "session", "Pi resumed a different session")
 }
 
-export async function piSessionFile(profile: PiProfile, upstreamSessionId: string): Promise<string> {
+async function piSessionFile(profile: PiProfile, upstreamSessionId: string): Promise<string> {
   const files = await fs.readdir(profile.sessionDir)
   const file = files.find((name) => name.endsWith(`_${upstreamSessionId}.jsonl`))
   if (!file) throw new TransportError("pi", "session", "Pi session file is missing")

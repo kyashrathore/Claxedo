@@ -220,7 +220,7 @@ export type FoldablePartLookup = (ref: PartRef) => FoldablePart | undefined
 
 type FoldablePart = { type: string; userOpen?: boolean }
 
-export const FOLD_MINIMUM = 2
+const FOLD_MINIMUM = 2
 
 const NO_KEYS: ReadonlySet<string> = new Set()
 

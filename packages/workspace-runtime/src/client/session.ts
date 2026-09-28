@@ -136,7 +136,7 @@ export type WorkspaceSessionClient = {
   }
   permissionMode: {
     get(input: SessionInput, options?: Options): Reply<AgentPermissionModeState>
-    set(input: SessionInput & { modeId: string }, options?: Options): Reply<AgentPresentationSession>
+    set(input: SessionInput & { modeId: string }, options?: Options): Reply<AgentPermissionModeState>
   }
   queue: {
     list(input: SessionInput, options?: Options): Reply<QueuedSessionPrompt[]>

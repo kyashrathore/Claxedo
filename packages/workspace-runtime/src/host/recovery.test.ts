@@ -789,6 +789,7 @@ describe("a Goal mutation that outlives the turn it stops", () => {
         await resolveHarness()
         return attached
       },
+      unattached: async () => ({ handle: attached.handle, directory: "/repo", attached }),
       publish: () => {},
       subscribeRuntime: () => () => {},
       captureTurn: held.recovery.captureSessionTurn,

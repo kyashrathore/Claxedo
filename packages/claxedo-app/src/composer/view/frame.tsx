@@ -20,11 +20,13 @@ export type PromptPopoverBindings = {
   documentPicker: boolean
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
+  atFailed?: string
   atActive?: string
   atKey: (item: AtOption) => string
   setAtActive: (id: string) => void
   onAtSelect: (item: AtOption) => void
   slashFlat: SlashCommand[]
+  slashFailed?: string
   slashActive?: string
   setSlashActive: (id: string) => void
   onSlashSelect: (item: SlashCommand) => void
@@ -68,11 +70,13 @@ export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
       documentNotice={props.documentNotice}
       setSlashPopoverRef={props.setSlashPopoverRef}
       atFlat={props.atFlat}
+      atFailed={props.atFailed}
       atActive={props.atActive}
       atKey={props.atKey}
       setAtActive={props.setAtActive}
       onAtSelect={props.onAtSelect}
       slashFlat={props.slashFlat}
+      slashFailed={props.slashFailed}
       slashActive={props.slashActive}
       setSlashActive={props.setSlashActive}
       onSlashSelect={props.onSlashSelect}

@@ -7,7 +7,7 @@ import type { StatusOwner } from "./status"
 import { createTurnWrites, type TurnWrites } from "./turn-writes"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
-import { frameOf, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
+import { frameFromWire, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
 
 export type EventIntake = {
   readonly frame: (raw: unknown) => void
@@ -86,7 +86,7 @@ export function createEventIntake(input: IntakeInput): EventIntake {
   }
   return {
     frame: (raw) => {
-      const frame = frameOf(raw)
+      const frame = frameFromWire(raw)
       if (!frame) return console.error("The event stream sent a frame without a type", raw)
       intake(frame)
     },

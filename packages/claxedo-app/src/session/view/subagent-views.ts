@@ -6,7 +6,7 @@ export type SubagentLabels = { readonly subagent: string; readonly task: string 
 const STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused", "interrupted", "completed", "failed", "killed"])
 const TRANSCRIPTS: ReadonlySet<string> = new Set(["live", "file", "messages", "none"])
 
-function subagentStatus(entry: SessionSubagent): SubagentView["status"] {
+function subagentViewStatus(entry: SessionSubagent): SubagentView["status"] {
   return entry.status && STATUSES.has(entry.status) ? entry.status : "unknown"
 }
 
@@ -14,7 +14,7 @@ function isTranscriptKind(kind: string | undefined): kind is Exclude<SubagentVie
   return kind !== undefined && TRANSCRIPTS.has(kind)
 }
 
-function transcriptOf(entry: SessionSubagent): SubagentView["transcriptKind"] {
+function transcriptKindOf(entry: SessionSubagent): SubagentView["transcriptKind"] {
   const kind = entry.transcript?.kind
   return isTranscriptKind(kind) ? kind : "unknown"
 }
@@ -33,14 +33,14 @@ type ViewContext = {
 
 function subagentView(entry: SessionSubagent, context: ViewContext): SubagentView {
   const { parentSessionId, labels, toolCallId } = context
-  const transcriptKind = transcriptOf(entry)
+  const transcriptKind = transcriptKindOf(entry)
   const role = toolCallId ? entry.toolCallEdges.get(toolCallId) : undefined
   return {
     parentSessionId,
     subagentKey: entry.subagentKey,
     ...(role ? { toolCallRole: role } : {}),
     ...(entry.mode ? { mode: entry.mode } : {}),
-    status: subagentStatus(entry),
+    status: subagentViewStatus(entry),
     label: entry.label || labels.subagent,
     agentLabel: entry.subagentType || entry.providerKind || labels.subagent,
     description: entry.description || labels.task,

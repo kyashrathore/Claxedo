@@ -739,6 +739,23 @@ describe("Claude SDK protocol", () => {
     } finally { await f.close() }
   })
 
+  test.each([
+    ["the home directory", {}, "."],
+    ["CLAUDE_CONFIG_DIR", { CLAUDE_CONFIG_DIR: "set" }, "owner"],
+  ] as const)("a kept Claude model answer is probed again when the CLI's account file in %s changes", async (_where, env, folder) => {
+    const f = await scriptedClaude({ models, env })
+    try {
+      const probe = () => f.transport.config.options({ session: f.session }, "probe")
+      await probe()
+      await probe()
+      expect(f.launches.map((row) => row.role)).toEqual(["probe"])
+      await fs.mkdir(path.join(f.session.directory, folder), { recursive: true })
+      await fs.writeFile(path.join(f.session.directory, folder, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "other@example.com" } }))
+      await probe()
+      expect(f.launches.map((row) => row.role)).toEqual(["probe", "probe"])
+    } finally { await f.close() }
+  })
+
   test("an unsupported Claude effort refuses the turn before a harness launch", async () => {
     const f = await fixture()
     try {

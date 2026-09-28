@@ -3,7 +3,7 @@ import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-runt
 import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { GoalCapabilityError, requireGoalAction } from "@claxedo/agent-sdk-runtime/adapters"
 import type { NativeGoalOperations } from "@claxedo/harness/contract"
-import type { AttachedSession } from "./attachments"
+import type { AttachedSession, UnattachedRead } from "./attachments"
 import { normalizeDirectory } from "./execution-binding"
 import { createKeyedSerializer } from "@claxedo/helpers"
 import type { RecoveryTurnCapture } from "./recovery"
@@ -17,6 +17,8 @@ import type {
 export interface RuntimeGoalControllerInput {
   store: AgentRuntimeStore
   attached: (sessionId: string) => Promise<AttachedSession>
+  /** The transport a Goal read addresses, which never attaches the session. */
+  unattached: (sessionId: string) => Promise<UnattachedRead>
   publish: (event: AgentRuntimeEventEnvelope) => void
   subscribeRuntime: (listen: (event: AgentRuntimeEventEnvelope) => void) => () => void
   /** Reads the turn a mutation may end, before the mutation's first await. */
@@ -73,7 +75,7 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     )
   })
 
-  const readContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory): Promise<GoalContext> => {
+  const sessionDirectory = (sessionId: string, requestedDirectory?: RuntimeDirectory): RuntimeDirectory => {
     const session = input.store.getSession(sessionId)
     if (!session) {
       throw new AgentRuntimeGoalError("goal_session_not_found", `Session ${sessionId} not found`)
@@ -82,9 +84,22 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     if (requestedDirectory !== undefined && normalizeDirectory(requestedDirectory) !== normalizeDirectory(directory)) {
       throw new AgentRuntimeGoalError("goal_scope_mismatch", `Session ${sessionId} does not belong to this directory`)
     }
+    return directory
+  }
+
+  const readContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory): Promise<GoalContext> => {
+    const directory = sessionDirectory(sessionId, requestedDirectory)
     const attached = await input.attached(sessionId)
     const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId })
     return { attached, directory, harness: attached.handle.runner.id, capabilities: declared.goals }
+  }
+
+  /** The Goal facts a read answers from without attaching the session: its harness's declared capabilities, and the live attachment only when it is held. */
+  const unattachedContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
+    sessionDirectory(sessionId, requestedDirectory)
+    const read = await input.unattached(sessionId)
+    const declared = await read.handle.transport.capabilities({ directory: read.directory, sessionId })
+    return { read, harness: read.handle.runner.id, capabilities: declared.goals }
   }
 
   const operableContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory): Promise<AvailableGoalContext> => {
@@ -159,11 +174,15 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     },
     resource: {
       async capabilities(sessionId: string, directory?: RuntimeDirectory): Promise<GoalCapabilities> {
-        return (await readContext(sessionId, directory)).capabilities
+        return (await unattachedContext(sessionId, directory)).capabilities
       },
+      /** The harness's Goal while the session is attached; otherwise the last Goal it reported, as the store holds it. */
       async read(sessionId: string, directory?: RuntimeDirectory): Promise<RuntimeGoalSnapshot | null> {
-        const context = await operableContext(sessionId, directory)
-        return await context.ops.read(context.attached.session)
+        const { read, harness, capabilities } = await unattachedContext(sessionId, directory)
+        if (!capabilities.implemented) throw new AgentRuntimeGoalError("goal_unavailable", `${harness} does not expose the Goal resource`)
+        const attached = read.attached
+        const ops = attached?.handle.transport.goals
+        return attached && ops ? await ops.read(attached.session) : input.store.getGoal(sessionId)
       },
       async start(
         goal: AgentRuntimeGoalStartInput,

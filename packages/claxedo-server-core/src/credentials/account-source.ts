@@ -1,6 +1,7 @@
+import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { and, eq, inArray } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
-import type { AccountSelections, AccountSource, AccountSources } from "./account-holder"
+import type { AccountSelections, AccountSources } from "./account-holder"
 import { ClaxedoProviderAccountSourceTable } from "./account-source.sql"
 import { credentialOrg, type CredentialOrgScope } from "./registry"
 

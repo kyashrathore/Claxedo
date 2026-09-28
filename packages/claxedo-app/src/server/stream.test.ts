@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { afterEach, expect, jest, test } from "bun:test"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
-import { openStream } from "./stream"
+import { openEventStream } from "./stream"
 
 afterEach(() => {
   jest.useRealTimers()
@@ -26,7 +26,7 @@ test("the stream keeps reconnecting past many failed attempts and re-reads the g
   let opens = 0
   let gaps = 0
   const states: string[] = []
-  const stream = openStream({
+  const stream = openEventStream({
     open: async () => {
       opens += 1
       if (opens <= failures) throw new TypeError("fetch failed")
@@ -53,7 +53,7 @@ test("the stream keeps reconnecting past many failed attempts and re-reads the g
 test("a stream outlives two missed heartbeats and a beat of jitter, and drops when the fourth beat is missed", async () => {
   jest.useFakeTimers()
   let push: (frame: string) => void = () => undefined
-  const stream = openStream({
+  const stream = openEventStream({
     open: async ({ signal }) => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -88,7 +88,7 @@ test("a 403 ends the stream: it reports the refusal once, goes offline and never
   jest.useFakeTimers()
   let opens = 0
   const refusals: Array<string | undefined> = []
-  const stream = openStream({
+  const stream = openEventStream({
     open: async () => {
       opens += 1
       return Response.json({ error: { code: "workspace_event_stream_denied", message: "denied" } }, { status: 403 })

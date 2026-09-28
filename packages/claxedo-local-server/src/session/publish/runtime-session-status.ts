@@ -51,7 +51,8 @@ function compatEventOf(frame: unknown): { type: string; properties: Record<strin
 /**
  * Session status as the daemon observes it: from the frames of every runtime
  * mounted in this process, and on demand from those runtimes' own answers.
- * `awaitingInput` is an open permission or question, held until its reply.
+ * `awaitingInput` is an open permission or question, held until it is
+ * replied, rejected or expired.
  */
 export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions): RuntimeSessionStatus {
   const now = options.now ?? Date.now
@@ -92,8 +93,10 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
         break
       }
       case "permission.replied":
+      case "permission.expired":
       case "question.replied":
-      case "question.rejected": {
+      case "question.rejected":
+      case "question.expired": {
         const requestId = raw(event.properties.requestID)
         if (requestId) entry.pending.delete(`${event.type.split(".")[0]}.asked:${requestId}`)
         break

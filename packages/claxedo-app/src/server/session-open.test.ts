@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
-import { readSession } from "./session-reads"
+import { startSessionReads } from "./session-reads"
 import { fakeServer, firstPath, firstRead, liveSession, openPath, openView, ref, shape } from "./test-session-server"
 
 test("session reads: a running session opens with one first read for its row, outline and page, beside one read of its status, requests, todos, goal and subagents", async () => {
@@ -28,7 +28,7 @@ test("session reads: a running session opens with one first read for its row, ou
       return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
     },
   })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
 
   const first = await reads.first
   expect(first.row.title).toBe("Live title")
@@ -57,7 +57,7 @@ test("session reads: a fact the runtime could not read fails alone, and a runtim
       return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
     },
   })
-  const reads = readSession(server.context, ref, shape)
+  const reads = startSessionReads(server.context, ref, shape)
 
   expect((await reads.first).transcript.entries).toHaveLength(2)
   await expect(reads.requests).rejects.toMatchObject({ class: "network", status: 502, code: "harness_engine_error", message: "The engine refused the question list" })
@@ -77,7 +77,7 @@ test("session status: a session whose last turn failed reads as failed once its 
     },
   })
 
-  expect(await readSession(server.context, ref, shape).status).toMatchObject({ kind: "failed", error: { message: "The provider refused" } })
+  expect(await startSessionReads(server.context, ref, shape).status).toMatchObject({ kind: "failed", error: { message: "The provider refused" } })
 })
 
 test("session status: settling a held idle reads the row and the open view, and the row's last turn names the failure", async () => {

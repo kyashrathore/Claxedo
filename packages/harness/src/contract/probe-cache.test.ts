@@ -13,12 +13,12 @@ const draft = (placeholder: string, leaseGeneration = "lease-1"): DraftLaunch =>
 
 let root: string
 let settings: string
-let files: string[]
+let files: { files: string[] }
 
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "probe-cache-"))
   settings = path.join(root, "settings.json")
-  files = [settings, path.join(root, "absent", "auth.json")]
+  files = { files: [settings, path.join(root, "absent", "auth.json")] }
 })
 
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
@@ -76,9 +76,24 @@ test("a failed probe is not kept, an unreadable input fails the read, and the ol
   expect(cache.size).toBe(0)
   fail = false
   expect(await cache.read("a", files, probe)).toBe("ok")
-  await expect(cache.read("x", [path.join(root, "nul\0")], probe)).rejects.toThrow()
+  await expect(cache.read("x", { files: [path.join(root, "nul\0")] }, probe)).rejects.toThrow()
   await cache.read("b", files, probe)
   await cache.read("c", files, probe)
   expect(await cache.peek("a", files)).toBeUndefined()
   expect(cache.size).toBe(2)
+})
+
+test("an answer with no input files is kept only for its max age, measured from when its probe started", async () => {
+  let now = 1_000
+  const inputs = { files: [], maxAge: { ms: 30_000, clock: { now: () => now } } }
+  const cache = new DraftProbeCache<string>()
+  const probe = counted(async () => { now += 5_000 })
+  expect(await cache.read("a", inputs, probe.probe)).toBe("answer-1")
+  now = 30_999
+  expect(await cache.peek("a", inputs)).toBe("answer-1")
+  expect(await cache.read("a", inputs, probe.probe)).toBe("answer-1")
+  now = 31_000
+  expect(await cache.peek("a", inputs)).toBeUndefined()
+  expect(await cache.read("a", inputs, probe.probe)).toBe("answer-2")
+  expect(probe.count()).toBe(2)
 })

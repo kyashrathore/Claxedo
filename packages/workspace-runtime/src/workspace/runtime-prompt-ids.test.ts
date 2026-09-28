@@ -82,6 +82,23 @@ test.each(["/message", "/prompt_async"])("a %s prompt naming another session's m
   expect(await f.transcript("b")).toEqual([])
 })
 
+test.each(["queue", "steer"])("a prompt delivered by %s naming another session's message id is refused at admission and queues nothing", async (delivery) => {
+  const f = await fixture()
+  const before = await f.transcript("a")
+
+  const response = await f.request("/session/b/prompt_async", "POST", {
+    messageID: "msg_a",
+    delivery,
+    parts: [{ type: "text", text: "stolen" }],
+  })
+
+  expect(response.status).toBe(409)
+  expect((await response.json() as { error: { code: string } }).error.code).toBe("message_id_conflict")
+  expect(await (await f.request("/session/b/queue")).json()).toEqual([])
+  expect(await f.transcript("a")).toEqual(before)
+  expect(await f.transcript("b")).toEqual([])
+})
+
 test("a prompt's part ids are minted from its message id, so a client part id cannot reach another session's part", async () => {
   const f = await fixture()
   const before = await f.transcript("a")

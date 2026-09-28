@@ -10,15 +10,15 @@ import type {
   SessionConfig,
   SessionHarness,
 } from "@claxedo/agent-runtime-contract"
-import { declaredPermissionModes, harnessKey } from "@claxedo/agent-runtime-contract"
+import { harnessKey } from "@claxedo/agent-runtime-contract"
 import { PermissionModeRefusedError, type ConnectionSecretAuthority, type HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
 import type { ConfigOptionsPreview, ConfigTarget, HarnessSession, TurnActor } from "@claxedo/harness/contract"
-import type { SessionAttachments } from "./attachments"
+import type { AttachedSession, SessionAttachments } from "./attachments"
 import { harnessCapabilitiesFor } from "./capabilities"
 import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStore } from "./contracts"
 import { draftLaunch, type LaunchComposer } from "./launch"
-import type { SessionRowWrite } from "./session-row"
+import type { PermissionModeWrite } from "./session-row"
 import type { HarnessHandle, TransportResolver } from "./transports"
 
 /** A harness read that names a live session or a draft on a harness in a directory. */
@@ -47,7 +47,7 @@ export function createHarnessReads(input: {
   launch: LaunchComposer
   attachments: SessionAttachments
   savedCommands: () => readonly SavedCommand[]
-  writeRow: SessionRowWrite
+  writeMode: PermissionModeWrite
 }) {
   const { store, transports, launch, attachments } = input
 
@@ -83,6 +83,25 @@ export function createHarnessReads(input: {
     return { providerID: config.model?.providerID ?? harnessKey(config.harness) ?? config.harness.id, modelID: requested }
   }
 
+  /**
+   * Sets an attached session's mode on its harness and stores the mode the
+   * harness kept, which a client must see even when it is not the one asked for.
+   */
+  const keepPermissionMode = async (attached: AttachedSession, modeId: string): Promise<AgentPermissionModeState> => {
+    const config = attached.handle.transport.config
+    const offered = config ? await config.permissionModes({ session: attached.session }) : undefined
+    if (!config || !offered || offered.unsupported !== undefined) {
+      throw new PermissionModeRefusedError("permission_modes_unsupported", offered?.unsupported ?? `${attached.handle.runner.id} has no permission modes of its own`)
+    }
+    if (!offered.modes.some((mode) => mode.id === modeId)) {
+      throw new PermissionModeRefusedError("unknown_permission_mode", `${attached.handle.runner.id} does not offer permission mode "${modeId}"`)
+    }
+    const kept = await config.setPermissionMode(attached.session, modeId)
+    const keptId = kept.currentModeId ?? null
+    await input.writeMode(attached.session.binding.sessionId, { modeId: keptId, label: kept.modes.find((mode) => mode.id === keptId)?.name ?? null })
+    return kept
+  }
+
   const declaredFor = (resolved: ResolvedTarget) =>
     resolved.handle.transport.capabilities({ directory: resolved.directory, ...(resolved.sessionId ? { sessionId: resolved.sessionId } : {}) })
 
@@ -99,6 +118,17 @@ export function createHarnessReads(input: {
       const declared = await declaredFor(resolved)
       const child = !!resolved.sessionId && !!store.getSession(resolved.sessionId)?.parentID
       return harnessCapabilitiesFor(resolved.handle, resolved.handle.transport, declared, { child })
+    },
+    /**
+     * A session's capabilities as its harness declares them, read without
+     * attaching the session. A fact a transport learns only from a live
+     * harness (an ACP agent's negotiated extensions) is absent until the
+     * session is attached.
+     */
+    async declaredCapabilities(sessionId: string, directory?: string, authority?: ConnectionSecretAuthority): Promise<HarnessCapabilities> {
+      const read = await attachments.withoutAttaching(sessionId, directory, authority)
+      const declared = await read.handle.transport.capabilities({ directory: read.directory, sessionId })
+      return harnessCapabilitiesFor(read.handle, read.handle.transport, declared, { child: !!store.getSession(sessionId)?.parentID })
     },
     async servesProviderCatalog(target: HarnessTarget): Promise<boolean> {
       return !!(await resolve(target)).handle.transport.providerCatalog
@@ -119,34 +149,12 @@ export function createHarnessReads(input: {
       const resolved = await resolve(target)
       return await resolved.handle.transport.config?.permissionModes(resolved.target)
     },
-    /**
-     * The mode the harness kept, stored and published as the session's row.
-     * The row names an agent-listed mode by the agent's own name, since the
-     * contract declares no modes for that harness a client could name it from.
-     */
+    /** Sets a session's mode on its harness, attaching it, and stores the mode the harness kept. */
     async setPermissionMode(sessionId: string, modeId: string, directory?: string,
       authority?: ConnectionSecretAuthority): Promise<AgentPermissionModeState> {
-      const attached = await attachments.for(sessionId, directory, undefined, authority)
-      const config = attached.handle.transport.config
-      const offered = config ? await config.permissionModes({ session: attached.session }) : undefined
-      if (!config || !offered || offered.unsupported !== undefined) {
-        throw new PermissionModeRefusedError("permission_modes_unsupported", offered?.unsupported ?? `${attached.handle.runner.id} has no permission modes of its own`)
-      }
-      if (!offered.modes.some((mode) => mode.id === modeId)) {
-        throw new PermissionModeRefusedError("unknown_permission_mode", `${attached.handle.runner.id} does not offer permission mode "${modeId}"`)
-      }
-      return await input.writeRow(sessionId, async () => {
-        const kept = await config.setPermissionMode(attached.session, modeId)
-        const keptId = kept.currentModeId ?? null
-        const label = keptId && !declaredPermissionModes(attached.handle.runner)
-          ? kept.modes.find((mode) => mode.id === keptId)?.name ?? null
-          : null
-        if (!store.updateSessionConfig(sessionId, { permissionMode: keptId, permissionModeLabel: label })) {
-          throw new Error(`Session ${sessionId} has no runtime config`)
-        }
-        return kept
-      })
+      return await keepPermissionMode(await attachments.for(sessionId, directory, undefined, authority), modeId)
     },
+    keepPermissionMode,
     async commands(target: HarnessTarget): Promise<readonly RuntimeCommand[]> {
       const resolved = await resolve(target)
       const commands = resolved.handle.transport.commands
@@ -161,9 +169,10 @@ export function createHarnessReads(input: {
       const resolved = await resolve(target)
       return await resolved.handle.transport.agents?.list(resolved.target)
     },
-    async todos(sessionId: string, directory?: string, authority?: ConnectionSecretAuthority): Promise<readonly AgentTodo[] | undefined> {
-      const attached = await attachments.for(sessionId, directory, undefined, authority)
-      return await attached.handle.transport.history?.todos(attached.session)
+    /** The harness's own todos for a session it is running; a session not attached has none to read live. */
+    async todos(sessionId: string): Promise<readonly AgentTodo[] | undefined> {
+      const attached = attachments.peek(sessionId)
+      return attached ? await attached.handle.transport.history?.todos(attached.session) : undefined
     },
     async messages(sessionId: string, directory?: string, authority?: ConnectionSecretAuthority): Promise<readonly AgentMessage[] | undefined> {
       const attached = await attachments.for(sessionId, directory, undefined, authority)

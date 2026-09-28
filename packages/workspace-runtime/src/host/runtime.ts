@@ -23,7 +23,7 @@ import { createRuntimeLifecycle } from "./lifecycle"
 import { createRuntimeRecovery } from "./recovery"
 import { recoveryWiring } from "./recovery-wiring"
 import { createRequestSurface } from "./requests"
-import { createSessionRowWrites } from "./session-row"
+import { createPermissionModeWrite, createSessionRowWrites } from "./session-row"
 import { createSessionLifecycle } from "./sessions"
 import { createSessionTitleOwner } from "./session-titles"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./subscription"
@@ -101,7 +101,9 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     },
   }))
   const executing = new Map<string, { generation: object; attached: AttachedSession; ended: Promise<void> }>()
-  const attachments = new SessionAttachments({ store, transports: input.transports, launch: input.launch, broker, workspaceId,
+  const writeRow = createSessionRowWrites({ store, eventHub })
+  const writeMode = createPermissionModeWrite({ store, writeRow })
+  const attachments = new SessionAttachments({ store, transports: input.transports, launch: input.launch, broker, workspaceId, writeMode,
     executing: (sessionId, generation) => {
       const current = executing.get(sessionId)
       return admissions.active(sessionId)?.generation === generation && current?.generation === generation ? current.attached : undefined
@@ -151,21 +153,22 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const goals = createRuntimeGoalController({
     store,
     attached: (sessionId) => attachments.for(sessionId),
+    unattached: (sessionId) => attachments.withoutAttaching(sessionId),
     publish,
     subscribeRuntime: eventHub.subscribeRuntime,
     captureTurn: recovery.captureSessionTurn,
     cancelCapturedTurn: recovery.stopCapturedTurn,
   })
 
-  const writeRow = createSessionRowWrites({ store, eventHub })
   const sessions = createSessionLifecycle({
     store, transports: input.transports, launch: input.launch, broker, attachments, admissions, workspaceId, publish,
     reportSessionFailure: recovery.reportSessionFailure,
     forgetGoal: (sessionId) => goals.forgetSession(sessionId),
     pushTitle: titles.push,
     writeRow,
+    writeMode,
   })
-  const reads = createHarnessReads({ store, transports: input.transports, launch: input.launch, attachments, savedCommands: input.savedCommands, writeRow })
+  const reads = createHarnessReads({ store, transports: input.transports, launch: input.launch, attachments, savedCommands: input.savedCommands, writeMode })
   const requests = createRequestSurface({ store, broker })
 
   const turnHost: TurnRunnerHost = {
@@ -242,6 +245,12 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       const capture = recovery.captureTurn(turn.sessionId, claimed, directory)
       const releaseAdmission = claimed.release
       try {
+        if (turn.permissionMode && turn.permissionMode !== config.permissionMode) {
+          const kept = await reads.keepPermissionMode(attached, turn.permissionMode)
+          if (kept.currentModeId !== turn.permissionMode) {
+            throw new Error(`${attached.handle.runner.id} kept permission mode ${kept.currentModeId ?? "unknown"} instead of ${turn.permissionMode}`)
+          }
+        }
         turn.onAdmitted?.()
         const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
         const started = store.startTurn(turnStartRecord(turn, prompt, userMessageId, assistantMessageId, agentSessionId))

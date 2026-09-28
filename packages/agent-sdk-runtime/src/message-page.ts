@@ -42,7 +42,7 @@ export type AgentMessagePageInput =
  * turn holds the user message id, while the journal keys the turn on the
  * assistant message id, and neither side can derive the other.
  */
-export type AgentTurnCoverageInput = {
+type AgentTurnCoverageInput = {
   turnId: string
 }
 
@@ -85,7 +85,7 @@ export type AgentMessagePage = {
 /** The message shape the latest-surface projection reads. */
 export type LatestSurfaceMessage = { info: Record<string, unknown>; parts: unknown[] }
 
-export function isLatestSurfacePart(part: unknown) {
+function isLatestSurfacePart(part: unknown) {
   return !!part && typeof part === "object" && (part as { type?: unknown }).type === "text"
 }
 

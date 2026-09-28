@@ -15,8 +15,9 @@ function acpTransport(peer: ReturnType<typeof acpPeer>) {
     config: { label: "Test ACP", connection: { kind: "process", command: "scripted" } } }, expectedRevision: 1, directory: "/repo", secrets: {} })
 }
 
-async function fixture() {
+async function fixture(setup: (peer: ReturnType<typeof acpPeer>) => void = () => {}) {
   const peer = acpPeer()
+  setup(peer)
   const transport = acpTransport(peer)
   const host = createHostFixture({ transports: { "acp-test": transport } })
   const session = await host.runtime.sessions.create(sessionCreate({ harness: { id: "acp-test", access: "connection" } }))
@@ -38,6 +39,43 @@ test("ACP death then missing upstream restores before preparing the next prompt"
     const prompt = f.requests.find((row) => row.method === "session/prompt")
     expect(JSON.stringify(prompt)).toContain("Saved recovery context")
     expect(f.store.getSessionConfig(f.id)?.handoff).toBeUndefined()
+  } finally { await f.dispose() }
+})
+
+const AGENT_MODES = [{ id: "ask", name: "Ask every time" }, { id: "code", name: "Write code" }]
+
+test("the mode an ACP agent opens, moves or resumes a session in, and a turn's own mode, are stored under the agent's names and published once each", async () => {
+  const f = await fixture((peer) => peer.setModes({ currentModeId: "ask", availableModes: AGENT_MODES }))
+  try {
+    const modes: unknown[] = []
+    f.eventHub.subscribeGlobal(({ payload }) => {
+      const config = payload.type === "session.updated" ? (payload.properties.info as { config?: { permissionModeLabel?: string } }).config : undefined
+      if (config) modes.push(config.permissionModeLabel)
+    })
+    const stored = () => f.store.getSessionConfig(f.id)
+    expect(stored()).toMatchObject({ permissionMode: "ask", permissionModeLabel: "Ask every time" })
+
+    const moved = { sessionId: f.store.getAgentSessionId(f.id)!, update: { sessionUpdate: "current_mode_update" as const, currentModeId: "code" } }
+    await f.peers[0].connection.sessionUpdate(moved)
+    await until(() => stored()?.permissionMode === "code")
+    await f.peers[0].connection.sessionUpdate(moved)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(stored()?.permissionModeLabel).toBe("Write code")
+    expect(modes).toEqual(["Write code"])
+
+    await f.runtime.turns.start({ sessionId: f.id, text: "ask first", permissionMode: "ask", origin: LOOPBACK_ORIGIN })
+    await until(() => !!f.store.getSession(f.id)?.lastTurn)
+    expect(stored()).toMatchObject({ permissionMode: "ask", permissionModeLabel: "Ask every time" })
+    expect(modes).toEqual(["Write code", "Ask every time"])
+
+    f.setModes({ currentModeId: "code", availableModes: AGENT_MODES })
+    f.peers[0].die()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const previous = JSON.stringify(f.store.getSession(f.id)?.lastTurn)
+    await f.runtime.turns.start({ sessionId: f.id, text: "continue", origin: LOOPBACK_ORIGIN })
+    await until(() => JSON.stringify(f.store.getSession(f.id)?.lastTurn) !== previous)
+    expect(stored()).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
+    expect(modes).toEqual(["Write code", "Ask every time", "Write code"])
   } finally { await f.dispose() }
 })
 

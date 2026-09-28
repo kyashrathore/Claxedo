@@ -1,6 +1,6 @@
 import path from "node:path"
 import { mkdir } from "node:fs/promises"
-import type { ClientPresentationEvent } from "@claxedo/agent-event-runtime/client-presentation"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { OpenCodeCorpus } from "./opencode-corpus"
 import { loadRuntimeStore, loadSessionMetaStore, loadWorkspaceStore } from "./production-modules"
 import type { RegisteredWorkspace, RuntimeStore } from "./production-modules"
@@ -118,7 +118,7 @@ type OpenTurn = {
  * `finishTurn` closes it under a turn lease. The corpus's own user message and
  * prompt part records are therefore not appended; the turn start is their record.
  */
-function replayTurns(store: RuntimeStore, sessionId: string, events: Iterable<ClientPresentationEvent>) {
+function replayTurns(store: RuntimeStore, sessionId: string, events: Iterable<AgentPresentationEvent>) {
   let turn: OpenTurn | undefined
   const finish = () => {
     if (!turn) return

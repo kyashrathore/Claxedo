@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import type { Dirent } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PromptModel } from "@claxedo/agent-runtime-contract"
@@ -6,7 +7,7 @@ import type { MachineLoginPolicy, PluginProjection, ResolvedCredentials } from "
 import type { CredentialProfile } from "../../registry/credentials"
 import { providerPlaceholder, selectedProviderProjection } from "../../contract"
 import { stringRecord } from "@claxedo/helpers"
-import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { isMissingFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
 export type PiProfile = {
   kind: CredentialProfile
@@ -26,6 +27,7 @@ const providerEnvironment = [
 ] as const
 
 const OWNER_PROBE_FILES = ["settings.json", "auth.json", "models.json", "trust.json"] as const
+const EXTENSION_ENTRY_FILES = ["index.ts", "index.js", "package.json"] as const
 
 export function selectPiProfile(
   credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
@@ -54,10 +56,30 @@ export function piEnvironment(profile: PiProfile, base: NodeJS.ProcessEnv): Reco
   return env
 }
 
-export function piProbeInputs(profile: PiProfile, directory: string): string[] {
-  const owner = profile.kind === "owner-login" ? OWNER_PROBE_FILES.map((name) => path.join(profile.agentDir, name)) : []
-  const project = path.join(path.resolve(directory), ".pi")
-  return [...owner, project, path.join(project, "settings.json")]
+async function extensionInputs(folder: string): Promise<string[]> {
+  let entries: Dirent[]
+  try { entries = await fs.readdir(folder, { withFileTypes: true }) }
+  catch (error) {
+    if (isMissingFile(error) || (error instanceof Error && "code" in error && error.code === "ENOTDIR")) return [folder]
+    throw error
+  }
+  return [folder, ...entries.flatMap((entry) => entry.isDirectory()
+    ? EXTENSION_ENTRY_FILES.map((name) => path.join(folder, entry.name, name)) : [path.join(folder, entry.name)])]
+}
+
+function projectFolders(directory: string): string[] {
+  const folders: string[] = []
+  for (let current = path.resolve(directory); ; current = path.dirname(current)) {
+    folders.push(path.join(current, ".pi"))
+    if (path.dirname(current) === current) return folders
+  }
+}
+
+export async function piProbeInputs(profile: PiProfile, directory: string): Promise<string[]> {
+  const owner = profile.kind === "owner-login"
+    ? [...OWNER_PROBE_FILES.map((name) => path.join(profile.agentDir, name)), ...await extensionInputs(path.join(profile.agentDir, "extensions"))] : []
+  return [...owner, ...projectFolders(directory).flatMap((folder) => [folder, path.join(folder, "settings.json")]),
+    ...await extensionInputs(path.join(path.resolve(directory), ".pi", "extensions"))]
 }
 
 export function piProjectionArgs(projection: PluginProjection): string[] {

@@ -5,8 +5,7 @@ import { lstatIfExists } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
 import { mirrorConfigTree } from "../config-mirror"
 
-const SETTINGS = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
-export const CLAUDE_SETTINGS_FILES = SETTINGS
+export const CLAUDE_SETTINGS_FILES = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
 const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins", "projects", "todos", "history.jsonl"] as const
 const CLAUDE_WRITTEN = ["projects", "todos", "history.jsonl"] as const
 
@@ -53,7 +52,7 @@ export async function composeClaudeConfigHome(root: string, source: string): Pro
       throw error
     }
   }
-  for (const name of SETTINGS) {
+  for (const name of CLAUDE_SETTINGS_FILES) {
     const from = path.join(source, name)
     const to = path.join(root, name)
     await fs.rm(to, { force: true })

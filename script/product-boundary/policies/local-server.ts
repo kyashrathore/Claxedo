@@ -203,8 +203,13 @@ export const localServer: Policy = {
   //    keep daemon replacement tied to the process this machine launched.
   //    It provides dependency-free data and OS reads, with no server, runtime
   //    or store closure behind them.
-  //    80/29, no headroom.
-  ceilings: { modules: 80, packages: 29 },
+  //  - `@claxedo/account-contract/vocabulary` through
+  //    `credentials/routes/credential.ts` and `credentials/broker.ts` (owner:
+  //    the account vocabulary the app, this daemon and the hosted server
+  //    share): whose account a person spends and where a stored account may
+  //    be delivered. The subpath is import-free.
+  //    80/30, no headroom.
+  ceilings: { modules: 80, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

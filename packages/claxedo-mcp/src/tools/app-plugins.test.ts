@@ -1,4 +1,7 @@
 import { PI_MCP_COMMAND, PI_MCP_EXTENSION_SOURCE } from "../../../harness/src/transports/pi-rpc/mcp"
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
@@ -260,7 +263,11 @@ test("the emitted Pi extension calls the real MCP server", async () => {
     on: (name: string, callback: () => Promise<void>) => events.set(name, callback),
   })
   try {
-    await commands.get(PI_MCP_COMMAND)!.handler(JSON.stringify(entry))
+    const handoff = path.join(await mkdtemp(path.join(tmpdir(), "pi-mcp-handoff-")), "server.json")
+    await writeFile(handoff, JSON.stringify(entry), { mode: 0o600 })
+    await commands.get(PI_MCP_COMMAND)!.handler(handoff)
+    await expect(stat(handoff)).rejects.toThrow("ENOENT")
+    await rm(path.dirname(handoff), { recursive: true })
     expect(active.toSorted()).toEqual(["read", ...APP_PLUGIN_TOOLS.map((name) => `mcp__claxedo__${name}`)].toSorted())
     expect((await tools.get("mcp__claxedo__app_plugin_guide")!.execute("guide", {})).content[0]).toMatchObject({ type: "text", text: APP_PLUGIN_GUIDE })
     await tools.get("mcp__claxedo__app_plugin_create")!.execute("call", { name: "Notes" })

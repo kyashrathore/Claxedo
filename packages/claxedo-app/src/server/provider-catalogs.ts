@@ -24,7 +24,7 @@ function catalogPlacement(harness: string, placementId: PlacementId | undefined)
   return harness === WORKSPACE_CATALOG_HARNESS ? placementId : undefined
 }
 
-function catalogKey(server: string, harness: string, placementId: PlacementId | undefined) {
+function catalogQueryKey(server: string, harness: string, placementId: PlacementId | undefined) {
   return queryKeys.providerCatalog(server, harness, catalogPlacement(harness, placementId))
 }
 
@@ -44,7 +44,7 @@ function needsDetail(catalog: ProviderCatalog | undefined, providerId: string): 
 export function providerCatalogQueries(transport: Transport, workspaces: Workspaces): ProviderCatalogQueries {
   return {
     catalog: (harness, placementId) =>
-      fetchQuery(catalogKey(transport.serverUrl, harness, placementId), () => readCatalog(transport, workspaces, harness, placementId, { view: "summary" })),
+      fetchQuery(catalogQueryKey(transport.serverUrl, harness, placementId), () => readCatalog(transport, workspaces, harness, placementId, { view: "summary" })),
   }
 }
 
@@ -54,7 +54,7 @@ export function createProviderCatalogsApi(transport: Transport, workspaces: Work
     const detail = await readCatalog(transport, workspaces, harness, placementId, { provider: providerId })
     const provider = detail.all.find((item) => item.id === providerId)
     if (!provider) throw new Error(`Provider ${providerId} was not returned by the runtime`)
-    queryClient.setQueryData<ProviderCatalog>(catalogKey(transport.serverUrl, harness, placementId), (current) =>
+    queryClient.setQueryData<ProviderCatalog>(catalogQueryKey(transport.serverUrl, harness, placementId), (current) =>
       current ? { all: current.all.map((item) => (item.id === providerId ? provider : item)), connected: detail.connected, default: detail.default } : detail,
     )
   }
@@ -63,7 +63,7 @@ export function createProviderCatalogsApi(transport: Transport, workspaces: Work
       const id = `${harness}\n${catalogPlacement(harness, placementId) ?? ""}\n${providerId}`
       const running = pending.get(id)
       if (running) return running
-      if (!needsDetail(queryClient.getQueryData<ProviderCatalog>(catalogKey(transport.serverUrl, harness, placementId)), providerId)) return Promise.resolve()
+      if (!needsDetail(queryClient.getQueryData<ProviderCatalog>(catalogQueryKey(transport.serverUrl, harness, placementId)), providerId)) return Promise.resolve()
       const task = read(harness, providerId, placementId).finally(() => pending.delete(id))
       pending.set(id, task)
       return task

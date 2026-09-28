@@ -1,10 +1,9 @@
-import type { CredentialScope, CredentialSource } from "./types"
-
-export type CredentialSecretScope = "local" | "shared"
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
+import type { CredentialSource } from "./types"
 
 export function credentialSecretInScope(input: {
   source: CredentialSource
-  scope?: CredentialScope
-}, scope: CredentialSecretScope = "local") {
+  scope?: AccountScope
+}, scope: AccountScope = "local") {
   return scope !== "shared" || input.scope === "shared"
 }

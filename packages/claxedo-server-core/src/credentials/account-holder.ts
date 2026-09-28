@@ -1,3 +1,4 @@
+import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { LOCAL_USER_ID } from "../platform/auth/local-identity"
 
 /**
@@ -19,18 +20,11 @@ export function credentialAdmitted(rowOwner: string | null | undefined, accountH
   return accountHolderOf(rowOwner, machineOwnerUserId) === accountHolder
 }
 
-export const ACCOUNT_SOURCES = ["own", "team"] as const
-export type AccountSource = (typeof ACCOUNT_SOURCES)[number]
-
 /** One person's choice per provider id; a provider they never chose for is `own`. */
 export type AccountSources = Readonly<Record<string, AccountSource>>
 
 /** Every person's choices, keyed by the user id each was stored under. */
 export type AccountSelections = Readonly<Record<string, AccountSources>>
-
-export function isAccountSource(value: unknown): value is AccountSource {
-  return value === "own" || value === "team"
-}
 
 /** One holder's choices, merged across the user ids that name them. */
 export function holderAccountSources(selections: AccountSelections, holder: string, machineOwnerUserId: string): AccountSources {

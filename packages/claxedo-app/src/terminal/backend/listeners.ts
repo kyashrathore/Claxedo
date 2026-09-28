@@ -11,7 +11,7 @@ export type BackendListeners = {
   readonly clear: () => void
 }
 
-function listen<T>(set: Set<T>, fn: T): Disposer {
+function addListener<T>(set: Set<T>, fn: T): Disposer {
   set.add(fn)
   return () => set.delete(fn)
 }
@@ -30,9 +30,9 @@ export function createListeners(): BackendListeners {
     emitResize: (cols, rows) => {
       for (const fn of resize) fn({ cols, rows })
     },
-    onData: (fn) => listen(data, fn),
-    onKey: (fn) => listen(key, fn),
-    onResize: (fn) => listen(resize, fn),
+    onData: (fn) => addListener(data, fn),
+    onKey: (fn) => addListener(key, fn),
+    onResize: (fn) => addListener(resize, fn),
     clear: () => {
       data.clear()
       key.clear()

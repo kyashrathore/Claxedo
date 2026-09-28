@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import type { AgentGoalMutationResult, GoalCapabilities, SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { NativeGoalOperations } from "@claxedo/harness/contract"
+import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { FakeTransport } from "../test-support/fake-transport"
@@ -229,6 +230,24 @@ describe("a create that carries the session's first prompt", () => {
       "lifecycle:failed",
     ])
     expect(published).toEqual([])
+    expect(host.store.getSession("ses_1")).toBeNull()
+  })
+
+  test("a harness that refuses the turn leaves no session and answers the coded refusal", async () => {
+    const journal: Journal = []
+    const host = harness(journal, { failTurnStart: new CredentialSelectionError("account_unavailable", "The session owner has no account for this harness") })
+    const response = await create(routes(journal, host), { id: "ses_1", prompt: FIRST })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "account_unavailable", message: "The session owner has no account for this harness" } })
+    expect(journal).toEqual([
+      "lifecycle:creating",
+      "create:ses_1",
+      "checkpoint:ses_1",
+      "delete:ses_1",
+      "after-delete:ses_1",
+      "lifecycle:failed",
+    ])
     expect(host.store.getSession("ses_1")).toBeNull()
   })
 

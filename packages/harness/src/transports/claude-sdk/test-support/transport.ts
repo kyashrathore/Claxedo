@@ -11,7 +11,7 @@ type ClaudeProcess = { wire: ScriptedProcess<Frame>; protocol: ClaudePeer }
 
 const result = { type: "result", subtype: "success", is_error: false, session_id: "up1", uuid: "result-1", num_turns: 1 }
 
-export async function scriptedClaude(options: { models: unknown[]; steering?: boolean }) {
+export async function scriptedClaude(options: { models: unknown[]; steering?: boolean; env?: NodeJS.ProcessEnv }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-scripted-"))
   const launches: { command: SpawnCommand; role: string }[] = []
   const users: Frame[] = []
@@ -50,7 +50,7 @@ export async function scriptedClaude(options: { models: unknown[]; steering?: bo
     },
   } satisfies Partial<HarnessServices>
   const transport = new ClaudeSdkTransport(services as unknown as HarnessServices, { executable: "claude", configRoot: path.join(root, "homes"),
-    userConfigRoot: path.join(root, "owner"), env: {} })
+    userConfigRoot: path.join(root, "owner"), env: options.env ?? {} })
   const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: root, locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id: "claude", access: "native" } }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }

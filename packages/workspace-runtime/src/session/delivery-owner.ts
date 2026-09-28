@@ -3,6 +3,7 @@ import type { PromptDelivery } from "@claxedo/agent-sdk-runtime"
 import type { SessionPromptBody } from "./service"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import type { QueuedPromptRecord, QueuedPromptAttempt } from "../store"
+import { admitTurnMessageIds } from "../host/turn-admission"
 
 export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release" | { replace: NonNullable<QueuedPromptRecord["parts"]> }
 
@@ -20,6 +21,7 @@ export type SessionDeliveryStore = {
   completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean
   sessionDirectory(sessionId: string): string | undefined
   sessionArchived(sessionId: string): boolean
+  messageSessionId(messageId: string): string | undefined
 }
 type Submission = { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester
 export type SessionDeliveryOwner = {
@@ -66,10 +68,12 @@ export function createSessionDeliveryOwner(input: {
   const eligible = (item: QueuedPromptRecord) => !item.held && (!item.steering || item.steering.state === "rejected")
   const next = (sessionId: string) => store().listQueuedPrompts()
     .filter((item) => item.sessionId === sessionId && eligible(item)).sort((a, b) => a.seq - b.seq)[0]
+  /** Refuses a message id another session holds before the row is written, as a turn's own admission does. */
   const persist = ({ sessionId, body, actor, author, authority, provenance, grant }: Submission) => {
     if (disposed) throw new Error("Session delivery owner is disposed")
+    const { userMessageId } = admitTurnMessageIds(store(), { sessionId, messageId: body.messageID ?? `msg_${randomUUID()}` })
     return store().queuePrompt({
-      sessionId, ...queuedPromptColumns(body), messageId: body.messageID ?? `msg_${randomUUID()}`,
+      sessionId, ...queuedPromptColumns(body), messageId: userMessageId,
       actor, author, authority, provenance, ...(grant ? { grant } : {}),
     })
   }

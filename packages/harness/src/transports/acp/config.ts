@@ -1,5 +1,6 @@
 import type { ConfigOperations, DraftLaunch, HarnessSession } from "../../contract"
 import { applySessionConfigUpdate, configOptionsPreview } from "../../contract"
+import { acpReportModeMove } from "./events"
 import type { AcpEntry } from "./index"
 import { acpOption, acpPermissionModes, type AcpCatalog } from "./options"
 import { acpApplySessionConfig, acpSetPermissionMode } from "./sync"
@@ -11,7 +12,7 @@ export function acpConfig(entryFor: (session: HarnessSession) => AcpEntry,
     update: async (session, update) => {
       const entry = entryFor(session)
       const config = applySessionConfigUpdate(entry.start.config, update)
-      await acpApplySessionConfig(entry, config)
+      await acpReportModeMove(entry, () => acpApplySessionConfig(entry, config))
       entry.start = { ...entry.start, config }
       return entry.start.config
     },

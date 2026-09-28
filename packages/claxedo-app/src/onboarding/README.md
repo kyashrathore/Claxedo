@@ -20,7 +20,7 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 
 ## Finish machine
 
-`FinishState` (`model.ts`, run by `createFinish` in `finish.ts`): `ready` → `working(created?)` → `finished(created)`, or `failed(error, created?)` and back to `working` on the next click. `created` is what Finish has made so far: a `project`, a hosted `cloudProject` still waiting for its workspace, or a `workspace`.
+`createFinish` (`finish.ts`) runs Finish as an `@/lib/flow` flow, `creating` then `opening`, beside `created`: what Finish has made so far, a `project`, a hosted `cloudProject` still waiting for its workspace, or a `workspace` (`model.ts`). A failure keeps `created`, and the next click runs the flow again.
 
 - A retry continues from `created`: it never creates what already exists, and with a project or workspace in hand it only opens it.
 - A failure after the project or workspace exists reads "Created successfully, but could not open it: …" and the button reads Open created project / Open created workspace.

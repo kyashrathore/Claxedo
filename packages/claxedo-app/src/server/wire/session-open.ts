@@ -2,7 +2,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import { errorFromBody, ServerError } from "../errors"
 import type { AgentRequest, SessionGoalState, SessionStatus, Subagent, Todo } from "../types"
 import { goalStateFromWire } from "./goal"
-import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
+import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
 import { sessionStatusFromWire } from "./status"
 import { subagentsFromWire } from "./subagents"
 
@@ -39,8 +39,8 @@ function requestsFromWire(permissions: SessionFact<readonly unknown[]>, question
   if ("error" in questions) return questions
   return {
     value: [
-      ...permissions.value.filter(isPermissionWire).map(permissionRequest),
-      ...questions.value.filter(isQuestionWire).map(questionRequest),
+      ...permissions.value.filter(isPermissionWire).map(requestFromPermission),
+      ...questions.value.filter(isQuestionWire).map(requestFromQuestion),
     ],
   }
 }

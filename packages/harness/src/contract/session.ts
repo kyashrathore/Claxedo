@@ -27,6 +27,8 @@ export type HarnessSession = {
   readonly locality: Locality
 }
 
+export type KeptPermissionMode = { modeId: string | null; label: string | null }
+
 export type StartInput = {
   sessionId: string
   workspaceId: string
@@ -40,6 +42,7 @@ export type StartInput = {
   credentials: ResolvedCredentials
   providerDefinitions?: readonly CustomProviderDefinition[]
   owner: TurnActor
+  permissionModeKept?: (mode: KeptPermissionMode) => Promise<void>
 }
 
 export type AttachInput = Omit<StartInput, "title" | "instructions"> & {

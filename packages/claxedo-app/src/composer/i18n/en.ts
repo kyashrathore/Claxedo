@@ -32,6 +32,8 @@ export type ComposerTextKey =
   | "prompt.popover.slashLabel"
   | "prompt.popover.emptyResults"
   | "prompt.popover.emptyCommands"
+  | "prompt.popover.filesFailed"
+  | "prompt.popover.commandsFailed"
   | "prompt.slash.badge.skill"
   | "prompt.slash.badge.mcp"
   | "prompt.slash.badge.custom"
@@ -140,6 +142,8 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.popover.slashLabel": "Commands",
   "prompt.popover.emptyResults": "No matching results",
   "prompt.popover.emptyCommands": "No matching commands",
+  "prompt.popover.filesFailed": "Files could not be searched:",
+  "prompt.popover.commandsFailed": "The harness's own commands could not be read:",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.slash.badge.custom": "custom",

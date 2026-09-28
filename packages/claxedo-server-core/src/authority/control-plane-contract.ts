@@ -12,6 +12,7 @@
  * and the full projection store. Nothing here constructs anything.
  */
 
+import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { SessionProjectionStore } from "./session-projection"
 import type { RelayProvider } from "../adapters/relay-port"
 import type { ControlPlaneAuthAdapter } from "../platform/auth/auth"
@@ -26,13 +27,12 @@ import type {
   CredentialHealth,
   CredentialKind,
   CredentialMetadata,
-  CredentialScope,
   CredentialStatus,
   CredentialUsageWindow,
   CredentialWrite,
   SetActiveCredentialsResult,
 } from "../credentials/types"
-import type { AccountSelections, AccountSource, AccountSources } from "../credentials/account-holder"
+import type { AccountSelections, AccountSources } from "../credentials/account-holder"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
 import type { HarnessId } from "@claxedo/agent-runtime-contract"
 import type { MachineLogin } from "../credentials/machine-login"
@@ -81,7 +81,7 @@ export type CredentialSyncResult = {
 export type ControlPlaneCredentials = {
   listCredentials: (org?: string) => Promise<CredentialMetadata[]>
   /** The rows the fanout would send for a scope, one per provider, secrets withheld. */
-  effectiveCredentials?: (scope: "local" | "shared", org?: string) => Promise<CredentialMetadata[]>
+  effectiveCredentials?: (scope: AccountScope, org?: string) => Promise<CredentialMetadata[]>
   /**
    * Mark one account — every row that stores it — as the one its providers run
    * on. Optional: a store that holds a single record per provider has no second
@@ -148,7 +148,7 @@ export type ControlPlaneCredentials = {
   ) => Promise<{
     saved: Array<{ credential_id: string; provider_id: string; kind: CredentialKind }>
   }>
-  updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number, org?: string) => Promise<boolean>
+  updateCredentialScope?: (id: string, scope: AccountScope, consentAt: number, org?: string) => Promise<boolean>
   /**
    * Persist replacement secret material for an existing credential: an OAuth
    * refresh, or the account a user reconnected by hand. `expiresAt` of `null`

@@ -24,7 +24,7 @@ export type OutlineTextRow = { message_id: string; text: string | null; syntheti
  * the users oldest first, and their text parts in transcript order, each
  * already cut to the snippet length by the store.
  */
-export type OutlineRows = {
+type OutlineRows = {
   users: readonly OutlineUserRow[]
   texts: readonly OutlineTextRow[]
   complete: boolean

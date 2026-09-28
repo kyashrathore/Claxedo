@@ -28,7 +28,7 @@ export function publishSqliteHostSessionRows(
     const touched = [...publication.rows, ...publication.removed]
     const served = servedSqliteWorkspaces(db, now, servingSql, publisher, [...new Set(touched.map((row) => row.workspaceId))])
     const plan = planHostSessionRows(publication, served, registeredSqliteSessions(db, [...new Set(touched.map((row) => row.sessionId))]))
-    for (const { row, workspace } of plan.adopt) adopt(db, now, workspace, row)
+    for (const { row, workspace } of plan.adopt) adoptHostSessionRow(db, now, workspace, row)
     for (const row of plan.update) writeListFields(db, row)
     for (const ref of plan.remove) {
       db.prepare(`
@@ -79,7 +79,7 @@ function registeredSqliteSessions(db: SqliteAuthorityDb, sessionIds: string[]) {
   return new Map(rows.map((row) => [row.session_id, { workspaceId: row.workspace_id, deleted: row.deleted_at !== null }]))
 }
 
-function adopt(db: SqliteAuthorityDb, now: number, workspace: ServedWorkspace, row: HostSessionRow) {
+function adoptHostSessionRow(db: SqliteAuthorityDb, now: number, workspace: ServedWorkspace, row: HostSessionRow) {
   const operationId = sessionAdoptionOperationId(row.sessionId)
   const owner = workspace.owner_token_identifier
   db.prepare(`DELETE FROM session_registration_operations WHERE session_id = ? AND state = 'compensated'`).run(row.sessionId)

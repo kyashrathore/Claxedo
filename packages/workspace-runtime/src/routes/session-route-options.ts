@@ -16,7 +16,7 @@ import type { AgentRuntime, AgentRuntimeRecovery, HarnessTarget } from "../host/
 import type { CompatEnvelope } from "../compat-events"
 import type { ActiveTurnScope, SessionPromptBody } from "../session/service"
 import type { SessionDeliveryOwner } from "../session/delivery-owner"
-import type { TurnOutline } from "../session/turn-outline"
+import type { TurnOutline } from "@claxedo/agent-sdk-runtime/turn-outline"
 import {
   sessionAccessContext,
   sessionRequestProvenance,
@@ -71,10 +71,11 @@ export type SessionRouteOptions = {
    * most has to answer.
    */
   resolveRecoveryOwner?: (c: Ctx, input: { sessionId: string }) => AgentRuntimeRecovery | undefined
-  // Upper bound on how long POST /prompt_async waits for the turn's admission
-  // decision before falling back to its fire-and-forget 204 ack. Guards against a
-  // wedged turns.start (adapter spawn that never settles admission and never
-  // throws) hanging the HTTP request indefinitely. Default 5000ms.
+  /**
+   * How long POST /prompt_async waits for the turn's admission decision before
+   * answering its fire-and-forget 204; 5000 ms when unset. A harness launch that
+   * neither admits the turn nor throws must not hold the request open.
+   */
   promptAsyncAdmissionAckTimeoutMs?: number
   resolveDirectory: (
     c: Ctx,
@@ -106,9 +107,9 @@ export type SessionRouteOptions = {
   ) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
   getPart?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messageId: string, partId: string) => Promise<AgentContentPart | undefined> | AgentContentPart | undefined
   /**
-   * The turn journal this route answers coverage from. No adapter is offered
-   * one: an engine that does not hold the journal cannot establish coverage,
-   * and a producer that cannot establish it must not be asked to guess.
+   * The turn journal this route answers coverage from. A harness is never
+   * asked: only the runtime that holds the journal can establish coverage, and
+   * a producer that cannot establish it must not guess.
    */
   turnCoverage?: (
     c: Ctx,

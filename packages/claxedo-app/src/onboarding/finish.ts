@@ -1,5 +1,7 @@
-import { machine } from "@/lib/machine"
-import { createdOf, finishTransition, openable, type Created, type FinishEvent, type FinishState, type Openable } from "./model"
+import { createSignal } from "solid-js"
+import { createFlow, runFlow } from "@/lib/flow"
+import { toAppError, type AppError } from "@/server"
+import { openable, type Created, type Openable } from "./model"
 
 export type FinishSteps = {
   readonly create: (created: Created | undefined) => Promise<Created>
@@ -7,40 +9,49 @@ export type FinishSteps = {
   readonly describe: (error: unknown, created: Created | undefined) => string
 }
 
-export function createFinish(steps: FinishSteps) {
-  const finish = machine<FinishState, FinishEvent>({ kind: "ready" }, finishTransition)
-  const created = () => createdOf(finish.state())
+function createResumableTarget(create: FinishSteps["create"]) {
+  const [created, setCreated] = createSignal<Created>()
   const reach = async (): Promise<Openable> => {
     let current = created()
     while (!openable(current)) {
-      current = await steps.create(current)
-      finish.send({ type: "created", created: current })
+      current = await create(current)
+      setCreated(current)
     }
     return current
   }
-  const run = async () => {
-    const kind = finish.state().kind
-    if (kind === "working" || kind === "finished") return
-    finish.send({ type: "started" })
-    try {
-      await steps.open(await reach())
-      finish.send({ type: "opened" })
-    } catch (error) {
-      finish.send({ type: "failed", error: steps.describe(error, created()) })
-    }
-  }
-  return {
-    state: finish.state,
-    created,
-    working: () => finish.state().kind === "working",
-    finished: () => finish.state().kind === "finished",
-    failure: () => {
-      const state = finish.state()
-      return state.kind === "failed" ? state.error : undefined
-    },
-    run,
-    moved: () => finish.send({ type: "moved" }),
-  }
+  return { created, reach }
 }
 
-export type Finish = ReturnType<typeof createFinish>
+function finishError(steps: FinishSteps, cause: unknown, created: Created | undefined): AppError {
+  const error = toAppError(cause)
+  return { class: error.class, retryable: error.retryable, message: steps.describe(cause, created) }
+}
+
+export function createFinish(steps: FinishSteps) {
+  const flow = createFlow<"creating" | "opening", Openable>()
+  const target = createResumableTarget(steps.create)
+  const reachAndOpen = async (step: (next: "opening") => void) => {
+    const reached = await target.reach()
+    step("opening")
+    await steps.open(reached)
+    return reached
+  }
+  const run = async () => {
+    const kind = flow.state().kind
+    if (kind === "running" || kind === "done") return
+    await runFlow(flow, "creating", reachAndOpen, (cause) => finishError(steps, cause, target.created()))
+  }
+  return {
+    created: target.created,
+    working: () => flow.state().kind === "running",
+    finished: () => flow.state().kind === "done",
+    failure: () => {
+      const state = flow.state()
+      return state.kind === "failed" ? state.error.message : undefined
+    },
+    run,
+    moved: () => {
+      if (flow.state().kind === "failed" && !target.created()) flow.send({ type: "reset" })
+    },
+  }
+}

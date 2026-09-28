@@ -94,3 +94,13 @@ test("an ask-rule prompt with suggestions persists nothing", async () => {
   expect(reply).toEqual({ behavior: "allow", updatedInput: { command: "npm test" } })
   expect(requests[0]?.kind === "permission" && requests[0].grantKey).toBeUndefined()
 })
+
+test("an always-allow answer that moves Claude's mode stores the mode the query now runs under", async () => {
+  const kept: unknown[] = []
+  const broker = { signal: new AbortController().signal, ask: async () => ({ kind: "permission" as const, decision: "allow_always" as const }) } as unknown as TurnBroker
+  const suggestions = [{ type: "setMode", mode: "acceptEdits", destination: "session" }] as Parameters<CanUseTool>[2]["suggestions"]
+  const answer = await askClaudePermission({ ...input, permissionModeKept: async (mode) => { kept.push(mode) } }, broker, "Edit",
+    { file_path: "/workspace/a.ts" }, { signal: new AbortController().signal, suggestions } as Parameters<CanUseTool>[2])
+  expect(answer).toMatchObject({ behavior: "allow", updatedPermissions: [{ type: "setMode", mode: "acceptEdits" }] })
+  expect(kept).toEqual([{ modeId: "acceptEdits", label: "Accept edits" }])
+})

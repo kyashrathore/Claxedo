@@ -140,7 +140,7 @@ export function teamAccountOf(harness: Harness, snapshot: AccountsSnapshot): Har
   return harnessAccounts(harness, snapshot.sources.team)[0]
 }
 
-function teamChosen(harness: Harness, snapshot: AccountsSnapshot) {
+function harnessOnTeamAccount(harness: Harness, snapshot: AccountsSnapshot) {
   return harness.providerIds.length > 0 && harness.providerIds.every((id) => snapshot.sources.sources.get(id) === "team")
 }
 
@@ -153,7 +153,7 @@ export function strandedBinding(login: MachineLogin, harness: Harness, snapshot:
 }
 
 export function selectedAccountKey(harness: Harness, snapshot: AccountsSnapshot): string | undefined {
-  if (teamChosen(harness, snapshot)) return TEAM_ACCOUNT_KEY
+  if (harnessOnTeamAccount(harness, snapshot)) return TEAM_ACCOUNT_KEY
   const rows = harnessAccounts(harness, snapshot.stored)
   const inUse = ownAccountInUse(harness, snapshot)
   const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined

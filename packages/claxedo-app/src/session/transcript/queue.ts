@@ -23,7 +23,7 @@ type QueueContext = {
 
 const NO_ITEMS: readonly QueuedPrompt[] = Object.freeze([])
 
-function field<T>(initial: T): Field<T> {
+function signalField<T>(initial: T): Field<T> {
   const [get, set] = createSignal<T>(initial)
   return { get, set }
 }
@@ -85,11 +85,11 @@ export function createQueue(server: Server, ref: SessionRef, onRead: (items: rea
     server,
     ref,
     onRead,
-    items: field(NO_ITEMS),
-    readError: field<AppError | undefined>(undefined),
-    pending: field<number | undefined>(undefined),
-    controlError: field<AppError | undefined>(undefined),
-    editing: field<number | undefined>(undefined),
+    items: signalField(NO_ITEMS),
+    readError: signalField<AppError | undefined>(undefined),
+    pending: signalField<number | undefined>(undefined),
+    controlError: signalField<AppError | undefined>(undefined),
+    editing: signalField<number | undefined>(undefined),
     inFlight: { current: undefined },
   }
   return {

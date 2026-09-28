@@ -6,6 +6,7 @@ import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
 import { createKeyedSerializer } from "@claxedo/helpers"
 import type { AgentRuntimeStore } from "./contracts"
 import { attachInput, type LaunchComposer } from "./launch"
+import type { PermissionModeWrite } from "./session-row"
 import type { HarnessHandle, TransportResolver } from "./transports"
 
 export type AttachedSession = {
@@ -16,6 +17,9 @@ export type AttachedSession = {
   owner: TurnActor
 }
 
+/** The transport a read addresses, and the session's attachment only when it is already held. */
+export type UnattachedRead = { handle: HarnessHandle; directory: string; attached?: AttachedSession }
+
 type AttachmentsInput = {
   store: AgentRuntimeStore
   transports: TransportResolver
@@ -23,6 +27,7 @@ type AttachmentsInput = {
   broker: BrokerOwner
   workspaceId: string
   executing: (sessionId: string, generation: object) => AttachedSession | undefined
+  writeMode: PermissionModeWrite
 }
 
 function serviceOrigin(owner: TurnActor): TurnOrigin {
@@ -94,6 +99,21 @@ export class SessionAttachments {
     return await this.attaching.run(sessionId, async () => this.peek(sessionId) ?? await this.attach(sessionId, directory, authority))
   }
 
+  /**
+   * The transport a read addresses without attaching the session. Attaching
+   * launches the harness process for most transports, so a session nobody is
+   * running is answered from its harness's declared facts instead.
+   */
+  async withoutAttaching(sessionId: string, requestedDirectory?: string, authority?: ConnectionSecretAuthority): Promise<UnattachedRead> {
+    const attached = this.peek(sessionId)
+    if (attached) return { handle: attached.handle, directory: attached.session.directory, attached }
+    const harness = this.harnessOf(sessionId)
+    if (!harness) throw new Error(`Session ${sessionId} has no runtime config`)
+    const directory = requestedDirectory ?? this.binding(sessionId).directory
+    const handle = await this.input.transports.forHarness(harness, directory, { owner: this.owner(sessionId), ...(authority ? { authority } : {}) })
+    return { handle, directory }
+  }
+
   /** The attachment a new turn runs on, after its connection and secret lease are resolved again under the turn's authority. */
   async admit(sessionId: string, authority?: ConnectionSecretAuthority): Promise<AttachedSession> {
     return await this.attaching.run(sessionId, () => this.attach(sessionId, undefined, authority))
@@ -119,6 +139,7 @@ export class SessionAttachments {
     const broker = createSessionBroker(this.input.broker, context)
     const session = await handle.transport.attach(attachInput(this.input.launch, {
       sessionId, directory, locality: handle.locality, config, owner,
+      permissionModeKept: (mode) => this.input.writeMode(sessionId, mode),
     }, binding), broker)
     const attachment: AttachedSession = { handle, session, broker, context, owner }
     this.attached.set(sessionId, attachment)

@@ -64,7 +64,7 @@ function todosOf(view: SessionOpenView) {
   return "error" in view.todos && view.todos.error.code === TODOS_UNSUPPORTED ? [] : factValue(view.todos)
 }
 
-export function readSession(context: SessionContext, ref: SessionRef, shape: PageShape, held?: HeldSessionReads): SessionReads {
+export function startSessionReads(context: SessionContext, ref: SessionRef, shape: PageShape, held?: HeldSessionReads): SessionReads {
   const { transport } = context
   const first = held ? readHeldFirst(context, ref, held) : readFirst(context, ref, shape)
   const opened = onRuntime<SessionOpenView | undefined>(

@@ -2,11 +2,11 @@ import type { AgentPermission, AgentPermissionReply, AgentQuestion } from "@clax
 import { requestId } from "../ids"
 import type { AgentRequest } from "../types"
 
-export function permissionRequest(permission: AgentPermission): AgentRequest {
+export function requestFromPermission(permission: AgentPermission): AgentRequest {
   return { kind: "permission", id: requestId(permission.id), permission }
 }
 
-export function questionRequest(question: AgentQuestion): AgentRequest {
+export function requestFromQuestion(question: AgentQuestion): AgentRequest {
   return { kind: "question", id: requestId(question.id), question }
 }
 

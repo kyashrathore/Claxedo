@@ -1,9 +1,10 @@
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import { randomUUID } from "crypto"
 import { collectLocalCredentialItems, localCredentialKey, type LocalCredentialItem } from "./sync"
 import { probeDiscoveredCredential } from "./probe"
 import type { CredentialUsageWindow } from "./verify"
 import { listCredentials, putCredential, updateCredentialHealth } from "@claxedo/server-core/credentials/registry"
-import type { CredentialHealth, CredentialScope, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import type { CredentialHealth, CredentialWrite } from "@claxedo/server-core/credentials/types"
 
 const ttl = 5 * 60 * 1000
 
@@ -37,7 +38,7 @@ export type CredentialDiscoveryPreview = {
 export type CredentialDiscoverySelection = {
   provider_id: string
   kind: LocalCredentialItem["kind"]
-  scope: CredentialScope
+  scope: AccountScope
 }
 
 export type CredentialDiscoveryErrorCode =

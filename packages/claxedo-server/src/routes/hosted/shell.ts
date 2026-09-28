@@ -51,7 +51,7 @@ import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
-import { isAccountSource, type AccountSource } from "@claxedo/server-core/credentials/account-holder"
+import { isAccountSource, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { AGENT_HARNESS_IDS, EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 

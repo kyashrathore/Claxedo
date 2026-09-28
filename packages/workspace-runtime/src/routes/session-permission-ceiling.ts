@@ -55,12 +55,12 @@ export async function sessionPermissionCeiling(opts: Opts, c: Ctx, directory: Ru
   return effectivePermissionCeiling(opts, c, directory, parent ?? undefined, config.permissionCeiling)
 }
 
+/** A turn's own mode is refused as bad input unless its harness offers it under the session's ceiling, before anything admits the turn. */
 export async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, modeId: string | undefined) {
   if (!modeId) return undefined
   const session = await readSession(opts, c, directory, sessionId)
   if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
   const ceiling = await sessionPermissionCeiling(opts, c, directory, session)
-  if (!ceiling) return undefined
   return (await permissionModeUnderCeiling(c, await opts.runtime(c), sessionTarget(c, sessionId, directory), ceiling, modeId)).refusal
 }
 

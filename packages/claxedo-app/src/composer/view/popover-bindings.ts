@@ -1,4 +1,4 @@
-import { createEffect, createMemo, type Accessor } from "solid-js"
+import { createEffect, createMemo, mergeProps, type Accessor } from "solid-js"
 import type { ComposerController } from "../controller"
 import type { ComposerSetup } from "../setup"
 import type { AtItem } from "../suggestions"
@@ -45,38 +45,54 @@ function followActiveSlashRow(popover: Accessor<PromptPopoverKind>, controller: 
   }
 }
 
+function atPopoverBindings(composer: ComposerSetup, popover: Accessor<PromptPopoverKind>) {
+  const controller = composer.controller
+  const at = createAtOptions(composer.suggestions.atItems, controller)
+  return {
+    get atFlat() {
+      return at.flat()
+    },
+    get atFailed() {
+      return composer.suggestions.atFailed()?.message
+    },
+    get atActive() {
+      return popover() === "at" ? at.keyOf(controller.state.activeId) : undefined
+    },
+    atKey: promptAtOptionKey,
+    setAtActive: at.setActive,
+    onAtSelect: at.select,
+  }
+}
+
+function slashPopoverBindings(composer: ComposerSetup, popover: Accessor<PromptPopoverKind>, keybind: (id: string) => string) {
+  const controller = composer.controller
+  return {
+    setSlashPopoverRef: followActiveSlashRow(popover, controller),
+    get slashFlat() {
+      return composer.suggestions.slashItems()
+    },
+    get slashFailed() {
+      return composer.suggestions.slashFailed()?.message
+    },
+    get slashActive() {
+      return popover() === "slash" ? controller.state.activeId : undefined
+    },
+    setSlashActive: controller.setActive,
+    onSlashSelect: controller.selectSlash,
+    commandKeybind: (id: string) => keybind(id) || undefined,
+  }
+}
+
 export function createPromptPopoverBindings(input: {
   composer: ComposerSetup
   popover: Accessor<PromptPopoverKind>
   keybind: (id: string) => string
 }): PromptPopoverBindings {
-  const controller = input.composer.controller
-  const at = createAtOptions(input.composer.suggestions.atItems, controller)
-  const setSlashPopoverRef = followActiveSlashRow(input.popover, controller)
-
-  return {
+  const shared = {
     get popover() {
       return input.popover()
     },
     documentPicker: false,
-    setSlashPopoverRef,
-    get atFlat() {
-      return at.flat()
-    },
-    get atActive() {
-      return input.popover() === "at" ? at.keyOf(controller.state.activeId) : undefined
-    },
-    atKey: promptAtOptionKey,
-    setAtActive: at.setActive,
-    onAtSelect: at.select,
-    get slashFlat() {
-      return input.composer.suggestions.slashItems()
-    },
-    get slashActive() {
-      return input.popover() === "slash" ? controller.state.activeId : undefined
-    },
-    setSlashActive: controller.setActive,
-    onSlashSelect: controller.selectSlash,
-    commandKeybind: (id) => input.keybind(id) || undefined,
   }
+  return mergeProps(shared, atPopoverBindings(input.composer, input.popover), slashPopoverBindings(input.composer, input.popover, input.keybind))
 }

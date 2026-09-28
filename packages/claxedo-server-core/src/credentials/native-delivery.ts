@@ -1,3 +1,4 @@
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { Log } from "../platform/runtime/lib/log"
 import {
@@ -87,7 +88,7 @@ export async function nativeProviderDeliveries(input: {
  * permission to run on whatever login its image carries.
  */
 export async function projectNativeProviderAuth(input: {
-  scope?: "local" | "shared"
+  scope?: AccountScope
   /** The person the sandbox serves; only the accounts they chose reach it. */
   sandboxOwner?: string
   machineOwnerUserId: string

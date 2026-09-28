@@ -19,6 +19,16 @@ function serveCommands(body: unknown) {
   return { workspace, requested, commands: () => workspace.server.queries.harnesses.commands(FIXTURE_PLACEMENT, "claude") }
 }
 
+function mountSlashPicker(workspace: ReturnType<typeof serveCommands>["workspace"]) {
+  return workspace.mount(() => createSuggestions({
+    registries: { mentions: { list: () => [], add: () => () => undefined } },
+    commandOptions: () => [{ id: "session.new", title: "New session", slash: "new" }],
+    placementId: () => FIXTURE_PLACEMENT,
+    harness: () => "claude",
+    query: () => ({ kind: "slash", query: "" }),
+  }))
+}
+
 test("slash picker: a harness's saved and transport commands list with their origin and source badges", async () => {
   const fixture = serveCommands([
     { name: "review", origin: "saved", content: "Review my saved instructions" },
@@ -27,13 +37,7 @@ test("slash picker: a harness's saved and transport commands list with their ori
     { name: "linear", origin: "transport", source: "mcp" },
     { name: "compact", origin: "transport", source: "command" },
   ])
-  const suggestions = fixture.workspace.mount(() => createSuggestions({
-    registries: { mentions: { list: () => [], add: () => () => undefined } },
-    commandOptions: () => [{ id: "session.new", title: "New session", slash: "new" }],
-    placementId: () => FIXTURE_PLACEMENT,
-    harness: () => "claude",
-    query: () => ({ kind: "slash", query: "" }),
-  }))
+  const suggestions = mountSlashPicker(fixture.workspace)
   await fixture.workspace.server.queryClient.fetchQuery(fixture.commands())
   await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -54,4 +58,14 @@ test("slash picker: a saved command without its content fails the command read",
   const read = fixture.workspace.server.queryClient.fetchQuery(fixture.commands())
   await expect(read).rejects.toBeInstanceOf(ServerError)
   await expect(read).rejects.toThrow("The harness command list answer does not match its contract")
+})
+
+test("slash picker: a failed harness command read is the picker's failure, and the app's own commands still list", async () => {
+  const fixture = serveCommands([{ name: "triage", origin: "saved" }])
+  const suggestions = mountSlashPicker(fixture.workspace)
+  await expect(fixture.workspace.server.queryClient.fetchQuery(fixture.commands())).rejects.toBeInstanceOf(ServerError)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(suggestions.slashFailed()?.message).toBe("The harness command list answer does not match its contract")
+  expect(suggestions.slashItems().map((item) => item.id)).toEqual(["session.new"])
 })

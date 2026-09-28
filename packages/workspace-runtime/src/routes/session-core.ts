@@ -957,14 +957,18 @@ async function sessionOwnStatus(opts: Opts, c: Ctx, directory: RuntimeDirectory,
   return (await opts.getStatus?.(c, directory))?.[sessionId] ?? null
 }
 
-/** A harness without todos refuses with `unsupported_operation`, the code every client reads for an operation it lacks. */
+/**
+ * A harness without todos refuses with `unsupported_operation`, the code every
+ * client reads for an operation it lacks. Neither the refusal nor the read
+ * attaches the session: opening an idle session never launches its harness.
+ */
 async function readSessionTodos(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<readonly unknown[] | Response> {
   const runtime = await opts.runtime(c)
-  const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, sessionId, directory), "todos", "todos")
-  if (unsupported) return unsupported
+  const caps = await runtime.reads.declaredCapabilities(sessionId, directory, requestSecretAuthority(c).secretAuthority)
+  if (!caps.todos) return unsupportedOperation(c, caps, "todos", { capability: "todos" })
   const replay = await opts.getTodos?.(c, directory, sessionId)
   if (replay) return replay
-  return await runtime.reads.todos(sessionId, directory, requestSecretAuthority(c).secretAuthority) ?? []
+  return await runtime.reads.todos(sessionId) ?? []
 }
 
 async function listSessionSubagents(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {

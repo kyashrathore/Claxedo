@@ -1,5 +1,6 @@
 import type { SessionConfigOption, SessionMode, SessionModeState } from "@agentclientprotocol/sdk"
 import type { AgentAgent, AgentConfigOption, AgentPermissionModeState, HarnessEffortLevels, ModelSelection } from "@claxedo/agent-runtime-contract"
+import type { KeptPermissionMode } from "../../contract"
 
 export type AcpOptionKind = "mode" | "model" | "thought_level"
 
@@ -55,6 +56,12 @@ export function acpPermissionModes(catalog: AcpCatalog): AgentPermissionModeStat
       ...(catalog.currentModeId ? { currentModeId: catalog.currentModeId } : {}), appliesFrom: "next-turn" }
   }
   return { modes: [], ...(catalog.options.length ? {} : { unsupported: "This agent does not expose permission modes" }), appliesFrom: "next-turn" }
+}
+
+export function acpKeptPermissionMode(catalog: AcpCatalog): KeptPermissionMode {
+  const state = acpPermissionModes(catalog)
+  const modeId = state.currentModeId ?? null
+  return { modeId, label: state.modes.find((mode) => mode.id === modeId)?.name ?? null }
 }
 
 export function acpAgents(catalog: AcpCatalog): AgentAgent[] {

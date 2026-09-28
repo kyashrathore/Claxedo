@@ -1,7 +1,8 @@
-import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
+import type { PermissionMode, PermissionUpdate } from "@anthropic-ai/claude-agent-sdk"
 import { CLAUDE_PERMISSION_MODES, type AgentPermissionModeState, type SessionConfig } from "@claxedo/agent-runtime-contract"
 import { claudePermissionSettings } from "../../profiles/claude-code"
 import { TransportError } from "../../contract/errors"
+import type { KeptPermissionMode } from "../../contract"
 import { replayClaudePermissionUpdates, claudeGrantUpdates, persistedClaudeRules } from "./grants"
 
 export const sdkModes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const satisfies readonly PermissionMode[]
@@ -13,6 +14,14 @@ export function claudeModeId(selected: string | undefined): string {
 
 export function claudeModeState(currentModeId: string): AgentPermissionModeState {
   return { modes: [...CLAUDE_PERMISSION_MODES.modes], currentModeId, appliesFrom: CLAUDE_PERMISSION_MODES.appliesFrom }
+}
+
+export function claudeModeKept(updates: readonly PermissionUpdate[] | undefined): KeptPermissionMode | undefined {
+  const moved = updates?.findLast((update) => update.type === "setMode")
+  if (moved?.type !== "setMode") return undefined
+  const mode = CLAUDE_PERMISSION_MODES.modes.find((candidate) => candidate.id === moved.mode)
+  if (!mode) throw new TransportError("claude", "protocol", `Unknown Claude permission mode ${moved.mode}`)
+  return { modeId: mode.id, label: mode.name }
 }
 
 export function requireClaudeMode(modeId: string): typeof sdkModes[number] {

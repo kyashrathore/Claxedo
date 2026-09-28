@@ -1,6 +1,10 @@
+import { randomUUID } from "node:crypto"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import type { McpServerSpec } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { installPiExtension, runPiExtensionCommand } from "./extension"
+import { installPiExtension, piExtensionPath, runPiExtensionCommand } from "./extension"
 import { piDeadline } from "./launch"
 import type { PiRpc } from "./rpc"
 import type { Clock } from "../../contract"
@@ -8,7 +12,9 @@ import type { Clock } from "../../contract"
 export const PI_MCP_COMMAND = "claxedo-mcp"
 const EXTENSION_FILE = "claxedo-first-party-mcp.ts"
 
-export const PI_MCP_EXTENSION_SOURCE = `const COMMAND = ${JSON.stringify(PI_MCP_COMMAND)}
+export const PI_MCP_EXTENSION_SOURCE = `import { readFile, rm } from "node:fs/promises"
+
+const COMMAND = ${JSON.stringify(PI_MCP_COMMAND)}
 
 async function connect(server) {
   let session
@@ -58,13 +64,18 @@ function content(block) {
   return block.type === "text" || block.type === "image" ? block : { type: "text", text: JSON.stringify(block) }
 }
 
+async function readOnce(file) {
+  try { return JSON.parse(await readFile(file, "utf8")) }
+  finally { await rm(file, { force: true }) }
+}
+
 export default function (pi) {
   let connection
   pi.registerCommand(COMMAND, {
     description: "Connect this session's Claxedo tools",
     handler: async (args) => {
       if (connection) throw new Error("Claxedo MCP is already connected")
-      const server = JSON.parse(args)
+      const server = await readOnce(args.trim())
       connection = await connect(server)
       const names = []
       for (const tool of await connection.tools()) {
@@ -89,8 +100,13 @@ export function installPiMcpExtension(stateRoot: string): Promise<string> {
   return installPiExtension(stateRoot, EXTENSION_FILE, PI_MCP_EXTENSION_SOURCE)
 }
 
-export async function connectPiMcp(rpc: PiRpc, clock: Clock, server: McpServerSpec): Promise<void> {
+export async function connectPiMcp(rpc: PiRpc, clock: Clock, stateRoot: string, server: McpServerSpec): Promise<void> {
   if (server.kind === "stdio") throw new TransportError("pi", "configuration", "Claxedo's MCP server must be an HTTP entry")
-  await runPiExtensionCommand(rpc, "Pi Claxedo MCP connection", PI_MCP_COMMAND,
-    JSON.stringify({ name: server.name, url: server.url, headers: server.headers ?? {} }), piDeadline(clock))
+  const handoff = path.join(stateRoot, "mcp-handoff", `${randomUUID()}.json`)
+  await fs.mkdir(path.dirname(handoff), { recursive: true, mode: 0o700 })
+  await writePrivateFileAtomic(handoff, JSON.stringify({ name: server.name, url: server.url, headers: server.headers ?? {} }))
+  try {
+    await runPiExtensionCommand(rpc, { what: "Pi Claxedo MCP connection", command: PI_MCP_COMMAND,
+      extension: piExtensionPath(stateRoot, EXTENSION_FILE), argument: handoff, deadline: piDeadline(clock) })
+  } finally { await fs.rm(handoff, { force: true }) }
 }

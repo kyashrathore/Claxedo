@@ -92,6 +92,20 @@ describe("runtime session status", () => {
     expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"]])
   })
 
+  test("a stopped turn's expired permission and question no longer await input", () => {
+    const h = harness()
+    h.mount()
+    h.emit("permission.asked", { id: "p1", sessionID: "s1", permission: "bash" })
+    h.emit("question.asked", { id: "q1", sessionID: "s1", questions: [] })
+
+    h.emit("permission.expired", { sessionID: "s1", requestID: "p1" })
+    expect(h.status.current(WS, "s1").awaitingInput, "the question is still open").toBe(true)
+    h.emit("question.expired", { sessionID: "s1", requestID: "q1" })
+    expect(h.status.current(WS, "s1").awaitingInput).toBe(false)
+
+    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"]])
+  })
+
   test("frames without a session, and frames of other kinds, change nothing", () => {
     const h = harness()
     h.mount()

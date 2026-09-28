@@ -46,7 +46,7 @@ import { captureTurnTarget, containLostTurn, recoveryCaller } from "./session-tu
  * is what `sessionError` → `firstTurnErrorData` classifies (unmatched →
  * "unknown") and what the client's raw-detail disclosure shows.
  */
-export function streamTurnErrorMessage(error: unknown): string {
+function streamTurnErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === "string" && error) return error
   return "Stream error"
@@ -196,7 +196,7 @@ export async function queuedPromptRequester(
   }
 }
 
-export type PromptAdmission = { answer: Response; turn?: Promise<void>; failed?: { error: unknown } }
+type PromptAdmission = { answer: Response; turn?: Promise<void>; failed?: { error: unknown } }
 
 /**
  * `prompt_async`'s admission, which a create's first prompt goes through too.
@@ -215,10 +215,10 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     if (admitted.size === 0) promptAdmissions.delete(sessionId)
   }
   const ADMISSION_ACK_TIMED_OUT = Symbol("prompt-async-admission-timeout")
-  // Wait for the turn's admission decision, but never longer than the bound:
-  // a wedged turns.start (adapter spawn that never settles admission and never
-  // throws) must not hang the prompt_async response. On timeout the caller gets
-  // its fire-and-forget 204 and the detached turn continues; any conflict/error
+  // Wait for the turn's admission decision, but never longer than the bound: a
+  // turns.start whose harness launch neither admits the turn nor throws must not
+  // hang the prompt_async response. On timeout the caller gets its
+  // fire-and-forget 204 and the detached turn continues; a conflict or error
   // then surfaces on the event stream.
   const awaitAdmissionAck = async (admission: Promise<unknown>): Promise<unknown> => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -290,11 +290,19 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         const submission = { sessionId: id, body, ...requester }
         if (body.delivery === "queue") {
           try { opts.queuedPrompts.queue(submission) }
-          catch (error) { return c.json({ error: streamTurnErrorMessage(error) }, 503) }
+          catch (error) {
+            if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
+            return c.json({ error: streamTurnErrorMessage(error) }, 503)
+          }
           admittedForExecution = true
           return c.json({ delivery: "queue" })
         }
-        const result = await opts.queuedPrompts.steer(submission)
+        let result: Awaited<ReturnType<typeof opts.queuedPrompts.steer>>
+        try { result = await opts.queuedPrompts.steer(submission) }
+        catch (error) {
+          if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
+          throw error
+        }
         admittedForExecution = true
         if (result.ok) return c.json({ delivery: "steer" })
         return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)

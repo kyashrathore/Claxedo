@@ -42,6 +42,7 @@ test("Pi lists and calls Claxedo's MCP tool with the session's bearer through it
     expect(commands.some((command) => command.name === "claxedo-mcp")).toBe(false)
     const written = await listFiles(path.join(root, "claxedo"))
     expect(written.some((file) => file.endsWith(".jsonl"))).toBe(true)
+    expect(written.filter((file) => file.includes(`${path.sep}mcp-handoff${path.sep}`))).toEqual([])
     for (const file of written) {
       if (!file.endsWith(".ts")) expect(await fs.readFile(file, "utf8")).not.toContain("pi-mcp-proof-bearer")
     }

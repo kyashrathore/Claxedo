@@ -14,6 +14,7 @@
  * The local server process holds the value; the harness process never does.
  */
 
+import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import { createHash, randomBytes } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
@@ -72,8 +73,6 @@ const FAILURES_BEFORE_YIELDING = 2
 
 /** The window a brokered request re-marks the row it spent, at most once within. */
 const USE_MARK_INTERVAL_MS = 60 * 1000
-
-type SecretScope = "local" | "shared"
 
 function credentialsDir(dataDir: string) {
   const dir = path.join(dataDir, "credentials")
@@ -134,7 +133,7 @@ async function openBrokerState(dataDir: string, now: () => number): Promise<Brok
 }
 
 export type ProjectAuthInput = {
-  scope?: SecretScope
+  scope?: AccountScope
   orgId?: string
   workspaceId?: string
   /** How the sandbox this projection is for can carry a credential, if at all. */
@@ -177,14 +176,14 @@ type MintedBinding = {
   providerId: string
   workspaceId: string
   orgId: string
-  scope: SecretScope
+  scope: AccountScope
   /** The row the placeholder now in the harness was minted for. */
   credentialId: string
   lease?: MintedLease
 }
 
 /** Whether anyone chose the team account for a provider: a team row nobody chose is neither minted nor honoured. */
-function teamChosen(selections: AccountSelections, providerId: string) {
+function anyoneChoseTeam(selections: AccountSelections, providerId: string) {
   return Object.values(selections).some((sources) => sources[providerId] === "team")
 }
 
@@ -268,7 +267,7 @@ export function createLocalCredentialBroker(input: {
    * indistinguishable from no account at all, and the harness answered that by
    * running on the machine's own login.
    */
-  function selectedCredentials(scope: SecretScope, org: string) {
+  function selectedCredentials(scope: AccountScope, org: string) {
     return activeCredentialsForScope(scope, { onOutage: "throw" }, org)
       .map((row) => hasProviderDestination(row.credential.provider_id, org)
         ? row
@@ -327,7 +326,7 @@ export function createLocalCredentialBroker(input: {
       const row = selectedCredentials(entry.scope, entry.orgId)
         .find((candidate) => candidate.credential.provider_id === entry.providerId && (candidate.credential.owner ?? null) === entry.rowOwner)
       if (!row || row.unavailable) return undefined
-      if (entry.rowOwner === null && !teamChosen(accountSelections(entry.orgId), entry.providerId)) return undefined
+      if (entry.rowOwner === null && !anyoneChoseTeam(accountSelections(entry.orgId), entry.providerId)) return undefined
       const destination = await destinationFor(row.credential, entry.orgId)
       if (!destination) return undefined
       const state = await brokerState()
@@ -435,7 +434,7 @@ export function createLocalCredentialBroker(input: {
       }
       const selections = accountSelections(org)
       const selection = selectedCredentials(scope, org)
-        .filter(({ credential }) => credential.owner || teamChosen(selections, credential.provider_id))
+        .filter(({ credential }) => credential.owner || anyoneChoseTeam(selections, credential.provider_id))
       const resolved: { owner: string | null; providerId: string; projection: ProviderProjectionSource }[] = []
       const project = (credential: CredentialMetadata, projection: ProviderProjectionSource) =>
         resolved.push({ owner: credential.owner ?? null, providerId: credential.provider_id, projection })

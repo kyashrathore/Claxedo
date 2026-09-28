@@ -12,11 +12,11 @@ export class PiDraftProbes {
 
   constructor(private readonly host: PiLaunchHost) {}
 
-  catalog(draft: DraftLaunch, model: PromptModel | undefined, mode: "probe" | "peek"): Promise<PiCatalog> {
+  async catalog(draft: DraftLaunch, model: PromptModel | undefined, mode: "probe" | "peek"): Promise<PiCatalog> {
     const key = draftProbeKey(draft, model?.modelID)
-    const files = piProbeInputs(selectPiProfile(draft.credentials, draft.directory, "probe", this.host.options), draft.directory)
-    if (mode === "peek") return this.catalogs.peek(key, files).then((catalog) => catalog ?? { models: [], efforts: [] })
-    return this.catalogs.read(key, files, () => this.probe(draft, model, (rpc) => piCatalog(rpc, model)))
+    const inputs = { files: await piProbeInputs(selectPiProfile(draft.credentials, draft.directory, "probe", this.host.options), draft.directory) }
+    if (mode === "peek") return await this.catalogs.peek(key, inputs) ?? { models: [], efforts: [] }
+    return this.catalogs.read(key, inputs, () => this.probe(draft, model, (rpc) => piCatalog(rpc, model)))
   }
 
   commands(draft: DraftLaunch) {

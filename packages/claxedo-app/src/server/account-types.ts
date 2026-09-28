@@ -1,10 +1,7 @@
+import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { QuotaWindow } from "@claxedo/usage-contract"
 
 export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean; readonly reason?: string }
-
-export type AccountScope = "local" | "shared"
-
-export type AccountSource = "own" | "team"
 
 export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly team: readonly Account[] }
 

@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream"
-import { AgentSideConnection, ndJsonStream, PROTOCOL_VERSION, RequestError, type Agent, type PromptResponse } from "@agentclientprotocol/sdk"
+import { AgentSideConnection, ndJsonStream, PROTOCOL_VERSION, RequestError, type Agent, type PromptResponse, type SessionModeState } from "@agentclientprotocol/sdk"
 import type { HarnessServices } from "@claxedo/harness/contract"
 
 export function acpPeer() {
@@ -19,6 +19,7 @@ export function acpPeer() {
   let context: { size: number; used: number } | undefined
   let startError: Error | undefined
   let startBarrier: Promise<void> | undefined
+  let modes: SessionModeState | undefined
   services.firstPartyMcp = (sessionId) => ({ kind: "http", name: "claxedo", url: `http://localhost/mcp/${sessionId}`, headers: { Authorization: `Bearer ${sessionId}` } })
   services.spawn = async () => {
     const stdin = new PassThrough()
@@ -40,11 +41,16 @@ export function acpPeer() {
         requests.push({ method: "session/new", params })
         const sessionId = `up-${generation}-${sessions.size}`
         sessions.add(sessionId)
-        return { sessionId }
+        return { sessionId, ...(modes ? { modes } : {}) }
       },
       resumeSession: async (params) => {
         requests.push({ method: "session/resume", params })
         if (!sessions.has(params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
+        return modes ? { modes } : {}
+      },
+      setSessionMode: async (params) => {
+        requests.push({ method: "session/set_mode", params })
+        if (modes) modes = { ...modes, currentModeId: params.modeId }
         return {}
       },
       loadSession: async (params) => {
@@ -72,5 +78,5 @@ export function acpPeer() {
     peers.push({ connection, die })
     return { pid: 5_000_000 + generation, stdin, stdout, stderr: new PassThrough(), exited, retire: async () => { die(); return { stopped: true } } }
   }
-  return { services, peers, requests, holdStart: (barrier: Promise<void>) => { startBarrier = barrier }, setUsage: (value: PromptResponse["usage"]) => { usage = value }, setContext: (value: { size: number; used: number }) => { context = value }, failStart: (error: Error) => { startError = error } }
+  return { services, peers, requests, setModes: (value: SessionModeState) => { modes = value }, holdStart: (barrier: Promise<void>) => { startBarrier = barrier }, setUsage: (value: PromptResponse["usage"]) => { usage = value }, setContext: (value: { size: number; used: number }) => { context = value }, failStart: (error: Error) => { startError = error } }
 }

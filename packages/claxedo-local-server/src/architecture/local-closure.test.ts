@@ -253,6 +253,10 @@ describe("@claxedo/local-server closure", () => {
     // surface a relayed request may reach — for this daemon and a
     // `claxedo connect` host alike, and reaches only server-core's log and
     // peer-address leaves and the runtime's relay subpath.
+    // `@claxedo/account-contract` owns the account vocabulary the credential
+    // routes validate against (whose account a person spends, where a stored
+    // account may be delivered), the same words the app and the hosted server
+    // read; this product reaches only its import-free `vocabulary` subpath.
     // `node:timers` is the device-code poll's sleep in
     // `credentials/provider-auth/service.ts` — bounded waits on the server
     // thread, which only a Node runtime has. `@claxedo/plugin-api` and
@@ -285,6 +289,6 @@ describe("@claxedo/local-server closure", () => {
     //    plugins above.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(110)
-    expect(packages.size).toBeLessThanOrEqual(29)
+    expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

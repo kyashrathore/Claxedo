@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -7,7 +7,18 @@ import { ScriptedProcess } from "../../../test-support/scripted-process"
 import { PiRpcTransport } from ".."
 
 type Frame = { type: string; id?: string; message?: string }
-type Launch = { command: SpawnCommand; options: SpawnOptions; wire: ScriptedProcess<Frame> }
+type Handoff = { file: string; mode: number; content: string }
+type Launch = { command: SpawnCommand; options: SpawnOptions; wire: ScriptedProcess<Frame>; handoffs: Handoff[] }
+
+const EXTENSION_COMMANDS: Record<string, string> = { "claxedo-first-party-mcp.ts": "claxedo-mcp", "claxedo-session-title.ts": "claxedo-title" }
+
+function registeredCommands(launch: Launch, unregistered: readonly string[]) {
+  const args = launch.command.args
+  return args.flatMap((arg, index) => {
+    const name = args[index - 1] === "-e" ? EXTENSION_COMMANDS[path.basename(arg)] : undefined
+    return name && !unregistered.includes(name) ? [{ name, source: "extension", sourceInfo: { path: arg } }] : []
+  })
+}
 
 function projectModel(cwd: string): string {
   try { return (JSON.parse(readFileSync(path.join(cwd, ".pi", "settings.json"), "utf8")) as { defaultModel: string }).defaultModel }
@@ -17,21 +28,25 @@ function projectModel(cwd: string): string {
   }
 }
 
-function answer(frame: Frame, launch: Launch, mcpFailure: string | undefined): unknown {
+function answer(frame: Frame, launch: Launch, mcpFailure: string | undefined, unregistered: readonly string[]): unknown {
   const sessionDir = launch.command.args[launch.command.args.indexOf("--session-dir") + 1]
   if (frame.type === "get_state" && launch.options.role === "harness" && sessionDir) {
     mkdirSync(sessionDir, { recursive: true })
     writeFileSync(path.join(sessionDir, "scripted_scripted-pi.jsonl"), "")
   }
-  if (frame.type === "prompt" && frame.message?.startsWith("/claxedo-mcp ") && mcpFailure) {
-    launch.wire.send({ type: "extension_error", extensionPath: "command:claxedo-mcp", error: mcpFailure })
+  if (frame.type === "get_commands") return { commands: registeredCommands(launch, unregistered) }
+  if (frame.type === "prompt" && frame.message?.startsWith("/claxedo-mcp ")) {
+    const file = frame.message.slice("/claxedo-mcp ".length)
+    launch.handoffs.push({ file, mode: statSync(file).mode & 0o777, content: readFileSync(file, "utf8") })
+    if (mcpFailure) launch.wire.send({ type: "extension_error", extensionPath: "command:claxedo-mcp", error: mcpFailure })
   }
   if (frame.type === "get_available_models") return { models: [{ provider: "scripted", id: projectModel(launch.command.cwd), name: "Scripted" }] }
   if (frame.type === "get_available_thinking_levels") return { levels: [] }
   return frame.type === "get_state" ? { sessionId: "scripted-pi", thinkingLevel: "off" } : {}
 }
 
-export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpFailure?: string; onLaunch?: (launch: Launch) => void } = {}) {
+export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpFailure?: string; unregistered?: string[];
+  onLaunch?: (launch: Launch) => void } = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "pi-scripted-")))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
@@ -39,8 +54,9 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
   const health = { changes: 0 }
   const mcpRequests: [string, string][] = []
   const spawn: HarnessServices["spawn"] = async (command, options) => {
-    const launch: Launch = { command, options, wire: new ScriptedProcess<Frame>((frame) => {
-      if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true, data: answer(frame, launch, input.mcpFailure) })
+    const launch: Launch = { command, options, handoffs: [], wire: new ScriptedProcess<Frame>((frame) => {
+      if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true,
+        data: answer(frame, launch, input.mcpFailure, input.unregistered ?? []) })
     }) }
     launches.push(launch)
     input.onLaunch?.(launch)

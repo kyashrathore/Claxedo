@@ -23,7 +23,10 @@ export function trackedAcpCancel(entry: AcpEntry, deadline: Deadline): NonNullab
     (what: string, aborted: boolean) => timeout = new AcpTransportError("timeout", `ACP ${what} ${aborted ? "was abandoned" : "timed out"}`))
     .then(() => ({ ok: true as const }), (error: unknown) => {
       const running = acknowledged && timeout !== undefined && error === timeout
-      if (!running) {
+      if (running) {
+        entry.observation.stopIgnored("The ACP agent acknowledged the cancel but its prompt is still running")
+        void request.then(entry.observation.stopSettled)
+      } else {
         entry.phase = "uncertain"
         const failure = new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error)
         entry.queue?.fail(failure)

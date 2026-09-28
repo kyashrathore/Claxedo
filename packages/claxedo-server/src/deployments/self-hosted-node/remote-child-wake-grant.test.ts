@@ -10,7 +10,7 @@ import { SessionRoutes } from "../../../../workspace-runtime/src/routes/session"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../../workspace-runtime/src/remote-session-authority"
 import { createRelayHostAuthMiddleware } from "../../../../workspace-runtime/src/workspace-host-service-auth"
 import type { SessionAccessPolicy } from "../../../../workspace-runtime/src/session-access-policy"
-import type { SessionDeliveryStore } from "../../../../workspace-runtime/src/session/delivery-owner"
+import { queuedPromptStore } from "../../../../workspace-runtime/src/workspace/session-routes"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import { fetchJsonBody, fetchUrl } from "../../test-support/fetch-calls"
 import {
@@ -145,21 +145,6 @@ function relayed(token: string, body: Record<string, unknown>, headers: Record<s
       ...headers,
     },
     body: JSON.stringify(body),
-  }
-}
-
-function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
-  return {
-    queuePrompt: (input) => store.queuePrompt(input),
-    deleteQueuedPrompt: (sessionId, seq) => store.deleteQueuedPrompt(sessionId, seq),
-    replaceQueuedPromptParts: (sessionId, seq, parts) => store.replaceQueuedPromptParts(sessionId, seq, parts),
-    listQueuedPrompts: () => store.listQueuedPrompts(),
-    claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => store.claimQueuedPromptDelivery(sessionId, seq, operationId, mode),
-    settleQueuedPromptDelivery: (sessionId, seq, steering) => store.settleQueuedPromptDelivery(sessionId, seq, steering),
-    setQueuedPromptHeld: (sessionId, seq, held) => store.setQueuedPromptHeld(sessionId, seq, held),
-    completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
-    sessionDirectory: (sessionId) => store.getSession(sessionId)?.directory,
-    sessionArchived: (sessionId) => store.getSession(sessionId)?.time?.archived !== undefined,
   }
 }
 

@@ -8,13 +8,13 @@ function commandSource(value: unknown): AgentCommand["source"] {
   return value === "command" || value === "mcp" || value === "skill" ? value : undefined
 }
 
-function commandInput(value: unknown): AgentCommand["input"] {
+function commandInputFromWire(value: unknown): AgentCommand["input"] {
   if (value === null) return null
   return isRecord(value) && typeof value.hint === "string" ? { hint: value.hint } : undefined
 }
 
 function commandDetails(row: Record<string, unknown>): CommandDetails {
-  const input = commandInput(row.input)
+  const input = commandInputFromWire(row.input)
   const source = commandSource(row.source)
   return {
     ...(typeof row.description === "string" ? { description: row.description } : {}),

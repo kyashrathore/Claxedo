@@ -7,9 +7,6 @@ import {
   type TurnOutline,
 } from "@claxedo/agent-sdk-runtime/turn-outline"
 
-export type { TurnOutline, TurnOutlineEntry } from "@claxedo/agent-sdk-runtime/turn-outline"
-export { TURN_OUTLINE_LIMIT, TURN_OUTLINE_SNIPPET_LENGTH }
-
 export type TurnOutlineDatabase = {
   prepare<Row>(sql: string): { all(...params: unknown[]): Row[] }
 }

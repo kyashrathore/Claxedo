@@ -1,6 +1,7 @@
 /// <reference types="bun" />
+import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { expect, test } from "bun:test"
-import type { Account, AccountSource } from "@/server"
+import type { Account } from "@/server"
 import { storedAccountWords, teamAccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
