@@ -65,7 +65,7 @@ function repair(status: number) {
   return "Try again."
 }
 
-export function providerLabel(input: DispatchContext & { relayLabel?: string }) {
+function providerLabel(input: DispatchContext & { relayLabel?: string }) {
   const id = input.providerID?.trim()
   if (id) {
     const named = PROVIDER_NAMES[id] ?? harnessLabelForProviderId(id)

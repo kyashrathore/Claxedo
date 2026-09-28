@@ -83,7 +83,7 @@ function InlineErrorStatus(props: ParentProps<{
   )
 }
 
-export function TurnAdmissionStatus(props: { summary?: string }) {
+function TurnAdmissionStatus(props: { summary?: string }) {
   return (
     <InlineErrorStatus
       testId="turn-admission-status-message"
@@ -128,7 +128,7 @@ export function TimelineErrorPresentation(props: {
   )
 }
 
-export function FirstTurnRecoveryCard(props: {
+function FirstTurnRecoveryCard(props: {
   kind: SessionErrorClass
   detail?: string
   summary?: string

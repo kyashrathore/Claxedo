@@ -126,5 +126,5 @@ export type SessionStores = {
   readonly recordViewport: (viewport: TranscriptViewport) => void
 }
 
-export { createSessionStores, SessionStoresProvider, useSessionStores } from "./store"
+export { SessionStoresProvider, useSessionStores } from "./store/provider"
 export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"

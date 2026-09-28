@@ -37,7 +37,7 @@ import { TimelineRow } from "./timeline-row-model"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
-export function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
+function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
   const files = new Set<string>()
   return (diffs ?? [])
     .reduceRight<SummaryDiff[]>((result, diff) => {
