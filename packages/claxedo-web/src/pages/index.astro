@@ -4,30 +4,62 @@ import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
 import { requireClaim } from "../content/claims"
-import { home, site } from "../content/site"
+import { home, site, type HomeLine } from "../content/site"
 
 for (const id of [...home.headline.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
+
+const holdMs = { speed: 3400, prompt: 4600, team: 3600, place: 4000, tools: 3600, terminal: 4600 } as const
+const words = (text: string) => text.split(" ")
+const cycleFor = (line: HomeLine, word: string): readonly string[] | undefined => line.cycles?.[word]
 ---
 
 <Layout title={`Claxedo — ${site.headline}`} description={site.description}>
+  <link slot="head" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@500&family=Newsreader:ital,opsz,wght@1,72,500&family=Schibsted+Grotesk:ital,wght@1,800&display=swap" />
   <Nav />
   <main id="main-content" class="home">
-    <section class="intro" aria-labelledby="home-title">
+    <section class="intro" aria-labelledby="home-title" data-stage-root>
       <h1 id="home-title">{home.headline.text}</h1>
-      <ul class="lines">
-        {home.lines.map((line) => (
-          <li>
-            {line.spot
-              ? <button type="button" class="line" data-line-spot={line.spot}>{line.text}</button>
-              : <span class="line">{line.text}</span>}
+      <ol class="stage" data-stage>
+        {home.lines.map((line, index) => (
+          <li class:list={["stage-line", `voice-${line.id}`, { "is-in": index === 0 }]} data-stage-line={line.id} data-hold={holdMs[line.id]}>
+            <span class="sr-only">{line.text}</span>
+            <span class="voice" aria-hidden="true">
+              {line.id === "speed" && <><span class="streak"></span><span class="mask">{line.text}</span></>}
+              {line.id === "prompt" && <span class="typed">{[...line.text].map((char, i) => <span class="ch" style={`--i:${i}`}>{char}</span>)}</span>}
+              {(line.id === "team" || line.id === "tools") && words(line.text).map((word, i) => <><span class="word" style={`--i:${i}`}>{word}</span>{" "}</>)}
+              {line.id === "place" && words(line.text).map((word, i) => {
+                const cycle = cycleFor(line, word)
+                return cycle
+                  ? <><span class="slot"><span class="final" style={`--k:${cycle.length}`}>{word}</span>{cycle.map((alt, k) => <span class="alt" style={`--k:${k}`}>{alt}</span>)}</span>{" "}</>
+                  : <><span class="word" style={`--i:${i}`}>{word}</span>{" "}</>
+              })}
+              {line.id === "terminal" && (
+                <span class="faces">
+                  <span class="face chat">{line.text}</span>
+                  <span class="face term"><span class="prompt-mark">❯</span> {line.text.toLowerCase()}<span class="block"></span></span>
+                </span>
+              )}
+            </span>
             {line.proof && (
-              <a class="proof" href={line.proof.href} aria-label={line.proof.label} title={line.proof.label}>
+              <a class="proof" href={line.proof.href}>
+                {line.proof.label}
                 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 10.5 10.5 5.5M6.5 5.5h4v4"></path></svg>
               </a>
             )}
           </li>
         ))}
-      </ul>
+      </ol>
+      <div class="controls" data-stage-controls hidden>
+        <div class="steps" role="group" aria-label="Choose a line">
+          {home.lines.map((line, index) => (
+            <button type="button" class="step" data-step={index} aria-label={line.text} aria-current={index === 0 ? "step" : undefined}><i></i></button>
+          ))}
+        </div>
+        <button type="button" class="pause" data-stage-pause aria-label="Pause" aria-pressed="false">
+          <svg class="icon-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"></path></svg>
+          <svg class="icon-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7.5-4.5z"></path></svg>
+        </button>
+      </div>
     </section>
     <div class="preview">
       <ClaxedoAppReplica />
@@ -37,76 +69,251 @@ for (const id of [...home.headline.claims, ...home.lines.flatMap((line) => line.
 </Layout>
 
 <script>
+  const root = document.querySelector<HTMLElement>("[data-stage-root]")
   const demo = document.querySelector<HTMLElement>("[data-demo]")
-  const spot = (detail: { spot?: string; open?: boolean }) => demo?.dispatchEvent(new CustomEvent("demo:spot", { detail }))
-  for (const line of document.querySelectorAll<HTMLButtonElement>("[data-line-spot]")) {
-    const name = line.dataset.lineSpot
-    line.addEventListener("pointerenter", () => spot({ spot: name }))
-    line.addEventListener("focus", () => spot({ spot: name }))
-    line.addEventListener("pointerleave", () => spot({}))
-    line.addEventListener("blur", () => spot({}))
-    line.addEventListener("click", () => spot({ spot: name, open: true }))
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)")
+  if (root && !reduce.matches) {
+    const stage = root.querySelector<HTMLElement>("[data-stage]")!
+    const lines = Array.from(stage.querySelectorAll<HTMLElement>("[data-stage-line]"))
+    const controls = root.querySelector<HTMLElement>("[data-stage-controls]")!
+    const steps = Array.from(controls.querySelectorAll<HTMLButtonElement>("[data-step]"))
+    const pauseButton = controls.querySelector<HTMLButtonElement>("[data-stage-pause]")!
+    const reasons = new Set<string>()
+    let index = 0
+    let fill: Animation | undefined
+
+    controls.hidden = false
+    root.dataset.playing = "true"
+
+    const syncDemo = (line: HTMLElement) => {
+      if (!demo) return
+      demo.style.setProperty("--demo-spot", getComputedStyle(line).getPropertyValue("--accent"))
+      demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: line.dataset.stageLine, open: true } }))
+    }
+
+    const applyPause = () => {
+      const paused = reasons.size > 0
+      root.dataset.paused = String(paused)
+      if (paused) fill?.pause()
+      else fill?.play()
+      const byUser = reasons.has("user") || reasons.has("demo")
+      pauseButton.setAttribute("aria-pressed", String(byUser))
+      pauseButton.setAttribute("aria-label", byUser ? "Play" : "Pause")
+    }
+
+    const show = (next: number) => {
+      const from = lines[index]
+      const to = lines[next]
+      if (from !== to) {
+        from.classList.remove("is-in")
+        from.classList.add("is-out")
+        const settle = (event: AnimationEvent) => {
+          if (event.target !== from) return
+          from.classList.remove("is-out")
+          from.removeEventListener("animationend", settle)
+        }
+        from.addEventListener("animationend", settle)
+      }
+      to.classList.remove("is-out", "is-in")
+      void to.offsetWidth
+      to.classList.add("is-in")
+      index = next
+      steps.forEach((step, i) => {
+        step.classList.toggle("is-done", i < next)
+        if (i === next) step.setAttribute("aria-current", "step")
+        else step.removeAttribute("aria-current")
+      })
+      fill?.cancel()
+      fill = steps[next].querySelector("i")!.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], {
+        duration: Number(to.dataset.hold),
+        easing: "linear",
+        fill: "forwards",
+      })
+      fill.onfinish = () => show((index + 1) % lines.length)
+      syncDemo(to)
+      applyPause()
+    }
+
+    const hold = (reason: string, on: boolean) => {
+      if (on) reasons.add(reason)
+      else reasons.delete(reason)
+      applyPause()
+    }
+
+    steps.forEach((step, i) => step.addEventListener("click", () => show(i)))
+    controls.querySelector(".steps")!.addEventListener("keydown", (event) => {
+      const key = (event as KeyboardEvent).key
+      if (key !== "ArrowRight" && key !== "ArrowLeft") return
+      event.preventDefault()
+      const focused = steps.indexOf(document.activeElement as HTMLButtonElement)
+      const next = ((focused < 0 ? index : focused) + (key === "ArrowRight" ? 1 : lines.length - 1)) % lines.length
+      show(next)
+      steps[next].focus()
+    })
+    pauseButton.addEventListener("click", () => {
+      const resume = reasons.has("user") || reasons.has("demo")
+      reasons.delete("demo")
+      hold("user", !resume)
+    })
+    stage.addEventListener("pointerenter", () => hold("hover", true))
+    stage.addEventListener("pointerleave", () => hold("hover", false))
+    stage.addEventListener("focusin", (event) => {
+      hold("focus", true)
+      const line = (event.target as Element).closest<HTMLElement>("[data-stage-line]")
+      if (line && line !== lines[index]) show(lines.indexOf(line))
+    })
+    stage.addEventListener("focusout", (event) => {
+      if (!stage.contains(event.relatedTarget as Node | null)) hold("focus", false)
+    })
+    demo?.addEventListener("demo:touched", () => hold("demo", true))
+    document.addEventListener("visibilitychange", () => hold("hidden", document.hidden))
+
+    show(0)
   }
 </script>
 
 <style>
-  .home { --home-width: min(100% - 2 * var(--gutter), 75rem); }
-  .intro { width: var(--home-width); margin: 0 auto; padding-block: clamp(1.75rem, 4.5vh, 2.75rem) clamp(1.75rem, 4vh, 2.5rem); }
-  h1 {
-    max-width: 24ch;
-    margin: 0;
-    font: 700 clamp(2.25rem, 3.6vw, 3.25rem)/1.04 var(--font-display);
-    letter-spacing: -0.035em;
-    text-wrap: balance;
+  .home {
+    --home-width: min(100% - 2 * var(--gutter), 75rem);
+    --voice-serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+    --voice-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --voice-grotesk: "Schibsted Grotesk", system-ui, sans-serif;
   }
-  .lines {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 clamp(1.5rem, 4vw, 3.5rem);
-    margin: clamp(1.75rem, 4vh, 2.5rem) 0 0;
+  .intro { width: var(--home-width); margin: 0 auto; padding-block: clamp(1.5rem, 4vh, 2.5rem) clamp(1.5rem, 3.5vh, 2.25rem); }
+  h1 { margin: 0 0 clamp(.75rem, 2vh, 1.25rem); color: var(--ink-soft); font: 500 clamp(1rem, 1.2vw, 1.125rem)/1.4 var(--font-sans); letter-spacing: -.005em; }
+
+  .voice-speed { --accent: oklch(0.76 0.14 250); }
+  .voice-prompt { --accent: oklch(0.78 0.13 350); }
+  .voice-team { --accent: oklch(0.79 0.15 55); }
+  .voice-place { --accent: oklch(0.8 0.15 155); }
+  .voice-tools { --accent: oklch(0.76 0.14 300); }
+  .voice-terminal { --accent: oklch(0.83 0.14 85); }
+  @media (prefers-color-scheme: light) {
+    .voice-speed { --accent: oklch(0.52 0.17 250); }
+    .voice-prompt { --accent: oklch(0.54 0.19 350); }
+    .voice-team { --accent: oklch(0.58 0.17 50); }
+    .voice-place { --accent: oklch(0.52 0.15 155); }
+    .voice-tools { --accent: oklch(0.5 0.19 300); }
+    .voice-terminal { --accent: oklch(0.56 0.13 75); }
+  }
+
+  .stage {
+    position: relative;
+    overflow-x: clip;
+    height: calc(var(--stage-size) * 1.08 * 2 + 2rem);
+    margin: 0;
     padding: 0;
     list-style: none;
+    --stage-size: clamp(2.1rem, 4.6vw, 4.25rem);
   }
-  .lines li {
-    padding: .8rem 0 .85rem;
-    border-top: 1px solid var(--line-strong);
-    transition: border-color 150ms ease-out;
+  .stage-line {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: .6rem;
+    opacity: 0;
+    pointer-events: none;
+    color: var(--accent);
   }
-  .lines li:has(button.line:hover, button.line:focus-visible) { border-color: var(--ink); }
-  .line {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ink);
-    font: 600 clamp(1.125rem, 1.55vw, 1.4rem)/1.22 var(--font-display);
-    letter-spacing: -0.018em;
-    text-align: left;
-  }
-  button.line { cursor: pointer; }
-  button.line:focus-visible { outline: none; }
-  .proof {
-    position: relative;
-    display: inline-grid;
-    place-items: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    margin-left: .3rem;
-    vertical-align: -.2rem;
-    border-radius: 50%;
-    color: var(--ink-faint);
-    transition: color 150ms ease-out, background-color 150ms ease-out;
-  }
-  .proof::after { content: ""; position: absolute; inset: -.5rem; }
-  .proof:hover { background: var(--surface-hover); color: var(--ink); }
-  .proof svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .stage-line.is-in, .stage-line.is-out { opacity: 1; }
+  .stage-line.is-in { pointer-events: auto; }
+  .stage-line.is-out { animation: line-out 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  @keyframes line-out { to { opacity: 0; transform: translateY(-10px); filter: blur(4px); } }
+  .voice { display: block; max-width: 100%; font-size: var(--stage-size); line-height: 1.08; text-wrap: balance; }
+  .intro[data-paused="true"] .stage-line.is-in, .intro[data-paused="true"] .stage-line.is-in * { animation-play-state: paused; }
+
+  .voice-speed .voice { position: relative; font: italic 800 var(--stage-size)/1.08 var(--voice-grotesk); letter-spacing: -.04em; }
+  .voice-speed .mask { display: block; }
+  .voice-speed.is-in .mask { animation: mask-slide 520ms cubic-bezier(0.7, 0, 0.2, 1) both; }
+  .voice-speed .streak { position: absolute; inset: 42% auto auto 0; width: 32%; height: .08em; border-radius: 1em; background: linear-gradient(90deg, transparent, var(--accent)); opacity: 0; }
+  .voice-speed.is-in .streak { animation: streak 620ms cubic-bezier(0.5, 0, 0.2, 1) both; }
+  @keyframes mask-slide { from { clip-path: inset(-10% 100% -10% 0); transform: translateX(-.4em); } to { clip-path: inset(-10% -2% -10% 0); transform: none; } }
+  @keyframes streak { 0% { opacity: 0; transform: translateX(-20%); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateX(260%); } }
+
+  .voice-prompt .voice { font: italic 500 var(--stage-size)/1.08 var(--voice-serif); font-optical-sizing: auto; letter-spacing: -.02em; }
+  .voice-prompt .ch { position: relative; white-space: pre; opacity: 0; }
+  .voice-prompt.is-in .ch { animation: type-in 1ms linear forwards; animation-delay: calc(300ms + var(--i) * 42ms); }
+  .voice-prompt .ch::after { content: ""; position: absolute; right: -.06em; top: .12em; bottom: .08em; width: .06em; background: currentColor; opacity: 0; }
+  .voice-prompt.is-in .ch::after { animation: caret-step 42ms linear; animation-delay: calc(300ms + var(--i) * 42ms); }
+  .voice-prompt.is-in .ch:last-child::after { animation: caret-blink 1s steps(1) infinite; animation-delay: calc(300ms + var(--i) * 42ms); }
+  @keyframes type-in { to { opacity: 1; } }
+  @keyframes caret-step { from, to { opacity: 1; } }
+  @keyframes caret-blink { 0% { opacity: 1; } 50% { opacity: 0; } }
+
+  .voice-team .voice { font: 800 var(--stage-size)/1.08 var(--voice-grotesk); letter-spacing: -.035em; }
+  .voice-team .word { display: inline-block; }
+  .voice-team.is-in .word { animation: rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 70ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(.45em); filter: blur(6px); } }
+
+  .voice-place .voice { font: 800 var(--stage-size)/1.08 var(--voice-grotesk); letter-spacing: -.035em; }
+  .voice-place .word { display: inline-block; }
+  .voice-place.is-in .word { animation: rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .voice-place .slot { display: inline-grid; overflow: hidden; padding-block: .04em .1em; margin-block: -.04em -.1em; }
+  .voice-place .slot > span { grid-area: 1 / 1; }
+  .voice-place .alt { opacity: 0; font-family: var(--voice-mono); font-weight: 500; font-size: .82em; align-self: center; letter-spacing: -.02em; }
+  .voice-place.is-in .alt { animation: tick 220ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(360ms + var(--k) * 220ms); }
+  .voice-place .final { opacity: 0; }
+  .voice-place.is-in .final { animation: land 380ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(360ms + var(--k) * 220ms); }
+  @keyframes tick { 0% { opacity: 0; transform: translateY(60%); } 35%, 65% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-60%); } }
+  @keyframes land { from { opacity: 0; transform: translateY(60%); } to { opacity: 1; transform: none; } }
+
+  .voice-tools .voice { font: italic 500 var(--stage-size)/1.08 var(--voice-serif); font-optical-sizing: auto; letter-spacing: -.02em; }
+  .voice-tools .word { display: inline-block; }
+  .voice-tools.is-in .word { animation: follow 900ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 110ms); }
+  @keyframes follow { from { opacity: 0; transform: translateX(-1.4em); filter: blur(5px); } 60% { filter: blur(0); } }
+
+  .voice-terminal .faces { display: inline-grid; perspective: 900px; }
+  .voice-terminal .face { grid-area: 1 / 1; align-self: center; justify-self: start; backface-visibility: hidden; }
+  .voice-terminal .chat { padding: .18em .5em .22em; border-radius: .55em .55em .55em .12em; background: color-mix(in oklch, var(--accent) 16%, transparent); font: 700 var(--stage-size)/1.08 var(--voice-grotesk); letter-spacing: -.03em; }
+  .voice-terminal .term { font: 500 calc(var(--stage-size) * .8)/1.08 var(--voice-mono); letter-spacing: -.04em; transform: rotateX(180deg); }
+  .voice-terminal .prompt-mark { opacity: .6; }
+  .voice-terminal .block { display: inline-block; width: .55em; height: .9em; margin-left: .08em; vertical-align: -.08em; background: currentColor; }
+  .voice-terminal.is-in .faces { animation: rise 460ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .voice-terminal.is-in .chat { animation: flip-chat 3000ms cubic-bezier(0.65, 0, 0.35, 1) 700ms both; }
+  .voice-terminal.is-in .term { animation: flip-term 3000ms cubic-bezier(0.65, 0, 0.35, 1) 700ms both; }
+  .voice-terminal.is-in .block { animation: caret-blink 1s steps(1) infinite; }
+  @keyframes flip-chat { 0%, 12% { transform: none; } 22%, 45% { transform: rotateX(-180deg); } 55%, 70% { transform: none; } 80%, 100% { transform: rotateX(-180deg); } }
+  @keyframes flip-term { 0%, 12% { transform: rotateX(180deg); } 22%, 45% { transform: none; } 55%, 70% { transform: rotateX(180deg); } 80%, 100% { transform: none; } }
+
+  .proof { display: inline-flex; align-items: center; gap: .3rem; min-height: 2rem; color: var(--ink-soft); font-size: .875rem; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: .2em; }
+  .proof:hover { color: var(--ink); text-decoration-color: currentColor; }
+  .proof svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .stage-line.is-in .proof { animation: rise 400ms cubic-bezier(0.22, 1, 0.36, 1) 500ms both; }
+
+  .controls { display: flex; align-items: center; gap: .75rem; margin-top: .5rem; }
+  .controls[hidden] { display: none; }
+  .steps { display: flex; gap: .375rem; }
+  .step { position: relative; display: block; width: 2.5rem; height: 1.5rem; padding: 0; border: 0; background: none; cursor: pointer; }
+  .step::before { content: ""; position: absolute; inset: calc(50% - 1.5px) 0 auto; height: 3px; border-radius: 3px; background: var(--line-strong); }
+  .step i { position: absolute; inset: calc(50% - 1.5px) 0 auto; height: 3px; border-radius: 3px; background: var(--ink); transform: scaleX(0); transform-origin: left; }
+  .step.is-done i { transform: scaleX(1); }
+  .step:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
+  .pause { position: relative; display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-soft); cursor: pointer; }
+  .pause:hover { background: var(--surface-hover); color: var(--ink); }
+  .pause::after { content: ""; position: absolute; inset: -.25rem; }
+  .pause svg { grid-area: 1 / 1; width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1); }
+  .pause .icon-play { fill: currentColor; stroke: none; opacity: 0; scale: .25; filter: blur(4px); }
+  .pause[aria-pressed="true"] .icon-play { opacity: 1; scale: 1; filter: none; }
+  .pause[aria-pressed="true"] .icon-pause { opacity: 0; scale: .25; filter: blur(4px); }
+
   .preview { width: var(--home-width); margin: 0 auto clamp(4rem, 8vw, 6rem); }
 
   @media (max-width: 38rem) {
     .home { --home-width: calc(100% - 2rem); }
-    .intro { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-    h1 { font-size: 2rem; }
-    .lines { grid-template-columns: minmax(0, 1fr); margin-top: 1.25rem; }
-    .lines li { padding: .6rem 0 .65rem; }
-    .line { font-size: 1.075rem; }
+    .stage { --stage-size: 2.05rem; height: calc(var(--stage-size) * 1.08 * 3 + 2.5rem); }
+    .step { width: 1.9rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage { display: grid; gap: 1.1rem; height: auto; --stage-size: clamp(1.5rem, 2.6vw, 2.1rem); }
+    .stage-line { position: static; opacity: 1; pointer-events: auto; gap: .25rem; }
+    .stage-line *, .stage-line *::after { animation: none !important; }
+    .voice-prompt .ch { opacity: 1; }
+    .voice-place .alt { display: none; }
+    .voice-place .final { opacity: 1; }
+    .voice-speed .streak, .voice-terminal .term { display: none; }
   }
 </style>

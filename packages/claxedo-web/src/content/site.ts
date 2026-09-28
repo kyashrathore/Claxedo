@@ -1,11 +1,15 @@
 import { github } from "../config"
 import { marketingActions, routes } from "./routes"
 
-/** `spot` names the part of the home page's app demo that a line lights up on hover. */
+/**
+ * `id` picks the line's voice on the home stage and the state the app demo moves to while it plays.
+ * `cycles` lists true alternatives a word flips through before it settles.
+ */
 export type HomeLine = {
+  id: "speed" | "prompt" | "team" | "place" | "tools" | "terminal"
   text: string
   proof?: { label: string; href: string }
-  spot?: "plugin" | "team" | "place" | "tools" | "terminal"
+  cycles?: Readonly<Record<string, readonly string[]>>
   claims: readonly string[]
 }
 
@@ -35,35 +39,37 @@ export const home = {
   headline: { text: site.headline, claims: ["harness-coverage"] },
   lines: [
     {
+      id: "speed",
       text: "Starts 2.5× faster than T3 Code and OpenCode",
       proof: { label: "See the benchmark", href: benchmarkUrl },
       claims: ["open-benchmark"],
     },
     {
+      id: "prompt",
       text: "Build your own features with a prompt",
-      spot: "plugin",
       claims: ["app-plugins-by-prompt"],
     },
     {
+      id: "team",
       text: "Self-host for your team on Cloudflare",
       proof: { label: "Read the deployment guide", href: `${github}/blob/dev/public-docs/user-deployed-cloudflare.md` },
-      spot: "team",
       claims: ["user-deployed-cloudflare"],
     },
     {
+      id: "place",
       text: "Any machine. Any sandbox.",
       proof: { label: "Read the sandbox adapter contract", href: `${github}/blob/dev/packages/sandbox-manager/docs/architecture.md` },
-      spot: "place",
+      cycles: { "machine.": ["laptop", "server", "desktop"], "sandbox.": ["Daytona", "Modal", "Vercel", "Docker"] },
       claims: ["sandbox-providers", "connected-placement"],
     },
     {
+      id: "tools",
       text: "Your tools follow you everywhere",
-      spot: "tools",
       claims: ["agent-plugins", "agent-plugins-follow-you"],
     },
     {
+      id: "terminal",
       text: "Chat or terminal. Your call.",
-      spot: "terminal",
       claims: ["harness-coverage", "acp-client", "agent-cli-access"],
     },
   ] satisfies readonly HomeLine[],
