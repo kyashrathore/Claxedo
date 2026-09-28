@@ -1,6 +1,6 @@
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeContractError, NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent, SessionRouteContext, SessionRouteOptions } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
@@ -1365,11 +1365,14 @@ describe("createSessionRoutes directory-less sessions", () => {
   }
 
   for (const managed of [false, true]) {
-    test(`a fork the harness makes under an id other than the requested one is deleted before it is read back or registered (${managed ? "managed" : "unmanaged"})`, async () => {
+    test(`a fork the harness refuses as unsupported answers the unsupported shape and is never read back, registered or deleted (${managed ? "managed" : "unmanaged"})`, async () => {
       const calls: string[] = []
       const fixture: AgentHarnessAdapter = {
         ...adapter(),
-        forkSession: async () => { calls.push("fork"); return { id: "session_engine" } },
+        forkSession: async () => {
+          calls.push("fork")
+          throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "fork", message: "this harness names its forks itself" })
+        },
         deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
       }
       const host = persistingHost(fixture, () => ({ created: 1, updated: 1 }))
@@ -1392,8 +1395,12 @@ describe("createSessionRoutes directory-less sessions", () => {
         body: JSON.stringify({ id: "session_child", messageId: "message_1" }),
       })
 
-      expect(response.status).toBe(500)
-      expect(calls).toEqual(["fork", "delete:session_engine"])
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error: { code: "unsupported_operation", operation: "fork", capability: "fork", reason: "harness_refused", message: "this harness names its forks itself" },
+      })
+      expect(calls).toEqual(["fork"])
       expect([...host.rows.keys()]).toEqual(["session_parent"])
     })
   }

@@ -9,6 +9,8 @@ import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
+import { OpenCodeSdkHarnessAdapter } from "../opencode/harness-adapter"
+import type { OpenCodeRuntime } from "../opencode/runtime"
 
 const cleanups: Array<() => void | Promise<void>> = []
 
@@ -37,11 +39,10 @@ const snapshot: RuntimeSnapshot = {
  * writes nothing into the host's store, so a session exists for the runtime
  * only once the host has persisted it.
  */
-async function fixture(fork: (childId?: string) => string) {
+async function fixture(forkSession: (binding: AgentExecutionBinding, messageId: string, childId?: string) => Promise<{ id: string }>) {
   const directory = await mkdtemp(join(tmpdir(), "runtime-fork-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws_fork", directory }
-  const forks: Array<{ parentId: string; messageId: string; childId?: string }> = []
   const deleted: string[] = []
   const adapter = {
     adapterCapabilities: ["runtime-config"] as const,
@@ -51,10 +52,7 @@ async function fixture(fork: (childId?: string) => string) {
     async createSession(_directory: string, _title: string | undefined, id?: string) {
       return { id: id ?? "generated" }
     },
-    async forkSession(binding: AgentExecutionBinding, messageId: string, childId?: string) {
-      forks.push({ parentId: binding.sessionId, messageId, ...(childId ? { childId } : {}) })
-      return { id: fork(childId) }
-    },
+    forkSession,
     async getSession() { return null },
     async getMessages() { return [] },
     async updateSession() { return null },
@@ -83,11 +81,15 @@ async function fixture(fork: (childId?: string) => string) {
     { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
   expect((await request("/session", "POST", { id: "parent" })).status).toBe(201)
-  return { request, forks, deleted }
+  return { request, deleted }
 }
 
 test("a fork by a harness that keeps its sessions elsewhere is persisted by the host, then read back under the requested id", async () => {
-  const f = await fixture((childId) => childId ?? "engine_child")
+  const forks: Array<{ parentId: string; messageId: string; childId?: string }> = []
+  const f = await fixture(async (binding, messageId, childId) => {
+    forks.push({ parentId: binding.sessionId, messageId, ...(childId ? { childId } : {}) })
+    return { id: childId ?? "engine_child" }
+  })
 
   const response = await f.request("/session/parent/fork", "POST", { id: "child", messageId: "msg_1" })
 
@@ -95,19 +97,33 @@ test("a fork by a harness that keeps its sessions elsewhere is persisted by the 
   const forked = await response.json() as { id: string; time: { created: number; updated: number } }
   expect(forked.id).toBe("child")
   expect(forked.time.updated).toBeGreaterThanOrEqual(forked.time.created)
-  expect(f.forks).toEqual([{ parentId: "parent", messageId: "msg_1", childId: "child" }])
+  expect(forks).toEqual([{ parentId: "parent", messageId: "msg_1", childId: "child" }])
   const read = await f.request("/session/child")
   expect(read.status).toBe(200)
   expect(await read.json()).toMatchObject({ id: "child", time: forked.time })
 })
 
-test("a fork the harness makes under an id other than the requested one is deleted and refused", async () => {
-  const f = await fixture(() => "engine_child")
+test("a fork into a requested id on OpenCode is answered unsupported, and leaves no host row and no engine child", async () => {
+  let engineForks = 0
+  const engine = {
+    host: {},
+    sessions: {
+      fork: async () => {
+        engineForks += 1
+        return { id: "engine_child", directory: "/", createdAt: 1, updatedAt: 1 }
+      },
+    },
+  } as unknown as OpenCodeRuntime
+  const openCode = new OpenCodeSdkHarnessAdapter({ runtime: engine, workspaceID: "ws_fork", directory: "/", reportOwnerFailure: () => {} })
+  const f = await fixture((binding, messageId, childId) => openCode.forkSession(binding, messageId, childId))
 
   const response = await f.request("/session/parent/fork", "POST", { id: "child", messageId: "msg_1" })
 
-  expect(response.status).toBe(500)
-  expect(f.deleted).toEqual(["engine_child"])
-  expect((await f.request("/session/engine_child")).status).toBe(404)
+  expect(response.status).toBe(409)
+  expect(await response.json()).toMatchObject({ ok: false, error: { code: "unsupported_operation", operation: "fork" } })
+  expect(engineForks).toBe(0)
+  expect(f.deleted).toEqual([])
   expect((await f.request("/session/child")).status).toBe(404)
+  const listed = await (await f.request("/session")).json() as Array<{ id: string }>
+  expect(listed.map((session) => session.id)).toEqual(["parent"])
 })

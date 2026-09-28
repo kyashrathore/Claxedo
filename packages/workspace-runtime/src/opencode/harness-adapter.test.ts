@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, jest, mock, test } from "bun:test"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeContractError, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
 import { SESSION_TOTAL_READ_MS } from "./turn-usage"
 import { createEventPump, type ProjectedEvent } from "./event-pump"
@@ -188,6 +188,20 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     bind()
     await drained
     expect(fake.sessions.prompt).toHaveBeenCalledTimes(1)
+  })
+
+  test("a fork into a requested child id is refused as unsupported before the engine forks", async () => {
+    const fake = runtime()
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+
+    const refused = await adapter.forkSession(binding(directory, "ses_1"), "msg_1", "ses_child").catch((error: unknown) => error)
+
+    expect(refused).toBeInstanceOf(AgentRuntimeContractError)
+    expect((refused as AgentRuntimeContractError).detail).toMatchObject({ code: "unsupported_operation", operation: "fork" })
+    expect(fake.sessions.fork).not.toHaveBeenCalled()
+    expect(await adapter.forkSession(binding(directory, "ses_1"), "msg_1")).toEqual({ id: "ses_fork" })
+    expect(fake.sessions.fork).toHaveBeenCalledTimes(1)
   })
 
   test("only the typed SDK missing-session error becomes a missing session", async () => {

@@ -17,7 +17,7 @@ import type {
 import type { AdapterCancelOutcome, AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
-import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeContractError, type AgentExecutionBinding, type AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
 import type { OpenCodeRuntime } from "./runtime"
@@ -633,7 +633,19 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async forkSession(binding: AgentExecutionBinding, messageId: string) {
+  /**
+   * The engine mints the child's id itself, so a fork asked for a specific
+   * child — the id a managed fork reserved and will register — is refused
+   * before the engine makes a child nobody can register or compensate.
+   */
+  async forkSession(binding: AgentExecutionBinding, messageId: string, childSessionId?: string) {
+    if (childSessionId) {
+      throw new AgentRuntimeContractError({
+        code: "unsupported_operation",
+        operation: "fork",
+        message: `OpenCode cannot fork session ${binding.sessionId} into the requested id ${childSessionId}; it names its forks itself`,
+      })
+    }
     const runtime = await this.engine()
     const forked = await runtime.sessions.fork(this.scope(binding.directory), binding.sessionId, { type: "before", messageID: messageId })
     return { id: forked.id }

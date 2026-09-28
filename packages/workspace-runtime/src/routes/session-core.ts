@@ -14,6 +14,7 @@ import type {
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSession, AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import {
+  AgentRuntimeContractError,
   parseRecoveryRequest,
   RecoveryContractError,
   sameSessionHarness,
@@ -625,6 +626,28 @@ async function unsupportedIfUnavailable(
     capability: key,
     reason: "adapter_method_unavailable",
     message: `${caps.harness} advertised ${key} but did not provide ${method}`,
+  })
+}
+
+/**
+ * A harness that advertises an operation can still refuse one request of it,
+ * as OpenCode refuses a fork into a named child. That refusal answers exactly
+ * as an unadvertised operation does, so a caller reads one shape for both.
+ */
+async function unsupportedIfRefused(
+  c: Ctx,
+  adapter: AgentHarnessAdapter,
+  directory: RuntimeDirectory,
+  key: CapabilityKey,
+  sessionId: string,
+  error: unknown,
+) {
+  if (!(error instanceof AgentRuntimeContractError) || error.detail.code !== "unsupported_operation") throw error
+  const caps = await adapter.readHarnessCapabilities(directory, { sessionId })
+  return unsupportedOperation(c, caps, error.detail.operation, {
+    capability: key,
+    reason: "harness_refused",
+    message: error.detail.message,
   })
 }
 
@@ -2094,16 +2117,16 @@ export function createSessionRoutes(opts: Opts) {
         const refused = await creationReservationGuard(opts, c, body.id, operationId)
         if (refused) return refused
       }
-      const child = opts.forkSession
-        ? await opts.forkSession(c, directory, sessionId, body.messageId ?? "", body.id)
-        : await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
+      let child: { id: string }
+      try {
+        child = opts.forkSession
+          ? await opts.forkSession(c, directory, sessionId, body.messageId ?? "", body.id)
+          : await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
+      } catch (error) {
+        return unsupportedIfRefused(c, adapter, directory, "fork", sessionId, error)
+      }
       let forked: { session: AgentSession; time: RuntimeSessionTime }
       try {
-        // The requested id is the one a managed fork reserved, and the only
-        // one its registration and compensation can name.
-        if (body.id && child.id !== body.id) {
-          throw new Error(`Session ${sessionId} was forked into ${child.id}, not the requested ${body.id}`)
-        }
         forked = await readCreatedSession(opts, c, adapter, directory, child.id)
       } catch (error) {
         await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
