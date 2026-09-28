@@ -68,6 +68,11 @@ function createToolPlugin(
           })
         }
       })
+      await context.session.hook("context", (input) => {
+        const offered = definitionsFor(sessions, context.location.directory)
+        const own = new Set(sessions.get(String(input.sessionID))?.tools.map((tool) => tool.name))
+        for (const name of Object.keys(input.tools)) if (offered.has(name) && !own.has(name)) delete input.tools[name]
+      })
       reloads.set(context.location.directory, context.tool.reload)
       return () => {
         if (reloads.get(context.location.directory) === context.tool.reload) reloads.delete(context.location.directory)

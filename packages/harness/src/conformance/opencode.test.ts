@@ -153,7 +153,8 @@ test("two sessions in one directory call first-party tools with their own identi
     const result = message.method === "initialize"
       ? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "first-party", version: "1" } }
       : message.method === "tools/list"
-        ? { tools: [{ name: "claxedo_proof", description: "Return the calling identity", inputSchema: { type: "object" } }] }
+        ? { tools: [{ name: "claxedo_proof", description: "Return the calling identity", inputSchema: { type: "object" } },
+          ...session === "s1" ? [{ name: "claxedo_owner_only", description: "Offered to s1 alone", inputSchema: { type: "object" } }] : []] }
         : { content: [{ type: "text", text: `FIRST_PARTY:${session}` }] }
     return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n\n`,
       { headers: { "content-type": "text/event-stream", "mcp-session-id": `mcp-${session}` } })
@@ -176,6 +177,14 @@ test("two sessions in one directory call first-party tools with their own identi
     const secondEvents = []
     for await (const event of context.transport.send(second, context.turn("Call claxedo_proof for FIRSTTWO"), context.turnBroker())) secondEvents.push(event)
     expect(JSON.stringify(secondEvents)).toContain("FIRST_PARTY:s2")
+    const offered = (marker: string) => state.server.requests.filter((request) => request.prompt.includes(marker) && request.tools.length)
+      .map((request) => request.tools.map((tool) => tool.name))
+    expect(offered("FIRSTONE")[0]).toEqual(expect.arrayContaining(["claxedo_proof", "claxedo_owner_only"]))
+    expect(offered("FIRSTTWO").length).toBeGreaterThan(0)
+    for (const names of offered("FIRSTTWO")) {
+      expect(names).toContain("claxedo_proof")
+      expect(names).not.toContain("claxedo_owner_only")
+    }
     expect(calls).toEqual([
       { session: "s1", authorization: "Bearer first-party-s1", name: "claxedo_proof" },
       { session: "s2", authorization: "Bearer first-party-s2", name: "claxedo_proof" },

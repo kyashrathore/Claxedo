@@ -104,7 +104,7 @@ function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: st
     return toolReply(next)
   }
   const tool = state.pendingTools[0]
-  if (tool && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
+  if (tool && modelTools(request.body).length && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
     state.pendingTools.shift()
     return toolReply(tool)
   }

@@ -18,7 +18,7 @@ test("tool catalogs stay location-scoped and a failed plugin install can retry",
       const directory = location.directory
       if (!setups.has(directory)) {
         let transform: (draft: { add(tool: { name: string }): void }) => unknown
-        await installed!.setup({ location, tool: {
+        await installed!.setup({ location, session: { hook: async () => ({}) }, tool: {
           transform(callback: typeof transform) { transform = callback },
           async reload() {
             const names: string[] = []
@@ -72,7 +72,7 @@ test("same-directory sessions dispatch by engine session and refuse forged ident
     },
   }
   const plugin = Object.assign(
-    async (next: Plugin.Plugin) => { await next.setup({ tool, location: { directory: process.cwd() } } as never) },
+    async (next: Plugin.Plugin) => { await next.setup({ tool, session: { hook: async () => ({}) }, location: { directory: process.cwd() } } as never) },
     { async awaitActivation() {} },
   )
   const client = { plugin }
@@ -94,4 +94,34 @@ test("same-directory sessions dispatch by engine session and refuse forged ident
     { session: "session-1", name: "workgraph_run", input: { command: "claim" } },
     { session: "session-2", name: "workgraph_run", input: { command: "read" } },
   ])
+})
+
+test("a session's model catalog lists only the Claxedo tools registered for it, and leaves the engine's own", async () => {
+  type Catalog = { sessionID: string; tools: Record<string, unknown> }
+  let filter: ((input: Catalog) => void) | undefined
+  let transform: ((draft: { add(definition: unknown): void }) => void | Promise<void>) | undefined
+  const tool = { transform(callback: typeof transform) { transform = callback }, async reload() { await transform?.({ add() {} }) } }
+  const session = { async hook(name: string, callback: (input: Catalog) => void) {
+    if (name === "context") filter = callback
+    return {}
+  } }
+  const plugin = Object.assign(
+    async (next: Plugin.Plugin) => { await next.setup({ tool, session, location: { directory: process.cwd() } } as never) },
+    { async awaitActivation() {} },
+  )
+  const port = createToolPort({ client: async () => ({ plugin }) } as unknown as OpenCodeHost)
+  const scope = WorkspaceScope.authorize({ workspaceID: "test", directory: process.cwd() })
+  const definition = (name: string) => ({ name, description: name, inputSchema: { type: "object" } })
+  await port.registerSession({ scope, sessionID: "owner", tools: [definition("app_plugin_guide"), definition("sessions_list")], execute: async () => ({}) })
+  await port.registerSession({ scope, sessionID: "member", tools: [definition("sessions_list")], execute: async () => ({}) })
+
+  const member: Catalog = { sessionID: "member", tools: { app_plugin_guide: {}, sessions_list: {}, read: {} } }
+  filter!(member)
+  expect(member.tools).toEqual({ sessions_list: {}, read: {} })
+  const owner: Catalog = { sessionID: "owner", tools: { app_plugin_guide: {}, sessions_list: {}, read: {} } }
+  filter!(owner)
+  expect(owner.tools).toEqual({ app_plugin_guide: {}, sessions_list: {}, read: {} })
+  const stranger: Catalog = { sessionID: "stranger", tools: { app_plugin_guide: {}, sessions_list: {}, read: {} } }
+  filter!(stranger)
+  expect(stranger.tools).toEqual({ read: {} })
 })
