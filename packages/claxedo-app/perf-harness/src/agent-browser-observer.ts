@@ -472,30 +472,10 @@ export async function installAgentBrowserObserver(page: {
   await page.evaluate(installBrowserBenchmark);
 }
 
-/**
- * Windows a side observation to exactly the interval the duration covers.
- *
- * A CPU profile of a session switch is only readable if it starts at the
- * trusted click and ends once the settle is confirmed. Started any earlier it
- * also contains sidebar pagination — fixture discovery the measured duration
- * deliberately excludes — and every frame of that shows up as app cost that
- * no user pays.
- */
-export type ActivationHooks = {
-  /** After the action is armed, before the trusted click. */
-  onArmed?: () => Promise<void>
-  /**
-   * Once the settle is confirmed, `PAINT_SETTLE_CONFIRMATION_FRAMES` after
-   * the reported paint; the profile window is that much longer than the duration.
-   */
-  onPainted?: () => Promise<void>
-  readinessTimeoutMs?: number
-}
-
 export async function measureSessionActivation(
   page: Page,
   target: SessionReadinessTarget,
-  hooks?: ActivationHooks,
+  options?: { readinessTimeoutMs?: number },
 ): Promise<SessionActionResult> {
   // Pagination is fixture discovery, not session activation. Expose the target
   // through the same public sidebar path before arming the trusted-action clock.
@@ -505,7 +485,6 @@ export async function measureSessionActivation(
     (next) => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.armAction(next),
     token,
   );
-  await hooks?.onArmed?.();
   // Installed before the trusted pointerdown: a frame the app paints during a
   // Node round trip would be missing from the settle run, and the mutation
   // observer must see every timeline mutation from the click on.
@@ -950,13 +929,12 @@ export async function measureSessionActivation(
     {
       id: target.sessionId,
       expectedMessageIds: [...target.expectedMessageIds],
-      readinessTimeoutMs: hooks?.readinessTimeoutMs ?? 30_000,
+      readinessTimeoutMs: options?.readinessTimeoutMs ?? 30_000,
       confirmationFrames: PAINT_SETTLE_CONFIRMATION_FRAMES,
     },
   );
   await clickVisibleSessionActivation(page, target.sessionId);
   const stablePaint = readStablePaint(await stablePaintPromise);
-  await hooks?.onPainted?.();
   const paintedMessage = stablePaint?.paintedMessage;
   const timing = readActionResult(
     await page.evaluate(

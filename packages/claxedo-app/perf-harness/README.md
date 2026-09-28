@@ -1,14 +1,12 @@
 # Claxedo benchmark driver
 
-The application-owned driver of the public [agent-app-benchmark](https://github.com/kyashrathore/agent-app-benchmark). The benchmark's registry apps `claxedo` and `claxedo-v2` declare `"driverOwnership": "application-repository"`, and the benchmark resolves the driver at the fixed path `$CLAXEDO_ROOT/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts`. Do not move it.
+The application-owned driver of the public [agent-app-benchmark](https://github.com/kyashrathore/agent-app-benchmark). The benchmark's registry app `claxedo-v2` declares `"driverOwnership": "application-repository"`, and the benchmark resolves the driver at the fixed path `$CLAXEDO_ROOT/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts`. Do not move it.
 
-- `src/public-agent-app-driver.ts`: the NDJSON driver. It lists the scenario ids it serves and dispatches each to its kind: app start, session switch, session navigation, workspace panel.
-- `src/public-corpus-materializer.ts`, `src/fixture-registration.ts`, `src/opencode-corpus.ts`: write the benchmark corpus into a Claxedo data directory through the app's own server-core and workspace-runtime writers (`src/production-modules.ts`).
+- `src/public-agent-app-driver.ts`: the NDJSON driver. It lists the scenario ids it serves and dispatches each to its kind: app start or session switch.
+- `src/public-corpus-materializer.ts`, `src/corpus-workspace.ts`, `src/fixture-registration.ts`, `src/opencode-corpus.ts`: write the benchmark corpus into a Claxedo data directory through the app's own server-core and workspace-runtime writers (`src/production-modules.ts`).
 - `src/agent-claxedo-launcher.ts`, `src/agent-cdp-page.ts`: launch the packaged app and attach over CDP.
-- `src/agent-browser-observer.ts`, `src/public-workspace-panel.ts` and the `src/workspace-panel-*.ts` modules: the readiness predicates and frame timing. They read the app's `data-testid`, `data-slot` and `data-component` hooks, so the app's `claxedo-names` check counts this folder as a reader. `src/public-workspace-panel.ts` runs the measured panel actions on `src/workspace-panel-scenario.ts` (cases, presets, fixture evidence), `src/workspace-panel-locators.ts` (finding and clicking rows, tabs and controls), `src/workspace-panel-setup.ts` (untimed setup into a known panel state), `src/workspace-panel-readiness.ts`, `src/workspace-panel-diff-readiness.ts` and `src/workspace-panel-owner-readiness.ts` (frame-based Files, file, Review and destination-owner readiness), and `src/workspace-panel-trace-recording.ts` and `src/workspace-panel-trace-reading.ts` (the in-page trace recorder and the reader of its result).
+- `src/agent-browser-observer.ts`: the readiness predicates and frame timing. It reads the app's `data-testid`, `data-slot` and `data-component` hooks, so the app's `claxedo-names` check counts this folder as a reader.
 - `src/browser/painted-frames.ts`: the one frame clock those predicates run on. Each frame is sampled in its own rendering step, after layout and before paint, so a sample reads what the frame painted. The driver times a session frame at its observation, `performance.now()` right after the sample, as the benchmark's `settle-31-frames/v1` rule does; the clock also stamps when the frame was painted, in a task posted from that step.
-- A workspace panel trace reports `frameTimestampsMs` from that clock: the painted time of each frame that began after the input. The benchmark's `summarize.mjs` derives `worstIntervalMs`, the p95 interval and `overBudgetIntervalCount` from those timestamps, so for this driver every interval is the gap between two painted frames, and a frame over 16.7 ms is a painted gap over 16.7 ms.
-- A traced panel action ends when its ready frame was painted, or at the second frame painted after the input when the first was already ready (`markActionEnd`). The benchmark withholds an action whose interval holds fewer than two renderer frames, so a tab switch painted in one frame is reported at its second frame, one frame late.
 
 The same driver measures the archived packaged v1 app and today's app, so a precondition it enforces must hold for both.
 
@@ -48,4 +46,4 @@ bun run verify
 
 ## Run
 
-See the benchmark's `docs/presets/claxedo-v1-vs-v2-fast.md`: `CLAXEDO_ROOT` names this checkout, and `CLAXEDO_BENCHMARK_EXECUTABLE` / `CLAXEDO_V2_BENCHMARK_EXECUTABLE` name the packaged apps.
+From the benchmark checkout, `node bin/agent-app-benchmark.mjs run --app claxedo-v2`, with `CLAXEDO_ROOT` naming this checkout and `CLAXEDO_V2_BENCHMARK_EXECUTABLE` the packaged app. The benchmark's README lists the other variables.

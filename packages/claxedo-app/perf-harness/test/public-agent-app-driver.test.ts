@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { buildWorkspaceFixtureManifest } from "agent-app-benchmark/workspace-fixture"
-import type { WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import {
   createClaxedoPublicDriver,
   parseApplicationArgument,
@@ -12,10 +10,6 @@ import {
   readPreparedCache,
   writePreparedCache,
 } from "../src/public-agent-app-driver"
-import { runPrearmedStablePaint } from "../src/public-workspace-panel"
-import { waitForPanelOwner } from "../src/workspace-panel-owner-readiness"
-import { WORKSPACE_PANEL_ACTIONS, type WorkspacePanelCase } from "../src/workspace-panel-scenario"
-import { installPaintedFrames } from "../src/browser/painted-frames"
 
 const receipt = {
   endpoint: "correct-content-painted-and-input-ready" as const,
@@ -30,8 +24,6 @@ const receipt = {
 function harness(extraSessionIds: string[] = []) {
   const activations: string[] = []
   const launches: Array<{ stateHandle: string; initialSessionId: string }> = []
-  const navigationExecutions: Array<Record<string, unknown>> = []
-  const panelExecutions: Array<Record<string, unknown>> = []
   let clock = 10
   const target = (logicalSessionId: string, sessionId: string) => ({
     logicalSessionId,
@@ -43,10 +35,7 @@ function harness(extraSessionIds: string[] = []) {
   })
   const readinessTargets = new Map([
     ["control", target("control", "native-control")],
-    ["within-workspace-cold-1048576", target("within-workspace-cold-1048576", "native-cold")],
-    ["within-workspace-warm-1048576", target("within-workspace-warm-1048576", "native-warm")],
-    ["source", target("source", "native-source")],
-    ["destination", target("destination", "native-destination")],
+    ["progressive-resource-1048576", target("progressive-resource-1048576", "native-resource")],
   ])
   for (const id of extraSessionIds) readinessTargets.set(id, target(id, `native-${id}`))
   const listed = { ids: [...new Set(extraSessionIds)].map((id) => `native-${id}`) }
@@ -83,32 +72,9 @@ function harness(extraSessionIds: string[] = []) {
       }
     },
     listedSessionIds: async () => listed.ids,
-    executeSessionNavigation: async (benchmarkCase, source, destination, preset) => {
-      navigationExecutions.push({ benchmarkCase, source, destination, preset })
-      return measurement()
-    },
-    executePanelAction: async (benchmarkCase, target, preset) => {
-      panelExecutions.push({ benchmarkCase, target, preset })
-      return measurement()
-    },
     shutdown: async () => ({ terminated: [], survivors: [], forced: [] }),
   })
-  return { driver, listed, activations, launches, navigationExecutions, panelExecutions }
-}
-
-function measurement() {
-  return {
-    clock: { kind: "single-monotonic-clock" as const, clock: "performance.now" as const, start: 20, end: 25 },
-    rendererTrace: {
-      clock: "performance.now" as const,
-      transitionMode: "animated" as const,
-      milestones: [],
-      frameTimestampsMs: [],
-      longAnimationFrames: [],
-      counterInterval: { start: 20, end: 25 },
-      counters: { scriptDurationMs: 0, styleRecalcDurationMs: 0, layoutDurationMs: 0, taskDurationMs: 0 },
-    },
-  }
+  return { driver, listed, activations, launches }
 }
 
 // Resolve the installed package so dependency drift cannot be hidden by a local
@@ -117,16 +83,7 @@ const frameworkRoot = new URL("../", import.meta.resolve("agent-app-benchmark/dr
 type Scenario = {
   id: string
   kind: string
-  cases: {
-    workspaceLoad?: WorkspaceLoad
-    panelLoads?: Array<{
-      id: string
-      expandedDirectoryCount: number
-      retainedFileTabCount: number
-      expandedReviewFileCount: number
-    }>
-    actions?: string[]
-  }
+  cases: Record<string, unknown>
 }
 const readScenario = async (id: string): Promise<Scenario> =>
   JSON.parse(await readFile(new URL(`registry/scenarios/${id}.json`, frameworkRoot), "utf8"))
@@ -135,23 +92,14 @@ const { expandCases, buildResourceSequence } = (await import(new URL("src/cases.
   expandCases: (scenario: Scenario, profile: string) => DriverCase[]
   buildResourceSequence: (scenario: Scenario) => DriverCase[]
 }
-const panelScenarioDefinition = await readScenario("workspace-panel-v1")
-// The panel scenario is the one that exercises a materialized workspace, so a
-// missing workspaceLoad means the registry changed under the test rather than
-// that this case is optional here.
-const panelWorkspaceLoad = panelScenarioDefinition.cases.workspaceLoad
-if (!panelWorkspaceLoad) throw new Error("workspace-panel-v1 must define cases.workspaceLoad")
-const workspaceFixtureManifest = buildWorkspaceFixtureManifest(panelWorkspaceLoad, "test")
-
 async function prepare(
   driver: ReturnType<typeof createClaxedoPublicDriver>,
-  scenarioId = "session-switch-v1",
+  scenarioId = "session-switch-walk-v2",
   scenarioDefinition?: Scenario,
 ) {
   return driver.prepare({
     scenarioId,
     scenarioDefinition,
-    ...(scenarioDefinition?.cases.workspaceLoad ? { workspaceFixtureManifest } : {}),
     scenarioDigestSha256: "1".repeat(64),
     corpusDirectory: "/tmp/corpus",
     corpusManifestPath: "/tmp/corpus/manifest.json",
@@ -165,7 +113,7 @@ async function prepare(
 describe("Claxedo public driver", () => {
   test("advertises exactly the scenarios registered by the pinned framework", async () => {
     const app: { scenarios: string[]; materializationModes: string[] } = JSON.parse(
-      await readFile(new URL("registry/apps/claxedo.json", frameworkRoot), "utf8"),
+      await readFile(new URL("registry/apps/claxedo-v2.json", frameworkRoot), "utf8"),
     )
     const advertised: string[] = [...PUBLIC_SCENARIO_IDS]
     expect(advertised.sort()).toEqual([...app.scenarios].sort())
@@ -179,70 +127,58 @@ describe("Claxedo public driver", () => {
     expect(result.stateHandles).toEqual({ P0: "sealed-p0", P1: "sealed-p1" })
   })
 
-  test("enforces cold and warm preparation around exactly one measured activation", async () => {
+  test("returns to control before each progressive step, and measures the return to control alone", async () => {
     const { driver, activations } = harness()
     await prepare(driver)
     await driver.launch({
-      scenarioId: "session-switch-v1",
+      scenarioId: "session-switch-walk-v2",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
     })
-    const cold = await driver.execute({
-      scenarioId: "session-switch-v1",
+    const step = await driver.execute({
+      scenarioId: "session-switch-walk-v2",
       case: {
-        caseId: "cold",
-        workload: "isolated-latency",
+        caseId: "step",
+        workload: "progressive-resource",
         sessionState: "cold",
         sourceSessionId: "control",
-        destinationSessionId: "within-workspace-cold-1048576",
+        destinationSessionId: "progressive-resource-1048576",
       },
     })
-    const warm = await driver.execute({
-      scenarioId: "session-switch-v1",
-      case: {
-        caseId: "warm",
-        workload: "isolated-latency",
-        sessionState: "warm",
-        sourceSessionId: "control",
-        destinationSessionId: "within-workspace-warm-1048576",
-      },
+    const control = await driver.execute({
+      scenarioId: "session-switch-walk-v2",
+      case: { caseId: "control", workload: "resource-control", destinationSessionId: "control" },
     })
-    expect(activations).toEqual([
-      "control",
-      "within-workspace-cold-1048576",
-      "within-workspace-warm-1048576",
-      "control",
-      "within-workspace-warm-1048576",
-    ])
-    expect(cold.durationMs).toBe(2)
-    expect(warm.durationMs).toBe(2)
+    expect(activations).toEqual(["control", "progressive-resource-1048576", "control"])
+    expect(step.durationMs).toBe(2)
+    expect(control.durationMs).toBe(2)
   })
 
   test("walks the list one row down per step, rejecting a step to anything but the next row", async () => {
-    const scenario = await readScenario("session-switch-walk-v1")
+    const scenario = await readScenario("session-switch-walk-v2")
     const cases = expandCases(scenario, "smoke")
     const ids = cases.flatMap((item) => ("destinationSessionId" in item ? [item.destinationSessionId] : []))
     const { driver, listed, activations } = harness(ids)
-    await prepare(driver, "session-switch-walk-v1", scenario)
-    await driver.launch({ scenarioId: "session-switch-walk-v1", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
-    for (const benchmarkCase of cases) await driver.execute({ scenarioId: "session-switch-walk-v1", case: benchmarkCase })
+    await prepare(driver, "session-switch-walk-v2", scenario)
+    await driver.launch({ scenarioId: "session-switch-walk-v2", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+    for (const benchmarkCase of cases) await driver.execute({ scenarioId: "session-switch-walk-v2", case: benchmarkCase })
     expect(activations).toEqual(ids)
     await driver.shutdown()
-    await driver.launch({ scenarioId: "session-switch-walk-v1", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+    await driver.launch({ scenarioId: "session-switch-walk-v2", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
     listed.ids = [listed.ids[1]!, listed.ids[0]!, ...listed.ids.slice(2)]
-    await driver.execute({ scenarioId: "session-switch-walk-v1", case: cases[0]! })
-    await expect(driver.execute({ scenarioId: "session-switch-walk-v1", case: cases[1]! })).rejects.toThrow(/not directly below/)
-    await expect(driver.execute({ scenarioId: "session-switch-walk-v1", case: { ...cases[0]!, caseId: "again" } })).rejects.toThrow(
+    await driver.execute({ scenarioId: "session-switch-walk-v2", case: cases[0]! })
+    await expect(driver.execute({ scenarioId: "session-switch-walk-v2", case: cases[1]! })).rejects.toThrow(/not directly below/)
+    await expect(driver.execute({ scenarioId: "session-switch-walk-v2", case: { ...cases[0]!, caseId: "again" } })).rejects.toThrow(
       /does not match this process's visits/,
     )
   })
 
   test("measures application start from the requested exact state", async () => {
     const { driver, launches } = harness()
-    await prepare(driver, "app-start-v1")
+    await prepare(driver, "app-start-fast-v3")
     const result = await driver.execute({
-      scenarioId: "app-start-v1",
+      scenarioId: "app-start-fast-v3",
       stateHandle: "sealed-p0",
       case: { caseId: "new-start", startMode: "new-application-state" },
     })
@@ -250,205 +186,9 @@ describe("Claxedo public driver", () => {
     expect(result.durationMs).toBe(4)
   })
 
-  test("dispatches session-navigation cases with the authoritative panel preset", async () => {
-    const { driver, navigationExecutions } = harness()
-    await driver.prepare({
-      scenarioId: "session-navigation-v1",
-      scenarioDigestSha256: "1".repeat(64),
-      corpusDirectory: "/tmp/corpus",
-      corpusManifestPath: "/tmp/corpus/manifest.json",
-      corpusDigestSha256: "a".repeat(64),
-      corpusDefinitionDigestSha256: "2".repeat(64),
-      eventSchemaDigestSha256: "b".repeat(64),
-      runDirectory: "/tmp/run",
-      scenarioDefinition: panelScenarioDefinition,
-      workspaceFixtureManifest: workspaceFixtureManifest as never,
-    })
-    await driver.launch({
-      scenarioId: "session-navigation-v1",
-      stateHandle: "sealed-p1",
-      initialSessionId: "control",
-      groupId: "group",
-    })
-    const result = await driver.execute({
-      scenarioId: "session-navigation-v1",
-      case: {
-        caseId: "return-open",
-        workload: "session-navigation",
-        trend: "panel-load",
-        navigationType: "return-visited-panel-open",
-        transcriptBytes: 1_048_576,
-        loadProfile: "moderate",
-        sourceSessionId: "source",
-        destinationSessionId: "destination",
-      },
-    })
-    expect(result.durationMs).toBe(5)
-    expect(result.timingEvidence).toEqual({ trustedInputAt: 20, trustedInputEvent: "pointerdown" })
-    expect(navigationExecutions).toHaveLength(1)
-    expect(navigationExecutions[0]?.preset).toEqual(panelScenarioDefinition.cases.panelLoads![1])
-  })
-
-  test("allows return after a prior first-visit even when other first-visits intervene", async () => {
-    const { driver, navigationExecutions } = harness()
-    await driver.prepare({
-      scenarioId: "session-navigation-v1",
-      scenarioDigestSha256: "1".repeat(64),
-      corpusDirectory: "/tmp/corpus",
-      corpusManifestPath: "/tmp/corpus/manifest.json",
-      corpusDigestSha256: "a".repeat(64),
-      corpusDefinitionDigestSha256: "2".repeat(64),
-      eventSchemaDigestSha256: "b".repeat(64),
-      runDirectory: "/tmp/run",
-      scenarioDefinition: panelScenarioDefinition,
-      workspaceFixtureManifest: workspaceFixtureManifest as never,
-    })
-    await driver.launch({
-      scenarioId: "session-navigation-v1",
-      stateHandle: "sealed-p1",
-      initialSessionId: "control",
-      groupId: "group",
-    })
-    const common = {
-      workload: "session-navigation" as const,
-      trend: "history-size" as const,
-      transcriptBytes: 1_048_576,
-      sourceSessionId: "source",
-    }
-    await driver.execute({
-      scenarioId: "session-navigation-v1",
-      case: { ...common, caseId: "first-a", navigationType: "first-visit", destinationSessionId: "destination" },
-    })
-    await driver.execute({
-      scenarioId: "session-navigation-v1",
-      case: {
-        ...common,
-        caseId: "first-b",
-        navigationType: "first-visit",
-        destinationSessionId: "within-workspace-warm-1048576",
-        transcriptBytes: 2_097_152,
-      },
-    })
-    const returned = await driver.execute({
-      scenarioId: "session-navigation-v1",
-      case: {
-        ...common,
-        caseId: "return-a",
-        navigationType: "return-visited-panel-closed",
-        destinationSessionId: "destination",
-      },
-    })
-
-    expect(
-      navigationExecutions.map((item) => (item.benchmarkCase as { navigationType: string }).navigationType),
-    ).toEqual(["first-visit", "first-visit", "return-visited-panel-closed"])
-    expect(returned.timingEvidence).toEqual({ trustedInputAt: 20, trustedInputEvent: "pointerdown" })
-  })
-
-  test("rejects a return without a prior first-visit in this process", async () => {
-    const { driver, navigationExecutions } = harness()
-    await driver.prepare({
-      scenarioId: "session-navigation-v1",
-      scenarioDigestSha256: "1".repeat(64),
-      corpusDirectory: "/tmp/corpus",
-      corpusManifestPath: "/tmp/corpus/manifest.json",
-      corpusDigestSha256: "a".repeat(64),
-      corpusDefinitionDigestSha256: "2".repeat(64),
-      eventSchemaDigestSha256: "b".repeat(64),
-      runDirectory: "/tmp/run",
-      scenarioDefinition: panelScenarioDefinition,
-      workspaceFixtureManifest: workspaceFixtureManifest as never,
-    })
-    await driver.launch({
-      scenarioId: "session-navigation-v1",
-      stateHandle: "sealed-p1",
-      initialSessionId: "control",
-      groupId: "group",
-    })
-    await expect(
-      driver.execute({
-        scenarioId: "session-navigation-v1",
-        case: {
-          caseId: "orphan-return",
-          workload: "session-navigation",
-          trend: "history-size",
-          navigationType: "return-visited-panel-closed",
-          transcriptBytes: 1_048_576,
-          sourceSessionId: "source",
-          destinationSessionId: "destination",
-        },
-      }),
-    ).rejects.toThrow("prior first-visit of the destination in this process")
-    expect(navigationExecutions).toHaveLength(0)
-  })
-
-  test("dispatches workspace-panel-v1 actions with the requested authoritative preset", async () => {
-    const { driver, panelExecutions } = harness()
-    await driver.prepare({
-      scenarioId: "workspace-panel-v1",
-      scenarioDigestSha256: "1".repeat(64),
-      corpusDirectory: "/tmp/corpus",
-      corpusManifestPath: "/tmp/corpus/manifest.json",
-      corpusDigestSha256: "a".repeat(64),
-      corpusDefinitionDigestSha256: "2".repeat(64),
-      eventSchemaDigestSha256: "b".repeat(64),
-      runDirectory: "/tmp/run",
-      scenarioDefinition: panelScenarioDefinition,
-      workspaceFixtureManifest: workspaceFixtureManifest as never,
-    })
-    await driver.launch({
-      scenarioId: "workspace-panel-v1",
-      stateHandle: "sealed-p1",
-      initialSessionId: "control",
-      groupId: "group",
-    })
-    const result = await driver.execute({
-      scenarioId: "workspace-panel-v1",
-      case: {
-        caseId: "review-to-files-heavy",
-        workload: "workspace-panel-interaction",
-        action: "review-to-files",
-        loadProfile: "heavy",
-      },
-    })
-    expect(panelExecutions).toHaveLength(1)
-    expect(panelExecutions[0]?.preset).toEqual(panelScenarioDefinition.cases.panelLoads![2])
-    expect(result.timingEvidence).toEqual({ trustedInputAt: 20, trustedInputEvent: "pointerdown" })
-  })
-
-  test("rejects retired scenario IDs and panel case shapes", async () => {
-    const retired = harness()
-    await expect(prepare(retired.driver, "workspace-panel-v2")).rejects.toThrow("does not support")
-    const { driver, panelExecutions } = harness()
-    await prepare(driver, "workspace-panel-v1", panelScenarioDefinition)
-    await driver.launch({
-      scenarioId: "workspace-panel-v1",
-      stateHandle: "sealed-p1",
-      initialSessionId: "control",
-      groupId: "group",
-    })
-    await expect(
-      driver.execute({
-        scenarioId: "workspace-panel-v1",
-        case: {
-          caseId: "retired",
-          workload: "workspace-panel-action",
-          action: "open-file",
-        } as unknown as WorkspacePanelCase,
-      }),
-    ).rejects.toThrow("request is incomplete")
-    await expect(
-      driver.execute({
-        scenarioId: "workspace-panel-v1",
-        case: {
-          caseId: "unknown-action",
-          workload: "workspace-panel-interaction",
-          action: "toggle-diff-view",
-          loadProfile: "light",
-        } as unknown as WorkspacePanelCase,
-      }),
-    ).rejects.toThrow("request is incomplete")
-    expect(panelExecutions).toHaveLength(0)
+  test("rejects a scenario it does not serve", async () => {
+    const { driver } = harness()
+    await expect(prepare(driver, "workspace-panel-v1")).rejects.toThrow("does not support")
   })
 
   test("dispatches every case emitted by the installed framework for every advertised scenario", async () => {
@@ -460,7 +200,7 @@ describe("Claxedo public driver", () => {
       ]
       expect(cases.length).toBeGreaterThan(0)
       const ids = cases.flatMap((item) => ("destinationSessionId" in item ? [item.destinationSessionId] : []))
-      const { driver, panelExecutions, navigationExecutions } = harness(ids)
+      const { driver } = harness(ids)
       expect((await driver.hello()).scenarios).toEqual([...PUBLIC_SCENARIO_IDS, ...PRIVATE_CORPUS_SCENARIO_IDS])
       await prepare(driver, scenarioId, scenario)
       if (scenario.kind !== "app-start") {
@@ -484,129 +224,8 @@ describe("Claxedo public driver", () => {
         expect(result.durationMs).toBeGreaterThan(0)
         if (scenario.kind === "app-start") await driver.shutdown()
       }
-      if (scenarioId === "workspace-panel-v1") {
-        expect(scenario.cases.actions).toEqual([...WORKSPACE_PANEL_ACTIONS])
-        expect(panelExecutions.map((item) => item.benchmarkCase)).toEqual(cases)
-        expect(new Set(panelExecutions.map((item) => (item.preset as { id: string }).id))).toEqual(
-          new Set(["light", "moderate", "heavy"]),
-        )
-      }
-      if (scenarioId === "workspace-panel-fast-v1") {
-        expect(panelExecutions.map((item) => item.benchmarkCase)).toEqual(cases)
-        expect(new Set(panelExecutions.map((item) => (item.preset as { id: string }).id))).toEqual(new Set(["moderate"]))
-      }
-      if (scenario.kind === "session-navigation") {
-        expect(navigationExecutions.map((item) => item.benchmarkCase)).toEqual(cases)
-      }
       await driver.shutdown()
     }
-  })
-
-  test("arms panel readiness before click and returns its exact stable-paint timestamp", async () => {
-    const order: string[] = []
-    let paint: ((at: number) => void) | undefined
-    const paintedAt = await runPrearmedStablePaint({
-      arm: () => {
-        order.push("armed")
-        return new Promise<number>((resolve) => {
-          paint = resolve
-        })
-      },
-      click: async () => {
-        order.push("click")
-        paint?.(37)
-      },
-      cancel: async () => {
-        order.push("cancel")
-      },
-    })
-
-    expect(order).toEqual(["armed", "click"])
-    expect(paintedAt).toBe(37)
-  })
-
-  test("reports when the first of two identical panel-owner frames was painted", async () => {
-    const original = new Map<string, PropertyDescriptor | undefined>()
-    const replaceGlobal = (name: string, value: unknown) => {
-      original.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
-      Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
-    }
-    const closedShell = {
-      dataset: { open: "false", stateOpen: "false" },
-      getBoundingClientRect: () => ({ left: 1000 }),
-      querySelectorAll: () => [],
-    }
-    const shells = [closedShell, null, closedShell, null, null]
-    const sampledAt: number[] = []
-    replaceGlobal("window", globalThis)
-    replaceGlobal("innerWidth", 1000)
-    const element = () => ({ style: {}, isConnected: true, append: () => {} })
-    replaceGlobal("document", {
-      createElement: element,
-      documentElement: element(),
-      querySelector: () => {
-        sampledAt.push(performance.now())
-        return shells[Math.min(sampledAt.length - 1, shells.length - 1)]
-      },
-    })
-    replaceGlobal("ResizeObserver", class {
-      constructor(private readonly callback: () => void) {}
-      observe() {
-        queueMicrotask(this.callback)
-      }
-      disconnect() {}
-    })
-    replaceGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      setTimeout(() => callback(performance.now()), 4)
-      return 0
-    })
-    replaceGlobal("__claxedoPaintedFrames", undefined)
-    installPaintedFrames()
-    try {
-      const page = {
-        evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
-      }
-      const at = await waitForPanelOwner(
-        page as never,
-        "closed",
-        {
-          sessionId: "session-a",
-          logicalSessionId: "session-a",
-          workspaceDirectory: "/workspace",
-          title: "Session A",
-          expectedMessageIds: [],
-          expectedPartIds: [],
-        },
-        { manifest: {} as never, files: ["src/a.ts"], changed: ["src/a.ts"], openFiles: ["src/a.ts", "src/b.ts"] },
-      )
-
-      expect(sampledAt.length).toBeGreaterThanOrEqual(5)
-      expect(at).toBeGreaterThan(sampledAt[3]!)
-      expect(at).toBeLessThan(sampledAt[4]!)
-    } finally {
-      for (const [name, descriptor] of original) {
-        if (descriptor) Object.defineProperty(globalThis, name, descriptor)
-        else delete (globalThis as Record<string, unknown>)[name]
-      }
-    }
-  })
-
-  test("rejects a panel scenario that does not define all authoritative presets", async () => {
-    const { driver } = harness()
-    await expect(
-      driver.prepare({
-        scenarioId: "workspace-panel-v1",
-        scenarioDigestSha256: "1".repeat(64),
-        corpusDirectory: "/tmp/corpus",
-        corpusManifestPath: "/tmp/corpus/manifest.json",
-        corpusDigestSha256: "a".repeat(64),
-        corpusDefinitionDigestSha256: "2".repeat(64),
-        eventSchemaDigestSha256: "b".repeat(64),
-        runDirectory: "/tmp/run",
-        scenarioDefinition: { cases: { panelLoads: panelScenarioDefinition.cases.panelLoads!.slice(0, 2) } },
-        workspaceFixtureManifest: workspaceFixtureManifest as never,
-      }),
-    ).rejects.toThrow("must define light, moderate, and heavy")
   })
 })
 

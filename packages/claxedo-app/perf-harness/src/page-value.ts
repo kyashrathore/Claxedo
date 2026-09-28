@@ -118,35 +118,6 @@ export function readNumberFields<const Keys extends readonly string[]>(
   return read
 }
 
-/** Every named field as a boolean, or a failure naming the first one missing. */
-export function readBooleanFields<const Keys extends readonly string[]>(
-  value: unknown,
-  keys: Keys,
-): Record<Keys[number], boolean> {
-  const record = readRecord(value)
-  const read: Record<string, boolean> = {}
-  for (const key of keys) read[key] = readBoolean(record[key])
-  return read
-}
-
-/**
- * One of a fixed set of strings, or a failure naming what arrived.
- *
- * A discriminant the page echoes back is still a claim about another realm, and
- * this is what keeps it a literal type here instead of a widened `string`.
- */
-export function readLiteral<const Values extends readonly string[]>(
-  value: unknown,
-  allowed: Values,
-): Values[number] {
-  const text = readText(value)
-  const found = allowed.find((candidate) => candidate === text)
-  if (found === undefined) {
-    throw new Error(`page evaluation answered ${JSON.stringify(text)}; expected one of ${allowed.join(", ")}`)
-  }
-  return found
-}
-
 /** A viewport-shaped answer: the two numbers a size read has to have. */
 export function readSize(value: unknown): { width: number; height: number } {
   return readNumberFields(value, ["width", "height"])

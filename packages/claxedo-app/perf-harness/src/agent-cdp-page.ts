@@ -1,26 +1,18 @@
 import { isRecord, numberField, recordField, textField } from "./json-fields"
-import { optionalPoint, optionalText, rawValue, readFlag, readNumber } from "./page-value"
-
+import { optionalPoint, optionalText, rawValue } from "./page-value"
 
 type PageEvent = "framenavigated" | "crash"
-type Index = number | "last"
 
 export interface BenchmarkLocator {
   click(options?: { timeout?: number }): Promise<void>
-  hover(): Promise<void>
-  count(): Promise<number>
   nth(index: number): BenchmarkLocator
-  last(): BenchmarkLocator
   locator(selector: string): BenchmarkLocator
   getAttribute(name: string): Promise<string | null>
-  waitFor(input: { state: "visible" | "attached" }): Promise<void>
-  focus(): Promise<void>
 }
 
 export interface BenchmarkPage {
   keyboard: {
     press(key: string): Promise<void>
-    type(value: string): Promise<void>
   }
   addInitScript(fn: () => void): Promise<void>
   /**
@@ -37,15 +29,6 @@ export interface BenchmarkPage {
    * this one through the same structural type.
    */
   evaluate<A = undefined>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>
-  /**
-   * Raw CDP escape hatch for diagnostics (profiling, tracing).
-   *
-   * Resolves `unknown`: a reply's shape is decided by the CDP method, not by
-   * the caller. Every caller today issues a command for its effect and ignores
-   * the reply; one that needs a field should read it rather than declare it.
-   */
-  rawCommand(method: string, params?: Record<string, unknown>): Promise<unknown>
-  onProtocolEvent(method: string, listener: (params: unknown) => void): () => void
   waitForFunction<A = undefined>(
     fn: ((arg: A) => unknown) | (() => unknown),
     arg?: A,
@@ -53,7 +36,6 @@ export interface BenchmarkPage {
   ): Promise<void>
   locator(selector: string): BenchmarkLocator
   getByTestId(testId: string): BenchmarkLocator
-  setViewportSize(size: { width: number; height: number }): Promise<void>
   on(event: PageEvent, listener: (frame?: BenchmarkPage) => void): void
   mainFrame(): BenchmarkPage
   close(): void
@@ -104,7 +86,6 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     framenavigated: [],
     crash: [],
   }
-  const protocolListeners = new Map<string, Set<(params: unknown) => void>>()
   let sequence = 0
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Timed out connecting to packaged renderer CDP")), timeoutMs)
@@ -138,7 +119,6 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     const method = textField(message, "method")
     if (method === "Page.frameNavigated") listeners.framenavigated.forEach((listener) => listener(page))
     if (method === "Inspector.targetCrashed") listeners.crash.forEach((listener) => listener())
-    if (method) protocolListeners.get(method)?.forEach((listener) => listener(message.params))
   })
   socket.addEventListener("close", () => fail(new Error("Packaged renderer CDP closed")))
   socket.addEventListener("error", () => fail(new Error("Packaged renderer CDP failed")))
@@ -185,18 +165,12 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     await command("Input.dispatchKeyEvent", { type: "keyUp", ...description, text: undefined })
   }
 
-  const typeCharacter = async (value: string) => {
-    const description = printableKeyDescription(value)
-    await command("Input.dispatchKeyEvent", { type: "keyDown", ...description })
-    await command("Input.dispatchKeyEvent", { type: "keyUp", ...description, text: undefined, unmodifiedText: undefined })
-  }
-
-  const locator = (selector: string, index: Index = 0, parent?: { selector: string; index: Index }): BenchmarkLocator => {
+  const locator = (selector: string, index = 0, parent?: { selector: string; index: number }): BenchmarkLocator => {
     const query = `(() => {
       const parents = ${parent ? `document.querySelectorAll(${JSON.stringify(parent.selector)})` : "[document]"};
-      const parent = parents[${parent?.index === "last" ? "parents.length - 1" : String(parent?.index ?? 0)}];
+      const parent = parents[${String(parent?.index ?? 0)}];
       const matches = parent?.querySelectorAll(${JSON.stringify(selector)}) ?? [];
-      return { matches, element: matches[${index === "last" ? "matches.length - 1" : String(index)}] };
+      return { matches, element: matches[${String(index)}] };
     })()`
     return {
       async click() {
@@ -215,76 +189,26 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
         await command("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 })
         await command("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 })
       },
-      async hover() {
-        const point = await evaluateExpression(`(() => {
-          const result = ${query}; const element = result.element;
-          if (!(element instanceof HTMLElement)) return null;
-          element.scrollIntoView({ block: "center", inline: "center" });
-          const rect = element.getBoundingClientRect();
-          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        })()`, optionalPoint)
-        if (!point) throw new Error(`benchmark hover target is missing: ${selector}`)
-        await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y })
-      },
-      count: () => evaluateExpression(`(${query}).matches.length`, readNumber),
       nth: (next) => locator(selector, next, parent),
-      last: () => locator(selector, "last", parent),
       locator: (child) => locator(child, 0, { selector, index }),
       getAttribute: async (name) =>
         // An attribute the element does not carry reads as absent, not as a
         // broken page: the expression already answers `null` for that case.
         (await evaluateExpression(`(${query}).element?.getAttribute(${JSON.stringify(name)}) ?? null`, optionalText)) ?? null,
-      async waitFor(input) {
-        await waitFor(() => evaluateExpression(`(() => {
-          const element = (${query}).element;
-          if (!(element instanceof HTMLElement)) return false;
-          if (${JSON.stringify(input.state)} === "attached") return true;
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden";
-        })()`, readFlag), timeoutMs, input.state === "visible" ? 16 : 50)
-      },
-      async focus() {
-        const focused = await evaluateExpression(`(() => {
-          const element = (${query}).element;
-          if (!(element instanceof HTMLElement)) return false;
-          element.focus(); return document.activeElement === element;
-        })()`, readFlag)
-        if (!focused) throw new Error(`benchmark focus target is missing: ${selector}`)
-      },
     }
   }
 
   const page: BenchmarkPage = {
-    keyboard: {
-      press: key,
-      async type(value) {
-        for (const character of value) await typeCharacter(character)
-      },
-    },
+    keyboard: { press: key },
     async addInitScript(fn) {
       await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${fn.toString()})()` })
     },
     evaluate,
-    rawCommand: (method, params = {}) => command(method, params),
-    onProtocolEvent(method, listener) {
-      const registered = protocolListeners.get(method) ?? new Set()
-      registered.add(listener)
-      protocolListeners.set(method, registered)
-      return () => {
-        registered.delete(listener)
-        if (registered.size === 0) protocolListeners.delete(method)
-      }
-    },
     async waitForFunction(fn, arg, options) {
       await waitFor(async () => !!await evaluate(fn, arg), options?.timeout ?? timeoutMs, options?.polling === "raf" ? 16 : 50)
     },
     locator: (selector) => locator(selector),
     getByTestId: (testId) => locator(`[data-testid="${cssEscape(testId)}"]`),
-    async setViewportSize() {
-      // The packaged process owns the fixed 1440x900 BrowserWindow. CDP device
-      // emulation would change renderer semantics, so this is intentionally a
-      // verification no-op rather than a synthetic viewport override.
-    },
     on(event, listener) { listeners[event].push(listener) },
     mainFrame: () => page,
     close() { socket.close() },
@@ -313,32 +237,6 @@ function keyDescription(value: string) {
   if (found) return found
   const codePoint = value.codePointAt(0) ?? 0
   return { key: value, code: "", windowsVirtualKeyCode: codePoint, text: value }
-}
-
-function printableKeyDescription(value: string) {
-  if (/^[a-z]$/.test(value)) {
-    const upper = value.toUpperCase()
-    return { key: value, code: `Key${upper}`, windowsVirtualKeyCode: upper.charCodeAt(0), text: value, unmodifiedText: value }
-  }
-  if (/^[A-Z]$/.test(value)) {
-    return { key: value, code: `Key${value}`, windowsVirtualKeyCode: value.charCodeAt(0), modifiers: 8, text: value, unmodifiedText: value.toLowerCase() }
-  }
-  if (/^[0-9]$/.test(value)) {
-    return { key: value, code: `Digit${value}`, windowsVirtualKeyCode: value.charCodeAt(0), text: value, unmodifiedText: value }
-  }
-  const punctuation: Record<string, { code: string; windowsVirtualKeyCode: number; modifiers?: number; unmodifiedText?: string }> = {
-    " ": { code: "Space", windowsVirtualKeyCode: 32 },
-    "'": { code: "Quote", windowsVirtualKeyCode: 222 },
-    "/": { code: "Slash", windowsVirtualKeyCode: 191 },
-    ".": { code: "Period", windowsVirtualKeyCode: 190 },
-    "-": { code: "Minus", windowsVirtualKeyCode: 189 },
-    _: { code: "Minus", windowsVirtualKeyCode: 189, modifiers: 8, unmodifiedText: "-" },
-    ";": { code: "Semicolon", windowsVirtualKeyCode: 186 },
-    "\\": { code: "Backslash", windowsVirtualKeyCode: 220 },
-  }
-  const found = punctuation[value]
-  if (!found) throw new Error(`Unsupported benchmark typing character: ${JSON.stringify(value)}`)
-  return { key: value, ...found, text: value, unmodifiedText: found.unmodifiedText ?? value }
 }
 
 function cssEscape(value: string) {

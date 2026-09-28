@@ -5,26 +5,16 @@ import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { serveDriver, type DriverHandlers, type PrepareParams } from "agent-app-benchmark/driver-sdk"
-import type { WorkspaceFixtureManifest, WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
 import { measureSessionActivation, type FrameLog } from "./agent-browser-observer"
 import { ensureFrontWindow } from "./front-window"
-import { readFlag, readText } from "./page-value"
+import { readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
-import { isRecord, numberField, recordField, recordsField, textField } from "./json-fields"
-import { materializeClaxedoPublicCorpus, type ClaxedoPublicMaterialization } from "./public-corpus-materializer"
-import { executeWorkspacePanelAction, executeSessionNavigation } from "./public-workspace-panel"
+import { isRecord, numberField, textField } from "./json-fields"
 import {
-  fixtureEvidence,
-  publicPanelLoadPresets,
-  WORKSPACE_PANEL_ACTIONS,
-  SESSION_NAVIGATION_TYPES,
-  PUBLIC_PANEL_LOAD_PROFILES,
-  type PanelTarget,
-  type PublicPanelLoadPreset,
-  type PublicPanelLoadPresets,
-  type SessionNavigationCase,
-  type WorkspacePanelCase,
-} from "./workspace-panel-scenario"
+  materializeClaxedoPublicCorpus,
+  type ClaxedoPublicMaterialization,
+  type CorpusReadinessTarget,
+} from "./public-corpus-materializer"
 
 /**
  * The resource workload's return to control is a validity check, not a scored
@@ -33,43 +23,10 @@ import {
  */
 const RESOURCE_CONTROL_READINESS_TIMEOUT_MS = 5_000
 
-const APP_START_SCENARIO_IDS: readonly string[] = [
-  "app-start-v1",
-  "app-start-fast-v1",
-  "app-start-fast-v2",
-  "app-start-fast-v3",
-  "app-start-real-sessions-v1",
-]
-const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = [
-  "session-switch-v1",
-  "session-switch-fast-v1",
-  "session-switch-fast-v2",
-  "session-switch-walk-v1",
-  "session-switch-walk-real-sessions-v1",
-]
-const SESSION_NAVIGATION_SCENARIO_IDS: readonly string[] = [
-  "session-navigation-v1",
-  "session-navigation-fast-v1",
-  "session-navigation-fast-v2",
-]
-const WORKSPACE_PANEL_SCENARIO_IDS: readonly string[] = ["workspace-panel-v1", "workspace-panel-fast-v1", "workspace-panel-fast-v2"]
+const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-fast-v3", "app-start-real-sessions-v1"]
+const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-walk-v2", "session-switch-walk-real-sessions-v1"]
 
-export const PUBLIC_SCENARIO_IDS = [
-  "app-start-v1",
-  "app-start-fast-v1",
-  "app-start-fast-v2",
-  "app-start-fast-v3",
-  "session-switch-v1",
-  "session-switch-fast-v1",
-  "session-switch-fast-v2",
-  "session-switch-walk-v1",
-  "session-navigation-v1",
-  "session-navigation-fast-v1",
-  "session-navigation-fast-v2",
-  "workspace-panel-v1",
-  "workspace-panel-fast-v1",
-  "workspace-panel-fast-v2",
-] as const
+export const PUBLIC_SCENARIO_IDS = ["app-start-fast-v3", "session-switch-walk-v2"] as const
 
 /**
  * Scenarios over the private corpus of redacted real sessions. They cannot be
@@ -98,11 +55,10 @@ type Clock = {
   end: number
 }
 
-type Target = PanelTarget
+type Target = CorpusReadinessTarget
 type Prepared = {
   materialization: ClaxedoPublicMaterialization
   stateHandles: { P0: string; P1: string }
-  panelLoadPresets?: PublicPanelLoadPresets
 }
 
 type LaunchParams = {
@@ -114,7 +70,7 @@ type LaunchParams = {
 
 type SwitchCase = {
   caseId: string
-  workload: "isolated-latency" | "transcript-size-latency" | "progressive-resource" | "resource-control" | "list-walk"
+  workload: "progressive-resource" | "resource-control" | "list-walk"
   sessionState?: "cold" | "warm"
   /** A list walk's step within its pass; step 0 enters the list from outside or wraps to its top. */
   walkPosition?: number
@@ -130,7 +86,7 @@ type StartCase = {
 type ExecuteParams = {
   scenarioId: string
   stateHandle?: string
-  case: SwitchCase | StartCase | SessionNavigationCase | WorkspacePanelCase
+  case: SwitchCase | StartCase
 }
 
 type ActiveLaunch = {
@@ -150,22 +106,8 @@ type DriverDependencies = {
   activate(target: Target, readinessTimeoutMs?: number): Promise<Activation>
   /** Native session ids of the rail's session rows, top to bottom. */
   listedSessionIds(): Promise<readonly string[]>
-  executePanelAction?(
-    benchmarkCase: WorkspacePanelCase,
-    target: Target,
-    preset: PublicPanelLoadPreset,
-  ): Promise<PanelMeasurement>
-  executeSessionNavigation?(
-    benchmarkCase: SessionNavigationCase,
-    source: Target,
-    destination: Target,
-    preset?: PublicPanelLoadPreset,
-  ): Promise<NavigationMeasurement>
   shutdown(): Promise<LaunchShutdown>
 }
-
-type PanelMeasurement = Awaited<ReturnType<typeof executeWorkspacePanelAction>>
-type NavigationMeasurement = Awaited<ReturnType<typeof executeSessionNavigation>>
 
 /** What a shutdown accounts for: every process it ended, and every one it did not. */
 type ShutdownResult = { terminated: OwnedProcess[]; survivors: OwnedProcess[] }
@@ -183,8 +125,6 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
   let prepared: Prepared | undefined
   let active = false
   let preparedScenarioId: string | undefined
-  /** Logical session IDs first-visited in the current app process (history returns may reuse them later). */
-  let visitedDestinations = new Set<string>()
   /** Logical session ids the list walk has shown in the running process. */
   let walkedSessions = new Set<string>()
 
@@ -210,26 +150,13 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       if (!SERVED_SCENARIO_IDS.includes(params.scenarioId)) {
         throw new Error(`Claxedo does not support scenario ${params.scenarioId}`)
       }
-      let panelLoadPresets: PublicPanelLoadPresets | undefined
-      if ([...SESSION_NAVIGATION_SCENARIO_IDS, ...WORKSPACE_PANEL_SCENARIO_IDS].includes(params.scenarioId)) {
-        if (!params.workspaceFixtureManifest) {
-          throw new Error(`Claxedo ${params.scenarioId} requires a workspace fixture manifest`)
-        }
-        panelLoadPresets = publicPanelLoadPresets({
-          scenarioDefinition: params.scenarioDefinition,
-          fixture: fixtureEvidence(params.workspaceFixtureManifest),
-        })
-      }
-      prepared = { ...(await dependencies.prepare(params)), ...(panelLoadPresets ? { panelLoadPresets } : {}) }
+      prepared = await dependencies.prepare(params)
       preparedScenarioId = params.scenarioId
       return {
         materializationMode: "native-opencode",
         corpusDigestSha256: prepared.materialization.corpusDigestSha256,
         eventSchemaDigestSha256: prepared.materialization.eventSchemaDigestSha256,
         mappingDigestSha256: prepared.materialization.mappingDigestSha256,
-        ...(prepared.materialization.workspaceFixtureDigestSha256
-          ? { workspaceFixtureDigestSha256: prepared.materialization.workspaceFixtureDigestSha256 }
-          : {}),
         stateHandles: prepared.stateHandles,
         sessionMapping: prepared.materialization.sessionMapping,
       }
@@ -242,64 +169,11 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       const launch = await dependencies.launch(params.stateHandle, params.initialSessionId)
       if (launch.processes.length === 0) throw new Error("Claxedo launch returned no application root")
       active = true
-      visitedDestinations = new Set()
       walkedSessions = new Set()
       return { ready: true, processes: launch.processes, readiness: launch.readiness }
     },
     execute: async (params) => {
       if (params.scenarioId !== preparedScenarioId) throw new Error("Claxedo execute scenario differs from preparation")
-      if (SESSION_NAVIGATION_SCENARIO_IDS.includes(params.scenarioId)) {
-        if (
-          !active ||
-          !("navigationType" in params.case) ||
-          params.case.workload !== "session-navigation" ||
-          !SESSION_NAVIGATION_TYPES.includes(params.case.navigationType)
-        ) {
-          throw new Error("Claxedo session-navigation request is incomplete")
-        }
-        if (!dependencies.executeSessionNavigation) {
-          throw new Error("Claxedo session-navigation dependency is missing")
-        }
-        const source = resolveTarget(params.case.sourceSessionId)
-        const destination = resolveTarget(params.case.destinationSessionId)
-        const preset = params.case.loadProfile
-          ? requirePrepared().panelLoadPresets?.[params.case.loadProfile]
-          : undefined
-        if (params.case.navigationType === "return-visited-panel-open" && !preset) {
-          throw new Error("Claxedo panel-open session navigation requires a declared load profile")
-        }
-        if (params.case.navigationType === "first-visit") {
-          if (visitedDestinations.has(params.case.destinationSessionId)) {
-            throw new Error("Claxedo first-visit destination was already displayed in this process")
-          }
-        } else if (params.case.navigationType === "return-visited-panel-closed") {
-          if (!visitedDestinations.has(params.case.destinationSessionId)) {
-            throw new Error("Claxedo return navigation requires a prior first-visit of the destination in this process")
-          }
-        }
-        const measured = await dependencies.executeSessionNavigation(params.case, source, destination, preset)
-        if (params.case.navigationType === "first-visit") {
-          visitedDestinations.add(params.case.destinationSessionId)
-        }
-        return navigationExecution(params.case.caseId, measured)
-      }
-      if (WORKSPACE_PANEL_SCENARIO_IDS.includes(params.scenarioId)) {
-        if (
-          !active ||
-          !("loadProfile" in params.case) ||
-          !("action" in params.case) ||
-          params.case.workload !== "workspace-panel-interaction" ||
-          !WORKSPACE_PANEL_ACTIONS.includes(params.case.action)
-        ) {
-          throw new Error("Claxedo workspace-panel request is incomplete")
-        }
-        if (!dependencies.executePanelAction) throw new Error("Claxedo workspace-panel dependency is missing")
-        const preset = requirePrepared().panelLoadPresets?.[params.case.loadProfile]
-        if (!preset) throw new Error(`Claxedo has no workspace-panel preset ${params.case.loadProfile}`)
-        const target = resolveTarget("control")
-        const measured = await dependencies.executePanelAction(params.case, target, preset)
-        return panelExecution(params.case.caseId, measured)
-      }
       if (APP_START_SCENARIO_IDS.includes(params.scenarioId)) {
         if (active) throw new Error("Claxedo app-start requires no running application")
         if (!("startMode" in params.case) || !params.stateHandle)
@@ -309,12 +183,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         active = true
         return { ...execution(params.case.caseId, launch.clock, withTimingEvidence(launch.readiness, launch.clock.end)), frameLog: launch.frameLog }
       }
-      if (
-        !SESSION_SWITCH_SCENARIO_IDS.includes(params.scenarioId) ||
-        "startMode" in params.case ||
-        "action" in params.case ||
-        "navigationType" in params.case
-      ) {
+      if (!SESSION_SWITCH_SCENARIO_IDS.includes(params.scenarioId) || "startMode" in params.case) {
         throw new Error(`Claxedo does not support scenario ${params.scenarioId}`)
       }
       if (!active) throw new Error("Claxedo session switching requires a running application")
@@ -336,10 +205,8 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         walkedSessions.add(destination.logicalSessionId)
         return activationExecution(benchmarkCase.caseId, measured)
       }
-      const control = resolveTarget(benchmarkCase.sourceSessionId ?? "control")
-      if (benchmarkCase.workload !== "resource-control") {
-        if (benchmarkCase.sessionState === "warm") await dependencies.activate(destination)
-        await dependencies.activate(control)
+      if (benchmarkCase.workload === "progressive-resource") {
+        await dependencies.activate(resolveTarget(benchmarkCase.sourceSessionId ?? "control"))
       }
       const measured = await dependencies.activate(
         destination,
@@ -350,7 +217,6 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
     shutdown: async () => {
       const { terminated, survivors } = await dependencies.shutdown()
       active = false
-      visitedDestinations = new Set()
       walkedSessions = new Set()
       return { terminated, survivors }
     },
@@ -363,22 +229,6 @@ function execution(caseId: string, clock: Clock, readiness: ReadinessReceipt) {
 
 function activationExecution(caseId: string, measured: Activation) {
   return { ...execution(caseId, measured.clock, readinessReceipt(measured.clock.end)), frameLog: measured.frameLog }
-}
-
-function panelExecution(caseId: string, measured: PanelMeasurement) {
-  return {
-    ...execution(caseId, measured.clock, readinessReceipt(measured.clock.end)),
-    timingEvidence: { trustedInputAt: measured.clock.start, trustedInputEvent: "pointerdown" },
-    rendererTrace: measured.rendererTrace,
-  }
-}
-
-function navigationExecution(caseId: string, measured: NavigationMeasurement) {
-  return {
-    ...execution(caseId, measured.clock, readinessReceipt(measured.clock.end)),
-    timingEvidence: { trustedInputAt: measured.clock.start, trustedInputEvent: "pointerdown" },
-    ...("rendererTrace" in measured ? { rendererTrace: measured.rendererTrace } : {}),
-  }
 }
 
 function readinessReceipt(observedAt?: number): ReadinessReceipt {
@@ -400,15 +250,9 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
   }
 }
 
-/**
- * Today's app and the v2 rebuild are packaged from one checkout and driven by
- * this one driver through the same readiness hooks. v2 has no hover prefetch by
- * design, so its open-file case starts surface-cold and data-cold instead of
- * data-warm; every end condition is the same.
- */
 export const APPLICATIONS = {
-  claxedo: { id: "claxedo", name: "Claxedo", hoverPrefetch: true },
-  "claxedo-v2": { id: "claxedo-v2", name: "Claxedo v2", hoverPrefetch: false },
+  claxedo: { id: "claxedo", name: "Claxedo" },
+  "claxedo-v2": { id: "claxedo-v2", name: "Claxedo v2" },
 } as const
 
 export type ApplicationId = keyof typeof APPLICATIONS
@@ -440,17 +284,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
   const driverDigestSha256 = await hashFiles([
     import.meta.path,
     path.join(import.meta.dir, "public-corpus-materializer.ts"),
-    path.join(import.meta.dir, "public-workspace-panel.ts"),
-    path.join(import.meta.dir, "workspace-panel-scenario.ts"),
-    path.join(import.meta.dir, "workspace-panel-locators.ts"),
-    path.join(import.meta.dir, "workspace-panel-trace-reading.ts"),
-    path.join(import.meta.dir, "workspace-panel-trace-recording.ts"),
-    path.join(import.meta.dir, "workspace-panel-readiness.ts"),
-    path.join(import.meta.dir, "workspace-panel-diff-readiness.ts"),
-    path.join(import.meta.dir, "workspace-panel-owner-readiness.ts"),
-    path.join(import.meta.dir, "workspace-panel-setup.ts"),
-    path.join(import.meta.dir, "trace-events.ts"),
-    path.join(import.meta.dir, "workspace-fixture.ts"),
+    path.join(import.meta.dir, "corpus-workspace.ts"),
     path.join(import.meta.dir, "fixture-registration.ts"),
     path.join(import.meta.dir, "opencode-corpus.ts"),
     path.join(import.meta.dir, "with-claxedo-data-directory.ts"),
@@ -465,7 +299,6 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
   const buildDigestSha256 = await hashFiles(await applicationBuildFiles(executable))
 
   let readinessTargets: ReadonlyMap<string, Target> = new Map()
-  let workspaceFixture: ReturnType<typeof fixtureEvidence> | undefined
   let current: ClaxedoLaunch | undefined
   let activeStateRoot: string | undefined
   let removeActiveState = false
@@ -529,22 +362,13 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     prepare: async (params) => {
       const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", application.id)
       attemptsRoot = path.join(runRoot, "attempts")
-      const stateCache = process.env.AGENT_APP_BENCHMARK_STATE_CACHE
-      // Workspace-backed scenarios share one fixture state per fixture digest; launches already
-      // reuse its workspaces read-only within a scenario, so later scenarios may reuse them too.
-      const cacheRoot =
-        stateCache && params.workspaceFixtureDigestSha256
-          ? path.join(stateCache, `fixture-${params.workspaceFixtureDigestSha256}`)
-          : stateCache
+      const cacheRoot = process.env.AGENT_APP_BENCHMARK_STATE_CACHE
       if (cacheRoot) await mkdir(cacheRoot, { recursive: true, mode: 0o700 })
       const privateRoot = cacheRoot ?? runRoot
       const p0 = path.join(privateRoot, "P0")
       const p1 = path.join(privateRoot, "P1")
       const cached = cacheRoot ? await readPreparedCache(cacheRoot, params.corpusDigestSha256) : undefined
       if (cached) {
-        if (cached.workspaceFixtureDigestSha256 !== params.workspaceFixtureDigestSha256)
-          throw new Error("Claxedo prepared-state cache belongs to a different workspace fixture")
-        workspaceFixture = params.workspaceFixtureManifest ? fixtureEvidence(params.workspaceFixtureManifest) : undefined
         readinessTargets = cached.readinessTargets
         return { materialization: cached, stateHandles: { P0: p0, P1: p1 } }
       }
@@ -559,14 +383,7 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
         expectedEventSchemaDigestSha256: params.eventSchemaDigestSha256,
         dataDirectory: path.join(p0, "data"),
         workspaceDirectory: path.join(privateRoot, "workspaces"),
-        ...(params.workspaceFixtureManifest
-          ? {
-              workspaceFixtureManifest: params.workspaceFixtureManifest,
-              expectedWorkspaceFixtureDigestSha256: params.workspaceFixtureDigestSha256,
-            }
-          : {}),
       })
-      workspaceFixture = params.workspaceFixtureManifest ? fixtureEvidence(params.workspaceFixtureManifest) : undefined
       readinessTargets = materialization.readinessTargets
       const seedInitializedState = async () => {
         await cp(p0, p1, { recursive: true, errorOnExist: true, mode: fsConstants.COPYFILE_FICLONE })
@@ -625,53 +442,8 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
       if (!Array.isArray(rows)) throw new Error("Claxedo rail rows did not read as a list")
       return rows.map(readText)
     },
-    executePanelAction: async (benchmarkCase, target, preset) => {
-      if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
-      if (!(await sessionRootVisible(current.page, target.sessionId))) {
-        throw new Error("Claxedo workspace-panel action is not on the control session")
-      }
-      return executeWorkspacePanelAction({
-        page: current.page,
-        benchmarkCase,
-        fixture: workspaceFixture,
-        preset,
-        hoverPrefetch: application.hoverPrefetch,
-      })
-    },
-    executeSessionNavigation: async (benchmarkCase, source, destination, preset) => {
-      if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
-      return executeSessionNavigation({
-        page: current.page,
-        benchmarkCase,
-        source,
-        destination,
-        fixture: workspaceFixture,
-        preset,
-      })
-    },
     shutdown: closeCurrent,
   }
-}
-
-/**
- * Claxedo keeps previously visited session panes mounted, so the first session
- * root in the DOM is not necessarily the focused one. The control-session guard
- * therefore asks for the root that carries the target id and requires it to be
- * laid out and visible, the same identity check the readiness observer uses.
- */
-async function sessionRootVisible(
-  page: { evaluate: (fn: (id: string) => unknown, id: string) => Promise<unknown> },
-  sessionId: string,
-) {
-  return readFlag(await page.evaluate((id) => {
-    const root = document.querySelector<HTMLElement>(
-      `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
-    )
-    if (!root) return false
-    const rect = root.getBoundingClientRect()
-    const style = getComputedStyle(root)
-    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-  }, sessionId))
 }
 
 /** Copies the app-side logs of a failed unmeasured launch out of the private run directory before it is discarded. */
@@ -746,7 +518,6 @@ function parsePreparedCache(record: Record<string, unknown>): ClaxedoPublicMater
   const corpusDigestSha256 = textField(record, "corpusDigestSha256")
   const eventSchemaDigestSha256 = textField(record, "eventSchemaDigestSha256")
   const mappingDigestSha256 = textField(record, "mappingDigestSha256")
-  const workspaceFixtureDigestSha256 = textField(record, "workspaceFixtureDigestSha256")
   const sessionMapping = stringRecord(record.sessionMapping)
   const messageCount = numberField(record, "messageCount")
   const transcriptBytes = numberField(record, "transcriptBytes")
@@ -772,7 +543,6 @@ function parsePreparedCache(record: Record<string, unknown>): ClaxedoPublicMater
     corpusDigestSha256,
     eventSchemaDigestSha256,
     mappingDigestSha256,
-    ...(workspaceFixtureDigestSha256 ? { workspaceFixtureDigestSha256 } : {}),
     sessionMapping,
     readinessTargets,
     messageCount,
@@ -858,113 +628,11 @@ function requiredString(params: Record<string, unknown>, name: string) {
   return value
 }
 
-const stringList = (record: Record<string, unknown>, key: string): string[] | undefined => {
-  const value = record[key]
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) return undefined
-  return value.filter((entry) => typeof entry === "string")
-}
-
-/** Read the fixture's generation parameters, which decide every file it holds. */
-function parseWorkspaceLoad(load: Record<string, unknown> | undefined): WorkspaceLoad | undefined {
-  if (!load || load.generator !== "agent-app-workspace-v1") return undefined
-  const counts = [
-    "directoryCount",
-    "sourceFileCount",
-    "sourceFileBytes",
-    "changedFileCount",
-    "diffHunksPerFile",
-    "diffLinesPerHunk",
-    "openFileTabCount",
-  ] as const
-  const read = counts.map((name) => [name, numberField(load, name)] as const)
-  if (read.some(([, value]) => value === undefined)) return undefined
-  return {
-    generator: "agent-app-workspace-v1",
-    directoryCount: numberField(load, "directoryCount") ?? 0,
-    sourceFileCount: numberField(load, "sourceFileCount") ?? 0,
-    sourceFileBytes: numberField(load, "sourceFileBytes") ?? 0,
-    changedFileCount: numberField(load, "changedFileCount") ?? 0,
-    diffHunksPerFile: numberField(load, "diffHunksPerFile") ?? 0,
-    diffLinesPerHunk: numberField(load, "diffLinesPerHunk") ?? 0,
-    openFileTabCount: numberField(load, "openFileTabCount") ?? 0,
-  }
-}
-
-/**
- * Read an unvalidated `workspaceFixtureManifest` from the driver protocol.
- *
- * The benchmark SDK's own `verifyWorkspaceFixtureManifest` takes an
- * already-typed manifest, so it cannot be the boundary for JSON off the wire.
- * This checks the fields the harness reads — the file identities, the changed
- * and open path lists, and the digests that make the fixture reproducible —
- * and rejects anything else, instead of asserting the shape and failing later
- * inside a scenario.
- */
-function parseWorkspaceFixtureManifest(value: unknown): WorkspaceFixtureManifest {
-  if (!isRecord(value)) throw new Error("Claxedo driver requires an object workspaceFixtureManifest")
-  const seed = textField(value, "seed")
-  const manifestDigestSha256 = textField(value, "manifestDigestSha256")
-  const directories = stringList(value, "directories")
-  const changedFilePaths = stringList(value, "changedFilePaths")
-  const openFilePaths = stringList(value, "openFilePaths")
-  const load = parseWorkspaceLoad(recordField(value, "load"))
-  const rawFiles = recordsField(value, "files")
-  if (
-    value.schemaVersion !== 1 ||
-    value.generator !== "agent-app-workspace-v1" ||
-    seed === undefined ||
-    manifestDigestSha256 === undefined ||
-    !directories ||
-    !changedFilePaths ||
-    !openFilePaths ||
-    !load ||
-    !rawFiles
-  ) {
-    throw new Error("Claxedo driver workspaceFixtureManifest does not match agent-app-workspace-v1")
-  }
-  const files = rawFiles.map((file) => {
-    const filePath = textField(file, "path")
-    const byteLength = numberField(file, "byteLength")
-    const initialDigestSha256 = textField(file, "initialDigestSha256")
-    const currentDigestSha256 = textField(file, "currentDigestSha256")
-    const hunks = (recordsField(file, "hunks") ?? []).map((hunk) => ({
-      startLine: numberField(hunk, "startLine") ?? -1,
-      lineCount: numberField(hunk, "lineCount") ?? -1,
-    }))
-    if (
-      filePath === undefined ||
-      byteLength === undefined ||
-      typeof file.changed !== "boolean" ||
-      initialDigestSha256 === undefined ||
-      currentDigestSha256 === undefined ||
-      hunks.some((hunk) => hunk.startLine < 0 || hunk.lineCount < 0)
-    ) {
-      throw new Error("Claxedo driver workspaceFixtureManifest has an unreadable file entry")
-    }
-    return { path: filePath, byteLength, changed: file.changed, hunks, initialDigestSha256, currentDigestSha256 }
-  })
-  return {
-    schemaVersion: 1,
-    generator: "agent-app-workspace-v1",
-    seed,
-    load,
-    directories,
-    files,
-    changedFilePaths,
-    openFilePaths,
-    manifestDigestSha256,
-  }
-}
-
 // The protocol hands these three readers whatever the caller sent. They take
 // `unknown` and check it, rather than being declared as already-validated
 // records and asserted into at the call site.
 function prepareParams(params: unknown): PrepareParams {
   if (!isRecord(params)) throw new Error("Claxedo driver prepare requires an object")
-  const workspaceFixtureManifest =
-    params.workspaceFixtureManifest === undefined
-      ? undefined
-      : parseWorkspaceFixtureManifest(params.workspaceFixtureManifest)
   return {
     scenarioId: requiredString(params, "scenarioId"),
     scenarioDigestSha256: requiredString(params, "scenarioDigestSha256"),
@@ -975,11 +643,6 @@ function prepareParams(params: unknown): PrepareParams {
     eventSchemaDigestSha256: requiredString(params, "eventSchemaDigestSha256"),
     runDirectory: requiredString(params, "runDirectory"),
     ...(isRecord(params.scenarioDefinition) ? { scenarioDefinition: params.scenarioDefinition } : {}),
-    ...(typeof params.fixtureSeed === "string" ? { fixtureSeed: params.fixtureSeed } : {}),
-    ...(workspaceFixtureManifest ? { workspaceFixtureManifest } : {}),
-    ...(typeof params.workspaceFixtureDigestSha256 === "string"
-      ? { workspaceFixtureDigestSha256: params.workspaceFixtureDigestSha256 }
-      : {}),
   }
 }
 
@@ -994,61 +657,18 @@ function launchParams(params: unknown): LaunchParams {
 }
 
 /**
- * Read an unvalidated benchmark case from the driver protocol.
- *
- * The four case shapes are discriminated by `workload` (or, for the start
- * case, by `startMode`). Asserting the union here let a malformed case reach a
- * scenario and fail as a missing session id mid-measurement; reading it here
- * names the bad field at the protocol boundary.
+ * Read an unvalidated benchmark case from the driver protocol. A switch case is
+ * discriminated by `workload`, a start case by `startMode`; reading them here
+ * names a malformed field at the protocol boundary instead of failing
+ * mid-measurement as a missing session id.
  */
-function parseBenchmarkCase(value: unknown): SwitchCase | StartCase | SessionNavigationCase | WorkspacePanelCase {
+function parseBenchmarkCase(value: unknown): SwitchCase | StartCase {
   if (!isRecord(value)) throw new Error("Claxedo driver requires a benchmark case")
   const caseId = textField(value, "caseId")
   if (caseId === undefined) throw new Error("Claxedo driver benchmark case is missing caseId")
   const workload = textField(value, "workload")
 
-  if (workload === "session-navigation") {
-    const navigationType = SESSION_NAVIGATION_TYPES.find((entry) => entry === textField(value, "navigationType"))
-    const trend = textField(value, "trend")
-    const transcriptBytes = numberField(value, "transcriptBytes")
-    const sourceSessionId = textField(value, "sourceSessionId")
-    const destinationSessionId = textField(value, "destinationSessionId")
-    const loadProfile = PUBLIC_PANEL_LOAD_PROFILES.find((entry) => entry === textField(value, "loadProfile"))
-    if (
-      !navigationType ||
-      (trend !== "history-size" && trend !== "panel-load") ||
-      transcriptBytes === undefined ||
-      sourceSessionId === undefined ||
-      destinationSessionId === undefined
-    ) {
-      throw new Error(`Claxedo driver session-navigation case ${caseId} is incomplete`)
-    }
-    return {
-      caseId,
-      workload,
-      trend,
-      navigationType,
-      transcriptBytes,
-      sourceSessionId,
-      destinationSessionId,
-      ...(loadProfile ? { loadProfile } : {}),
-    }
-  }
-
-  if (workload === "workspace-panel-interaction") {
-    const action = WORKSPACE_PANEL_ACTIONS.find((entry) => entry === textField(value, "action"))
-    const loadProfile = PUBLIC_PANEL_LOAD_PROFILES.find((entry) => entry === textField(value, "loadProfile"))
-    if (!action || !loadProfile) throw new Error(`Claxedo driver workspace-panel case ${caseId} is incomplete`)
-    return { caseId, workload, action, loadProfile }
-  }
-
-  if (
-    workload === "isolated-latency" ||
-    workload === "transcript-size-latency" ||
-    workload === "progressive-resource" ||
-    workload === "resource-control" ||
-    workload === "list-walk"
-  ) {
+  if (workload === "progressive-resource" || workload === "resource-control" || workload === "list-walk") {
     const destinationSessionId = textField(value, "destinationSessionId")
     if (destinationSessionId === undefined) {
       throw new Error(`Claxedo driver switch case ${caseId} is missing destinationSessionId`)
