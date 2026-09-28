@@ -2054,8 +2054,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           `
       update sessions set
         title = coalesce(?, title),
-        updated_at = max(updated_at, coalesce(?, updated_at)),
-        deleted_at = null
+        updated_at = max(updated_at, coalesce(?, updated_at))
       where session_id = ? and workspace_id = ? and deleted_at is null
         and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
     `,
