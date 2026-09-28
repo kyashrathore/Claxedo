@@ -1,0 +1,54 @@
+Subject: diff-changes: drop the muted-hover rules keyed on the deleted .activity-row
+
+What: the .activity-row:hover branch of the muted-hover rules and the stylesheet list that named activity-row.css are removed.
+Why: the app deleted ActivityRow, so nothing renders .activity-row; the collapsible-trigger branch is the one that can match.
+
+diff --git a/src/components/diff-changes.css b/src/components/diff-changes.css
+index 387f57a1ba..a69b05ae7c 100644
+--- a/src/components/diff-changes.css
++++ b/src/components/diff-changes.css
+@@ -32,9 +32,9 @@
+ }
+ 
+ /*
+- * muted-hover variant (T0.2): +N -N sit at --text-weaker at rest and only light
+- * green/red while their enclosing .activity-row is hovered (mouse-capable devices).
+- * tabular-nums so digit changes never shift layout (F1/F9).
++ * muted-hover variant: +N -N sit at --text-weaker at rest and only light
++ * green/red while their enclosing collapsible trigger is hovered (mouse-capable
++ * devices). tabular-nums so digit changes never shift layout.
+  */
+ .ui-diff-changes[data-variant="muted-hover"] {
+   .ui-diff-changes-additions,
+@@ -46,18 +46,12 @@
+ }
+ 
+ @media (hover: hover) {
+-  .activity-row:hover
+-    [data-component="diff-changes"][data-variant="muted-hover"]
+-    .ui-diff-changes-additions,
+   [data-slot="collapsible-trigger"]:hover
+     [data-component="diff-changes"][data-variant="muted-hover"]
+     .ui-diff-changes-additions {
+     color: var(--text-diff-add-base);
+   }
+ 
+-  .activity-row:hover
+-    [data-component="diff-changes"][data-variant="muted-hover"]
+-    .ui-diff-changes-deletions,
+   [data-slot="collapsible-trigger"]:hover
+     [data-component="diff-changes"][data-variant="muted-hover"]
+     .ui-diff-changes-deletions {
+diff --git a/src/theme/transcript-typography.ts b/src/theme/transcript-typography.ts
+index fa49ca644b..91ab4946ec 100644
+--- a/src/theme/transcript-typography.ts
++++ b/src/theme/transcript-typography.ts
+@@ -107,7 +107,7 @@ export const TRANSCRIPT_HEADING_SCALE_KEYS: readonly TranscriptHeadingScale[] =
+ /**
+  * Every number the transcript is set with, as the `--transcript-<css>` variable
+  * the stylesheets read (`markdown.css`, `message-part.css`, `basic-tool.css`,
+- * `activity-row.css`, `work-group.css`, `session-turn.css`) and the value those
++ * `work-group.css`, `session-turn.css`) and the value those
+  * stylesheets fall back to when the variable is absent. A `shipped` of
+  * `undefined` marks a knob whose fallback differs per element (block margins,
+  * the responsive column, a code block's inherited leading, a group's indent),

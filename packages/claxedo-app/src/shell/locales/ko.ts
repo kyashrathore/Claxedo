@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "시스템",
   "shell.scheme.light": "라이트",
   "shell.scheme.dark": "다크",
-  "shell.failed": "문제가 발생했습니다",
   "shell.navigation": "프로젝트 및 세션",
   "shell.category.theme": "테마",
   "shell.category.view": "보기",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "색상 테마",
   "shell.settingsGroup.account": "계정",
   "shell.settingsGroup.app": "앱",
-  "shell.settingsSections": "설정 섹션",
   "shell.settingsEmpty": "섹션을 선택하세요",
 }

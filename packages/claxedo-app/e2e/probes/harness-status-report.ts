@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { frameSessionId, frameType, type EventStream, type StreamFrame } from "../harness/stream"
 
@@ -114,7 +115,7 @@ export function renderReport(input: { records: TurnRecord[]; skipped: string[]; 
 }
 
 export async function writeReport(text: string) {
-  const file = path.join(import.meta.dirname, "harness-status.result.md")
+  const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-probe-harness-status-")), "report.md")
   await fs.writeFile(file, text)
   return file
 }

@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process"
+import { sleep } from "@claxedo/helpers"
 
 export type HealthOptions = {
   label: string
@@ -29,7 +30,7 @@ export async function waitForHealth(url: string, options: HealthOptions) {
     const result = await probe(url)
     if (result.ok && (options.ready?.() ?? true)) return
     lastReason = result.ok ? `${url} answered, but not from ${options.label}` : result.reason
-    await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 250))
+    await sleep(options.intervalMs ?? 250)
   }
   const tail = options.log().split("\n").slice(-80).join("\n")
   throw new Error(

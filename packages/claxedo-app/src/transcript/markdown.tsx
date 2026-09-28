@@ -46,6 +46,7 @@ import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
 import { createImageWaits, stabilizeImages, type ImageFiles, type ImageWaits } from "./markdown-images"
+import { copyText } from "@/lib/clipboard"
 import { nextIdleSlice } from "@/lib/idle"
 import { createMarkdownEdges, keepMarkdownEdge } from "./markdown-edges"
 
@@ -481,9 +482,7 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     const code = button.closest('[data-component="markdown-code"]')?.querySelector("code")
     const content = table instanceof HTMLTableElement ? markdownTableText(table) : (code?.textContent ?? "")
     if (!content) return
-    const clipboard = navigator?.clipboard
-    if (!clipboard) return
-    await clipboard.writeText(content)
+    if (!(await copyText(content)).copied) return
     const labels = getLabels()
     setCopyState(button, labels, true)
     const existing = timeouts.get(button)

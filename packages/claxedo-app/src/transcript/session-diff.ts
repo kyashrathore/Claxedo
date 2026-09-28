@@ -1,6 +1,5 @@
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
 
-export type { FileDiffMetadata } from "@pierre/diffs"
 import { parsePatch } from "diff"
 import type { AgentReviewFileDiff } from "@claxedo/agent-runtime-contract"
 

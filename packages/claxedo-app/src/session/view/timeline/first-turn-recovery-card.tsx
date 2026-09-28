@@ -1,4 +1,5 @@
 import { createSignal, Show, type ParentProps } from "solid-js"
+import { copyText } from "@/lib/clipboard"
 import { ClaxedoIcon as Icon, Button, Card, Tooltip } from "@/ui"
 import { ClaxedoIconButton as IconButton } from "@/ui"
 import type { DispatchContext } from "./provider-error-detail"
@@ -9,7 +10,7 @@ function RawDetail(props: { detail: string }) {
   const [copied, setCopied] = createSignal(false)
 
   const copy = async () => {
-    await navigator.clipboard.writeText(props.detail)
+    if (!(await copyText(props.detail)).copied) return
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

@@ -1,11 +1,8 @@
 import { providerErrorDetail, providerUsageLimitDetail, type DispatchContext } from "./provider-error-detail"
 import { asRecord } from "@claxedo/helpers/guards"
-import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS, type AgentAssistantMessage, type AgentUserMessage } from "@claxedo/agent-runtime-contract"
+import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
 
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
-export type FirstTurnMessage =
-  | Pick<AgentUserMessage, "id" | "role" | "time">
-  | Pick<AgentAssistantMessage, "id" | "role" | "parentID" | "time" | "finish" | "error">
 
 const recoveries = {
   credential: { kind: "credential", title: "Reconnect your AI provider", description: "The provider rejected the credential for this workspace.", label: "Reconnect and resend" },
@@ -60,28 +57,3 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
   if (/(workspace|worktree|repository|directory|sandbox|provision|filesystem|eacces|enoent|permission denied)/i.test(message)) return "workspace"
   return "unknown"
 }
-
-export function isSettledTurnAssistant(message: FirstTurnMessage): message is Extract<FirstTurnMessage, { role: "assistant" }> {
-  if (message.role !== "assistant") return false
-  if (message.error !== undefined) return true
-  return typeof message.time.completed === "number" && message.finish !== "tool-calls" && message.finish !== "unknown"
-}
-
-export function firstTurnOutcome(messages: FirstTurnMessage[]) {
-  const first = messages.find((message): message is Extract<FirstTurnMessage, { role: "user" }> => message.role === "user")
-  if (!first) return undefined
-  const assistant = messages.find((message): message is Extract<FirstTurnMessage, { role: "assistant" }> =>
-    isSettledTurnAssistant(message) && message.parentID === first.id,
-  )
-  if (!assistant || (typeof assistant.time.completed !== "number" && !assistant.error)) return undefined
-  if (!assistant.error) return { name: "first_turn_ok" as const }
-  return { name: "first_turn_failed" as const, class: sessionRecoveryClass(assistant.error) }
-}
-
-export function firstTurnFunnelEvents(messages: FirstTurnMessage[], cloud: boolean) {
-  const outcome = firstTurnOutcome(messages)
-  if (!outcome) return []
-  if (outcome.name !== "first_turn_ok" || !cloud) return [outcome]
-  return [outcome, { name: "first_cloud_turn_ok" as const }]
-}
-

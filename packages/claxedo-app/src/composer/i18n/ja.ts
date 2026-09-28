@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "キャンセル",
-  "composer.action.save": "保存",
   "composer.attachment.refused.title": "{{harness}} はこの添付ファイルを扱えません",
   "composer.attachment.refused.description": "{{harness}} には {{mime}} を渡す入力がなく、このセッションにはファイルを置くワークスペースフォルダもありません。",
   "composer.attachment.unreadable.title": "添付ファイルを読み取れませんでした",
   "composer.attachment.unreadable.description": "このデバイスから {{filename}} を読み取れませんでした。",
-  "composer.marks.title": "画像にマークを付ける",
-  "composer.marks.hint": "ドラッグで範囲を囲むか、クリックでピンを置いてからコメントを入力します。",
-  "composer.marks.delete": "マークを削除",
-  "composer.marks.mark": "マーク {{number}}",
   "dialog.model.search.placeholder": "モデルを検索",
   "dialog.model.empty": "モデルが見つかりません",
   "command.provider.connect": "プロバイダーに接続",

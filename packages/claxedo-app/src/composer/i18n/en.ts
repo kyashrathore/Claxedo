@@ -1,15 +1,9 @@
 export type ComposerTextKey =
-  | "composer.action.cancel"
-  | "composer.action.save"
   | "composer.attachment.reading"
   | "composer.attachment.refused.title"
   | "composer.attachment.refused.description"
   | "composer.attachment.unreadable.title"
   | "composer.attachment.unreadable.description"
-  | "composer.marks.title"
-  | "composer.marks.hint"
-  | "composer.marks.delete"
-  | "composer.marks.mark"
   | "dialog.model.search.placeholder"
   | "dialog.model.empty"
   | "command.provider.connect"
@@ -112,17 +106,11 @@ export type ComposerTextKey =
   | "command.category.model"
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
-  "composer.action.cancel": "Cancel",
-  "composer.action.save": "Save",
   "composer.attachment.reading": "Reading {{filename}}…",
   "composer.attachment.refused.title": "{{harness}} cannot take this attachment",
   "composer.attachment.refused.description": "{{harness}} has no prompt input for {{mime}}, and this session has no workspace folder to keep the file in.",
   "composer.attachment.unreadable.title": "Attachment could not be read",
   "composer.attachment.unreadable.description": "{{filename}} could not be read from this device.",
-  "composer.marks.title": "Mark up image",
-  "composer.marks.hint": "Drag to box an area or click to drop a pin, then comment on it.",
-  "composer.marks.delete": "Delete mark",
-  "composer.marks.mark": "mark {{number}}",
   "dialog.model.search.placeholder": "Search models",
   "dialog.model.empty": "No model results",
   "command.provider.connect": "Connect provider",

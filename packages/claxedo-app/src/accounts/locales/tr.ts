@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "Modeller",
   "settings.models.description": "Aracılarınızın çalıştığı hesaplar ve her birinin sunduğu modeller.",
   "settings.models.tab.accounts": "Hesaplar",
-  "provider.connect.context.harness": "{{harness}} bu hesapla çalışacak.",
-  "provider.connect.context.engine": "{{engine}} bunu {{vendor}} modelleri için kullanacak.",
   "provider.connect.method.openKeyPage": "Anahtar sayfasını aç",
   "provider.connect.method.anthropic.subscription.title": "Claude aboneliği (Pro veya Max)",
   "provider.connect.method.anthropic.subscription.for": "Claude.ai planınızı ve sınırlarını kullanır.",

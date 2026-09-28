@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "Sistem",
   "shell.scheme.light": "Açık",
   "shell.scheme.dark": "Koyu",
-  "shell.failed": "Bir şeyler yanlış gitti",
   "shell.navigation": "Projeler ve oturumlar",
   "shell.category.theme": "Tema",
   "shell.category.view": "Görünüm",
@@ -48,6 +47,5 @@ export default {
   "shell.toast.colorScheme": "Renk şeması",
   "shell.settingsGroup.account": "Hesap",
   "shell.settingsGroup.app": "Uygulama",
-  "shell.settingsSections": "Ayar bölümleri",
   "shell.settingsEmpty": "Bir bölüm seçin",
 }

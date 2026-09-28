@@ -19,8 +19,6 @@ import {
 import { getCursorPosition } from "./editor/dom"
 import { createEditorKeyDown, type PopoverKind } from "./editor/keymap"
 
-export type { PopoverState } from "./controller-context"
-
 function caretState(context: ControllerContext) {
   const editor = context.input.refs.editor()
   const selection = window.getSelection()

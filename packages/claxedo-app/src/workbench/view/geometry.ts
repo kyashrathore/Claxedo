@@ -10,7 +10,3 @@ export function rectStyle(rect: PaneRect | undefined): JSX.CSSProperties {
     height: `${rect.height * 100}%`,
   }
 }
-
-export function absoluteRect(rect: PaneRect, size: { w: number; h: number }): PaneRect {
-  return { left: rect.left * size.w, top: rect.top * size.h, width: rect.width * size.w, height: rect.height * size.h }
-}

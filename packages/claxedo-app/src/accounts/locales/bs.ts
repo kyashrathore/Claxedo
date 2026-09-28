@@ -74,8 +74,6 @@ export default {
   "settings.models.title": "Modeli",
   "settings.models.description": "Računi na kojima rade vaši agenti i modeli koje svaki nudi.",
   "settings.models.tab.accounts": "Računi",
-  "provider.connect.context.harness": "{{harness}} će raditi na ovom računu.",
-  "provider.connect.context.engine": "{{engine}} će ga koristiti za {{vendor}} modele.",
   "provider.connect.method.openKeyPage": "Otvori stranicu s ključevima",
   "provider.connect.method.anthropic.subscription.title": "Claude pretplata (Pro ili Max)",
   "provider.connect.method.anthropic.subscription.for": "Koristi vaš Claude.ai plan i njegova ograničenja.",

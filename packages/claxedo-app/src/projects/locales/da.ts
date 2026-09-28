@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "Køres efter oprettelse af et nyt arbejdsområde (worktree).",
   "projects.edit.startup.placeholder": "f.eks. bun install",
   "projects.edit.action": "Rediger",
-  "projects.close": "Luk",
   "projects.chip.project": "Projekt",
   "projects.chip.self": "Denne computer",
   "projects.chip.workspace": "Arbejdsområde",

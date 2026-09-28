@@ -11,7 +11,6 @@ const en = {
   "panel.close": "Close workspace panel",
   "panel.maximize": "Maximize workspace panel",
   "panel.restore": "Restore workspace panel width",
-  "panel.resize": "Resize workspace panel",
   "panel.addTab": "Add workspace tab",
   "panel.add.file": "File",
   "panel.add.browser": "Browser",
@@ -22,7 +21,7 @@ const en = {
   "panel.markdown.source": "Show source",
 }
 
-export type PanelKey = keyof typeof en
+type PanelKey = keyof typeof en
 
 export const panelDictionary = {
   en,

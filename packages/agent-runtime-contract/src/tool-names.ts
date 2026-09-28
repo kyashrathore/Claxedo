@@ -40,9 +40,9 @@ export function toolNameAliases(): ReadonlyArray<readonly [alias: string, target
   return Object.entries(TOOL_NAME_ALIASES)
 }
 
-export const CLAXEDO_MCP_SERVER = "claxedo"
+const CLAXEDO_MCP_SERVER = "claxedo"
 
-export const CLAXEDO_TOOL_NAMES = [
+const CLAXEDO_TOOL_NAMES = [
   "task_list",
   "task_get",
   "task_create",

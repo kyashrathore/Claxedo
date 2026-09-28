@@ -1,6 +1,5 @@
 @layer theme, base, components, utilities;
 
-@import "./activity-row.css" layer(components);
 @import "./agent-glyph.css" layer(components);
 @import "./basic-tool.css" layer(components);
 @import "./claxedo-tool.css" layer(components);

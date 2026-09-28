@@ -1,4 +1,5 @@
 import { createSignal, onCleanup } from "solid-js"
+import { copyText } from "@/lib/clipboard"
 import { ClaxedoIconButton as IconButton } from "@/ui"
 import { useAccountsText } from "../i18n"
 
@@ -10,7 +11,7 @@ export function ConnectCommand(props: { readonly command: string }) {
   let timer: ReturnType<typeof setTimeout> | undefined
   onCleanup(() => clearTimeout(timer))
   const copy = async () => {
-    await navigator.clipboard.writeText(props.command)
+    if (!(await copyText(props.command)).copied) return
     setCopied(true)
     clearTimeout(timer)
     timer = setTimeout(() => setCopied(false), COPIED_MS)

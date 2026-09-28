@@ -1,11 +1,12 @@
 import { type ComponentProps, createMemo, Show, splitProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Card, CardDescription, Collapsible, Icon, type IconProps, IconButton, Tooltip } from "@/ui"
+import { copyText } from "@/lib/clipboard"
 import { useTranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { ToolExitCode } from "./basic-tool"
 import { safeLinkHref } from "./safe-link"
 
-export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
+interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   icon?: IconProps["name"]
   tool: string
   error: string
@@ -89,7 +90,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   const copy = async () => {
     const text = cleaned()
     if (!text) return
-    await navigator.clipboard.writeText(text)
+    if (!(await copyText(text)).copied) return
     setState("copied", true)
     setTimeout(() => setState("copied", false), 2000)
   }

@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Cancelar",
-  "composer.action.save": "Salvar",
   "composer.attachment.refused.title": "{{harness}} não consegue usar este anexo",
   "composer.attachment.refused.description": "{{harness}} não tem uma entrada de prompt para {{mime}}, e esta sessão não tem uma pasta de espaço de trabalho para guardar o arquivo.",
   "composer.attachment.unreadable.title": "Não foi possível ler o anexo",
   "composer.attachment.unreadable.description": "Não foi possível ler {{filename}} neste dispositivo.",
-  "composer.marks.title": "Marcar imagem",
-  "composer.marks.hint": "Arraste para destacar uma área ou clique para colocar um alfinete e depois comente.",
-  "composer.marks.delete": "Excluir marcação",
-  "composer.marks.mark": "marcação {{number}}",
   "dialog.model.search.placeholder": "Buscar modelos",
   "dialog.model.empty": "Nenhum resultado de modelo",
   "command.provider.connect": "Conectar provedor",

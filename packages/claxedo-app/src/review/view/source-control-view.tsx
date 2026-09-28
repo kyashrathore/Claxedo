@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import { restoreScrollTop } from "@/lib/scroll-restore"
 import {
-  toAppError,
   type DiffScope,
   type DiffSummary,
   type GitCommit,
@@ -108,7 +107,7 @@ function WorktreeGroups(props: {
   )
 }
 
-export type SourceControlViewProps = {
+type SourceControlViewProps = {
   readonly placementId: PlacementId
   readonly active: boolean
   readonly activePath?: string

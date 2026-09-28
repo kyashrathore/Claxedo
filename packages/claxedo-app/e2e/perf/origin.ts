@@ -1,7 +1,8 @@
 import fs from "node:fs"
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import path from "node:path"
 import { forward, forwardUpgrade } from "../harness/proxy"
+import { listenOnLoopback } from "../harness/ports"
 
 export type AppOrigin = { url: string; close(): Promise<void> }
 
@@ -36,13 +37,6 @@ function sendFile(response: ServerResponse, file: string) {
   fs.createReadStream(file).pipe(response)
 }
 
-function listen(server: Server, port: number) {
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", resolve)
-  })
-}
-
 export async function startAppOrigin(input: { port: number; distDir: string; daemonUrl: string }): Promise<AppOrigin> {
   const daemon = new URL(input.daemonUrl)
   const index = path.join(input.distDir, "index.html")
@@ -54,7 +48,7 @@ export async function startAppOrigin(input: { port: number; distDir: string; dae
     forward(request, response, daemon)
   })
   server.on("upgrade", (request, socket, head) => forwardUpgrade(request, socket, head, daemon))
-  await listen(server, input.port)
+  await listenOnLoopback(server, input.port)
   return {
     url: `http://127.0.0.1:${input.port}`,
     close: () =>

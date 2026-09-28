@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "취소",
-  "composer.action.save": "저장",
   "composer.attachment.refused.title": "{{harness}}에서 이 첨부 파일을 사용할 수 없습니다",
   "composer.attachment.refused.description": "{{harness}}에는 {{mime}}을 전달할 입력이 없고, 이 세션에는 파일을 보관할 작업 공간 폴더도 없습니다.",
   "composer.attachment.unreadable.title": "첨부 파일을 읽을 수 없습니다",
   "composer.attachment.unreadable.description": "이 기기에서 {{filename}}을 읽을 수 없습니다.",
-  "composer.marks.title": "이미지에 표시",
-  "composer.marks.hint": "드래그해 영역을 지정하거나 클릭해 핀을 놓은 뒤 댓글을 남기세요.",
-  "composer.marks.delete": "표시 삭제",
-  "composer.marks.mark": "표시 {{number}}",
   "dialog.model.search.placeholder": "모델 검색",
   "dialog.model.empty": "모델 결과 없음",
   "command.provider.connect": "공급자 연결",

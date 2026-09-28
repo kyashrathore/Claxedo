@@ -1,25 +1,6 @@
-import {
-  type BaseDiffOptions,
-  DiffLineAnnotation,
-  FileContents,
-  FileDiffOptions,
-  type SelectedLineRange,
-} from "@pierre/diffs"
+import { type BaseDiffOptions } from "@pierre/diffs"
 import { codeTheme } from "../code-theme"
-import { ComponentProps } from "solid-js"
 import { lineCommentStyles } from "../line-comment-styles"
-
-export type DiffProps<T = {}> = FileDiffOptions<T, undefined> & {
-  before: FileContents
-  after: FileContents
-  annotations?: DiffLineAnnotation<T>[]
-  selectedLines?: SelectedLineRange | null
-  commentedLines?: SelectedLineRange[]
-  onLineNumberSelectionEnd?: (selection: SelectedLineRange | null) => void
-  onRendered?: () => void
-  class?: string
-  classList?: ComponentProps<"div">["classList"]
-}
 
 const unsafeCSS = `
 :host {

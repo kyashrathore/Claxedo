@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "Modeller",
   "settings.models.description": "Kontoene agentene dine kjører på, og hvilke modeller hver av dem tilbyr.",
   "settings.models.tab.accounts": "Kontoer",
-  "provider.connect.context.harness": "{{harness}} kjører på denne kontoen.",
-  "provider.connect.context.engine": "{{engine}} bruker den til {{vendor}}-modeller.",
   "provider.connect.method.openKeyPage": "Åpne nøkkelsiden",
   "provider.connect.method.anthropic.subscription.title": "Claude-abonnement (Pro eller Max)",
   "provider.connect.method.anthropic.subscription.for": "Bruker Claude.ai-planen din og grensene i den.",

@@ -1,1 +1,1 @@
-export { createSessionTranscript, type RetainedSession, type SessionTranscript, type TranscriptDeps, type TranscriptSeed } from "./store"
+export { createSessionTranscript, type RetainedSession, type SessionTranscript, type TranscriptSeed } from "./store"

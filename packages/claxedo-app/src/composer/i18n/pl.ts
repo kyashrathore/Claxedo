@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Anuluj",
-  "composer.action.save": "Zapisz",
   "composer.attachment.refused.title": "{{harness}} nie obsługuje tego załącznika",
   "composer.attachment.refused.description": "{{harness}} nie ma wejścia promptu dla {{mime}}, a ta sesja nie ma folderu przestrzeni roboczej, w którym plik mógłby pozostać.",
   "composer.attachment.unreadable.title": "Nie udało się odczytać załącznika",
   "composer.attachment.unreadable.description": "Nie udało się odczytać {{filename}} z tego urządzenia.",
-  "composer.marks.title": "Oznacz obraz",
-  "composer.marks.hint": "Przeciągnij, aby zaznaczyć obszar, lub kliknij, aby wstawić pinezkę, a następnie dodaj komentarz.",
-  "composer.marks.delete": "Usuń oznaczenie",
-  "composer.marks.mark": "oznaczenie {{number}}",
   "dialog.model.search.placeholder": "Szukaj modeli",
   "dialog.model.empty": "Brak wyników modelu",
   "command.provider.connect": "Połącz dostawcę",

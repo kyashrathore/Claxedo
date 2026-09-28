@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "Executa após criar um novo espaço de trabalho (worktree).",
   "projects.edit.startup.placeholder": "ex: bun install",
   "projects.edit.action": "Editar",
-  "projects.close": "Fechar",
   "projects.chip.project": "Projeto",
   "projects.chip.self": "Este computador",
   "projects.chip.workspace": "Espaço de trabalho",

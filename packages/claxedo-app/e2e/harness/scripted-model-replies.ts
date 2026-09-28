@@ -1,4 +1,5 @@
 import type { ServerResponse } from "node:http"
+import { sleep } from "@claxedo/helpers"
 import type { ContentBlock, Message, MessageCreateParams, RawMessageStreamEvent } from "@anthropic-ai/sdk/resources/messages"
 import type { ChatCompletionChunk } from "openai/resources/chat/completions"
 import type {
@@ -44,7 +45,7 @@ async function writeTextStream<T extends { type: string }>(
   let emittedText = false
   for (const event of events) {
     if (isTextDelta(event)) {
-      if (emittedText && pacing) await new Promise((resolve) => setTimeout(resolve, pacing.delayMs))
+      if (emittedText && pacing) await sleep(pacing.delayMs)
       emittedText = true
     }
     if (outgoing.destroyed) return
@@ -89,7 +90,7 @@ export async function respondChat(outgoing: ServerResponse, sequence: number, re
   const textCount = reply.kind === "text" ? deltas(reply.text, pacing).length : 0
   outgoing.writeHead(200, { ...SSE_HEADERS, connection: "keep-alive" })
   for (const [index, event] of events.entries()) {
-    if (pacing && index > 1 && index <= textCount) await new Promise((resolve) => setTimeout(resolve, pacing.delayMs))
+    if (pacing && index > 1 && index <= textCount) await sleep(pacing.delayMs)
     outgoing.write(`data: ${JSON.stringify(event)}\n\n`)
   }
   outgoing.end("data: [DONE]\n\n")

@@ -20,9 +20,9 @@ const section = (id: string, key: SettingsKey, group: SettingsSection["group"], 
   view,
 })
 
-export type { AppearancePreferences, ContrastLevels, ContrastScheme, NavigatorSide, Preferences, TranscriptPreferences } from "./preferences"
+export type { Preferences } from "./preferences"
 export { terminalFontFamily } from "./fonts"
-export { CONTRAST_DEFAULTS, PreferencesProvider, TRANSCRIPT_DEFAULTS, usePreferences } from "./preferences"
+export { PreferencesProvider, usePreferences } from "./preferences"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [

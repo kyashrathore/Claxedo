@@ -11,6 +11,5 @@
     "noUnusedParameters": true,
     "types": ["bun"]
   },
-  "include": ["."],
-  "exclude": ["fixtures"]
+  "include": ["."]
 }

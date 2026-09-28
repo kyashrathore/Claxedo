@@ -1,6 +1,5 @@
 export default {
   "projects.cancel": "Cancel",
-  "projects.close": "Close",
   "projects.save": "Save",
   "projects.saving": "Saving...",
   "projects.loading": "Loading",

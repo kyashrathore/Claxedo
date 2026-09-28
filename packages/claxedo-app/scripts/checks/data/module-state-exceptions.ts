@@ -1,4 +1,4 @@
-export type ModuleStateException = {
+type ModuleStateException = {
   readonly file: string
   readonly binding: string
   readonly reason: string
@@ -26,11 +26,8 @@ export const moduleStateExceptions: readonly ModuleStateException[] = [
   { file: `${transcript}/line-comment-styles.ts`, binding: "installed", reason: "install-once guard for the line-comment stylesheet" },
   { file: `${transcript}/image-availability.ts`, binding: "availability", reason: "one availability signal per image URL, shared by every transcript that shows it; readers subscribe from their own render scope", cap: "none: one short entry per distinct image URL for the page's life" },
   { file: `${transcript}/markdown-cache.tsx`, binding: "cache", reason: protectedCache, cap: "4096 entries and 8 MB (markdownCacheLimits)" },
-  { file: `${transcript}/markdown-cache.tsx`, binding: "totalBytes", reason: "byte count of the markdown cache above" },
-  { file: `${transcript}/markdown-cache.tsx`, binding: "mermaidCache", reason: protectedCache, cap: "256 entries and 2 MB" },
-  { file: `${transcript}/markdown-cache.tsx`, binding: "mermaidBytes", reason: "byte count of the Mermaid cache above" },
+  { file: `${transcript}/markdown-cache.tsx`, binding: "mermaidCache", reason: protectedCache, cap: "256 entries and 2 MB (mermaidSvgCacheLimits)" },
   { file: `${transcript}/markdown-code-cache.ts`, binding: "cache", reason: protectedCache, cap: "4096 entries and 8 MB (codeHighlightCacheLimits)" },
-  { file: `${transcript}/markdown-code-cache.ts`, binding: "totalBytes", reason: "byte count of the code cache above" },
   { file: `${transcript}/markdown-shiki.worker.ts`, binding: "streams", reason: "worker-side highlight streams by key", cap: "deleted on dispose and completion" },
   { file: `${transcript}/markdown-shiki.worker.ts`, binding: "highlighter", reason: "the worker's one lazily created shiki highlighter" },
   { file: `${transcript}/markdown-worker.ts`, binding: "worker", reason: "the one markdown worker" },

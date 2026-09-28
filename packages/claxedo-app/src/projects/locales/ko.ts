@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "새 작업 공간(작업 트리)을 만든 뒤 실행됩니다.",
   "projects.edit.startup.placeholder": "예: bun install",
   "projects.edit.action": "편집",
-  "projects.close": "닫기",
   "projects.chip.project": "프로젝트",
   "projects.chip.self": "이 컴퓨터",
   "projects.chip.workspace": "작업 공간",

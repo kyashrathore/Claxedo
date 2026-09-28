@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "システム",
   "shell.scheme.light": "ライト",
   "shell.scheme.dark": "ダーク",
-  "shell.failed": "問題が発生しました",
   "shell.navigation": "プロジェクトとセッション",
   "shell.category.theme": "テーマ",
   "shell.category.view": "表示",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "配色",
   "shell.settingsGroup.account": "アカウント",
   "shell.settingsGroup.app": "アプリ",
-  "shell.settingsSections": "設定のセクション",
   "shell.settingsEmpty": "セクションを選択",
 }

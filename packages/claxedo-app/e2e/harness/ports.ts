@@ -1,4 +1,5 @@
 import net from "node:net"
+import { sleep } from "@claxedo/helpers"
 
 function portRange() {
   const match = /^(\d+)-(\d+)$/.exec(process.env.CLAXEDO_E2E_PORT_RANGE ?? "")
@@ -14,6 +15,13 @@ async function portIsFree(port: number) {
   return await new Promise<boolean>((resolve) => {
     server.once("error", () => resolve(false))
     server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)))
+  })
+}
+
+export function listenOnLoopback(server: net.Server, port: number) {
+  return new Promise<void>((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", resolve)
   })
 }
 
@@ -36,7 +44,7 @@ export async function portFreed(port: number, withinMs: number) {
   const deadline = Date.now() + withinMs
   while (!(await portIsFree(port))) {
     if (Date.now() > deadline) return false
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await sleep(100)
   }
   return true
 }

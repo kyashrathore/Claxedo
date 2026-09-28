@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Otkaži",
-  "composer.action.save": "Sačuvaj",
   "composer.attachment.refused.title": "{{harness}} ne može primiti ovaj prilog",
   "composer.attachment.refused.description": "{{harness}} nema ulaz upita za {{mime}}, a ova sesija nema folder radnog prostora u kojem bi datoteka ostala.",
   "composer.attachment.unreadable.title": "Prilog se nije mogao pročitati",
   "composer.attachment.unreadable.description": "{{filename}} se nije mogao pročitati s ovog uređaja.",
-  "composer.marks.title": "Označi sliku",
-  "composer.marks.hint": "Povucite da uokvirite područje ili kliknite da postavite pribadaču, zatim dodajte komentar.",
-  "composer.marks.delete": "Izbriši oznaku",
-  "composer.marks.mark": "oznaka {{number}}",
   "dialog.model.search.placeholder": "Pretraži modele",
   "dialog.model.empty": "Nema rezultata za modele",
   "command.provider.connect": "Poveži provajdera",

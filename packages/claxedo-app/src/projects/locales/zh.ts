@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "在创建新的工作区 (worktree) 后运行。",
   "projects.edit.startup.placeholder": "例如 bun install",
   "projects.edit.action": "编辑",
-  "projects.close": "关闭",
   "projects.chip.project": "项目",
   "projects.chip.self": "这台电脑",
   "projects.chip.workspace": "工作区",

@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { sleep } from "@claxedo/helpers"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
@@ -11,7 +12,7 @@ const INTEGRATIONS_PATH = "/api/claxedo/integrations"
 const CODE_HOST_CAPABILITY = "code-host"
 const GRANT_LIFETIME_MS = 15 * 60 * 1000
 
-export type IntegrationPrompt = {
+type IntegrationPrompt = {
   readonly id: string
   readonly label: string
   readonly placeholder?: string
@@ -52,7 +53,7 @@ export type IntegrationConnectOutcome =
   | { readonly kind: "authorize"; readonly grant: IntegrationGrant }
   | { readonly kind: "failed"; readonly reason: IntegrationFailure; readonly status?: number; readonly code?: string; readonly verifyReason?: string }
 
-export type IntegrationGrantOutcome = { readonly kind: "connected" } | { readonly kind: "failed"; readonly reason: IntegrationFailure } | { readonly kind: "abandoned" }
+type IntegrationGrantOutcome = { readonly kind: "connected" } | { readonly kind: "failed"; readonly reason: IntegrationFailure } | { readonly kind: "abandoned" }
 
 type ConnectOptions = { readonly scope?: ConnectionScope; readonly confirmReplace?: boolean }
 
@@ -175,13 +176,11 @@ async function readAttempt(transport: Transport, attemptId: string): Promise<Att
   return { state: status === "expired" ? "expired" : "denied" }
 }
 
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
 async function awaitGrant(transport: Transport, grant: IntegrationGrant, alive: () => boolean): Promise<IntegrationGrantOutcome> {
   const deadline = Date.now() + GRANT_LIFETIME_MS
   let interval = grant.intervalMs
   while (Date.now() < deadline) {
-    await wait(interval)
+    await sleep(interval)
     if (!alive()) return { kind: "abandoned" }
     const answer = await readAttempt(transport, grant.attemptId)
     if (!alive()) return { kind: "abandoned" }
