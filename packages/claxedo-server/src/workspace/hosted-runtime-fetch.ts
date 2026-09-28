@@ -30,6 +30,7 @@ export async function hostedRuntimeFetch(
   const token = await relay.mintRuntimeAccessToken({
     workspaceId,
     hostId: target.hostId,
+    routingId: target.routingId,
     orgId: identity.orgId,
     ...CONTROL_PLANE_RUNTIME_ACTOR,
     role: "owner",
