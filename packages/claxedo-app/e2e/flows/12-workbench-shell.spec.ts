@@ -85,6 +85,7 @@ test("12 a narrow workbench shows one split pane without chrome, and a resize of
 
   await app.getByRole("button", { name: "Close Pane" }).first().click()
   await expect(divider(app)).toHaveCount(0)
+  await expect(app.getByTestId("session-page-root")).toHaveCount(1)
   const writes = await domWritesDuring(app, async () => {
     await app.setViewportSize({ width: 900, height: 800 })
     await app.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
