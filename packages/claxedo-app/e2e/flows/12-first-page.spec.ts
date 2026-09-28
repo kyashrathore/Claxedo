@@ -219,6 +219,20 @@ test("12 a warm return to a session read open, with every fold, group and row op
   expect(still.scrollTopDelta, "scrollTop change after the return's first frame").toBe(0)
 })
 
+test("12 going back to a session whose first read found it missing reveals it as unavailable in place of the session left", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("missing", "Missing")
+  await seedTurns(stack, api, workspace.directory, "Present", 1)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, "ses_missing")}`)
+  const unavailable = app.getByTestId("session-unavailable")
+  await expect(unavailable).toBeVisible()
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Present", exact: true }).click()
+  const left = app.getByText("Present reply line 6.").first()
+  await expect(left).toBeVisible()
+  await app.goBack()
+  await expect(unavailable, "the missing session, revealed").toBeVisible()
+  await expect(left, "the session left, handed over").toBeHidden()
+})
+
 test("12 a session on a connection that is not set up shows its setup notice once its options answer", async ({ stack, api, app }) => {
   await stack.acp.installUnset()
   const workspace = await stack.daemon.makeWorkspace("unset-harness", "Unset harness")

@@ -106,6 +106,7 @@ export type SwitchReport = {
   readonly moved: readonly string[]
   readonly shownStates: readonly string[]
   readonly footers: readonly string[]
+  readonly navs: readonly boolean[]
   readonly railApart: readonly string[]
 }
 
@@ -172,6 +173,7 @@ export function switchReport(frames: readonly SwitchFrame[], targetId: string): 
       return index > 0 && shown(frame.panes[0]) === shown(target[index - 1].panes[0]) ? [] : [describe(frame)]
     }),
     footers: [...new Set(target.map((frame) => frame.panes[0].footer))],
+    navs: [...new Set(target.map((frame) => frame.panes[0].nav))],
     railApart: frames.filter((frame) => frame.panes.length === 1 && frame.rail !== frame.panes[0].sessionId).map(describe),
   }
 }
