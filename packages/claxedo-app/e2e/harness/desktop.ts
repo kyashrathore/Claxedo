@@ -6,6 +6,7 @@ import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { ClaxedoApi } from "./api"
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
+import { daemonExited, desktopDaemonPid } from "./desktop-daemon"
 import { serveRenderer, type DesktopRenderer, type RendererServer } from "./desktop-renderer"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import type { TlsTrust } from "./tls-front"
@@ -88,6 +89,10 @@ async function startWorld(label: string, renderer: DesktopRenderer): Promise<Des
   return { dataDir, serverPort: ports[2], egress, scripted, acpScriptDir, rendererUrl: rendererServer?.url, close }
 }
 
+function serverDataDir(world: DesktopWorld) {
+  return path.join(world.dataDir, "server-data")
+}
+
 export type DesktopAccount = { coreOrigin: string; trust: TlsTrust }
 
 async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefined) {
@@ -97,7 +102,7 @@ async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefin
     ...(await isolatedEnv(world.dataDir, world.egress.url)),
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(world.dataDir),
     CLAXEDO_DESKTOP_USER_DATA_DIR: path.join(world.dataDir, "user-data"),
-    CLAXEDO_DATA_DIR: path.join(world.dataDir, "server-data"),
+    CLAXEDO_DATA_DIR: serverDataDir(world),
     CLAXEDO_SERVER_PORT: String(world.serverPort),
     ZDOTDIR: zdotdir,
     ELECTRON_RENDERER_URL: world.rendererUrl,
@@ -212,7 +217,9 @@ export async function launchDesktop(input: { label: string; red: boolean; render
       await sink.close()
       releasePort(sink.port)
     }
+    const daemon = await desktopDaemonPid(serverDataDir(world))
     await app.close()
+    if (daemon !== undefined) await daemonExited(daemon)
     await world.close()
   }
   const url = `http://127.0.0.1:${world.serverPort}`

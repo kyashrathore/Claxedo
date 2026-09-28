@@ -212,6 +212,8 @@ The embedded server admits only its application: Electron main stamps a capabili
 | `api` | `ClaxedoApi` for the embedded server, sent through `window` |
 | `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name, projectName?)`, `log()` | As on `stack` |
 
+Closing the desktop waits for the daemon it started (the `pid` in its data directory's `local-daemon.json`) to exit before deleting that directory: a quitting app asks the daemon to drain, and the daemon writes its compile cache as it exits, up to a second after the app has gone.
+
 `bun run dev` in `packages/claxedo-desktop` runs the desktop in development, and `bun run package:mac` packages it.
 
 ### Real CLIs
@@ -238,6 +240,7 @@ e2e/
     workspace-dists.ts   builds a workspace package's dist when it is missing
     desktop-build.ts     builds packages/claxedo-desktop when stale
     desktop-renderer.ts  serves the built desktop renderer over http for desktopRenderer "http"
+    desktop-daemon.ts    the daemon a desktop started, and waiting for it to exit
     desktop.ts           launches the Electron app isolated, with its scripted world
     scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent
     workspaces.ts        a fresh repository registered with a server
