@@ -161,9 +161,11 @@ export function applyDirectorySessionCacheEvent(input: {
     case "session.error":
     case "permission.asked":
     case "permission.replied":
+    case "permission.expired":
     case "question.asked":
     case "question.replied":
     case "question.rejected":
+    case "question.expired":
       return undefined
     case "server.instance.disposed":
       input.push(input.directory)

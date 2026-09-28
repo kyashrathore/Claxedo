@@ -93,8 +93,6 @@ export const dict = {
   "command.session.undo.description": "Son mesajı geri al",
   "command.session.redo": "Yinele",
   "command.session.redo.description": "Son geri alınan mesajı yinele",
-  "command.session.compact": "Oturumu sıkıştır",
-  "command.session.compact.description": "Bağlam boyutunu azaltmak için oturumu özetle",
   "command.session.fork": "Mesajdan dallandır",
   "command.session.fork.description": "Önceki bir mesajdan yeni oturum oluştur",
 
@@ -392,8 +390,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Otomatik kabul durduruldu",
   "toast.permissions.autoaccept.off.description": "Düzenleme ve yazma izinleri onay gerektirecek",
 
-  "toast.model.none.title": "Model seçilmedi",
-  "toast.model.none.description": "Bu oturumu özetlemek için bir sağlayıcı bağlayın",
 
   "toast.file.loadFailed.title": "Dosya yüklenemedi",
   "toast.file.listFailed.title": "Dosyalar listelenemedi",

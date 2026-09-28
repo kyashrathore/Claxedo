@@ -173,7 +173,8 @@ export function applyDirectoryEventToShellQueries(input: {
       }))
       break
     }
-    case "permission.replied": {
+    case "permission.replied":
+    case "permission.expired": {
       const reply = requestReply(input.event.properties)
       if (!reply) break
       updateSessionRequests(reply.sessionID, (cache) => ({
@@ -193,7 +194,8 @@ export function applyDirectoryEventToShellQueries(input: {
       break
     }
     case "question.replied":
-    case "question.rejected": {
+    case "question.rejected":
+    case "question.expired": {
       const reply = requestReply(input.event.properties)
       if (!reply) break
       updateSessionRequests(reply.sessionID, (cache) => ({

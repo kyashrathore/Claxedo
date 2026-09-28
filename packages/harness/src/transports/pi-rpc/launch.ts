@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
-import type { Deadline, HarnessServices, SessionBroker, StartInput } from "../../contract"
+import { deadlineAfter, type Deadline, type HarnessServices, type SessionBroker, type StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { piEnvironment, piProjectionArgs, preparePiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
 import { PiRpc } from "./rpc"
@@ -18,8 +18,11 @@ export type PiLaunchHost = {
   disposed(): boolean
 }
 
-export function piDeadline(clock: HarnessServices["clock"], ms = 15_000): Deadline {
-  return { at: clock.now() + ms, signal: new AbortController().signal }
+export const piDeadline = (clock: HarnessServices["clock"]): Deadline => deadlineAfter(clock, 15_000)
+
+export async function retiringOnFailure<T>(rpc: PiRpc, clock: HarnessServices["clock"], work: () => Promise<T>): Promise<T> {
+  try { return await work() }
+  catch (error) { await rpc.retire(piDeadline(clock)); throw error }
 }
 
 export async function launchPi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined, launch: PiLaunch): Promise<PiRpc> {
@@ -40,17 +43,23 @@ export async function launchPi(host: PiLaunchHost, input: StartInput, profile: P
       host.services.log.error("Pi RPC diagnostic publication failed", { error: errorMessage(error) }))
     else host.services.log.warn(event.diagnostic.message, { code: event.diagnostic.code, raw: event.diagnostic.raw })
   })
-  try { await rpc.request("get_state"); return rpc }
-  catch (error) { await rpc.retire(piDeadline(host.services.clock)); throw error }
+  await retiringOnFailure(rpc, host.services.clock, () => rpc.request("get_state"))
+  return rpc
 }
 
-export async function piUpstreamOf(rpc: PiRpc, clock: HarnessServices["clock"]): Promise<string> {
-  const state = await rpc.request("get_state")
-  if (!state || typeof state !== "object" || !("sessionId" in state) || typeof state.sessionId !== "string") {
-    await rpc.retire(piDeadline(clock))
+export function piUpstreamOf(rpc: PiRpc, clock: HarnessServices["clock"]): Promise<string> {
+  return retiringOnFailure(rpc, clock, async () => {
+    const state = await rpc.request("get_state")
+    if (state && typeof state === "object" && "sessionId" in state && typeof state.sessionId === "string") return state.sessionId
     throw new TransportError("pi", "protocol", "Pi did not return a session id")
-  }
-  return state.sessionId
+  })
+}
+
+export async function resumePi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker, upstreamSessionId: string): Promise<PiRpc> {
+  const rpc = await launchPi(host, input, profile, broker, { role: "harness", resume: await piSessionFile(profile, upstreamSessionId) })
+  if (await piUpstreamOf(rpc, host.services.clock) === upstreamSessionId) return rpc
+  await rpc.retire(piDeadline(host.services.clock))
+  throw new TransportError("pi", "session", "Pi resumed a different session")
 }
 
 export async function piSessionFile(profile: PiProfile, upstreamSessionId: string): Promise<string> {

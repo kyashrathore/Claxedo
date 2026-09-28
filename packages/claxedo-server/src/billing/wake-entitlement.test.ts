@@ -21,7 +21,7 @@ const auth = {
 
 function services(
   ensure: ReturnType<typeof vi.fn>,
-  workspace: Record<string, unknown> = { backing: "cloud-vm", home_region: "us-east" },
+  workspace: Record<string, unknown> = { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
 ) {
   return {
     authority: {
@@ -49,7 +49,6 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_1",
-      "https://control.test",
     )
     expect(result).toMatchObject({ status: 402, error: { code: "billing_entitlement_required" } })
     expect(requireCloudWorkspaceEntitlement).toHaveBeenCalledTimes(1)
@@ -67,7 +66,6 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_1",
-      "https://control.test",
     )
     expect(result).toMatchObject({ status: 503, error: { code: "billing_state_unavailable" } })
     expect(ensure).not.toHaveBeenCalled()
@@ -86,7 +84,6 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_1",
-      "https://control.test",
     )
     expect(requireCloudWorkspaceEntitlement).toHaveBeenCalledTimes(1)
     expect(ensure).toHaveBeenCalledTimes(1)
@@ -107,7 +104,6 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_local",
-      "https://control.test",
     )
 
     expect(requireCloudWorkspaceEntitlement).not.toHaveBeenCalled()
@@ -122,7 +118,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       epoch: 1,
       homeRegion: "us-east",
     }))
-    const result = await hostedConnectionInfo(services(ensure), { ...options }, auth, "ws_1", "https://control.test")
+    const result = await hostedConnectionInfo(services(ensure), { ...options }, auth, "ws_1")
     expect(ensure).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ connection: { status: "provisioning" } })
   })

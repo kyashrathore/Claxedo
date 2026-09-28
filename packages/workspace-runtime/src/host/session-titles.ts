@@ -16,6 +16,8 @@ export type TitleTarget = {
   session: HarnessSession
 }
 
+type NamedSession = Pick<TitleTarget, "transport" | "session">
+
 /**
  * The runtime's title policy, in one place: a first-prompt placeholder the
  * moment a turn starts on an untitled session, then one harness side turn
@@ -26,6 +28,20 @@ export type TitleTarget = {
 export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub }) {
   const { store, eventHub } = input
   const attempted = new Set<string>()
+
+  /**
+   * Hands the harness a title this store already committed. The store's title
+   * is the session's name; a harness that cannot take it keeps its own and
+   * the refusal is logged, never undone locally.
+   */
+  async function push(sessionId: string, title: string, named: () => Promise<NamedSession>) {
+    try {
+      const { transport, session } = await named()
+      await transport.naming?.rename?.(session, title)
+    } catch (error) {
+      log.warn("Harness rejected the session title", { sessionId, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
 
   function placeholder(sessionId: string, directory: string, prompt: PromptInput): CompatEvent | null {
     const session = store.getSession(sessionId)
@@ -64,7 +80,6 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
       if (!title) return
       const current = store.getSession(sessionId)
       if (!current || current.titleSource === "user" || current.titleSource === "harness") return
-      await naming.rename?.(target.session, title)
       const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
       const committed = store.appendEvent({
         sessionId,
@@ -80,10 +95,11 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
         source: { dir: "in", method: "generated-title" },
       }).payload
       eventHub.publishGlobal(withDir(directory, committed))
+      await push(sessionId, title, async () => target)
     } catch (error) {
       log.warn("Session title generation failed", { sessionId, harness: target.session.binding.connectionId, error: error instanceof Error ? error.message : String(error) })
     }
   }
 
-  return { placeholder, generate }
+  return { placeholder, generate, push }
 }

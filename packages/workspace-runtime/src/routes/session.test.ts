@@ -10,6 +10,8 @@ import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type Ses
 import { fetchDouble } from "../test-support/fetch-double"
 import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
 import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../test-support/fake-workspace-app"
+import { loopbackMachineLoginPolicy } from "../testing"
+import { createWorkspaceHost } from "../workspace/runtime"
 
 const apps: FakeWorkspaceApp[] = []
 afterEach(async () => {
@@ -1209,6 +1211,76 @@ it("requires an offered provider option and forwards its opaque ID to the harnes
   expect(answers).toEqual([{ kind: "permission", decision: "allow_once", optionId: "provider/session-policy" }])
 })
 
+it("settles each offered provider option with the kind the harness offered it as", async () => {
+  const answers: RequestAnswer[] = []
+  const published: CompatEvent[] = []
+  const options = [
+    { optionId: "provider/once", kind: "allow_once" as const, name: "Allow once" },
+    { optionId: "provider/always", kind: "allow_always" as const, name: "Always allow" },
+    { optionId: "provider/reject", kind: "reject_once" as const, name: "Reject" },
+    { optionId: "provider/never", kind: "reject_always" as const, name: "Reject always" },
+  ]
+  const ask = (requestId: string) => asking((sessionId) => permission(requestId, sessionId, { options }), answers)
+  const wa = await workspaceApp({
+    onCompatEvent: (event) => published.push(event.payload),
+    transport: () => scripted({ always: ask("permission-always"), reject: ask("permission-reject"), never: ask("permission-never") },
+      { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
+  })
+  await wa.createSession("session_owner")
+
+  for (const choice of ["always", "reject", "never"]) {
+    expect((await wa.json("/session/session_owner/prompt_async", { parts: [{ type: "text", text: choice }] })).status).toBe(204)
+    await settle()
+    const response = await wa.json(`/session/session_owner/permissions/permission-${choice}`, { optionId: `provider/${choice}` })
+    expect(response.status).toBe(200)
+    await settle()
+  }
+
+  expect(answers).toEqual([
+    { kind: "permission", decision: "allow_always", optionId: "provider/always" },
+    { kind: "permission", decision: "deny", optionId: "provider/reject" },
+    { kind: "permission", decision: "reject_always", optionId: "provider/never" },
+  ])
+  expect(published.filter((event) => event.type === "permission.replied")).toMatchObject([
+    { properties: { requestID: "permission-always", reply: "always" } },
+    { properties: { requestID: "permission-reject", reply: "reject" } },
+    { properties: { requestID: "permission-never", reply: "reject" } },
+  ])
+})
+
+it("answers and declines an elicitation-only harness's requests through the question routes", async () => {
+  const answers: RequestAnswer[] = []
+  const published: CompatEvent[] = []
+  const elicitation = (requestId: string): TurnRequest => ({
+    kind: "elicitation", requestId, mode: "form", message: "Name the branch",
+    schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+  })
+  const wa = await workspaceApp({
+    onCompatEvent: (event) => published.push(event.payload),
+    transport: () => scripted({ form: asking(() => elicitation("elicit-form"), answers), decline: asking(() => elicitation("elicit-decline"), answers) },
+      { capabilities: { requests: { permissions: false, questions: false, elicitation: true } } }),
+  })
+  await wa.createSession("s1")
+
+  expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "form" }] })).status).toBe(204)
+  await settle()
+  expect(await (await wa.app.request(wa.url("/question"))).json()).toMatchObject([{ id: "elicit-form", sessionID: "s1" }])
+  expect((await wa.json("/question/elicit-form/reply", { answers: [[JSON.stringify({ name: "main" })]] })).status).toBe(200)
+  await settle()
+
+  expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "decline" }] })).status).toBe(204)
+  await settle()
+  expect((await wa.json("/question/elicit-decline/reject", {})).status).toBe(200)
+  await settle()
+
+  expect(answers).toEqual([{ kind: "form", values: { name: "main" } }, { kind: "rejected" }])
+  expect(published.filter((event) => event.type === "question.replied" || event.type === "question.rejected")).toEqual([
+    { id: "question.replied:s1:elicit-form", type: "question.replied", properties: { sessionID: "s1", requestID: "elicit-form", answers: [[JSON.stringify({ name: "main" })]] } },
+    { id: "question.rejected:s1:elicit-decline", type: "question.rejected", properties: { sessionID: "s1", requestID: "elicit-decline" } },
+  ])
+  expect(await (await wa.app.request(wa.url("/session/s1/capabilities"))).json()).toMatchObject({ questions: true })
+})
+
 it("retires a permission a previous owner asked and never settled, so the reopened workspace neither lists nor answers it", async () => {
   const optionId = '{"persist":"session"}'
   const capabilities = { requests: { permissions: true, questions: false, elicitation: false } }
@@ -1228,4 +1300,74 @@ it("retires a permission a previous owner asked and never settled, so the reopen
   const response = await reopened.json("/session/permission-session/permissions/persisted-permission", { optionId })
   expect(response.status).toBe(404)
   expect(reopened.store().listPermissions(reopened.directory)).toEqual([])
+})
+
+describe("session create ownership", () => {
+  it("a host that reads the session index must name its own workspace", () => {
+    expect(() => createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), sessionIdWorkspace: () => undefined }))
+      .toThrow("sessionIdWorkspace requires a target workspace")
+  })
+
+  it("refuses an id another workspace holds before any harness launches", async () => {
+    const app = await workspaceApp({ sessionIdWorkspace: (sessionId) => sessionId === "ses_foreign" ? "ws_other" : "ws_fake" })
+    const refused = await app.json("/session", { id: "ses_foreign" }, { params: { connectionId: "fake" } })
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_create_conflict" } })
+    expect(app.transports.flatMap((transport) => transport instanceof FakeTransport ? transport.starts : [])).toEqual([])
+    await app.createSession("ses_own")
+    expect(app.transport().starts.map((start) => start.sessionId)).toEqual(["ses_own"])
+  })
+})
+
+describe("archiving a running session", () => {
+  it("does not start a prompt queued behind the cancelled turn", async () => {
+    const transport = scripted({
+      hold: async function* ({ signal }) {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+      },
+    })
+    const wa = await workspaceApp({ transport: () => transport })
+    await wa.createSession("ses_archive_queue")
+    expect((await wa.json("/session/ses_archive_queue/prompt_async", { parts: [{ type: "text", text: "hold" }] })).status).toBe(204)
+    for (let attempt = 0; attempt < 200 && transport.turns.length === 0; attempt++) await settle()
+    const queued = await wa.json("/session/ses_archive_queue/prompt_async", { messageID: "msg_after_archive", parts: [{ type: "text", text: "queued" }], delivery: "queue" })
+    expect(await queued.json()).toEqual({ delivery: "queue" })
+    expect((await wa.json("/session/ses_archive_queue", { time: { archived: 77 } }, { method: "PATCH" })).status).toBe(200)
+    for (let attempt = 0; attempt < 20; attempt++) await settle()
+    expect(transport.turns.map(promptText)).toEqual(["hold"])
+    expect(wa.store().getSession("ses_archive_queue")).toMatchObject({ status: "idle", time: { archived: 77 } })
+  })
+})
+
+describe("archiving between a queued prompt's claim and its admission", () => {
+  it("leaves the claimed prompt unstarted and queued", async () => {
+    let gate: Promise<void> | undefined
+    let reached!: () => void
+    const reachedGate = new Promise<void>((resolve) => { reached = resolve })
+    let open!: () => void
+    class GatedTransport extends ScriptedTransport {
+      override async capabilities() {
+        if (gate) { reached(); await gate }
+        return super.capabilities()
+      }
+    }
+    let finish!: () => void
+    const transport = new GatedTransport({
+      first: async function* () { await new Promise<void>((resolve) => { finish = resolve }) },
+    })
+    const wa = await workspaceApp({ transport: () => transport })
+    await wa.createSession("ses_archive_gap")
+    expect((await wa.json("/session/ses_archive_gap/prompt_async", { parts: [{ type: "text", text: "first" }] })).status).toBe(204)
+    for (let attempt = 0; attempt < 200 && transport.turns.length === 0; attempt++) await settle()
+    expect(await (await wa.json("/session/ses_archive_gap/prompt_async", { messageID: "msg_gap", parts: [{ type: "text", text: "queued" }], delivery: "queue" })).json())
+      .toEqual({ delivery: "queue" })
+    gate = new Promise<void>((resolve) => { open = resolve })
+    finish()
+    await reachedGate
+    expect((await wa.json("/session/ses_archive_gap", { time: { archived: 88 } }, { method: "PATCH" })).status).toBe(200)
+    open()
+    for (let attempt = 0; attempt < 20; attempt++) await settle()
+    expect(transport.turns.map(promptText)).toEqual(["first"])
+    expect(wa.store().listQueuedPrompts().map((row) => row.messageId)).toEqual(["msg_gap"])
+  })
 })

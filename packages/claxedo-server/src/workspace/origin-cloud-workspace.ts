@@ -1,9 +1,4 @@
-import {
-  hostedSandboxNetworkPolicy,
-  type SandboxBrokeredSecret,
-  type SandboxNetworkPolicy,
-  type SandboxSource,
-} from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -16,6 +11,7 @@ import {
   type Workspace,
 } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
+import { hostedSandboxInput, type WorkspaceSandboxEgress } from "./hosted-sandbox-input"
 
 const log = Log.create({ service: "origin-cloud-workspace" })
 
@@ -50,11 +46,10 @@ export type OriginCloudWorkspaceInput = {
   displayName: string
   /**
    * What every hosted root's egress allowlist is built from besides the git
-   * host this allocation clones: the relay and control-plane endpoints the
-   * runtime reports back to, and the operator's extra hosts. Blanks are
-   * ignored, as the workspace routes ignore them.
+   * host this allocation clones: the deployment's relays and extra hosts, and
+   * the control-plane origin the runtime reports back to.
    */
-  egress: Readonly<{ controlPlane: ReadonlyArray<string | undefined>; extraHosts?: readonly string[] }>
+  egress: WorkspaceSandboxEgress
   /**
    * Records the allocation with the deployment's workspace authority, as the
    * caller. A deployment whose authority never learns of the workspace can
@@ -129,27 +124,21 @@ export async function allocateOriginCloudWorkspace(
     return { code: "source_unavailable", detail: `Cloud root ${workspace.id} has no remote to clone` }
   }
 
-  const source: SandboxSource = {
-    kind: "git",
-    repoUrl,
-    ...(workspace.git_branch ? { branch: workspace.git_branch } : {}),
-  }
   const prepared = (await input.prepare?.(workspace)) ?? {}
-  const ready = await awaitSandboxReady(sandboxManager, workspace, {
-    homeRegion: input.services.defaultHomeRegion ?? "us-east",
-    projectId: input.projectId,
-    source,
-    net: hostedSandboxNetworkPolicy({
-      controlPlane: [...input.egress.controlPlane],
-      source,
-      ...(input.egress.extraHosts ? { extraHosts: input.egress.extraHosts } : {}),
-    }),
+  const ready = await awaitSandboxReady(sandboxManager, workspace.id, hostedSandboxInput({
+    workspace_id: workspace.id,
+    project_id: input.projectId,
+    home_region: input.services.defaultHomeRegion,
+    repo_url: repoUrl,
+    git_branch: workspace.git_branch,
+    remote_directory: workspace.remote_directory,
+  }, {
+    egress: input.egress,
     // The project's own environment first: a prepared value names this one
     // root and must not be shadowed by a project-wide variable of the same
     // name.
-    env: { ...(await projectEnv(input.projectId)), ...prepared.env },
-    secrets: prepared.secrets ?? [],
-  })
+    preparation: { env: { ...(await projectEnv(input.projectId)), ...prepared.env }, secrets: [...prepared.secrets ?? []] },
+  }))
   if (ready.status === "ready") return { workspace }
   if (ready.status === "provisioning") {
     return {
@@ -250,27 +239,12 @@ type SandboxLifecycle = NonNullable<ControlPlaneServices["sandbox"]["sandboxMana
 
 async function awaitSandboxReady(
   sandboxManager: SandboxLifecycle,
-  workspace: Workspace,
-  run: {
-    homeRegion: string
-    projectId: string
-    source: SandboxSource
-    net: SandboxNetworkPolicy
-    env: Record<string, string>
-    secrets: readonly SandboxBrokeredSecret[]
-  },
+  workspaceId: string,
+  run: SandboxManagerInput,
 ) {
   const deadline = Date.now() + READY_DEADLINE_MS
   for (;;) {
-    const result = await sandboxManager.ensure(workspace.id, {
-      homeRegion: run.homeRegion,
-      labels: { projectId: run.projectId },
-      workspaceRoot: workspace.remote_directory ?? WORKSPACE_DIR,
-      ...(Object.keys(run.env).length ? { env: run.env } : {}),
-      ...(run.secrets.length ? { secrets: [...run.secrets] } : {}),
-      source: run.source,
-      net: run.net,
-    })
+    const result = await sandboxManager.ensure(workspaceId, run)
     if (result.status !== "provisioning") return result
     if (Date.now() >= deadline) return result
     await new Promise((resolve) => setTimeout(resolve, Math.min(result.retryAfterMs, READY_POLL_CAP_MS)))

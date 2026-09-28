@@ -1,10 +1,10 @@
-import { translateStopReason } from "./translate/translate-session-update"
+import { translatePromptUsage, translateStopReason } from "./translate/translate-session-update"
 import type { SessionNotification, SessionConfigOption, SessionMode } from "@agentclientprotocol/sdk"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,
   ProjectedMcpServer, RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, configGenerationChanged, mergeStartInput } from "../../contract"
+import { acpDeclaredCapabilities, attachedSessionEntry, configGenerationChanged, mergeStartInput } from "../../contract"
 import type { AcpConnectionOptions, AcpPeer } from "./connection"
 import { AcpTransportError } from "./errors"
 import { acpTurnFailure } from "./outcome"
@@ -115,11 +115,10 @@ export class AcpTransport implements HarnessTransport {
     return {
       modelSelection: acpModelSelection(entry), effortLevels: acpEffortCatalog(entry),
       instructionChannel: "prompt-prefix", configOwner: "harness",
-      requests: { permissions: true, questions: false, elicitation: true },
+      ...acpDeclaredCapabilities,
       subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
       goals: groups?.goals ?? { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-      todos: false,
-      history: "store", titles: "side-request", pluginIntake: { mcp: this.connection.supportsMcpServers === false ? "none" : "session", skills: "none" },
+      titles: "side-request", pluginIntake: { mcp: this.connection.supportsMcpServers === false ? "none" : "session", skills: "none" },
       mcpTransports: { stdio: this.connection.kind === "process" && this.connection.supportsMcpServers !== false,
         http: this.connection.supportsMcpServers !== false && mcp?.http === true,
         sse: this.connection.supportsMcpServers !== false && mcp?.sse === true },
@@ -203,7 +202,8 @@ export class AcpTransport implements HarnessTransport {
     const prompt = entry.peer.agent.prompt({ sessionId: session.binding.upstreamSessionId, prompt: await acpPrompt(turn, this.delivery(entry)) })
     submission.submitted = true
     void prompt.then((result) => {
-      for (const event of translateStopReason(result.stopReason, session.binding.sessionId)) queue.push({ event })
+      for (const event of [...translatePromptUsage(result.usage, session.binding.upstreamSessionId),
+        ...translateStopReason(result.stopReason, session.binding.sessionId)]) queue.push({ event })
       queue.end()
     }, (error: unknown) => queue.fail(error))
     while (true) {

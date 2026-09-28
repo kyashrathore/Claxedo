@@ -72,6 +72,20 @@ describe("directory event shell query projector", () => {
     })
   })
 
+  test("an expired question leaves the shell request query", () => {
+    const question = { id: "question_expiring", sessionID: "ses_query", questions: [] } as QuestionRequest
+    apply({ type: "question.asked", properties: question })
+    apply({ type: "question.expired", properties: { sessionID: "ses_query", requestID: question.id } })
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "requests"))).toEqual({ permissions: [], questions: [] })
+  })
+
+  test("an expired permission leaves the shell request query", () => {
+    const permission = { id: "perm_expiring", sessionID: "ses_query", permission: "edit", patterns: [], metadata: {}, always: [] } as PermissionRequest
+    apply({ type: "permission.asked", properties: permission })
+    apply({ type: "permission.expired", properties: { sessionID: "ses_query", requestID: permission.id } })
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "requests"))).toEqual({ permissions: [], questions: [] })
+  })
+
   test("a replayed ask for a resolved request does not re-open it", () => {
     const permission = {
       id: "perm_replay",

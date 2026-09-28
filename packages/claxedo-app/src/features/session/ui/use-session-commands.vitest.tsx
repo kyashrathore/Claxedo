@@ -25,7 +25,6 @@ const sdkCalls = {
   abort: 0,
   revert: 0,
   unrevert: 0,
-  summarize: 0,
 }
 
 const params = {
@@ -230,10 +229,6 @@ vi.doMock("@/features/session/app-ports", () => ({
           sdkCalls.unrevert += 1
           return { data: { id: "session-1", time: { created: 1, updated: 2 } } }
         },
-        summarize: async () => {
-          sdkCalls.summarize += 1
-          return { data: undefined }
-        },
       },
     },
   }),
@@ -278,7 +273,6 @@ describe("session command contracts", () => {
     sdkCalls.abort = 0
     sdkCalls.revert = 0
     sdkCalls.unrevert = 0
-    sdkCalls.summarize = 0
     queryClient.clear()
     setSessionInfo({ id: "session-1" })
     fileTreeToggles = 0
@@ -348,6 +342,10 @@ describe("session command contracts", () => {
     expect(ids).toContain("message.next")
   })
 
+  test("offers no compact of its own: a harness that declares commands lists its own /compact", () => {
+    expect(collectCommands().map((command) => command.id)).not.toContain("session.compact")
+  })
+
   test("the MCP command answers to /mcp and mod+;", () => {
     const mcp = collectCommands().find((command) => command.id === "mcp.toggle")
 
@@ -410,7 +408,6 @@ describe("session command contracts", () => {
     expect(byId.get("permissions.autoaccept")?.disabled).toBe(true)
     expect(byId.get("session.undo")?.disabled).toBe(true)
     expect(byId.get("session.redo")?.disabled).toBe(true)
-    expect(byId.get("session.compact")?.disabled).toBe(true)
     expect(byId.get("session.fork")?.disabled).toBe(true)
   })
 

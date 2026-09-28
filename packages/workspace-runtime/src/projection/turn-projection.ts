@@ -13,7 +13,6 @@ export type RuntimeAppendSource = {
   dir: "in" | "out"
   method: string
   requestId?: string
-  frame?: unknown
 }
 
 export type TurnProjectionOwner = {
@@ -28,12 +27,12 @@ type RuntimeEventStore = {
     payload: CompatEvent
     source?: RuntimeAppendSource
     fencingToken?: number
-  }): { payload: CompatEvent }
+  }): { payload: CompatEvent; messageUpdate?: CompatEvent }
 }
 
-function committed(payload: { payload: CompatEvent }) {
-  if (!payload) throw new Error("Runtime store appendEvent must return committed output")
-  return payload.payload
+function committed(output: { payload: CompatEvent; messageUpdate?: CompatEvent }) {
+  if (!output) throw new Error("Runtime store appendEvent must return committed output")
+  return output
 }
 
 export function createTurnEventProjector(options: {
@@ -72,8 +71,8 @@ export function createTurnEventProjector(options: {
       source,
       ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
     }))
-    options.onEvent(output)
-    return output
+    options.onEvent(output.payload)
+    if (output.messageUpdate) options.onEvent(output.messageUpdate)
   }
 
   return {
@@ -106,13 +105,15 @@ export function createTurnEventProjector(options: {
     terminalizeOpenTools(message: string, source: RuntimeAppendSource) {
       return projection.terminalizeOpenTools(message).map((event) => {
         const payload = event.payload
-        const output = committed(options.store.appendEvent({
+        const appended = committed(options.store.appendEvent({
           sessionId: options.owner.sessionId,
           agentSessionId: options.owner.getAgentSessionId(),
           payload,
           source,
           ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
         }))
+        if (appended.messageUpdate) options.onEvent(appended.messageUpdate)
+        const output = appended.payload
         const runtimeEvent = terminalizedToolRuntimeEvent(output, message)
         if (runtimeEvent) publishRuntime(runtimeEvent)
         return output

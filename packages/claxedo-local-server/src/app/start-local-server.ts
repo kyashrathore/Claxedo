@@ -204,6 +204,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     onSessionMetaSnapshot: async (workspace, sessions) => {
       await services.projectionStore.sync_session_metas(workspace, sessions)
     },
+    sessionIdWorkspace: async (sessionId) => (await services.projectionStore.session_meta(sessionId))?.workspaceID,
   })
   // The broker is a route on this same listener, so its origin is this server's.
   const credentialBroker = createLocalCredentialBroker({

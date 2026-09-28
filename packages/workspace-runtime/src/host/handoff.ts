@@ -42,6 +42,8 @@ export type HandoffTransactionInput = {
   openTarget(config: SessionConfig, directory: string | undefined): Promise<OpenedTarget>
   /** Releases the native session a left harness still holds. */
   closeSource(harness: SessionHarness, source: SessionHandoffSource, directory: string | undefined): Promise<void>
+  /** Re-attaches the native session an unsent handoff kept, when the switch returns to its harness. */
+  resumeSource(harness: SessionHarness, source: SessionHandoffSource): void
 }
 
 export class HandoffRollbackError extends AggregateError {
@@ -154,9 +156,11 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
 type SwitchPlan = {
   previous: NativeSession
   targetDirectory: string | undefined
-  unsent: SessionHandoff | undefined
   from: SessionHarness
-  source: SessionHandoffSource | undefined
+  /** The native session the pending handoff keeps once this switch commits. */
+  kept: SessionHandoffSource | undefined
+  /** The native session being left when an unsent handoff already keeps the conversation's source. */
+  intermediate: SessionHandoffSource | undefined
   resumed: SessionHandoffSource | undefined
 }
 
@@ -167,9 +171,16 @@ function planSwitch(input: HandoffTransactionInput): SwitchPlan {
   const pending = input.current.handoff
   const unsent = pending?.pending && !pending.announced && !pending.reason ? pending : undefined
   const from = unsent?.from ?? input.current.harness
-  const source = unsent ? unsent.source : leftSource(input, previous)
+  const left = leftSource(input, previous)
   const resumed = unsent?.source && sameSessionHarness(from, input.update.harness) ? unsent.source : undefined
-  return { previous, targetDirectory: input.directory ?? input.session.directory, unsent, from, source, resumed }
+  return {
+    previous,
+    targetDirectory: input.directory ?? input.session.directory,
+    from,
+    kept: unsent ? unsent.source : left,
+    intermediate: unsent ? left : undefined,
+    resumed,
+  }
 }
 
 function leftSource(input: HandoffTransactionInput, previous: NativeSession): SessionHandoffSource {
@@ -219,7 +230,7 @@ function commitSwitch(
     agent: configured.agent ?? null,
     handoff: transcript === undefined
       ? plan.resumed?.handoff ?? null
-      : { from: plan.from, pending: true, transcript, ...(plan.source ? { source: plan.source } : {}) },
+      : { from: plan.from, pending: true, transcript, ...(plan.kept ? { source: plan.kept } : {}) },
   })!
 }
 
@@ -245,9 +256,11 @@ async function switchHarness(input: HandoffTransactionInput): Promise<SessionCon
       ? await opened.attached.handle.transport.config!.update(opened.attached.session, configUpdateFor(input, plan.resumed))
       : nextConfig
     const next = commitSwitch(input, plan, configured, transcript)
-    if (plan.unsent && plan.source) {
+    if (plan.resumed) input.resumeSource(plan.from, plan.resumed)
+    const intermediate = plan.intermediate
+    if (intermediate) {
       await releaseNativeSession({
-        close: () => input.closeSource(input.current.harness, plan.source!, input.session.directory ?? plan.targetDirectory),
+        close: () => input.closeSource(input.current.harness, intermediate, input.session.directory ?? plan.targetDirectory),
         harness: input.current.harness,
         sessionId: input.sessionId,
         diagnose: input.diagnose,

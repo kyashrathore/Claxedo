@@ -92,8 +92,6 @@ export const dict = {
   "command.session.undo.description": "Angre siste melding",
   "command.session.redo": "Gjør om",
   "command.session.redo.description": "Gjør om siste angrede melding",
-  "command.session.compact": "Komprimer sesjon",
-  "command.session.compact.description": "Oppsummer sesjonen for å redusere kontekststørrelsen",
   "command.session.fork": "Forgren fra melding",
   "command.session.fork.description": "Opprett en ny sesjon fra en tidligere melding",
 
@@ -389,8 +387,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Stoppet automatisk akseptering av tillatelser",
   "toast.permissions.autoaccept.off.description": "Forespørsler om tillatelse vil kreve godkjenning",
 
-  "toast.model.none.title": "Ingen modell valgt",
-  "toast.model.none.description": "Koble til en leverandør for å oppsummere denne sesjonen",
 
   "toast.file.loadFailed.title": "Kunne ikke laste fil",
   "toast.file.listFailed.title": "Kunne ikke liste filer",

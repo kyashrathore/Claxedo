@@ -1,4 +1,4 @@
-import type { SandboxDriver, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxDriver, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
@@ -33,6 +33,10 @@ export function createHostedRuntimeDelivery(input: {
   services: ControlPlaneServices
   sandboxManager: SandboxManager
   driver: SandboxDriver
+  sandboxInput(
+    workspaceId: string,
+    prepared: { preparation: WorkspaceRuntimePreparation | undefined; secrets: readonly SandboxBrokeredSecret[] },
+  ): Promise<SandboxManagerInput>
   settings: UserAgentConfigRepository
   credentials(orgId: string): ControlPlaneCredentials
   signingEnv: Record<string, string | undefined>
@@ -87,10 +91,7 @@ export function createHostedRuntimeDelivery(input: {
     const preparation = await hooks.prepareRuntime(context)
     const target = await input.sandboxManager.target(workspaceId)
     if (target.status !== "ready") return
-    const ensured = await input.sandboxManager.ensure(workspaceId, {
-      homeRegion: target.homeRegion,
-      secrets: preparation.secrets ?? [],
-    })
+    const ensured = await input.sandboxManager.ensure(workspaceId, await input.sandboxInput(workspaceId, { preparation, secrets: [] }))
     if (ensured.status !== "ready") throw new Error(`hosted runtime refresh failed: ${ensured.status}`)
     await hooks.provisionRuntime(context, preparation)
   }

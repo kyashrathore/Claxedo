@@ -47,6 +47,7 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
 
 const RELAY_URL = "https://relay.claxedo.test"
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
+const REQUEST_ORIGIN = "https://edge.claxedo.test"
 const REPO_URL = "https://github.com/acme/widgets.git"
 
 function fakeDriver(egressControl: SandboxEgressControl) {
@@ -89,11 +90,16 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
   // route to `driver.ensureHost`.
   const sandboxManager = createSandboxManager({ leaseStore, driver })
   const capture = vi.fn()
+  const rows = new Map<string, Record<string, unknown>>()
   const services = {
     authority: {
       usersMe: vi.fn(async () => ({ subject: "user_1" })),
       authorizeWorkspaceCreate: vi.fn(async () => {}),
-      createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })),
+      createCloudWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string; projectId?: string; repoUrl?: string }) => {
+        rows.set(args.workspaceId, { workspace_id: args.workspaceId, project_id: args.projectId, backing: "cloud-vm", repo_url: args.repoUrl })
+        return { workspace_id: args.workspaceId }
+      }),
+      openWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => ({ allowed: true, role: "owner", workspace: rows.get(args.workspaceId) })),
       auditAllow: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => ({})),
     },
@@ -104,6 +110,7 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
     authConfig,
     verifier,
     relayUrl: RELAY_URL,
+    sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN,
     countActiveOrgSandboxLeases: async () => 0,
     // No real DNS in tests: clone admission resolves through this stub.
     resolveRepoAddresses: async () => ["140.82.112.3"],
@@ -114,7 +121,7 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
 
 async function create(app: ReturnType<typeof buildApp>["app"], token = "user_1") {
   const res = await app.fetch(
-    new Request(`${CONTROL_PLANE_ORIGIN}/create`, {
+    new Request(`${REQUEST_ORIGIN}/create`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ projectId: "proj_1", repoUrl: REPO_URL }),
@@ -148,8 +155,12 @@ describe("POST /create hands the driver a restricted egress policy", () => {
     // Its own control plane and relay: the runtime tunnels through the relay,
     // fetches the relay JWKS, and reports register/heartbeat back to the
     // control plane. Without these the sandbox cannot be reached at all.
+    // The control plane is the origin the sandbox is given, not whichever
+    // origin the create request arrived on, so a refresh that has no request
+    // allows the same one.
     expect(hosts).toContain("relay.claxedo.test")
     expect(hosts).toContain("cp.claxedo.test")
+    expect(hosts).not.toContain("edge.claxedo.test")
     // The git host it clones from — this workspace's repo, not a forge list.
     expect(hosts).toContain("github.com")
     // The model providers the agent harness calls.
@@ -260,65 +271,34 @@ function code(source: string) {
     .join("\n")
 }
 
-/** The `sandboxManager.ensure(...)` argument object, comments removed. */
-function ensureCallSites(source = routeSource) {
-  const stripped = code(source)
-  const sites: string[] = []
-  const marker = ".ensure(workspaceId, {"
-  let at = stripped.indexOf(marker)
-  while (at !== -1) {
-    // Walk braces from the argument object's `{` to its match.
-    let depth = 0
-    let end = at + marker.length - 1
-    for (let i = end; i < stripped.length; i++) {
-      const char = stripped[i]
-      if (char === "{") depth++
-      else if (char === "}") {
-        depth--
-        if (depth === 0) {
-          end = i
-          break
-        }
-      }
-    }
-    sites.push(stripped.slice(at, end + 1))
-    at = stripped.indexOf(marker, end)
-  }
-  return sites
+/** What each `.ensure(workspaceId, ...)` call in the route is handed, comments removed. */
+function ensureArguments(source = routeSource) {
+  return [...code(source).matchAll(/\.ensure\(\s*workspaceId,\s*([^\n]*)/g)].map((match) => match[1].trim())
 }
 
 describe("the hosted ensure call site cannot omit the egress policy", () => {
   test("the scanner actually finds the call site (guard against an empty ratchet)", () => {
-    expect(ensureCallSites()).toHaveLength(1)
-    expect(ensureCallSites()[0]).toContain("homeRegion")
+    expect(ensureArguments()).toHaveLength(1)
   })
 
-  test("the ratchet fires on a call site with no policy", () => {
-    // Proves the check below can fail. This is exactly the shape the call site
-    // had before the 2026-07-27 review.
+  test("the ratchet fires on a call site that assembles its own input", () => {
+    // Proves the check below can fail. This is the shape the call site had
+    // before the 2026-07-27 review.
     const regressed = [
       "        void sandboxManager",
       "          .ensure(workspaceId, {",
       "            homeRegion,",
       "            workspaceRoot: directory,",
-      '            source: { kind: "git", repoUrl },',
       "          })",
     ].join("\n")
-    expect(ensureCallSites(regressed).every((site) => site.includes("net:"))).toBe(false)
+    expect(ensureArguments(regressed).every((argument) => argument.startsWith("hostedSandboxInput("))).toBe(false)
   })
 
-  test("every hosted ensure call site passes net", () => {
-    // A new hosted provisioning path with no `net` lands here. Do not add an
-    // exemption — pass the policy. `hostedSandboxNetworkPolicy` exists so that
-    // costs one line.
-    const missing = ensureCallSites().filter((site) => !site.includes("net:"))
-    expect(missing).toEqual([])
-  })
-
-  test("the policy comes from the shared builder, not an inline literal", () => {
-    // An inline `{ mode: "restricted", hosts: [...] }` here would drift away
-    // from the reviewed allowlist the moment anything changed.
-    expect(ensureCallSites()[0]).toContain("hostedSandboxNetworkPolicy({")
-    expect(code(routeSource)).toContain('from "@claxedo/sandbox-manager"')
+  test("every hosted ensure call site is handed the one full-input builder", () => {
+    // `hostedSandboxInput` always supplies `net`, rebuilt from the workspace
+    // row, so a new hosted provisioning path gets the policy by using it. Do
+    // not add an exemption.
+    expect(ensureArguments().filter((argument) => !argument.startsWith("hostedSandboxInput("))).toEqual([])
+    expect(code(routeSource)).toContain('import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"')
   })
 })

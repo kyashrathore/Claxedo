@@ -116,8 +116,6 @@ export const dict = {
   "command.session.undo.description": "撤销上一条消息",
   "command.session.redo": "重做",
   "command.session.redo.description": "重做上一条撤销的消息",
-  "command.session.compact": "精简会话",
-  "command.session.compact.description": "总结会话以减少上下文大小",
   "command.session.fork": "从消息分叉",
   "command.session.fork.description": "从之前的消息创建新会话",
 
@@ -402,8 +400,6 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "权限请求将被自动批准",
   "toast.permissions.autoaccept.off.title": "已停止自动接受权限",
   "toast.permissions.autoaccept.off.description": "权限请求将需要批准",
-  "toast.model.none.title": "未选择模型",
-  "toast.model.none.description": "请先连接提供商以总结此会话",
   "toast.file.loadFailed.title": "加载文件失败",
   "toast.file.listFailed.title": "列出文件失败",
   "toast.context.noLineSelection.title": "未选择行",

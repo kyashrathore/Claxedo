@@ -158,6 +158,7 @@ function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
     setQueuedPromptHeld: (sessionId, seq, held) => store.setQueuedPromptHeld(sessionId, seq, held),
     completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
     sessionDirectory: (sessionId) => store.getSession(sessionId)?.directory,
+    sessionArchived: (sessionId) => store.getSession(sessionId)?.time?.archived !== undefined,
   }
 }
 

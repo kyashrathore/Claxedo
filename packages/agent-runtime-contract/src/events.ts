@@ -68,9 +68,11 @@ export type AgentPresentationEvent =
   | { type: "message.completed"; properties: { sessionID: string; messageID: string } }
   | { id: string; type: "permission.asked"; properties: AgentPermission }
   | { id: string; type: "permission.replied"; properties: { sessionID: string; requestID: string } & ({ reply: "once" | "always" | "reject"; optionId?: never } | { optionId: string; reply?: never }) }
+  | { id: string; type: "permission.expired"; properties: { sessionID: string; requestID: string } }
   | { id: string; type: "question.asked"; properties: AgentQuestion }
   | { id: string; type: "question.replied"; properties: { sessionID: string; requestID: string; answers: string[][] } }
   | { id: string; type: "question.rejected"; properties: { sessionID: string; requestID: string } }
+  | { id: string; type: "question.expired"; properties: { sessionID: string; requestID: string } }
   | { id: string; type: "todo.updated"; properties: { sessionID: string; todos: AgentTodo[] } }
   | { id: string; type: "session.status"; properties: { sessionID: string; status: AgentRuntimeStatus } }
   | { id: string; type: "session.idle"; properties: { sessionID: string } }
@@ -100,9 +102,11 @@ export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "message.completed": true,
   "permission.asked": true,
   "permission.replied": true,
+  "permission.expired": true,
   "question.asked": true,
   "question.replied": true,
   "question.rejected": true,
+  "question.expired": true,
   "todo.updated": true,
   "session.status": true,
   "session.idle": true,

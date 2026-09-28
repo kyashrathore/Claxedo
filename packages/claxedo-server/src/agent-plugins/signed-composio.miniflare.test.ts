@@ -480,6 +480,7 @@ describe("signed Composio Gmail on Miniflare", () => {
           workspace: {
             workspace_id: "ws_cloud_mint",
             org_id: USER.organizationId,
+            project_id: "project_cloud_mint",
             backing: "cloud-vm",
             home_region: "us-east",
           },
@@ -509,7 +510,7 @@ describe("signed Composio Gmail on Miniflare", () => {
       provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
         await provisionForMint(workspaceId, preparation)
       },
-    }, auth, "ws_cloud_mint", "https://control.test")
+    }, auth, "ws_cloud_mint")
 
     expect(local).toMatchObject({ connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" } })
     expect(cloud).toMatchObject({ connection: { backing: "cloud-vm", runtimeAccessToken: "runtime-token" } })

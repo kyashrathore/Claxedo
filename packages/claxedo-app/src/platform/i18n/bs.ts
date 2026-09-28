@@ -89,8 +89,6 @@ export const dict = {
   "command.session.undo.description": "Poništi posljednju poruku",
   "command.session.redo": "Vrati",
   "command.session.redo.description": "Vrati posljednju poništenu poruku",
-  "command.session.compact": "Sažmi sesiju",
-  "command.session.compact.description": "Sažmi sesiju kako bi se smanjio kontekst",
   "command.session.fork": "Fork iz poruke",
   "command.session.fork.description": "Kreiraj novu sesiju iz prethodne poruke",
 
@@ -388,8 +386,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvatanje dozvola",
   "toast.permissions.autoaccept.off.description": "Zahtjevi za dozvole će zahtijevati odobrenje",
 
-  "toast.model.none.title": "Nije odabran model",
-  "toast.model.none.description": "Poveži provajdera da sažmeš ovu sesiju",
 
   "toast.file.loadFailed.title": "Neuspjelo učitavanje datoteke",
   "toast.file.listFailed.title": "Neuspješno listanje datoteka",

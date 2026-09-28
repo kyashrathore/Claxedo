@@ -3,7 +3,9 @@ import os from "node:os"
 import path from "node:path"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { HARNESS_TABLE, type ProviderProjection } from "@claxedo/agent-runtime-contract"
 import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
+import { selectedProviderProjection } from "../../contract"
 import { CLAXEDO_MARKETPLACE, codexHomeKey, copyTreeAtomically, mirrorOwnerCodexHome } from "./home"
 
 const START = "# BEGIN CLAXEDO CODEX PROFILE"
@@ -90,8 +92,12 @@ function withoutClaxedoBlock(content: string): string {
   return begin < 0 ? content.trimEnd() : `${content.slice(0, begin)}${content.slice(end + END.length)}`.trim()
 }
 
+export function codexCredential(credentials: ResolvedCredentials): ProviderProjection | undefined {
+  return selectedProviderProjection(credentials, HARNESS_TABLE.codex.providerIds)
+}
+
 export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {
-  const selected = input.credentials.providers.codex
+  const selected = codexCredential(input.credentials)
   if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
   const brokered = Boolean(selected)
   const ownerHome = input.ownerHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")

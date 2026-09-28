@@ -3,12 +3,13 @@ import type {
   PendingRequest,
   RequestAnswer,
   RequestBroker,
+  RequestReply,
   RequestScope,
   TurnRequest,
 } from "../../contract/broker"
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "../ports"
 import { grantToSave } from "../grants"
-import { optionMatchesDecision, substitutePermissionOption } from "../options"
+import { decisionAnswer, offeredOptionAnswer } from "../options"
 import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type RequestAuthority } from "./authority"
 import { OrphanRetirement } from "./orphan-retirement"
 import { preflight } from "./preflight"
@@ -24,7 +25,7 @@ type Entry = {
   phase: "asked" | "validating" | "committing" | "answered" | "cancelled" | "expired"
   resolve(answer: RequestAnswer): void
   expiry?: unknown
-  validating?: AbortController
+  validating?: { controller: AbortController; settled: Promise<void> }
   cancelRequested?: "cancelled" | "expired"
   published?: Promise<void>
   termination?: Promise<void>
@@ -154,7 +155,7 @@ export class RequestTable implements RequestBroker {
 
   async answer(
     requestId: string,
-    answer: RequestAnswer,
+    reply: RequestReply,
     target: Parameters<RequestBroker["answer"]>[2],
   ): Promise<AnswerResult> {
     const sessionId = "sessionId" in target ? target.sessionId : target.start.sessionId
@@ -169,40 +170,47 @@ export class RequestTable implements RequestBroker {
       return requestRefusal("foreign")
     }
     if (!requestTargetMatchesOwner(this.ports, entry.authority, target)) return requestRefusal("foreign")
-    if (answer.kind === "cancelled" || answer.kind === "expired") return requestRefusal("unoffered")
+    if (reply.kind === "cancelled" || reply.kind === "expired") return requestRefusal("unoffered")
     try { await entry.published } catch { return requestRefusal("persistence") }
     if (entry.phase === "validating") {
       if (entry.pending.request.kind !== "elicitation" || entry.pending.request.mode !== "form") return requestRefusal("duplicate")
-      throw new ElicitationValidationError("validation_busy", "This request is already being validated")
+      if (reply.kind !== "rejected") throw new ElicitationValidationError("validation_busy", "This request is already being validated")
+      entry.validating?.controller.abort()
+      await entry.validating?.settled
     }
     if (entry.cancelRequested) return this.retryTermination(entry)
     if (entry.phase !== "asked") return requestRefusal("duplicate")
-    const selected = this.selectAnswer(entry, answer)
-    if (!selected) return requestRefusal("unoffered")
-    answer = selected
+    const answer = this.selectAnswer(entry, reply)
+    if (!answer) return requestRefusal("unoffered")
+    return this.validateAndCommit(entry, answer)
+  }
+
+  private async validateAndCommit(entry: Entry, answer: RequestAnswer): Promise<AnswerResult> {
     entry.phase = "validating"
     const controller = new AbortController()
-    entry.validating = controller
+    const { promise: settled, resolve: settle } = Promise.withResolvers<void>()
+    entry.validating = { controller, settled }
     try {
       await validateAnswer(this.ports, entry.pending.request, answer, controller.signal)
     } catch (error) {
       entry.validating = undefined
+      settle()
       if (entry.cancelRequested) return this.retryTermination(entry)
       entry.phase = "asked"
       throw error
     }
     entry.validating = undefined
+    settle()
     if (entry.cancelRequested) return this.retryTermination(entry)
     return this.commitAnswer(entry, answer)
   }
 
-  private selectAnswer(entry: Entry, answer: RequestAnswer): RequestAnswer | undefined {
-    if (entry.pending.request.kind !== "permission" || answer.kind !== "permission") return answer
-    const options = entry.pending.request.options
-    const chosenId = answer.optionId
-    if (chosenId !== undefined && !options?.some((option) =>
-      option.optionId === chosenId && optionMatchesDecision(answer.decision, option.kind))) return undefined
-    return substitutePermissionOption(answer, options)
+  private selectAnswer(entry: Entry, reply: RequestReply): RequestAnswer | undefined {
+    if (reply.kind !== "permission") return reply
+    const request = entry.pending.request
+    const options = request.kind === "permission" ? request.options : undefined
+    if ("optionId" in reply) return offeredOptionAnswer(reply.optionId, options)
+    return request.kind === "permission" ? decisionAnswer(reply.decision, options) : reply
   }
 
   private async commitAnswer(entry: Entry, answer: RequestAnswer): Promise<AnswerResult> {
@@ -243,7 +251,7 @@ export class RequestTable implements RequestBroker {
   private async terminate(entry: Entry, kind: "cancelled" | "expired"): Promise<void> {
     if (entry.phase === "answered" || entry.phase === "cancelled" || entry.phase === "expired") return
     entry.cancelRequested = kind
-    entry.validating?.abort()
+    entry.validating?.controller.abort()
     await entry.published
     if (entry.phase === "committing") return
     await this.finishTermination(entry)

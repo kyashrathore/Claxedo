@@ -8,7 +8,9 @@ import { isHostReply, type HostReply, type HostRequest } from "./protocol"
 
 export type CursorHostKey = { binding: string; home: string; backendUrl?: string }
 
-const HOST_SCRIPT = fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "./host.ts" : "./host.js", import.meta.url))
+const HOST_ARGS = import.meta.url.endsWith(".ts")
+  ? [...process.execArgv, fileURLToPath(new URL("./host.ts", import.meta.url))]
+  : [fileURLToPath(new URL("./host.js", import.meta.url))]
 const RUN_IDLE_MS = 600_000
 const COMMAND_MS = 30_000
 
@@ -126,7 +128,7 @@ export class CursorHostRegistry {
   }
 
   private async spawn(key: CursorHostKey, signal: AbortSignal): Promise<CursorHost> {
-    const owned = await this.services.spawn({ file: process.execPath, args: [HOST_SCRIPT], cwd: key.home,
+    const owned = await this.services.spawn({ file: process.execPath, args: HOST_ARGS, cwd: key.home,
       env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", signal })
     const host = new CursorHost(owned, this.services.clock, this.services.log)
     if (signal.aborted) {

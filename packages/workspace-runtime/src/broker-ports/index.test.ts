@@ -234,6 +234,44 @@ class StoreBehaviorPorts extends MemoryPorts {
 registerBrokerBehaviorCases("runtime store", () => new StoreBehaviorPorts())
 
 describe("store broker ports", () => {
+  test("a permission that expires is published as expired, not as the person's rejection", async () => {
+    const { ports, publishers } = setup()
+    const streamed: unknown[] = []
+    publishers.subscribeGlobal((event) => { streamed.push(event.payload) })
+    const request = permission("expiring-permission")
+    const pending: PendingRequest = { sessionId: "s1", request, askedAt: 1, upstreamSessionId: "up1" }
+    await ports.publish({ id: "permission.asked:s1:expiring-permission", type: "permission.asked", properties: request.permission }, pending)
+    await ports.persistAnswer(pending, { kind: "expired" }, false)
+    expect(streamed).toContainEqual(expect.objectContaining({ type: "permission.expired", properties: { sessionID: "s1", requestID: "expiring-permission" } }))
+    expect(streamed).not.toContainEqual(expect.objectContaining({ type: "permission.replied" }))
+    expect(ports.readPending({ sessionId: "s1" })).toEqual([])
+  })
+
+  test("a question that expires is published as expired, not as the person's rejection", async () => {
+    const { ports, publishers } = setup()
+    const streamed: unknown[] = []
+    publishers.subscribeGlobal((event) => { streamed.push(event.payload) })
+    const request = question("expiring")
+    const pending: PendingRequest = { sessionId: "s1", request, askedAt: 1, upstreamSessionId: "up1" }
+    await ports.publish({ id: "question.asked:s1:expiring", type: "question.asked", properties: request.question }, pending)
+    await ports.persistAnswer(pending, { kind: "expired" }, false)
+    expect(streamed).toContainEqual(expect.objectContaining({ type: "question.expired", properties: { sessionID: "s1", requestID: "expiring" } }))
+    expect(streamed).not.toContainEqual(expect.objectContaining({ type: "question.rejected" }))
+    expect(ports.readPending({ sessionId: "s1" })).toEqual([])
+  })
+
+  test("a grant's automatic answer is recorded and streamed as the reply, though nobody was asked", async () => {
+    const { store, ports, publishers } = setup()
+    const streamed: unknown[] = []
+    publishers.subscribeGlobal((event) => { streamed.push(event.payload) })
+    const pending: PendingRequest = { sessionId: "s1", request: permission("granted"), askedAt: 1, upstreamSessionId: "up1" }
+    await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, true)
+    const replied = { type: "permission.replied", properties: { sessionID: "s1", requestID: "granted", reply: "always" } }
+    expect(streamed).toContainEqual(expect.objectContaining(replied))
+    expect(store.brokerDatabase().prepare<{ n: number }>(
+      "SELECT count(*) AS n FROM runtime_journal WHERE session_id = 's1' AND type = 'permission.replied'").get()?.n).toBe(1)
+  })
+
   test("first answer wins across a reopened store and directory reads are scoped", async () => {
     const { root, store, ports } = setup()
     const request = question("first")

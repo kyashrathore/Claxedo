@@ -541,11 +541,11 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       this.persistMessage(sessionId, event.properties.messageID)
     } else if (event.type === "permission.asked") {
       this.persistInteraction("runtime_permissions", sessionId, event.properties.id)
-    } else if (event.type === "permission.replied") {
+    } else if (event.type === "permission.replied" || event.type === "permission.expired") {
       this.run("DELETE FROM runtime_permissions WHERE id = ?", event.properties.requestID)
     } else if (event.type === "question.asked") {
       this.persistInteraction("runtime_questions", sessionId, event.properties.id)
-    } else if (event.type === "question.replied" || event.type === "question.rejected") {
+    } else if (event.type === "question.replied" || event.type === "question.rejected" || event.type === "question.expired") {
       this.run("DELETE FROM runtime_questions WHERE id = ?", event.properties.requestID)
     } else if (event.type === "todo.updated") {
       this.replaceTodos(sessionId)

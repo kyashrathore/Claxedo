@@ -77,12 +77,12 @@ export function setSessionRequestsQueryData(input: {
  * read has stopped listing yet.
  *
  * Pending permissions and questions are a push-owned cache with two directory
- * hydration readers — the session pane's and the rail's — and three resolvers:
- * the `permission.replied` / `question.replied` / `question.rejected` frames
- * and the question dock's own clear on a successful reply. A read issued before
- * a resolution still carries the resolved request, so writing it through
- * re-seeds a question the user already answered; the dock paints it again until
- * the next read or frame clears it.
+ * hydration readers, the session pane's and the rail's. A request leaves it on
+ * any settling frame (replied, rejected or expired) or on the question dock's
+ * own clear after a successful reply. A read issued before that still carries
+ * the settled request, so writing it through would re-seed a question the
+ * user already answered, and the dock would paint it again until the next
+ * read or frame clears it.
  *
  * The request id is what orders the two: the list read, the reply frame and the
  * dock's reply all name the same id, so a removal is remembered by id rather

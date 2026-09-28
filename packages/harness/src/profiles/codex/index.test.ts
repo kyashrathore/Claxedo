@@ -6,7 +6,7 @@ import path from "node:path"
 import type { PluginProjection, ResolvedCredentials } from "../../contract"
 import { prepareCodexProfile } from "."
 
-const brokered: ResolvedCredentials = { providers: { codex: { baseUrl: "http://127.0.0.1:47501/v1", placeholder: "first", authMode: "api-key" } }, secrets: {}, leaseGeneration: "first" }
+const brokered: ResolvedCredentials = { providers: { "codex-app-server": { baseUrl: "http://127.0.0.1:47501/v1", placeholder: "first", authMode: "api-key" } }, secrets: {}, leaseGeneration: "first" }
 const ownLogin: ResolvedCredentials = { providers: {}, secrets: {}, leaseGeneration: "own" }
 const machineOwner = { kind: "machine-owner" as const }
 const noPlugins: PluginProjection = { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }
@@ -108,7 +108,7 @@ test("the home is shared by owner, credential binding and plugin set", async () 
     expect((await run({})).home).toBe(base)
     expect((await run({ owner: { kind: "person", userId: "member" } })).home).not.toBe(base)
     expect((await run({ credentials: brokered })).home).not.toBe(base)
-    expect((await run({ credentials: { ...brokered, leaseGeneration: "second", providers: { codex: { ...brokered.providers.codex!, placeholder: "rotated" } } } })).home)
+    expect((await run({ credentials: { ...brokered, leaseGeneration: "second", providers: { "codex-app-server": { ...brokered.providers["codex-app-server"]!, placeholder: "rotated" } } } })).home)
       .toBe((await run({ credentials: brokered })).home)
     expect((await run({ credentials: brokered })).brokered).toBe(true)
     expect(await fs.readdir((await run({ credentials: brokered })).home)).not.toContain("auth.json")
@@ -156,7 +156,7 @@ test("a brokered home retains a projected plugin cache during credential rotatio
     const { home } = await prepareCodexProfile({ homeRoot, owner: machineOwner, projection, credentials: brokered })
     const cache = path.join(home, "plugins", "cache", "claxedo-agent-plugins", "sample", "2.0.0", "sentinel")
     expect(await fs.readFile(cache, "utf8")).toBe("sample retained")
-    const rotated = { ...brokered, providers: { codex: { ...brokered.providers.codex!, placeholder: "second" } } }
+    const rotated = { ...brokered, providers: { "codex-app-server": { ...brokered.providers["codex-app-server"]!, placeholder: "second" } } }
     expect((await prepareCodexProfile({ homeRoot, owner: machineOwner, projection, credentials: rotated })).home).toBe(home)
     const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
     expect(config).toContain("Bearer second")

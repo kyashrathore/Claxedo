@@ -17,6 +17,7 @@ import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRu
 import { assertSessionCreateBindingScope, normalizeDirectory, requireExecutionBinding } from "./execution-binding"
 import { executeHandoffTransaction, releaseKeptHandoffSource, type OpenedTarget } from "./handoff"
 import { attachInput, startInput, type LaunchComposer } from "./launch"
+import type { createSessionTitleOwner } from "./session-titles"
 import type { TurnAdmissions } from "./turn-admission"
 import type { TransportResolver } from "./transports"
 
@@ -31,12 +32,15 @@ export type SessionLifecycleInput = {
   publish: (event: AgentRuntimeEventEnvelope) => void
   reportSessionFailure: (sessionId: string, error: unknown) => void
   forgetGoal: (sessionId: string) => void
+  pushTitle: ReturnType<typeof createSessionTitleOwner>["push"]
 }
-
-type KeptSource = { handle: AttachedSession["handle"]; session: HarnessSession }
 
 function key(input: Pick<SessionConfig, "harness">["harness"]) {
   return `${input.id}:${input.access}`
+}
+
+function keptKey(sessionId: string, harness: SessionHarness, upstreamSessionId: string) {
+  return `${sessionId}\0${key(harness)}\0${upstreamSessionId}`
 }
 
 function retainedFields(input: { instructions?: string; group?: AgentRuntimeSessionCreateInput["group"] }) {
@@ -54,7 +58,7 @@ function retainedFields(input: { instructions?: string; group?: AgentRuntimeSess
  */
 export function createSessionLifecycle(input: SessionLifecycleInput) {
   const { store, transports, launch, attachments, admissions } = input
-  const keptSources = new Map<string, KeptSource>()
+  const keptSources = new Map<string, AttachedSession>()
 
   const diagnose = (sessionId: string, directory: RuntimeDirectory) => (payload: AgentRuntimeEvent) =>
     input.publish({ sessionId, directory, payload })
@@ -82,9 +86,10 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
 
   /** Closes the native session a left harness holds, attaching it first when this process never held it. */
   const closeSource = async (harness: SessionHarness, source: SessionHandoffSource, sessionId: string, directory: string | undefined) => {
-    const kept = keptSources.get(`${sessionId}\0${source.upstreamSessionId}`)
+    const keptId = keptKey(sessionId, harness, source.upstreamSessionId)
+    const kept = keptSources.get(keptId)
     if (kept) {
-      keptSources.delete(`${sessionId}\0${source.upstreamSessionId}`)
+      keptSources.delete(keptId)
       await kept.handle.transport.close(kept.session)
       return
     }
@@ -101,6 +106,14 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       owner,
     }, left), detachedBroker(sessionId, targetDirectory, owner, left))
     await handle.transport.close(session)
+  }
+
+  const resumeSource = (sessionId: string, harness: SessionHarness, source: SessionHandoffSource) => {
+    const keptId = keptKey(sessionId, harness, source.upstreamSessionId)
+    const kept = keptSources.get(keptId)
+    if (!kept) return
+    keptSources.delete(keptId)
+    attachments.register(sessionId, kept)
   }
 
   const openTarget = (sessionId: string, owner: TurnActor, title: string | undefined) =>
@@ -146,7 +159,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     const targetDirectory = directory ?? session.directory
     const previousBinding = requireExecutionBinding(store, sessionId, targetDirectory, current.harness)
     const left = attachments.forget(sessionId)
-    if (left) keptSources.set(`${sessionId}\0${previousBinding.upstreamSessionId}`, { handle: left.handle, session: left.session })
+    const leftKey = keptKey(sessionId, current.harness, previousBinding.upstreamSessionId)
+    if (left) keptSources.set(leftKey, left)
     try {
       return await executeHandoffTransaction({
         sessionId, directory: targetDirectory, session, current, update: { ...update, harness: update.harness! },
@@ -154,10 +168,11 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         diagnose: diagnose(sessionId, targetDirectory),
         openTarget: openTarget(sessionId, attachments.owner(sessionId), session.title ?? undefined),
         closeSource: (harness, source, dir) => closeSource(harness, source, sessionId, dir),
+        resumeSource: (harness, source) => resumeSource(sessionId, harness, source),
       })
     } catch (error) {
       if (left) {
-        keptSources.delete(`${sessionId}\0${previousBinding.upstreamSessionId}`)
+        keptSources.delete(leftKey)
         attachments.register(sessionId, left)
       }
       throw error
@@ -225,15 +240,17 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       return persisted
     },
     async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
-      if (updates.title !== undefined) {
-        const attached = await attachments.for(sessionId, directory)
-        await attached.handle.transport.naming?.rename?.(attached.session, updates.title)
-      }
       const persisted = store.updateSession(sessionId, {
         ...(updates.title !== undefined ? { title: updates.title } : {}),
         ...(updates.time?.archived !== undefined ? { time: { archived: updates.time.archived } } : {}),
       })
       if (!persisted) throw new Error(`Session ${sessionId} not found`)
+      if (updates.title !== undefined) {
+        await input.pushTitle(sessionId, updates.title, async () => {
+          const attached = await attachments.for(sessionId, directory)
+          return { transport: attached.handle.transport, session: attached.session }
+        })
+      }
       return persisted
     },
     async delete(sessionId: string, directory?: RuntimeDirectory) {

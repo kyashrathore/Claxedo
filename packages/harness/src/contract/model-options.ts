@@ -1,7 +1,7 @@
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 
 export function modelAndEffortOptions(input: {
-  models: readonly { id: string; name: string; description?: string }[]
+  models: readonly { id: string; name: string; description?: string; connected?: boolean }[]
   selected?: string
   efforts?: readonly string[]
   currentEffort?: string

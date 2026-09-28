@@ -58,6 +58,10 @@ export type RequestAnswer =
   | { kind: "cancelled" }
   | { kind: "expired" }
 
+export type PermissionReply = { kind: "permission"; decision: PermissionDecision } | { kind: "permission"; optionId: string }
+
+export type RequestReply = Exclude<RequestAnswer, { kind: "permission" }> | PermissionReply
+
 export type OutsideTurnUsage = {
   sessionId: string
   directory: string
@@ -136,7 +140,7 @@ export interface RequestBroker {
   list(scope: RequestScope): readonly PendingRequest[]
   answer(
     requestId: string,
-    answer: RequestAnswer,
+    reply: RequestReply,
     target: { sessionId: string } | { start: AgentSessionStartBinding },
   ): Promise<AnswerResult>
   closeSession(sessionId: string): void

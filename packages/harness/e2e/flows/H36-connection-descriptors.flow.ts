@@ -39,9 +39,9 @@ export async function run() {
     createUrl.searchParams.set("directory", workspace.directory)
     createUrl.searchParams.set("connectionId", "h36-disabled")
     const selection = await directTransport({ method: "POST", url: createUrl.toString(), headers: { "content-type": "application/json" }, body: JSON.stringify({ harness: { id: "h36-disabled", access: "connection" } }) })
-    assert.equal(selection.status, 500, selection.body)
+    assert.equal(selection.status, 409, selection.body)
     assert.deepEqual((JSON.parse(selection.body) as { error?: { code?: string; message?: string } }).error,
-      { code: "session_create_failed", message: "Connection h36-disabled is disabled" })
+      { code: "workspace_harness_not_configured", message: "Connection \"h36-disabled\" is not configured on this runtime" })
     assert.deepEqual(await api.sessions(workspace.directory), [])
     const listing = await directTransport({ method: "GET", url: endpoint })
     assert.equal(listing.status, 200)

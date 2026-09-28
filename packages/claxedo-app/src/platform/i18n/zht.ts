@@ -93,8 +93,6 @@ export const dict = {
   "command.session.undo.description": "復原上一則訊息",
   "command.session.redo": "重做",
   "command.session.redo.description": "重做上一則復原的訊息",
-  "command.session.compact": "精簡工作階段",
-  "command.session.compact.description": "總結工作階段以減少上下文大小",
   "command.session.fork": "從訊息分支",
   "command.session.fork.description": "從先前的訊息建立新工作階段",
 
@@ -389,8 +387,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "已停止自動接受權限",
   "toast.permissions.autoaccept.off.description": "權限請求將需要批准",
 
-  "toast.model.none.title": "未選擇模型",
-  "toast.model.none.description": "請先連線提供者以總結此工作階段",
 
   "toast.file.loadFailed.title": "載入檔案失敗",
 

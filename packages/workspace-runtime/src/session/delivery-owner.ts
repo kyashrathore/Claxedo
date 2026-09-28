@@ -19,6 +19,7 @@ export type SessionDeliveryStore = {
   setQueuedPromptHeld(sessionId: string, seq: number, held: boolean): boolean
   completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean
   sessionDirectory(sessionId: string): string | undefined
+  sessionArchived(sessionId: string): boolean
 }
 type Submission = { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester
 export type SessionDeliveryOwner = {
@@ -132,7 +133,7 @@ export function createSessionDeliveryOwner(input: {
         const handoff = await input.whenIdle(sessionId, directory)
         if (handoff.unavailable) return
         try {
-          if (disposed) return
+          if (disposed || store().sessionArchived(sessionId)) return
           // A control or another owner may have changed the queue while idle
           // admission was pending. Only the freshly read durable row may run.
           const current = next(sessionId)

@@ -29,7 +29,9 @@ export function selectPiProfile(
   owner: TurnActor, credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
   sessionProfile?: CredentialProfile,
 ): PiProfile {
-  const kind = ownerMayUseMachineLogin(owner, options) ? sessionProfile ?? "owner-login" : "brokered"
+  const machineLogin = ownerMayUseMachineLogin(owner, options)
+  const bound = PI_LAUNCH_PROVIDERS.some((name) => selectedProviderProjection(credentials, piCredentialProviderIDs(name)) !== undefined)
+  const kind = machineLogin ? sessionProfile ?? (bound ? "brokered" : "owner-login") : "brokered"
   const workspace = createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16)
   const stateDir = path.join(options.stateRoot, workspace)
   const session = createHash("sha256").update(sessionId).digest("hex").slice(0, 16)

@@ -34,6 +34,13 @@ test("Codex cancellation never allows a command", async () => {
   expect(answer).toEqual({ decision: "cancel" })
 })
 
+test("Codex tells an MCP server a rejected elicitation was declined and a withdrawn one was cancelled", async () => {
+  const elicitation = { method: "mcpServer/elicitation/request", id: 1,
+    params: { threadId: "thread", turnId: "turn", serverName: "server", mode: "form", message: "Name", requestedSchema: { type: "object", properties: {} } } } as unknown as ServerRequest
+  expect(await answerCodexRequest(elicitation, broker(async () => ({ kind: "rejected" })), "s1")).toMatchObject({ action: "decline" })
+  expect(await answerCodexRequest(elicitation, broker(async () => ({ kind: "cancelled" })), "s1")).toMatchObject({ action: "cancel" })
+})
+
 test("Codex approval keys include the command and cwd", async () => {
   const keys: string[] = []
   const ask = broker(async (request) => {

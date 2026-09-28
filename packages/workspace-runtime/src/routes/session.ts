@@ -88,6 +88,7 @@ export type SessionRoutesOptions = {
    * public handler so its private-session filter cannot be shadowed. */
   getStatus?: (c: SessionRouteContext, directory: string) => unknown
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   /**
    * Host-owned child sessions (`POST /session` with `parentID`). The host
    * lends its subagent admission, a secret for idempotent child ids and the
@@ -323,6 +324,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     afterCreateSession: options.afterCreateSession
       ? (_c, directory, session) => options.afterCreateSession!({ directory: requiredDirectory(directory), session })
       : undefined,
+    sessionIdWorkspace: options.sessionIdWorkspace,
     listSubagents: options.listSubagents
       ? (_c, directory, parentSessionId) => options.listSubagents!({ directory: requiredDirectory(directory), parentSessionId })
       : undefined,

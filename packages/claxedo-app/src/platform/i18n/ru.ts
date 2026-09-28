@@ -89,8 +89,6 @@ export const dict = {
   "command.session.undo.description": "Отменить последнее сообщение",
   "command.session.redo": "Повторить",
   "command.session.redo.description": "Повторить отменённое сообщение",
-  "command.session.compact": "Сжать сессию",
-  "command.session.compact.description": "Сократить сессию для уменьшения размера контекста",
   "command.session.fork": "Создать ответвление",
   "command.session.fork.description": "Создать новую сессию из сообщения",
 
@@ -388,8 +386,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.description": "Запросы на разрешения будут требовать одобрения",
 
 
-  "toast.model.none.title": "Модель не выбрана",
-  "toast.model.none.description": "Подключите провайдера для суммаризации сессии",
 
   "toast.file.loadFailed.title": "Не удалось загрузить файл",
 

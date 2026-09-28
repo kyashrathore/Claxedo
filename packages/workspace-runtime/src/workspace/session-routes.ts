@@ -24,6 +24,7 @@ export type SessionRoutesMountInput = {
   currentRunner: () => RuntimeRunner
   transcripts?: WorkspaceTranscriptRoutesOptions
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   sessionToolPrompt: (sessionId: string) => string | undefined
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
 }
@@ -39,6 +40,7 @@ function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
     completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
     settleQueuedPromptDelivery: (sessionId, seq, steering) => store.settleQueuedPromptDelivery(sessionId, seq, steering),
     sessionDirectory: (sessionId) => store.getSession(sessionId)?.directory,
+    sessionArchived: (sessionId) => store.getSession(sessionId)?.time?.archived !== undefined,
   }
 }
 
@@ -105,6 +107,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
       return config
     },
     afterCreateSession: input.afterCreateSession,
+    sessionIdWorkspace: input.sessionIdWorkspace,
     afterUpdateSession: ({ sessionId, updates }) => {
       store().updateSession(sessionId, updates)
     },

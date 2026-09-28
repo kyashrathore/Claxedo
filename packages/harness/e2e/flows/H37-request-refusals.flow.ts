@@ -26,7 +26,7 @@ export async function run() {
 
     const pi = await api.createSession(first.directory, { harness: { id: "pi", access: "native" }, model: { providerId: "pi", modelId: "openai/gpt-4.1" } })
     const command = await request("POST", `/session/${encodeURIComponent(pi.id)}/command`, first.directory, { command: "unsupported" })
-    assert.equal(command.status, 409, JSON.stringify(command.body))
+    assert.equal(command.status, 501, JSON.stringify(command.body))
     assert.equal(command.body.error?.code, "unsupported_operation")
     assert.equal((await readAcpRequests(stack.acp.scriptDir)).length, before, "a refused request reached the ACP agent")
     assert.deepEqual(stack.scripted.requests, [], "a refused request reached the model server")

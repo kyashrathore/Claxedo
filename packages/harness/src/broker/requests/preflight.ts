@@ -1,7 +1,7 @@
 import type { RequestAnswer, TurnRequest } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 import { hasGrant } from "../grants"
-import { substitutePermissionOption } from "../options"
+import { decisionAnswer } from "../options"
 import { pendingRequest, type RequestAuthority } from "./authority"
 
 export async function preflight(
@@ -17,7 +17,7 @@ export async function preflight(
     return { kind: "expired" }
   }
   if (request.kind === "permission" && hasGrant(ports, sessionId, authority.value.connectionId, request)) {
-    const automatic = substitutePermissionOption({ kind: "permission", decision: "allow_always" }, request.options)
+    const automatic = decisionAnswer("allow_always", request.options)
     const pending = pendingRequest(ports, authority, request)
     if (signal?.aborted) {
       await ports.persistAnswer(pending, { kind: "cancelled" }, false)

@@ -54,6 +54,23 @@ async function filesMentioning(root: string, needle: string) {
   return hits
 }
 
+function bearerClaims(authorization: string | undefined): { iss?: unknown; aud?: unknown } {
+  const payload = /^Bearer [^.]+\.([^.]+)\.[^.]+$/.exec(authorization ?? "")?.[1]
+  return payload ? JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { iss?: unknown; aud?: unknown } : {}
+}
+
+function assertOwnServer(servers: McpEntry[], session: string): McpEntry {
+  const own = servers.filter((server) => server.name === "claxedo")
+  assert.equal(own.length, 1, `the consented project's sandbox carries Claxedo's own MCP server once in ${session}: ${JSON.stringify(servers.map((server) => server.name))}`)
+  const [server] = own
+  assert.ok(server.url?.startsWith("http://127.0.0.1:") && server.url.includes("/api/claxedo/mcp?session="),
+    `Claxedo's own MCP server in ${session} is not the sandbox runtime's loopback endpoint: ${server.url}`)
+  const claims = bearerClaims(server.headers?.find((header) => header.name === "Authorization")?.value)
+  assert.deepEqual({ iss: claims.iss, aud: claims.aud }, { iss: "claxedo-workspace-runtime", aud: "claxedo-mcp" },
+    `Claxedo's own MCP server in ${session} carries a credential other than the sandbox runtime's own`)
+  return server
+}
+
 export async function run() {
   const stack = await startHostedStack("h28-plugins")
   try {
@@ -130,7 +147,9 @@ export async function run() {
       assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
       const leaks = await filesMentioning(path.join(stack.root, "sandbox-workspaces"), HOSTED_MCP_UPSTREAM_TOKEN)
       assert.deepEqual(leaks, [], "the upstream token never appears inside the sandbox")
-      const gatewayLeaks = (await Promise.all((servers.flatMap((server) => server.headers ?? []).map((header) => header.value)))).filter((value) => value.includes("eyJ"))
+      const own = assertOwnServer(servers, "the first session")
+      const gatewayLeaks = servers.filter((server) => server !== own).flatMap((server) => server.headers ?? [])
+        .map((header) => header.value).filter((value) => value.includes("eyJ"))
       assert.deepEqual(gatewayLeaks, [], "no signed gateway credential reached the sandbox")
 
       const changed = await json<{ revision: number; reconciliation: { state: string } }>(await hostedFetch(stack, "/api/claxedo/plugins/activation", {
@@ -160,6 +179,7 @@ export async function run() {
         const restarted = (await readAcpRequests(scriptDir)).filter((request) => request.method === "session/new").at(-1)
         const afterServers = (restarted?.params.mcpServers ?? []) as McpEntry[]
         assert.ok(!afterServers.some((server) => server.name.endsWith("-scripted")), `C-8: the deactivated plugin still reaches the running sandbox: ${JSON.stringify(afterServers)}`)
+        assertOwnServer(afterServers, "the session after the plugin change")
         assert.match(assistantText(await api.messages(workspace.directory, after.id)), /H28 after change/)
       } finally {
         afterStream.close()

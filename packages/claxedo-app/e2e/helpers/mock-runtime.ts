@@ -1145,12 +1145,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   let sessionDirectory = DIR
   let harnessPollCount = 0
   let harnessGetPollCount = 0
-  // Pending permission/question requests — what a real engine returns from
-  // GET /permission and GET /question. Specs drive these via `emit({type:
-  // "permission.asked"|"question.asked", ...})` and settle them via
-  // `permission.replied` / `question.replied` / `question.rejected`. Without
-  // this, every session-meta hydrate (GET /permission → []) overwrites the
-  // SSE-upserted dock cache and the permission/question docks never stick.
+  // The pending requests GET /permission and GET /question answer with. A
+  // spec opens one with an `*.asked` frame and closes it with any frame that
+  // settles it: replied, rejected or expired. An empty list here would let
+  // every session-meta hydrate overwrite the docks the stream just filled.
   let pendingPermissions: Array<Record<string, unknown>> = []
   let pendingQuestions: Array<Record<string, unknown>> = []
   // Same contract as permissions: GET /session/:id/todo must reflect the
@@ -1258,7 +1256,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           properties,
         ]
       }
-    } else if (type === "permission.replied") {
+    } else if (type === "permission.replied" || type === "permission.expired") {
       const requestID = typeof properties.requestID === "string" ? properties.requestID : undefined
       if (requestID) pendingPermissions = pendingPermissions.filter((item) => item.id !== requestID)
     } else if (type === "question.asked") {
@@ -1269,7 +1267,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           properties,
         ]
       }
-    } else if (type === "question.replied" || type === "question.rejected") {
+    } else if (type === "question.replied" || type === "question.rejected" || type === "question.expired") {
       const requestID = typeof properties.requestID === "string" ? properties.requestID : undefined
       if (requestID) pendingQuestions = pendingQuestions.filter((item) => item.id !== requestID)
     } else if (type === "todo.updated") {

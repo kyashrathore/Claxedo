@@ -23,6 +23,7 @@ export class BrokerEventDelivery {
       sessionId, payload, ...(source ? { source } : {}),
     })
     this.broadcast(sessionId, committed.payload)
+    if (committed.messageUpdate) this.broadcast(sessionId, committed.messageUpdate)
   }
 
   runtime(sessionId: string, payload: AgentRuntimeEvent, assistantMessageId?: string): void {

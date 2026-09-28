@@ -33,6 +33,7 @@ import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
+import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -228,7 +229,6 @@ export type RuntimeEventSource = {
   dir: "in" | "out"
   method: string
   requestId?: string
-  frame?: unknown
 }
 
 export type RuntimeStoreAppendOutput = {
@@ -238,6 +238,8 @@ export type RuntimeStoreAppendOutput = {
   agentSessionId?: string
   payload: CompatEvent
   source?: RuntimeEventSource
+  /** The assistant message a committed `session.usage` folded into, for its publisher to stream after the usage. */
+  messageUpdate?: CompatEvent
 }
 
 export type RuntimeStoreTurnStartOutput = {
@@ -625,6 +627,8 @@ const readColumn = {
   turnFinish: (json: string): TurnFinish => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='event'` row: an engine envelope. */
   eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
+  /** `runtime_journal.payload_json` on a `kind='event'`, `type='session.usage'` row. */
+  usagePayload: (json: string): Extract<CompatEvent, { type: "session.usage" }> => JSON.parse(json),
   /** `pending_permission.patterns_json`. */
   permissionPatterns: (json: string): string[] => JSON.parse(json),
   /** `pending_permission.options_json`: absent is distinct from no offered options. */
@@ -636,6 +640,20 @@ const readColumn = {
    * straight from the event's own `properties.questions`.
    */
   questions: (json: string): AgentQuestion["questions"] => JSON.parse(json),
+}
+
+/**
+ * An assistant message's tokens are every usage observation reported for it;
+ * the message schema has no unknown, so an unreported category reads as zero.
+ */
+function assistantMessageTokens(observations: Iterable<RuntimeUsageObservation>) {
+  const usage = foldUsageObservations(observations)
+  return {
+    input: usage.input ?? 0,
+    output: usage.output ?? 0,
+    reasoning: usage.reasoning ?? 0,
+    cache: { read: usage.cache.read ?? 0, write: usage.cache.write ?? 0 },
+  }
 }
 
 /** Keep host-stamped `claxedo.author` when an engine envelope omits it. */
@@ -986,6 +1004,11 @@ export class RuntimeStore {
     } catch {
       // column already exists
     }
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS runtime_journal_message_usage_idx
+      ON runtime_journal (session_id, assistant_message_id, seq)
+      WHERE kind = 'event' AND type = 'session.usage'
+    `)
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS runtime_journal_part_snapshot_idx
       ON runtime_journal (session_id, part_id, seq)
@@ -2615,7 +2638,9 @@ export class RuntimeStore {
     const assistantMessageId =
       row.kind === "control" && (row.control.type === "turn.start" || row.control.type === "turn.finish")
         ? row.control.assistantMessageId
-        : null
+        : row.kind === "event" && row.payload.type === "session.usage"
+          ? (row.payload.properties.messageID ?? null)
+          : null
     const insert = () => {
       if (partId && !options.ignoreDuplicate) {
         this.db
@@ -2803,11 +2828,35 @@ export class RuntimeStore {
       .prepare<{ created_at: number; info_json: string }>("SELECT created_at, info_json FROM message WHERE id = ?")
       .get(id)
     const merged = preserveClaxedoAuthor(prev ? readColumn.messageRecord(prev.info_json) : undefined, info)
+    const observations = role === "assistant" ? this.messageUsageObservations(sessionId, id) : []
+    if (observations.length) merged.tokens = assistantMessageTokens(observations)
     this.db
       .prepare(
         "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
       .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? ts)
+  }
+
+  /** Usage folds from the journal, not the previous row, so a later rebuild of the message cannot drop it. */
+  private messageUsageObservations(sessionId: string, messageId: string): RuntimeUsageObservation[] {
+    return this.db
+      .prepare<{ payload_json: string }>(`
+        SELECT payload_json FROM runtime_journal
+        WHERE session_id = ? AND assistant_message_id = ? AND kind = 'event' AND type = 'session.usage'
+        ORDER BY seq ASC
+      `)
+      .all(sessionId, messageId)
+      .flatMap((row) => {
+        const observation = readColumn.usagePayload(row.payload_json).properties.observation
+        return observation ? [observation] : []
+      })
+  }
+
+  private storedAssistantMessage(sessionId: string, messageId: string) {
+    const row = this.db
+      .prepare<{ info_json: string }>("SELECT info_json FROM message WHERE id = ? AND session_id = ? AND role = 'assistant'")
+      .get(messageId, sessionId)
+    return row ? readColumn.messageInfo(row.info_json) : undefined
   }
 
   private upsertPart(envelope: object, ts: number) {
@@ -3347,6 +3396,7 @@ export class RuntimeStore {
         return
 
       case "permission.replied":
+      case "permission.expired":
         this.db.prepare("UPDATE pending_permission SET status = 'answered', updated_at = ? WHERE session_id = ? AND id = ?")
           .run(row.ts, event.properties.sessionID, event.properties.requestID)
         return
@@ -3369,9 +3419,17 @@ export class RuntimeStore {
 
       case "question.replied":
       case "question.rejected":
+      case "question.expired":
         this.db.prepare("UPDATE pending_question SET status = 'answered', updated_at = ? WHERE session_id = ? AND id = ?")
           .run(row.ts, event.properties.sessionID, event.properties.requestID)
         return
+
+      case "session.usage": {
+        const messageId = event.properties.messageID
+        const info = messageId ? this.storedAssistantMessage(row.sessionId, messageId) : undefined
+        if (info && event.properties.observation) this.upsertMessage(info, row.ts)
+        return
+      }
 
       case "message.completed": {
         const rowInfo = this.db
@@ -3750,6 +3808,8 @@ export class RuntimeStore {
     }
     const committed = this.commit(row, (input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}))
     if (committed.kind !== "event") throw new Error("Expected event journal row")
+    const usage = committed.payload.type === "session.usage" ? committed.payload.properties : undefined
+    const folded = usage?.observation && usage.messageID ? this.storedAssistantMessage(committed.sessionId, usage.messageID) : undefined
     return {
       sessionId: committed.sessionId,
       seq: committed.seq,
@@ -3757,6 +3817,7 @@ export class RuntimeStore {
       ...(committed.agentSessionId ? { agentSessionId: committed.agentSessionId } : {}),
       payload: committed.payload,
       ...(committed.source ? { source: committed.source } : {}),
+      ...(folded ? { messageUpdate: messageUpdated(folded) } : {}),
     } satisfies RuntimeStoreAppendOutput
   }
 

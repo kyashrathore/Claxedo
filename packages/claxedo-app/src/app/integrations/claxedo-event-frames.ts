@@ -130,9 +130,11 @@ type ClaxedoDirectoryEventType =
     | "todo.updated"
     | "permission.asked"
     | "permission.replied"
+    | "permission.expired"
     | "question.asked"
     | "question.replied"
     | "question.rejected"
+    | "question.expired"
     | "session.diff"
     | "session.compacted"
 

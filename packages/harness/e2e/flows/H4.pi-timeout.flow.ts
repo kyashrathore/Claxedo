@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { writePiDialogExtension } from "../harness/pi-dialog-extension"
+import { forgetStoredAccounts, ownerPiAgentDir, writeOwnerPiModels } from "../harness/pi-owner"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
@@ -11,9 +12,10 @@ export async function run() {
   try {
     const workspace = await stack.daemon.makeWorkspace("h4-pi-timeout")
     const { directory } = workspace
-    const agentDir = path.join(stack.dataDir, "agent-core", workspace.id, "pi", "agent")
-    await fs.mkdir(agentDir, { recursive: true })
+    const agentDir = ownerPiAgentDir(stack)
+    await writeOwnerPiModels(agentDir, stack.scripted.v1Url, "h4-scripted")
     await fs.writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }))
+    await forgetStoredAccounts(stack)
     await writePiDialogExtension(directory)
     const api = new ClaxedoApi(stack.url)
     const stream = await stack.events(directory)

@@ -34,6 +34,8 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
   await writeAcpScript(directory, "text", { steps: [
     { kind: "text", text: "PICONFORM" }, { kind: "usage", used: 12, size: 4096 },
   ] })
+  await writeAcpScript(directory, "usage", { steps: [{ kind: "text", text: "USAGE" }],
+    usage: { inputTokens: 11, outputTokens: 5, totalTokens: 16, thoughtTokens: 2, cachedReadTokens: 1, cachedWriteTokens: 0 } })
   await writeAcpScript(directory, "silence", { steps: [{ kind: "hold", name: "never-released" }] })
   await writeAcpScript(directory, "permission-silence", { steps: [
     { kind: "permission", tool: "execute", title: "Run scripted command", text: "permission result" },
@@ -992,6 +994,32 @@ test("ACP child updates use a child route and brokered lineage", async () => {
     expect(events.some((item) => item.route?.kind === "child" && item.event.type === "text-delta" && item.event.delta.includes("Child result"))).toBe(true)
     expect(context.ports.subagents.some((item) => item.status === "running")).toBe(true)
     expect(context.ports.subagents.some((item) => item.status === "completed")).toBe(true)
+  } finally { await context.close() }
+})
+
+test("ACP prompt-result usage reaches the turn as a cumulative observation before it finishes", async () => {
+  const context = await setupConformance({
+    name: "acp usage",
+    backend: () => backend("process"),
+    makeTransport(services, state) {
+      const peer = state as AcpBackend
+      return new AcpTransport(services, peer.connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    const events = []
+    for await (const item of context.transport.send(context.session, context.turn(acpScriptToken("usage")), context.turnBroker())) {
+      events.push(item.event)
+    }
+    const usage = events.findIndex((event) => event.type === "usage" && event.observation !== undefined)
+    expect(usage).toBeGreaterThanOrEqual(0)
+    expect(usage).toBeLessThan(events.findIndex((event) => event.type === "finish"))
+    expect(events[usage]).toEqual({
+      type: "usage", contextSize: 16, contextUsed: 16,
+      observation: { kind: "cumulative", nativeSessionId: context.session.binding.upstreamSessionId,
+        tokens: { input: 11, output: 5, reasoning: 2, cache: { read: 1, write: 0 } } },
+    })
   } finally { await context.close() }
 })
 

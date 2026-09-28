@@ -89,8 +89,6 @@ export const dict = {
   "command.session.undo.description": "Undo the last message",
   "command.session.redo": "Redo",
   "command.session.redo.description": "Redo the last undone message",
-  "command.session.compact": "Compact session",
-  "command.session.compact.description": "Summarize the session to reduce context size",
   "command.session.fork": "Fork from message",
   "command.session.fork.description": "Create a new session from a previous message",
 
@@ -396,8 +394,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Stopped auto-accepting permissions",
   "toast.permissions.autoaccept.off.description": "Permission requests will require approval",
 
-  "toast.model.none.title": "No model selected",
-  "toast.model.none.description": "Connect a provider to summarize this session",
 
   "toast.file.loadFailed.title": "Failed to load file",
   "toast.file.listFailed.title": "Failed to list files",

@@ -89,8 +89,6 @@ export const dict = {
   "command.session.undo.description": "Deshacer el último mensaje",
   "command.session.redo": "Rehacer",
   "command.session.redo.description": "Rehacer el último mensaje deshecho",
-  "command.session.compact": "Compactar sesión",
-  "command.session.compact.description": "Resumir la sesión para reducir el tamaño del contexto",
   "command.session.fork": "Bifurcar desde mensaje",
   "command.session.fork.description": "Crear una nueva sesión desde un mensaje anterior",
 
@@ -388,8 +386,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Se dejó de aceptar permisos automáticamente",
   "toast.permissions.autoaccept.off.description": "Las solicitudes de permisos requerirán aprobación",
 
-  "toast.model.none.title": "Ningún modelo seleccionado",
-  "toast.model.none.description": "Conecta un proveedor para resumir esta sesión",
 
   "toast.file.loadFailed.title": "Fallo al cargar archivo",
   "toast.file.listFailed.title": "Fallo al listar archivos",

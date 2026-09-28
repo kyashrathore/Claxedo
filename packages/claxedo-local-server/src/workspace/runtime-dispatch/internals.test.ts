@@ -105,6 +105,17 @@ describe("the host aggregate's place in runtime dispatch", () => {
     expect(bare.status).toBe(404)
   })
 
+  test.each([
+    ["POST", "http://127.0.0.1/session?connectionId=scripted-acp"],
+    ["GET", "http://127.0.0.1/session/ses_1"],
+    ["POST", "http://127.0.0.1/question/que_1/reply"],
+  ])("a session request (%s %s) naming no workspace is refused as a typed binding error", async (method, url) => {
+    const { app } = dispatcher()
+    const response = await app.request(url, { method })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "invalid_execution_binding", details: { field: "directory" } } })
+  })
+
   test("a composition that mounts no aggregate leaves a workspace-less wr/events on the workspace dispatch path", async () => {
     const { app } = dispatcher({ aggregate: false })
     const response = await app.request("http://127.0.0.1/api/wr/events")

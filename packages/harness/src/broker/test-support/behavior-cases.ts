@@ -53,7 +53,7 @@ describe(`${name} request broker`, () => {
     ports.current.set("s1", authority)
     const replacement = turn.ask(permission("p2-replacement", undefined, [{ optionId: "once", kind: "allow_once", name: "Once" }]))
     await tick()
-    expect(await owner.broker.answer("p2-replacement", { kind: "permission", decision: "allow_once", optionId: "wrong" }, { sessionId: "s1" })).toMatchObject({ refusal: "unoffered" })
+    expect(await owner.broker.answer("p2-replacement", { kind: "permission", optionId: "wrong" }, { sessionId: "s1" })).toMatchObject({ refusal: "unoffered" })
     expect(ports.saved).toHaveLength(1)
     expect(owner.broker.list({ sessionId: "s1" })).toHaveLength(1)
     expect(await owner.broker.answer("p2-replacement", { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).toMatchObject({ ok: true })
@@ -61,6 +61,34 @@ describe(`${name} request broker`, () => {
     expect(await owner.broker.answer("p2-replacement", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ refusal: "duplicate" })
   })
 
+
+  test("an offered option settles with the kind it was offered as", async () => {
+    const { owner, turn } = setup()
+    const offered = [
+      { optionId: "once", kind: "allow_once" as const, name: "Once" },
+      { optionId: "always", kind: "allow_always" as const, name: "Always" },
+      { optionId: "reject", kind: "reject_once" as const, name: "Reject" },
+      { optionId: "never", kind: "reject_always" as const, name: "Never" },
+    ]
+    const settled = []
+    for (const option of offered) {
+      const waiting = turn.ask(permission(`option-${option.optionId}`, undefined, offered))
+      await tick()
+      expect(await owner.broker.answer(`option-${option.optionId}`, { kind: "permission", optionId: option.optionId }, { sessionId: "s1" })).toMatchObject({ ok: true })
+      settled.push(await waiting)
+    }
+    expect(settled).toEqual([
+      { kind: "permission", decision: "allow_once", optionId: "once" },
+      { kind: "permission", decision: "allow_always", optionId: "always" },
+      { kind: "permission", decision: "deny", optionId: "reject" },
+      { kind: "permission", decision: "reject_always", optionId: "never" },
+    ])
+    const asked = turn.ask(question("option-for-question"))
+    await tick()
+    expect(await owner.broker.answer("option-for-question", { kind: "permission", optionId: "once" }, { sessionId: "s1" })).toMatchObject({ refusal: "unoffered" })
+    expect(await owner.broker.answer("option-for-question", { kind: "rejected" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await asked).toEqual({ kind: "rejected" })
+  })
 
   test("late ask from an ended turn saves cancellation before publication", async () => {
     const { ports, turn } = setup()
@@ -181,6 +209,20 @@ describe(`${name} request broker`, () => {
     expect(await waiting).toEqual({ kind: "permission", decision: "allow_always" })
   })
 
+  test("always against a harness offering only once settles once and saves no grant", async () => {
+    const { owner, turn } = setup()
+    const onlyOnce = [{ optionId: "once", kind: "allow_once" as const, name: "Once" }]
+    const first = turn.ask(permission("p-once-only", "command:once", onlyOnce))
+    await tick()
+    expect(await owner.broker.answer("p-once-only", { kind: "permission", decision: "allow_always" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await first).toEqual({ kind: "permission", decision: "allow_once", optionId: "once" })
+    const again = turn.ask(permission("p-once-again", "command:once", onlyOnce))
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" }).map((row) => row.request.requestId)).toEqual(["p-once-again"])
+    await owner.broker.answer("p-once-again", { kind: "rejected" }, { sessionId: "s1" })
+    await again
+  })
+
   test("option substitution never widens allow once", () => {
     const option = (kind: "allow_once" | "allow_always" | "reject_once" | "reject_always") => ({ optionId: kind, kind, name: kind })
     expect(chooseBrokerPermissionOption("allow_once", [option("allow_always")])).toBeUndefined()
@@ -237,6 +279,26 @@ describe(`${name} request broker`, () => {
     expect(ports.evaluatorSignal?.aborted).toBe(true)
     expect(ports.saved.at(-1)?.answer).toEqual({ kind: "cancelled" })
     expect(ElicitationValidationError).toBeDefined()
+  })
+
+  test("a decline during form validation cancels the validation and settles the decline", async () => {
+    const { ports, owner, turn } = setup()
+    const request = { kind: "elicitation" as const, requestId: "form-decline", mode: "form" as const, message: "Name",
+      schema: { type: "object", properties: { name: { type: "string", pattern: "^[A-Z]+$" } }, required: ["name"] } }
+    const waiting = turn.ask(request)
+    await tick()
+    let release!: () => void
+    ports.evaluated = new Promise<void>((resolve) => { release = resolve })
+    const validating = owner.broker.answer("form-decline", { kind: "form", values: { name: "VALID" } }, { sessionId: "s1" })
+    await tick()
+    const declined = owner.broker.answer("form-decline", { kind: "rejected" }, { sessionId: "s1" })
+    await tick()
+    expect(ports.evaluatorSignal?.aborted).toBe(true)
+    release()
+    await expect(validating).rejects.toMatchObject({ code: "validation_cancelled" })
+    expect(await declined).toMatchObject({ ok: true })
+    expect(await waiting).toEqual({ kind: "rejected" })
+    expect(ports.saved.at(-1)?.answer).toEqual({ kind: "rejected" })
   })
 
   test("provider turns drain each event and subagents reuse a child", async () => {
@@ -639,14 +701,18 @@ describe(`${name} broker review regressions`, () => {
     await waiting
   })
 
-  test("F12 explicit option must match decision", async () => {
+  test("F12 an explicit allow-once option never saves a grant", async () => {
     const { owner, turn } = setup()
-    const waiting = turn.ask(permission("exact", "grant", [{ optionId: "once", kind: "allow_once", name: "Once" }]))
+    const offered = [{ optionId: "once", kind: "allow_once" as const, name: "Once" }]
+    const waiting = turn.ask(permission("exact", "grant", offered))
     await tick()
-    expect(await owner.broker.answer("exact", { kind: "permission", decision: "allow_always", optionId: "once" }, { sessionId: "s1" }))
-      .toMatchObject({ refusal: "unoffered" })
-    await owner.broker.answer("exact", { kind: "rejected" }, { sessionId: "s1" })
-    await waiting
+    expect(await owner.broker.answer("exact", { kind: "permission", optionId: "once" }, { sessionId: "s1" })).toMatchObject({ ok: true })
+    expect(await waiting).toEqual({ kind: "permission", decision: "allow_once", optionId: "once" })
+    const again = turn.ask(permission("exact-again", "grant", offered))
+    await tick()
+    expect(owner.broker.list({ sessionId: "s1" }).map((row) => row.request.requestId)).toEqual(["exact-again"])
+    await owner.broker.answer("exact-again", { kind: "rejected" }, { sessionId: "s1" })
+    await again
   })
 
   test("caller cannot submit terminal answers", async () => {

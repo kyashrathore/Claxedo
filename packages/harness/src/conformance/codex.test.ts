@@ -8,6 +8,7 @@ import { runConformance, setupConformance, type ConformanceBackend, withUndelive
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { ensurePinnedCodex, PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
+import { eventually } from "../../e2e/harness/eventually"
 import { listenOnLoopback } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -40,7 +41,7 @@ async function backend(): Promise<CodexBackend> {
     root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
     harness: { id: "codex", access: "native" }, expectedMcp: "config",
     model: { providerID: "codex", modelID: "gpt-4.1" },
-    credentials: { providers: { codex: { baseUrl: server.v1Url, placeholder: "codex-conformance-placeholder", authMode: "api-key" } },
+    credentials: { providers: { "codex-app-server": { baseUrl: server.v1Url, placeholder: "codex-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "person", userId: "member" },
     origin: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
@@ -585,7 +586,7 @@ test("Codex starts a projected configured MCP server", async () => {
     ] } }
   try {
     await transport.start(input, broker)
-    expect(requests.length).toBeGreaterThan(0)
+    await eventually("the projected MCP server's first request", async () => requests.length > 0 ? requests : undefined)
   } finally {
     await transport.dispose()
     server.closeAllConnections()

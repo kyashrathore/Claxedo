@@ -100,9 +100,11 @@ function targetedQueryKeys(event: RoutableEvent) {
   if (sessionId && (
     event.type === "permission.asked" ||
     event.type === "permission.replied" ||
+    event.type === "permission.expired" ||
     event.type === "question.asked" ||
     event.type === "question.replied" ||
-    event.type === "question.rejected"
+    event.type === "question.rejected" ||
+    event.type === "question.expired"
   )) {
     return [
       shellDataKeys.sessionId(sessionId, "requests"),

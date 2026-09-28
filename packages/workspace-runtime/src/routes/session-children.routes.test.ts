@@ -429,6 +429,24 @@ describe("POST /session with parentID", () => {
     expect(item.store.getSession(child.id)).toBeFalsy()
   })
 
+  test("archiving a session cancels its own running turn before the archive lands", async () => {
+    const item = fixture()
+    await item.seedParent("parent")
+    item.hold("parent")
+    await item.runtime.turns.start({ sessionId: "parent", parts: [{ type: "text", text: "work" }], origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false } })
+    for (let attempt = 0; attempt < 200 && item.calls.prompts.length === 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const archived = await item.app.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ time: { archived: 42 } }),
+    })
+    expect(archived.status).toBe(200)
+    expect(item.calls.aborted).toEqual(["parent"])
+    await item.runtime.turns.whenIdle("parent")
+    expect(item.store.getSession("parent")).toMatchObject({ status: "idle", time: { archived: 42 } })
+  })
+
   test("a child's finished turn wakes the idle parent through the prompt path with the child's summary", async () => {
     const item = fixture()
     await item.seedParent("parent")

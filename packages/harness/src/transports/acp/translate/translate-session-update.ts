@@ -3,6 +3,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type {
   SessionUpdate,
   ToolCallContent,
+  PromptUsage,
   StopReason,
   ToolKind,
 } from "./types"
@@ -545,6 +546,25 @@ export function translateSessionUpdate(
 }
 
 export const translateAcpSessionUpdate = translateSessionUpdate
+
+export function translatePromptUsage(usage: PromptUsage | null | undefined, nativeSessionId: string): AgentRuntimeEvent[] {
+  if (!usage) return []
+  return [{
+    type: "usage",
+    contextSize: usage.totalTokens,
+    contextUsed: usage.totalTokens,
+    observation: {
+      kind: "cumulative",
+      nativeSessionId,
+      tokens: {
+        input: usage.inputTokens,
+        output: usage.outputTokens,
+        reasoning: usage.thoughtTokens ?? null,
+        cache: { read: usage.cachedReadTokens ?? null, write: usage.cachedWriteTokens ?? null },
+      },
+    },
+  }]
+}
 
 export function translateStopReason(
   stopReason: StopReason,

@@ -291,7 +291,7 @@ test("Pi lists only its profile's runnable models and their thinking levels thro
     const model = preview.options.find((option) => option.id === "model")
     expect(model?.selectOptions?.some((choice) => choice.id === "openai/o3")).toBe(true)
     expect(new Set(model?.selectOptions?.map((choice) => choice.id.split("/")[0]))).toEqual(new Set(["openai"]))
-    expect(model?.selectOptions?.every((choice) => choice.connected !== false)).toBe(true)
+    expect(model?.selectOptions?.every((choice) => choice.connected === true)).toBe(true)
     expect(preview.options.find((option) => option.category === "thought_level")).toBeUndefined()
     expect(await config.options({ session: context.session }, "peek")).toEqual(preview)
     const reasoning = await config.options({ session: context.session, model: { providerID: "pi", modelID: "openai/o3" } }, "probe")
@@ -367,3 +367,45 @@ test("a failed Pi retirement during configure keeps the session and its process 
     if (pid !== undefined && alive(pid)) process.kill(pid, "SIGKILL")
   }
 }, 30_000)
+
+test("Pi stopped before its prompt is sent ends the turn without prompting and serves the next turn", async () => {
+  const context = await setupConformance({ name: "pi stop before prompt", backend,
+    makeTransport: (services, state) => piTransport(services, state) })
+  try {
+    const server = (context.backend as PiBackend).server
+    const within = <T>(promise: Promise<T>) => Promise.race([promise.then(() => "ended"), new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 5_000))])
+    const stoppedBefore = new AbortController()
+    stoppedBefore.abort()
+    const early = context.transport.send(context.session, context.turn("Reply with exactly this one token: PISTOPPEDEARLY"), context.turnBroker(stoppedBefore.signal))
+    expect(await within((async () => { for await (const _event of early) {} })())).toBe("ended")
+    const stoppedDuring = new AbortController()
+    const during = context.transport.send(context.session, context.turn("Reply with exactly this one token: PISTOPPEDLATE"),
+      context.turnBroker(stoppedDuring.signal))[Symbol.asyncIterator]()
+    const first = during.next()
+    stoppedDuring.abort()
+    expect(await within((async () => { if (!(await first).done) for (;;) if ((await during.next()).done) break })())).toBe("ended")
+    expect(server.requests.filter((request) => request.prompt.includes("PISTOPPED"))).toEqual([])
+    expect(await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: new AbortController().signal }))
+      .toMatchObject({ execution: "terminal" })
+    const events: unknown[] = []
+    for await (const event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIAFTERSTOP"), context.turnBroker())) events.push(event)
+    expect(server.requests.some((request) => request.prompt.includes("PIAFTERSTOP"))).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi cancel that arrives before the prompt stops that turn, whether or not its signal was aborted", async () => {
+  const context = await setupConformance({ name: "pi cancel before prompt", backend,
+    makeTransport: (services, state) => piTransport(services, state) })
+  try {
+    const server = (context.backend as PiBackend).server
+    const turn = context.transport.send(context.session, context.turn("Reply with exactly this one token: PICANCELEARLY"), context.turnBroker())[Symbol.asyncIterator]()
+    const first = turn.next()
+    const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: new AbortController().signal })
+    expect(outcome).toMatchObject({ execution: "terminal" })
+    const ended = Promise.race([(async () => { if (!(await first).done) for (;;) if ((await turn.next()).done) break })().then(() => "ended"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 5_000))])
+    expect(await ended).toBe("ended")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(server.requests.filter((request) => request.prompt.includes("PICANCELEARLY"))).toEqual([])
+  } finally { await context.close() }
+}, 60_000)

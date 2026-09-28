@@ -672,10 +672,12 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         return
       }
       case "permission.asked": return this.applyPermissionAsked(sessionId, event)
-      case "permission.replied": return this.removePermission(event.properties.requestID)
+      case "permission.replied":
+      case "permission.expired": return this.removePermission(event.properties.requestID)
       case "question.asked": return this.applyQuestionAsked(sessionId, event)
       case "question.replied":
-      case "question.rejected": return this.removeQuestion(event.properties.requestID)
+      case "question.rejected":
+      case "question.expired": return this.removeQuestion(event.properties.requestID)
       case "todo.updated": return void this.todos.set(sessionId, event.properties.todos)
       case "session.status": return this.applySessionStatus(sessionId, event)
       case "session.idle": return this.touch(sessionId, null, null)

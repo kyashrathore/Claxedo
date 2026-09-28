@@ -89,8 +89,6 @@ export const dict = {
   "command.session.undo.description": "Fortryd den sidste besked",
   "command.session.redo": "Omgør",
   "command.session.redo.description": "Omgør den sidste fortrudte besked",
-  "command.session.compact": "Komprimér session",
-  "command.session.compact.description": "Opsummer sessionen for at reducere kontekststørrelsen",
   "command.session.fork": "Forgren fra besked",
   "command.session.fork.description": "Opret en ny session fra en tidligere besked",
 
@@ -386,8 +384,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.description": "Anmodninger om tilladelse vil kræve godkendelse",
 
 
-  "toast.model.none.title": "Ingen model valgt",
-  "toast.model.none.description": "Forbind en udbyder for at opsummere denne session",
 
   "toast.file.loadFailed.title": "Kunne ikke indlæse fil",
 

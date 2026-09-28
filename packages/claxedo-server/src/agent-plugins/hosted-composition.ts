@@ -1,5 +1,6 @@
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import type { D1Database } from "@cloudflare/workers-types"
+import { cloudRootBacking, isCloudRoot } from "./cloud-root-backing"
 import type { Hono } from "hono"
 import { brokeredPlaceholderEnv } from "@claxedo/sandbox-manager"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
@@ -320,13 +321,7 @@ export function createHostedAgentPluginsComposition(input: {
   // sandbox manager. A workspace placed on the owner's machine is pulled by
   // that machine itself (`GET /runtime/self`), so the
   // connection mint for it must not fail closed on a rail that does not apply.
-  const cloudWorkspace = async (workspaceId: string) => {
-    const row = await input.database
-      .prepare("select backing from workspaces where workspace_id = ? and deleted_at is null")
-      .bind(workspaceId)
-      .first<{ backing: string }>()
-    return row?.backing === "cloud-vm"
-  }
+  const cloudWorkspace = (workspaceId: string) => isCloudRoot(input.database, workspaceId)
   const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant })
   const tasksGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP)
   const subagentsGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_SUBAGENTS_TOOL_GROUP)
@@ -345,7 +340,7 @@ export function createHostedAgentPluginsComposition(input: {
     }),
   }
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
-    if (!(await cloudWorkspace(workspaceId))) return {}
+    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
     const [preparation, env] = await Promise.all([
       preparer.forSnapshot(snapshot),

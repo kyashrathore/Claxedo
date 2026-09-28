@@ -6,7 +6,7 @@ import type { PiRpc } from "./rpc"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 
 export type PiCatalog = {
-  models: { id: string; name: string }[]
+  models: { id: string; name: string; connected: true }[]
   efforts: string[]
   current?: { model?: string; effort?: string }
 }
@@ -38,7 +38,7 @@ export async function piCatalog(rpc: PiRpc, model: PromptModel | undefined): Pro
     const provider = asString(row.provider)
     const id = asString(row.id)
     if (!provider || !id) throw new TransportError("pi", "protocol", "Pi model lacks provider/id")
-    return { id: `${provider}/${id}`, name: asString(row.name) || id }
+    return { id: `${provider}/${id}`, name: asString(row.name) || id, connected: true as const }
   })
   if (model && models.some((item) => item.id === model.modelID)) await rpc.request("set_model", piModelSelection(model))
   const levels = asRecordOrEmpty(await rpc.request("get_available_thinking_levels")).levels

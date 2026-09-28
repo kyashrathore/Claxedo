@@ -89,8 +89,6 @@ export const dict = {
   "command.session.undo.description": "ยกเลิกข้อความล่าสุด",
   "command.session.redo": "ทำซ้ำ",
   "command.session.redo.description": "ทำซ้ำข้อความที่ถูกยกเลิกล่าสุด",
-  "command.session.compact": "บีบอัดเซสชัน",
-  "command.session.compact.description": "สรุปเซสชันเพื่อลดขนาดบริบท",
   "command.session.fork": "แตกแขนงจากข้อความ",
   "command.session.fork.description": "สร้างเซสชันใหม่จากข้อความก่อนหน้า",
 
@@ -386,8 +384,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "หยุดยอมรับสิทธิ์โดยอัตโนมัติแล้ว",
   "toast.permissions.autoaccept.off.description": "คำขอสิทธิ์จะต้องได้รับการอนุมัติ",
 
-  "toast.model.none.title": "ไม่ได้เลือกโมเดล",
-  "toast.model.none.description": "เชื่อมต่อผู้ให้บริการเพื่อสรุปเซสชันนี้",
 
   "toast.file.loadFailed.title": "ไม่สามารถโหลดไฟล์",
   "toast.file.listFailed.title": "ไม่สามารถแสดงรายการไฟล์",

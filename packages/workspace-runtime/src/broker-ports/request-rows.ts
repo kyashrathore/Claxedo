@@ -29,9 +29,24 @@ function readAnswerRow(db: SqliteDatabase, sessionId: string, requestId: string)
   return undefined
 }
 
+/**
+ * The rows a question-shaped reply carries. An accepted elicitation is a reply,
+ * not a rejection: a form echoes the one JSON object the question route takes,
+ * and a URL consent has no text of its own.
+ */
+function repliedAnswers(answer: RequestAnswer): string[][] | undefined {
+  if (answer.kind === "answers") return answer.answers.map((part) => [...part])
+  if (answer.kind === "form") return [[JSON.stringify(answer.values)]]
+  if (answer.kind === "consent" && answer.accepted) return [[]]
+  return undefined
+}
+
 function replyEvent(pending: PendingRequest, answer: RequestAnswer): AgentPresentationEvent {
   const sessionID = pending.sessionId
   const requestID = pending.request.requestId
+  if (pending.request.kind === "permission" && answer.kind === "expired") {
+    return { id: `permission.expired:${sessionID}:${requestID}`, type: "permission.expired", properties: { sessionID, requestID } }
+  }
   if (pending.request.kind === "permission") {
     const reply = answer.kind === "permission"
       ? answer.decision === "allow_always" ? "always" : answer.decision === "allow_once" ? "once" : "reject"
@@ -42,12 +57,16 @@ function replyEvent(pending: PendingRequest, answer: RequestAnswer): AgentPresen
       properties: { sessionID, requestID, reply },
     }
   }
-  if (answer.kind === "answers") {
+  const answers = repliedAnswers(answer)
+  if (answers) {
     return {
       id: `question.replied:${sessionID}:${requestID}`,
       type: "question.replied",
-      properties: { sessionID, requestID, answers: answer.answers.map((part) => [...part]) },
+      properties: { sessionID, requestID, answers },
     }
+  }
+  if (answer.kind === "expired") {
+    return { id: `question.expired:${sessionID}:${requestID}`, type: "question.expired", properties: { sessionID, requestID } }
   }
   return {
     id: `question.rejected:${sessionID}:${requestID}`,
@@ -145,11 +164,12 @@ export class BrokerRequestRows {
         }
       }
       if (grantKey) this.store.brokerPersistGrantInside(pending.sessionId, grantKey)
-      if (prior) this.store.brokerAppendInside(pending.sessionId, replyEvent(pending, answer))
+      const replied = !!prior || automatic
+      if (replied) this.store.brokerAppendInside(pending.sessionId, replyEvent(pending, answer))
       db.prepare(`UPDATE ${name} SET status = 'answered', broker_answer_json = ?, broker_automatic = ?, updated_at = ?
         WHERE session_id = ? AND id = ? AND broker_answer_json IS NULL`)
         .run(JSON.stringify(answer), automatic ? 1 : 0, Date.now(), pending.sessionId, pending.request.requestId)
-      return !!prior
+      return replied
     })
     if (published) this.delivery.broadcast(pending.sessionId, replyEvent(pending, answer))
     return []

@@ -38,6 +38,7 @@ export type FakeWorkspaceAppOptions = {
   eventHub?: RuntimeEventHub
   onCompatEvent?: (event: CompatEnvelope) => void
   afterCreateSession?: WorkspaceHostOptions["afterCreateSession"]
+  sessionIdWorkspace?: WorkspaceHostOptions["sessionIdWorkspace"]
   /** Middleware installed ahead of the host's routes. */
   before?: (app: Hono) => void
 }
@@ -72,6 +73,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
     ...(options.sessionAccessPolicy ? { sessionAccessPolicy: options.sessionAccessPolicy } : {}),
     ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
+    ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
     storeFactory: ({ storeRoot }) => {
       store = new RuntimeStore(storeRoot)
       return store

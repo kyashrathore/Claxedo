@@ -93,15 +93,16 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       return payload
     }
     const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
-    const committed = store.appendEvent({
+    const appended = store.appendEvent({
       sessionId,
       ...(agentSessionId ? { agentSessionId } : {}),
       payload: compat,
       source,
       ...(fence ? { fencingToken: fence.fencingToken() } : {}),
-    }).payload
-    emit({ sessionId, directory, payload: committed })
-    return committed
+    })
+    emit({ sessionId, directory, payload: appended.payload })
+    if (appended.messageUpdate) emit({ sessionId, directory, payload: appended.messageUpdate })
+    return appended.payload
   }
 
   const titles = createSessionTitleOwner({ store, eventHub })
@@ -133,6 +134,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     store, transports: input.transports, launch: input.launch, broker, attachments, admissions, workspaceId, publish,
     reportSessionFailure: recovery.reportSessionFailure,
     forgetGoal: (sessionId) => goals.forgetSession(sessionId),
+    pushTitle: titles.push,
   })
   const reads = createHarnessReads({ store, transports: input.transports, launch: input.launch, attachments })
   const requests = createRequestSurface({ store, broker })
@@ -189,6 +191,9 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
             turnInputFor(prompt, store.getTodos(turn.sessionId), turn.origin)) } : {}),
         })
         return delivered.delivery === "steer" ? { ...delivered, target: recovery.turnTarget(turn.sessionId, running) } : delivered
+      }
+      if (turn.delivery === "queue" && store.getSession(turn.sessionId)?.time?.archived !== undefined) {
+        throw new AgentRuntimeTurnAdmissionError(turn.sessionId, "Session is archived; its queued input stays queued")
       }
       const claimed = admissions.claim(turn.sessionId, {
         turnId: userMessageId,

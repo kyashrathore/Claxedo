@@ -13,6 +13,8 @@ import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
+import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
+import { hostedWorkspaceSandboxInput } from "./hosted-workspace-sandbox-input"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import {
   composeProviderNeutralHostedControlPlane,
@@ -239,6 +241,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         services: plane.services,
         sandboxManager: plane.services.sandbox.sandboxManager,
         driver: input.sandbox.driver,
+        sandboxInput: hostedWorkspaceSandboxInput({ database: input.controlPlaneDatabase, egress: hostedSandboxEgress(plane) }),
         settings,
         credentials: plane.orgCredentials,
         signingEnv: input.env,

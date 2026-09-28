@@ -89,6 +89,7 @@ export type WorkspaceRuntimeServerOptions = {
   resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  sessionIdWorkspace?: WorkspaceHostOptions["sessionIdWorkspace"]
   /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
   sessionAccessPolicy?: SessionAccessPolicy
   target?: WorkspaceTarget
@@ -455,6 +456,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
+    ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
     sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),

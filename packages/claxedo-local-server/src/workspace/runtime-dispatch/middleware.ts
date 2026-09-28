@@ -25,6 +25,7 @@ import {
   requestWorkspace,
   resolveWorkspaceHit,
   runtimeOwned,
+  unnamedSessionWorkspace,
   type RuntimeProxyOptions,
 } from "./internals"
 
@@ -50,6 +51,8 @@ async function workspaceRuntimeProxyWithOptions(
   // runtime is unavailable".
   const aggregate = hostAggregateEvents(c, pathname, options)
   if (aggregate) return await aggregate
+  const unnamed = unnamedSessionWorkspace(c, pathname)
+  if (unnamed) return unnamed
 
   try {
     const input = requestWorkspace(c.req.raw)

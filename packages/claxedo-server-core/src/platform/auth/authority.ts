@@ -447,6 +447,7 @@ export type WorkspaceAuthority = {
       repoUrl?: string
       repoName?: string
       gitBranch?: string
+      remoteDirectory?: string
       homeRegion?: string
     },
   ) => Promise<unknown>
@@ -471,6 +472,7 @@ export type WorkspaceAuthority = {
       repoUrl?: string
       repoName?: string
       gitBranch?: string
+      remoteDirectory?: string
       homeRegion?: string
     },
   ) => Promise<unknown>

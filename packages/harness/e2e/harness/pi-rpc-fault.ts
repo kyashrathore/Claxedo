@@ -9,6 +9,7 @@ export async function injectPiRpcFault(dataDir: string) {
   const bin = path.join(dataDir, BIN_NAME)
   const gate = path.join(bin, "armed")
   const evidence = path.join(bin, "seen.log")
+  const refusalCommand = process.env.CLAXEDO_E2E_H18_RPC_REFUSAL_RED === "1" ? "command" : JSON.stringify("get_state")
   return writeLineProxyFault({
     dataDir,
     binName: BIN_NAME,
@@ -23,7 +24,7 @@ export async function injectPiRpcFault(dataDir: string) {
       const command = injected.get(reply.id)
       injected.delete(reply.id)
       process.stdout.write(JSON.stringify({ type: "response", id: "unknown-" + reply.id, command, success: false, error: "H18 unknown id" }) + "\\n")
-      process.stdout.write(JSON.stringify({ type: "response", id: reply.id, command: process.env.CLAXEDO_E2E_H18_RPC_REFUSAL_RED === "1" ? command : "get_state", success: false, error: "H18 mismatched command" }) + "\\n")
+      process.stdout.write(JSON.stringify({ type: "response", id: reply.id, command: ${refusalCommand}, success: false, error: "H18 mismatched command" }) + "\\n")
       fs.appendFileSync(${JSON.stringify(evidence)}, "injected " + reply.id + "\\nreal " + reply.id + "\\n")
     }`,
   })

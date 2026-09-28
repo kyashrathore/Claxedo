@@ -232,8 +232,8 @@ export class AgentRuntimeTurnAdmissionError extends Error {
   readonly code = AGENT_RUNTIME_TURN_CONFLICT_CODE
   readonly status = 409
 
-  constructor(readonly sessionId: string) {
-    super("Session is already processing a message")
+  constructor(readonly sessionId: string, message = "Session is already processing a message") {
+    super(message)
     this.name = "AgentRuntimeTurnAdmissionError"
   }
 }

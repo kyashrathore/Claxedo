@@ -53,8 +53,8 @@ export function frameType(frame: StreamFrame): string | undefined {
 }
 
 export function frameSessionId(frame: StreamFrame): string | undefined {
-  const payload = frame.data.payload as { properties?: { sessionID?: unknown; sessionId?: unknown } } | undefined
-  const value = payload?.properties?.sessionID ?? payload?.properties?.sessionId
+  const payload = frame.data.payload as { type?: unknown; properties?: { sessionID?: unknown; sessionId?: unknown; info?: { id?: unknown } } } | undefined
+  const value = payload?.type === "session.deleted" ? payload.properties?.info?.id : payload?.properties?.sessionID ?? payload?.properties?.sessionId
   return typeof value === "string" ? value : undefined
 }
 

@@ -1875,7 +1875,7 @@ describe("a share level reaches the runtime as the authority's answer to a write
     })
     const app = stamped(routes, () => ({ actor_id: "actor_grantee", actor_kind: "human", workspace_id: "ws_1", org_id: "org_1", role: "editor" }))
     beforeDispose.push(async () => {
-      if (h.store.listPermissions(WORKSPACE).length > 0) await h.runtime.permissions.respond("perm_1", "deny", WORKSPACE)
+      if (h.store.listPermissions(WORKSPACE).length > 0) await h.runtime.permissions.respond("perm_1", { kind: "permission", decision: "deny" }, WORKSPACE)
       if (h.store.listQuestions(WORKSPACE).length > 0) await h.runtime.questions.reject("question_1", "session_shared")
       await h.runtime.turns.whenIdle("session_shared")
     })

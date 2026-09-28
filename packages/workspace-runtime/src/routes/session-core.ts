@@ -285,18 +285,30 @@ async function cascadeToChildren(
       continue
     }
     if (!await readSession(opts, c, directory, childSessionId)) continue
-    // Archiving a child stops the turn it is running. The runtime keeps the
-    // operation whatever it reaches, so a cancellation that does not land is
-    // visible through the child's own recovery inspection rather than lost.
-    const childOwner = opts.resolveRecoveryOwner?.(c, { sessionId: childSessionId })
-    if (childOwner) {
-      await cancelAdmittedTurn(childOwner, childSessionId, recoveryCaller(c), `archive-child:${childSessionId}:${randomUUID()}`)
-    }
-    const body = { time: { archived: updates.archived ?? Date.now() } }
-    const session = await (await opts.runtime(c)).sessions.update(childSessionId, body, directory)
-    await after(opts.afterUpdateSession?.(c, directory, session, body))
-    opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionUpdated(session)))
+    await updateSessionMeta(opts, c, directory, childSessionId, { time: { archived: updates.archived ?? Date.now() } })
   }
+}
+
+/**
+ * An archive lands before it stops the turn the session is running: the
+ * cancellation's end hands the session to the next queued prompt, which must
+ * already see the session archived. The runtime keeps the cancellation
+ * whatever it reaches, so one that does not land is visible through the
+ * session's own recovery inspection rather than lost.
+ */
+async function updateSessionMeta(
+  opts: Opts,
+  c: Ctx,
+  directory: RuntimeDirectory,
+  sessionId: string,
+  body: { title?: string; time?: { archived: number } },
+) {
+  const session = await (await opts.runtime(c)).sessions.update(sessionId, body, directory)
+  await after(opts.afterUpdateSession?.(c, directory, session, body))
+  const owner = body.time ? opts.resolveRecoveryOwner?.(c, { sessionId }) : undefined
+  if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${randomUUID()}`)
+  opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
+  return session
 }
 
 function createdSessionBody(session: unknown, created: Record<string, unknown>) {
@@ -438,6 +450,7 @@ type Opts = {
   getStatus?: (c: Ctx, directory: RuntimeDirectory) => unknown
   afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
+  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   afterGetSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
   getSessionConfig?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<SessionConfig>
@@ -1358,7 +1371,6 @@ async function filterSessionStatus(opts: Opts, c: Ctx, status: unknown) {
 async function admitQuestionOperation(
   opts: Opts,
   c: Ctx,
-  method: "replyQuestion" | "rejectQuestion",
 ): Promise<
   | { rejected: Response; id?: undefined; directory?: undefined; sessionId?: undefined }
   | { rejected?: undefined; id: string; directory: RuntimeDirectory; sessionId: string; start?: AgentSessionStartBinding }
@@ -1381,7 +1393,6 @@ async function admitQuestionOperation(
   if (guarded) return { rejected: guarded }
   const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId: known, ...(directory ? { directory } : {}) }, "questions", "question_response")
   if (unsupported) return { rejected: unsupported }
-  void method
   return { id, directory, sessionId: known }
 }
 
@@ -1629,6 +1640,10 @@ export function createSessionRoutes(opts: Opts) {
             const refused = await creationReservationGuard(opts, c, body.id, operationId)
             if (refused) return refused
             reserved = managed
+          }
+          const holder = body.id ? await opts.sessionIdWorkspace?.(body.id) : undefined
+          if (holder !== undefined && holder !== workspaceId) {
+            return c.json(errorBody("session_create_conflict", `Session ${body.id} belongs to another workspace`), 409)
           }
           const runtime = await opts.runtime(c)
           const requestedHarness = opts.requestedSessionHarness(c)
@@ -2017,9 +2032,7 @@ export function createSessionRoutes(opts: Opts) {
         ...(archived !== undefined ? { time: { archived } } : {}),
       }
       if (!await readSession(opts, c, directory, sessionId)) return c.json(sessionNotFound(), 404)
-      const session = await (await opts.runtime(c)).sessions.update(sessionId, body, directory)
-      await after(opts.afterUpdateSession?.(c, directory, session, body))
-      opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
+      const session = await updateSessionMeta(opts, c, directory, sessionId, body)
       if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
       return c.json(normalizeSession(session, directory))
     })
@@ -2635,17 +2648,18 @@ export function createSessionRoutes(opts: Opts) {
       } else if (optionId !== undefined) {
         return c.json({ error: "This permission request does not offer provider options" }, 400)
       }
-      const r = optionId !== undefined ? "once" : str(body.response) ?? "deny"
-      const decision = r === "once" ? "allow_once" : r === "always" ? "allow_always" : "deny"
+      const response = str(body.response)
       try {
-        const result = await runtime.permissions.respond(permId, decision, directory ?? "", optionId)
+        const result = await runtime.permissions.respond(permId, optionId !== undefined
+          ? { kind: "permission", optionId }
+          : { kind: "permission", decision: response === "once" ? "allow_once" : response === "always" ? "allow_always" : "deny" }, directory ?? "")
         return c.json({ ok: true, events: result.events })
       } catch (error) {
         return requestRefusedResponse(c, error)
       }
     })
     .post("/question/:id/reply", async (c) => {
-      const admitted = await admitQuestionOperation(opts, c, "replyQuestion")
+      const admitted = await admitQuestionOperation(opts, c)
       if (admitted.rejected) return admitted.rejected
       const { id, sessionId } = admitted
       const body = rec(await boundedJsonBody(c))
@@ -2663,7 +2677,7 @@ export function createSessionRoutes(opts: Opts) {
       return c.json({ ok: true })
     })
     .post("/question/:id/reject", async (c) => {
-      const admitted = await admitQuestionOperation(opts, c, "rejectQuestion")
+      const admitted = await admitQuestionOperation(opts, c)
       if (admitted.rejected) return admitted.rejected
       const { id, sessionId } = admitted
       try {

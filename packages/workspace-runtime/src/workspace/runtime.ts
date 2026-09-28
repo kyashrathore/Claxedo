@@ -70,6 +70,8 @@ export type WorkspaceHostOptions = {
   transcripts?: WorkspaceTranscriptRoutesOptions
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  /** The workspace that already holds a session id on this host; a create naming an id another workspace holds is refused before any harness launches. */
+  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   /** Private-session authority selected by the host composition. */
   sessionAccessPolicy?: SessionAccessPolicy
   harness?: RuntimeHarnessSelection
@@ -172,6 +174,9 @@ function mcpStatus(config: Record<string, unknown>) {
 }
 
 export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHost {
+  if (options.sessionIdWorkspace && !options.target?.workspaceId) {
+    throw new Error("sessionIdWorkspace requires a target workspace: a session's holder is compared with the workspace this host serves")
+  }
   const eventHub = options.eventHub ?? createRuntimeEventHub()
   let closeEvents: () => void = () => {}
   const hostFrames = createWorkspaceEventFramesTap()
@@ -293,6 +298,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const runtimeStore = store()
     const services = createHarnessServices({
       ownership: launchOwnership(),
+      ...(options.processObserver ? { observation: { observer: options.processObserver, ...(options.target ? { workspaceId: options.target.workspaceId } : {}) } } : {}),
       ...(options.transcripts ? { transcripts: options.transcripts } : {}),
       ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
       log: { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
@@ -556,6 +562,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         currentRunner,
         transcripts: options.transcripts,
         afterCreateSession: options.afterCreateSession,
+        sessionIdWorkspace: options.sessionIdWorkspace,
         sessionToolPrompt: (sessionId) => {
           const registration = sessionToolPrompts.get(sessionId)
           return registration ? scopedToolPrompt(sessionId, registration) : undefined

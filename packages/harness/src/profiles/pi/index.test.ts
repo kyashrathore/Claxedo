@@ -61,6 +61,14 @@ describe("Pi profile selection", () => {
     expect(selectPiProfile(owner, credentials, "/work", "restricted-session", { ...options, canUseOwnLogin: false }).kind).toBe("brokered")
   })
 
+  test("the machine owner's stored Claxedo account wins over its own Pi login", () => {
+    const options: PiProfileOptions = { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true, stateRoot: "/tmp/pi-test", ownerAgentDir: "/tmp/pi-agent" }
+    const stored = { ...credentials, providers: { openai: { baseUrl: "http://127.0.0.1:1/v1", placeholder: "stored", authMode: "api-key" as const } } }
+    expect(selectPiProfile(owner, stored, "/work", "stored-session", options).kind).toBe("brokered")
+    expect(selectPiProfile(owner, credentials, "/work", "login-session", options).kind).toBe("owner-login")
+    expect(selectPiProfile(owner, stored, "/work", "kept-session", options, "owner-login").kind).toBe("owner-login")
+  })
+
   test("isolates concurrent member overlays within one workspace", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-concurrent-profiles-"))
     try {

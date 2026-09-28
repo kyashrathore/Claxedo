@@ -257,6 +257,7 @@ let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
 let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
+let configuredSessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"] | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
 let configuredFirstPartyMcpLaunch: EmbeddedFirstPartyMcpLaunch | undefined
 
@@ -329,6 +330,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaEvent?: (event: CompatEnvelope) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
+  sessionIdWorkspace?: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Absent, no embedded runtime injects the first-party MCP entry into its sessions. */
   firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
@@ -343,6 +345,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
+  configuredSessionIdWorkspace = input.sessionIdWorkspace
   configuredOnTurnOutcome = input.onTurnOutcome
 }
 
@@ -379,6 +382,7 @@ function options(
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
+    ...(configuredSessionIdWorkspace ? { sessionIdWorkspace: configuredSessionIdWorkspace } : {}),
     ...(configuredFirstPartyMcpLaunch
       ? {
           firstPartyMcpLaunch: {

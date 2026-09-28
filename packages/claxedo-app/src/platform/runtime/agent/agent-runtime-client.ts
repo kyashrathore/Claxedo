@@ -568,7 +568,12 @@ export function createAgentRuntimeClient(options: {
         suffix: "/todo",
         init: { headers: { Accept: "application/json" } },
       })
-      return { data: await readJson<AgentTodo[]>(res) }
+      try {
+        return { data: await readJson<AgentTodo[]>(res) }
+      } catch (error) {
+        if (error instanceof AgentRuntimeRequestError && error.code === "unsupported_operation") return { data: [] }
+        throw error
+      }
     },
     /**
      * Permission modes for a session, in the HARNESS's own vocabulary.

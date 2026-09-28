@@ -43,12 +43,8 @@ export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: Tur
       custom: message.method === "input" || message.method === "editor",
     }],
   }), { signal }))
-  if (!answers) {
-    rpc.send({ type: "extension_ui_response", id: message.id, cancelled: true })
-    return
-  }
-  const value = answers[0]?.[0]
-  if (message.method === "confirm") rpc.send({ type: "extension_ui_response", id: message.id, confirmed: value === "Yes" })
+  const value = answers?.[0]?.[0]
+  if (answers && message.method === "confirm") rpc.send({ type: "extension_ui_response", id: message.id, confirmed: value === "Yes" })
   else if (typeof value === "string") rpc.send({ type: "extension_ui_response", id: message.id, value })
   else rpc.send({ type: "extension_ui_response", id: message.id, cancelled: true })
 }

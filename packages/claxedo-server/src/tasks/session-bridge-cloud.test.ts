@@ -688,6 +688,7 @@ describe("hosted tasks cloud roots", () => {
       repoUrl: REPO,
       repoName: "importer",
       gitBranch: "main",
+      remoteDirectory: "/workspace",
       homeRegion: "us-east",
     })
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(OWNER_PRINCIPAL, expect.objectContaining({

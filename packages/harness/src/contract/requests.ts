@@ -68,8 +68,10 @@ export function requestQuestionAnswers(answer: RequestAnswer): Extract<RequestAn
 export function elicitationAnswer(answer: RequestAnswer):
   | { kind: "form"; values: Readonly<Record<string, unknown>> }
   | { kind: "consent"; accepted: boolean }
+  | { kind: "decline" }
   | { kind: "cancel" } {
   if (answer.kind === "form") return answer
   if (answer.kind === "consent") return answer
+  if (answer.kind === "rejected") return { kind: "decline" }
   return { kind: "cancel" }
 }

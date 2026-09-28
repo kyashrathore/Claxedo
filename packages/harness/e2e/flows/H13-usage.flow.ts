@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { isDeepStrictEqual } from "node:util"
 import { ClaxedoApi, assistantText, type SessionHarness } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
@@ -35,21 +36,8 @@ export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi
       `${name} CLI did not report usage through ${method}`)
   }
   assert.ok(sources.some((entry) => entry.type === "session.usage"), `${name} runtime did not project session usage`)
-  console.log(`H13 ${name} raw source summary: ${JSON.stringify(sources.flatMap((entry) => {
-    const source = entry.source
-    const frame = source.frame as Record<string, unknown> | undefined
-    const message = frame?.message as Record<string, unknown> | undefined
-    const params = frame?.params as Record<string, unknown> | undefined
-    const tokenUsage = params?.tokenUsage as Record<string, unknown> | undefined
-    return message?.usage || frame?.usage || tokenUsage
-      ? [{ event: entry.type, method: source.method, type: frame?.type, usage: message?.usage ?? frame?.usage ?? tokenUsage }]
-      : []
-  }))}`)
   console.log(`H13 ${name} projected usage events: ${JSON.stringify(sources.filter((entry) => entry.type === "session.usage").map((entry) => entry.payload))}`)
-  if (name === "codex") console.log(`H13 Codex rate-limit reports: ${JSON.stringify(sources.filter((entry) => entry.source.method === "account/rateLimits/updated").map((entry) => {
-    const params = (entry.source.frame as { params?: { rateLimits?: unknown } }).params
-    return params?.rateLimits
-  }))}`)
+  if (name === "codex") console.log(`H13 Codex rate-limit reports: ${JSON.stringify(sources.filter((entry) => entry.source.method === "account/rateLimits/updated").map((entry) => entry.payload))}`)
   const firstTotals = await api.usageForSession(session.id)
   assert.ok(firstTotals.claxedo.totals.input > 0 && firstTotals.claxedo.totals.output > 0,
     `${name} session totals did not receive usage`)
@@ -62,8 +50,11 @@ export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi
     return tokens?.input && tokens.output ? last : undefined
   }, 10_000)
   const tokens = assistant.info.tokens as { input: number; output: number }
-  assert.ok(stream.frames.some((frame) => frameType(frame) === "message.updated" && frameSessionId(frame) === session.id
-    && JSON.stringify(frame.data.payload).includes('"tokens"')), `${name} usage was not streamed`)
+  assert.ok(stream.frames.some((frame) => {
+    const info = (frame.data.payload as { properties?: { info?: { id?: unknown; tokens?: unknown } } } | undefined)?.properties?.info
+    return frameType(frame) === "message.updated" && frameSessionId(frame) === session.id && info?.id === assistant.info.id
+      && isDeepStrictEqual(info.tokens, assistant.info.tokens)
+  }), `${name} usage was not streamed`)
   const totals = await eventually(`${name} usage totals`, async () => {
     const result = await api.usageForSession(session.id)
     return result.claxedo.totals.turnCount > 0 && result.claxedo.totals.input > 0 ? result.claxedo.totals : undefined

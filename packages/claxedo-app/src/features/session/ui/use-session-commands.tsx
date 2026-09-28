@@ -610,31 +610,6 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       },
     }),
     sessionCommand({
-      id: "session.compact",
-      title: language.t("command.session.compact"),
-      description: language.t("command.session.compact.description"),
-      slash: "compact",
-      disabled: !args.sessionId() || visibleUserMessages().length === 0 || !supports("commands"),
-      onSelect: async () => {
-        const sessionID = args.sessionId()
-        if (!sessionID) return
-        if (!supports("commands")) return
-        const model = local.model.current()
-        if (!model) {
-          showToast({
-            title: language.t("toast.model.none.title"),
-            description: language.t("toast.model.none.description"),
-          })
-          return
-        }
-        await sdk.client.session.summarize({
-          sessionID,
-          modelID: model.id,
-          providerID: model.provider.id,
-        })
-      },
-    }),
-    sessionCommand({
       id: "session.fork",
       title: language.t("command.session.fork"),
       description: language.t("command.session.fork.description"),

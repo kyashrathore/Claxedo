@@ -3,7 +3,7 @@ import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-p
 import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
-import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
+import { routeOwnership, RouteDomain, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import type { RelayTokenInput } from "@claxedo/server-core/adapters/relay-port"
@@ -206,6 +206,19 @@ export async function ensureCloudRuntime(
 function sandboxUnavailableDetail(result: Exclude<SandboxEnsureResult, { status: "ready" }>) {
   if (result.status === "provisioning") return `sandbox provisioning; retry after ${result.retryAfterMs}ms`
   return result.error ?? "sandbox unavailable"
+}
+
+/**
+ * A session path belongs to exactly one workspace's runtime, and nothing after
+ * this dispatch serves it; a request that names no workspace can only be told
+ * so, before any runtime or harness is chosen.
+ */
+export function unnamedSessionWorkspace(c: Context, pathname: string) {
+  const owner = routeOwnership(pathname)
+  if (!("domain" in owner) || owner.domain !== RouteDomain.AgentSessionRuntime) return undefined
+  const input = requestWorkspace(c.req.raw)
+  if (input.workspaceId !== undefined || input.directory !== undefined) return undefined
+  return c.json(errorBody("invalid_execution_binding", "A session request must name its workspace by directory or workspaceId", { field: "directory" }), 400)
 }
 
 export function noWr(c: Context, err?: unknown) {

@@ -371,11 +371,13 @@ function attentionChange(payload: CompatEnvelope["payload"]): { kind: "add" | "r
     case "permission.asked":
       return { kind: "add", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.id}` }
     case "permission.replied":
+    case "permission.expired":
       return { kind: "remove", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.requestID}` }
     case "question.asked":
       return { kind: "add", sessionId: payload.properties.sessionID, requestId: `question:${payload.properties.id}` }
     case "question.replied":
     case "question.rejected":
+    case "question.expired":
       return { kind: "remove", sessionId: payload.properties.sessionID, requestId: `question:${payload.properties.requestID}` }
     default:
       return undefined

@@ -8,6 +8,13 @@ const optionOrder: Record<PermissionDecision, readonly PermissionOptionKind[]> =
   reject_always: ["reject_always", "reject_once"],
 }
 
+const optionDecision: Record<PermissionOptionKind, PermissionDecision> = {
+  allow_once: "allow_once",
+  allow_always: "allow_always",
+  reject_once: "deny",
+  reject_always: "reject_always",
+}
+
 export function chooseBrokerPermissionOption(
   decision: PermissionDecision,
   options: readonly PermissionOption[],
@@ -17,15 +24,13 @@ export function chooseBrokerPermissionOption(
     .find((option) => option !== undefined)
 }
 
-export function optionMatchesDecision(decision: PermissionDecision, kind: PermissionOptionKind): boolean {
-  return decision === "deny" ? kind === "reject_once" : decision === "reject_always" ? kind === "reject_always" : decision === kind
+export function decisionAnswer(decision: PermissionDecision, options: readonly PermissionOption[] | undefined): RequestAnswer {
+  if (options === undefined) return { kind: "permission", decision }
+  const option = chooseBrokerPermissionOption(decision, options)
+  return option ? { kind: "permission", decision: optionDecision[option.kind], optionId: option.optionId } : { kind: "cancelled" }
 }
 
-export function substitutePermissionOption(
-  answer: Extract<RequestAnswer, { kind: "permission" }>,
-  options: readonly PermissionOption[] | undefined,
-): RequestAnswer {
-  if (options === undefined || answer.optionId !== undefined) return answer
-  const option = chooseBrokerPermissionOption(answer.decision, options)
-  return option ? { ...answer, optionId: option.optionId } : { kind: "cancelled" }
+export function offeredOptionAnswer(optionId: string, options: readonly PermissionOption[] | undefined): RequestAnswer | undefined {
+  const option = options?.find((candidate) => candidate.optionId === optionId)
+  return option && { kind: "permission", decision: optionDecision[option.kind], optionId: option.optionId }
 }

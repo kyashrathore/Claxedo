@@ -1,7 +1,7 @@
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority, type WorkspaceAuthority, type WorkspaceOpenResult } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority, type WorkspaceOpenResult, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import {
   apiError,
@@ -11,6 +11,7 @@ import {
   relayRole,
   type WorkspaceRouteOptions,
 } from "../workspace/route-support"
+import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
 import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 import {
   previousRuntimeAccessTokenError,
@@ -18,7 +19,7 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { hostedSandboxNetworkPolicy, type SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxManager } from "@claxedo/sandbox-manager"
 
 type HostedConnectionDenial = {
   error: ReturnType<typeof apiError>
@@ -31,6 +32,7 @@ type CloudConnectionIngress =
   | {
       authority: WorkspaceAuthority
       result: WorkspaceOpenResult
+      workspace: WorkspaceRecord
       hostManager: SandboxManager
       homeRegion: ClaxedoRegion
       relayUrl: string
@@ -114,7 +116,7 @@ async function cloudConnectionIngress(
       relayRoom: workspaceId,
     },
   })
-  return { authority, result, hostManager, homeRegion, relayUrl }
+  return { authority, result, workspace: result.workspace, hostManager, homeRegion, relayUrl }
 }
 
 /** The mint tail both paths share once a ready sandbox target exists. */
@@ -226,7 +228,6 @@ export async function hostedConnectionInfo(
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
   workspaceId: string,
-  controlPlaneUrl: string,
   previousJti?: string,
 ) {
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
@@ -234,7 +235,7 @@ export async function hostedConnectionInfo(
   if ("tunnel" in ingress) {
     return hostTunnelConnectionInfo(services, options, auth, workspaceId, previousJti)
   }
-  const { authority, result, hostManager, homeRegion, relayUrl } = ingress
+  const { authority, result, workspace, hostManager, homeRegion, relayUrl } = ingress
 
   const runtimeContext = { workspaceId }
   let preparation
@@ -246,18 +247,10 @@ export async function hostedConnectionInfo(
       status: 409,
     } as const
   }
-  const ensured = await hostManager.ensure(workspaceId, {
-    homeRegion,
-    net: hostedSandboxNetworkPolicy({
-      controlPlane: [relayUrl, controlPlaneUrl],
-      source: typeof result.workspace?.repo_url === "string"
-        ? { kind: "git", repoUrl: result.workspace.repo_url }
-        : { kind: "empty" },
-      extraHosts: options.sandboxEgressExtraHosts,
-    }),
-    ...(preparation?.secrets !== undefined ? { secrets: preparation.secrets } : {}),
-    ...(preparation?.env ? { env: preparation.env } : {}),
-  })
+  const ensured = await hostManager.ensure(workspaceId, hostedSandboxInput(workspace, {
+    egress: options,
+    preparation,
+  }))
   captureWorkspaceTelemetry({
     services,
     auth,

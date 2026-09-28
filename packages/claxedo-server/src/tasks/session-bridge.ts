@@ -31,7 +31,7 @@ import {
   originCloudWorkspaceId,
 } from "../workspace/origin-cloud-workspace"
 import type { TasksRootIdentity } from "./root-capability"
-import { configuredRelayUrl, type WorkspaceRuntimePreparation } from "../workspace/route-support"
+import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
 
 export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
@@ -214,15 +214,11 @@ function createTasksCloudTarget(
       },
       services: input.services,
       egress: {
-        controlPlane: [
-          configuredRelayUrl({
-            ...(input.services.relay.relayUrl ? { relayUrl: input.services.relay.relayUrl } : {}),
-            ...(input.services.relay.relayUrls ? { relayUrls: input.services.relay.relayUrls } : {}),
-            ...(input.services.defaultHomeRegion ? { defaultHomeRegion: input.services.defaultHomeRegion } : {}),
-          }),
-          input.sandboxEgress.controlPlaneOrigin,
-        ],
-        ...(input.sandboxEgress.extraHosts ? { extraHosts: input.sandboxEgress.extraHosts } : {}),
+        ...(input.services.relay.relayUrl ? { relayUrl: input.services.relay.relayUrl } : {}),
+        ...(input.services.relay.relayUrls ? { relayUrls: input.services.relay.relayUrls } : {}),
+        ...(input.services.defaultHomeRegion ? { defaultHomeRegion: input.services.defaultHomeRegion } : {}),
+        ...(input.sandboxEgress.extraHosts ? { sandboxEgressExtraHosts: [...input.sandboxEgress.extraHosts] } : {}),
+        ...(input.sandboxEgress.controlPlaneOrigin ? { sandboxControlPlaneOrigin: input.sandboxEgress.controlPlaneOrigin } : {}),
       },
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       projectId: origin.task.projectId,
@@ -240,6 +236,7 @@ function createTasksCloudTarget(
           ...(workspace.repo_url ? { repoUrl: workspace.repo_url } : {}),
           ...(workspace.repo_name ? { repoName: workspace.repo_name } : {}),
           ...(workspace.git_branch ? { gitBranch: workspace.git_branch } : {}),
+          ...(workspace.remote_directory ? { remoteDirectory: workspace.remote_directory } : {}),
           ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
         })
         // Same position the create route fires it: the authority row exists,
@@ -299,6 +296,7 @@ type RootWorkspaceArgs = {
   repoUrl?: string
   repoName?: string
   gitBranch?: string
+  remoteDirectory?: string
   homeRegion?: string
 }
 

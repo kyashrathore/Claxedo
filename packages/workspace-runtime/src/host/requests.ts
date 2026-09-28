@@ -1,7 +1,7 @@
 import { ElicitationValidationError, isRecord, type AgentPermission, type AgentQuestion, type AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import type { createRequestBroker } from "@claxedo/harness/broker"
-import type { AnswerResult, PendingRequest, RequestAnswer } from "@claxedo/harness/contract"
-import { AgentRuntimeRequestRefusedError, type AgentRuntimeInteractionResult, type AgentRuntimePermissionDecision, type AgentRuntimeStore } from "./contracts"
+import type { AnswerResult, PendingRequest, PermissionReply, RequestAnswer } from "@claxedo/harness/contract"
+import { AgentRuntimeRequestRefusedError, type AgentRuntimeInteractionResult, type AgentRuntimeStore } from "./contracts"
 
 export type RequestTarget = { sessionId: string } | { start: AgentSessionStartBinding }
 
@@ -66,17 +66,10 @@ export function createRequestSurface(input: { store: AgentRuntimeStore; broker: 
         broker.broker.list({ directory })
         return store.listPermissions(directory)
       },
-      async respond(
-        permissionId: string,
-        decision: AgentRuntimePermissionDecision,
-        directory: string,
-        optionId?: string,
-      ): Promise<AgentRuntimeInteractionResult> {
+      async respond(permissionId: string, reply: PermissionReply, directory: string): Promise<AgentRuntimeInteractionResult> {
         const permission = store.listPermissions(directory).find((item) => item.id === permissionId)
         if (!permission) throw new Error(`Permission ${permissionId} not found`)
-        return settled(await broker.broker.answer(permissionId,
-          { kind: "permission", decision, ...(optionId === undefined ? {} : { optionId }) },
-          { sessionId: permission.sessionID }))
+        return settled(await broker.broker.answer(permissionId, reply, { sessionId: permission.sessionID }))
       },
     },
     questions: {

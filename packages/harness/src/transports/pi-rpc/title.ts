@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
-import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { readTextIfExists, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { TransportError } from "../../contract/errors"
 import type { PiRpc } from "./rpc"
 
@@ -44,10 +44,7 @@ export function piTitleExtensionPath(stateRoot: string): string {
 export async function installPiTitleExtension(stateRoot: string): Promise<string> {
   const file = piTitleExtensionPath(stateRoot)
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 })
-  let current: string | undefined
-  try { current = await fs.readFile(file, "utf8") }
-  catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error }
-  if (current !== PI_TITLE_EXTENSION_SOURCE) await writePrivateFileAtomic(file, PI_TITLE_EXTENSION_SOURCE)
+  if (await readTextIfExists(file) !== PI_TITLE_EXTENSION_SOURCE) await writePrivateFileAtomic(file, PI_TITLE_EXTENSION_SOURCE)
   return file
 }
 

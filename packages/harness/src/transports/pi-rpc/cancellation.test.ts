@@ -21,7 +21,7 @@ function fixture(clear: "stall" | "reject" | "ok") {
   })
   const transport = new PiRpcTransport({ clock } as unknown as HarnessServices, {} as never)
   const session = { binding: { sessionId: "s1" } } as HarnessSession
-  const entry = { session, rpc, busy: true, settled: false }
+  const entry = { session, rpc, busy: true, prompted: true, settled: false }
   ;(transport as unknown as { entries: Map<string, typeof entry> }).entries.set("s1", entry)
   return { transport, session, commands, rpc, entry }
 }

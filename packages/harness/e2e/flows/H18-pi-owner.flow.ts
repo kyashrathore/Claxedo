@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { armPiRpcFault, piRpcFaultEvidence } from "../harness/pi-rpc-fault"
+import { forgetStoredAccounts, ownerPiAgentDir, writeOwnerPiModels } from "../harness/pi-owner"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
@@ -19,11 +20,9 @@ const extension = `export default function (pi) {
 `
 
 async function installProfile(agentDir: string, modelUrl: string, auth: Buffer) {
+  await writeOwnerPiModels(agentDir, modelUrl, "h18-scripted")
   await fs.mkdir(path.join(agentDir, "extensions"), { recursive: true })
   await fs.writeFile(path.join(agentDir, "extensions", "h18.ts"), extension)
-  await fs.writeFile(path.join(agentDir, "models.json"), JSON.stringify({ providers: {
-    openai: { baseUrl: modelUrl, apiKey: "h18-scripted" },
-  } }))
   await fs.writeFile(path.join(agentDir, "auth.json"), auth)
 }
 
@@ -31,11 +30,12 @@ export async function run() {
   const stack = await startStack({ label: "h18-pi-owner", piRpcFault: true })
   try {
     const workspace = await stack.daemon.makeWorkspace("h18")
-    const own = path.join(stack.dataDir, ".pi", "agent")
+    const own = ownerPiAgentDir(stack)
     const legacy = path.join(stack.dataDir, "agent-core", workspace.id, "pi", "agent")
     const auth = Buffer.from('{"h18":"owner-login-sentinel"}\n')
     await installProfile(own, stack.scripted.v1Url, auth)
     await installProfile(legacy, stack.scripted.v1Url, auth)
+    await forgetStoredAccounts(stack)
     const api = new ClaxedoApi(stack.url)
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "pi", modelId: "openai/gpt-4.1" }

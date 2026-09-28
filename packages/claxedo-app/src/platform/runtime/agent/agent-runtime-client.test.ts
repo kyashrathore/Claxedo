@@ -49,6 +49,16 @@ describe("AgentRuntimeClient", () => {
     expect(error).toBeInstanceOf(AgentRuntimeRequestError)
     expect(error).toMatchObject({ message, status: 409, code: "queue_rejected" })
   })
+  it("reads a harness's todo refusal as no todos and keeps every other refusal", async () => {
+    const refusal = (code: string, status: number) => createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001",
+      request: async () => ok({ ok: false, error: { code, message: `${code} refusal` } }, { status }),
+    })
+    expect(await refusal("unsupported_operation", 409).getTodos({ directory: "/repo", sessionID: "session-1" })).toEqual({ data: [] })
+    const error = await refusal("session_not_found", 404).getTodos({ directory: "/repo", sessionID: "session-1" }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(AgentRuntimeRequestError)
+    expect(error).toMatchObject({ status: 404, code: "session_not_found" })
+  })
   it("uses the session's permission owner and disambiguates native versus connection drafts", async () => {
     const calls: URL[] = []
     const client = createAgentRuntimeClient({

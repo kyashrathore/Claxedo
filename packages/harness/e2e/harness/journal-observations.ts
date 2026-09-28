@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite"
 export async function runtimeSources(dataDir: string, sessionId: string) {
   const root = path.join(dataDir, "agent-core")
   const workspaces = await fs.readdir(root)
-  const sources: Array<{ type: string; payload: unknown; source: { method: string; frame?: unknown } }> = []
+  const sources: Array<{ type: string; payload: unknown; source: { dir: "in" | "out"; method: string; requestId?: string } }> = []
   for (const workspace of workspaces) {
     const file = path.join(root, workspace, "state.db")
     try {

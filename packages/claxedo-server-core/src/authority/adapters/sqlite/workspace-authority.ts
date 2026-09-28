@@ -1516,8 +1516,8 @@ export function createSqliteWorkspaceAuthority(
       db.prepare(`
         INSERT INTO workspaces (
           workspace_id, org_id, project_id, owner_token_identifier, backing,
-          display_name, home_region, repo_url, repo_name, git_branch, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'cloud-vm', ?, ?, ?, ?, ?, ?, ?)
+          display_name, home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'cloud-vm', ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         args.workspaceId,
         orgId,
@@ -1528,6 +1528,7 @@ export function createSqliteWorkspaceAuthority(
         args.repoUrl ?? null,
         args.repoName ?? null,
         args.gitBranch ?? null,
+        args.remoteDirectory === undefined ? null : normalizeStoredDirectory(args.remoteDirectory),
         now,
         now,
       )

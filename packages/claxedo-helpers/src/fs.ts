@@ -17,6 +17,14 @@ export async function realPathWithinRoot(source: string, root: string): Promise<
   return { resolved, within: inside(root, resolved) }
 }
 
+export async function readTextIfExists(pathname: string): Promise<string | undefined> {
+  try { return await readFile(pathname, "utf8") }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
+    throw error
+  }
+}
+
 export async function lstatIfExists(pathname: string): Promise<Stats | undefined> {
   try { return await lstat(pathname) }
   catch (error) {

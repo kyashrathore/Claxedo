@@ -234,7 +234,7 @@ test("Codex draft probes are keyed on non-secret identity, shared across rotatio
   const peer = await scriptedTransport({ clock: { now: () => now, setTimeout, clearTimeout } })
   const draft = (placeholder: string): DraftLaunch => ({ workspaceId: "w1", directory: peer.startInput.directory, locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id: "codex", access: "native" } }, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] },
-    credentials: { providers: { codex: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration: "lease-1" } })
+    credentials: { providers: { "codex-app-server": { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration: "lease-1" } })
   try {
     expect((await peer.transport.config.options({ draft: draft("secret-one") }, "probe")).options.length).toBeGreaterThan(0)
     expect(peer.spawned()).toBe(1)

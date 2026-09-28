@@ -71,6 +71,7 @@ async function elicitation(params: Record<string, unknown>, message: RpcMessage,
       message: asString(params.message) ?? "", ...(params.mode === "url" ? { url: asString(params.url) ?? "", elicitationId: asString(params.elicitationId) ?? "" } : { schema: params.requestedSchema }) })))
     if (answer.kind === "form") return { action: "accept", content: answer.values }
     if (answer.kind === "consent" && answer.accepted) return { action: "accept", content: null }
+    if (answer.kind === "decline") return { action: "decline", content: null }
     return { action: "cancel" }
 }
 

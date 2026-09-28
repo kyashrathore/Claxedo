@@ -2,6 +2,8 @@ import { decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtim
 import { configObject, onlyFields, resolveBindings, secretBindings, configStringArray, configStringRecord, configText, type SecretBindings } from "./bindings"
 import { assertCurrentConnection, type ConnectionConfigHooks, type ConstructTransport, type CustomHarnessProvider } from "./types"
 import { TransportError } from "../../contract/errors"
+import { wireConnectionCapabilities } from "../../capabilities/wire"
+import { acpDeclaredCapabilities, acpOfferedOperations } from "../../contract"
 
 export type AcpConnection =
   | { kind: "process"; command: string; args?: string[]; env?: Record<string, string>; supportsMcpServers?: boolean; sharedFilesystem?: boolean }
@@ -68,7 +70,7 @@ export function acpConnectionConfig(): Required<ConnectionConfigHooks<AcpProvide
     },
     project(config) {
       return { label: config.label, readiness: "configured",
-        capabilities: { abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false },
+        capabilities: wireConnectionCapabilities({ ...acpDeclaredCapabilities, subagents: false }, acpOfferedOperations, { harness: "acp", transport: "acp", abort: true }),
         ...(config.modelSelection ? { modelSelection: config.modelSelection } : {}) }
     },
   }

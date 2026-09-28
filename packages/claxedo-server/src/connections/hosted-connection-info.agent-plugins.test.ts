@@ -37,7 +37,7 @@ function subject(order: string[]) {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
+        workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1", backing: "cloud-vm", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
       })),
       recordRuntimeAccessToken: vi.fn(async () => undefined),
       auditAllow: vi.fn(async () => undefined),
@@ -63,10 +63,11 @@ describe("Agent Plugins cloud readiness gate", () => {
     const result = await hostedConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       provisionRuntime: async () => { order.push("plugins") },
       sandboxEgressExtraHosts: ["registry.acme.test"],
-    }, auth, "ws_1", "https://control.test")
+    }, auth, "ws_1")
 
     expect(order).toEqual(["ensure", "plugins", "token"])
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
@@ -90,15 +91,19 @@ describe("Agent Plugins cloud readiness gate", () => {
     const result = await hostedConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime,
       provisionRuntime,
-    }, auth, "ws_1", "https://control.test")
+    }, auth, "ws_1")
 
     expect(order).toEqual(["prepare", "ensure", "plugins", "token"])
     expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", {
       homeRegion: "us-east",
-      net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["relay.test", "control.test"]) }),
+      labels: { projectId: "project_1" },
+      workspaceRoot: "/workspace",
+      source: { kind: "git", repoUrl: "https://git.acme.test/private.git" },
+      net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["relay.test", "control.test", "git.acme.test"]) }),
       secrets: preparation.secrets,
       env: preparation.env,
     })
@@ -111,6 +116,7 @@ describe("Agent Plugins cloud readiness gate", () => {
     const { services, signer } = subject([])
     const options = {
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime: async () => ({ secrets: [] }),
     }
@@ -122,10 +128,10 @@ describe("Agent Plugins cloud readiness gate", () => {
       prepareRuntime: async () => ({
         secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
       }),
-    }, auth, "ws_1", "https://control.test")
+    }, auth, "ws_1")
     expect(warm).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
 
-    const result = await hostedConnectionInfo(services, options, auth, "ws_1", "https://control.test")
+    const result = await hostedConnectionInfo(services, options, auth, "ws_1")
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
     expect(services.sandbox.sandboxManager!.ensure).toHaveBeenLastCalledWith("ws_1", expect.objectContaining({ secrets: [] }))
   })
@@ -135,9 +141,10 @@ describe("Agent Plugins cloud readiness gate", () => {
 
     const result = await hostedConnectionInfo(services, {
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
-    }, auth, "ws_1", "https://control.test")
+    }, auth, "ws_1")
 
     expect(result).toMatchObject({
       status: 409,
@@ -153,9 +160,10 @@ describe("Agent Plugins cloud readiness gate", () => {
     const result = await hostedConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       provisionRuntime: async () => { throw new Error("artifact corrupt") },
-    }, auth, "ws_1", "https://control.test")
+    }, auth, "ws_1")
 
     expect(order).toEqual(["ensure"])
     expect(signer).not.toHaveBeenCalled()
@@ -222,6 +230,7 @@ describe("Agent Plugins machine-placement readiness gate", () => {
     const result = await hostTunnelConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime,
       provisionRuntime,
@@ -242,6 +251,7 @@ describe("Agent Plugins machine-placement readiness gate", () => {
     const result = await hostTunnelConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
       provisionRuntime: async () => { order.push("plugins") },
@@ -261,6 +271,7 @@ describe("Agent Plugins machine-placement readiness gate", () => {
     const result = await hostTunnelConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime: async () => { order.push("prepare"); return {} },
       provisionRuntime: async () => { throw new Error("artifact corrupt") },
