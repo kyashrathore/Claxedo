@@ -124,7 +124,7 @@ function runtime() {
         instructions: typeof body.instructions === "string" ? body.instructions : "",
         ...(typeof body.variant === "string" ? { variant: body.variant } : {}),
       })
-      return Response.json({ id: String(body.id), directory: "/workspace" }, { status: 201 })
+      return Response.json({ id: String(body.id), directory: "/workspace", time: { created: 1, updated: 1 } }, { status: 201 })
     }
     const message = /^\/session\/([^/]+)\/message$/.exec(requestPath)
     if (message) return rows.has(message[1]) ? Response.json([]) : Response.json({}, { status: 404 })
@@ -135,7 +135,7 @@ function runtime() {
       return Response.json({ harness: HARNESS, model: MODEL, variant: row.variant ?? null, instructions: row.instructions })
     }
     const read = /^\/session\/([^/]+)$/.exec(requestPath)
-    if (read) return rows.has(read[1]) ? Response.json({ id: read[1] }) : Response.json({}, { status: 404 })
+    if (read) return rows.has(read[1]) ? Response.json({ id: read[1], time: { created: 1, updated: 1 } }) : Response.json({}, { status: 404 })
     return Response.json({ error: { code: "unexpected", message: requestPath } }, { status: 500 })
   })
   return { sessions }

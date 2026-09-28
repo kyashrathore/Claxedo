@@ -18,7 +18,7 @@ import {
 import { sessionCreateRequest } from "@claxedo/server-core/workspace/http/session-create-request"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
-import { asRecord, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { asRecord, numberField, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
 
 export type MachineSessionCaller =
@@ -192,6 +192,8 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         workspaceID: input.workspaceId,
         directory: stringField(session, "directory"),
         title: stringField(session, "title"),
+        createdAt: numberField(asRecord(session?.time), "created"),
+        updatedAt: numberField(asRecord(session?.time), "updated"),
         ...(input.harness ? { tags: [`harness:${input.harness.id}`] } : {}),
       })
       return { ...session, id: sessionId }

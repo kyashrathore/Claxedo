@@ -51,7 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mock.request.mockImplementation(async (_path, init) => {
     const body = JSON.parse(init.body)
-    return Response.json({ id: body.id, directory: "/repo", title: "Native Pi" })
+    return Response.json({ id: body.id, directory: "/repo", title: "Native Pi", time: { created: 11, updated: 12 } })
   })
 })
 describe("machine session dispatch", () => {
@@ -75,7 +75,7 @@ describe("machine session dispatch", () => {
     })
     expect(f.projectionStore.put_session_meta).toHaveBeenCalledWith(
       session.id,
-      expect.objectContaining({ host: "workspace", workspaceID: "ws", tags: ["harness:pi"] }),
+      expect.objectContaining({ host: "workspace", workspaceID: "ws", tags: ["harness:pi"], createdAt: 11, updatedAt: 12 }),
     )
   })
   test("carries instructions and effort to the machine create", async () => {

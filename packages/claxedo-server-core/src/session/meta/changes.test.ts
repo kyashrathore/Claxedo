@@ -43,9 +43,9 @@ afterEach(() => {
 
 describe("session meta change notices", () => {
   test("a put reports the session under its workspace, and one placed nowhere reports nothing", async () => {
-    await putSessionMeta("s1", { workspaceID: ws.id, directory: ws.directory, title: "First" })
+    await putSessionMeta("s1", { workspaceID: ws.id, directory: ws.directory, title: "First", createdAt: 1, updatedAt: 1 })
     await putSessionMeta("s1", { title: "Renamed" })
-    await putSessionMeta("orphan", { directory: "/tmp/elsewhere" })
+    await putSessionMeta("orphan", { directory: "/tmp/elsewhere", createdAt: 1, updatedAt: 1 })
 
     expect(heard).toEqual([
       { kind: "changed", workspaceId: ws.id, sessionId: "s1" },
@@ -54,9 +54,9 @@ describe("session meta change notices", () => {
   })
 
   test("a delete reports every row of the tree it removed", async () => {
-    await putSessionMeta("root", { ws })
-    await putSessionMeta("child", { ws, parentID: "root" })
-    await putSessionMeta("grandchild", { ws, parentID: "child" })
+    await putSessionMeta("root", { ws, createdAt: 1, updatedAt: 1 })
+    await putSessionMeta("child", { ws, parentID: "root", createdAt: 1, updatedAt: 1 })
+    await putSessionMeta("grandchild", { ws, parentID: "child", createdAt: 1, updatedAt: 1 })
     heard.length = 0
 
     await deleteSessionMeta("root")
@@ -85,14 +85,14 @@ describe("session meta change notices", () => {
       throw new Error("listener down")
     })
     try {
-      await expect(putSessionMeta("s6", { ws })).resolves.toBeUndefined()
+      await expect(putSessionMeta("s6", { ws, createdAt: 1, updatedAt: 1 })).resolves.toBeUndefined()
       expect(heard).toEqual([{ kind: "changed", workspaceId: ws.id, sessionId: "s6" }])
       expect(warn).toHaveBeenCalledTimes(1)
 
       stop()
       unsubscribe()
       heard.length = 0
-      await putSessionMeta("s7", { ws })
+      await putSessionMeta("s7", { ws, createdAt: 1, updatedAt: 1 })
       expect(heard).toEqual([])
       expect(warn).toHaveBeenCalledTimes(1)
     } finally {

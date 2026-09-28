@@ -66,6 +66,8 @@ describe("control plane durable state", () => {
       title: "Persistent session",
       tags: ["review"],
       attachments: [{ kind: "review", targetID: "review_1" }],
+      createdAt: 1,
+      updatedAt: 1,
     })
     sessionLog.persist_message_event("session-restart", {
       type: "message.updated",

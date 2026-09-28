@@ -156,7 +156,7 @@ describe("session inventory notices on cp/events", () => {
       if (event.type === "session.inventory.changed") notices.push(event.workspaceId)
     })
     try {
-      await putSessionMeta("ses_new", { ws, directory: ws.directory, title: "new" })
+      await putSessionMeta("ses_new", { ws, directory: ws.directory, title: "new", createdAt: 1, updatedAt: 1 })
       await putSessionMeta("ses_new", { ws, directory: ws.directory, title: "renamed" })
       await syncSessionMeta(ws, engineSession({ id: "ses_new", created: 1, updated: 2 }))
       await syncSessionMetas(ws, [
@@ -185,5 +185,23 @@ describe("a synced session's times come only from its runtime", () => {
     await expect(syncSessionMeta(ws, session)).rejects.toThrow("Session ses_untimed has no runtime time.created and time.updated")
     await expect(syncSessionMetas(ws, [session])).rejects.toThrow("Session ses_untimed has no runtime time.created and time.updated")
     expect(await sessionMeta("ses_untimed")).toBeUndefined()
+  })
+})
+
+describe("a put session row's times come only from its runtime", () => {
+  test.each([
+    ["no times", {}],
+    ["no creation time", { updatedAt: 2 }],
+    ["no update time", { createdAt: 1 }],
+  ] as const)("a put that would create a row with %s is refused and writes nothing", async (_label, times) => {
+    await expect(putSessionMeta("ses_untimed", { ws, directory: ws.directory, title: "Untimed", ...times }))
+      .rejects.toThrow("Session ses_untimed has no runtime time.created and time.updated")
+    expect(await sessionMeta("ses_untimed")).toBeUndefined()
+  })
+
+  test("a put on an existing row keeps the runtime's creation time", async () => {
+    await syncSessionMeta(ws, engineSession({ id: "ses_timed", created: 5, updated: 6 }))
+    await putSessionMeta("ses_timed", { tags: ["kept"] })
+    expect(await sessionMeta("ses_timed")).toMatchObject({ createdAt: 5, tags: ["kept"] })
   })
 })

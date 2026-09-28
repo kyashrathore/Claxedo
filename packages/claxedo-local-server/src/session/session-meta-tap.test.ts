@@ -74,6 +74,16 @@ describe("session meta projection tap", () => {
     expect([listed?.createdAt, listed?.updatedAt]).toEqual([1_000, 1_000])
   })
 
+  test("lists no row for a created session the runtime answered without its times", async () => {
+    const app = new Hono()
+    app.use(sessionMetaProjectionTap({ put_session_meta: putSessionMeta, delete_session_meta: deleteSessionMeta }))
+    app.post("/session", (c) => c.json({ id: "ses_untimed", title: "Untimed", directory: "/work" }))
+    const response = await app.request("http://localhost/session?directory=%2Fwork", { method: "POST" })
+
+    expect(response.status).toBe(200)
+    expect(await sessionMeta("ses_untimed")).toBeUndefined()
+  })
+
   test("records a rename", async () => {
     const projection = store()
     await mount(projection).request("http://localhost/session/ses_1?directory=%2Fwork", { method: "PATCH" })

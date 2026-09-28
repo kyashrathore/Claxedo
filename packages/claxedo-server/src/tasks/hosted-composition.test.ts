@@ -840,7 +840,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
       }
       if (requestPath.startsWith("/session?")) {
         rows.set(String(body.id), [])
-        return Response.json({ id: String(body.id), directory: "/workspace" }, { status: 201 })
+        return Response.json({ id: String(body.id), directory: "/workspace", time: { created: 1, updated: 1 } }, { status: 201 })
       }
       const message = /^\/session\/([^/]+)\/message$/.exec(requestPath)
       if (message) {
@@ -866,7 +866,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
           : Response.json({}, { status: 404 })
       }
       const read = /^\/session\/([^/]+)$/.exec(requestPath)
-      if (read) return rows.has(read[1]) ? Response.json({ id: read[1] }) : Response.json({}, { status: 404 })
+      if (read) return rows.has(read[1]) ? Response.json({ id: read[1], time: { created: 1, updated: 1 } }) : Response.json({}, { status: 404 })
       return Response.json({ error: { code: "unexpected", message: requestPath } }, { status: 500 })
     })
   }

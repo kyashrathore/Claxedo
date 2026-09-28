@@ -345,6 +345,8 @@ describe("createLocalControlPlaneServices", () => {
     await services.projectionStore.put_session_meta("ses_local_1", {
       directory: "/work",
       title: "Recorded",
+      createdAt: 1,
+      updatedAt: 1,
     })
 
     const stored = await services.projectionStore.session_meta("ses_local_1")

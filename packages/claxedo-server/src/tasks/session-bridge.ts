@@ -142,6 +142,8 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       workspaceID: created.target.workspace.id,
       title: created.title,
       model: created.model,
+      createdAt: created.time.created,
+      updatedAt: created.time.updated,
     }),
 
     forgetSessionMeta: (sessionId) => input.services.projectionStore.delete_session_meta(sessionId),

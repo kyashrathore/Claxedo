@@ -39,6 +39,12 @@ async function worktree(directory: string) {
   return directory
 }
 
+let runtimeClock = 0
+function runtimeTimes() {
+  runtimeClock += 1
+  return { createdAt: runtimeClock, updatedAt: runtimeClock }
+}
+
 const authConfig = {
   enabled: true,
   issuer: "https://issuer.example.test",
@@ -128,6 +134,7 @@ describe("session metadata routes", () => {
   })
 
   test("local unsigned mode remains available when signed auth is disabled", async () => {
+    await putSessionMeta("local_1", { directory: "/tmp/local-1", ...runtimeTimes() })
     const local = SessionMetaRoutes()
     const res = await local.request("http://localhost/api/claxedo/session/local_1/meta", {
       method: "PUT",
@@ -142,8 +149,20 @@ describe("session metadata routes", () => {
     })
   })
 
+  test("a metadata write for a session no runtime has recorded is refused and writes nothing", async () => {
+    const res = await SessionMetaRoutes().request("http://localhost/api/claxedo/session/never_recorded/meta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: ["global"] }),
+    })
+
+    expect(res.status).toBe(404)
+    expect(await sessionMeta("never_recorded")).toBeUndefined()
+  })
+
   test("local unsigned mode lists projected session metadata on the local product route", async () => {
     await putSessionMeta("local_list_1", {
+      ...runtimeTimes(),
       directory: "/tmp/local-list",
       tags: ["global"],
       title: "Local list row",
@@ -167,7 +186,7 @@ describe("session metadata routes", () => {
     const directory = await worktree(path.join(root, "explicit-workspace-boundary"))
     const ws = await ensureWorkspace({ workspaceId: "ws_meta_boundary", project_id: "ws_project_boundary", directory })
     if (!ws) throw new Error("test workspace was not created")
-    await putSessionMeta("meta_boundary_session", { ws, title: "Must remain scoped" })
+    await putSessionMeta("meta_boundary_session", { ws, title: "Must remain scoped", ...runtimeTimes() })
     const refreshSessionProjection = vi.fn()
     const app = SessionMetaRoutes({ refreshSessionProjection })
     for (const workspaceId of ["ws_missing", "", "   "]) {
@@ -202,6 +221,7 @@ describe("session metadata routes", () => {
     if (!resolvedWorkspace) throw new Error("test workspace was not created")
     const refreshSessionProjection = vi.fn(async () => {
       await putSessionMeta("local_refresh_1", {
+        ...runtimeTimes(),
         ws: resolvedWorkspace,
         title: "Refreshed before list",
       })
@@ -237,6 +257,7 @@ describe("session metadata routes", () => {
     if (!resolvedWorkspace) throw new Error("test workspace was not created")
     const refreshSessionProjection = vi.fn(async () => {
       await putSessionMeta("cloud_refresh_1", {
+        ...runtimeTimes(),
         ws: resolvedWorkspace,
         title: "Cloud row",
       })
@@ -262,10 +283,12 @@ describe("session metadata routes", () => {
   test("local unsigned mode serves bounded rail pages on the local product route", async () => {
     const directory = `/tmp/local-navigation-${randomUUID()}`
     await putSessionMeta("local_navigation_1", {
+      ...runtimeTimes(),
       directory,
       title: "Local navigation one",
     })
     await putSessionMeta("local_navigation_2", {
+      ...runtimeTimes(),
       directory,
       title: "Local navigation two",
     })
@@ -308,7 +331,7 @@ describe("session metadata routes", () => {
       return workspace
     }))
     for (const [index, workspace] of [...workspaces, ...workspaces, ...workspaces].entries()) {
-      await putSessionMeta(`ses_project_${index}`, { ws: workspace, title: `Session ${index}` })
+      await putSessionMeta(`ses_project_${index}`, { ws: workspace, title: `Session ${index}`, ...runtimeTimes() })
     }
     const refreshSessionProjection = vi.fn(async (_workspace: { id: string }) => {})
     const routes = SessionMetaRoutes({ refreshSessionProjection })
@@ -335,10 +358,10 @@ describe("session metadata routes", () => {
 
   test("pages the rail past a parent's children without listing one or retiring the cursor early", async () => {
     const directory = `/tmp/local-navigation-children-${randomUUID()}`
-    await putSessionMeta("child_parent_1", { directory, title: "First root" })
-    await putSessionMeta("child_parent_2", { directory, title: "Second root" })
+    await putSessionMeta("child_parent_1", { directory, title: "First root", ...runtimeTimes() })
+    await putSessionMeta("child_parent_2", { directory, title: "Second root", ...runtimeTimes() })
     for (const parent of ["child_parent_1", "child_parent_2"]) {
-      await putSessionMeta(`${parent}_child`, { directory, title: `Child of ${parent}`, parentID: parent })
+      await putSessionMeta(`${parent}_child`, { directory, title: `Child of ${parent}`, parentID: parent, ...runtimeTimes() })
     }
 
     const listed: string[] = []
@@ -359,8 +382,8 @@ describe("session metadata routes", () => {
 
   test("keeps children out of the grouped rail read, which pages from the unbounded store", async () => {
     const directory = `/tmp/local-navigation-grouped-${randomUUID()}`
-    await putSessionMeta("grouped_parent", { directory, title: "Grouped root" })
-    await putSessionMeta("grouped_child", { directory, title: "Grouped child", parentID: "grouped_parent" })
+    await putSessionMeta("grouped_parent", { directory, title: "Grouped root", ...runtimeTimes() })
+    await putSessionMeta("grouped_child", { directory, title: "Grouped child", parentID: "grouped_parent", ...runtimeTimes() })
 
     const res = await SessionMetaRoutes().request(
       `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&groupBy=workspace&limit=10`,
@@ -463,6 +486,7 @@ describe("session metadata routes", () => {
 
   test("signed reads require authority session visibility", async () => {
     await putSessionMeta("sess_read", {
+      ...runtimeTimes(),
       ws: {
         id: "ws_1",
         project_id: "proj_1",
@@ -498,6 +522,7 @@ describe("session metadata routes", () => {
 
   test("signed reads redact local-only absolute directories", async () => {
     await putSessionMeta("sess_path", {
+      ...runtimeTimes(),
       ws: {
         id: "ws_1",
         project_id: "proj_1",
@@ -533,6 +558,7 @@ describe("session metadata routes", () => {
       project_id: "proj_1",
       directory: dir,
     })
+    await putSessionMeta("sess_write", { workspaceID: "ws_1", directory: dir, ...runtimeTimes() })
     const { app, svc } = buildApp()
     const res = await app.request(`http://localhost/api/claxedo/session/sess_write/meta?workspaceId=ws_1&directory=${encodeURIComponent(dir)}`, {
       method: "PUT",

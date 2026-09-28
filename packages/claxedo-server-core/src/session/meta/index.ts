@@ -158,7 +158,7 @@ export async function putSessionMeta(
     archived?: number | null
     tags?: string[]
     attachments?: SessionAttachment[]
-    /** Preserve corpus/import stamps; do not invent "now" for seeds. */
+    /** The runtime's times; a put that would create the row is refused without both. */
     createdAt?: number
     updatedAt?: number
     lastHumanTurnAt?: number
@@ -204,7 +204,10 @@ export async function putSessionMeta(
       || prev.archived_at !== archivedAt
       || input.tags !== undefined
       || input.attachments !== undefined
-    const createdAt = prev?.created_at ?? input.createdAt ?? stamp
+    const createdAt = prev?.created_at ?? input.createdAt
+    if (createdAt === undefined || (!prev && input.updatedAt === undefined)) {
+      throw new Error(`Session ${sessionID} has no runtime time.created and time.updated`)
+    }
     const updatedAt = input.updatedAt !== undefined
       ? Math.max(input.updatedAt, prev?.updated_at ?? 0)
       : contentChanged

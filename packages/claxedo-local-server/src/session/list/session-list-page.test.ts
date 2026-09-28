@@ -55,10 +55,10 @@ describe("localSessionListPage", () => {
   test("each row carries the status its runtime holds, read once per workspace in process", async () => {
     const running = await workspace("running")
     const asleep = await workspace("asleep")
-    await putSessionMeta("ses_busy", { ws: running, title: "Busy" })
-    await putSessionMeta("ses_asking", { ws: running, title: "Asking" })
-    await putSessionMeta("ses_quiet", { ws: running, title: "Quiet" })
-    await putSessionMeta("ses_asleep", { ws: asleep, title: "Asleep" })
+    await putSessionMeta("ses_busy", { ws: running, title: "Busy", createdAt: 1, updatedAt: 1 })
+    await putSessionMeta("ses_asking", { ws: running, title: "Asking", createdAt: 1, updatedAt: 1 })
+    await putSessionMeta("ses_quiet", { ws: running, title: "Quiet", createdAt: 1, updatedAt: 1 })
+    await putSessionMeta("ses_asleep", { ws: asleep, title: "Asleep", createdAt: 1, updatedAt: 1 })
     const fake = runtime({
       [running.id]: {
         "/session/status": { ses_busy: { type: "busy" } },

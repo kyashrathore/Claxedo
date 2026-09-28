@@ -9,7 +9,7 @@ import {
   type AgentMessage,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
-import { asRecord, isRecord } from "@claxedo/helpers/guards"
+import { asFiniteNumber, asRecord, isRecord } from "@claxedo/helpers/guards"
 import {
   sessionCreateRequest,
   sessionHarnessQuery,
@@ -145,6 +145,7 @@ export type TasksSessionHost = {
     target: TasksRuntimeTarget
     title: string
     model: ModelReference
+    time: SessionTimes
   }): Promise<void>
   /** Remove what `projectSessionMeta` wrote, so an abandoned session leaves no row behind. */
   forgetSessionMeta(sessionId: string): Promise<void>
@@ -606,7 +607,7 @@ async function startSession(
 
     const existing = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)
     if (!existing) return { ok: false, error: tasksErrorDetail("unsupported", "The workspace runtime is unreachable") }
-    if (existing.status === 200) return recoverSession(host, target, sessionId, command, resolved)
+    if (existing.status === 200) return recoverSession(host, target, existing, sessionId, command, resolved)
 
     const create = sessionCreateRequest({
       id: sessionId,
@@ -627,14 +628,17 @@ async function startSession(
       // Start created, which is the same situation as finding it above: adopt
       // it only if it is running this configuration.
       const collided = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)
-      if (collided?.status === 200) return recoverSession(host, target, sessionId, command, resolved)
+      if (collided?.status === 200) return recoverSession(host, target, collided, sessionId, command, resolved)
       return { ok: false, error: await runtimeRefusal("create this session", created) }
     }
+    const time = await sessionTimes(created)
+    if (!time) return untimedSession(sessionId)
     await host.projectSessionMeta({
       sessionId,
       target,
       title: command.task.title,
       model: resolved.configuration.model,
+      time,
     })
     return { ok: true }
   })
@@ -768,6 +772,7 @@ async function abandonSession(
 async function recoverSession(
   host: TasksSessionHost,
   target: TasksRuntimeTarget,
+  session: Response,
   sessionId: string,
   command: StartCommand,
   resolved: ResolvedStart,
@@ -796,14 +801,33 @@ async function recoverSession(
   // this session is still running.
   const metas = await host.sessionMetas([sessionId])
   if (!metas.has(sessionId)) {
+    const time = await sessionTimes(session)
+    if (!time) return untimedSession(sessionId)
     await host.projectSessionMeta({
       sessionId,
       target,
       title: command.task.title,
       model: resolved.configuration.model,
+      time,
     })
   }
   return { ok: true }
+}
+
+type SessionTimes = { created: number; updated: number }
+
+async function sessionTimes(response: Response): Promise<SessionTimes | undefined> {
+  const time = asRecord(asRecord(await response.json().catch(() => undefined))?.time)
+  const created = asFiniteNumber(time?.created)
+  const updated = asFiniteNumber(time?.updated)
+  return created === undefined || updated === undefined ? undefined : { created, updated }
+}
+
+function untimedSession(sessionId: string): Refusal {
+  return {
+    ok: false,
+    error: tasksErrorDetail("unsupported", `The workspace runtime answered session ${sessionId} without its creation and update times`),
+  }
 }
 
 function sameConfiguration(stored: SessionConfiguration, resolved: ResolvedStart): boolean {

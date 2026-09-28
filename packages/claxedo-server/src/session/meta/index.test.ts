@@ -141,14 +141,18 @@ describe("session meta", () => {
     await putSessionMeta("sess", {
       tags: ["review"],
       attachments: [{ kind: "review", targetID: "rev_1" }],
+      createdAt: 1,
+      updatedAt: 1,
     })
     await putSessionMeta("child", {
       parentID: "sess",
       tags: ["child"],
       attachments: [{ kind: "review", targetID: "rev_child" }],
+      createdAt: 1,
+      updatedAt: 1,
     })
-    await putSessionMeta("grandchild", { parentID: "child" })
-    await putSessionMeta("unrelated", { tags: ["keep"] })
+    await putSessionMeta("grandchild", { parentID: "child", createdAt: 1, updatedAt: 1 })
+    await putSessionMeta("unrelated", { tags: ["keep"], createdAt: 1, updatedAt: 1 })
 
     expect(await sessionMeta("sess")).toBeTruthy()
     await deleteSessionMeta("sess")
@@ -165,6 +169,8 @@ describe("session meta", () => {
     await putSessionMeta("pi-model", {
       host: "workspace",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+      createdAt: 1,
+      updatedAt: 1,
     })
 
     expect((await sessionMeta("pi-model"))?.model).toEqual({
@@ -376,11 +382,15 @@ describe("session meta", () => {
       directory: "/tmp/global/visible",
       title: "Visible",
       tags: ["global", "global:default"],
+      createdAt: 1,
+      updatedAt: 1,
     })
     await putSessionMeta("hidden", {
       directory: "/tmp/global/hidden",
       title: "Hidden",
       tags: ["global"],
+      createdAt: 1,
+      updatedAt: 2,
     })
 
     expect((await taggedSessionMetas(["global"])).map((item) => item.sessionID)).toEqual(["visible"])
@@ -396,16 +406,22 @@ describe("session meta", () => {
       host: "workspace",
       title: "Telegram 1",
       tags: ["source-channel:telegram"],
+      createdAt: 1,
+      updatedAt: 1,
     })
     await putSessionMeta("telegram-2", {
       host: "workspace",
       title: "Telegram 2",
       tags: ["source-channel:telegram"],
+      createdAt: 1,
+      updatedAt: 1,
     })
     await putSessionMeta("github-1", {
       host: "workspace",
       title: "GitHub 1",
       tags: ["source-channel:github"],
+      createdAt: 1,
+      updatedAt: 1,
     })
 
     const counts = await sourceChannelSessionCountsByWeek()
@@ -533,7 +549,7 @@ describe("session meta", () => {
 
   test("creates session navigation indexes for common updated-time views", async () => {
     await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("ses_index", { directory: "/tmp/repo" })
+    await putSessionMeta("ses_index", { directory: "/tmp/repo", createdAt: 1, updatedAt: 1 })
 
     const indexes = (ClaxedoDB.raw().prepare(`
       SELECT name FROM sqlite_master
@@ -554,7 +570,7 @@ describe("session meta", () => {
     ["model_id", "claude-sonnet-4-5"],
   ])("reports partial model configuration when only %s is stored", async (column, value) => {
     await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("partial-model", { host: "workspace" })
+    await putSessionMeta("partial-model", { host: "workspace", createdAt: 1, updatedAt: 1 })
     ClaxedoDB.raw().prepare(`UPDATE claxedo_session_meta SET ${column} = ? WHERE session_id = ?`).run(value, "partial-model")
 
     await expect(sessionMeta("partial-model")).rejects.toThrow("incomplete model configuration")

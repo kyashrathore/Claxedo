@@ -35,7 +35,8 @@ const MODEL = { providerID: "openai", modelID: "gpt-5" }
 
 type RuntimeCall = { path: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-function runtime(input: { refuseDelete?: boolean; offeredModelId?: string } = {}) {
+function runtime(input: { refuseDelete?: boolean; offeredModelId?: string; time?: { created: number; updated: number } | null } = {}) {
+  const time = input.time === null ? {} : { time: input.time ?? { created: 1, updated: 1 } }
   const calls: RuntimeCall[] = []
   const sessions = new Map<string, { instructions?: string; variant?: string; messages: Array<{ info: { id: string; role: string; sessionID: string }; parts: unknown[] }> }>()
   mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) => {
@@ -52,7 +53,7 @@ function runtime(input: { refuseDelete?: boolean; offeredModelId?: string } = {}
         ...(typeof row.variant === "string" ? { variant: row.variant } : {}),
         messages: [],
       })
-      return Response.json({ id, directory: "/workspace", title: row.title }, { status: 201 })
+      return Response.json({ id, directory: "/workspace", title: row.title, ...time }, { status: 201 })
     }
     const message = /^\/session\/([^/]+)\/message$/.exec(path)
     if (message) {
@@ -96,7 +97,7 @@ function runtime(input: { refuseDelete?: boolean; offeredModelId?: string } = {}
     if (read) {
       const session = sessions.get(read[1])
       if (!session) return Response.json({ error: { code: "not_found" } }, { status: 404 })
-      if (init?.method !== "DELETE") return Response.json({ id: read[1], directory: "/workspace" })
+      if (init?.method !== "DELETE") return Response.json({ id: read[1], directory: "/workspace", ...time })
       if (input.refuseDelete) {
         return Response.json({ error: { message: "this session cannot be deleted" } }, { status: 409 })
       }
@@ -435,6 +436,30 @@ describe("hosted tasks session bridge", () => {
     expect(await kit.sessionState([origin])).toEqual([{ session, state: "live", handoff: "pending" }])
   })
 
+
+  test("projects the created session under its runtime's times, and refuses one the runtime answers without them", async () => {
+    runtime({ time: { created: 11, updated: 12 } })
+    const timed = services()
+    const kit = bridge(timed)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    expect(await kit.start(await startCommand(previewed.preview.digest))).toMatchObject({ ok: true })
+    expect(timed.projectionStore.put_session_meta).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ createdAt: 11, updatedAt: 12 }),
+    )
+
+    runtime({ time: null })
+    const untimed = services()
+    const refused = bridge(untimed)
+    const again = await refused.preview(previewCommand())
+    if (!again.ok) throw new Error("preview refused")
+    expect(await refused.start(await startCommand(again.preview.digest))).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("without its creation and update times") },
+    })
+    expect(untimed.projectionStore.put_session_meta).not.toHaveBeenCalled()
+  })
 
   test("stops rather than reserving as itself when a supplied resolver names nobody", async () => {
     const host = runtime()

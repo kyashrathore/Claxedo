@@ -42,12 +42,14 @@ export function createLocalTasksSessionBridge(input: LocalTasksSessionBridgeInpu
     // A Start reaches the runtime through the local runtime port, so the local
     // app's response tap never sees the create: without this the session is
     // missing from every list, including the liveness read above.
-    projectSessionMeta: (input: { sessionId: string; target: TasksRuntimeTarget; title: string; model: { providerID: string; modelID: string } }) =>
+    projectSessionMeta: (input: { sessionId: string; target: TasksRuntimeTarget; title: string; model: { providerID: string; modelID: string }; time: { created: number; updated: number } }) =>
       putSessionMeta(input.sessionId, {
         ws: input.target.workspace,
         host: "workspace",
         title: input.title,
         model: input.model,
+        createdAt: input.time.created,
+        updatedAt: input.time.updated,
       }),
 
     forgetSessionMeta: (sessionId) => deleteSessionMeta(sessionId),

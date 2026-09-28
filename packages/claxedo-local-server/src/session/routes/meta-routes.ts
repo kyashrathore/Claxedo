@@ -276,6 +276,7 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (ws && previous?.workspaceID && ws.id !== previous.workspaceID) {
         await authorizeWrite(authResult.auth, options, ws.id)
       }
+      if (!previous) throw new HTTPException(404, { message: "session metadata not found" })
       if (!Object.keys(next).length && !ws) {
         throw new HTTPException(400, { message: "session metadata update is empty" })
       }
