@@ -14,8 +14,12 @@ test("failed startup waits for owned descendants before disposable state is remo
   const unrelated = Bun.spawn([node, "-e", "setInterval(() => {}, 1000)"], { stdout: "ignore", stderr: "ignore" })
   try {
     const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
-    await writeFile(executable, `#!/bin/sh\nsleep 60 &\necho $! > ${quote(pidFile)}\nexec sleep 60\n`)
+    await writeFile(executable, `#!/bin/sh\n[ "$1" = --warm ] && exit 0\nsleep 60 &\necho $! > ${quote(pidFile)}\nexec sleep 60\n`)
     await chmod(executable, 0o700)
+    // macOS checks a new executable on its first exec: 500–1100 ms on a loaded
+    // host, against 7 ms for later execs. Paid here, it cannot delay the child
+    // past the launch's lifetime.
+    await Bun.spawn([executable, "--warm"]).exited
     const launching = launchPackagedClaxedo({
       executable,
       isolatedProfilePath: path.join(root, "profile"),
@@ -26,9 +30,11 @@ test("failed startup waits for owned descendants before disposable state is remo
     })
     // Attach the rejection handler immediately; the fixture deliberately never
     // exposes CDP, then leaves its child alive when the parent exits.
-    const failure = launching.catch((error) => error as Error)
-    const deadline = performance.now() + 3_000
-    while (!owned && performance.now() < deadline) {
+    let settled = false
+    const failure = launching.catch((error) => error as Error).finally(() => {
+      settled = true
+    })
+    while (!owned && !settled) {
       const child = Number(await readFile(pidFile, "utf8").catch(() => ""))
       if (child > 0) owned = (await readProcessTable()).find((item) => item.pid === child)
       if (!owned) await Bun.sleep(25)

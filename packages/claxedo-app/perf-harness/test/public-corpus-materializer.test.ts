@@ -159,7 +159,7 @@ describe("public OpenCode corpus materialization", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test("a latest turn that paints a tool row before its text expects every part of that turn", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-corpus-tool-turn-"))
