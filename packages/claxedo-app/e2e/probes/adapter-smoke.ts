@@ -4,7 +4,7 @@ import type { ServerEvent } from "../../src/server/events"
 import type { Placement } from "../../src/server/types"
 import { codeHostConnections } from "../../src/server/integrations"
 import { createServer, type ServerHandle } from "../../src/server/server"
-import { check, describe, eventLog, isStatus, RESTART_TIMEOUT_MS, results, surfaceOf, waitFor, type Probe } from "./probe-support"
+import { check, describe, eventLog, isStatus, PROBE_VIEWPORT, RESTART_TIMEOUT_MS, results, surfaceOf, waitFor, type Probe } from "./probe-support"
 import { startTcpProxy } from "./tcp-proxy"
 
 async function connectAndPlace(probe: Probe): Promise<Placement> {
@@ -81,9 +81,9 @@ async function turnChecks(probe: Probe, placement: Placement) {
   const ref = row.ref
   console.log(`PASS create: session ${ref.sessionId} "${row.title}" on ${SCRIPTED_ACP_HARNESS.id}`)
   await check("session reads: fresh session", async () => {
-    const reads = server.sessions.read(ref)
-    const [surface, status, goal] = await Promise.all([reads.surface, reads.status, reads.goal, reads.requests, reads.todos])
-    return `status=${status.kind} entries=${surface.transcript.entries.length} goal actions=[${goal.actions.join(",")}]`
+    const reads = server.sessions.read(ref, PROBE_VIEWPORT)
+    const [first, status, goal] = await Promise.all([reads.first, reads.status, reads.goal, reads.requests, reads.todos])
+    return `status=${status.kind} entries=${first.transcript.entries.length} goal actions=[${goal.actions.join(",")}]`
   })
   await check("prompt: the turn streams and settles", async () => {
     await stack.acp.write("reply", { steps: [{ kind: "text", text: "ADAPTER_OK streamed in four pieces", chunks: 4 }] })
@@ -96,7 +96,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
   })
   await check("session surface and list after the turn", async () => {
     const snapshot = await surfaceOf(server, ref)
-    if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the latest-surface page lacks the reply")
+    if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the first page lacks the reply")
     const page = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
     const hit = page.rows.find((item) => item.ref.sessionId === ref.sessionId)
     if (!hit) throw new Error(`${page.rows.length} row(s), none is ${ref.sessionId}`)
@@ -108,7 +108,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
     await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Delegate. ${acpScriptToken("delegate")}`, attachments: [] })
     await log.next("subagentUpdated", from, (event): event is ServerEvent => event.type === "subagentUpdated" && event.ref.sessionId === ref.sessionId)
     await log.next("idle", from, isStatus(ref.sessionId, ["idle"]))
-    const child = (await server.sessions.read(ref).subagents).find((subagent) => subagent.childSessionId)
+    const child = (await server.sessions.read(ref, PROBE_VIEWPORT).subagents).find((subagent) => subagent.childSessionId)
     if (!child?.childSessionId) throw new Error("no subagent names a child session")
     const snapshot = await surfaceOf(server, { ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
     return `${child.subagentKey} status=${child.status} child entries=${snapshot.transcript.entries.length}`

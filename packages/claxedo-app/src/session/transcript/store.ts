@@ -1,6 +1,6 @@
 import { createMemo, onCleanup } from "solid-js"
 import { unreachable } from "@/lib/machine"
-import type { Server, ServerEvent, SessionOutline, SessionRef, TranscriptPage } from "@/server"
+import type { HeldSessionReads, Server, ServerEvent, SessionRef } from "@/server"
 import type { SessionLoadState, SessionView } from "@/session"
 import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
@@ -9,6 +9,7 @@ import { applyServerEvent } from "./events"
 import { settleTurn } from "./settle"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
+import { loadPart } from "./part"
 import { sendPrompt, showSent, stopTurn } from "./send"
 import { retainedSession, type RetainedSession } from "./retained"
 import { readSnapshot } from "./snapshot"
@@ -23,7 +24,7 @@ export type SessionTranscript = SessionView & {
 
 export type { RetainedSession } from "./retained"
 
-export type TranscriptSeed = { readonly latestTurn: TranscriptPage; readonly outline: SessionOutline | undefined }
+export type TranscriptSeed = HeldSessionReads
 
 const LOADING: SessionLoadState = { kind: "loading" }
 const READY: SessionLoadState = { kind: "ready" }
@@ -34,7 +35,6 @@ function loadState(phase: SessionPhase): SessionLoadState {
     case "loading":
       return LOADING
     case "ready":
-    case "completing":
     case "rereading":
       return READY
     case "missing":
@@ -75,9 +75,9 @@ function sessionView(context: TranscriptContext): SessionView {
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,
-    outline: context.outline.state,
-    loadOlder: () => loadOlder(context, "page"),
-    loadOlderTurn: () => loadOlder(context, "turn"),
+    outline: context.outline,
+    loadOlder: () => loadOlder(context),
+    loadPart: (messageId, partId) => loadPart(context, messageId, partId),
     reload: () => readSnapshot(context),
     send: (input) => sendPrompt(context, input),
     showSent: (prompt) => showSent(context, prompt),

@@ -36,7 +36,7 @@ function status(type: Kind): "added" | "deleted" | "modified" {
   return "modified"
 }
 
-export function patchFile(raw: unknown): ApplyPatchFile | undefined {
+export function patchFile(raw: unknown, headerOnly = false): ApplyPatchFile | undefined {
   if (!raw || typeof raw !== "object") return undefined
 
   const value = raw as Raw
@@ -48,7 +48,7 @@ export function patchFile(raw: unknown): ApplyPatchFile | undefined {
   const after = typeof value.after === "string" ? value.after : undefined
 
   if (!type || !filePath || !relativePath) return undefined
-  if (!patch && before === undefined && after === undefined) return undefined
+  if (!headerOnly && !patch && before === undefined && after === undefined) return undefined
 
   const additions = typeof value.additions === "number" ? value.additions : 0
   const deletions = typeof value.deletions === "number" ? value.deletions : 0
@@ -73,7 +73,7 @@ export function patchFile(raw: unknown): ApplyPatchFile | undefined {
   }
 }
 
-export function patchFiles(raw: unknown) {
+export function patchFiles(raw: unknown, headerOnly = false) {
   if (!Array.isArray(raw)) return []
-  return raw.map(patchFile).filter((file): file is ApplyPatchFile => !!file)
+  return raw.map((file) => patchFile(file, headerOnly)).filter((file): file is ApplyPatchFile => !!file)
 }

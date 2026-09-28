@@ -66,15 +66,15 @@ test("12 a session switch shows the previous session until the next one is laid 
 
   const acp = { model: "Scripted ACP default", nameKnown: true }
   const switches = [
-    { label: "unvisited", next: target, ...acp },
-    { label: "unvisited Pi", next: pi, model: "anthropic/claude-opus-4-8", nameKnown: false },
-    { label: "another workspace", next: elsewhere, ...acp },
-    { label: "short unvisited", next: short, ...acp },
-    { label: "long rows", next: long, ...acp },
-    { label: "failed last turn", next: failed, ...acp },
-    { label: "visited", next: previous, ...acp },
+    { label: "unvisited", next: target, nav: true, ...acp },
+    { label: "unvisited Pi", next: pi, nav: false, model: "anthropic/claude-opus-4-8", nameKnown: false },
+    { label: "another workspace", next: elsewhere, nav: true, ...acp },
+    { label: "short unvisited", next: short, nav: false, ...acp },
+    { label: "long rows", next: long, nav: true, ...acp },
+    { label: "failed last turn", next: failed, nav: true, ...acp },
+    { label: "visited", next: previous, nav: false, ...acp },
   ]
-  for (const { label, next, model, nameKnown } of switches) {
+  for (const { label, next, nav, model, nameKnown } of switches) {
     await test.step(`switch to the ${label} session`, async () => {
       const frames = await recordSwitchFrames(app, { targetId: next.id, quietFrames: 30 })
       await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: next.title, exact: true }).click()
@@ -89,6 +89,7 @@ test("12 a session switch shows the previous session until the next one is laid 
       if (nameKnown) expect.soft(seen.footers, `composer footer labels of the ${label} session`).toHaveLength(1)
       expect.soft(seen.footers[0], `the ${label} session's first footer names its model`).toContain(model)
       expect.soft(seen.footers[0], `the ${label} session's first footer`).not.toMatch(/Select (model|agent)/)
+      expect.soft(seen.navs, `the ${label} session's nav rail in every frame from its reveal`).toEqual([nav])
       expect.soft(seen.railApart, "frames where the rail selects a session other than the one shown").toEqual([])
       expect.soft(seen.sessions, "sessions shown, in order").toEqual(seen.sessions.length === 1 ? [next.id] : [seen.sessions[0], next.id])
       await expectNothingAnimating(app)

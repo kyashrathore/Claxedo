@@ -16,7 +16,6 @@ export type {
 } from "./model"
 export { queuedMessageText, turnActive } from "./model"
 export { messageNavVisible } from "./message-nav-preview"
-export { pageTurnFoldableCounts } from "./timeline-mount-cache"
 export { useTranscriptTypography } from "./transcript-typography"
 export { MessageComment, Timeline, uniqueSummaryDiffs, type SummaryDiff } from "./message-timeline.data"
 export { TimelineRow, type TimelineRowMap } from "./timeline-row-model"

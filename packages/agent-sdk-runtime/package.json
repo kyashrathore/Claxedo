@@ -139,6 +139,13 @@
       "import": "./dist/message-page.mjs",
       "default": "./dist/message-page.mjs"
     },
+    "./turn-page": {
+      "development": "./src/turn-page.ts",
+      "bun": "./src/turn-page.ts",
+      "types": "./dist/turn-page.d.ts",
+      "import": "./dist/turn-page.mjs",
+      "default": "./dist/turn-page.mjs"
+    },
     "./turn-outline": {
       "development": "./src/turn-outline.ts",
       "bun": "./src/turn-outline.ts",

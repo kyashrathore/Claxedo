@@ -24,8 +24,10 @@ import {
   sessionInventoryResponse,
   requiredWorkspaceId,
   signedSessionList, sessionListErrorResponse } from "../list"
-import { messagePageCursor, parseMessagePageInput } from "../message-page"
+import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
+import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -94,6 +96,48 @@ function projectedMessagePage(
   const read = services.projectionStore.read_session_message_page
   if (!read) throw new AgentMessagePageError(501, "message paging is unavailable for the session projection")
   return read(sessionId, page)
+}
+
+function projectedTurnRead(services: ControlPlaneServices, sessionId: string): TurnRead {
+  return (before) => storedTurn(projectedMessagePage(services, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }))
+}
+
+/** A loopback first read: the session's projected meta as the loopback inventory lists it, its replay's outline, and the projection's latest turns. */
+async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageQuery | undefined) {
+  const meta = await services.projectionStore.session_meta(sessionId)
+  if (!meta) return undefined
+  return await readFirstRead(
+    meta,
+    turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)),
+    projectedTurnRead(services, sessionId),
+    firstPage,
+  )
+}
+
+/** A loopback read of one part, from the projection's replay: it offers no read of one message by id. */
+async function projectedPart(services: ControlPlaneServices, sessionId: string, at: { messageId: string; partId: string }) {
+  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
+  const message = services.projectionStore.read_session_messages(sessionId).find((item) => item.info.id === at.messageId)
+  const part = message?.parts.find((item) => item.id === at.partId)
+  return part ? { part } : {}
+}
+
+/** A loopback page of the projection's turns before the reader's cursor, for a session the projection holds. */
+async function projectedPage(services: ControlPlaneServices, sessionId: string, page: TurnPageQuery & { before: string }) {
+  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
+  return await readTurnPage(projectedTurnRead(services, sessionId), page)
+}
+
+const sessionNotFound = { error: { code: "session_not_found", message: "Session not found" } } as const
+
+/** The refusals a transcript read throws, as the responses they answer; anything else propagates. */
+function transcriptReadError(c: Context, err: unknown) {
+  if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+  if (err instanceof TurnPageQueryError) return c.json({ error: { code: "turn_page_query_error", message: err.message } }, 400)
+  if (err instanceof AgentMessagePageError) {
+    return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
+  }
+  throw err
 }
 
 function workspaceTransportCapabilities(transport: string) {
@@ -265,16 +309,51 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/outline", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
-          return c.json({ allowed: true, ...turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)) })
-        }
-        const authority = requireAuthority(services)
-        const auth = await signedAuth(c.req.raw, options)
-        const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
-        return c.json(await authority.readSessionOutline(auth, { sessionId, workspaceId }))
+        const firstPage = parseTurnPageQuery((name) => c.req.query(name))
+        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
+          ? await projectedFirstRead(services, sessionId, firstPage)
+          : await requireAuthority(services).readSessionFirstRead(await signedAuth(c.req.raw, options), {
+              sessionId,
+              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
+              ...(firstPage ? { firstPage } : {}),
+            })
+        return read ? c.json(read) : c.json(sessionNotFound, 404)
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return transcriptReadError(c, err)
+      }
+    })
+    .get("/sessions/:sessionId/page", async (c) => {
+      try {
+        const sessionId = c.req.param("sessionId")
+        const page = parseOlderTurnPageQuery((name) => c.req.query(name))
+        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
+          ? await projectedPage(services, sessionId, page)
+          : await requireAuthority(services).readSessionPage(await signedAuth(c.req.raw, options), {
+              sessionId,
+              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
+              page,
+            })
+        return read ? c.json(read) : c.json(sessionNotFound, 404)
+      } catch (err) {
+        return transcriptReadError(c, err)
+      }
+    })
+    .get("/sessions/:sessionId/part", async (c) => {
+      try {
+        const sessionId = c.req.param("sessionId")
+        const at = parseSessionPartInput(c.req.query("messageId"), c.req.query("partId"))
+        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
+          ? await projectedPart(services, sessionId, at)
+          : await requireAuthority(services).readSessionPart(await signedAuth(c.req.raw, options), {
+              sessionId,
+              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
+              ...at,
+            })
+        if (!read) return c.json(sessionNotFound, 404)
+        if (!read.part) return c.json({ error: { code: "part_not_found", message: "The session has no such part" } }, 404)
+        return c.json({ part: read.part })
+      } catch (err) {
+        return transcriptReadError(c, err)
       }
     })
     .get("/sessions/:sessionId/capabilities", async (c) => {

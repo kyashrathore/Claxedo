@@ -46,6 +46,7 @@ export function SessionTimeline(props: {
           sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId), server.capabilities()?.thisMachine?.id)
         }
         resolveSubagents={resolveSubagents}
+        loadToolBody={(part) => void props.view.loadPart(part.messageID, part.id)}
       >
         <Show when={props.view.conversation()}>
           <MessageTimeline

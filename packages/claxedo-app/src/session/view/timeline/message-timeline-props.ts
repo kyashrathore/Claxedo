@@ -30,6 +30,7 @@ export type MessageTimelineProps = {
   navMessages?: TimelineNavTurn[]
   currentMessage?: TimelineNavTurn
   onMessageSelect?: (turn: TimelineNavTurn) => void
+  onReaderToggle: () => void
   progressBlocked?: Accessor<boolean>
   anchor: (id: string) => string
   setScrollToEnd?: (fn: () => void) => void

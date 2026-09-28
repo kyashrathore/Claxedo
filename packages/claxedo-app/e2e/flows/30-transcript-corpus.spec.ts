@@ -5,13 +5,12 @@ import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
 import { expectDetachedGrowthAtMost, expectHeapGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
 import { switchSessions } from "../corpus/switch"
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
-import { acpScriptToken, expect, holdResponse, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
 const LIVE_DURATIONS_STYLE = path.join(import.meta.dirname, "..", "corpus", "live-durations.css")
 const TURN_TIMEOUT = 30_000
 const TALL_VIEWPORT = 1600
-const LATEST_TURN_READ = /[?&]view=latest-turn\b/
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 const LIVE_DURATION = /(· |Worked for )\d+(?:h \d+m|m \d+s|ms|s|m|h)\b/g
@@ -210,10 +209,8 @@ for (const corpusCase of loadCases()) {
     const baseline = corpusCase.id
     const { workspace, target, turns, live } = await arrange(stack, api, corpusCase)
     await app.setViewportSize({ width: app.viewportSize()?.width ?? 1280, height: TALL_VIEWPORT })
-    const fullRead = await holdResponse(app, LATEST_TURN_READ)
     await app.goto(sessionUrl(stack, workspace.id, target.sessionId))
     await expect(turnRows(app).first()).toBeVisible()
-    await fullRead.release()
     for (const turn of live) await startLiveTurn(stack, api, target, turn)
     await expect(app.getByText(corpusCase.ready).first()).toBeVisible()
     await compareStage(app, corpusCase, baseline, "open")

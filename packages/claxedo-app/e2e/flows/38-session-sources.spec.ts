@@ -147,7 +147,7 @@ test("38 a stopped sandbox's session paints its stored surface, and its project 
   await expect(page.getByText("Kept by the control plane")).toBeVisible()
   await expect(page.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })).toBeVisible()
 
-  expect(reads.filter((read) => read.includes(`/api/control/sessions/${sessionId}/messages`) && read.includes("view=latest-surface"))).toHaveLength(1)
+  expect(reads.filter((read) => read.includes(`/api/control/sessions/${sessionId}/outline`) && read.includes("rows=")), "one first read").toHaveLength(1)
   expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
   expect(reads.filter((read) => read.startsWith(`POST /api/workspace/${workspace.id}/connection`)), "wakes").toEqual([])
   expect(reads.filter((read) => read.includes("/api/wr/pty")), "terminal lists").toEqual([])

@@ -251,7 +251,6 @@ export type TurnFoldStatus = {
   interrupted?: boolean
   errored?: boolean
   busy?: boolean
-  partsPending?: boolean
   foldWhenSettled?: boolean
   userChoice?: boolean
 }
@@ -268,7 +267,7 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
     !running &&
     status.foldWhenSettled !== false &&
     status.settled &&
-    (status.foldableCount >= FOLD_MINIMUM || !!status.partsPending)
+    status.foldableCount >= FOLD_MINIMUM
   const explainsItself = !!status.interrupted || !!status.errored
   return {
     canFold,
@@ -277,7 +276,7 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
   }
 }
 
-function groupMembers(group: PartGroup): PartRef[] {
+export function groupMembers(group: PartGroup): PartRef[] {
   return group.type === "part" ? [group.ref] : group.refs
 }
 
@@ -317,6 +316,11 @@ function assistantMessageInterrupted(message: AgentAssistantMessage) {
   if (message.error?.name === "MessageAbortedError") return true
   if (message.error?.name !== "UnknownError") return false
   return asRecord(message.error.data)?.message === "Codex turn aborted"
+}
+
+/** The assistant message a session's last turn was cancelled at, which that turn draws as an interruption. */
+export function cancelledAssistantMessageId(lastTurn: { status: string; assistantMessageId?: string } | undefined): string | undefined {
+  return lastTurn?.status === "cancelled" ? lastTurn.assistantMessageId : undefined
 }
 
 export function turnInterruption(messages: readonly AgentAssistantMessage[], cancelledAssistantMessageId?: string) {

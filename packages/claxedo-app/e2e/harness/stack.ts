@@ -12,6 +12,8 @@ import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
 import { stopSandboxes } from "./sandboxes"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
+import { installUnsetAcp } from "./scripted-world"
+import { directTransport } from "./transport"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
 
 export type Stack = {
@@ -24,6 +26,7 @@ export type Stack = {
     scriptDir: string
     write(name: string, script: AcpScript): Promise<void>
     release(name: string): Promise<void>
+    installUnset(): Promise<void>
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   gitRemote(name: string): Promise<GitRemote>
@@ -101,6 +104,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
       scriptDir: daemon.acpScriptDir,
       write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
       release: (name) => releaseAcpHold(daemon.acpScriptDir, name),
+      installUnset: () => installUnsetAcp(directTransport, daemon.url, daemon.acpScriptDir),
     },
     events: async (directory, options) => {
       const stream = await openEventStream(daemon.url, directory, options)

@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, SignJWT } from "jose"
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
@@ -253,20 +254,121 @@ describe("resource-closed hosted core app", () => {
     )).toEqual([])
   })
 
-  test("the session outline route refuses a request without a workspaceId, and otherwise answers with the authority's outline", async () => {
+  test("the session outline route answers the authority's first read, forwards the reader's viewport, and refuses a partial viewport or a missing session", async () => {
     const hosted = plane()
-    const outline = { allowed: true, role: "owner", turns: [{ id: "msg_1", messages: 2 }], complete: true }
-    const readSessionOutline = vi.fn(async () => outline)
-    Object.assign(hosted.services.authority!, { readSessionOutline })
+    const firstRead = {
+      session: { session_id: "ses_1", project_id: "prj_1", created_at: 1, updated_at: 2 },
+      outline: { turns: [{ id: "msg_1", createdAt: 1, user: "why?" }], complete: true },
+    }
+    const page = { turns: [{ messages: [], cursor: "cursor-1" }] }
+    const readSessionFirstRead = vi.fn(async (_auth: unknown, input: { sessionId: string; firstPage?: unknown }) =>
+      input.sessionId !== "ses_1" ? undefined : input.firstPage ? { ...firstRead, page } : firstRead)
+    Object.assign(hosted.services.authority!, { readSessionFirstRead })
     const app = createHostedCoreApp(hosted, options) as unknown as Hono
     const headers = { authorization: "Bearer alice" }
+
     const unscoped = await app.request("/api/control/sessions/ses_1/outline", { headers })
     expect(unscoped.status).toBe(400)
     await expect(unscoped.json()).resolves.toMatchObject({ error: { code: "WORKSPACE_ID_REQUIRED" } })
-    const read = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1", { headers })
+
+    const outlineOnly = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1", { headers })
+    expect(outlineOnly.status).toBe(200)
+    await expect(outlineOnly.json()).resolves.toEqual(firstRead)
+    expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1" })
+
+    const withPage = await app.request("/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=1&shell=1&edit=0", { headers })
+    expect(withPage.status).toBe(200)
+    await expect(withPage.json()).resolves.toEqual({ ...firstRead, page })
+    expect(readSessionFirstRead).toHaveBeenLastCalledWith(expect.anything(), {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      firstPage: { rows: 10, cols: 100, reasoning: true, shell: true, edit: false },
+    })
+
+    readSessionFirstRead.mockClear()
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
+      const refused = await app.request(`/api/control/sessions/ses_1/outline?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    expect(readSessionFirstRead).not.toHaveBeenCalled()
+
+    const missing = await app.request("/api/control/sessions/ses_missing/outline?workspaceId=ws_1", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
+  })
+
+  test("the session page route answers the authority's page before the reader's cursor, and refuses a read without its cursor or viewport, a cursor the store did not issue, or a missing session", async () => {
+    const hosted = plane()
+    const page = { turns: [{ messages: [{ info: { id: "u1", role: "user" }, parts: [] }], cursor: "cursor-1" }] }
+    const readSessionPage = vi.fn(async (_auth: unknown, input: { sessionId: string; page: { before: string } }) => {
+      if (input.page.before === "foreign") throw new AgentMessagePageError(400, "Invalid message page cursor")
+      return input.sessionId === "ses_1" ? page : undefined
+    })
+    Object.assign(hosted.services.authority!, { readSessionPage })
+    const app = createHostedCoreApp(hosted, options) as unknown as Hono
+    const headers = { authorization: "Bearer alice" }
+    const viewport = "rows=10&cols=100&reasoning=1&shell=0&edit=1"
+
+    const read = await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
     expect(read.status).toBe(200)
-    await expect(read.json()).resolves.toEqual(outline)
-    expect(readSessionOutline).toHaveBeenCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1" })
+    await expect(read.json()).resolves.toEqual(page)
+    expect(readSessionPage).toHaveBeenLastCalledWith(expect.anything(), {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      page: { rows: 10, cols: 100, reasoning: true, shell: false, edit: true, before: "cursor-2" },
+    })
+
+    const unscoped = await app.request(`/api/control/sessions/ses_1/page?${viewport}&before=cursor-2`, { headers })
+    expect(unscoped.status).toBe(400)
+    await expect(unscoped.json()).resolves.toMatchObject({ error: { code: "WORKSPACE_ID_REQUIRED" } })
+
+    readSessionPage.mockClear()
+    for (const query of [viewport, `${viewport}&before=`, "before=cursor-2", "rows=10&cols=100&reasoning=1&before=cursor-2", "rows=10&cols=2001&reasoning=1&shell=0&edit=1&before=cursor-2"]) {
+      const refused = await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    expect(readSessionPage).not.toHaveBeenCalled()
+
+    const foreign = await app.request(`/api/control/sessions/ses_1/page?workspaceId=ws_1&${viewport}&before=foreign`, { headers })
+    expect(foreign.status).toBe(400)
+    await expect(foreign.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+
+    const missing = await app.request(`/api/control/sessions/ses_missing/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
+  })
+
+  test("the session part route answers the authority's whole part, and names a read without its message or part, a missing part and a missing session", async () => {
+    const hosted = plane()
+    const part = { id: "a1-p0", type: "tool", tool: "read", callID: "call-1", state: { status: "completed", input: {}, output: "whole", title: "a.ts", metadata: {}, time: { start: 1, end: 2 } } }
+    const readSessionPart = vi.fn(async (_auth: unknown, input: { sessionId: string; partId: string }) =>
+      input.sessionId !== "ses_1" ? undefined : input.partId === "a1-p0" ? { part } : {})
+    Object.assign(hosted.services.authority!, { readSessionPart })
+    const app = createHostedCoreApp(hosted, options) as unknown as Hono
+    const headers = { authorization: "Bearer alice" }
+
+    const read = await app.request("/api/control/sessions/ses_1/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual({ part })
+    expect(readSessionPart).toHaveBeenLastCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1", messageId: "a1", partId: "a1-p0" })
+
+    readSessionPart.mockClear()
+    for (const query of ["messageId=a1", "partId=a1-p0", "messageId=&partId=a1-p0"]) {
+      const refused = await app.request(`/api/control/sessions/ses_1/part?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+    }
+    expect(readSessionPart).not.toHaveBeenCalled()
+
+    const noPart = await app.request("/api/control/sessions/ses_1/part?workspaceId=ws_1&messageId=a1&partId=a1-p9", { headers })
+    expect(noPart.status).toBe(404)
+    await expect(noPart.json()).resolves.toMatchObject({ error: { code: "part_not_found" } })
+
+    const missing = await app.request("/api/control/sessions/ses_missing/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 
   test("mounts build-composed route contributions and the integrations family under their own owners", async () => {

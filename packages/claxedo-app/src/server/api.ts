@@ -62,8 +62,10 @@ import type {
   ProjectSource,
   ProjectUpdate,
   PromptDelivery,
+  PageShape,
   PromptInput,
   QueuedPrompt,
+  ReaderSettings,
   QueuedPromptAction,
   QueuedPromptControl,
   SessionCreateInput,
@@ -75,15 +77,16 @@ import type {
   SessionRow,
   Subagent,
   TranscriptPage,
+  TranscriptPart,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly read: (ref: SessionRef, held?: HeldSessionReads) => SessionReads
-  readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
-  readonly wholeTurn: (ref: SessionRef, before?: string) => Promise<TranscriptPage>
+  readonly read: (ref: SessionRef, shape: PageShape, held?: HeldSessionReads) => SessionReads
+  readonly page: (ref: SessionRef, shape: PageShape, before: string) => Promise<TranscriptPage>
+  readonly part: (ref: SessionRef, messageId: string, partId: string) => Promise<TranscriptPart>
   readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
   readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>

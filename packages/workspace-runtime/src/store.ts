@@ -46,7 +46,7 @@ import type {
   SessionModelGroup,
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import {
   effectivePermissionModeId,
   effectiveSessionModel,
@@ -571,6 +571,11 @@ type MessageProjectionRow = {
   id: string
   ord: number
   info_json: string
+}
+
+type MessageClose = {
+  ts: number
+  message?: string
 }
 
 type SurfaceTurnRow = {
@@ -2165,7 +2170,7 @@ export class RuntimeStore {
    * projection already considers terminal: it can never progress again, so it
    * is reported as errored rather than left spinning in every transcript.
    */
-  private terminalizedPart(part: AgentMessage["parts"][number], ts: number, message?: string) {
+  private terminalizedPart(part: AgentMessage["parts"][number], close: MessageClose) {
     if (part.type !== "tool") return part
     const state = part.state
     if (state.status !== "pending" && state.status !== "running") return part
@@ -2174,12 +2179,25 @@ export class RuntimeStore {
       state: {
         ...state,
         status: "error" as const,
-        error: this.staleToolError(message),
+        error: this.staleToolError(close.message),
         time: {
-          start: state.status === "running" ? state.time.start : ts,
-          end: ts,
+          start: state.status === "running" ? state.time.start : close.ts,
+          end: close.ts,
         },
       },
+    }
+  }
+
+  /** When and why an assistant message ended; nothing while the message can still progress. */
+  private messageClose(info: AgentMessage["info"]): MessageClose | undefined {
+    const infoRecord = info as Record<string, unknown>
+    const time = asRecord(info.time)
+    if (info.role !== "assistant" || (typeof time?.completed !== "number" && !infoRecord.error)) return undefined
+    const err = asRecord(infoRecord.error)
+    const data = asRecord(err?.data)
+    return {
+      ts: num(time?.completed) ?? num(time?.created) ?? Date.now(),
+      message: str(data?.message) ?? str(err?.message),
     }
   }
 
@@ -4259,18 +4277,11 @@ export class RuntimeStore {
 
     return msgs.map((msg) => {
       const info = readColumn.messageInfo(msg.info_json)
-      const infoRecord = info as Record<string, unknown>
-      const time = asRecord(info.time)
-      const completed = typeof time?.completed === "number"
-      const err = asRecord(infoRecord.error)
-      const data = asRecord(err?.data)
-      const message = str(data?.message) ?? str(err?.message)
-      const terminal = info.role === "assistant" && (completed || !!infoRecord.error)
-      const ts = num(time?.completed) ?? num(time?.created) ?? Date.now()
+      const close = this.messageClose(info)
       const messageParts = partsByMessage.get(msg.id) ?? []
       return {
         info,
-        parts: terminal ? messageParts.map((part) => this.terminalizedPart(part, ts, message)) : messageParts,
+        parts: close ? messageParts.map((part) => this.terminalizedPart(part, close)) : messageParts,
       }
     })
   }
@@ -4331,6 +4342,25 @@ export class RuntimeStore {
 
   messageSessionId(messageId: string) {
     return this.db.prepare<{ session_id: string }>("SELECT session_id FROM message WHERE id = ?").get(messageId)?.session_id
+  }
+
+  /** One stored part whole, as the message it belongs to hydrates it; nothing when the session has no such message or the message no such part. */
+  getPart(sessionId: string, messageId: string, partId: string): AgentContentPart | undefined {
+    this.settleDeltas(sessionId)
+    const row = this.db
+      .prepare<{ info_json: string; data_json: string }>(
+        `
+        SELECT m.info_json, p.data_json
+        FROM part p
+        INNER JOIN message m ON m.id = p.message_id AND m.session_id = p.session_id
+        WHERE p.id = ? AND p.session_id = ? AND p.message_id = ?
+      `,
+      )
+      .get(partId, sessionId, messageId)
+    if (!row) return undefined
+    const part = readColumn.messagePart(row.data_json)
+    const close = this.messageClose(readColumn.messageInfo(row.info_json))
+    return close ? this.terminalizedPart(part, close) : part
   }
 
   turnOutline(sessionId: string): TurnOutline | undefined {

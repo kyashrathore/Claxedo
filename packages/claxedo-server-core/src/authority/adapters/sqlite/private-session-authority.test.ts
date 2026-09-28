@@ -18,7 +18,9 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
 import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
-import { exerciseTurnOutlineConformance } from "@claxedo/server-core/platform/auth/turn-outline.conformance"
+import { exerciseFirstReadConformance } from "@claxedo/server-core/platform/auth/first-read.conformance"
+import { exerciseTurnPageConformance } from "@claxedo/server-core/platform/auth/turn-page.conformance"
+import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/auth/session-part.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
@@ -789,10 +791,20 @@ describe("SQLite latest views", () => {
       workspaceId: "workspace_main",
       creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
     })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"], earlier: ["u1", "a1"] })
-    await expect(exerciseTurnOutlineConformance({
+    await expect(exerciseFirstReadConformance({
+      authority: store,
+      workspaceId: "workspace_main",
+      creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
+    })).resolves.toEqual({ outline: ["u1", "u2"], page: ["u1", "u2"] })
+    await expect(exerciseTurnPageConformance({
       authority: store,
       workspaceId: "workspace_main",
       creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
     })).resolves.toEqual(["u1", "u2"])
+    await expect(exerciseSessionPartConformance({
+      authority: store,
+      workspaceId: "workspace_main",
+      creator: { auth: creator, runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" } },
+    })).resolves.toBe("a1-p0")
   })
 })

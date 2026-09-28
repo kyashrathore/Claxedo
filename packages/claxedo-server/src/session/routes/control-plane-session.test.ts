@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import type { ReaderSettings } from "@claxedo/agent-sdk-runtime/turn-page"
+import { exerciseToolHeaderReads, toolHeaderTranscript } from "@claxedo/server-core/platform/auth/turn-page.conformance"
 import type { ControlPlaneServices } from "../../authority/services"
 
 const mocks = vi.hoisted(() => ({
@@ -315,7 +318,10 @@ describe("control plane session routes", () => {
           },
         ],
       })),
-      readSessionOutline: vi.fn(async () => ({ allowed: true, turns: [{ id: "u1" }], complete: true })),
+      readSessionFirstRead: vi.fn(async (_auth: unknown, input: { sessionId: string }) =>
+        input.sessionId === "session-1"
+          ? { session: { session_id: "session-1", title: "Signed session", created_at: 1, updated_at: 2 }, outline: { turns: [{ id: "u1", createdAt: 1 }], complete: true } }
+          : undefined),
       authorizeSessionRead: vi.fn(async () => {}),
     }
     svc.authority = authority as never
@@ -345,7 +351,10 @@ describe("control plane session routes", () => {
     const messages = await app.request("http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
-    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1", {
+    const outline = await app.request("http://127.0.0.1/sessions/session-1/outline?workspaceId=ws_1&rows=10&cols=100&reasoning=0&shell=0&edit=0", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+    const missingOutline = await app.request("http://127.0.0.1/sessions/session-2/outline?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
     const capabilities = await app.request(
@@ -365,8 +374,17 @@ describe("control plane session routes", () => {
       maxEventOrdinal: 7,
     })
     expect(outline.status).toBe(200)
-    await expect(outline.json()).resolves.toEqual({ allowed: true, turns: [{ id: "u1" }], complete: true })
-    expect(authority.readSessionOutline).toHaveBeenCalledWith(expect.anything(), { sessionId: "session-1", workspaceId: "ws_1" })
+    await expect(outline.json()).resolves.toEqual({
+      session: { session_id: "session-1", title: "Signed session", created_at: 1, updated_at: 2 },
+      outline: { turns: [{ id: "u1", createdAt: 1 }], complete: true },
+    })
+    expect(authority.readSessionFirstRead).toHaveBeenCalledWith(expect.anything(), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+      firstPage: { rows: 10, cols: 100, reasoning: false, shell: false, edit: false },
+    })
+    expect(missingOutline.status).toBe(404)
+    await expect(missingOutline.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
     expect(capabilities.status).toBe(409)
     await expect(capabilities.json()).resolves.toMatchObject({
       error: { code: "session_harness_missing" },
@@ -388,6 +406,88 @@ describe("control plane session routes", () => {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
+  })
+
+  test("a signed page read answers the authority's turns before the reader's cursor and names a session it cannot read", async () => {
+    const svc = services()
+    const page = { turns: [{ messages: [{ info: { id: "u1", role: "user" }, parts: [] }], cursor: "cursor-1" }] }
+    const authority = {
+      readSessionPage: vi.fn(async (_auth: unknown, input: { sessionId: string; page: { before: string } }) => {
+        if (input.page.before === "foreign") throw new AgentMessagePageError(400, "Invalid message page cursor")
+        return input.sessionId === "session-1" ? page : undefined
+      }),
+    }
+    svc.authority = authority as never
+    svc.projectionStore.read_session_message_page = vi.fn(() => {
+      throw new Error("a signed page read must not read the central projection")
+    })
+    const app = ControlPlaneSessionRoutes(svc, signedOptions)
+    const headers = { Authorization: "Bearer signed-token" }
+    const viewport = "rows=10&cols=100&reasoning=0&shell=1&edit=0"
+
+    const read = await app.request(`http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual(page)
+    expect(authority.readSessionPage).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+      page: { rows: 10, cols: 100, reasoning: false, shell: true, edit: false, before: "cursor-2" },
+    })
+
+    authority.readSessionPage.mockClear()
+    for (const query of [viewport, `${viewport}&before=`, "before=cursor-2", "rows=10&cols=100&before=cursor-2"]) {
+      const refused = await app.request(`http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&${query}`, { headers })
+      expect(refused.status, query).toBe(400)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    expect(authority.readSessionPage).not.toHaveBeenCalled()
+
+    const foreign = await app.request(`http://127.0.0.1/sessions/session-1/page?workspaceId=ws_1&${viewport}&before=foreign`, { headers })
+    expect(foreign.status).toBe(400)
+    await expect(foreign.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+
+    const missing = await app.request(`http://127.0.0.1/sessions/session-2/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
+  })
+
+  test("a signed part read answers the authority's whole part and names a missing part or a session it cannot read", async () => {
+    const svc = services()
+    const part = { id: "a1-p0", type: "tool", tool: "read", callID: "call-1", state: { status: "completed", input: {}, output: "whole", title: "a.ts", metadata: {}, time: { start: 1, end: 2 } } }
+    const authority = {
+      readSessionPart: vi.fn(async (_auth: unknown, input: { sessionId: string; partId: string }) =>
+        input.sessionId !== "session-1" ? undefined : input.partId === "a1-p0" ? { part } : {}),
+    }
+    svc.authority = authority as never
+    svc.projectionStore.read_session_messages = vi.fn(() => {
+      throw new Error("a signed part read must not read the central projection")
+    })
+    const app = ControlPlaneSessionRoutes(svc, signedOptions)
+    const headers = { Authorization: "Bearer signed-token" }
+
+    const read = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(read.status).toBe(200)
+    await expect(read.json()).resolves.toEqual({ part })
+    expect(authority.readSessionPart).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+      messageId: "a1",
+      partId: "a1-p0",
+    })
+
+    const unnamed = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1", { headers })
+    expect(unnamed.status).toBe(400)
+    await expect(unnamed.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+
+    const noPart = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1&partId=a1-p9", { headers })
+    expect(noPart.status).toBe(404)
+    await expect(noPart.json()).resolves.toMatchObject({ error: { code: "part_not_found" } })
+
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
   })
 
   test("keeps a signed workspace page on the authority cursor chain", async () => {
@@ -923,22 +1023,140 @@ describe("machine session admission", () => {
   })
 })
 
-test("a loopback caller without a bearer outlines the local projection's replay, turn by turn", async () => {
-  const svc = services()
-  svc.projectionStore.read_session_messages = vi.fn(() => [
-    { info: { id: "u1", role: "user", time: { created: 10 } }, parts: [{ type: "text", text: "  first prompt " }] },
-    { info: { id: "a1", role: "assistant", parentID: "u1", time: { created: 11, completed: 12 } }, parts: [{ type: "tool", tool: "Agent", callID: "call-1" }, { type: "text", text: "done" }] },
-    { info: { id: "u2", role: "user", time: { created: 20 }, summary: { title: "Second" } }, parts: [{ type: "text", text: "second" }] },
-  ])
-  const app = ControlPlaneSessionRoutes(svc, {})
-  const outline = await app.request("http://127.0.0.1/sessions/session-1/outline")
-  expect(outline.status).toBe(200)
-  expect(await outline.json()).toEqual({
-    allowed: true,
+const turnMessage = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>, parentID?: string) => {
+  const at = Number(id.replace(/\D/g, "")) * 10
+  return {
+    info: { id, sessionID: "session-1", role, time: { created: at, ...(role === "assistant" ? { completed: at + 5 } : {}) }, ...(parentID ? { parentID } : {}), ...(id === "u2" ? { summary: { title: "Second" } } : {}) },
+    parts: parts.map((part, index) => ({ id: `${id}-p${index}`, sessionID: "session-1", messageID: id, ...part })),
+  }
+}
+
+describe("a loopback caller without a bearer reads the local projection's first read, its pages and its parts", () => {
+  const first = [turnMessage("u1", "user", [{ type: "text", text: "  first prompt " }]), turnMessage("a1", "assistant", [{ type: "text", text: "done" }], "u1")]
+  const work = turnMessage("a2", "assistant", [
+    { type: "text", text: "Looking." },
+    { type: "tool", tool: "read", callID: "call-1", state: { status: "completed", input: {}, output: "x", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+  ], "u2")
+  const answer = turnMessage("a3", "assistant", [{ type: "text", text: "Answer." }], "u2")
+  const second = [turnMessage("u2", "user", [{ type: "text", text: "second" }]), work, answer]
+  const meta = sessionMeta({ id: "session-1", updatedAt: 30 })
+
+  function loopback() {
+    const svc = services()
+    svc.projectionStore.session_meta = vi.fn(async (sessionId: string) => (sessionId === "session-1" ? meta : undefined))
+    svc.projectionStore.read_session_messages = vi.fn(() => [...first, ...second])
+    svc.projectionStore.read_session_message_page = vi.fn((_sessionId: string, page) =>
+      "before" in page && page.before === "cursor-u2" ? { messages: first } : { messages: second, nextCursor: "cursor-u2" })
+    return { svc, app: ControlPlaneSessionRoutes(svc) }
+  }
+
+  const outline = {
     complete: true,
     turns: [
       { id: "u1", createdAt: 10, user: "first prompt" },
       { id: "u2", createdAt: 20, title: "Second", user: "second" },
     ],
+  }
+
+  test("answers the session's projected row and the outline of its replay, turn by turn", async () => {
+    const { app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/outline")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ session: meta, outline })
+  })
+
+  test("with the reader's viewport, answers the first page: the first turn whole, and the latest turn with every part, its tools as headers, and its cursor", async () => {
+    const { svc, app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
+    expect(response.status).toBe(200)
+    const { page, ...read } = await response.json()
+    expect(read).toEqual({ session: meta, outline })
+    expect(page.turns).toHaveLength(2)
+    expect(page.turns[0]).toEqual({ messages: first })
+    const latest = page.turns[1]
+    expect(Object.keys(latest).sort()).toEqual(["cursor", "messages"])
+    expect(latest.cursor).toBe("cursor-u2")
+    expect(latest.messages.map((message: { parts: Array<{ id: string }> }) => message.parts.map((part) => part.id))).toEqual(second.map((message) => message.parts.map((part) => part.id)))
+    expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })
+    expect(latest.messages[2]).toEqual(answer)
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(1, "session-1", { view: "latest-turn" })
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenNthCalledWith(2, "session-1", { view: "latest-turn", before: "cursor-u2" })
+  })
+
+  test("a page read answers the projection's turns before the reader's cursor, projected as the first page is", async () => {
+    const { svc, app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/page?rows=10&cols=100&reasoning=0&shell=0&edit=0&before=cursor-u2")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ turns: [{ messages: first }] })
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenCalledTimes(1)
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenCalledWith("session-1", { view: "latest-turn", before: "cursor-u2" })
+  })
+
+  test("a page read names its cursor and its viewport, and a session the projection does not hold has no page", async () => {
+    const { svc, app } = loopback()
+    for (const query of ["rows=10&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=0&before=", "before=cursor-u2"]) {
+      const refused = await app.request(`http://127.0.0.1/sessions/session-1/page?${query}`)
+      expect(refused.status, query).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/page?rows=10&cols=100&reasoning=0&shell=0&edit=0&before=cursor-u2")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+    expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
+  })
+
+  test("a part read answers the replay's part whole, and names a missing part, a read without its part, and a session the projection does not hold", async () => {
+    const { app } = loopback()
+    const response = await app.request("http://127.0.0.1/sessions/session-1/part?messageId=a2&partId=a2-p1")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ part: work.parts[1] })
+
+    const wrongMessage = await app.request("http://127.0.0.1/sessions/session-1/part?messageId=a3&partId=a2-p1")
+    expect(wrongMessage.status).toBe(404)
+    expect(await wrongMessage.json()).toMatchObject({ error: { code: "part_not_found" } })
+    const unnamed = await app.request("http://127.0.0.1/sessions/session-1/part?messageId=a2")
+    expect(unnamed.status).toBe(400)
+    expect(await unnamed.json()).toMatchObject({ error: { code: "message_page_error" } })
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/part?messageId=a2&partId=a2-p1")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+  })
+
+  test("refuses a partial or out-of-range viewport and names a session the projection does not hold", async () => {
+    const { svc, app } = loopback()
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
+      const refused = await app.request(`http://127.0.0.1/sessions/session-1/outline?${query}`)
+      expect(refused.status, query).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "turn_page_query_error" } })
+    }
+    expect(svc.projectionStore.session_meta).not.toHaveBeenCalled()
+    const missing = await app.request("http://127.0.0.1/sessions/session-2/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+  })
+
+  test("every read sends a tool as its header, and whole only when the reader's shell or edit setting opens it", async () => {
+    const transcript = toolHeaderTranscript("session-1")
+    const starts = transcript.flatMap((message, index) => (message.info.role === "user" ? [index] : []))
+    const turns = starts.map((start, index) => transcript.slice(start, starts[index + 1]))
+    const svc = services()
+    svc.projectionStore.session_meta = vi.fn(async (sessionId: string) => (sessionId === "session-1" ? meta : undefined))
+    svc.projectionStore.read_session_messages = vi.fn(() => transcript as never)
+    svc.projectionStore.read_session_message_page = vi.fn((_sessionId: string, page) => {
+      const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
+      return { messages: (turns[end - 1] ?? []) as never, ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
+    })
+    const app = ControlPlaneSessionRoutes(svc)
+    const settings = (reader: ReaderSettings) => `reasoning=${Number(reader.reasoning)}&shell=${Number(reader.shell)}&edit=${Number(reader.edit)}`
+    const read = async (path: string) => {
+      const response = await app.request(`http://127.0.0.1/sessions/session-1/${path}`)
+      expect(response.status, path).toBe(200)
+      return await response.json()
+    }
+
+    await exerciseToolHeaderReads({
+      first: async (reader) => (await read(`outline?rows=40&cols=100&${settings(reader)}`)).page,
+      page: async (reader, before) => await read(`page?rows=40&cols=100&${settings(reader)}&before=${before}`),
+    }, transcript)
   })
 })

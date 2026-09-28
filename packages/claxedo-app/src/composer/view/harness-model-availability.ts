@@ -37,6 +37,7 @@ export function createModelAvailability(input: ModelAvailabilityInput) {
   const modelLoading = createMemo(() => input.harness() && isCatalogHarness(input.harness()) ? input.catalog.providers.loading() : optionsLoading())
   const hasModelOptions = createMemo(() => input.rows().length > 0)
   const managedDefaultModel = createManagedDefaultModel(input)
+  const modelsAnswered = createMemo(() => input.selection().optionsAnswered && (input.harness()?.kind !== "connection" || !!input.connectionDeclaration()))
   const modelUnavailable = createMemo(() => {
     return !modelLoading() && !hasModelOptions() && !managedDefaultModel() && !input.catalog.unread()
   })
@@ -50,7 +51,7 @@ export function createModelAvailability(input: ModelAvailabilityInput) {
     return !input.harness() || managedDefaultModel() || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
   const modelLoadingOrSwitching = createMemo(() => modelLoading() || input.switching())
-  return { isError, isStale, modelLoading, hasModelOptions, managedDefaultModel, modelOptionsFailed, modelDisabled, modelLoadingOrSwitching }
+  return { isError, isStale, modelLoading, hasModelOptions, modelsAnswered, managedDefaultModel, modelOptionsFailed, modelDisabled, modelLoadingOrSwitching }
 }
 
 export type ModelAvailability = ReturnType<typeof createModelAvailability>

@@ -401,7 +401,7 @@ describe("session Goal routes", () => {
     const missing = await openView(SessionRoutes(() => adapter({})))
     expect(missing.status).toBe(200)
     const opened = await missing.json()
-    expect(opened.session.id).toBe("s1")
+    expect(opened).not.toHaveProperty("session")
     expect(opened.goal).toEqual({ error: { status: 503, code: "goal_runtime_unavailable", message: "Goal runtime is unavailable" } })
 
     let runtimeResolutions = 0

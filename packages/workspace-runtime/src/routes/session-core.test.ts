@@ -1,6 +1,6 @@
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT, type AgentToolPart, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent, SessionRouteContext } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
@@ -635,23 +635,195 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{ view: "latest-turn", before: "before-user" }])
   })
 
-  test("serves the session's turn outline from the runtime store, and names a missing session or an absent store", async () => {
+  test("answers an outline read with the session's row and its turn outline, and names a missing session or an absent store", async () => {
     const outline: TurnOutline = {
       turns: [{ id: "user-1", createdAt: 1, user: "why?" }],
       complete: true,
     }
     const app = routes({ adapter: adapter(), getTurnOutline: (_directory, sessionId) => (sessionId === "session-1" ? outline : undefined) })
 
-    const served = await app.request("http://localhost/session/session-1/message/../outline".replace("/message/..", ""))
+    const served = await app.request("http://localhost/session/session-1/outline")
     expect(served.status).toBe(200)
     expect(served.headers.get("cache-control")).toBe("no-store")
-    expect(await served.json()).toEqual(outline)
+    expect(await served.json()).toEqual({ session: await (await app.request("http://localhost/session/session-1")).json(), outline })
 
     const missing = await app.request("http://localhost/session/session-2/outline")
     expect(missing.status).toBe(404)
 
     const unsupported = await routes({ adapter: adapter() }).request("http://localhost/session/session-1/outline")
     expect(unsupported.status).toBe(501)
+  })
+
+  const pagedTurn = (index: number): AgentMessage[] => {
+    const user = `user-${index}`
+    const worked = `assistant-${index}-a`
+    const answered = `assistant-${index}-b`
+    const assistant = (id: string, parts: AgentMessage["parts"]) => ({
+      info: { id, sessionID: "session-1", role: "assistant", parentID: user, time: { created: 2, completed: 3 } },
+      parts,
+    }) as AgentMessage
+    return [
+      { info: { id: user, sessionID: "session-1", role: "user", time: { created: 1 } }, parts: [{ id: `${user}-p`, sessionID: "session-1", messageID: user, type: "text", text: `Prompt ${index}` }] } as AgentMessage,
+      assistant(worked, [
+        { id: `${worked}-t`, sessionID: "session-1", messageID: worked, type: "text", text: "Looking." },
+        { id: `${worked}-r`, sessionID: "session-1", messageID: worked, type: "tool", callID: "c", tool: "read", state: { status: "completed", input: {}, output: "x", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+      ]),
+      assistant(answered, [{ id: `${answered}-t`, sessionID: "session-1", messageID: answered, type: "text", text: `Answer ${index}.` }]),
+    ]
+  }
+
+  function pagedRoutes() {
+    const turns = Array.from({ length: 30 }, (_, index) => pagedTurn(index))
+    const reads: AgentMessagePageInput[] = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          reads.push(page)
+          const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
+          return { messages: turns[end - 1] ?? [], ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
+        },
+      }),
+      getTurnOutline: () => ({ turns: [], complete: true }),
+    })
+    return { app, turns, reads }
+  }
+
+  const viewport = "rows=10&cols=100&reasoning=0&shell=0&edit=0"
+
+  test("a first read's page walks back one whole turn at a time and sends every part of each turn, its tools as headers", async () => {
+    const { app, turns, reads } = pagedRoutes()
+
+    const response = await app.request(`http://localhost/session/session-1/outline?${viewport}`)
+
+    expect(response.status).toBe(200)
+    const { page } = await response.json()
+    expect(reads).toEqual([{ view: "latest-turn" }, ...["29", "28", "27", "26"].map((before) => ({ view: "latest-turn" as const, before }))])
+    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["25", "26", "27", "28", "29"])
+    const latest = page.turns.at(-1)
+    expect(Object.keys(latest).sort()).toEqual(["cursor", "messages"])
+    expect(latest.messages.map((message: AgentMessage) => message.parts.map((part) => part.id))).toEqual(turns[29]!.map((message) => message.parts.map((part) => part.id)))
+    expect(latest.messages[1].parts[1]).toMatchObject({ type: "tool", headerOnly: true, state: { output: "" } })
+  })
+
+  test("a page read answers the turns before its cursor, projected as the first page is", async () => {
+    const { app, reads } = pagedRoutes()
+
+    const response = await app.request(`http://localhost/session/session-1/page?${viewport}&before=27`)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    const page = await response.json()
+    expect(reads).toEqual(["27", "26", "25", "24", "23"].map((before) => ({ view: "latest-turn" as const, before })))
+    expect(page.turns.map((item: { cursor: string }) => item.cursor)).toEqual(["22", "23", "24", "25", "26"])
+  })
+
+  const toolBody = (name: string, bytes = 1024) => `${name}:${"x".repeat(bytes)}`
+  const toolBodies = ["read-output", "read-preview", "read-attachment", "bash-output", "bash-metadata", "edit-old", "edit-new", "edit-output", "edit-before", "edit-after"]
+
+  function bodiedTurns(): AgentMessage[][] {
+    const message = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>, parentID?: string) => ({
+      info: { id, sessionID: "session-1", role, time: { created: 1, ...(role === "assistant" ? { completed: 2 } : {}) }, ...(parentID ? { parentID } : {}) },
+      parts: parts.map((part, index) => ({ id: `${id}-p${index}`, sessionID: "session-1", messageID: id, ...part })),
+    }) as AgentMessage
+    const tool = (name: string, messageId: string, input: Record<string, unknown>, metadata: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+      type: "tool",
+      tool: name,
+      callID: `call-${name}-${messageId}`,
+      state: { status: "completed", input, output: toolBody(`${name}-output`, 64 * 1024), title: name, metadata, time: { start: 1, end: 2 }, ...extra },
+    })
+    const tools = (messageId: string) => ({
+      read: tool("read", messageId, { filePath: "shot.png" }, { loaded: ["shot.png"], preview: toolBody("read-preview") }, {
+        attachments: [{ id: `${messageId}-attachment`, sessionID: "session-1", messageID: messageId, type: "file", mime: "image/png", url: `data:image/png;base64,${toolBody("read-attachment")}` }],
+      }),
+      bash: tool("bash", messageId, { command: "ls" }, { command: "ls", exitCode: 0, output: toolBody("bash-metadata") }),
+      edit: tool("edit", messageId, { filePath: "a.ts", oldString: toolBody("edit-old"), newString: toolBody("edit-new") }, {
+        filediff: { file: "a.ts", additions: 1, deletions: 1, before: toolBody("edit-before"), after: toolBody("edit-after") },
+      }),
+    })
+    const unfolded = (index: number, name: "read" | "bash" | "edit") => [
+      message(`user-${index}`, "user", [{ type: "text", text: name }]),
+      message(`assistant-${index}`, "assistant", [tools(`assistant-${index}`)[name], { type: "text", text: "Done." }], `user-${index}`),
+    ]
+    return [
+      unfolded(1, "bash"),
+      unfolded(2, "edit"),
+      unfolded(3, "read"),
+      [
+        message("user-4", "user", [{ type: "text", text: "all" }]),
+        message("assistant-4-a", "assistant", [{ type: "text", text: "Looking." }, ...Object.values(tools("assistant-4-a"))], "user-4"),
+        message("assistant-4-b", "assistant", [{ type: "text", text: "Done." }], "user-4"),
+      ],
+    ]
+  }
+
+  test("every read sends a tool as its header, and whole only when the reader's shell or edit setting opens it", async () => {
+    const turns = bodiedTurns()
+    const stored = new Map(turns.flat().map((message) => [message.info.id, message.parts.map((part) => part.id)]))
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          const end = "before" in page && page.before !== undefined ? Number(page.before) : turns.length
+          return { messages: turns[end - 1] ?? [], ...(end > 1 ? { nextCursor: String(end - 1) } : {}) }
+        },
+      }),
+      getTurnOutline: () => ({ turns: [], complete: true }),
+    })
+    type Turn = { messages: AgentMessage[]; cursor?: string }
+    const sentAsHeaders = (label: string, sent: Turn[], reader: { shell: boolean; edit: boolean }) => {
+      const tools = sent.flatMap((turn) => {
+        expect(turn.messages.map((message) => message.parts.map((part) => part.id)), label).toEqual(turn.messages.map((message) => stored.get(message.info.id)!))
+        return turn.messages.flatMap((message) => message.parts.filter((part): part is AgentToolPart => part.type === "tool"))
+      })
+      expect(new Set(tools.map((part) => part.tool)), label).toEqual(new Set(["read", "bash", "edit"]))
+      for (const part of tools) {
+        const json = JSON.stringify(part)
+        if ((part.tool === "bash" && reader.shell) || (part.tool === "edit" && reader.edit)) {
+          expect(part.headerOnly, `${label}: ${part.tool}`).toBeUndefined()
+          expect(toolBodies.filter((name) => name.startsWith(`${part.tool}-`)).filter((name) => !json.includes(`${name}:`)), `${label}: ${part.tool}`).toEqual([])
+        } else {
+          expect(part, `${label}: ${part.tool}`).toMatchObject({ headerOnly: true, state: { status: "completed", output: "" } })
+          expect(part.state, `${label}: ${part.tool}`).not.toHaveProperty("attachments")
+          expect(toolBodies.filter((name) => json.includes(`${name}:`)), `${label}: ${part.tool}`).toEqual([])
+        }
+      }
+    }
+
+    for (const reader of [{ reasoning: false, shell: false, edit: false }, { reasoning: false, shell: true, edit: true }]) {
+      const settings = `reasoning=0&shell=${Number(reader.shell)}&edit=${Number(reader.edit)}`
+      const { page: first } = await (await app.request(`http://localhost/session/session-1/outline?rows=40&cols=100&${settings}`)).json() as { page: { turns: Turn[] } }
+      const latest = first.turns.at(-1)!
+      expect(first.turns.length, settings).toBe(4)
+      sentAsHeaders(`first read, ${settings}`, first.turns, reader)
+      const page = await (await app.request(`http://localhost/session/session-1/page?rows=40&cols=100&${settings}&before=${latest.cursor}`)).json() as { turns: Turn[] }
+      expect(page.turns.length, settings).toBe(3)
+      sentAsHeaders(`page read, ${settings}`, page.turns, reader)
+    }
+  })
+
+  test("a part read answers one part whole, and names a part the session lacks or a runtime that cannot read one", async () => {
+    const part = pagedTurn(3)[1]!.parts[1]!
+    const app = routes({ adapter: adapter(), getPart: (sessionId, messageId, partId) => (sessionId === "session-1" && messageId === part.messageID && partId === part.id ? part : undefined) })
+
+    const served = await app.request(`http://localhost/session/session-1/message/${part.messageID}/part/${part.id}`)
+    expect(served.status).toBe(200)
+    expect(served.headers.get("cache-control")).toBe("no-store")
+    expect(await served.json()).toEqual(part)
+
+    const missing = await app.request(`http://localhost/session/session-1/message/${part.messageID}/part/nope`)
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "part_not_found" } })
+
+    expect((await routes({ adapter: adapter() }).request(`http://localhost/session/session-1/message/${part.messageID}/part/${part.id}`)).status).toBe(501)
+  })
+
+  test("a first read or a page read names every extent it needs and refuses one out of range, and a page read names its cursor", async () => {
+    const { app } = pagedRoutes()
+    for (const query of ["rows=10&cols=100", "rows=10&reasoning=0", "rows=10&cols=100&reasoning=0", "rows=0&cols=100&reasoning=0&shell=0&edit=0", "rows=10&cols=100&reasoning=yes&shell=0&edit=0", "rows=10&cols=2001&reasoning=1&shell=0&edit=0", "rows=10&cols=100&reasoning=0&shell=0&edit=2"]) {
+      expect((await app.request(`http://localhost/session/session-1/outline?${query}`)).status).toBe(400)
+      expect((await app.request(`http://localhost/session/session-1/page?${query}&before=3`)).status).toBe(400)
+    }
+    expect((await app.request(`http://localhost/session/session-1/page?${viewport}`)).status).toBe(400)
+    expect((await app.request("http://localhost/session/session-1/page?before=3")).status).toBe(400)
   })
 
   test("returns unsupported instead of violating a bounded request with full history", async () => {
@@ -907,6 +1079,7 @@ function routes(input: {
   getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessage[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessage[]; maxEventOrdinal?: number } | undefined
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   getTurnOutline?: (directory: RuntimeDirectory, sessionId: string) => TurnOutline | undefined
+  getPart?: (sessionId: string, messageId: string, partId: string) => AgentMessage["parts"][number] | undefined
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
@@ -924,6 +1097,7 @@ function routes(input: {
       ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
       : undefined,
     getTurnOutline: input.getTurnOutline ? (_c, directory, sessionId) => input.getTurnOutline?.(directory, sessionId) : undefined,
+    getPart: input.getPart ? (_c, _directory, sessionId, messageId, partId) => input.getPart?.(sessionId, messageId, partId) : undefined,
     sessionAccessPolicy: input.sessionAccessPolicy,
     afterCreateSession: input.afterCreateSession
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
@@ -1290,7 +1464,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     const view = await opened.json()
     expect(decisions).toEqual(["session_open:session_meta_read"])
     expect(filtered).toEqual([])
-    expect(view.session).toEqual(await (await routes.request("http://localhost/session/session_open")).json())
+    expect(view).not.toHaveProperty("session")
     expect(view.status).toEqual({ value: (await (await routes.request("http://localhost/session/status")).json()).session_open })
     expect(view.permissions).toEqual({ value: await (await routes.request("http://localhost/permission")).json() })
     expect(view.questions).toEqual({ value: await (await routes.request("http://localhost/question")).json() })
@@ -2807,7 +2981,7 @@ describe("createSessionRoutes engine refusals", () => {
         message: "opencode answered permission.request.list for /workspace with status 500",
       },
     }
-    expect(view.session.id).toBe("session_1")
+    expect(view).not.toHaveProperty("session")
     expect(view.permissions).toEqual(refusal)
     expect(view.questions).toEqual(refusal)
     expect(view.todos).toEqual({ value: [] })

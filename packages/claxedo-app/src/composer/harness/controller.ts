@@ -38,6 +38,7 @@ export type HarnessSelectionControllerStore = {
   selectedModelKey(scope: string): ModelChoice | undefined
   optionsStale(scope: string): boolean
   optionsLoading(scope: string): boolean
+  optionsAnswered(scope: string): boolean
   configError(scope: string): string | undefined
   draftDefaultState(scope: string): DraftDefaultResult["state"] | undefined
   draftDefaultLabels(scope: string): DraftDefaultLabels | undefined
@@ -70,6 +71,7 @@ export type HarnessSelectionSnapshot = {
   selectedModelKey?: ModelChoice
   optionsStale: boolean
   optionsLoading: boolean
+  optionsAnswered: boolean
   configError: string | undefined
   draftDefaultState?: DraftDefaultResult["state"]
   draftDefaultLabels?: DraftDefaultLabels
@@ -95,6 +97,7 @@ function readSelection(store: HarnessSelectionControllerStore, scope: string): H
     selectedModelKey,
     optionsStale: store.optionsStale(scope),
     optionsLoading: store.optionsLoading(scope),
+    optionsAnswered: store.optionsAnswered(scope),
     configError: store.configError(scope),
     draftDefaultState: store.draftDefaultState(scope),
     draftDefaultLabels: store.draftDefaultLabels(scope),

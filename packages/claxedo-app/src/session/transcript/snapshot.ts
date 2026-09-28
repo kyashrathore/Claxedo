@@ -1,21 +1,26 @@
 import { batch } from "solid-js"
-import { toAppError, type HeldSessionReads, type SessionReads, type SessionSurfaceRead } from "@/server"
+import { toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
-import { adoptOlderCursor, completeLatestTurn, surfaceFragments } from "./latest-turn"
-import { isReading, NO_FRAGMENTS } from "./model"
+import { isOptimisticMessage } from "./merge"
+import { isReading, outlineOf } from "./model"
 
-function landSurface(context: TranscriptContext, surface: SessionSurfaceRead): void {
+function hasOlderLoaded(context: TranscriptContext, page: TranscriptPage): boolean {
+  const first = page.entries[0]?.info.id
+  return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && message.id < first)
+}
+
+function landFirst(context: TranscriptContext, first: SessionFirstRead): void {
   const current = context.phase.state()
   const held = isReading(current) ? current.held : []
   batch(() => {
-    context.deps.list.readRow(surface.row)
-    replaceLatest(context.setData, surface.transcript)
-    context.setData("fragmentParts", surface.latestTurnComplete ? NO_FRAGMENTS : surfaceFragments(surface.transcript))
-    context.latestTurnRead.current = surface.latestTurnComplete ? surface.transcript : undefined
-    adoptOlderCursor(context, surface.transcript)
-    context.setData("diff", [...surface.diff])
+    context.deps.list.readRow(first.row)
+    replaceLatest(context.setData, first.transcript)
+    context.latestTurnRead.current = first.latestTurn
+    if (!hasOlderLoaded(context, first.transcript)) context.setOlderCursor(first.transcript.olderCursor)
+    context.setData("diff", [...first.diff])
+    context.setOutline(outlineOf(first.outline))
     for (const event of held) applyTranscriptEvent(context, event)
     context.phase.send({ type: "readLanded" })
   })
@@ -38,10 +43,6 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
   landSide(context, "todos", reads.todos, (todos) => context.todos.read(todos, sentAt))
   landSide(context, "goal", reads.goal, context.goal.read)
   landSide(context, "subagents", reads.subagents, context.subagents.read)
-  reads.outline.then(
-    (outline) => context.outline.send({ type: "outlineLanded", outline, sentAt }),
-    (cause) => context.outline.send({ type: "outlineFailed", error: toAppError(cause), sentAt }),
-  )
 }
 
 export function readSnapshot(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
@@ -54,11 +55,10 @@ export function readSnapshot(context: TranscriptContext, held?: HeldSessionReads
 async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
   context.phase.send({ type: "readStarted" })
   const sentAt = Date.now()
-  const reads = context.server.sessions.read(context.ref, held)
+  const reads = context.server.sessions.read(context.ref, context.deps.pageShape(), held)
   landSides(context, reads, sentAt)
   try {
-    landSurface(context, await reads.surface)
-    await completeLatestTurn(context)
+    landFirst(context, await reads.first)
   } catch (cause) {
     const error = toAppError(cause)
     context.phase.send(error.class === "not_found" ? { type: "readMissing" } : { type: "readFailed", error })

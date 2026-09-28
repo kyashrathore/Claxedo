@@ -5,8 +5,6 @@ row 0:
 - text: Show the sum. acp-script:math-and-mermaid-0 Build · <time>
 - button "Copy message"
 row 1:
-- button "Worked for 0s"
-row 2:
 - paragraph: "The sum is:"
 - paragraph:
   - math: a + b = c a+b=c

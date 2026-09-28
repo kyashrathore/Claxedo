@@ -20,6 +20,7 @@ import type {
   TranscriptPart,
 } from "@/server"
 import type { TranscriptConversation } from "@/transcript"
+import type { TranscriptViewport } from "./transcript-viewport"
 import type { SessionSubagent } from "./transcript/subagent-merge"
 import type { QueuedMessages } from "./view/timeline/model"
 
@@ -74,7 +75,6 @@ export type OutlineState =
   | { readonly kind: "loading" }
   | { readonly kind: "ready"; readonly outline: SessionOutline }
   | { readonly kind: "unavailable" }
-  | { readonly kind: "failed"; readonly error: AppError }
 
 export type RequestState =
   | { readonly kind: "open" }
@@ -110,7 +110,7 @@ export type SessionView = {
   readonly olderState: Accessor<OlderState>
   readonly outline: Accessor<OutlineState>
   readonly loadOlder: () => Promise<void>
-  readonly loadOlderTurn: () => Promise<void>
+  readonly loadPart: (messageId: string, partId: string) => Promise<void>
   readonly reload: () => Promise<void>
   readonly send: (input: PromptInput) => Promise<void>
   readonly showSent: (prompt: SentPrompt) => void
@@ -123,6 +123,7 @@ export type { SessionSubagent }
 export type SessionStores = {
   readonly list: SessionList
   readonly open: (ref: SessionRef) => SessionView
+  readonly recordViewport: (viewport: TranscriptViewport) => void
 }
 
 export { createSessionStores, SessionStoresProvider, useSessionStores } from "./store"

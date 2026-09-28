@@ -1,10 +1,11 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
 import { createEffect, createRoot, on } from "solid-js"
-import { placementId, projectId, ServerError, sessionId, type Server, type SessionReads, type SessionOutline, type SessionRef, type TranscriptPage } from "@/server"
+import { placementId, projectId, ServerError, sessionId, type Server, type SessionFirstRead, type SessionReads, type SessionRef, type TranscriptPage, type TranscriptPart } from "@/server"
 import { createRequests } from "../requests"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
 import { loadOlder } from "./older"
+import { loadPart } from "./part"
 import { readSnapshot } from "./snapshot"
 
 const ref: SessionRef = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
@@ -16,18 +17,41 @@ const entry = (id: string, role: "user" | "assistant", parts: readonly { readonl
 
 const page = (entries: ReturnType<typeof entry>[], olderCursor?: string) => ({ entries, ...(olderCursor ? { olderCursor } : {}) }) as unknown as TranscriptPage
 
-const surface = page([entry("msg_2", "user", [{ type: "text", id: "p1" }]), entry("msg_2_r", "assistant", [{ type: "text", id: "p3" }])], "before-the-reply")
-const wholeTurn = page([entry("msg_2", "user", [{ type: "text", id: "p1" }]), entry("msg_2_r", "assistant", [{ type: "tool", id: "p2" }, { type: "text", id: "p3" }])], "before-the-turn")
-const olderPage = page([entry("msg_1", "user", [{ type: "text", id: "p0" }])])
-const olderTurn = page([entry("msg_1", "user", [{ type: "text", id: "p0" }]), entry("msg_1_r", "assistant", [{ type: "tool", id: "p8" }, { type: "text", id: "p9" }])])
-const olderPages: TranscriptPage[] = [page([entry("msg_1_r", "assistant", [{ type: "text", id: "p9" }])], "before-msg-1"), olderPage]
+const turn = (userId: string, partIds: readonly [string, string]) => [
+  entry(userId, "user", [{ type: "text", id: partIds[0] }]),
+  entry(`${userId}_r`, "assistant", [{ type: "text", id: partIds[1] }]),
+]
 
-function fakeServer(pages: readonly TranscriptPage[] = [olderPage], outlines: Promise<SessionOutline>[] = []) {
+const shell = (output: string, headerOnly?: true): TranscriptPart => ({
+  id: "p2",
+  sessionID: "ses_1",
+  messageID: "msg_2_r",
+  type: "tool",
+  callID: "c2",
+  tool: "bash",
+  state: { status: "completed", input: { command: "ls" }, output, title: "ls", metadata: {}, time: { start: 1, end: 2 } },
+  ...(headerOnly ? { headerOnly } : {}),
+})
+
+const withShell = (turnPage: TranscriptPage, part: TranscriptPart) =>
+  ({ ...turnPage, entries: turnPage.entries.map((item) => (item.info.id === "msg_2_r" ? { ...item, parts: [part, ...item.parts] } : item)) }) as TranscriptPage
+
+const latest = page(turn("msg_2", ["p1", "p3"]), "before-the-turn")
+const olderPage = page(turn("msg_1", ["p0", "p9"]))
+const outline = { turns: [{ id: "msg_1", createdAt: 1, preview: {} }, { id: "msg_2", createdAt: 1, preview: {} }], complete: true }
+
+const firstRead = (transcript: TranscriptPage): SessionFirstRead => ({
+  row: { ref, title: "Two turns", createdAt: 1, updatedAt: 2 },
+  diff: [],
+  outline,
+  transcript,
+  latestTurn: undefined,
+})
+
+function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly TranscriptPage[] = [olderPage]) {
   const olderReads: string[] = []
-  const turnReads: string[] = []
-  const reads: SessionReads = {
-    surface: Promise.resolve({ row: { ref, title: "Two turns", createdAt: 1, updatedAt: 2 }, diff: [], transcript: surface, latestTurnComplete: false }),
-    outline: Promise.resolve(undefined),
+  const reads = {
+    first: Promise.resolve(first),
     status: Promise.resolve({ kind: "idle" }),
     requests: Promise.resolve([]),
     todos: Promise.resolve([]),
@@ -36,39 +60,51 @@ function fakeServer(pages: readonly TranscriptPage[] = [olderPage], outlines: Pr
   } as unknown as SessionReads
   const server = {
     sessions: {
-      read: () => ({ ...reads, outline: outlines.shift() ?? reads.outline }),
-      wholeTurn: async (_ref: SessionRef, before?: string) => {
-        if (before === undefined) return wholeTurn
-        turnReads.push(before)
-        return olderTurn
-      },
-      older: async (_ref: SessionRef, cursor: string) => {
+      read: () => reads,
+      page: async (_ref: SessionRef, _shape: unknown, cursor: string) => {
         olderReads.push(cursor)
         return pages[olderReads.length - 1] ?? olderPage
       },
+      part: async () => shell("a\nb"),
     },
   } as unknown as Server
-  const deps = { list: { readRow: () => undefined, readStatus: () => undefined }, requests: { read: () => undefined, readFailed: () => undefined } } as unknown as TranscriptDeps
-  return { server, deps, olderReads, turnReads }
+  const deps = {
+    list: { readRow: () => undefined, readStatus: () => undefined },
+    requests: { read: () => undefined, readFailed: () => undefined },
+    pageShape: () => ({ rows: 40, cols: 100, reasoning: false, shell: false, edit: false }),
+  } as unknown as TranscriptDeps
+  return { server, deps, olderReads }
 }
 
-test("snapshot: once the whole latest turn lands, older history pages from before the turn, not from the surface's cursor into it", async () => {
+const idle = () => new Promise((resolve) => setTimeout(resolve, 5))
+
+test("snapshot: a first read lands its row, outline and page in one update, and nothing more is read until the reader pages", async () => {
   const { server, deps, olderReads } = fakeServer()
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
+    const seen: string[] = []
+    createEffect(
+      on(
+        () => [context.phase.state().kind, context.data.messages.length, context.outline().kind] as const,
+        (state) => seen.push(state.join(" ")),
+      ),
+    )
     await readSnapshot(context)
-    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
+    expect(seen, "the row, page and outline land together").toEqual(["loading 0 loading", "ready 2 ready"])
     expect(context.olderCursor()).toBe("before-the-turn")
-    await loadOlder(context, "page")
+    await idle()
+    expect(olderReads, "an idle transcript reads nothing").toEqual([])
+
+    await loadOlder(context)
     expect(olderReads).toEqual(["before-the-turn"])
-    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_2_r"])
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
     dispose()
   })
 })
 
 test("older: a page that lands is out of flight before it is announced, so a watcher of the landing can page again at once", async () => {
-  const { server, deps, olderReads } = fakeServer(olderPages)
+  const { server, deps, olderReads } = fakeServer(undefined, [page(turn("msg_1", ["p0", "p9"]), "before-msg-1"), page(turn("msg_0", ["p5", "p6"]))])
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
     await readSnapshot(context)
@@ -76,52 +112,72 @@ test("older: a page that lands is out of flight before it is announced, so a wat
       on(
         () => context.older.state().kind,
         (kind) => {
-          if (kind === "idle" && context.olderCursor() !== undefined) void loadOlder(context, "page")
+          if (kind === "idle" && context.olderCursor() !== undefined) void loadOlder(context)
         },
         { defer: true },
       ),
     )
-    await loadOlder(context, "page")
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await loadOlder(context)
+    await idle()
     expect(olderReads).toEqual(["before-the-turn", "before-msg-1"])
-    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_0", "msg_0_r", "msg_1", "msg_1_r", "msg_2", "msg_2_r"])
     expect(context.olderCursor()).toBeUndefined()
     dispose()
   })
 })
 
-test("snapshot: an outline read sent earlier that lands after a later one loses", async () => {
-  const outline = (id: string): SessionOutline => ({ turns: [{ id, createdAt: 1, preview: {} }], complete: true })
-  let landEarlier: (outline: SessionOutline) => void = () => {}
-  const { server, deps } = fakeServer([olderPage], [new Promise<SessionOutline>((resolve) => (landEarlier = resolve)), Promise.resolve(outline("later"))])
-  let now = 1_000
-  const clock = spyOn(Date, "now").mockImplementation(() => (now += 1))
+test("snapshot: a reread that sends a tool as its header keeps the body the reader loaded", async () => {
+  const withHeader = withShell(latest, shell("", true))
+  const { server, deps } = fakeServer(firstRead(withHeader))
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
     await readSnapshot(context)
+    await loadPart(context, "msg_2_r", "p2")
     await readSnapshot(context)
-    expect(context.outline.state()).toMatchObject({ kind: "ready", outline: outline("later") })
-    landEarlier(outline("earlier"))
-    await Promise.resolve()
-    expect(context.outline.state()).toMatchObject({ kind: "ready", outline: outline("later") })
+    expect(context.data.parts["msg_2_r"]).toEqual([shell("a\nb"), withHeader.entries[1]!.parts[1]!])
     dispose()
   })
-  clock.mockRestore()
 })
 
-test("older: a whole-turn read pages from the same cursor, in the same slot, and lands the turn above like a page", async () => {
-  const { server, deps, olderReads, turnReads } = fakeServer()
+test("snapshot: a reread's newer whole part replaces the body the reader loaded", async () => {
+  const reads = [withShell(latest, shell("", true)), withShell(latest, shell("a\nb\nc"))]
+  const { server: base, deps } = fakeServer()
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref, deps.pageShape()), first: Promise.resolve(firstRead(reads.shift()!)) }) } } as unknown as Server
   await createRoot(async (dispose) => {
     const context = createTranscriptContext(server, ref, deps)
     await readSnapshot(context)
-    const turn = loadOlder(context, "turn")
-    expect(loadOlder(context, "page"), "a page asked for while the turn is in flight joins it").toBe(turn)
-    await turn
-    expect(turnReads).toEqual(["before-the-turn"])
-    expect(olderReads).toEqual([])
+    await loadPart(context, "msg_2_r", "p2")
+    await readSnapshot(context)
+    expect(context.data.parts["msg_2_r"]?.[0]).toEqual(shell("a\nb\nc"))
+    dispose()
+  })
+})
+
+test("older: a page that overlaps a turn whose tool body the reader loaded keeps the body", async () => {
+  const withHeader = withShell(latest, shell("", true))
+  const overlapping = page([...(olderPage.entries as ReturnType<typeof entry>[]), ...(withHeader.entries as ReturnType<typeof entry>[])])
+  const { server, deps } = fakeServer(firstRead(withHeader), [overlapping])
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await loadPart(context, "msg_2_r", "p2")
+    await loadOlder(context)
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_1", "msg_1_r", "msg_2", "msg_2_r"])
-    expect(context.olderCursor()).toBeUndefined()
-    expect(context.older.state().kind).toBe("idle")
+    expect(context.data.parts["msg_2_r"]?.[0]).toEqual(shell("a\nb"))
+    dispose()
+  })
+})
+
+test("older: a refused page keeps the older cursor, so the reader can page again", async () => {
+  const { server: base, deps } = fakeServer()
+  const refused = new ServerError({ class: "network", message: "An older page cannot be read while the session's machine is offline" })
+  const server = { ...base, sessions: { ...base.sessions, page: async () => Promise.reject(refused) } } as unknown as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await loadOlder(context)
+    expect(context.older.state()).toMatchObject({ kind: "failed", error: { class: "network" } })
+    expect(context.olderCursor()).toBe("before-the-turn")
     dispose()
   })
 })
@@ -129,13 +185,13 @@ test("older: a whole-turn read pages from the same cursor, in the same slot, and
 test("snapshot: a refused requests read leaves the transcript on screen and names the failure for its Retry, and the next read clears it", async () => {
   const refused = new ServerError({ class: "network", status: 502, code: "harness_engine_error", message: "The engine refused the permission list" })
   const answers = [Promise.reject(refused), Promise.resolve([])]
-  const { server: base } = fakeServer()
-  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref), requests: answers.shift()! }) } } as unknown as Server
+  const { server: base, deps } = fakeServer()
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref, deps.pageShape()), requests: answers.shift()! }) } } as unknown as Server
   let now = 1_000
   const clock = spyOn(Date, "now").mockImplementation(() => (now += 1))
   await createRoot(async (dispose) => {
     const requests = createRequests(server)
-    const context = createTranscriptContext(server, ref, { list: { readRow: () => undefined, readStatus: () => undefined }, requests } as unknown as TranscriptDeps)
+    const context = createTranscriptContext(server, ref, { ...deps, requests } as unknown as TranscriptDeps)
     await readSnapshot(context)
     await Promise.resolve()
     expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
