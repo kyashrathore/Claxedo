@@ -1,18 +1,16 @@
 # Claxedo benchmark driver
 
-The application-owned driver of the public [agent-app-benchmark](https://github.com/kyashrathore/agent-app-benchmark). The benchmark's registry app `claxedo-v2` declares `"driverOwnership": "application-repository"`, and the benchmark resolves the driver at the fixed path `$CLAXEDO_ROOT/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts`. Do not move it.
+The application-owned driver of the public [agent-app-benchmark](https://github.com/kyashrathore/agent-app-benchmark). The benchmark's registry app `claxedo` declares `"driverOwnership": "application-repository"`, and the benchmark resolves the driver at the fixed path `$CLAXEDO_ROOT/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts`. Do not move it.
 
 - `src/public-agent-app-driver.ts`: the NDJSON driver. It lists the scenario ids it serves and dispatches each to its kind: app start or session switch.
 - `src/public-corpus-materializer.ts`, `src/corpus-workspace.ts`, `src/fixture-registration.ts`, `src/opencode-corpus.ts`: write the benchmark corpus into a Claxedo data directory through the app's own server-core and workspace-runtime writers (`src/production-modules.ts`).
 - `src/agent-claxedo-launcher.ts`, `src/agent-cdp-page.ts`: launch the packaged app and attach over CDP.
 - `src/agent-browser-observer.ts`: the readiness predicates and frame timing. It reads the app's `data-testid`, `data-slot` and `data-component` hooks, so the app's `claxedo-names` check counts this folder as a reader.
-- `src/browser/painted-frames.ts`: the one frame clock those predicates run on. Each frame is sampled in its own rendering step, after layout and before paint, so a sample reads what the frame painted. The driver times a session frame at its observation, `performance.now()` right after the sample, as the benchmark's `settle-31-frames/v1` rule does; the clock also stamps when the frame was painted, in a task posted from that step.
-
-The same driver measures the archived packaged v1 app and today's app, so a precondition it enforces must hold for both.
+- `src/browser/painted-frames.ts`: the one frame clock those predicates run on. Each frame is sampled in its own rendering step, after layout and before paint, so a sample reads what the frame painted. The driver times a session frame at its observation, `performance.now()` right after the sample, as the benchmark's `settle-31-frames` rule does; the clock also stamps when the frame was painted, in a task posted from that step.
 
 ## Settle stamp
 
-Driver version 2 reports the settle frame's observation time and declares `settle-31-frames/v1`. Version 1 reported the time the painted-frames clock saw that frame painted and declared no clock rule. On one run of the packaged 394ff45ca5 app that recorded both for every settle (111 s, 1-minute load 20–30), the painted time was later than the observation by 3.2 ms median, 5.4 ms p95 and 6.0 ms at most over 98 switches, and by 3.2 ms median and 6.2 ms at most over 15 app-start and control settles. Version 2 durations are shorter than version 1's by that much for the same frames.
+Driver version 2 reports the settle frame's observation time and declares `settle-31-frames`. Version 1 reported the time the painted-frames clock saw that frame painted and declared no clock rule. On one run of the packaged 394ff45ca5 app that recorded both for every settle (111 s, 1-minute load 20–30), the painted time was later than the observation by 3.2 ms median, 5.4 ms p95 and 6.0 ms at most over 98 switches, and by 3.2 ms median and 6.2 ms at most over 15 app-start and control settles. Version 2 durations are shorter than version 1's by that much for the same frames.
 
 The published results from before the rule came from driver commit 0df673fff3, which sampled each frame inside its requestAnimationFrame callback and reported that sample's observation. That sample ran before the frame's style and layout, where the current one runs after them: on the same run the current observation came 2.2 ms median and 4.5 ms at most after the callback began. The two samples can read different content for the same frame, so the difference from those results is not a fixed offset. Results from either earlier driver declare no clock rule, and the benchmark's verdict refuses to pair them with results that declare one.
 
@@ -46,4 +44,4 @@ bun run verify
 
 ## Run
 
-From the benchmark checkout, `node bin/agent-app-benchmark.mjs run --app claxedo-v2`, with `CLAXEDO_ROOT` naming this checkout and `CLAXEDO_V2_BENCHMARK_EXECUTABLE` the packaged app. The benchmark's README lists the other variables.
+From the benchmark checkout, `node bin/agent-app-benchmark.mjs run --app claxedo`, with `CLAXEDO_ROOT` naming this checkout and `CLAXEDO_BENCHMARK_EXECUTABLE` the packaged app. The benchmark's README lists the other variables.

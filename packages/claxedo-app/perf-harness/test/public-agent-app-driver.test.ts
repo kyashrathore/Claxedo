@@ -4,7 +4,6 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   createClaxedoPublicDriver,
-  parseApplicationArgument,
   PRIVATE_CORPUS_SCENARIO_IDS,
   PUBLIC_SCENARIO_IDS,
   readPreparedCache,
@@ -94,7 +93,7 @@ const { expandCases, buildResourceSequence } = (await import(new URL("src/cases.
 }
 async function prepare(
   driver: ReturnType<typeof createClaxedoPublicDriver>,
-  scenarioId = "session-switch-walk-v2",
+  scenarioId = "session-switch-walk",
   scenarioDefinition?: Scenario,
 ) {
   return driver.prepare({
@@ -113,7 +112,7 @@ async function prepare(
 describe("Claxedo public driver", () => {
   test("advertises exactly the scenarios registered by the pinned framework", async () => {
     const app: { scenarios: string[]; materializationModes: string[] } = JSON.parse(
-      await readFile(new URL("registry/apps/claxedo-v2.json", frameworkRoot), "utf8"),
+      await readFile(new URL("registry/apps/claxedo.json", frameworkRoot), "utf8"),
     )
     const advertised: string[] = [...PUBLIC_SCENARIO_IDS]
     expect(advertised.sort()).toEqual([...app.scenarios].sort())
@@ -131,13 +130,13 @@ describe("Claxedo public driver", () => {
     const { driver, activations } = harness()
     await prepare(driver)
     await driver.launch({
-      scenarioId: "session-switch-walk-v2",
+      scenarioId: "session-switch-walk",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
     })
     const step = await driver.execute({
-      scenarioId: "session-switch-walk-v2",
+      scenarioId: "session-switch-walk",
       case: {
         caseId: "step",
         workload: "progressive-resource",
@@ -147,7 +146,7 @@ describe("Claxedo public driver", () => {
       },
     })
     const control = await driver.execute({
-      scenarioId: "session-switch-walk-v2",
+      scenarioId: "session-switch-walk",
       case: { caseId: "control", workload: "resource-control", destinationSessionId: "control" },
     })
     expect(activations).toEqual(["control", "progressive-resource-1048576", "control"])
@@ -156,29 +155,29 @@ describe("Claxedo public driver", () => {
   })
 
   test("walks the list one row down per step, rejecting a step to anything but the next row", async () => {
-    const scenario = await readScenario("session-switch-walk-v2")
+    const scenario = await readScenario("session-switch-walk")
     const cases = expandCases(scenario, "smoke")
     const ids = cases.flatMap((item) => ("destinationSessionId" in item ? [item.destinationSessionId] : []))
     const { driver, listed, activations } = harness(ids)
-    await prepare(driver, "session-switch-walk-v2", scenario)
-    await driver.launch({ scenarioId: "session-switch-walk-v2", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
-    for (const benchmarkCase of cases) await driver.execute({ scenarioId: "session-switch-walk-v2", case: benchmarkCase })
+    await prepare(driver, "session-switch-walk", scenario)
+    await driver.launch({ scenarioId: "session-switch-walk", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+    for (const benchmarkCase of cases) await driver.execute({ scenarioId: "session-switch-walk", case: benchmarkCase })
     expect(activations).toEqual(ids)
     await driver.shutdown()
-    await driver.launch({ scenarioId: "session-switch-walk-v2", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
+    await driver.launch({ scenarioId: "session-switch-walk", stateHandle: "sealed-p1", initialSessionId: "control", groupId: "walk" })
     listed.ids = [listed.ids[1]!, listed.ids[0]!, ...listed.ids.slice(2)]
-    await driver.execute({ scenarioId: "session-switch-walk-v2", case: cases[0]! })
-    await expect(driver.execute({ scenarioId: "session-switch-walk-v2", case: cases[1]! })).rejects.toThrow(/not directly below/)
-    await expect(driver.execute({ scenarioId: "session-switch-walk-v2", case: { ...cases[0]!, caseId: "again" } })).rejects.toThrow(
+    await driver.execute({ scenarioId: "session-switch-walk", case: cases[0]! })
+    await expect(driver.execute({ scenarioId: "session-switch-walk", case: cases[1]! })).rejects.toThrow(/not directly below/)
+    await expect(driver.execute({ scenarioId: "session-switch-walk", case: { ...cases[0]!, caseId: "again" } })).rejects.toThrow(
       /does not match this process's visits/,
     )
   })
 
   test("measures application start from the requested exact state", async () => {
     const { driver, launches } = harness()
-    await prepare(driver, "app-start-fast-v3")
+    await prepare(driver, "app-start")
     const result = await driver.execute({
-      scenarioId: "app-start-fast-v3",
+      scenarioId: "app-start",
       stateHandle: "sealed-p0",
       case: { caseId: "new-start", startMode: "new-application-state" },
     })
@@ -272,19 +271,5 @@ describe("Claxedo prepared-state cache", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
-  })
-})
-
-describe("the application argument", () => {
-  test("names today's app by default and the v2 rebuild only when asked", () => {
-    expect(parseApplicationArgument([])).toBe("claxedo")
-    expect(parseApplicationArgument(["--application", "claxedo-v2"])).toBe("claxedo-v2")
-  })
-
-  test("rejects anything else rather than falling back to today's app", () => {
-    expect(() => parseApplicationArgument(["--application", "claxedo-v3"])).toThrow(/--application/)
-    expect(() => parseApplicationArgument(["--application"])).toThrow(/--application/)
-    expect(() => parseApplicationArgument(["--app", "claxedo-v2"])).toThrow(/--application/)
-    expect(() => parseApplicationArgument(["--application", "claxedo-v2", "extra"])).toThrow(/--application/)
   })
 })

@@ -23,16 +23,16 @@ import {
  */
 const RESOURCE_CONTROL_READINESS_TIMEOUT_MS = 5_000
 
-const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-fast-v3", "app-start-real-sessions-v1"]
-const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-walk-v2", "session-switch-walk-real-sessions-v1"]
+const APP_START_SCENARIO_IDS: readonly string[] = ["app-start", "app-start-real-sessions"]
+const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-walk", "session-switch-walk-real-sessions"]
 
-export const PUBLIC_SCENARIO_IDS = ["app-start-fast-v3", "session-switch-walk-v2"] as const
+export const PUBLIC_SCENARIO_IDS = ["app-start", "session-switch-walk"] as const
 
 /**
  * Scenarios over the private corpus of redacted real sessions. They cannot be
  * registered, so they are served here beside the registered ones.
  */
-export const PRIVATE_CORPUS_SCENARIO_IDS = ["app-start-real-sessions-v1", "session-switch-walk-real-sessions-v1"] as const
+export const PRIVATE_CORPUS_SCENARIO_IDS = ["app-start-real-sessions", "session-switch-walk-real-sessions"] as const
 
 const SERVED_SCENARIO_IDS: readonly string[] = [...PUBLIC_SCENARIO_IDS, ...PRIVATE_CORPUS_SCENARIO_IDS]
 
@@ -250,27 +250,9 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
   }
 }
 
-export const APPLICATIONS = {
-  claxedo: { id: "claxedo", name: "Claxedo" },
-  "claxedo-v2": { id: "claxedo-v2", name: "Claxedo v2" },
-} as const
+const APPLICATION = { id: "claxedo", name: "Claxedo" } as const
 
-export type ApplicationId = keyof typeof APPLICATIONS
-
-function isApplicationId(value: string | undefined): value is ApplicationId {
-  return value !== undefined && Object.hasOwn(APPLICATIONS, value)
-}
-
-export function parseApplicationArgument(argv: readonly string[]): ApplicationId {
-  if (argv.length === 0) return "claxedo"
-  const [flag, value, ...rest] = argv
-  if (flag !== "--application" || !isApplicationId(value) || rest.length > 0)
-    throw new Error(`Claxedo driver accepts only --application ${Object.keys(APPLICATIONS).join("|")}, got ${JSON.stringify(argv)}`)
-  return value
-}
-
-async function makeDefaultDependencies(applicationId: ApplicationId): Promise<DriverDependencies> {
-  const application = APPLICATIONS[applicationId]
+async function makeDefaultDependencies(): Promise<DriverDependencies> {
   const repoRoot = path.resolve(import.meta.dir, "../../../..")
   const executable = await discoverPackagedExecutable()
   const desktopPackage: unknown = JSON.parse(
@@ -352,15 +334,15 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
   return {
     hello: {
       protocolVersion: 1,
-      application: { id: application.id, name: application.name, version: desktopVersion, buildDigestSha256 },
+      application: { ...APPLICATION, version: desktopVersion, buildDigestSha256 },
       driver: { name: "claxedo-reference", version: "2", sourceCommit, digestSha256: driverDigestSha256 },
-      sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
+      sourceEventFormats: ["opencode-event"],
       materializationModes: ["native-opencode"],
       guiFramework: "electron",
-      clockRule: "settle-31-frames/v1",
+      clockRule: "settle-31-frames",
     },
     prepare: async (params) => {
-      const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", application.id)
+      const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", APPLICATION.id)
       attemptsRoot = path.join(runRoot, "attempts")
       const cacheRoot = process.env.AGENT_APP_BENCHMARK_STATE_CACHE
       if (cacheRoot) await mkdir(cacheRoot, { recursive: true, mode: 0o700 })
@@ -703,7 +685,7 @@ function executeParams(params: unknown): ExecuteParams {
 }
 
 export async function runClaxedoPublicDriver() {
-  const driver = createClaxedoPublicDriver(await makeDefaultDependencies(parseApplicationArgument(Bun.argv.slice(2))))
+  const driver = createClaxedoPublicDriver(await makeDefaultDependencies())
   const handlers: DriverHandlers = {
     hello: async () => driver.hello(),
     prepare: async (params) => driver.prepare(prepareParams(params)),

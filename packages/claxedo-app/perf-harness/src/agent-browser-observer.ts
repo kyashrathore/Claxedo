@@ -162,7 +162,7 @@ type SessionActionResult =
 
 /**
  * The frames an activation's clock was derived from, in the shape the
- * benchmark re-derives the settle from (settle-31-frames/v1). The observer is
+ * benchmark re-derives the settle from (settle-31-frames). The observer is
  * installed before the click, so frames before the trusted input are dropped.
  */
 export type FrameLog = {
