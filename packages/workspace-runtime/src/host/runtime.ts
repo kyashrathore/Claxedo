@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { AgentMessage, AgentSession, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import type { AgentRuntimeStreamEvent, ConnectionSecretAuthority, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { eventSessionId, sessionIdle, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
@@ -97,8 +97,13 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       })
     },
   }))
-  const attachments = new SessionAttachments({ store, transports: input.transports, launch: input.launch, broker, workspaceId })
-  const executing = new Map<string, AttachedSession>()
+  const executing = new Map<string, { generation: object; attached: AttachedSession }>()
+  const attachments = new SessionAttachments({ store, transports: input.transports, launch: input.launch, broker, workspaceId,
+    executing: (sessionId, generation) => {
+      const current = executing.get(sessionId)
+      return admissions.active(sessionId)?.generation === generation && current?.generation === generation ? current.attached : undefined
+    },
+  })
 
   const commitAndPublish: TurnRunnerHost["commit"] = (sessionId, directory, payload, source, fence, emit) => {
     if (fence && !fence.valid()) throw new Error("Durable session turn admission is no longer valid")
@@ -128,7 +133,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     producer: lifecycle.producer,
     providerTurn: (sessionId) => input.ports.currentTurnAuthority(sessionId)?.turnId,
     cancelTarget: async (sessionId) => {
-      const attached = executing.get(sessionId) ?? await attachments.for(sessionId)
+      const attached = executing.get(sessionId)?.attached ?? await attachments.for(sessionId)
       return { transport: attached.handle.transport, session: attached.session }
     },
     publish,
@@ -173,8 +178,12 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     if (turn.admission && !turn.admission.valid()) throw new Error("Durable session turn admission is no longer valid")
     // Capture the target before attachment yields. A replacement turn must
     // never inherit an input addressed to the previous one.
-    const steeringTarget = turn.delivery === "steer" ? admissions.active(turn.sessionId) : undefined
-    const attached = await attachments.for(turn.sessionId)
+    const controlTarget = turn.delivery ? admissions.active(turn.sessionId) : undefined
+    if (!turn.delivery && admissions.active(turn.sessionId)) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
+    const authority = turnSecretAuthority(turn)
+    const attached = controlTarget
+      ? await attachments.for(turn.sessionId, undefined, controlTarget.generation)
+      : await attachments.admit(turn.sessionId, authority)
     // Pinned before the first yield: a lease rotation or a removed connection
     // must not dispose the transport between this read and the turn's launch.
     const unpin = attached.handle.pin()
@@ -194,13 +203,14 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       const handoff = config.handoff?.pending ? config.handoff.transcript : undefined
       const prompt = turnPrompt({ turn, config, userMessageId, assistantMessageId, channel: declared.instructionChannel })
       const running = admissions.active(turn.sessionId)
-      if (turn.delivery === "steer" && (!steeringTarget || running?.generation !== steeringTarget.generation)) {
+      if (turn.delivery === "steer" && (!controlTarget || running?.generation !== controlTarget.generation)) {
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt,
           delivery: "queue", steering: { ok: false, status: "no_active_turn", message: "The target turn ended before steering" } }
       }
+      if (controlTarget && running?.generation !== controlTarget.generation) return startTurn(turn)
       if (running) {
         if (!turn.delivery) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-        const live = executing.get(turn.sessionId) ?? attached
+        const live = executing.get(turn.sessionId)?.attached ?? attached
         const steer = live.handle.transport.steer
         const delivered = await deliverToBusySession({
           running, turn, prompt, userMessageId, assistantMessageId, directory,
@@ -236,18 +246,18 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
         })
         announceHandoff({
           sessionId: turn.sessionId, userMessageId, directory, config, store,
-          closeSource: (harness, source, dir) => sessions.closeSource(harness, source, turn.sessionId, dir),
+          closeSource: (harness, source, dir) => sessions.closeSource(harness, source, turn.sessionId, dir, authority),
           commit: (event) => commitAndPublish(turn.sessionId, directory, event, { dir: "out", method: "session/handoff" }, turn.admission, publish),
           diagnose: (payload) => publish({ sessionId: turn.sessionId, directory, payload }),
         })
-        executing.set(turn.sessionId, attached)
+        executing.set(turn.sessionId, { generation: claimed.generation, attached })
         launched = true
         void track(() => runTurn(turnHost, {
           attached, binding, prompt, origin: turn.origin, capture, releaseAdmission,
           clearsHandoff: !!handoff, fence: turn.admission,
           ...(input.afterTurn ? { afterTurn: () => input.afterTurn!(turn.sessionId) } : {}),
         }), capture.leaseId).catch((error: unknown) => recovery.reportTurnFailure(capture, error)).finally(() => {
-          if (executing.get(turn.sessionId) === attached) executing.delete(turn.sessionId)
+          if (executing.get(turn.sessionId)?.generation === claimed.generation) executing.delete(turn.sessionId)
           unpin()
         })
       } catch (error) {
@@ -262,6 +272,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
 
   return {
     attachments,
+    abortStarts: sessions.abortStarts,
     reads,
     sessions: resource({
       create: (create: AgentRuntimeSessionCreateInput): Promise<AgentSession> => sessions.create(create),
@@ -271,13 +282,14 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       async list(inputDirectory: RuntimeDirectory): Promise<AgentSession[]> {
         return store.listSessions(runtimeDirectory(inputDirectory))
       },
-      update: (sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) =>
-        sessions.update(sessionId, updates, directory),
-      updateConfig: (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) =>
-        sessions.updateSessionConfig(sessionId, update, directory),
-      delete: (sessionId: string, directory?: RuntimeDirectory) => sessions.delete(sessionId, directory),
-      fork: (sessionId: string, messageId: string, childId?: string, directory?: RuntimeDirectory) =>
-        sessions.fork(sessionId, messageId, childId, directory),
+      update: (sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory,
+        secretAuthority?: ConnectionSecretAuthority) => sessions.update(sessionId, updates, directory, secretAuthority),
+      updateConfig: (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
+        sessions.updateSessionConfig(sessionId, update, directory, secretAuthority),
+      delete: (sessionId: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
+        sessions.delete(sessionId, directory, secretAuthority),
+      fork: (sessionId: string, messageId: string, childId?: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
+        sessions.fork(sessionId, messageId, childId, directory, secretAuthority),
     }),
     turns: {
       whenIdle(sessionId: string) {
@@ -313,7 +325,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     },
     /** The transport and its harness session for one attached session, for the operations only a transport answers. */
     async transportFor(sessionId: string, directory?: string): Promise<{ transport: HarnessTransport; session: HarnessSession }> {
-      const attached = await attachments.for(sessionId, directory)
+      const attached = await attachments.for(sessionId, directory, admissions.active(sessionId)?.generation)
       return { transport: attached.handle.transport, session: attached.session }
     },
     dispose() {
@@ -331,6 +343,10 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       )
     },
   }
+}
+
+function turnSecretAuthority(turn: AgentRuntimeTurnStartInput): ConnectionSecretAuthority | undefined {
+  return turn.admission ? { kind: "turn", lease: turn.admission.proof() } : undefined
 }
 
 export function streamEventSessionId(payload: AgentRuntimeStreamEvent): string | undefined {

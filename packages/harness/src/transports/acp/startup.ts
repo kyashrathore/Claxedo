@@ -7,6 +7,7 @@ import { acpFlushUpdates, acpObserveSubagent, acpUnknown, acpUpdate } from "./ev
 import { ACP_PLUGINS_NOT_APPLIED, claudeOptionsMeta } from "./extensions/claude-options"
 import type { AcpEntry, AcpMcpFilter } from "./index"
 import { acpModeState } from "./options"
+import type { AcpPeerOwnership } from "./ownership"
 import { acpElicitation, acpMcp, acpPermission } from "./protocol"
 import { restoreAcp, type AcpRestored, type MissingSessionContext } from "./restore"
 
@@ -18,6 +19,7 @@ export type AcpHost = {
   readonly entries: Map<string, AcpEntry>
   readonly starting: Set<AcpEntry>
   readonly startingAborts: Set<AbortController>
+  readonly peers: AcpPeerOwnership
   disposed(): boolean
   mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[]
 }
@@ -59,8 +61,8 @@ export async function openAcpEntry(host: AcpHost, input: StartInput, broker: Ses
     update: (notification) => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update)),
     extension: (_sessionId, update) => acpObserveSubagent(entry, update),
     unknown: (sessionId, method, payload) => acpUnknown(entry, sessionId, method, payload),
-  }, { role: "harness", signal: startupAbort.signal }) } catch (error) { startupAbort.abort(); host.startingAborts.delete(startupAbort); throw error }
-  if (host.disposed()) { host.startingAborts.delete(startupAbort); await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
+  }, { role: "harness", signal: startupAbort.signal, owner: host.peers }) } catch (error) { startupAbort.abort(); host.startingAborts.delete(startupAbort); throw error }
+  if (host.disposed()) { host.startingAborts.delete(startupAbort); await host.peers.retire(peer); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
   entry = { start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], modes: [], modeUpdates: 0, startupAbort,
     pendingUpdates: [], sideSessions: new Map(),
     session: { binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
@@ -86,7 +88,7 @@ async function abandon(host: AcpHost, entry: AcpEntry, error: unknown): Promise<
   entry.startupAbort.abort()
   host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
-  await entry.peer.retire()
+  await host.peers.retire(entry.peer)
   throw error
 }
 
@@ -122,7 +124,7 @@ export async function attachAcpEntry(host: AcpHost, input: AttachInput, broker: 
 export async function restartAcpEntry(host: AcpHost, entry: AcpEntry): Promise<void> {
   entry.pendingRestart = false
   entry.startupAbort.abort()
-  await entry.peer.retire()
+  await host.peers.retire(entry.peer)
   host.entries.delete(entry.session.binding.sessionId)
   const next = await openAcpEntry(host, entry.start, entry.broker)
   try {

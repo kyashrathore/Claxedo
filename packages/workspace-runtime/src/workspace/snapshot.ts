@@ -1,8 +1,9 @@
 import fs from "fs"
 import path from "path"
 import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
+import { errorMessage } from "@claxedo/helpers"
 import { acpConnectionConfig, piRpcConnectionConfig, type ConnectionConfigHooks } from "@claxedo/harness/providers"
-import { rec, str } from "../json-value"
+import { rec } from "../json-value"
 import { RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection } from "../routes/config"
 import type { RuntimeConfigApplyStatus } from "./host"
 
@@ -23,19 +24,6 @@ export function runnerForSelection(selection: RuntimeHarnessSelection): RuntimeR
 
 export function harnessKey(harness: RuntimeRunner) {
   return `${harness.id}:${harness.access}`
-}
-
-export function errorMessage(input: unknown) {
-  if (input instanceof Error) return input.message
-  const row = rec(input)
-  if (!row) return String(input)
-  const message = str(rec(row.data)?.message) ?? str(row.message)
-  if (message) return message
-  try {
-    return JSON.stringify(input)
-  } catch {
-    return String(input)
-  }
 }
 
 /** Every descriptor the snapshot carries, validated by its provider's own config hook. */

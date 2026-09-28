@@ -31,7 +31,7 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig, type AgentConfigOptions } from "@claxedo/server-core/agent-config/index"
+import { loadUserConfig, configureAgentConfig, type AgentConfigOptions } from "@claxedo/server-core/agent-config/index"
 import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { projectNativeProviderAuth } from "@claxedo/server-core/credentials/native-delivery"
 import {
@@ -1357,6 +1357,11 @@ export function createSelfHostedApp(
   }))
   app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
     authority: selfHostedRuntimeAuthority(services.authority),
+    connectionSecrets: {
+      resolveWorkspaceOwner: (workspaceId) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
+      readConnections: async () => (await loadUserConfig()).connections,
+      credentials: () => services.credentials,
+    },
     turnAuthority: selfHostedTurnAuthority(services.authority),
     turnCredentials,
     // A cloud sandbox this box provisions reports into the store its own

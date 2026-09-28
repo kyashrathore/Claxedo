@@ -485,6 +485,23 @@ describe("disposal", () => {
     expect(reported[1]).toBe("cleanup")
   })
 
+  test("a failed teardown is not kept: the next dispose stops again, and cleanup runs once", async () => {
+    const reported: unknown[] = []
+    const lifecycle = createRuntimeLifecycle({ onTeardownFailure: (error) => reported.push(error) })
+    let stops = 0
+    let cleanups = 0
+    const stop = async () => { if (++stops === 1) throw new Error("the harness would not stop") }
+
+    expect(await lifecycle.dispose(stop, () => { cleanups++ })).toMatchObject({ ok: false })
+    expect(await lifecycle.dispose(stop, () => { cleanups++ })).toEqual({ ok: true })
+    await tick()
+
+    expect(stops).toBe(2)
+    expect(cleanups).toBe(1)
+    expect(await lifecycle.dispose(stop, () => { cleanups++ })).toEqual({ ok: true })
+    expect(stops).toBe(2)
+  })
+
   test("a clean teardown drains first and then cleans up", async () => {
     const order: string[] = []
     const lifecycle = createRuntimeLifecycle({ onTeardownFailure: () => order.push("reported") })
@@ -567,7 +584,7 @@ describe("a lease that moved to another owner", () => {
     const { runtime, store, turns, dispose } = fixture()
     return {
       runtime, store, turns, dispose,
-      admission: { valid: () => valid, fencingToken: () => 1 },
+      admission: { valid: () => valid, fencingToken: () => 1, proof: () => "turn-lease" },
       revoke: () => { valid = false },
     }
   }
@@ -1173,7 +1190,7 @@ describe("cancellation outcomes", () => {
     try {
       await f.runtime.sessions.create(sessionCreate({ id: "s" }))
       const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN,
-        admission: { valid: () => valid, fencingToken: () => 1 } })
+        admission: { valid: () => valid, fencingToken: () => 1, proof: () => "turn-lease" } })
       await until(() => transport.turns.length === 1)
       const child = await transport.turns[0].broker.observeSubagent({
         observationId: "fg", providerId: "fg", providerKind: "test", status: "running", mode: "foreground", transcript: { kind: "messages" },

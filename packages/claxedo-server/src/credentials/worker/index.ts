@@ -72,7 +72,7 @@ export type HostedCredentialStoreInput = {
 }
 
 const METADATA_COLUMNS =
-  "org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, created_at, updated_at"
+  "org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, incarnation, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
@@ -187,8 +187,8 @@ export function hostedOrgCredentials(
         .prepare(
           `insert into hosted_provider_credentials (
              org_id, provider_id, kind, source, label, account_id, status, health,
-             expires_at, last_validated_at, last_error, secret_envelope, revision, created_at, updated_at
-           ) values (?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?)
+             expires_at, last_validated_at, last_error, secret_envelope, revision, incarnation, created_at, updated_at
+           ) values (?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?)
            on conflict (org_id, provider_id) do update set
              kind = excluded.kind,
              source = excluded.source,
@@ -213,6 +213,7 @@ export function hostedOrgCredentials(
           input.account_id ?? null,
           input.expires_at ?? null,
           await cipher.seal(input.provider_id, input.secret),
+          crypto.randomUUID(),
           timestamp,
           timestamp,
         )
@@ -353,6 +354,7 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
   const providerId = requiredTextColumn(row, "provider_id")
   return {
     id: providerId,
+    scope: "shared",
     org_id: requiredTextColumn(row, "org_id"),
     provider_id: providerId,
     kind: enumColumn(row, "kind", CREDENTIAL_KINDS),
@@ -367,6 +369,7 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     created_at: requiredIntegerColumn(row, "created_at"),
     updated_at: requiredIntegerColumn(row, "updated_at"),
     revision: requiredIntegerColumn(row, "revision"),
+    incarnation: requiredTextColumn(row, "incarnation"),
   }
 }
 

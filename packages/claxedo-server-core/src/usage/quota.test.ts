@@ -16,6 +16,7 @@ function credential(input: Partial<CredentialMetadata> & { id: string }): Creden
     created_at: 0,
     updated_at: 0,
     revision: 1,
+    incarnation: input.id,
     ...input,
   }
 }

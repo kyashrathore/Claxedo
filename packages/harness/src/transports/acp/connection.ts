@@ -8,8 +8,9 @@ import { createWebSocketStream } from "@agentclientprotocol/sdk/experimental/ws-
 import type { HarnessServices, OwnedProcess, StartInput } from "../../contract"
 import { AcpTransportError } from "./errors"
 import { AcpStartupDeadline } from "./deadline"
+import type { AcpPeerOwnership } from "./ownership"
 import { processByteStreams } from "./streams"
-import { stringRecord } from "@claxedo/helpers"
+import { singleFlightUntil, stringRecord } from "@claxedo/helpers"
 
 export type AcpConnectionOptions = ({ startupTimeoutMs?: number; promptTimeoutMs?: number; sharedFilesystem?: boolean } & (
   | { kind: "process"; command: string; args?: readonly string[]; env?: Readonly<Record<string, string>>; supportsMcpServers?: boolean }
@@ -32,7 +33,7 @@ export type AcpPeer = {
   retire(): Promise<void>
 }
 
-export type AcpLaunch = { role: "harness" | "probe"; signal: AbortSignal }
+export type AcpLaunch = { role: "harness" | "probe"; signal: AbortSignal; owner: AcpPeerOwnership }
 
 export async function connectAcp(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, handlers: AcpHandlers,
   launch: AcpLaunch): Promise<AcpPeer> {
@@ -49,15 +50,15 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
     unstable_createElicitation: (request) => initializing ? startup.request(() => handlers.elicitation(request)) : handlers.elicitation(request),
     unstable_completeElicitation: (notification) => handlers.complete(notification),
   }), inbound.stream)
-  let retirement: Promise<void> | undefined
-  const retire = () => { retirement ??= retireStream(process, inbound.cancel, services); return retirement }
+  const retire = singleFlightUntil(() => retireStream(process, inbound.cancel, services), () => true)
+  launch.owner.own({ retire })
   try {
     const handshake = await startup.run(agent.initialize({ protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: { elicitation: { form: {}, url: {} } }, clientInfo: { name: "Claxedo", version: "2" } }))
     initializing = false
     return { agent, handshake, process, retire }
   } catch (error) {
-    await retire()
+    await launch.owner.retire({ retire })
     if (error instanceof AcpTransportError) throw error
     const exit = process ? await process.exited : undefined
     throw new AcpTransportError("connection", exit?.code !== null && exit?.code !== undefined

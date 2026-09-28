@@ -156,7 +156,7 @@ export type RuntimePromptTurnInput = {
    */
   onTurnTarget?: (target: RecoveryTurnTarget) => void
   /** Current durable lease generation, checked before every producer publish. */
-  turnAdmission?: { valid(): boolean; fencingToken(): number }
+  turnAdmission?: { valid(): boolean; fencingToken(): number; proof(): string }
   actor?: { actorId: string; actorKind: "human" | "agent" }
   author?: {
     id: string

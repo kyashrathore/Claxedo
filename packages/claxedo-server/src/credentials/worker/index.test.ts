@@ -9,7 +9,7 @@ import {
 } from "./index"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
-import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { HOSTED_CREDENTIAL_MIGRATIONS, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 const KEK_ENV = { [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 3).toString("base64") }
 const FULL_ENV = { ...KEK_ENV, [HOSTED_CREDENTIALS_FLAG]: "1" }
@@ -24,7 +24,7 @@ const write = {
 let controlPlane: ControlPlaneDatabase
 
 beforeAll(async () => {
-  controlPlane = await miniflareControlPlaneDatabase(["0039_hosted_provider_credentials.sql"])
+  controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
 })
 
 afterAll(async () => {
@@ -111,6 +111,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
       secret: "sk-hosted-secret-0042",
     })
     expect(meta).toMatchObject({
+      scope: "shared",
       id: "integration:conn-1",
       org_id: org,
       provider_id: "integration:conn-1",
@@ -153,6 +154,21 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(await credentials.getCredentialByProvider("openai", "oauth_token")).toMatchObject({ kind: "oauth_token" })
     expect(await credentials.deleteCredentialsByProvider("openai", "api_key")).toBe(0)
     expect(await credentials.deleteCredentialsByProvider("openai", "oauth_token")).toBe(1)
+  })
+
+  test("a credential deleted and stored again under the same provider id is a new incarnation", async () => {
+    const credentials = store(freshOrg("incarnation"))
+    const first = await credentials.putCredential({ ...write, secret: "first" })
+    expect(first.incarnation).toEqual(expect.stringMatching(/\S/))
+    expect(await credentials.putCredential({ ...write, secret: "second" })).toMatchObject({ incarnation: first.incarnation, revision: 2 })
+    await expect(credentials.updateCredentialSecret?.(first.id, "third")).resolves.toBe(true)
+    expect(await credentials.getCredential?.(first.id)).toMatchObject({ incarnation: first.incarnation, revision: 3 })
+
+    expect(await credentials.deleteCredential(first.id)).toBe(true)
+    const recreated = await credentials.putCredential({ ...write, secret: "fourth" })
+    expect(recreated).toMatchObject({ id: first.id, revision: first.revision })
+    expect(recreated.incarnation).toEqual(expect.stringMatching(/\S/))
+    expect(recreated.incarnation).not.toBe(first.incarnation)
   })
 
   test("the schema refuses a row outside the credential enums, so a read never has to re-validate one", async () => {

@@ -12,7 +12,7 @@ import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/plat
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
-import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { HOSTED_CREDENTIAL_MIGRATIONS, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { fetchUrl } from "../../test-support/fetch-calls"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
@@ -185,7 +185,7 @@ describe("hosted production Pi and connection discovery", () => {
     const base = plane()
     base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") }
     base.services.authority!.resolveOrgId = vi.fn(async (auth) => `internal-${auth.user.subject}` as never)
-    const controlPlane = await miniflareControlPlaneDatabase(["0039_hosted_provider_credentials.sql"])
+    const controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
     let broken = false
     base.orgCredentials = (orgId) => {
       if (broken) throw new Error("CONTROL_PLANE_DB unavailable")

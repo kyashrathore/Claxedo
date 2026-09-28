@@ -1,3 +1,4 @@
+import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
@@ -6,7 +7,7 @@ import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
-import { previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
+import { connectionRateLimitError, previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
 import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 type CloudWorkspaceGate =
@@ -190,6 +191,7 @@ export async function cloudConnectionStatus(
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
   ws: Workspace,
+  rateLimiter: ConnectionRateLimiter,
 ) {
   const gate = await cloudWorkspaceGate(services, auth, ws)
   if ("error" in gate) return gate
@@ -210,6 +212,8 @@ export async function cloudConnectionStatus(
       },
     } as const
   }
+  const limited = await connectionRateLimitError(services, rateLimiter, auth, ws.id)
+  if (limited) return { error: limited.body.error, status: limited.status }
   return mintSignedCloudConnection(services, options, auth, ws, gate, target.hostId)
 }
 

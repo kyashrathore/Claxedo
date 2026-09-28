@@ -9,7 +9,7 @@ import type {
   SessionConfig,
   SessionHarness,
 } from "@claxedo/agent-runtime-contract"
-import type { HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretAuthority, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
 import type { ConfigOptionsPreview, ConfigTarget, TurnActor } from "@claxedo/harness/contract"
 import type { SessionAttachments } from "./attachments"
 import { harnessCapabilitiesFor } from "./capabilities"
@@ -19,8 +19,8 @@ import type { HarnessHandle, TransportResolver } from "./transports"
 
 /** A harness read that names a live session or a draft on a harness in a directory. */
 export type HarnessTarget =
-  | { sessionId: string; directory?: string }
-  | { harness: SessionHarness; directory: string; owner?: TurnActor }
+  | { sessionId: string; directory?: string; secretAuthority?: ConnectionSecretAuthority }
+  | { harness: SessionHarness; directory: string; owner?: TurnActor; secretAuthority?: ConnectionSecretAuthority }
 
 type ResolvedTarget = { handle: HarnessHandle; target: ConfigTarget; sessionId?: string; directory: string }
 
@@ -34,10 +34,12 @@ export function createHarnessReads(input: {
 
   const resolve = async (target: HarnessTarget): Promise<ResolvedTarget> => {
     if ("sessionId" in target) {
-      const attached = await attachments.for(target.sessionId, target.directory)
+      const attached = await attachments.for(target.sessionId, target.directory, undefined, target.secretAuthority)
       return { handle: attached.handle, target: { session: attached.session }, sessionId: target.sessionId, directory: attached.session.directory }
     }
-    const handle = await transports.forHarness(target.harness, target.directory)
+    const handle = await transports.forHarness(target.harness, target.directory, {
+      owner: target.owner ?? { kind: "machine-owner" }, ...(target.secretAuthority ? { authority: target.secretAuthority } : {}),
+    })
     const draft = draftLaunch(launch, { harness: target.harness, directory: target.directory, locality: handle.locality,
       owner: target.owner ?? { kind: "machine-owner" } })
     return { handle, target: { draft }, directory: target.directory }
@@ -64,8 +66,9 @@ export function createHarnessReads(input: {
       const resolved = await resolve(target)
       return await resolved.handle.transport.config?.permissionModes(resolved.target)
     },
-    async setPermissionMode(sessionId: string, modeId: string, directory?: string): Promise<AgentPermissionModeState | undefined> {
-      const attached = await attachments.for(sessionId, directory)
+    async setPermissionMode(sessionId: string, modeId: string, directory?: string,
+      authority?: ConnectionSecretAuthority): Promise<AgentPermissionModeState | undefined> {
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       const config = attached.handle.transport.config
       if (!config) return undefined
       const state = await config.setPermissionMode(attached.session, modeId)
@@ -81,16 +84,16 @@ export function createHarnessReads(input: {
       const resolved = await resolve(target)
       return await resolved.handle.transport.agents?.list(resolved.target)
     },
-    async todos(sessionId: string, directory?: string): Promise<readonly AgentTodo[] | undefined> {
-      const attached = await attachments.for(sessionId, directory)
+    async todos(sessionId: string, directory?: string, authority?: ConnectionSecretAuthority): Promise<readonly AgentTodo[] | undefined> {
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       return await attached.handle.transport.history?.todos(attached.session)
     },
-    async messages(sessionId: string, directory?: string): Promise<readonly AgentMessage[] | undefined> {
-      const attached = await attachments.for(sessionId, directory)
+    async messages(sessionId: string, directory?: string, authority?: ConnectionSecretAuthority): Promise<readonly AgentMessage[] | undefined> {
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       return await attached.handle.transport.history?.messages(attached.session)
     },
-    async sessionConfig(sessionId: string, directory?: string): Promise<SessionConfig> {
-      const attached = await attachments.for(sessionId, directory)
+    async sessionConfig(sessionId: string, directory?: string, authority?: ConnectionSecretAuthority): Promise<SessionConfig> {
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId })
       if (declared.configOwner === "harness" && attached.handle.transport.config) return await attached.handle.transport.config.read(attached.session)
       const config = store.getSessionConfig(sessionId)

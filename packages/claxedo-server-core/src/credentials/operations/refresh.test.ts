@@ -19,6 +19,7 @@ function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata
     created_at: NOW,
     updated_at: NOW,
     revision: 1,
+    incarnation: "cred_1",
     ...input,
   }
 }

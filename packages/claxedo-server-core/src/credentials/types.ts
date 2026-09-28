@@ -86,6 +86,13 @@ export interface CredentialMetadata {
    */
   revision: number
   /**
+   * Which stored credential this is, issued once per insert and never again.
+   * A credential deleted and stored again can repeat both `id` and `revision`,
+   * so a holder that compares only those takes the replacement for the
+   * credential it already has.
+   */
+  incarnation: string
+  /**
    * How much of the plan the last usage read had spent. Parsed out of the
    * stored JSON, so a row written before the column existed, or holding text
    * that no longer parses, reads as absent rather than as an empty plan.

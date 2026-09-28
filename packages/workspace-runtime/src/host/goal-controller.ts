@@ -5,7 +5,7 @@ import { GoalCapabilityError, requireGoalAction } from "@claxedo/agent-sdk-runti
 import type { NativeGoalOperations } from "@claxedo/harness/contract"
 import type { AttachedSession } from "./attachments"
 import { normalizeDirectory } from "./execution-binding"
-import { createGoalStartAdmission } from "./goal-start-admission"
+import { createKeyedSerializer } from "@claxedo/helpers"
 import type { RecoveryTurnCapture } from "./recovery"
 import { AgentRuntimeGoalError } from "./contracts"
 import type {
@@ -42,7 +42,7 @@ type AvailableGoalContext = GoalContext & { ops: NativeGoalOperations }
  * is also mirrored onto the hub from publishing the same state twice.
  */
 export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
-  const startAdmissions = createGoalStartAdmission()
+  const startAdmissions = createKeyedSerializer()
   const publishedSignatures = new Map<string, string>()
 
   const publishSnapshot = (sessionId: string, directory: RuntimeDirectory, goal: RuntimeGoalSnapshot | null) => {

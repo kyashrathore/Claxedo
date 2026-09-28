@@ -29,7 +29,7 @@ export type SessionRoutesMountInput = {
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
 }
 
-function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
+export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
   return {
     queuePrompt: (input) => store.queuePrompt(input),
     deleteQueuedPrompt: (sessionId, seq) => store.deleteQueuedPrompt(sessionId, seq),

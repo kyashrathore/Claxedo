@@ -159,6 +159,22 @@ test("a rotation the harness refuses mid-turn fails the apply rather than being 
   await prompt
 })
 
+test("retrying the identical refused snapshot resends its credentials and projection", async () => {
+  const f = await fixture()
+  await f.host.apply(snapshot("first"))
+  expect((await f.request("/session", "POST", { id: "held" })).status).toBe(201)
+  const prompt = f.request("/session/held/message", "POST", { parts: [{ type: "text", text: "go" }] })
+  await f.startedTurn
+  const next = snapshot("renewed", { docs: { name: "docs", transport: "stdio", command: "docs", args: [], env: {} } })
+  await expect(f.host.apply(next)).rejects.toThrow("refused")
+  f.release()
+  await prompt
+  await f.host.apply(next)
+  expect(f.host.detail().configApply?.state).toBe("applied")
+  expect(f.placeholders()).toEqual(["first", "renewed"])
+  expect(f.applied.at(-1)?.projection?.mcpServers).toMatchObject([{ kind: "stdio", name: "docs" }])
+})
+
 test("a held config that fails when the turn ends is reported, not swallowed", async () => {
   const f = await fixture()
   await f.host.apply(snapshot("first"))

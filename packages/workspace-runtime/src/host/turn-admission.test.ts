@@ -401,7 +401,7 @@ describe("durable turn authority", () => {
     let valid = true
     try {
       await f.runtime.sessions.create(sessionCreate({ id: "s" }))
-      await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN, admission: { valid: () => valid, fencingToken: () => 1 } })
+      await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN, admission: { valid: () => valid, fencingToken: () => 1, proof: () => "turn-lease" } })
       f.store.startTurn({ ...record, assistantMessageId: "replacement", fencingToken: 2 })
       valid = false
       release()

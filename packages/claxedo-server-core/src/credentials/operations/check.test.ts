@@ -16,6 +16,7 @@ function row(overrides: Partial<CredentialMetadata> = {}): CredentialMetadata {
     created_at: 1,
     updated_at: 1,
     revision: 1,
+    incarnation: "cred_1",
     ...overrides,
   }
 }

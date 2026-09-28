@@ -19,6 +19,7 @@ import {
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
+import { sandboxConnectionSecrets } from "./connection-secrets"
 import { configureRuntimeGitAuth } from "./git-auth"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
@@ -168,6 +169,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       })
     : undefined
   const options: WorkspaceRuntimeServerOptions = {
+    ...(authorityUrl
+      ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), directory: targetDirectory, authorityUrl }) }
+      : {}),
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
     ...relayOptions,

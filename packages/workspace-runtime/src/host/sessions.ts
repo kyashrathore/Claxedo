@@ -9,7 +9,7 @@ import {
   type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { admitSessionInstructions, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import { admitSessionInstructions, type ConnectionSecretAuthority, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { createSessionBroker, type createRequestBroker, type SessionBrokerContext } from "@claxedo/harness/broker"
 import { applySessionConfigUpdate, type HarnessSession, type SessionBroker, type TurnActor } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
@@ -59,6 +59,7 @@ function retainedFields(input: { instructions?: string; group?: AgentRuntimeSess
 export function createSessionLifecycle(input: SessionLifecycleInput) {
   const { store, transports, launch, attachments, admissions } = input
   const keptSources = new Map<string, AttachedSession>()
+  const starts = new AbortController()
 
   const diagnose = (sessionId: string, directory: RuntimeDirectory) => (payload: AgentRuntimeEvent) =>
     input.publish({ sessionId, directory, payload })
@@ -85,7 +86,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
   })
 
   /** Closes the native session a left harness holds, attaching it first when this process never held it. */
-  const closeSource = async (harness: SessionHarness, source: SessionHandoffSource, sessionId: string, directory: string | undefined) => {
+  const closeSource = async (harness: SessionHarness, source: SessionHandoffSource, sessionId: string, directory: string | undefined,
+    authority?: ConnectionSecretAuthority) => {
     const keptId = keptKey(sessionId, harness, source.upstreamSessionId)
     const kept = keptSources.get(keptId)
     if (kept) {
@@ -97,8 +99,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     const current = store.getSessionConfig(sessionId)
     if (!current) throw new Error(`Session ${sessionId} has no runtime config`)
     const targetDirectory = directory ?? binding.directory
-    const handle = await transports.forHarness(harness, targetDirectory)
     const owner = attachments.owner(sessionId)
+    const handle = await transports.forHarness(harness, targetDirectory, { owner, ...(authority ? { authority } : {}) })
     const left = Object.freeze({ ...binding, connectionId: connectionIdForHarness(harness), upstreamSessionId: source.upstreamSessionId })
     const session = await handle.transport.attach(attachInput(launch, {
       sessionId, directory: targetDirectory, locality: handle.locality,
@@ -116,10 +118,10 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     attachments.register(sessionId, kept)
   }
 
-  const openTarget = (sessionId: string, owner: TurnActor, title: string | undefined) =>
+  const openTarget = (sessionId: string, owner: TurnActor, title: string | undefined, authority?: ConnectionSecretAuthority) =>
     async (config: SessionConfig, directory: string | undefined): Promise<OpenedTarget> => {
       const targetDirectory = normalizeDirectory(directory)
-      const handle = await transports.forHarness(config.harness, targetDirectory)
+      const handle = await transports.forHarness(config.harness, targetDirectory, { owner, ...(authority ? { authority } : {}) })
       const context: SessionBrokerContext = { sessionId, directory: targetDirectory, workspaceId: input.workspaceId,
         origin: { actor: owner, via: "service", reissued: false } }
       const broker = createSessionBroker(input.broker, context)
@@ -141,11 +143,12 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       }
     }
 
-  const updateSessionConfig = async (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) => {
+  const updateSessionConfig = async (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory,
+    authority?: ConnectionSecretAuthority) => {
     const current = store.getSessionConfig(sessionId)
     const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
     if (!changingHarness) {
-      const attached = await attachments.for(sessionId, directory)
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId })
       const configured = declared.configOwner === "harness" && attached.handle.transport.config
         ? await attached.handle.transport.config.update(attached.session, update)
@@ -166,8 +169,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         sessionId, directory: targetDirectory, session, current, update: { ...update, harness: update.harness! },
         binding: previousBinding, store, admissions,
         diagnose: diagnose(sessionId, targetDirectory),
-        openTarget: openTarget(sessionId, attachments.owner(sessionId), session.title ?? undefined),
-        closeSource: (harness, source, dir) => closeSource(harness, source, sessionId, dir),
+        openTarget: openTarget(sessionId, attachments.owner(sessionId), session.title ?? undefined, authority),
+        closeSource: (harness, source, dir) => closeSource(harness, source, sessionId, dir, authority),
         resumeSource: (harness, source) => resumeSource(sessionId, harness, source),
       })
     } catch (error) {
@@ -180,6 +183,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
   }
 
   return {
+    abortStarts: () => starts.abort(new Error("AgentRuntime is disposed")),
     updateSessionConfig,
     closeSource,
     async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
@@ -191,8 +195,11 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       }
       if (create.id) assertSessionCreateBindingScope(store, create.id, create)
       const directory = normalizeDirectory(create.directory)
-      const handle = await transports.forHarness(create.harness, directory)
+      const handle = await transports.forHarness(create.harness, directory, {
+        owner: create.owner, ...(create.secretAuthority ? { authority: create.secretAuthority } : {}),
+      })
       const declared = await handle.transport.capabilities({ directory })
+      starts.signal.throwIfAborted()
       const refusal = admitSessionInstructions({ harness: create.harness.id, channel: declared.instructionChannel, instructions: create.instructions })
       if (refusal?.reason === "no_instruction_channel") {
         throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: refusal.message })
@@ -217,6 +224,12 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       })
       const context = brokerContext(create, sessionId)
       const broker = createSessionBroker(input.broker, context)
+      const startupBroker: SessionBroker = {
+        ...broker,
+        ask: (request, options) => broker.ask(request, {
+          signal: options?.signal ? AbortSignal.any([starts.signal, options.signal]) : starts.signal,
+        }),
+      }
       let session: HarnessSession
       try {
         if (!store.updateSessionConfig(sessionId, config)) throw new Error(`Session ${sessionId} has no runtime config`)
@@ -224,7 +237,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
           sessionId, directory, locality: handle.locality, config, owner: create.owner,
           ...(create.title !== undefined ? { title: create.title } : {}),
           ...(create.instructions ? { instructions: create.instructions } : {}),
-        }), broker)
+        }), startupBroker)
       } catch (error) {
         await endStart(context)
         if (!existed) {
@@ -239,7 +252,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)
       return persisted
     },
-    async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
+    async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory,
+      authority?: ConnectionSecretAuthority) {
       const persisted = store.updateSession(sessionId, {
         ...(updates.title !== undefined ? { title: updates.title } : {}),
         ...(updates.time?.archived !== undefined ? { time: { archived: updates.time.archived } } : {}),
@@ -247,28 +261,29 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       if (!persisted) throw new Error(`Session ${sessionId} not found`)
       if (updates.title !== undefined) {
         await input.pushTitle(sessionId, updates.title, async () => {
-          const attached = await attachments.for(sessionId, directory)
+          const attached = await attachments.for(sessionId, directory, undefined, authority)
           return { transport: attached.handle.transport, session: attached.session }
         })
       }
       return persisted
     },
-    async delete(sessionId: string, directory?: RuntimeDirectory) {
+    async delete(sessionId: string, directory?: RuntimeDirectory, authority?: ConnectionSecretAuthority) {
       const config = store.getSessionConfig(sessionId)
-      const attached = await attachments.for(sessionId, directory)
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       await attached.handle.transport.close(attached.session)
       input.broker.broker.closeSession(sessionId)
       attachments.forget(sessionId)
       await releaseKeptHandoffSource({
         sessionId, directory: attached.session.directory, config,
-        closeSource: (harness, source, dir) => closeSource(harness, source, sessionId, dir),
+        closeSource: (harness, source, dir) => closeSource(harness, source, sessionId, dir, authority),
         diagnose: diagnose(sessionId, attached.session.directory),
       })
       store.deleteSession(sessionId)
       input.forgetGoal(sessionId)
     },
-    async fork(sessionId: string, messageId: string, childId: string | undefined, directory?: RuntimeDirectory): Promise<{ id: string }> {
-      const attached = await attachments.for(sessionId, directory)
+    async fork(sessionId: string, messageId: string, childId: string | undefined, directory?: RuntimeDirectory,
+      authority?: ConnectionSecretAuthority): Promise<{ id: string }> {
+      const attached = await attachments.for(sessionId, directory, undefined, authority)
       const ops = attached.handle.transport.fork
       if (!ops) throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "fork", message: `${attached.handle.runner.id} does not support fork` })
       const id = childId ?? `ses_${randomUUID()}`
