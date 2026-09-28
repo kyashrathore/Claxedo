@@ -40,12 +40,10 @@ export const homeMarkdown = `# ${site.name}
 
 ${site.description}
 
-${home.trust.items.join(". ")}.
-
-${home.points.map((point) => `- **${point.title}.** ${point.line}${point.link ? ` ${point.link.label}: ${point.link.href}` : ""}`).join("\n")}
+${home.lines.map((line) => `- **${/[.!?]$/.test(line.text) ? line.text : `${line.text}.`}**${line.proof ? ` ${line.proof.label}: ${line.proof.href}` : ""}`).join("\n")}
 
 - Download the desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}
-- ${home.openInBrowser.label}: ${home.openInBrowser.href}
+- Open in a browser: ${site.clients.web.destination}
 - Source: ${github}
 - Community: ${contact}
 

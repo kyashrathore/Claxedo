@@ -2,39 +2,32 @@
 import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
-import DownloadMenu from "../components/DownloadMenu.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
 import { requireClaim } from "../content/claims"
 import { home, site } from "../content/site"
 
-for (const id of [...home.trust.claims, ...home.points.flatMap((point) => point.claims)]) requireClaim(id)
+for (const id of [...home.headline.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
 ---
 
 <Layout title={`Claxedo — ${site.headline}`} description={site.description}>
   <Nav />
   <main id="main-content" class="home">
     <section class="intro" aria-labelledby="home-title">
-      <div class="lead">
-        <h1 id="home-title">{site.headline}</h1>
-        <div class="actions">
-          <DownloadMenu placement="hero" />
-          <a class="btn-secondary" href={home.openInBrowser.href}>{home.openInBrowser.label}</a>
-        </div>
-        <ul class="trust">
-          {home.trust.items.map((item) => <li>{item}</li>)}
-        </ul>
-      </div>
-      <dl class="points">
-        {home.points.map((point) => (
-          <div>
-            <dt>{point.title}</dt>
-            <dd>
-              {point.line}
-              {point.link && <> <a href={point.link.href}>{point.link.label}</a></>}
-            </dd>
-          </div>
+      <h1 id="home-title">{home.headline.text}</h1>
+      <ul class="lines">
+        {home.lines.map((line) => (
+          <li>
+            {line.spot
+              ? <button type="button" class="line" data-line-spot={line.spot}>{line.text}</button>
+              : <span class="line">{line.text}</span>}
+            {line.proof && (
+              <a class="proof" href={line.proof.href} aria-label={line.proof.label} title={line.proof.label}>
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 10.5 10.5 5.5M6.5 5.5h4v4"></path></svg>
+              </a>
+            )}
+          </li>
         ))}
-      </dl>
+      </ul>
     </section>
     <div class="preview">
       <ClaxedoAppReplica />
@@ -43,54 +36,77 @@ for (const id of [...home.trust.claims, ...home.points.flatMap((point) => point.
   <Footer />
 </Layout>
 
+<script>
+  const demo = document.querySelector<HTMLElement>("[data-demo]")
+  const spot = (detail: { spot?: string; open?: boolean }) => demo?.dispatchEvent(new CustomEvent("demo:spot", { detail }))
+  for (const line of document.querySelectorAll<HTMLButtonElement>("[data-line-spot]")) {
+    const name = line.dataset.lineSpot
+    line.addEventListener("pointerenter", () => spot({ spot: name }))
+    line.addEventListener("focus", () => spot({ spot: name }))
+    line.addEventListener("pointerleave", () => spot({}))
+    line.addEventListener("blur", () => spot({}))
+    line.addEventListener("click", () => spot({ spot: name, open: true }))
+  }
+</script>
+
 <style>
   .home { --home-width: min(100% - 2 * var(--gutter), 75rem); }
-  .intro {
-    display: grid;
-    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
-    gap: clamp(2.5rem, 5vw, 5rem);
-    align-items: start;
-    width: var(--home-width);
-    margin: 0 auto;
-    padding-block: clamp(1.5rem, 3.5vh, 2.25rem) clamp(1.75rem, 3.5vh, 2.25rem);
-  }
+  .intro { width: var(--home-width); margin: 0 auto; padding-block: clamp(1.75rem, 4.5vh, 2.75rem) clamp(1.75rem, 4vh, 2.5rem); }
   h1 {
+    max-width: 24ch;
     margin: 0;
-    font: var(--display-weight) clamp(2.1rem, 3vw, 2.6rem)/1.08 var(--font-display);
-    letter-spacing: var(--display-tracking);
-    font-feature-settings: var(--display-features);
+    font: 700 clamp(2.25rem, 3.6vw, 3.25rem)/1.04 var(--font-display);
+    letter-spacing: -0.035em;
     text-wrap: balance;
   }
-  .actions { margin-top: 1.75rem; }
-  .trust { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; margin: 1.1rem 0 0; padding: 0; list-style: none; color: var(--ink-faint); font-size: .8rem; }
-  .trust li { display: flex; align-items: center; gap: .45rem; }
-  .trust li::before { content: ""; width: .3rem; height: .3rem; border-radius: 50%; background: var(--success); }
-  .points { margin: 0; border-bottom: 1px solid var(--line); }
-  .points > div {
+  .lines {
     display: grid;
-    grid-template-columns: 11.5rem minmax(0, 1fr);
-    gap: 1.5rem;
-    padding: .5rem 0;
-    border-top: 1px solid var(--line);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 clamp(1.5rem, 4vw, 3.5rem);
+    margin: clamp(1.75rem, 4vh, 2.5rem) 0 0;
+    padding: 0;
+    list-style: none;
   }
-  dt { color: var(--ink); font-size: .875rem; font-weight: 500; line-height: 1.45; }
-  dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.45; text-wrap: pretty; }
-  dd a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); }
-  dd a:hover { text-decoration-color: currentColor; }
+  .lines li {
+    padding: .8rem 0 .85rem;
+    border-top: 1px solid var(--line-strong);
+    transition: border-color 150ms ease-out;
+  }
+  .lines li:has(button.line:hover, button.line:focus-visible) { border-color: var(--ink); }
+  .line {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: 600 clamp(1.125rem, 1.55vw, 1.4rem)/1.22 var(--font-display);
+    letter-spacing: -0.018em;
+    text-align: left;
+  }
+  button.line { cursor: pointer; }
+  button.line:focus-visible { outline: none; }
+  .proof {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-left: .3rem;
+    vertical-align: -.2rem;
+    border-radius: 50%;
+    color: var(--ink-faint);
+    transition: color 150ms ease-out, background-color 150ms ease-out;
+  }
+  .proof::after { content: ""; position: absolute; inset: -.5rem; }
+  .proof:hover { background: var(--surface-hover); color: var(--ink); }
+  .proof svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .preview { width: var(--home-width); margin: 0 auto clamp(4rem, 8vw, 6rem); }
-
-  @media (max-width: 64rem) {
-    .intro { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
-    h1 { max-width: 20ch; }
-  }
 
   @media (max-width: 38rem) {
     .home { --home-width: calc(100% - 2rem); }
-    .intro { padding-top: 1.75rem; gap: 1.5rem; }
-    h1 { font-size: 1.85rem; }
-    .actions { flex-wrap: nowrap; margin-top: 1.25rem; }
-    .actions > :global(*) { flex: 1 1 0; width: auto; }
-    .points > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; padding: .55rem 0; }
-    dt, dd { font-size: .875rem; }
+    .intro { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    h1 { font-size: 2rem; }
+    .lines { grid-template-columns: minmax(0, 1fr); margin-top: 1.25rem; }
+    .lines li { padding: .6rem 0 .65rem; }
+    .line { font-size: 1.075rem; }
   }
 </style>

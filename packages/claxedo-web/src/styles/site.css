@@ -65,12 +65,12 @@
 }
 
 :root {
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Inter", system-ui, sans-serif;
+  --font-sans: "Schibsted Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Schibsted Grotesk", system-ui, sans-serif;
   --font-mono: "Claxedo Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --display-weight: 510;
-  --display-tracking: -.022em;
-  --display-features: "cv01", "ss03", "cv11";
+  --display-weight: 600;
+  --display-tracking: -.028em;
+  --display-features: normal;
   --radius-sm: 8px;
   --radius: 10px;
   --radius-lg: 12px;
