@@ -54,7 +54,7 @@ test("the agent-config snapshot route serves the snapshot with its auth map remo
 
   expect(response.status).toBe(200)
   expect(projectAuth).toHaveBeenCalledTimes(1)
-  expect(JSON.parse(body)).toEqual({ version: 4, mcp: {}, connections: [], providerDefinitions: [] })
+  expect(JSON.parse(body)).toEqual({ version: 4, mcp: {}, connections: [], providerDefinitions: [], commands: [] })
   expect(body).not.toContain("placeholder-that-must-not-travel")
 })
 

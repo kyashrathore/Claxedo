@@ -257,6 +257,7 @@ export const dict = {
   "prompt.dropzone.label": "Upuść tutaj obrazy, pliki PDF lub pliki tekstowe",
   "prompt.dropzone.file.label": "Upuść, aby @wspomnieć plik",
   "prompt.slash.badge.custom": "własne",
+  "prompt.slash.badge.saved": "zapisane",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Usuń plik z kontekstu",

@@ -68,6 +68,7 @@ export function createHostedRuntimeDelivery(input: {
     const auth = nativeProviderAuth(await deliveries(person.orgId))
     await hostedRuntimeConfigApply(input.services, workspaceId, {
       version: 4 as const,
+      commands: [],
       mcp: await hooks.acpMcp?.(workspaceId, preparation) ?? {},
       connections: Object.values(config.connections),
       ...(explicitDefaultHarness(config) ? { defaultHarness: explicitDefaultHarness(config) } : {}),

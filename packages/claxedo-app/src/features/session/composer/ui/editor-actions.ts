@@ -284,7 +284,7 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
     closePopover()
 
     if (cmd.type === "custom") {
-      const text = `/${cmd.trigger} `
+      const text = cmd.origin === "saved" ? cmd.content : `/${cmd.trigger} `
       setEditorText(text)
       input.prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
       focusEditorEnd()

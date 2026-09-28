@@ -1,5 +1,4 @@
-import type { AgentCommand } from "@claxedo/agent-runtime-contract"
-import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
+import type { AgentCommand, RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
@@ -22,8 +21,8 @@ export function normalizeCommandList(data: unknown) {
     ? data.commands
     : []
   return list
-    .filter((item): item is Command => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
-    .filter((item) => !!item?.name)
+    .filter((item): item is RuntimeCommand => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
+    .filter((item) => !!item.name && (item.origin === "transport" || (item.origin === "saved" && typeof item.content === "string")))
     .slice()
     .sort((a, b) => cmp(a.name, b.name))
 }

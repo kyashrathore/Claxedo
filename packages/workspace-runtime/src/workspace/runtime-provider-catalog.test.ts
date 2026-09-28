@@ -23,6 +23,7 @@ afterEach(async () => {
 
 const snapshot: RuntimeSnapshot = {
   version: 4,
+  commands: [],
   mcp: {},
   connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
   auth: {},

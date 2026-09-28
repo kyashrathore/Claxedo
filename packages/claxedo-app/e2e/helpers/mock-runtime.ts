@@ -2320,7 +2320,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/command**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/command") return r.fallback()
-    return json(r, [{ name: "build", description: "Build command" }])
+    return json(r, [{ name: "build", description: "Build command", origin: "transport" }])
   })
   await page.route("**/permission**", (r) => {
     if (!api(r)) return r.continue()
@@ -2804,7 +2804,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     api(r) ? json(r, [{ id: "build", name: "build", mode: "primary" }]) : r.continue(),
   )
   await page.route("**/api/claxedo/agent-config/commands**", (r) =>
-    api(r) ? json(r, [{ name: "build", description: "Build command" }]) : r.continue(),
+    api(r) ? json(r, [{ name: "build", content: "Build the project", origin: "saved" }]) : r.continue(),
   )
 
   // "**" after /status is required: the app requests /session/status?directory=…, and a
@@ -3541,7 +3541,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/agent**`, (r) =>
       json(r, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }]),
     )
-    await page.route(`${base}/command**`, (r) => json(r, [{ name: "build", description: "Build command" }]))
+    await page.route(`${base}/command**`, (r) => json(r, [{ name: "build", description: "Build command", origin: "transport" }]))
     await page.route(`${base}/permission**`, (r) => {
       // `/permission/modes` is NOT this handler's, and the trailing `**` would
       // otherwise take it. Playwright matches routes LAST-REGISTERED-FIRST, and

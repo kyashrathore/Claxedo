@@ -41,9 +41,7 @@ export async function putConnection(store: UserAgentConfigStore, connectionId: s
 
 export async function deleteConnection(store: UserAgentConfigStore, connectionId: string) {
   const config = await store.read()
-  if (!(connectionId in config.connections)) {
-    throw new AgentConfigMutationError("agent_config_connection_not_found", "Agent connection not found", 404)
-  }
+  if (!(connectionId in config.connections)) return
   const connections = Object.fromEntries(Object.entries(config.connections).filter(([id]) => id !== connectionId))
   const { defaultConnectionId: _, ...rest } = config
   await store.write({ ...rest, connections, ...(config.defaultConnectionId === connectionId ? {} : {

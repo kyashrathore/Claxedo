@@ -256,6 +256,7 @@ export const dict = {
   "prompt.dropzone.label": "Déposez des images, des PDF ou des fichiers texte ici",
   "prompt.dropzone.file.label": "Déposez pour @mentionner le fichier",
   "prompt.slash.badge.custom": "personnalisé",
+  "prompt.slash.badge.saved": "enregistré",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Retirer le fichier du contexte",

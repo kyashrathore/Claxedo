@@ -5,6 +5,7 @@ import { ClaxedoApi } from "./api"
 import { hostedFetch, signInHostedPerson, type HostedPerson } from "./hosted-auth"
 import { startHostedStack } from "./hosted-stack"
 import type { HttpTransport } from "./transport"
+import { openEventStream } from "./stream"
 
 type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
 
@@ -83,7 +84,11 @@ export function hostedApi(stack: HostedStack, workspace: Awaited<ReturnType<type
     })
     return { status: response.status, body: await response.text() }
   }
-  return new ClaxedoApi(stack.workerUrl, transport)
+  return new ClaxedoApi(stack.workerUrl, transport, {
+    events: (directory) => openEventStream(stack.relayUrl, directory, {
+      relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
+    }),
+  })
 }
 
 export async function hostedSession(stack: HostedStack, owner: HostedPerson, workspace: Awaited<ReturnType<typeof hostedWorkspace>>,

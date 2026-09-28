@@ -13,6 +13,7 @@ function snapshot() {
   return {
     version: 4 as const,
     mcp: {},
+    commands: [],
     connections: [{
       connectionId: "acp-primary",
       providerKey: "acp",
@@ -73,6 +74,12 @@ describe("runtime config v4", () => {
     })
     expect(rejected.status).toBe(400)
     expect(normalizeRuntimeSnapshot({ ...snapshot(), harnessLaunch: {} })).not.toHaveProperty("harnessLaunch")
+  })
+
+  test("rejects a snapshot that does not state its saved commands", () => {
+    const { commands: _, ...withoutCommands } = snapshot()
+    expect(normalizeRuntimeSnapshot(withoutCommands)).toBeUndefined()
+    expect(normalizeRuntimeSnapshot(snapshot())?.commands).toEqual([])
   })
 
   test("rejects unknown runtime snapshot fields instead of silently ignoring them", () => {

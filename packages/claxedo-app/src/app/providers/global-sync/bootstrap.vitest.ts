@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
+import type { RuntimeCommand as Command } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { type NormalizedProviderListResponse, normalizeProviderList } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -723,7 +724,7 @@ describe("override bootstrapDirectory", () => {
           })
         }
         if (req.url === "http://relay.test/workspaces/ws_cloud/command") {
-          return new Response(JSON.stringify([{ name: "build", template: "bun test" }]), {
+          return new Response(JSON.stringify([{ name: "build", origin: "transport", content: "bun test" }]), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })
@@ -875,7 +876,7 @@ describe("override bootstrapDirectory", () => {
           return Response.json([{ name: "plan", mode: "primary" }])
         }
         if (req.url === "http://relay.test/workspaces/ws_known_bootstrap/command") {
-          return Response.json([{ name: "build", template: "bun test" }])
+          return Response.json([{ name: "build", origin: "transport", content: "bun test" }])
         }
         throw new Error(`unexpected signed cloud fetch: ${req.url}`)
       },
@@ -934,7 +935,7 @@ describe("override bootstrapDirectory", () => {
           })
         }
         if (req.url === "http://relay.test/workspaces/ws_default/command") {
-          return new Response(JSON.stringify([{ name: "build", template: "bun test" }]), {
+          return new Response(JSON.stringify([{ name: "build", origin: "transport", content: "bun test" }]), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })

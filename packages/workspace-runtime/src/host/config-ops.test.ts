@@ -20,6 +20,7 @@ test("runtime-owned previews read the current saved model on every request", asy
     store: { getSessionConfig: () => ({ harness: { id: "opencode", access: "native" }, model }) } as unknown as AgentRuntimeStore,
     attachments: { for: async () => ({ handle, session }) } as unknown as SessionAttachments,
     transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} },
+    savedCommands: () => [],
     launch: { workspaceId: "workspace", credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "one" }),
       projection: () => ({ generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }) },
   })

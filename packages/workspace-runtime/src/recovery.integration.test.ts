@@ -155,7 +155,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
   })
 
   const snapshot: RuntimeSnapshot = {
-    version: 4, mcp: {}, auth: {},
+    version: 4, commands: [], mcp: {}, auth: {},
     connections: [{ connectionId: "primary", providerKey: "recovery-fixture", configRevision: 1, enabled: true, config: { name: "primary" } }],
     defaultHarness: { kind: "connection", connectionId: "primary" },
   }

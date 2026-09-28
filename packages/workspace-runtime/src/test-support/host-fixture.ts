@@ -100,6 +100,7 @@ export function createHostFixture(input: HostFixtureInput): HostFixture {
     store, eventHub, transports, ports, ownerGeneration,
     launch: testLaunch(workspaceId),
     identity: input.identity ?? { workspaceId },
+    savedCommands: () => [],
     ...(input.subscriberBufferSize !== undefined ? { subscriberBufferSize: input.subscriberBufferSize } : {}),
     ...(input.recovery ? { recovery: input.recovery } : {}),
     ...(input.afterTurn ? { afterTurn: input.afterTurn } : {}),

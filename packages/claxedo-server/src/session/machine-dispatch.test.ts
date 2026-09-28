@@ -153,6 +153,8 @@ describe("machine session dispatch", () => {
   })
 })
 
+const FETCH_DEADLINE_MS = 20
+
 describe("machine channel event ordering", () => {
   function streamFixture() {
     let controller!: ReadableStreamDefaultController<Uint8Array>
@@ -172,7 +174,11 @@ describe("machine channel event ordering", () => {
         return new Response(stream)
       }
       admit()
-      return Response.json({ ok: true })
+      if (url.endsWith("/prompt_async")) return new Response(null, { status: 204 })
+      // Any request the runtime holds open until the turn ends is cut by the
+      // client's fetch deadline, shortened here from Bun's 300 s.
+      await new Promise((resolve) => setTimeout(resolve, FETCH_DEADLINE_MS))
+      throw new DOMException("The operation timed out.", "TimeoutError")
     })
     return {
       admitted,
@@ -208,7 +214,26 @@ describe("machine channel event ordering", () => {
       final,
       event("session.status", { status: { type: "idle" } }),
     ])
-    expect(mock.request.mock.calls.filter(([url]) => url.endsWith("/message"))).toHaveLength(1)
+    expect(mock.request.mock.calls.filter(([url]) => url.endsWith("/prompt_async"))).toHaveLength(1)
+  })
+  test("a turn that outlasts the fetch deadline completes from the stream", async () => {
+    const f = fixture()
+    const s = streamFixture()
+    const collected = (async () => {
+      const events = []
+      for await (const e of f.runtime.prompt("session", { messageID: "user-turn" }, caller)) events.push(e)
+      return events
+    })()
+    const outcome = collected.then(() => "completed", (error: unknown) => `failed: ${String(error)}`)
+    let settled: string | undefined
+    void outcome.then((value) => { settled = value })
+    await s.admitted
+    s.emit(event("message.updated", { info: { id: "user-turn", sessionID: "session", role: "user" } }))
+    await new Promise((resolve) => setTimeout(resolve, FETCH_DEADLINE_MS * 5))
+    expect(settled).toBeUndefined()
+    s.emit(event("session.idle"))
+    expect(await outcome).toBe("completed")
+    expect((await collected).map((e) => (e as { type: string }).type)).toEqual(["message.updated", "session.idle"])
   })
   test("reports a lost event stream instead of replaying or claiming completion", async () => {
     const f = fixture()
@@ -221,6 +246,6 @@ describe("machine channel event ordering", () => {
     await s.admitted
     s.close()
     await rejected
-    expect(mock.request.mock.calls.filter(([url]) => url.endsWith("/message"))).toHaveLength(1)
+    expect(mock.request.mock.calls.filter(([url]) => url.endsWith("/prompt_async"))).toHaveLength(1)
   })
 })

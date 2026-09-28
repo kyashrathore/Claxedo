@@ -163,7 +163,7 @@ async function fixture(options: FixtureOptions = {}) {
     },
   })
   const snapshot = (name = "agent", revision = 1): RuntimeSnapshot => ({
-    version: 4, mcp: {}, auth: {},
+    version: 4, commands: [], mcp: {}, auth: {},
     connections: ["primary", "secondary"].map((connectionId) => ({
       connectionId, providerKey: "fixture", configRevision: revision, enabled: true, config: { name },
     })),

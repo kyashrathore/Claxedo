@@ -275,6 +275,7 @@ export const dict = {
   "prompt.dropzone.label": "Перетащите сюда изображения, PDF или текстовые файлы",
   "prompt.dropzone.file.label": "Отпустите для @упоминания файла",
   "prompt.slash.badge.custom": "своё",
+  "prompt.slash.badge.saved": "сохранённое",
   "prompt.slash.badge.skill": "навык",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Удалить файл из контекста",

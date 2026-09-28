@@ -18,7 +18,7 @@ test("a runtime whose default harness is an ACP connection is healthy before and
     { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
   try {
-    await runtime.host.apply({ version: 4, auth: {}, mcp: {}, connections: [{ connectionId: "health-agent", providerKey: "acp", configRevision: 1, enabled: true,
+    await runtime.host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [{ connectionId: "health-agent", providerKey: "acp", configRevision: 1, enabled: true,
       config: { label: "Health agent", connection: { kind: "process", command: "node", args: [peerPath] } } }], defaultHarness: { kind: "connection", connectionId: "health-agent" } })
     expect(await (await request("/global/health")).json()).toMatchObject({ ok: true })
     const creating = request("/session?connectionId=health-agent", "POST", { id: "health-session" })

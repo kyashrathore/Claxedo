@@ -241,17 +241,17 @@ test.describe("core composer modes @core", () => {
     await expect(editor).toHaveText("", { timeout: 5_000 })
   })
 
-  test("custom slash command inserts the trigger for editing instead of firing", async ({ page }) => {
+  test("a saved slash command inserts its content for editing instead of firing", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
 
     await editor.click()
     await page.keyboard.type("/buil")
-    await expect(page.locator('[data-slash-id="custom.build"]')).toBeVisible({ timeout: 10_000 })
-    await page.locator('[data-slash-id="custom.build"]').click()
+    await expect(page.locator('[data-slash-id="custom.saved.build"]')).toBeVisible({ timeout: 10_000 })
+    await page.locator('[data-slash-id="custom.saved.build"]').click()
 
-    await expect.poll(() => editor.innerText(), { timeout: 5_000 }).toBe("/build ")
+    await expect.poll(() => editor.innerText(), { timeout: 5_000 }).toBe("Build the project")
     await expect(page.locator("[data-slash-id]")).toHaveCount(0)
   })
 
@@ -282,7 +282,7 @@ test.describe("core composer modes @core", () => {
 
     await editor.click()
     await page.keyboard.type("/buil")
-    await expect(page.locator('[data-slash-id="custom.build"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-slash-id="custom.saved.build"]')).toBeVisible({ timeout: 10_000 })
 
     await page.keyboard.press("Escape")
 

@@ -26,6 +26,7 @@ const EXPIRES_AT = Date.now() + 60 * 60 * 1000
 function snapshot(overrides: Partial<RuntimeSnapshot> = {}, baseUrl = "http://127.0.0.1:2595/bindings/cursor1"): RuntimeSnapshot {
   return {
     version: 4,
+    commands: [],
     mcp: {},
     connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
     auth: {

@@ -103,3 +103,18 @@ describe("PromptPopover ARIA", () => {
     expect(view.getByRole("option").textContent).toContain("draft")
   })
 })
+
+describe("PromptPopover custom command badges", () => {
+  test("a saved command shows one saved badge; a harness command keeps its source badge", () => {
+    const commands: SlashCommand[] = [
+      { id: "custom.saved.review", trigger: "review", title: "review", type: "custom", origin: "saved", content: "Review" },
+      { id: "custom.transport.review", trigger: "review", title: "review", type: "custom", origin: "transport" },
+      { id: "custom.transport.deploy", trigger: "deploy", title: "deploy", type: "custom", origin: "transport", source: "skill" },
+    ]
+    const view = render(() => <PromptPopover {...base()} popover="slash" slashFlat={commands} />)
+    const badges = view.getAllByRole("option").map((option) =>
+      [...option.querySelectorAll("[data-slash-badge]")].map((badge) => badge.textContent))
+    expect(badges).toEqual([["prompt.slash.badge.saved"], ["prompt.slash.badge.custom"], ["prompt.slash.badge.skill"]])
+    expect(view.getAllByRole("option")[0].textContent).not.toContain("Saved")
+  })
+})

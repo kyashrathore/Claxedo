@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import { ClaxedoApi, assistantText } from "../harness/api"
-import { activateCloudCredential, cloudSessionTransport, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
+import { assistantText } from "../harness/api"
+import { activateCloudCredential, cloudApi, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 import { sendJson } from "../harness/transport"
@@ -15,7 +15,7 @@ export async function run() {
     const workspace = await createCloudWorkspace(stack, "h19-pi")
     const connection = await waitCloudConnection(stack, workspace.id)
     assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
-    const api = new ClaxedoApi(stack.url, cloudSessionTransport(stack, workspace.id), { reserveSessions: true })
+    const api = cloudApi(stack, workspace.id)
     const stream = await openEventStream(stack.url, workspace.directory, {
       relayWorkspaceId: workspace.id,
       authorization: `Bearer ${stack.daemon.cloudToken}`,

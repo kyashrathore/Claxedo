@@ -642,7 +642,7 @@ describe("session prompt route", () => {
     const res = await wa.app.request(wa.url("/command"))
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(commands)
+    expect(await res.json()).toEqual(commands.map((command) => ({ ...command, origin: "transport" })))
   })
 
   it("patches session config", async () => {

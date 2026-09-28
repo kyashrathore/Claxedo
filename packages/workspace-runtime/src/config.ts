@@ -9,7 +9,6 @@ export type {
   ProviderProjection,
   ProviderProjectionSource,
   ConfigRouteOptions,
-  RuntimeCommandItem,
   RuntimeConnectionDescriptor,
   RuntimeHarnessSelection,
   RuntimeNativeHarnessId,

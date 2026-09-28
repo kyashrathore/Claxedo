@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { ascendingMessageIds } from "./message-ids"
+import { frameSessionId, frameType, openEventStream, type EventStream, type StreamFrame } from "./stream"
 import { directTransport, type HttpTransport } from "./transport"
 import { activateCorpus } from "./wire-corpus"
 
@@ -34,7 +35,12 @@ export type QuestionRow = { id: string; sessionID: string; [key: string]: unknow
 
 type CallOptions = { directory?: string; body?: unknown; query?: Record<string, string>; headers?: Record<string, string> }
 
-export type ApiOptions = { reserveSessions?: boolean }
+/** Opens the event stream a prompt reads its turn's end from; the API's own url by default. */
+export type ApiEvents = (directory: string) => Promise<EventStream>
+
+export type ApiOptions = { reserveSessions?: boolean; events?: ApiEvents }
+
+const TURN_TIMEOUT_MS = 240_000
 
 type Reservation = { operationId: string; sessionId: string }
 
@@ -45,6 +51,22 @@ export function assistantText(messages: MessageRow[]) {
     .filter((part) => part.type === "text")
     .map((part) => part.text ?? "")
     .join("")
+}
+
+/**
+ * An idle counts only after this turn's own message appeared, so an idle left
+ * over from an earlier turn cannot end it. A failure can end a turn before any
+ * message is stored.
+ */
+function turnEnded(sessionId: string, messageId: string) {
+  let observed = false
+  return (frame: StreamFrame) => {
+    if (frameSessionId(frame) !== sessionId) return false
+    const type = frameType(frame)
+    const info = (frame.data.payload as { properties?: { info?: { id?: unknown; parentID?: unknown } } } | undefined)?.properties?.info
+    if (type === "message.updated" && (info?.id === messageId || info?.parentID === messageId)) observed = true
+    return type === "session.error" || (type === "session.idle" && observed)
+  }
 }
 
 export class ClaxedoApi {
@@ -214,26 +236,33 @@ export class ClaxedoApi {
   }
 
   prompt(directory: string, id: string, text: string, options: { messageId?: string; model?: ModelChoice } = {}) {
-    const messageId = this.turnId(options.messageId)
-    return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/message`, {
-      directory,
-      body: {
-        parts: [{ type: "text", text }],
-        ...(messageId ? { messageID: messageId } : {}),
-        ...(options.model ? { model: { providerID: options.model.providerId, modelID: options.model.modelId } } : {}),
-      },
-    })
+    return this.turn(directory, id, [{ type: "text", text }], this.turnId(options.messageId), options.model)
   }
 
   promptParts(directory: string, id: string, parts: MessagePart[], options: { model?: ModelChoice } = {}) {
-    return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/message`, {
-      directory,
-      body: {
-        parts,
-        messageID: this.turnId(),
-        ...(options.model ? { model: { providerID: options.model.providerId, modelID: options.model.modelId } } : {}),
-      },
-    })
+    return this.turn(directory, id, parts, this.turnId(), options.model)
+  }
+
+  /**
+   * Admits the turn with `prompt_async` and resolves when the stream reports it
+   * ended, idle or failed. A request held open for the whole turn is cut by the
+   * client's fetch deadline (300 s in Bun), which a long turn outlasts.
+   */
+  private async turn(directory: string, id: string, parts: MessagePart[], messageId: string, model?: ModelChoice) {
+    const stream = await (this.options.events ?? ((target: string) => openEventStream(this.url, target)))(directory)
+    try {
+      await this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/prompt_async`, {
+        directory,
+        body: {
+          parts,
+          messageID: messageId,
+          ...(model ? { model: { providerID: model.providerId, modelID: model.modelId } } : {}),
+        },
+      })
+      await stream.waitFor(turnEnded(id, messageId), { label: `end of turn ${messageId}`, timeoutMs: TURN_TIMEOUT_MS })
+    } finally {
+      stream.close()
+    }
   }
 
   promptAsync(directory: string, id: string, text: string, options: { messageId?: string } = {}) {

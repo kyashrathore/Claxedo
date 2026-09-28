@@ -142,7 +142,7 @@ describe("generic agent connection config API", () => {
       sandbox_driver: { default_driver: "daytona" },
     })
 
-    expect((await app().request("/connections/absent", { method: "DELETE" })).status).toBe(404)
+    expect((await app().request("/connections/absent", { method: "DELETE" })).status).toBe(200)
     expect((await app().request("/connections/conn-primary", { method: "DELETE" })).status).toBe(200)
 
     const config = await loadUserConfig()

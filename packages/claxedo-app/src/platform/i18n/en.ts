@@ -276,6 +276,7 @@ export const dict = {
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.dropzone.file.label": "Drop to @mention file",
   "prompt.slash.badge.custom": "custom",
+  "prompt.slash.badge.saved": "saved",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Remove file from context",

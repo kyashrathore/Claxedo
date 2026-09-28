@@ -2,6 +2,8 @@ import { sendJson, directTransport, type HttpTransport } from "./transport"
 import path from "node:path"
 import fs from "node:fs/promises"
 import type { Stack } from "./stack"
+import { ClaxedoApi } from "./api"
+import { openEventStream } from "./stream"
 
 export type CloudWorkspace = { id: string; directory: string; status?: string }
 
@@ -19,6 +21,16 @@ export function cloudSessionTransport(stack: Stack, workspaceId: string): HttpTr
     const target = new URL(`/workspaces/${encodeURIComponent(workspaceId)}${url.pathname}${url.search}`, stack.url)
     return directTransport({ ...request, url: target.toString(), headers: { ...request.headers, authorization: `Bearer ${stack.daemon.cloudToken}` } })
   }
+}
+
+/** Sessions, prompts and their event stream all go through the relay to the workspace's sandbox. */
+export function cloudApi(stack: Stack, workspaceId: string) {
+  return new ClaxedoApi(stack.url, cloudSessionTransport(stack, workspaceId), {
+    reserveSessions: true,
+    events: (directory) => openEventStream(stack.url, directory, {
+      relayWorkspaceId: workspaceId, authorization: `Bearer ${stack.daemon.cloudToken}`,
+    }),
+  })
 }
 
 export function cloudTransport(stack: Stack, workspaceId?: string): HttpTransport {

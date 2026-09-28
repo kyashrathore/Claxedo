@@ -53,7 +53,7 @@ void test(
         body: JSON.stringify(body),
       })
     try {
-      await runtime.host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
+      await runtime.host.apply({ version: 4, commands: [], mcp: {}, connections: [], auth: {} })
       const model = { providerID: "pi", modelID: "openai/gpt-4.1" }
       const created = await post("session?nativeHarness=pi", { model })
       assert.equal(created.status, 201, await created.clone().text())
@@ -152,6 +152,7 @@ void test(
       mcp: {},
       connections: [],
       auth: {},
+      commands: [],
     }
     const call = async (resource: string, body: object) => {
       const response = await runtime.app.request(

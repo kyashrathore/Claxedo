@@ -11,6 +11,7 @@
 // Nothing in this file is reactive: no Solid imports, no signals. That is the
 // point — it is all data in, data out, which is why it can be shared and tested
 // directly.
+import type { AgentSessionCommand, RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 
 export type PromptAgentRow = {
@@ -29,11 +30,13 @@ export type PromptCommandOption = {
   disabled?: boolean
 }
 
-export type PromptCustomCommand = {
-  name: string
-  description?: string
-  input?: { hint: string } | null
-  source?: SlashCommand["source"]
+
+export function promptCustomCommands(catalog: RuntimeCommand[] | undefined, sessionCommands: AgentSessionCommand[] | undefined): RuntimeCommand[] {
+  if (!sessionCommands) return catalog ?? []
+  return [
+    ...(catalog ?? []).filter((command) => command.origin === "saved"),
+    ...sessionCommands.map((command) => ({ ...command, origin: "transport" as const })),
+  ]
 }
 
 export function promptAtOptionKey(x: AtOption | undefined) {
@@ -87,7 +90,7 @@ export function promptAgentOptions(agents: PromptAgentRow[]) {
 
 export function promptSlashCommands(input: {
   commandOptions: PromptCommandOption[]
-  customCommands?: PromptCustomCommand[]
+  customCommands?: RuntimeCommand[]
 }) {
   const builtin = input.commandOptions
     .filter((opt) => !opt.disabled && !opt.id.startsWith("suggested.") && opt.slash)
@@ -101,12 +104,13 @@ export function promptSlashCommands(input: {
     }))
 
   const goalReserved = builtin.some((command) => command.trigger.toLowerCase() === "goal")
-  const custom = (input.customCommands ?? []).filter((cmd) => !(goalReserved && cmd.name.toLowerCase() === "goal")).map((cmd) => ({
-    id: `custom.${cmd.name}`,
+  const custom = (input.customCommands ?? []).filter((cmd) => !(goalReserved && cmd.name.toLowerCase() === "goal")).map((cmd): SlashCommand => ({
+    id: `custom.${cmd.origin}.${cmd.name}`,
+    ...(cmd.origin === "saved" ? { origin: "saved" as const, content: cmd.content } : { origin: "transport" as const }),
     trigger: cmd.name,
     title: cmd.name,
     description: cmd.input?.hint ? [cmd.description, cmd.input.hint].filter(Boolean).join(" · ") : cmd.description,
-    type: "custom" as const,
+    type: "custom",
     source: cmd.source,
   }))
 

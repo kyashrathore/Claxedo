@@ -43,7 +43,7 @@ test("public remote ACP disconnect preserves received output and never replays t
     { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
   try {
-    await host.apply({ version: 4, auth: {}, mcp: {}, connections: [{ connectionId: "remote", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Remote acceptance", connection: { kind: "websocket", url: `ws://127.0.0.1:${server.port}` } } }], defaultHarness: { kind: "connection", connectionId: "remote" } })
+    await host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [{ connectionId: "remote", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Remote acceptance", connection: { kind: "websocket", url: `ws://127.0.0.1:${server.port}` } } }], defaultHarness: { kind: "connection", connectionId: "remote" } })
     expect((await request("/session", "POST", { id: "remote-local", title: "Remote acceptance" })).status).toBe(201)
     expect(await (await request("/session/remote-local")).json()).toMatchObject({ title: "Remote acceptance", titleSource: "user" })
     const failed = await request("/session/remote-local/message", "POST", { parts: [{ type: "text", text: "First operation; do not repeat." }] })
@@ -109,7 +109,7 @@ for (const imageSupport of [true, false]) test(`public remote ACP image delivery
     { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
   try {
-    await host.apply({ version: 4, auth: {}, mcp: {}, connections: [{ connectionId: "images", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Image peer", connection: { kind: "websocket", url: `ws://127.0.0.1:${server.port}` } } }], defaultHarness: { kind: "connection", connectionId: "images" } })
+    await host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [{ connectionId: "images", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Image peer", connection: { kind: "websocket", url: `ws://127.0.0.1:${server.port}` } } }], defaultHarness: { kind: "connection", connectionId: "images" } })
     expect((await request("/session", "POST", { id: "image-local", title: "Image acceptance" })).status).toBe(201)
     const response = await request("/session/image-local/message", "POST", { parts: [
       { type: "text", text: "Review this attachment." },

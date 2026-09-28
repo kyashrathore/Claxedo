@@ -125,7 +125,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
   })
 
   test("slash-looking text uses the generic runtime prompt path", async () => {
-    state.commandListResponse = [{ name: "build" }]
+    state.commandListResponse = [{ name: "build", origin: "transport" }]
     await seedCommandList("/repo/main")
     promptValue.splice(0, promptValue.length, { type: "text", content: "/build --fast", start: 0, end: 13 })
     const submit = createSubmit({
@@ -156,7 +156,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
   })
 
   test("runtime failure for slash-looking text restores the draft", async () => {
-    state.commandListResponse = [{ name: "build" }]
+    state.commandListResponse = [{ name: "build", origin: "transport" }]
     await seedCommandList("/repo/main")
     state.transportPromptAsyncError = new Error("runtime exploded")
     promptValue.splice(0, promptValue.length, { type: "text", content: "/build --fast", start: 0, end: 13 })

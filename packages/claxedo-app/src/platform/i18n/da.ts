@@ -274,6 +274,7 @@ export const dict = {
   "prompt.dropzone.label": "Slip billeder, PDF'er eller tekstfiler her",
   "prompt.dropzone.file.label": "Slip for at @nævne fil",
   "prompt.slash.badge.custom": "brugerdefineret",
+  "prompt.slash.badge.saved": "gemt",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Fjern fil fra kontekst",

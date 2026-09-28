@@ -7,6 +7,7 @@
 // boot state, composer-mode scoping) stays outside this contract, in our frame,
 // so the upstream controller runs unforked.
 import type { Accessor } from "solid-js"
+import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { ContentPart, ImageAttachmentPart, Prompt, PromptDraftScope, usePrompt } from "@/features/session/providers/prompt"
 import type { ComposerDocumentOption, createDocumentPickerController } from "@/features/session/composer/document-picker-controller"
 import type { PromptHistoryComments } from "@/features/session/composer/ui/history-controller"
@@ -27,12 +28,6 @@ export type ComposerEngineCommandOption = {
   disabled?: boolean
 }
 
-export type ComposerEngineCustomCommand = {
-  name: string
-  description?: string
-  input?: { hint: string } | null
-  source?: SlashCommand["source"]
-}
 
 /** The picker's own input contract, so the two can never disagree. */
 type ComposerDocumentPickerInput = Parameters<typeof createDocumentPickerController>[0]
@@ -114,7 +109,7 @@ export type ComposerEngineInput = {
   recentFiles: Accessor<string[]>
   searchFilesAndDirectories: (query: string) => Promise<string[]>
   commandOptions: Accessor<ComposerEngineCommandOption[]>
-  customCommands: Accessor<ComposerEngineCustomCommand[] | undefined>
+  customCommands: Accessor<RuntimeCommand[] | undefined>
   triggerSlashCommand: (id: string) => void
   documentDirectory: ComposerDocumentPickerInput["directory"]
   listDocuments: ComposerDocumentPickerInput["list"]

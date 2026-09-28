@@ -337,6 +337,7 @@ describe("two-user signed runtime transport acceptance", () => {
     })
     await runtime.host.apply({
       version: 4,
+      commands: [],
       mcp: {},
       auth: {},
       connections: [{ connectionId: CONNECTION, providerKey: CONNECTION, configRevision: 1, enabled: true, config: {} }],

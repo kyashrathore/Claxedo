@@ -155,7 +155,7 @@ test("registering session tools for a connection session no one has attached lea
     cleanups.push(() => host.dispose())
     return host
   }
-  const snapshot = { version: 4 as const, auth: {}, mcp: {}, connections: [
+  const snapshot = { version: 4 as const, commands: [], auth: {}, mcp: {}, connections: [
     { connectionId: runner.id, providerKey: "fixture", configRevision: 1, enabled: true, config: {}, secretRefs: { token: "ref" } },
   ], defaultHarness: { kind: "connection" as const, connectionId: runner.id } }
   cleanups.push(() => rm(directory, { recursive: true, force: true }))

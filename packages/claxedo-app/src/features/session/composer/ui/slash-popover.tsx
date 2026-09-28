@@ -15,14 +15,26 @@ export type AtOption =
       status: string
     }
 
-export interface SlashCommand {
+type SlashCommandRow = {
   id: string
   trigger: string
   title: string
   description?: string
   keybind?: string
-  type: "builtin" | "custom"
   source?: "command" | "mcp" | "skill"
+}
+
+export type SlashCommand =
+  | (SlashCommandRow & { type: "builtin" })
+  | (SlashCommandRow & { type: "custom" } & ({ origin: "saved"; content: string } | { origin: "transport" }))
+
+function slashCommandBadge(cmd: SlashCommand) {
+  if (cmd.type !== "custom") return undefined
+  if (cmd.origin === "saved") return "prompt.slash.badge.saved"
+  if (cmd.source === "command") return undefined
+  if (cmd.source === "skill") return "prompt.slash.badge.skill"
+  if (cmd.source === "mcp") return "prompt.slash.badge.mcp"
+  return "prompt.slash.badge.custom"
 }
 
 /**
@@ -171,14 +183,12 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       </Show>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                      <Show when={cmd.type === "custom" && cmd.source !== "command"}>
-                        <span class="text-11-regular text-text-weak px-1.5 py-0.5 bg-surface-base rounded">
-                          {cmd.source === "skill"
-                            ? props.t("prompt.slash.badge.skill")
-                            : cmd.source === "mcp"
-                              ? props.t("prompt.slash.badge.mcp")
-                              : props.t("prompt.slash.badge.custom")}
-                        </span>
+                      <Show when={slashCommandBadge(cmd)}>
+                        {(badge) => (
+                          <span data-slash-badge class="text-11-regular text-text-weak px-1.5 py-0.5 bg-surface-base rounded">
+                            {props.t(badge())}
+                          </span>
+                        )}
                       </Show>
                       <Show when={props.commandKeybind(cmd.id)}>
                         <span class="text-12-regular text-text-weak">{props.commandKeybind(cmd.id)}</span>

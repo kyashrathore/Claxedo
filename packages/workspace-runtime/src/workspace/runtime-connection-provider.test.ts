@@ -72,7 +72,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     const { host, create } = mountedHost(root, "ws-concurrent", { connectionProviders: [provider] })
     try {
-      await host.apply({ version: 4, mcp: {}, auth: {}, connections: [fixtureConnection()], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
+      await host.apply({ version: 4, commands: [], mcp: {}, auth: {}, connections: [fixtureConnection()], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
       const responses = await Promise.all([create("one"), create("two")])
       expect(responses.map((response) => response.status)).toEqual([201, 201])
       expect(created).toBe(1)
@@ -110,7 +110,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       resolveConnectionSecrets: () => ({ secrets: { token: "runtime-only" }, secretLeaseGeneration: "lease-1" }),
     })
     await host.apply({
-      version: 4,
+      version: 4, commands: [],
       mcp: {},
       connections: [fixtureConnection({ token: "credentials/fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
@@ -137,7 +137,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     const provider = fakeConnectionProvider({ providerKey: "fixture", capabilities, transport: () => new FakeTransport() })
     const { host, create } = mountedHost(root, "ws-1", { connectionProviders: [provider] })
     await host.apply({
-      version: 4,
+      version: 4, commands: [],
       mcp: {},
       connections: [fixtureConnection({ token: "credentials/fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
@@ -179,7 +179,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       resolveConnectionSecrets: () => ({ secrets: { token: lease }, secretLeaseGeneration: lease }),
     })
     await host.apply({
-      version: 4,
+      version: 4, commands: [],
       mcp: {},
       connections: [fixtureConnection({ token: "credential:fixture" })],
       defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
@@ -216,7 +216,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     try {
       await host.apply({
-        version: 4,
+        version: 4, commands: [],
         mcp: {},
         auth: {},
         connections: [fixtureConnection()],
@@ -236,7 +236,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
   test("leaves default selection unresolved when policy omits it", async () => {
     const root = await workspaceRoot("workspace-runtime-unselected-")
     const { host } = mountedHost(root, "ws-unselected", {})
-    await host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
+    await host.apply({ version: 4, commands: [], mcp: {}, connections: [], auth: {} })
     expect(host.detail().harness).toBeUndefined()
     await host.dispose()
   })

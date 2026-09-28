@@ -275,6 +275,7 @@ export const dict = {
   "prompt.dropzone.label": "ลากรูปภาพ, PDF หรือไฟล์ข้อความมาวางที่นี่",
   "prompt.dropzone.file.label": "วางเพื่อ @กล่าวถึงไฟล์",
   "prompt.slash.badge.custom": "กำหนดเอง",
+  "prompt.slash.badge.saved": "บันทึกไว้",
   "prompt.slash.badge.skill": "ทักษะ",
   "prompt.slash.badge.mcp": "MCP",
   "prompt.context.removeFile": "เอาไฟล์ออกจากบริบท",

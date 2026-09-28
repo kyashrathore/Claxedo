@@ -1,17 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
+import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import { commandListQuery, normalizeCommandList } from "./shell"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 
 afterEach(() => queryClient.clear())
 
-function command(name: string, description = ""): Command {
+function command(name: string, description = ""): RuntimeCommand {
   return {
     name,
-    template: "",
+    origin: "transport",
     description,
-    hints: [],
   }
 }
 
@@ -103,7 +102,7 @@ describe("shell query helpers", () => {
         if (url.toString() === "http://127.0.0.1:3001/workspaces/ws_1/command") {
           expect(req.headers.get("authorization")).toBeNull()
           expect(req.headers.get("x-claxedo-directory")).toBeNull()
-          return new Response(JSON.stringify([{ name: "deploy" }]), { status: 200 })
+          return new Response(JSON.stringify([{ name: "deploy", origin: "transport" }]), { status: 200 })
         }
         throw new Error(`unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,
@@ -121,7 +120,7 @@ describe("shell query helpers", () => {
       },
     })
 
-    expect(await query.queryFn()).toEqual([{ name: "deploy" }])
+    expect(await query.queryFn()).toEqual([{ name: "deploy", origin: "transport" }])
     expect(calls).toEqual(["GET http://127.0.0.1:3001/workspaces/ws_1/command"])
   })
 
@@ -146,7 +145,7 @@ describe("shell query helpers", () => {
           }), { status: 200 })
         }
         if (url.toString() === "https://relay.test/workspaces/ws_cloud/command") {
-          return new Response(JSON.stringify([{ name: "deploy" }]), { status: 200 })
+          return new Response(JSON.stringify([{ name: "deploy", origin: "transport" }]), { status: 200 })
         }
         throw new Error(`unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,
@@ -164,7 +163,7 @@ describe("shell query helpers", () => {
       },
     })
 
-    expect(await query.queryFn()).toEqual([{ name: "deploy" }])
+    expect(await query.queryFn()).toEqual([{ name: "deploy", origin: "transport" }])
     expect(calls.some((call) => call.includes("/api/claxedo/agent-config/commands"))).toBe(false)
   })
 
@@ -177,7 +176,7 @@ describe("shell query helpers", () => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         calls.push(req.url)
         if (req.url === "http://claxedo.test/api/claxedo/agent-config/commands") {
-          return new Response(JSON.stringify([{ name: "lint" }]), { status: 200 })
+          return new Response(JSON.stringify([{ name: "lint", content: "Lint", origin: "saved" }]), { status: 200 })
         }
         throw new Error(`unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,
@@ -195,7 +194,7 @@ describe("shell query helpers", () => {
       },
     })
 
-    expect(await query.queryFn()).toEqual([{ name: "lint" }])
+    expect(await query.queryFn()).toEqual([{ name: "lint", content: "Lint", origin: "saved" }])
     expect(calls).toEqual(["http://claxedo.test/api/claxedo/agent-config/commands"])
   })
 
@@ -205,7 +204,7 @@ describe("shell query helpers", () => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
-      return new Response(JSON.stringify([{ name: "build" }]), { status: 200 })
+      return new Response(JSON.stringify([{ name: "build", content: "Build", origin: "saved" }]), { status: 200 })
     }) as typeof fetch
     try {
       const query = commandListQuery({
@@ -228,10 +227,18 @@ describe("shell query helpers", () => {
         },
       })
 
-      expect(await query.queryFn()).toEqual([{ name: "build" }])
+      expect(await query.queryFn()).toEqual([{ name: "build", content: "Build", origin: "saved" }])
       expect(calls).toEqual(["GET http://127.0.0.1:3001/api/claxedo/agent-config/commands"])
     } finally {
       globalThis.fetch = previous
     }
   })
+})
+
+test("command parsing retains both origins and rejects absent origin or absent saved content", () => {
+  const entries = [
+    { name: "review", origin: "saved", content: "Review my saved instructions" },
+    { name: "review", origin: "transport" },
+  ]
+  expect(normalizeCommandList([...entries, { name: "invalid" }, { name: "invalid", origin: "saved" }])).toEqual(entries)
 })

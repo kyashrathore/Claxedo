@@ -205,6 +205,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   let currentProviderDefinitions: NonNullable<AppliedRuntimeSnapshot["providerDefinitions"]> = []
   let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = {}
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
+  let currentCommands: AppliedRuntimeSnapshot["commands"] = []
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
   const snapshots = createKeyedSerializer<"snapshot">()
   const storeFactory = resolveStoreFactory(options)
@@ -350,6 +351,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const runtime = createAgentRuntime({
       store: runtimeStore, eventHub, transports, ports, ownerGeneration, launch,
       identity: { workspaceId: options.target?.workspaceId ?? "" },
+      savedCommands: () => currentCommands,
       afterTurn: (sessionId) => configuration.afterTurn(sessionId),
     })
     engine = { services, transports, ports, runtime, configuration }
@@ -439,6 +441,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       currentProviderDefinitions = next.providerDefinitions ?? []
       currentHarnessLaunch = nextHarnessLaunch
       if (engine) await engine.configuration.apply({ credentials: credentialsChanged, projection: projectionChanged, providerDefinitions: providerDefinitionsChanged })
+      currentCommands = next.commands
       state = "ready"
       err = ""
       appliedSignature = signature
@@ -639,6 +642,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         providerDefinitions: currentProviderDefinitions,
         workspaceHarnessEnabled: enabled,
         harnessLaunch,
+        commands: currentCommands,
       })
     },
     detail() {

@@ -7,6 +7,7 @@ import { brokeredSecretFromRegistration } from "@claxedo/egress-broker"
 import { createLocalBrokeringSandboxDriver } from "@claxedo/sandbox-manager/drivers/local-brokering"
 import type { SandboxBrokeredSecret, SandboxTarget } from "@claxedo/sandbox-manager"
 import { parseRegistrations, type EgressRegistration } from "../../../claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials"
+import { claxedoAgentPluginsWorkspaceRuntimeEntry } from "../../../claxedo-server/src/hosts/workspace-runtime/startup"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
 import { PINNED_PI } from "./pinned-pi"
 import { scriptedGithub } from "./hosted-scripted-github"
@@ -156,7 +157,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
     root: input.root,
     executable: process.env.CLAXEDO_E2E_NODE ?? process.execPath,
     // The VM image's own entry: the Claxedo runtime composition with the Agent Plugins apply route mounted.
-    args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, path.join(REPO_ROOT, "packages/claxedo-server/src/hosts/workspace-runtime/host-entry.agent-plugins.ts")],
+    args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, claxedoAgentPluginsWorkspaceRuntimeEntry()],
     allowedOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     directOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl, [HOSTED_MCP_GATEWAY_ORIGIN]: gateway.url },

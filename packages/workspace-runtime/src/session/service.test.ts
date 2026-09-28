@@ -54,6 +54,7 @@ function host(options: FakeTransportOptions = {}): Host {
     store, eventHub, ports, ownerGeneration, launch,
     transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} },
     identity: { workspaceId: WORKSPACE },
+    savedCommands: () => [],
   })
   const created = { store, runtime, transport, eventHub }
   hosts.push({ host: created, root })

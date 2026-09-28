@@ -49,6 +49,7 @@ describe("applied runtime config", () => {
       providerDefinitions: [],
       mcp: {},
       connections: [],
+      commands: [],
       auth: {
         "claude-sdk": bound,
         "codex-app-server": {

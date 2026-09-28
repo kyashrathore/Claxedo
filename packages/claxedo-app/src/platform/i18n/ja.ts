@@ -256,6 +256,7 @@ export const dict = {
   "prompt.dropzone.label": "画像、PDF、またはテキストファイルをここにドロップしてください",
   "prompt.dropzone.file.label": "ドロップして@メンションファイルを追加",
   "prompt.slash.badge.custom": "カスタム",
+  "prompt.slash.badge.saved": "保存済み",
   "prompt.slash.badge.skill": "スキル",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "コンテキストからファイルを削除",

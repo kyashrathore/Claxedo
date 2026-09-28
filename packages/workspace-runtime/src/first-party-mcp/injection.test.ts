@@ -51,7 +51,7 @@ function fixture(input: { firstParty: boolean; groups?: readonly string[] }) {
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const apply = () => host.apply({
-    version: 4, mcp: {}, auth: {},
+    version: 4, commands: [], mcp: {}, auth: {},
     connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
     defaultHarness: { kind: "connection", connectionId: "fixture" },
   })

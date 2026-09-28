@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { AgentMessage, AgentSession, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage, AgentSession, SavedCommand, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStreamEvent, ConnectionSecretAuthority, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import { eventSessionId, sessionIdle, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
@@ -55,6 +55,7 @@ export type AgentRuntimeCompositionInput = CreateAgentRuntimeInput & {
   ownerGeneration: string
   /** Runs after a session's turn ends, before the next one can start: a held configuration lands here. */
   afterTurn?: (sessionId: string) => Promise<void>
+  savedCommands: () => readonly SavedCommand[]
 }
 
 /** The caller owns input.store and closes it after this runtime is disposed. */
@@ -160,7 +161,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     forgetGoal: (sessionId) => goals.forgetSession(sessionId),
     pushTitle: titles.push,
   })
-  const reads = createHarnessReads({ store, transports: input.transports, launch: input.launch, attachments })
+  const reads = createHarnessReads({ store, transports: input.transports, launch: input.launch, attachments, savedCommands: input.savedCommands })
   const requests = createRequestSurface({ store, broker })
 
   const turnHost: TurnRunnerHost = {

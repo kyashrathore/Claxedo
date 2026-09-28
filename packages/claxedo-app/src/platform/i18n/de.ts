@@ -261,6 +261,7 @@ export const dict = {
   "prompt.dropzone.label": "Bilder, PDFs oder Textdateien hier ablegen",
   "prompt.dropzone.file.label": "Ablegen zum @Erwähnen der Datei",
   "prompt.slash.badge.custom": "benutzerdefiniert",
+  "prompt.slash.badge.saved": "gespeichert",
   "prompt.slash.badge.skill": "Skill",
   "prompt.slash.badge.mcp": "MCP",
   "prompt.context.removeFile": "Datei aus dem Kontext entfernen",

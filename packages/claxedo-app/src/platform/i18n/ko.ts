@@ -256,6 +256,7 @@ export const dict = {
   "prompt.dropzone.label": "이미지, PDF 또는 텍스트 파일을 이곳에 드롭하세요",
   "prompt.dropzone.file.label": "드롭하여 파일 @멘션 추가",
   "prompt.slash.badge.custom": "사용자 지정",
+  "prompt.slash.badge.saved": "저장됨",
   "prompt.slash.badge.skill": "스킬",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "컨텍스트에서 파일 제거",

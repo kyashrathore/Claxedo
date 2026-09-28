@@ -278,6 +278,7 @@ export const dict = {
   "prompt.dropzone.label": "Slipp bilder, PDF-er eller tekstfiler her",
   "prompt.dropzone.file.label": "Slipp for å @nevne fil",
   "prompt.slash.badge.custom": "egendefinert",
+  "prompt.slash.badge.saved": "lagret",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.removeFile": "Fjern fil fra kontekst",
