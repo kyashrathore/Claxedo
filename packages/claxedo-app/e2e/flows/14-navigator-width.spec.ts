@@ -64,3 +64,51 @@ for (const side of ["left", "right"] as const) {
     await expectWhole(app, "opening Changes")
   })
 }
+
+for (const side of ["left", "right"] as const) {
+  test(`14 a ${side} navigator's edge drags and steps by arrow keys within its limits, and the width survives a reload`, async ({ stack, api, app }) => {
+    await app.setViewportSize({ width: 1400, height: 800 })
+    if (side === "right") await app.addInitScript(() => localStorage.setItem("claxedo:appearance:fonts", JSON.stringify({ navigatorSide: "right" })))
+    const workspace = await stack.daemon.makeWorkspace(`resize-${side}`)
+    await fs.appendFile(path.join(workspace.directory, "README.md"), "a changed line\n")
+    const session = await api.createSession(workspace.directory, { title: "Resize", harness: SCRIPTED_ACP_HARNESS })
+
+    await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+    await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+    await app.getByRole("button", { name: UI.openPanel }).click()
+    const panel = app.getByRole("complementary", { name: "Workspace panel" })
+    await panel.getByRole("button", { name: "Open Changes", exact: true }).click()
+    await expect(panel.getByTestId("source-control-groups")).toBeVisible()
+    const column = app.getByTestId("workspace-navigator-overlay")
+    const handle = panel.getByRole("separator", { name: "Resize navigator" })
+    const width = () => column.evaluate((element) => element.clientWidth)
+    const outward = side === "left" ? 1 : -1
+    const before = await width()
+
+    const box = await handle.boundingBox()
+    if (!box) throw new Error("the navigator's edge is not laid out")
+    await app.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await app.mouse.down()
+    await app.mouse.move(box.x + box.width / 2 + outward * 90, box.y + box.height / 2, { steps: 6 })
+    await app.mouse.up()
+    await expect.poll(width, { message: "the width after a drag" }).toBe(before + 90)
+    await expect(handle).toHaveAttribute("aria-valuenow", String(before + 90))
+
+    await handle.focus()
+    await app.keyboard.press(side === "left" ? "ArrowRight" : "ArrowLeft")
+    await expect.poll(width, { message: "the width after an arrow key" }).toBe(before + 114)
+    await app.keyboard.press("End")
+    const row = await column.evaluate((element) => element.parentElement?.clientWidth ?? 0)
+    await expect.poll(width, { message: "the widest navigator leaves the diff 40 % of the row" }).toBe(Math.floor(row * 0.6))
+    await app.keyboard.press("Home")
+    await expect.poll(width, { message: "the narrowest navigator" }).toBe(220)
+    await app.keyboard.press(side === "left" ? "ArrowRight" : "ArrowLeft")
+    await expect.poll(width).toBe(244)
+
+    await app.reload()
+    await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+    if (await app.getByRole("button", { name: UI.openPanel }).isVisible()) await app.getByRole("button", { name: UI.openPanel }).click()
+    await expect(column).toHaveAttribute("data-open", "true")
+    await expect.poll(width, { message: "the width after a reload" }).toBe(244)
+  })
+}

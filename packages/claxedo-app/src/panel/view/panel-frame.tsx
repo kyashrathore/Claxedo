@@ -4,7 +4,7 @@ import { useServer } from "@/server"
 import { createExposed } from "../exposed"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
-import { PANEL_MOTION } from "../width"
+import { PANEL_BORDER_WIDTH, PANEL_MOTION } from "../width"
 import { PanelBody } from "./panel-body"
 import { PanelHeader } from "./panel-header"
 import { PanelResizeHandle } from "./resize-handle"
@@ -48,7 +48,7 @@ function WorkspacePanel(): JSX.Element {
       classList={{ "pointer-events-none": !panel.open() }}
       style={{
         width: panel.phone() ? "100%" : `${panel.width()}px`,
-        "border-left": "1px solid var(--border-weaker-base)",
+        "border-left": `${PANEL_BORDER_WIDTH}px solid var(--border-weaker-base)`,
         contain: "strict",
         "backface-visibility": "hidden",
         transform: panel.open() ? "translate3d(0, 0, 0)" : "translate3d(100%, 0, 0)",

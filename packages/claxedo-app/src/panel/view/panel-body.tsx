@@ -1,4 +1,4 @@
-import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
+import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
@@ -13,9 +13,9 @@ import { createExposed } from "../exposed"
 import { filePathFromTab } from "../focus"
 import { panelDictionary } from "../i18n"
 import { usePanel, type Panel } from "../store"
+import { NavigatorResizeHandle } from "./resize-handle"
 
 const NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
-const NAVIGATOR_WIDTH = "min(280px, 45cqw)"
 
 function activeFilePath(panel: Panel): string | undefined {
   const tab = panel.activeTab()
@@ -52,10 +52,13 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
 function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const preferences = usePreferences()
-  const left = () => preferences.appearance.navigatorSide === "left"
+  const side = () => preferences.appearance.navigatorSide
+  const left = () => side() === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
   const visited = createMemo<boolean>((was) => was || (panel.open() && selected()), false)
   const shown = createExposed(() => panel.open() && selected())
+  const [dragging, setDragging] = createSignal(false)
+  const width = () => `${panel.navigatorWidth()}px`
   return (
     <Show when={visited()}>
       <div
@@ -64,7 +67,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
         data-navigator-kind={panel.navigator() ?? "files"}
         data-open={selected() ? "true" : "false"}
         aria-hidden={selected() ? undefined : "true"}
-        data-navigator-side={left() ? "left" : "right"}
+        data-navigator-side={side()}
         class="claxedo-workspace-navigator-overlay box-content h-full shrink-0 overflow-hidden border-border-weak-base bg-background-base motion-reduce:transition-none"
         classList={{
           "order-first border-r": left(),
@@ -73,17 +76,22 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
           "border-transparent": !selected(),
         }}
         style={{
-          width: selected() ? NAVIGATOR_WIDTH : "0px",
-          transition: NAVIGATOR_TRANSITION,
+          width: selected() ? width() : "0px",
+          transition: dragging() ? "none" : NAVIGATOR_TRANSITION,
           "content-visibility": selected() ? "visible" : "hidden",
         }}
       >
-        <div class="relative h-full" style={{ width: NAVIGATOR_WIDTH }}>
+        <div class="relative h-full" style={{ width: width() }}>
           <Show when={shown()}>
             <NavigatorViews placementId={props.placementId} />
           </Show>
         </div>
       </div>
+      <Show when={selected()}>
+        <div class="relative w-0 shrink-0" classList={{ "-order-1": left(), "order-1": !left() }}>
+          <NavigatorResizeHandle side={side()} onDragging={setDragging} />
+        </div>
+      </Show>
     </Show>
   )
 }

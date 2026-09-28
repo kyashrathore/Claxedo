@@ -17,7 +17,15 @@ import type { ReviewFocus } from "@/review"
 import { filePathFromTab, type FileReveal, type PanelFocus } from "./focus"
 import { rememberPanelPerSession, type SessionPanelSnapshot } from "./session-memory"
 import { createPanelTabs } from "./tabs-store"
-import { clampPanelWidth, restingPanelWidth, workbenchInset } from "./width"
+import {
+  clampNavigatorWidth,
+  clampPanelWidth,
+  maxNavigatorWidth,
+  PANEL_BORDER_WIDTH,
+  restingNavigatorWidth,
+  restingPanelWidth,
+  workbenchInset,
+} from "./width"
 import type { ReviewWorkspaceTab, WorkspacePanelNavigator } from "./workspace-tabs"
 
 export type PanelShowOptions = { readonly navigator?: WorkspacePanelNavigator | null }
@@ -39,6 +47,9 @@ export type Panel = {
   readonly inset: Accessor<number>
   readonly setAvailable: (width: number) => void
   readonly chooseWidth: (width: number) => void
+  readonly navigatorWidth: Accessor<number>
+  readonly navigatorMaxWidth: Accessor<number>
+  readonly chooseNavigatorWidth: (width: number) => void
   readonly toggleFullWidth: () => void
   readonly toggle: () => void
   readonly close: () => void
@@ -50,7 +61,18 @@ export type Panel = {
   readonly reviewFocus: Accessor<ReviewFocus | undefined>
 }
 
-type PanelSize = Pick<Panel, "phone" | "fullWidth" | "width" | "available" | "setAvailable" | "chooseWidth">
+type PanelSize = Pick<
+  Panel,
+  | "phone"
+  | "fullWidth"
+  | "width"
+  | "available"
+  | "setAvailable"
+  | "chooseWidth"
+  | "navigatorWidth"
+  | "navigatorMaxWidth"
+  | "chooseNavigatorWidth"
+>
 
 const PanelContext = createContext<Panel>()
 
@@ -67,6 +89,12 @@ function createPanelSize(): PanelSize & { readonly setFullWidth: (fullWidth: boo
   const width = createMemo(() =>
     restingPanelWidth({ available: available(), phone: phone(), fullWidth: fullWidth(), chosen: chosen() }),
   )
+  const [navigatorChosen, setNavigatorChosen] = persistedSignal<number | null>(
+    preferenceKey("panel", "navigatorWidth"),
+    null,
+    readWidth,
+  )
+  const row = () => width() - PANEL_BORDER_WIDTH
   return {
     phone,
     fullWidth,
@@ -74,6 +102,9 @@ function createPanelSize(): PanelSize & { readonly setFullWidth: (fullWidth: boo
     available,
     setAvailable: (value) => setAvailable(value),
     chooseWidth: (value) => setChosen(Math.round(clampPanelWidth(value, available()))),
+    navigatorWidth: createMemo(() => restingNavigatorWidth(row(), navigatorChosen())),
+    navigatorMaxWidth: () => maxNavigatorWidth(row()),
+    chooseNavigatorWidth: (value) => setNavigatorChosen(Math.round(clampNavigatorWidth(value, row()))),
     setFullWidth: (value) => setFullWidth(value),
   }
 }

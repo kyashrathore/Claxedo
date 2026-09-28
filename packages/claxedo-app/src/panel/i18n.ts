@@ -11,6 +11,8 @@ const en = {
   "panel.close": "Close workspace panel",
   "panel.maximize": "Maximize workspace panel",
   "panel.restore": "Restore workspace panel width",
+  "panel.resize": "Resize workspace panel",
+  "panel.navigator.resize": "Resize navigator",
   "panel.addTab": "Add workspace tab",
   "panel.add.file": "File",
   "panel.add.browser": "Browser",
