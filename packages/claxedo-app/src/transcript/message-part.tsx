@@ -34,6 +34,7 @@ import type {
 import { useData } from "./data"
 import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, Tooltip, IconButton, Button, TextShimmer, type IconProps } from "@/ui"
 import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
+import { copyText } from "@/lib/clipboard"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
@@ -60,30 +61,6 @@ import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
-
-async function writeClipboard(text: string): Promise<boolean> {
-  const body = typeof document === "undefined" ? undefined : document.body
-  if (body) {
-    const textarea = document.createElement("textarea")
-    textarea.value = text
-    textarea.setAttribute("readonly", "")
-    textarea.style.position = "fixed"
-    textarea.style.opacity = "0"
-    textarea.style.pointerEvents = "none"
-    body.appendChild(textarea)
-    textarea.select()
-    const copied = document.execCommand("copy")
-    body.removeChild(textarea)
-    if (copied) return true
-  }
-
-  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-  if (!clipboard?.writeText) return false
-  return clipboard.writeText(text).then(
-    () => true,
-    () => false,
-  )
-}
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
@@ -975,7 +952,7 @@ export function UserMessageDisplay(props: {
   const handleCopy = async () => {
     const content = text()
     if (!content) return
-    if (await writeClipboard(content)) {
+    if ((await copyText(content)).copied) {
       setState("copied", true)
       setTimeout(() => setState("copied", false), 2000)
     }
@@ -1525,7 +1502,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const handleCopy = async () => {
     const content = text()
     if (!content) return
-    if (await writeClipboard(content)) {
+    if ((await copyText(content)).copied) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
@@ -1999,7 +1976,7 @@ ToolRegistry.register({
     const handleCopy = async () => {
       const content = text()
       if (!content) return
-      if (await writeClipboard(content)) {
+      if ((await copyText(content)).copied) {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       }
