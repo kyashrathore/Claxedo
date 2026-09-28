@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER } from "./daemon-request"
 import {
   DEFAULT_SESSION_REQUEST_URLS,
+  daemonReaderOrigin,
   daemonRequestHeaders,
-  daemonResponseHeaders,
   daemonResponseListener,
   grantMainRendererDaemonAccess,
+  withAllowedOrigin,
   type BeforeSendHeadersDetails,
   type DaemonResponseDetails,
+  type DaemonResponseHeaders,
 } from "./renderer-daemon-access"
 
 /**
@@ -30,6 +32,7 @@ const policy = {
 }
 
 const mainFrame: BeforeSendHeadersDetails = {
+  id: 1,
   url: `${DAEMON}/api/claxedo/session`,
   requestHeaders: {},
   webContentsId: MAIN_WEBCONTENTS,
@@ -72,49 +75,80 @@ describe("what the trusted development renderer may read", () => {
   const DEV_ORIGIN = "http://127.0.0.1:5173"
   const DEV_DOCUMENT = `${DEV_ORIGIN}/index.local.html`
   const devPolicy = { ...policy, isTrustedDocumentUrl: (url: string) => new URL(url).origin === DEV_ORIGIN }
-  const credentials: DaemonResponseDetails = {
+  const credentials: BeforeSendHeadersDetails = {
+    id: 7,
     url: `${DAEMON}/api/claxedo/credentials`,
+    requestHeaders: { Origin: DEV_ORIGIN },
     webContentsId: MAIN_WEBCONTENTS,
     frame: { url: DEV_DOCUMENT, parent: null },
-    responseHeaders: { "content-type": ["application/json"] },
   }
-  const responseFor = (details: Partial<DaemonResponseDetails>, against = devPolicy) =>
-    daemonResponseHeaders({ ...credentials, ...details }, against)
+  const readerOf = (details: Partial<BeforeSendHeadersDetails>, against = devPolicy) =>
+    daemonReaderOrigin({ ...credentials, ...details }, against)
 
-  test("a daemon response names the document's own origin, replacing any the daemon sent", () => {
-    expect(responseFor({})).toEqual({ "content-type": ["application/json"], "Access-Control-Allow-Origin": [DEV_ORIGIN] })
-    expect(responseFor({ responseHeaders: { "access-control-allow-origin": [DAEMON] } })).toEqual({ "Access-Control-Allow-Origin": [DEV_ORIGIN] })
+  test("is its document's own origin when that is exactly the origin the request sent", () => {
+    expect(readerOf({})).toBe(DEV_ORIGIN)
+    expect(readerOf({ requestHeaders: { origin: DEV_ORIGIN } })).toBe(DEV_ORIGIN)
   })
 
-  test("its own request keeps the origin it sent, which Chromium checks the answer against", () => {
-    const headers = daemonRequestHeaders({ ...mainFrame, frame: credentials.frame, requestHeaders: { Origin: DEV_ORIGIN } }, devPolicy)
-    expect(headers.Origin).toBe(DEV_ORIGIN)
+  test("a foreign or missing request origin is no reader", () => {
+    expect(readerOf({ requestHeaders: { Origin: "http://127.0.0.1:5174" } })).toBeUndefined()
+    expect(readerOf({ requestHeaders: { Origin: "https://evil.example" } })).toBeUndefined()
+    expect(readerOf({ requestHeaders: {} })).toBeUndefined()
   })
 
-  test("a subframe, an unregistered webContents, another document or an unreadable frame reads nothing", () => {
-    expect(responseFor({ frame: { url: DEV_DOCUMENT, parent: { url: DEV_DOCUMENT } } })).toBeUndefined()
-    expect(responseFor({ webContentsId: 42 })).toBeUndefined()
-    expect(responseFor({ webContentsId: undefined })).toBeUndefined()
-    expect(responseFor({ frame: { url: "http://127.0.0.1:5174/index.local.html", parent: null } })).toBeUndefined()
-    expect(responseFor({ frame: null })).toBeUndefined()
+  test("a subframe, another webContents, another document or an unreadable frame is no reader", () => {
+    expect(readerOf({ frame: { url: DEV_DOCUMENT, parent: { url: DEV_DOCUMENT } } })).toBeUndefined()
+    expect(readerOf({ webContentsId: 42 })).toBeUndefined()
+    expect(readerOf({ webContentsId: undefined })).toBeUndefined()
+    expect(readerOf({ frame: { url: "http://127.0.0.1:5174/index.local.html", parent: null }, requestHeaders: { Origin: "http://127.0.0.1:5174" } })).toBeUndefined()
+    expect(readerOf({ frame: null })).toBeUndefined()
   })
 
-  test("a response from anywhere but the daemon is left alone", () => {
-    expect(responseFor({ url: `${DEV_ORIGIN}/assets/index.js` })).toBeUndefined()
-    expect(responseFor({ url: "https://api.example/credentials" })).toBeUndefined()
+  test("a request to anywhere but the daemon is no reader", () => {
+    expect(readerOf({ url: `${DEV_ORIGIN}/assets/index.js` })).toBeUndefined()
+    expect(readerOf({ url: "https://api.example/credentials" })).toBeUndefined()
   })
 
-  test("a packaged document, which Chromium does not hold to the check, gets nothing", () => {
-    expect(responseFor({ frame: { url: RENDERER_DOCUMENT, parent: null } }, policy)).toBeUndefined()
+  test.each(["null", "file://"])("the packaged document, sending %s, is no reader", (opaque) => {
+    expect(readerOf({ frame: { url: RENDERER_DOCUMENT, parent: null }, requestHeaders: { Origin: opaque } }, policy)).toBeUndefined()
   })
 
-  test("the session's one listener answers the daemon's responses and hands every other to the document policy", () => {
-    const passed: string[] = []
-    let current: typeof devPolicy | undefined
+  test("the answer echoes the reader's origin in place of any the daemon sent, and grants nothing else", () => {
+    expect(withAllowedOrigin({ "content-type": ["application/json"], "access-control-allow-origin": [DAEMON] }, DEV_ORIGIN)).toEqual({
+      "content-type": ["application/json"],
+      "Access-Control-Allow-Origin": [DEV_ORIGIN],
+    })
+  })
+
+  test("the grant answers exactly the responses to requests it judged readers, once each", () => {
+    let listener: ((details: BeforeSendHeadersDetails, callback: (response: { requestHeaders: Record<string, string> }) => void) => void) | undefined
+    const respond = grantMainRendererDaemonAccess({ policy: devPolicy, onBeforeSendHeaders: (_filter, next) => { listener = next } })
+    const send = (details: Partial<BeforeSendHeadersDetails>) => {
+      let sent: Record<string, string> | undefined
+      listener?.({ ...credentials, ...details }, (response) => { sent = response.requestHeaders })
+      return sent
+    }
+    const response = (id: number) => respond({ id, url: credentials.url, responseHeaders: { vary: ["Origin"] } })
+
+    expect(send({})).toEqual({ Origin: DEV_ORIGIN, [CLAXEDO_DAEMON_CAPABILITY_HEADER]: "installation-secret" })
+    expect(response(7)).toEqual({ vary: ["Origin"], "Access-Control-Allow-Origin": [DEV_ORIGIN] })
+    expect(response(7)).toBeUndefined()
+
+    send({ id: 8, requestHeaders: { Origin: "https://evil.example" } })
+    expect(response(8)).toBeUndefined()
+
+    send({ id: 9 })
+    send({ id: 9, url: "https://elsewhere.example/landing", requestHeaders: {} })
+    expect(response(9)).toBeUndefined()
+  })
+
+  test("the session's one response listener answers the daemon's responses and hands every other to the document policy", () => {
+    const passed: number[] = []
+    let daemonResponses: DaemonResponseHeaders | undefined
     const listener = daemonResponseListener<DaemonResponseDetails>({
-      policy: () => current,
+      daemonResponses: () => daemonResponses,
       otherwise: (details, callback) => {
-        passed.push(details.url)
+        passed.push(details.id)
         callback({})
       },
     })
@@ -124,11 +158,11 @@ describe("what the trusted development renderer may read", () => {
       return sent
     }
 
-    expect(answer(credentials)).toEqual({})
-    current = devPolicy
-    expect(answer(credentials)?.responseHeaders?.["Access-Control-Allow-Origin"]).toEqual([DEV_ORIGIN])
-    expect(answer({ ...credentials, url: DEV_DOCUMENT })).toEqual({})
-    expect(passed).toEqual([credentials.url, DEV_DOCUMENT])
+    expect(answer({ id: 1, url: credentials.url })).toEqual({})
+    daemonResponses = (details) => (details.id === 2 ? { "Access-Control-Allow-Origin": [DEV_ORIGIN] } : undefined)
+    expect(answer({ id: 2, url: credentials.url })).toEqual({ responseHeaders: { "Access-Control-Allow-Origin": [DEV_ORIGIN] } })
+    expect(answer({ id: 3, url: DEV_DOCUMENT })).toEqual({})
+    expect(passed).toEqual([1, 3])
   })
 })
 
