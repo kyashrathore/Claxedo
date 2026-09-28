@@ -3,8 +3,11 @@ import { CLAXEDO_DAEMON_CAPABILITY_HEADER } from "./daemon-request"
 import {
   DEFAULT_SESSION_REQUEST_URLS,
   daemonRequestHeaders,
+  daemonResponseHeaders,
+  daemonResponseListener,
   grantMainRendererDaemonAccess,
   type BeforeSendHeadersDetails,
+  type DaemonResponseDetails,
 } from "./renderer-daemon-access"
 
 /**
@@ -62,6 +65,70 @@ describe("the trusted main renderer", () => {
 
   test("never has a real origin laundered into the daemon's", () => {
     expect(headersFor({ requestHeaders: { Origin: "https://evil.example" } }).Origin).toBe("https://evil.example")
+  })
+})
+
+describe("what the trusted development renderer may read", () => {
+  const DEV_ORIGIN = "http://127.0.0.1:5173"
+  const DEV_DOCUMENT = `${DEV_ORIGIN}/index.local.html`
+  const devPolicy = { ...policy, isTrustedDocumentUrl: (url: string) => new URL(url).origin === DEV_ORIGIN }
+  const credentials: DaemonResponseDetails = {
+    url: `${DAEMON}/api/claxedo/credentials`,
+    webContentsId: MAIN_WEBCONTENTS,
+    frame: { url: DEV_DOCUMENT, parent: null },
+    responseHeaders: { "content-type": ["application/json"] },
+  }
+  const responseFor = (details: Partial<DaemonResponseDetails>, against = devPolicy) =>
+    daemonResponseHeaders({ ...credentials, ...details }, against)
+
+  test("a daemon response names the document's own origin, replacing any the daemon sent", () => {
+    expect(responseFor({})).toEqual({ "content-type": ["application/json"], "Access-Control-Allow-Origin": [DEV_ORIGIN] })
+    expect(responseFor({ responseHeaders: { "access-control-allow-origin": [DAEMON] } })).toEqual({ "Access-Control-Allow-Origin": [DEV_ORIGIN] })
+  })
+
+  test("its own request keeps the origin it sent, which Chromium checks the answer against", () => {
+    const headers = daemonRequestHeaders({ ...mainFrame, frame: credentials.frame, requestHeaders: { Origin: DEV_ORIGIN } }, devPolicy)
+    expect(headers.Origin).toBe(DEV_ORIGIN)
+  })
+
+  test("a subframe, an unregistered webContents, another document or an unreadable frame reads nothing", () => {
+    expect(responseFor({ frame: { url: DEV_DOCUMENT, parent: { url: DEV_DOCUMENT } } })).toBeUndefined()
+    expect(responseFor({ webContentsId: 42 })).toBeUndefined()
+    expect(responseFor({ webContentsId: undefined })).toBeUndefined()
+    expect(responseFor({ frame: { url: "http://127.0.0.1:5174/index.local.html", parent: null } })).toBeUndefined()
+    expect(responseFor({ frame: null })).toBeUndefined()
+  })
+
+  test("a response from anywhere but the daemon is left alone", () => {
+    expect(responseFor({ url: `${DEV_ORIGIN}/assets/index.js` })).toBeUndefined()
+    expect(responseFor({ url: "https://api.example/credentials" })).toBeUndefined()
+  })
+
+  test("a packaged document, which Chromium does not hold to the check, gets nothing", () => {
+    expect(responseFor({ frame: { url: RENDERER_DOCUMENT, parent: null } }, policy)).toBeUndefined()
+  })
+
+  test("the session's one listener answers the daemon's responses and hands every other to the document policy", () => {
+    const passed: string[] = []
+    let current: typeof devPolicy | undefined
+    const listener = daemonResponseListener<DaemonResponseDetails>({
+      policy: () => current,
+      otherwise: (details, callback) => {
+        passed.push(details.url)
+        callback({})
+      },
+    })
+    const answer = (details: DaemonResponseDetails) => {
+      let sent: { responseHeaders?: Record<string, string[]> } | undefined
+      listener(details, (response) => { sent = response })
+      return sent
+    }
+
+    expect(answer(credentials)).toEqual({})
+    current = devPolicy
+    expect(answer(credentials)?.responseHeaders?.["Access-Control-Allow-Origin"]).toEqual([DEV_ORIGIN])
+    expect(answer({ ...credentials, url: DEV_DOCUMENT })).toEqual({})
+    expect(passed).toEqual([credentials.url, DEV_DOCUMENT])
   })
 })
 

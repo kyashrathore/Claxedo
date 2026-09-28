@@ -221,10 +221,8 @@ export async function launchDesktop(input: { label: string; red: boolean; render
     const window = await shellWindow(app)
     await serverPublished(window)
     const transport = pageTransport(window)
-    if (input.renderer === "file") {
-      await prepareScriptedServer(transport, url, { scripted: world.scripted, acpScriptDir: world.acpScriptDir, red: input.red })
-      await window.reload()
-    }
+    await prepareScriptedServer(transport, url, { scripted: world.scripted, acpScriptDir: world.acpScriptDir, red: input.red })
+    await window.reload()
     return desktopHandle(world, { app, window, transport, connectionSink, log, close })
   } catch (error) {
     const failure = new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })
