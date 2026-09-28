@@ -5,9 +5,8 @@ import { railDictionary } from "../i18n"
 import { MARKETPLACE_PATH, TASKS_PATH } from "./utility-pages"
 import { ClaxedoIcon as Icon } from "@/ui"
 
-
 const ROW_CLASS =
-  "w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"
+  "sidebar-row w-full flex items-center gap-2 leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"
 
 function rowState(active: boolean) {
   return {
