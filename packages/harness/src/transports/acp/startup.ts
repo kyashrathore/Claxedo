@@ -1,6 +1,8 @@
 import type { CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest } from "@agentclientprotocol/sdk"
+import { createKeyedSerializer } from "@claxedo/helpers"
 import type { AttachInput, HarnessServices, HarnessSession, McpServerSpec, SessionBroker, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
+import type { AcpConnectionHealth } from "./health"
 import { AcpStartupDeadline } from "./deadline"
 import { AcpTransportError } from "./errors"
 import { acpFlushUpdates, acpObserveSubagent, acpUnknown, acpUpdate } from "./events"
@@ -11,6 +13,7 @@ import { acpElicitation, acpMcp, acpPermission } from "./protocol"
 import { restoreAcp, type AcpRestored, type MissingSessionContext } from "./restore"
 
 export type AcpHost = {
+  readonly health: AcpConnectionHealth
   readonly services: HarnessServices
   readonly connection: AcpConnectionOptions
   readonly filterMcp: AcpMcpFilter
@@ -18,6 +21,7 @@ export type AcpHost = {
   readonly entries: Map<string, AcpEntry>
   readonly starting: Set<AcpEntry>
   readonly startingAborts: Set<AbortController>
+  idle(entry: AcpEntry): void
   disposed(): boolean
   mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[]
 }
@@ -48,7 +52,10 @@ export async function acpSideElicitation(entry: AcpEntry | undefined, broker: Se
 
 export async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBroker): Promise<AcpEntry> {
   if (host.disposed()) throw new AcpTransportError("connection", "ACP transport disposed")
+  const observation = host.health.begin(input.sessionId, input.directory)
   let entry: AcpEntry | undefined
+  const notifications = createKeyedSerializer()
+  const inOrder = (deliver: () => Promise<void>) => notifications.run(input.sessionId, deliver)
   const startupAbort = new AbortController()
   host.startingAborts.add(startupAbort)
   let peer: AcpPeer
@@ -56,15 +63,21 @@ export async function openAcpEntry(host: AcpHost, input: StartInput, broker: Ses
     permission: (request) => acpSidePermission(entry, broker, request, startupAbort.signal),
     elicitation: (request) => acpSideElicitation(entry, broker, request, startupAbort.signal),
     complete: (notification) => (entry?.turnBroker ?? broker).completeElicitation(notification.elicitationId),
-    update: (notification) => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update)),
-    extension: (_sessionId, update) => acpObserveSubagent(entry, update),
-    unknown: (sessionId, method, payload) => acpUnknown(entry, sessionId, method, payload),
-  }, { role: "harness", signal: startupAbort.signal }) } catch (error) { startupAbort.abort(); host.startingAborts.delete(startupAbort); throw error }
+    update: (notification) => inOrder(() => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update))),
+    extension: (_sessionId, update) => inOrder(() => acpObserveSubagent(entry, update)),
+    unknown: (sessionId, method, payload) => inOrder(() => acpUnknown(entry, sessionId, method, payload)),
+  }, { role: "harness", signal: startupAbort.signal }) } catch (error) { observation.failed(error); startupAbort.abort(); host.startingAborts.delete(startupAbort); throw error }
   if (host.disposed()) { host.startingAborts.delete(startupAbort); await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
-  entry = { start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], modes: [], modeUpdates: 0, startupAbort,
+  entry = { onIdle: () => host.idle(opened), updatesDelivered: () => inOrder(async () => {}), observation, start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], modes: [], modeUpdates: 0, startupAbort,
     pendingUpdates: [], sideSessions: new Map(),
     session: { binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
       connectionId: input.config.harness.id, upstreamSessionId: "" }, directory: input.directory, locality: input.locality } }
+  const opened = entry
+  peer.agent.signal.addEventListener("abort", () => {
+    observation.disconnected()
+    opened.providerTurn?.queue.fail(new AcpTransportError("connection", "ACP peer disconnected"))
+  }, { once: true })
+  if (peer.agent.signal.aborted) observation.disconnected()
   host.starting.add(entry)
   return entry
 }
@@ -76,13 +89,16 @@ async function adopt(host: AcpHost, entry: AcpEntry, restored: AcpRestored, what
   entry.session = { ...entry.session, binding: await entry.broker.rebind(restored.upstreamSessionId) }
   await acpFlushUpdates(entry, (update) => acpObserveSubagent(entry, update))
   if (host.disposed()) throw new AcpTransportError("connection", `ACP transport disposed during ${what}`)
+  if (entry.peer.agent.signal.aborted) throw new AcpTransportError("connection", `ACP peer disconnected during ${what}`)
   host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
+  entry.observation.ready()
   host.entries.set(entry.session.binding.sessionId, entry)
   return entry.session
 }
 
 async function abandon(host: AcpHost, entry: AcpEntry, error: unknown): Promise<never> {
+  entry.observation.failed(error)
   entry.startupAbort.abort()
   host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
@@ -133,6 +149,7 @@ export async function restartAcpEntry(host: AcpHost, entry: AcpEntry): Promise<v
     next.commands = entry.commands
     next.modes = entry.modes
     next.currentModeId = entry.currentModeId
+    next.context = entry.context
     await adopt(host, next, restored, "restart")
   } catch (error) { await abandon(host, next, error) }
 }

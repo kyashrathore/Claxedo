@@ -14,6 +14,7 @@ export type SpawnOptions = {
   role: "harness" | "probe"
   label: string
   sessionId?: string
+  home?: string
   signal: AbortSignal
 }
 
@@ -65,6 +66,7 @@ export interface Clock {
 }
 
 export interface HarnessServices {
+  recordHomeUse(home: string): Promise<void>
   spawn(command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess>
   firstPartyMcp(sessionId: string, locality: Locality): McpServerSpec | undefined
   transcripts: TranscriptRegistrar

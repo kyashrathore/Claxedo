@@ -22,7 +22,6 @@ export class SubagentBroker {
     this.ports.bindChildCorrelation(sessionId, correlationKey, child.sessionId)
   }
 
-  /** Admits and publishes one observation; the host's own child sessions arrive here without a turn. */
   async admit(sessionId: string, observation: SubagentObservation): Promise<SubagentUpdatedEvent> {
     const transcript = observation.transcript?.kind
     const openable = transcript === "live" || transcript === "messages" || transcript === "file"

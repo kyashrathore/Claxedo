@@ -1,6 +1,9 @@
+import { applyAcpGoal, receiveAcpProviderUpdate } from "./provider-turn"
+import { goalSnapshot } from "./extensions/goals"
 import { createAgentEventRuntime } from "../../translate/runtime"
 import { createAcpEventTranslator } from "./translate/event-translator"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, RoutedEvent } from "../../contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import type { AcpEntry } from "./index"
@@ -48,6 +51,21 @@ function acpCatalogUpdate(entry: AcpEntry, update: SessionNotification["update"]
   }
   if (update.sessionUpdate === "config_option_update") entry.options = update.configOptions
   if (update.sessionUpdate === "current_mode_update") { entry.currentModeId = update.currentModeId; entry.modeUpdates++ }
+  if (update.sessionUpdate === "usage_update") entry.context = { size: update.size, used: update.used }
+}
+
+async function ingestAcpUpdate(entry: AcpEntry, notification: SessionNotification, goal: RuntimeGoalSnapshot | null | undefined): Promise<void> {
+  if (entry.receive) { entry.receive(notification); return }
+  const goalActive = entry.broker.goal.read()?.status === "active" || goal?.status === "active"
+  if (await receiveAcpProviderUpdate(entry, notification, goalActive)) return
+  const runtime = createAgentEventRuntime({ harness: entry.start.config.harness.id, threadId: notification.sessionId,
+    adapter: createAcpEventTranslator({ client: entry.start.config.harness.id }) })
+  const routed = routedIngest(runtime, { source: "acp.jsonrpc", method: "session/update", payload: notification.update }, { method: "session/update" })
+  for (const item of routed) {
+    const event = item.event
+    if (event.type === "available-commands-update" || event.type === "config-update" || event.type === "session-info" ||
+      event.type === "session-title" || event.type === "session-agent" || event.type === "diagnostic") await entry.broker.publish(event)
+  }
 }
 
 async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotification,
@@ -57,29 +75,27 @@ async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotificati
   if (notification.sessionId !== entry.session.binding.upstreamSessionId) {
     await observe(notification.update)
     entry.quiet?.touch()
-    entry.receive?.(notification)
+    const receive = entry.receive ?? entry.providerTurn?.receive
+    receive?.(notification)
     return
   }
+  const meta = notification.update._meta?.goal
+  const goal = meta === undefined ? undefined : goalSnapshot(entry.session.binding.sessionId, { goal: meta })
   acpCatalogUpdate(entry, notification.update)
-  await observe(notification.update)
-  entry.quiet?.touch()
-  if (entry.receive) entry.receive(notification)
-  else {
-    const runtime = createAgentEventRuntime({ harness: entry.start.config.harness.id, threadId: notification.sessionId,
-      adapter: createAcpEventTranslator({ client: entry.start.config.harness.id }) })
-    const routed = routedIngest(runtime, { source: "acp.jsonrpc", method: "session/update", payload: notification.update }, { method: "session/update" })
-    for (const item of routed) {
-      const event = item.event
-      if (event.type === "available-commands-update" || event.type === "config-update" || event.type === "session-info" ||
-        event.type === "session-title" || event.type === "session-agent" || event.type === "diagnostic") await entry.broker.publish(event)
-    }
+  const deliver = async () => {
+    await observe(notification.update)
+    entry.quiet?.touch()
+    await ingestAcpUpdate(entry, notification, goal)
   }
+  if (goal === undefined) await deliver()
+  else await applyAcpGoal(entry, goal, deliver)
 }
 
 export async function acpUnknown(entry: AcpEntry | undefined, sessionId: string, method: string, payload: unknown): Promise<void> {
   if (!entry || (entry.session.binding.upstreamSessionId && entry.session.binding.upstreamSessionId !== sessionId)) return
   const event = unrecognizedEvent("acp.jsonrpc", method, payload)
-  if (entry.queue) entry.queue.push({ event })
+  const queue = entry.queue ?? entry.providerTurn?.queue
+  if (queue) queue.push({ event })
   else await entry.broker.publish(event)
 }
 

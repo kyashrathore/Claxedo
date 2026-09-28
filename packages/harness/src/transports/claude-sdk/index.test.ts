@@ -87,6 +87,11 @@ test("goal cancellation reports unknown when admission settles failed", async ()
     .toMatchObject({ execution: "unknown", cleanup: "unknown", error: { message: "retirement failed" } })
 })
 
+test("an unselected Claude draft reports the auto classifier mode", async () => {
+  const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
+  expect((await value.config.permissionModes({ draft: { ...input, config: { harness: input.config.harness } } })).currentModeId).toBe("auto")
+})
+
 test("Claude session config has one owner, the runtime, and the transport keeps no copy", async () => {
   const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
   const session = await value.start({ ...input, config: { ...input.config, permissionMode: "default" } }, sessionBroker)
@@ -112,4 +117,32 @@ test("goal cancellation reports terminal cleanup once admission settles cancelle
     expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
       .toEqual({ execution: "terminal", cleanup: "owned" })
   }
+})
+
+test("a stop during Claude turn startup aborts it before launch and says nothing ran", async () => {
+  const specs: Parameters<ClaudeQueryLauncher["launch"]>[0][] = []
+  const value = transport({ async *[Symbol.asyncIterator]() {} }, specs)
+  const session = await value.start(input, sessionBroker)
+  try {
+    const stream = value.send(session, turn, { signal: new AbortController().signal } as TurnBroker)[Symbol.asyncIterator]()
+    const first = stream.next()
+    expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1_000, signal: new AbortController().signal }))
+      .toEqual({ execution: "terminal", cleanup: "verified_clear" })
+    expect(await first).toEqual({ done: true, value: undefined })
+    expect(specs).toEqual([])
+  } finally { await value.dispose() }
+})
+
+test("an aborted Claude turn signal ends the stream before launch without an error", async () => {
+  const specs: Parameters<ClaudeQueryLauncher["launch"]>[0][] = []
+  const value = transport({ async *[Symbol.asyncIterator]() {} }, specs)
+  const session = await value.start(input, sessionBroker)
+  const controller = new AbortController()
+  controller.abort()
+  try {
+    const events = []
+    for await (const event of value.send(session, turn, { signal: controller.signal } as TurnBroker)) events.push(event)
+    expect(events).toEqual([])
+    expect(specs).toEqual([])
+  } finally { await value.dispose() }
 })

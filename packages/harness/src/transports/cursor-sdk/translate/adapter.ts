@@ -323,8 +323,6 @@ export function cursorSubagentObservations(value: unknown): CursorSubagentObserv
     ...(subagentType ? { subagentType } : {}),
     ...(providerId ? { providerId } : {}),
     ...(providerId ? { providerKind: "cursor-agent" } : {}),
-    // Cursor supplies a provider-local path only on success. Turning that path into
-    // an authorized opaque handle is not implemented yet, so this rail fails closed.
     transcript: { kind: "none" },
   }]
 }
@@ -387,7 +385,6 @@ function toolCompletedEvents(input: {
     }
   }
   const result = asRecord(successfulOutput(input.result))
-  // Cursor SDK MCP results use { image: { data, mimeType } }, not MCP's wire block.
   const attachments = (Array.isArray(result?.content) ? result.content : []).flatMap((item) => {
     const image = asRecord(asRecord(item)?.image)
     const data = text(image?.data)

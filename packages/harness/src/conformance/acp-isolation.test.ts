@@ -62,7 +62,7 @@ for (const kind of ["websocket", "streamable-http"] as const) {
         try {
           context = await setup(kind, restoreMode, capabilities)
           expect(context.transport.fork).toBeDefined()
-          await context.transport.fork!.fork(context.session, "message")
+          await context.transport.fork!.fork(context.session, "message", "child")
           const binding = context.session.binding
           await context.transport.close(context.session)
           await context.transport.attach({ ...context.start, binding }, context.sessionBroker)
@@ -92,7 +92,8 @@ function wireServer(server: ProjectedMcpServer) {
 
 async function collect(context: Context, text: string) {
   const events = []
-  for await (const event of context.transport.send(context.session, context.turn(text), context.turnBroker())) events.push(event)
+  const session = await context.transport.restore!(context.session)
+  for await (const event of context.transport.send(session, context.turn(text), context.turnBroker())) events.push(event)
   return events
 }
 

@@ -89,7 +89,7 @@ export interface AgentListOperations {
 }
 
 export interface ForkOperations {
-  fork(session: HarnessSession, messageId: string, childSessionId?: string): Promise<{ upstreamSessionId: string }>
+  fork(session: HarnessSession, messageId: string, childSessionId: string): Promise<{ upstreamSessionId: string }>
 }
 
 export type SessionTool = Readonly<{
@@ -118,6 +118,7 @@ export interface HarnessTransport {
   capabilities(context: CapabilityContext): Promise<TransportCapabilities>
   start(input: StartInput, session: SessionBroker): Promise<HarnessSession>
   attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
+  restore?(session: HarnessSession): Promise<HarnessSession>
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent>
   cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome>
   configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied>

@@ -42,7 +42,7 @@ test("disposing during pending initialize retires the process before start rejec
   let retired = false
   const process: OwnedProcess = { pid: 5_000_000, stdin, stdout: new PassThrough(), stderr: new PassThrough(), exited,
     retire: async () => { retired = true; exit({ code: 0, signal: null }); return { stopped: true } } }
-  const services = { spawn: async () => process,
+  const services = { spawn: async () => process, recordHomeUse: async () => {},
     clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
   const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root })
   let initialized!: () => void
@@ -91,7 +91,7 @@ async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clo
     return { pid: 5_000_002 + processes.length, stdin, stdout, stderr: new PassThrough(), exited,
       retire: async () => { retired++; exit({ code: 0, signal: null }); return { stopped: true } } }
   }
-  const services = { spawn, firstPartyMcp: () => undefined,
+  const services = { spawn, recordHomeUse: async () => {}, firstPartyMcp: () => undefined,
     clock: options.clock ?? { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
   const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner") })
   const startInput = { ...input, directory: root, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }
@@ -245,5 +245,35 @@ test("Codex draft probes are keyed on non-secret identity, shared across rotatio
     now += 31_000
     await peer.transport.config.options({ draft: draft("secret-one") }, "probe")
     expect(peer.spawned()).toBe(2)
+  } finally { await peer.close() }
+})
+
+test("explicit Codex cancel waits for pending startup and interrupts within its deadline", async () => {
+  const peer = await scriptedTransport({ holdTurnStart: true })
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
+    await peer.started
+    const cancelling = peer.transport.cancel(session, turnInput, { at: Date.now() + 500, signal: new AbortController().signal })
+    peer.releaseTurnStart()
+    for (let attempt = 0; attempt < 50 && !peer.frames.some((frame) => frame.method === "turn/interrupt"); attempt++) await new Promise((resolve) => setTimeout(resolve, 2))
+    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "interrupted" } } })}\n`)
+    await running
+    expect(peer.frames.find((frame) => frame.method === "turn/interrupt")?.params).toEqual({ threadId: "thread-1", turnId: "turn-current" })
+    expect((await cancelling).execution).toBe("terminal")
+  } finally { await peer.close() }
+})
+
+test("Codex cancellation honors its deadline while startup is still pending", async () => {
+  const peer = await scriptedTransport({ holdTurnStart: true })
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const running = (async () => { for await (const _event of peer.transport.send(session, turnInput, { signal: new AbortController().signal } as TurnBroker)) {} })()
+    await peer.started
+    await expect(peer.transport.cancel(session, turnInput, { at: Date.now() + 10, signal: new AbortController().signal })).rejects.toThrow("stop deadline")
+    expect(peer.frames.some((frame) => frame.method === "turn/interrupt")).toBe(false)
+    peer.releaseTurnStart()
+    peer.stdout.write(`${JSON.stringify({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })}\n`)
+    await running
   } finally { await peer.close() }
 })

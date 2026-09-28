@@ -73,6 +73,7 @@ export function createTestServices(): TestServices {
       processes.push(process)
       return process
     },
+    recordHomeUse: async () => {},
     firstPartyMcp: () => undefined,
     transcripts: {
       register: async ({ filePath }) => { transcriptRows.set(filePath, []); return { state: "ready", handle: filePath } },

@@ -228,7 +228,6 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     })
   }
 
-  /** Tools the host scopes to one session, dispatched inside the engine beside the first-party ones. */
   readonly sessionTools: SessionToolOperations = {
     register: async (session: HarnessSession, scoped: ScopedSessionTools): Promise<void> => {
       const entry = this.entry(session)

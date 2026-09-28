@@ -119,14 +119,12 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
   const streams = new Map<string, PendingStream>()
   const selected = new Map<string, { name: string; script: CursorScript }>()
   const held = new Map<string, Set<string>>()
+  const released = new Set<string>()
   const send = (id: string) => {
     const pending = streams.get(id)
-    if (!pending?.script || !pending.name || pending.script.hold) {
-      if (pending?.script?.hold && pending.name) {
-        const ids = held.get(pending.name) ?? new Set<string>()
-        ids.add(id)
-        held.set(pending.name, ids)
-      }
+    if (!pending?.script || !pending.name) return
+    if (pending.script.hold && !released.has(pending.name)) {
+      held.set(pending.name, (held.get(pending.name) ?? new Set<string>()).add(id))
       return
     }
     streams.delete(id)
@@ -236,16 +234,11 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
     },
     refusePath(path, status) { refusedPaths.set(path, status) },
     release(name) {
-      const ids = held.get(name)
-      if (!ids) throw new Error(`Cursor script ${name} is not held`)
+      if (!scripts.has(name)) throw new Error(`Unknown Cursor script ${name}`)
+      released.add(name)
+      const ids = held.get(name) ?? new Set<string>()
       held.delete(name)
-      for (const id of ids) {
-        const pending = streams.get(id)
-        if (pending?.script) {
-          pending.script = { ...pending.script, hold: false }
-          send(id)
-        }
-      }
+      for (const id of ids) send(id)
     },
     close: async () => {
       server.closeAllConnections()

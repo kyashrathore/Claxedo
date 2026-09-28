@@ -17,7 +17,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line)
   if (logFile) appendFileSync(logFile, JSON.stringify({ pid: process.pid, ...message }) + "\n")
   if (message.method === "initialize") {
-    send({ id: message.id, result: { protocolVersion: 1, agentInfo: { name: "Startup Acceptance", version: "1" }, agentCapabilities: {}, _meta: { claxedo: { version: 1, health: true } } } })
+    send({ id: message.id, result: { protocolVersion: 1, agentInfo: { name: "Startup Acceptance", version: "1" }, agentCapabilities: {}, _meta: { claxedo: { version: 1 } } } })
   } else if (message.method === "session/new") {
     const id = `form-${message.id}`
     pending.set(id, message.id)

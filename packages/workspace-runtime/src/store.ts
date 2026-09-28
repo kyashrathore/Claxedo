@@ -473,7 +473,7 @@ function sqliteConstructor(mod: unknown, exportName: string): SqliteDatabaseCons
   throw new Error(`sqlite driver export ${exportName} missing`)
 }
 
-function openDatabase(file: string): SqliteDatabase {
+export function openDatabase(file: string): SqliteDatabase {
   const driver = process.versions.bun
     ? sqliteConstructor(requireDatabase("bun:sqlite"), "Database")
     : sqliteConstructor(requireDatabase("better-sqlite3"), "default")

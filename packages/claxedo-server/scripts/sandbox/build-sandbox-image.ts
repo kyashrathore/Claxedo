@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { isBuiltin } from "node:module"
 import { build as esbuildBuild, type Metafile } from "esbuild"
 import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
+import { bundleCursorWorker } from "../../../harness/scripts/cursor-worker"
 import { isRecord } from "@claxedo/helpers/guards"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
 import { parseJson } from "@claxedo/server-core/platform/json/index"
@@ -297,6 +298,9 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     outfile: path.join(outDir, HOST_BUNDLE_FILENAME),
   }))
   assertHostBundleDependencies(result.metafile!, dependencies)
+  const cursorWorker = await bundleCursorWorker(outDir)
+  const unshipped = cursorWorker.packages.filter((name) => !dependencies[name])
+  if (unshipped.length) throw new Error(`The Cursor SDK worker needs packages the image does not install: ${unshipped.join(", ")}`)
   const bundlePath = path.join(outDir, HOST_BUNDLE_FILENAME)
   const packageJsonPath = path.join(outDir, "package.json")
   // The public OpenCode SDK behind the native `opencode` harness is an
@@ -335,6 +339,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     .update(fs.readFileSync(smokePath))
     .update(fs.readFileSync(agentInstallerPath))
     .update(fs.readFileSync(gateChildPath))
+    .update(fs.readFileSync(cursorWorker.file))
     .update(stagedPatches.digest)
     .digest("hex")
     .slice(0, 10)
@@ -343,6 +348,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     packageJson: packageJsonPath,
     versionFile,
     launchGateChild: gateChildPath,
+    cursorWorker: cursorWorker.file,
     buildId,
   }
 }

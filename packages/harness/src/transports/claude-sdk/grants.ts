@@ -5,7 +5,7 @@ export type ClaudePermissionRules = { allow: string[]; deny: string[]; ask: stri
 
 export type ClaudeGrant = { key: string; updates?: PermissionUpdate[] }
 
-type GrantContext = { directory: string; permissionMode?: string }
+type GrantContext = { directory: string; permissionMode: string }
 
 const protocolRuleBehaviorMap = { allow: "allow", deny: "deny", ask: "ask" } as const
 const protocolPermissionStateMap: readonly (keyof ClaudePermissionRules)[] = ["allow", "deny", "ask", "additionalDirectories"]
@@ -25,7 +25,7 @@ export function claudeGrant(context: GrantContext, toolName: string, toolInput: 
   if (toolName !== "Bash" || typeof toolInput.command !== "string" || !toolInput.command || !options.blockedPath) return undefined
   return { key: JSON.stringify({ tool: toolName, directory: context.directory, identity: {
     toolInput: Object.fromEntries(Object.entries(toolInput).filter(([key]) => key !== "description")),
-    mode: context.permissionMode ?? "default", blockedPath: options.blockedPath, agentID: options.agentID } }) }
+    mode: context.permissionMode, blockedPath: options.blockedPath, agentID: options.agentID } }) }
 }
 
 function isPermissionUpdate(value: unknown): value is PermissionUpdate {

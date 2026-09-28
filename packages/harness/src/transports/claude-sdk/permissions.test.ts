@@ -42,3 +42,7 @@ test("saved grants replay their rules and directories at launch while the runtim
   expect(options.additionalDirectories).toEqual(["/tmp/extra"])
   expect(() => permissionOptions({ ...config, permissionState: state }, ["not json"])).toThrow("Invalid persisted Claude grant")
 })
+
+test("an unselected Claude session runs in the auto classifier mode", () => {
+  expect(permissionOptions(config).permissionMode).toBe("auto")
+})

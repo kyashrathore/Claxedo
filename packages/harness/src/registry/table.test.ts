@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { HARNESS_TABLE as CONTRACT_TABLE } from "@claxedo/agent-runtime-contract"
-import { harnessRecord, harnessesForTransport } from "./table"
+import { harnessRecord } from "./table"
 
 test("the table routes every built-in and custom provider", () => {
   expect(harnessRecord("claude")?.vendor).toBe(CONTRACT_TABLE.claude.vendor)
@@ -14,8 +14,6 @@ test("the table routes every built-in and custom provider", () => {
   expect(harnessRecord("opencode-server")).toBeUndefined()
   expect(harnessRecord("pi-rpc")?.transport).toBe("pi-rpc")
   expect(harnessRecord("unknown")).toBeUndefined()
-  expect(harnessesForTransport("acp").map((row) => row.id)).toEqual(["acp"])
-  expect(harnessesForTransport("opencode-sdk").map((row) => row.id)).toEqual(["opencode"])
 })
 
 test("MCP capability matches the harnesses that accept MCP servers today", () => {

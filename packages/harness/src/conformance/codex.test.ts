@@ -566,8 +566,10 @@ test("Codex starts a projected configured MCP server", async () => {
   const state = await backend()
   const port = await reservePort()
   const requests: string[] = []
+  const contacted = Promise.withResolvers<void>()
   const server = createServer((request, response) => {
     requests.push(request.url ?? "")
+    contacted.resolve()
     response.writeHead(404).end()
   })
   await listenOnLoopback(server, port)
@@ -585,7 +587,8 @@ test("Codex starts a projected configured MCP server", async () => {
     ] } }
   try {
     await transport.start(input, broker)
-    expect(requests.length).toBeGreaterThan(0)
+    await contacted.promise
+    expect(requests).toContain("/mcp")
   } finally {
     await transport.dispose()
     server.closeAllConnections()

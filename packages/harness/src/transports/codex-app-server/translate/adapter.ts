@@ -281,7 +281,6 @@ function todosFromPlan(row: Record<string, unknown>) {
   })
 }
 
-/** The turn accumulator names the raw Codex token fields; it is the only list of them. */
 type CodexUsageField = keyof CodexTurnUsageState["accumulated"]
 type CodexUsageFields = CodexTurnUsageState["accumulated"]
 
@@ -290,10 +289,6 @@ function addNullable(previous: number | null, delta: number | undefined) {
   return (previous ?? 0) + delta
 }
 
-/**
- * Codex reports input inclusive of cached input, and output inclusive of
- * reasoning; the runtime meters the disjoint categories.
- */
 function disjointTokens(fields: CodexUsageFields): RuntimeTokenUsage {
   return {
     input: fields.inputTokens === null ? null : Math.max(0, fields.inputTokens - (fields.cachedInputTokens ?? 0)),
@@ -326,11 +321,6 @@ function tokenUsageReport(row: Record<string, unknown>): TokenUsageReport | unde
   }
 }
 
-/**
- * What a report adds since `previousTotals`: the difference of the thread's
- * lifetime totals, which recovers a missed emission, or the report's own
- * request (`last`) when there is no previous total to difference against.
- */
 function reportGrowth(report: TokenUsageReport, previousTotals: Record<string, unknown> | undefined) {
   return (field: CodexUsageField) => {
     if (report.total && previousTotals) {
@@ -351,14 +341,12 @@ function usageEvent(report: TokenUsageReport, observation?: RuntimeUsageObservat
   }
 }
 
-/** The model a thread runs on, as the app-server reported it in a response the driver read. */
 export type CodexThreadModel = (threadId: string) => string | undefined
 
 function reportedModelKey(threadId: string, turnId?: string) {
   return turnId ? `${threadId}\0${turnId}` : threadId
 }
 
-/** The model a notification reports a thread, or one turn of it, now running on. */
 export function codexReportedModel(method: string, payload: unknown): { threadId: string; turnId?: string; model: string } | undefined {
   const row = asRecord(payload) ?? {}
   const threadId = text(row.threadId)
@@ -384,11 +372,6 @@ function recordReportedModel(state: CodexAppServerAdapterState, method: string, 
   }
 }
 
-/**
- * Each Codex turn of each thread is its own usage scope: a thread reports one
- * turn's running total at a time, and a Claxedo turn can span several of them
- * — a subagent's second turn, a nested subagent folded into its ancestor.
- */
 function usage(
   row: Record<string, unknown>,
   previous: CodexTurnUsageState | undefined,
@@ -399,23 +382,13 @@ function usage(
   const sameTurn = previous?.turnId === turnId ? previous : undefined
   const report = tokenUsageReport(row)
   if (!report) return undefined
-  // `last` is one API request and the thread's lifetime `total` identifies
-  // it: an unchanged total is the same request emitted again, not new spend.
-  // A duplicate still refreshes the context meter but carries no metering
-  // observation.
   if (report.totalsSignature !== undefined && report.totalsSignature === sameTurn?.previousTotalsSignature) {
     return { event: usageEvent(report), turnUsage: sameTurn }
   }
-  // A turn the app-server moved to another model reports the rest of its
-  // requests in a stream of their own, so each cumulative names the one model
-  // that served it.
   const model = servedModel(turnId)
   const turnScope = turnId ? `${threadId}:${turnId}` : threadId
   const stream = sameTurn?.model === model ? sameTurn : undefined
   const scope = stream ? stream.scope ?? turnScope : sameTurn ? `${turnScope}@${model ?? "unknown"}` : turnScope
-  // A turn spans many API requests. Sum each request into a turn-cumulative
-  // accumulator (kind "cumulative" replaces on the meter side, so emitting the
-  // bare per-request `last` would drop every request but the final one).
   const growth = reportGrowth(report, sameTurn?.previousTotals)
   const accumulated = {
     inputTokens: addNullable(stream?.accumulated.inputTokens ?? null, growth("inputTokens")),
@@ -443,13 +416,6 @@ function usage(
   }
 }
 
-/**
- * A `thread/tokenUsage/updated` report read by an owner that holds no turn's
- * accumulator, as the spend since `previousTotal` — the same thread's lifetime
- * total at the report before it, whoever read that one. It is a delta, so it
- * adds to what the thread's turns already metered instead of replacing it,
- * and a report repeating the previous total adds nothing.
- */
 export function codexUsageGrowth(input: {
   payload: unknown
   previousTotal: Record<string, unknown> | undefined
@@ -768,14 +734,11 @@ function threadStatusEvents(row: Record<string, unknown>) {
   const type = text(status?.type)
   if (type === "active") return [{ type: "session-status", status: "busy" }] satisfies AgentRuntimeEvent[]
   if (type === "idle" || type === "notLoaded") return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
-  // systemError precedes the authoritative error and turn/completed frames.
-  // Publishing a terminal error here closes consumers before those details arrive.
   return []
 }
 
 function protocolEvent(event: { method?: string; payload: unknown }): CodexAppServerProtocolEvent {
   if (!event.method) throw new Error("Codex app-server event is missing a method")
-  // JSON-RPC framing stores `params` as RawHarnessEvent.payload; this is the single boundary into generated protocol types.
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
   return {
     method: event.method,
@@ -784,11 +747,6 @@ function protocolEvent(event: { method?: string; payload: unknown }): CodexAppSe
   } as CodexAppServerProtocolEvent
 }
 
-/**
- * An `error` frame of a thread folded into its first-level ancestor, which the
- * driver re-files under this method: it ends that descendant's work, not the
- * ancestor's session, so it is read as a diagnostic rather than a terminal.
- */
 export const CODEX_DESCENDANT_ERROR_METHOD = "codex/descendant-error"
 
 export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel } = {}): HarnessEventAdapter<CodexAppServerAdapterState> {
@@ -810,7 +768,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
       const row = payload(event)
 
       switch (message.method) {
-        // Chat transcript: text, reasoning, and proposed-plan content that belongs in the assistant timeline.
         case "item/agentMessage/delta": {
           const delta = eventText(event)
           if (!delta) return []
@@ -879,11 +836,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
             return [{ type: "error", error: text(completedItem.message) ?? text(completedItem.text) ?? "Codex item failed" }]
           }
           const existing = own(state.toolsByItemId, id)
-          // Codex completes commands with every output field null in two different cases:
-          // the command genuinely printed nothing, OR stdout already arrived via
-          // `outputDelta` (which we accumulate in `toolOutputByCallId`). So fall back to
-          // the streamed buffer first, then to empty — never to `row`, which is the raw
-          // protocol payload and would dump the whole envelope into the output pane.
           const output =
             completedItem.output ??
             completedItem.result ??
@@ -907,10 +859,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
             ...(Array.isArray(completedItem.contentItems) ? completedItem.contentItems : []).flatMap((item) =>
               asRecord(item)?.type === "inputImage" ? imageUrlAttachment(asRecord(item)?.imageUrl) : []),
           ]
-          // `CommandExecutionStatus` never disagreed with the code across 16,529 completed
-          // command items in local rollouts (`completed` ⇔ 0, `failed` ⇔ non-zero), so this
-          // path and `process/exited`, which receives only a code, reach the same verdict.
-          // `declined` is the third state: the command never ran.
           const commandStatus = itemType === "command_execution" ? text(completedItem.status) : undefined
           const completion = mcpError !== undefined
             ? { type: "tool-error" as const, toolCallId: id, error: mcpError }
@@ -1007,8 +955,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           return {
             state: {
               ...state,
-              // Re-inserted last, so the bound evicts the thread that reported
-              // longest ago rather than the one this runtime was opened for.
               turnUsageByThread: boundKeyedRecord({ ...otherThreads, [threadId]: result.turnUsage }, RETAINED_WIRE_KEYS_MAX),
             },
             events: [result.event],
@@ -1018,7 +964,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
         case "thread/compacted":
           return [{ type: "session-compaction", phase: "completed", metadata: { codex: row } }]
 
-        // Interactive requests: app-server pauses the turn until the client answers.
         case "item/commandExecution/requestApproval":
         case "item/fileChange/requestApproval":
         case "item/permissions/requestApproval":
@@ -1043,7 +988,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           }]
         }
 
-        // Provider/session surfaces that are not message text but should be first-class runtime state.
         case "account/updated":
           return [{
             type: "auth-status",
@@ -1183,7 +1127,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
             : []
 
         case "account/chatgptAuthTokens/refresh":
-        // App/global surfaces: useful for a full app shell, not part of a single chat timeline yet.
         case "app/list/updated":
         case "attestation/generate":
         case "externalAgentConfig/import/completed":
@@ -1202,14 +1145,12 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           codexStartedSubagent(row)
           return []
 
-        // Hook and review lifecycle: chat-adjacent, but AgentRuntimeEvent has no hook/review surface yet.
         case "hook/completed":
         case "hook/started":
         case "item/autoApprovalReview/completed":
         case "item/autoApprovalReview/started":
           return unmappedCodexAppServerEvent(event)
 
-        // Lower-level tool streams: live stdout/stderr, terminal, patch, and MCP progress for running tools.
         case "command/exec/outputDelta": {
           const id = text(row.processId) ?? context.createId("process")
           return appendToolText({
@@ -1330,7 +1271,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           })
         }
 
-        // Message detail that is currently redundant with already-mapped item lifecycle.
         case "item/reasoning/summaryPartAdded":
         case "rawResponseItem/completed":
         case "serverRequest/resolved":
@@ -1349,7 +1289,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           return unmappedCodexAppServerEvent(event)
         }
 
-        // Realtime surfaces: media/transcript channels are not part of the classic chat projection yet.
         case "thread/realtime/closed":
         case "thread/realtime/error":
         case "thread/realtime/itemAdded":

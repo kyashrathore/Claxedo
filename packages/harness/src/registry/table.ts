@@ -1,5 +1,5 @@
 import {
-  AGENT_HARNESS_DEFINITIONS, AGENT_HARNESS_IDS, HARNESS_IDS, HARNESS_TABLE, isHarnessId,
+  AGENT_HARNESS_DEFINITIONS, AGENT_HARNESS_IDS, HARNESS_TABLE, isHarnessId,
   type AgentHarnessId, type HarnessId as BuiltInHarnessId,
 } from "@claxedo/agent-runtime-contract"
 import type { TransportKind } from "../contract/transport"
@@ -78,10 +78,4 @@ export function harnessRecord(id: string): HarnessRecord | undefined {
     return { id: key, access: "connection", transport: CUSTOM_TRANSPORTS[key], mcp: CUSTOM_MCP[key] }
   }
   return undefined
-}
-
-export function harnessesForTransport(kind: TransportKind): readonly HarnessRecord[] {
-  return [...HARNESS_IDS, ...AGENT_HARNESS_IDS.filter((id) => !isHarnessId(id)), ...CUSTOM_HARNESS_PROVIDER_KEYS]
-    .map((id) => harnessRecord(id))
-    .filter((record): record is HarnessRecord => record !== undefined && record.transport === kind)
 }

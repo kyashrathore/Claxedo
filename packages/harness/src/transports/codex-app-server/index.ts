@@ -1,4 +1,4 @@
-import { prefixedRandomId, stringRecord } from "@claxedo/helpers"
+import { prefixedRandomId, settleAtRequestDeadline } from "@claxedo/helpers"
 import type { RuntimeGoalSnapshot, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type {
@@ -6,14 +6,14 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, draftProbeKey, DraftProbeCache, mergeStartInput } from "../../contract"
-import { prepareCodexProfile } from "../../profiles/codex"
+import { spawnCodexProfile } from "./launch"
 import { projectCodexThreadConfig } from "./configuration"
 import { createCodexConfig } from "./config"
 import { codexCapabilities, codexCapabilityDraft } from "./capabilities"
 import { codexThreadResumeParams, codexThreadStartParams, codexTurnInput } from "./input"
 import { codexPermissionSettings } from "./modes"
 import { CodexEvents, publishCodexQuota } from "./events"
-import { CodexRequestRefusal, CodexTransportError } from "./errors"
+import { CodexRequestRefusal, CodexTransportError, CodexDeadlineError } from "./errors"
 import { snapshotFromCodexGoal, createCodexGoals } from "./goals"
 import { readCodexModels, type CodexModel } from "./models"
 import { admitCodexProviderTurn, type CodexProviderTurn } from "./provider-turn"
@@ -40,7 +40,7 @@ export type Entry = {
   goal: RuntimeGoalSnapshot | null
   models?: Promise<CodexModel[]>
   providerTurn?: CodexProviderTurn
-  turn?: { broker: TurnBroker; id?: string; settings: CodexTurnSettings }
+  turn?: { broker: TurnBroker; id?: string; started: Promise<void>; settings: CodexTurnSettings }
 }
 
 export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv }
@@ -65,13 +65,7 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   private async launch(input: StartInput): Promise<{ rpc: CodexRpc; home: string; brokered: boolean }> {
     if (this.disposed) throw new CodexTransportError("process", "Codex transport disposed")
-    const profile = await prepareCodexProfile({ homeRoot: this.options.homeRoot, owner: input.owner, credentials: input.credentials,
-      projection: input.projection, ownerHome: this.options.ownerHome })
-    const env = stringRecord(this.options.env ?? process.env)
-    env.CODEX_HOME = profile.home
-    const owned = await this.services.spawn({ file: this.options.binary, args: ["app-server", "--listen", "stdio://"], cwd: input.directory, env },
-      { role: "harness", label: "Codex app-server", sessionId: input.sessionId, signal: this.disposeAbort.signal })
-    const rpc = new CodexRpc(owned, this.services.clock)
+    const { rpc, profile } = await spawnCodexProfile(input, this.options, this.services, this.disposeAbort.signal)
     this.starting.add(rpc)
     try {
       if (this.disposed) throw new CodexTransportError("process", "Codex transport disposed during startup")
@@ -249,8 +243,12 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)
-    if (entry.state !== "busy" || !entry.turn?.id) return { execution: "unknown" as const, cleanup: "unknown" as const }
-    return entry.terminals.stop(entry.turn.id, deadline)
+    const turn = entry.turn
+    if (entry.state !== "busy" || !turn) return { execution: "unknown" as const, cleanup: "unknown" as const }
+    await settleAtRequestDeadline("Codex turn startup", { signal: deadline.signal, deadlineAt: deadline.at },
+      turn.started, () => {}, () => new CodexDeadlineError("Codex turn startup exceeded the stop deadline"))
+    if (!turn.id) return { execution: "unknown" as const, cleanup: "unknown" as const }
+    return entry.terminals.stop(turn.id, deadline)
   }
 
   readonly steer = { steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {

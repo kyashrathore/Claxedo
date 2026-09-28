@@ -251,10 +251,12 @@ describe(`${name} request broker`, () => {
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
     const admission = await session.admitProviderTurn({ reason: "goal" }, async function* () {
       yield { event: { type: "text-delta", delta: "hello" } }
+      yield { event: { type: "finish", sessionId: "s1" } }
     })
-    expect(admission).toMatchObject({ admitted: true, turn: { turnId: expect.any(String), assistantMessageId: expect.any(String) } })
-    if (admission.admitted) expect(await admission.settled).toEqual({ state: "completed" })
-    expect(ports.drained).toHaveLength(1)
+    if (!admission.admitted) throw new Error("Provider turn was not admitted")
+    expect([typeof admission.turn.turnId, typeof admission.turn.assistantMessageId]).toEqual(["string", "string"])
+    expect(await admission.settled).toEqual({ state: "completed" })
+    expect(ports.drained).toHaveLength(2)
   })
 
   test("a provider turn hands its run the admitted identity and drains under it", async () => {
@@ -262,11 +264,22 @@ describe(`${name} request broker`, () => {
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
     const result = await session.admitProviderTurn({ reason: "goal" }, async function* (_broker, turn) {
       yield { event: { type: "text-delta", delta: turn.assistantMessageId } }
+      yield { event: { type: "finish", sessionId: "s1" } }
     })
     expect(result.admitted).toBe(true)
     if (!result.admitted) return
     expect(await result.settled).toEqual({ state: "completed" })
-    expect(ports.drained).toEqual([{ event: { type: "text-delta", delta: result.turn.assistantMessageId } }])
+    expect(ports.drained).toEqual([{ event: { type: "text-delta", delta: result.turn.assistantMessageId } }, { event: { type: "finish", sessionId: "s1" } }])
+  })
+
+  test("a provider turn exhausted without a parent terminal fails", async () => {
+    const { owner } = setup()
+    const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+    const result = await session.admitProviderTurn({ reason: "goal" }, async function* () {
+      yield { event: { type: "text-delta", delta: "unfinished" } }
+    })
+    expect(result.admitted).toBe(true)
+    if (result.admitted) expect(await result.settled).toEqual({ state: "failed", error: "Harness stream ended without a terminal event" })
   })
 
   test("a provider turn the runtime cancels before its run ends settles cancelled", async () => {

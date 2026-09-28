@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join, posix, relative } from "node:path"
 import { builtinModules } from "node:module"
 import ts from "typescript-5"
+import { sourceComments } from "./comments"
 
 export type Rule =
   | "no-comments"
@@ -168,18 +169,8 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
       if (!firstFile.has(part)) firstFile.set(part, path)
     }
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
-    const templateFragments: Array<{ start: number; end: number }> = []
-    walk(source, node => {
-      if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-        templateFragments.push({ start: node.getStart(source), end: node.end })
-      }
-    })
-    const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, text)
-    for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
-      if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) continue
-      if (templateFragments.some(fragment => fragment.start <= scanner.getTokenPos() && scanner.getTokenPos() < fragment.end)) continue
-      const comment = scanner.getTokenText()
-      if (!isDirective(comment)) add(path, lineAt(source, scanner.getTokenPos()), "no-comments", "Remove the comment or use a listed tool directive")
+    for (const comment of sourceComments(source)) {
+      if (!isDirective(text.slice(comment.pos, comment.end))) add(path, lineAt(source, comment.pos), "no-comments", "Remove the comment or use a listed tool directive")
     }
     if (production && lines(text) > 300) add(path, 301, "size", "Split the file along responsibilities to stay at 300 lines or fewer")
 

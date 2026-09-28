@@ -85,6 +85,15 @@ export function createTurnEventProjector(options: {
     },
     project(runtimeEvent: AgentRuntimeEvent, source: RuntimeAppendSource) {
       for (const event of projection.ingest(runtimeEvent)) append(event.payload, source)
+      if (runtimeEvent.type === "usage" && runtimeEvent.observation?.kind === "cumulative" && runtimeEvent.observation.scope === undefined) {
+        const tokens = runtimeEvent.observation.tokens
+        const message = buildAssistantMessage({ id: assistantMessageId, sessionID: options.owner.sessionId,
+          parentID: options.input.userMessageId ?? options.input.parentMessageId ?? options.owner.sessionId,
+          agent: options.input.agent, model: options.input.model, variant: options.input.variant, directory: options.directory, created })
+        message.tokens = { input: tokens.input ?? 0, output: tokens.output ?? 0, reasoning: tokens.reasoning ?? 0,
+          cache: { read: tokens.cache.read ?? 0, write: tokens.cache.write ?? 0 } }
+        append(messageUpdated(message), source)
+      }
       if (runtimeEvent.type !== "step-start") {
         publishRuntime(runtimeEvent)
         return

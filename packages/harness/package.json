@@ -53,6 +53,12 @@
       "types": "./dist/transports/opencode-sdk/index.d.ts",
       "import": "./dist/transports/opencode-sdk/index.js"
     },
+    "./cursor-worker": {
+      "development": "./src/transports/cursor-sdk/host.ts",
+      "bun": "./src/transports/cursor-sdk/host.ts",
+      "types": "./dist/transports/cursor-sdk/host.d.ts",
+      "import": "./dist/transports/cursor-sdk/host.js"
+    },
     "./testing/opencode": {
       "development": "./src/test-support/opencode.ts",
       "bun": "./src/test-support/opencode.ts",
@@ -64,13 +70,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run generate:codex-protocol && tsc -p tsconfig.build.json",
+    "build": "bun run generate:codex-protocol && bun scripts/build.ts",
     "typecheck": "bun run generate:codex-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
-    "test": "bun run check && bun test src scripts e2e/harness",
+    "test": "bun run check && bun test src scripts e2e/harness && bun run test:node",
     "flows": "bun e2e/flows/run.ts",
     "corpus": "bun e2e/harness/corpus.ts",
-    "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts"
+    "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts",
+    "test:node": "bun run build && node --test scripts/package.node.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.3.0",
@@ -91,6 +98,7 @@
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
+    "esbuild": "0.25.12",
     "openai": "6.26.0",
     "typescript": "catalog:",
     "typescript-5": "npm:typescript@5.9.3"

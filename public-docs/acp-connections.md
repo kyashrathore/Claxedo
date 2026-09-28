@@ -229,13 +229,16 @@ more. Compared with the native harnesses, an ACP connection has:
 A `session/request_permission` is shown as a permission prompt carrying the
 agent's `title`, the command for an `execute` request or the reason otherwise,
 and the `locations` the agent named as path patterns. An "always" answer is
-remembered per session, keyed by tool kind and the exact title, on the
-session's stored permission state, so it survives a process or app restart and
-is cleared when the session changes harness; the next matching request is
-answered without a prompt and recorded only as replied. A request with no
-title is never remembered. Agents that keep their own allowlist still receive
-`allow_always` when they offer it. A compound shell command is a new title each
-time it changes, so a per-program allowlist has to come from the agent.
+remembered per session on its stored permission state, keyed by a digest of
+the tool kind, the tool's input (`rawInput`) and the `locations` it names, so
+the stored key never carries the command or content it approved. It survives
+a process or app restart and is cleared when the session changes harness; the next matching request is
+answered without a prompt and recorded only as replied. The title is display
+text and plays no part: a request with the same input under another title
+matches, and a request with neither input nor locations is never remembered.
+Agents that keep their own allowlist still receive `allow_always` when they
+offer it. A compound shell command is a new input each time it changes, so a
+per-program allowlist has to come from the agent.
 
 Two answers never reach the user: a remembered "always", and the app's own
 "Approve for me" allowlist, which auto-approves `search`, `think` and `edit`

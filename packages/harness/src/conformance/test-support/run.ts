@@ -303,7 +303,7 @@ export function runConformance(input: ConformanceInput): void {
       const context = await setup(input)
       try {
         if (!context.backend.verifyRemoteMcp) return
-        await context.transport.fork?.fork(context.session, "m1")
+        await context.transport.fork?.fork(context.session, "m1", "child")
         await context.transport.close(context.session)
         await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
         await context.backend.verifyRemoteMcp()
@@ -529,6 +529,7 @@ export function runConformance(input: ConformanceInput): void {
         const result = await context.sessionBroker.admitProviderTurn({ reason: "goal" }, async function* () {
           await gate
           yield { event: { type: "text-delta", delta: "native goal" } }
+          yield { event: { type: "finish", sessionId: context.session.binding.sessionId } }
         })
         expect(result.admitted).toBe(true)
         if (!result.admitted) return
@@ -538,7 +539,7 @@ export function runConformance(input: ConformanceInput): void {
         expect(settled).toBe(false)
         release()
         expect(await result.settled).toEqual({ state: "completed" })
-        expect(context.ports.drained).toHaveLength(1)
+        expect(context.ports.drained).toHaveLength(2)
       } finally { await context.close() }
     }, 60_000)
 

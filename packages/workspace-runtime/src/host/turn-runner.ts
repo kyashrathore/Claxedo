@@ -1,7 +1,6 @@
 import type { AgentExecutionBinding, AgentTurnOutcome, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import { sessionIdle, toCompatEvent, type CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createTurnBroker, type BrokerOwner, type TurnAuthority } from "@claxedo/harness/broker"
 import { TransportError, type RoutedEvent, type TurnOrigin } from "@claxedo/harness/contract"
 import { createChildEventRouter } from "../projection/child-event-routing"
@@ -119,18 +118,17 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     for await (const routed of run.attached.handle.transport.send(run.attached.session, turn, turnBroker)) {
       if (!admitted()) return
       const payload: AgentRuntimeEvent = routed.event
-      terminal ||= isTerminalRuntimePayload(payload)
-      outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-      if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
+      if (routed.route?.kind !== "child") {
+        terminal ||= isTerminalRuntimePayload(payload)
+        outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
+        if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
+      }
       router.project(payload, appendSource(routed), routed.route)
     }
     if (!admitted()) return
-    if (!terminal) {
-      const payload = sessionIdle(sessionId)
-      outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-      host.commit(sessionId, directory, payload, { dir: "out", method: "runtime.finish" }, fence, publishTurn)
-    }
-    const settled = outcome ?? { status: "completed" as const, completedAt: Date.now() }
+    if (!terminal || !outcome) throw new TransportError("provider", "missing_terminal_event",
+      "Harness stream ended without a terminal event", { detail: { code: "missing_terminal_event", transport: run.attached.handle.transport.kind } })
+    const settled = outcome
     finalized = recovery.finalizeTurn(capture, settled, { emit: publishTurn })
     recovery.retainFailure(capture, settled, finalized)
     if (finalized.ok && outcome?.status === "completed") {
@@ -161,9 +159,4 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     }
     finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok)
   }
-}
-
-/** The compat frame a turn commits before its producer yields, when the payload is one. */
-export function compatOf(payload: AgentRuntimeStreamEvent): CompatEvent | null {
-  return toCompatEvent(payload)
 }

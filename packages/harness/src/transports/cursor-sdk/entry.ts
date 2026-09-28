@@ -14,6 +14,7 @@ export type CursorEntry = {
   process: CursorHost
   plugins: CursorPluginOptions
   busy: boolean
+  starting?: { turnId: string; launched: boolean; abort: AbortController }
   reopen: boolean
   closing?: Promise<void>
 }

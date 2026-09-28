@@ -90,12 +90,21 @@ function withoutClaxedoBlock(content: string): string {
   return begin < 0 ? content.trimEnd() : `${content.slice(0, begin)}${content.slice(end + END.length)}`.trim()
 }
 
-export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {
-  const selected = input.credentials.providers.codex
+function selectedCodexAccount(credentials: ResolvedCredentials) {
+  const selected = credentials.providers.codex
   if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
+  return selected
+}
+
+export function codexProfileHome(input: Omit<CodexProfileInput, "ownerHome">): string {
+  return path.join(input.homeRoot, codexHomeKey(input.owner, selectedCodexAccount(input.credentials), input.projection))
+}
+
+export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {
+  const selected = selectedCodexAccount(input.credentials)
   const brokered = Boolean(selected)
   const ownerHome = input.ownerHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
-  const home = path.join(input.homeRoot, codexHomeKey(input.owner, selected && !("unavailable" in selected) ? selected : undefined, input.projection))
+  const home = codexProfileHome(input)
   const existing = await fs.lstat(home).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined
     throw error
@@ -105,7 +114,7 @@ export async function prepareCodexProfile(input: CodexProfileInput): Promise<Cod
   await fs.chmod(home, 0o700)
   if (!brokered) await mirrorOwnerCodexHome(ownerHome, home)
   const fragments = [await marketplace(home, input.projection)]
-  if (selected && !("unavailable" in selected)) fragments.unshift(brokerFragment(selected))
+  if (selected) fragments.unshift(brokerFragment(selected))
   const retained = brokered ? "" : withoutClaxedoBlock(await readOptional(path.join(ownerHome, "config.toml")))
   const block = fragments.filter(Boolean).join("\n\n")
   const next = [retained, block ? `${START}\n${block}\n${END}` : ""].filter(Boolean).join("\n\n")

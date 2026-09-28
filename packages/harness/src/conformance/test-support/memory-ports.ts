@@ -1,8 +1,8 @@
 import type { AgentSessionStartBinding, RuntimeGoalSnapshot, SessionConfig, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
-import type { PendingRequest, ProviderTurnInput, ProviderTurnResult, RequestAnswer } from "../../contract/broker"
-import type { HarnessBinding, TurnRef } from "../../contract/session"
+import type { PendingRequest, ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RequestAnswer } from "../../contract/broker"
+import type { HarnessBinding, RoutedEvent, TurnRef } from "../../contract/session"
 import type { BrokerEvent, BrokerPorts, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"
 import { createMemorySubagentAdmissionStore } from "../../broker/subagents/admission"
 
@@ -106,12 +106,21 @@ export class MemoryPorts implements BrokerPorts {
     const authority = this.current.get(_sessionId)
     if (authority) this.current.set(_sessionId, { ...authority, turnId })
     const settled = Promise.resolve().then(() => run(turn, controller.signal)).then(
-      () => controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const },
-      (error: unknown) => controller.signal.aborted ? { state: "cancelled" as const } : { state: "failed" as const, error: errorMessage(error) },
+      (): ProviderTurnSettlement => {
+        const terminal = this.terminals.get(turnId)
+        if (controller.signal.aborted) return { state: "cancelled" }
+        if (!terminal) return { state: "failed", error: "Harness stream ended without a terminal event" }
+        return terminal.type === "error" ? { state: "failed", error: terminal.error } : { state: "completed" }
+      },
+      (error: unknown): ProviderTurnSettlement => controller.signal.aborted ? { state: "cancelled" } : { state: "failed", error: errorMessage(error) },
     )
     return { admitted: true as const, turn, settled }
   }
-  async drainProviderEvent(_sessionId: string, _turn: TurnRef, event: unknown) { this.drained.push(event) }
+  private readonly terminals = new Map<string, Extract<RoutedEvent["event"], { type: "finish" | "error" }>>()
+  async drainProviderEvent(_sessionId: string, turn: TurnRef, event: RoutedEvent) {
+    this.drained.push(event)
+    if (event.route?.kind !== "child" && (event.event.type === "finish" || event.event.type === "error")) this.terminals.set(turn.turnId, event.event)
+  }
   meterUsage(_usage: unknown) {}
   sessionEvents: { sessionId: string; event: unknown }[] = []
   async publishSessionEvent(sessionId: string, event: unknown) { this.sessionEvents.push({ sessionId, event }) }

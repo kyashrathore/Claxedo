@@ -13,11 +13,12 @@ import { CodexAppServerTransport, type CodexTransportOptions } from "./transport
 import { ClaudeSdkTransport } from "./transports/claude-sdk"
 import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
 import { CursorSdkTransport, type CursorSdkTransportOptions } from "./transports/cursor-sdk"
+export { CURSOR_WORKER_FILE } from "./transports/cursor-sdk"
 import { OpenCodeSdkTransport, type OpenCodeSdkTransportOptions } from "./transports/opencode-sdk/transport"
 
 export type HarnessCompositionOptions = {
   acp: () => { missingContext: MissingSessionContext }
-  pi: () => PiRpcOptions
+  pi: (command?: string) => PiRpcOptions
   codex: () => CodexTransportOptions
   claude: () => ClaudeSdkOptions
   cursor: () => CursorSdkTransportOptions
@@ -31,7 +32,7 @@ export function createHarnessComposer(
 ) {
   const acp = createAcpProvider((config, host) => new AcpTransport(host, config.connection, filterMcpServers, options.acp().missingContext))
   const pi = createPiRpcProvider((config, host) => {
-    const base = options.pi()
+    const base = options.pi(config.command)
     return new PiRpcTransport(host, {
       ...base, binary: config.command, args: config.args, env: { ...base.env, ...config.env },
       ownerAgentDir: config.profileDir ?? base.ownerAgentDir,

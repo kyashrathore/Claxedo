@@ -2,12 +2,13 @@ import type { HarnessServices, OwnedProcess, SpawnCommand, SpawnOptions } from "
 import { launchOwnedProcess, retirementSettled, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { singleFlightUntil } from "@claxedo/helpers"
+import { homeHoldingOwnership } from "./host/home-use"
 
 export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServices["spawn"] {
   return async (command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess> => {
     if (options.signal.aborted) throw new Error(`Spawn of ${options.label} was aborted before it started`)
     const launch = await launchOwnedProcess({
-      ownership,
+      ownership: options.home ? homeHoldingOwnership(ownership, options.home) : ownership,
       role: "harness",
       ...(options.sessionId ? { scope: { sessionId: options.sessionId, directory: command.cwd } } : { scope: { directory: command.cwd } }),
       payload: { command: command.file, args: [...command.args] },

@@ -173,11 +173,6 @@ function textChunkDelta(input: {
 type ConfigUpdateEvent = Extract<AgentRuntimeEvent, { type: "config-update" }>
 type ConfigUpdateOption = ConfigUpdateEvent["options"][number]
 
-/**
- * Flattens `SessionConfigSelectOptions` (a flat option array OR an array of groups)
- * into the id/name pairs the runtime event carries. Entries that do not match either
- * wire shape are dropped rather than emitted as `{ id: undefined }`.
- */
 function decodeSelectOptions(value: unknown): Array<{ id: string; name: string }> {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
@@ -247,9 +242,6 @@ function decodeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): Confi
   })
 }
 
-// ---------------------------------------------------------------------------
-// Main export
-// ---------------------------------------------------------------------------
 
 export function translateSessionUpdate(
   update: SessionUpdate,
@@ -273,7 +265,6 @@ export function translateSessionUpdate(
       }
 
       const chunks: AgentRuntimeEvent[] = []
-      // messageId tracking for step-start (agent_message_chunk only)
       if (!isThought && "messageId" in update) {
         const newMsgId = (update as { messageId?: string | null }).messageId ?? null
         if (newMsgId !== null && newMsgId !== ctx.state.lastMessageId) {
@@ -343,10 +334,7 @@ export function translateSessionUpdate(
         chunks.push({ type: "tool-status", toolCallId: update.toolCallId, status: nextStatus, display: next.display, metadata: next.metadata })
       }
 
-      // Session-surface routing: emit session events instead of tool rows
       if (isSessionSurface(classification)) {
-        // Standard ACP `think` tools do not create a tool row; thinking
-        // content arrives through `agent_thought_chunk`.
         chunks.push(...drainContent(tool, content, ctx.diagnostics))
         chunks.push(...drainSpots(tool, locations))
         return chunks
@@ -407,7 +395,6 @@ export function translateSessionUpdate(
         ? [{ type: "tool-status", toolCallId, status: nextStatus, display: next.display, metadata: next.metadata }]
         : []
 
-      // Session-surface routing: emit session events instead of tool rows
       if (isSessionSurface(classification)) {
         const chunks: AgentRuntimeEvent[] = [...statusChunks]
         chunks.push(...drainContent(tool, safeItems, ctx.diagnostics))
@@ -537,7 +524,7 @@ export function translateSessionUpdate(
     }
 
     default: {
-      const _: never = update // compile error if SDK adds unhandled variant
+      const _: never = update
       diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", { reason: "unknown_session_update", shape: shape(update) })
       return []
     }

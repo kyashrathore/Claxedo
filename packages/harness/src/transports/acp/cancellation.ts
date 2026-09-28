@@ -18,7 +18,9 @@ export function trackedAcpCancel(entry: AcpEntry, deadline: Deadline): NonNullab
     (what: string, aborted: boolean) => new AcpTransportError("timeout", `ACP ${what} ${aborted ? "was abandoned" : "timed out"}`))
     .then(() => ({ ok: true as const }), (error: unknown) => {
       entry.phase = "uncertain"
-      entry.queue?.fail(new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error))
+      const failure = new AcpTransportError("session", "ACP cancel failed; prompt outcome is uncertain", error)
+      entry.queue?.fail(failure)
+      entry.providerTurn?.queue.fail(failure)
       return { ok: false as const, error }
     })
   entry.cancelSent = tracked

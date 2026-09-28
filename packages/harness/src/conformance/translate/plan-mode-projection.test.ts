@@ -29,7 +29,6 @@ function harnessRuntime<S>(harness: string, adapter: HarnessEventAdapter<S>): Ru
   }) as unknown as Runtime
 }
 
-/** The parts as a reader would last see them: one entry per part id, text deltas joined. */
 function settle(runtime: Runtime, events: unknown[]): Settled {
   const projection = createClientPresentationProjection({
     sessionId: "session-1",
@@ -77,8 +76,6 @@ describe("a proposed plan, per harness", () => {
     })
   })
 
-  // claude-agent-acp titles ExitPlanMode "Ready to code?" (kind switch_mode) and keeps
-  // the real name only in `_meta.claudeCode.toolName`; the part is named from the title.
   test("Claude over ACP: ExitPlanMode keeps its markdown but is named `ready`, so it misses the plan row", () => {
     const settled = settle(harnessRuntime("acp:claude", createAcpEventTranslator({ client: "acp:claude" })), [
       { source: "acp.jsonrpc", method: "session/update", payload: {

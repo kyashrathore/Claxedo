@@ -204,11 +204,6 @@ function toolInputEvents(tool: ClaudeBlockState, parsedInput: Record<string, unk
   }] satisfies AgentRuntimeEvent[]
 }
 
-/**
- * Claude Code's Bash tool carries no numeric field for the exit status; a
- * non-zero run's result text starts with the code, "Exit code 1\n…", whether
- * or not the harness marked the result as an error.
- */
 function exitCodeFromResultText(resultText: string) {
   const match = /^Exit code (\d+)(?:\s|$)/.exec(resultText)
   return match ? Number(match[1]) : undefined
@@ -221,11 +216,6 @@ function toolResultText(block: Record<string, unknown>) {
   return content.flatMap((item) => text(item) ?? text(asRecord(item)?.text) ?? []).join("\n")
 }
 
-/**
- * Only base64 sources are mapped: across 1,543 local transcripts all 1,052
- * tool-result image blocks used `source.type === "base64"`, and a URL source
- * carries no `media_type` to filter or name the attachment by.
- */
 function toolResultImages(block: Record<string, unknown>): Array<{ mime: string; data: string }> {
   const content = block.content
   if (!Array.isArray(content)) return []
@@ -241,7 +231,6 @@ function toolResultImages(block: Record<string, unknown>): Array<{ mime: string;
   })
 }
 
-/** Use a single read path as a filename only; preserve each image's supplied bytes. */
 function resultAttachments(
   images: Array<{ mime: string; data: string }>,
   display: ToolDisplay,
@@ -320,11 +309,6 @@ function isQuestionTool(toolName: string) {
   return canonicalToolName(toolName) === "question"
 }
 
-/**
- * The `question` renderer reads the answers from the part's metadata; the result text
- * repeats them as prose no reader parses. Only a completed call carries the record —
- * a declined prompt arrives as an error.
- */
 function questionAnswerMetadata(input: Record<string, unknown>, result: Record<string, unknown> | undefined) {
   const answers = asRecord(result?.answers)
   if (!answers) return {}
@@ -350,13 +334,6 @@ function agentResultText(result: Record<string, unknown> | undefined, fallback: 
   return content.flatMap((item) => text(asRecord(item)?.text) ?? []).join("\n") || fallback
 }
 
-/**
- * Only the result of a `create_subagent` call the ledger saw binds a child;
- * the same JSON printed by any other tool is output, not a binding. Each
- * block is read from its own content; `tool_use_result` is one tool's
- * structured output with no `tool_use_id`, so it stands in for a block only
- * when the message delivers exactly one.
- */
 function claudeHostSubagentObservations(
   message: Record<string, unknown>,
   wrapperId: string,
@@ -397,26 +374,12 @@ function commonPrefixLength(shown: string, snapshot: string) {
   return shared
 }
 
-/**
- * Invariant: the projection holds exactly one copy of an assistant message's
- * text. The harness delivers that text twice — as streamed `text_delta`s and
- * again as a cumulative snapshot on the completed message — so the snapshot may
- * only contribute what streaming has not already shown for that same message:
- * its tail when it continues the streamed text, nothing when it equals it, and
- * only the part past the common prefix when the two disagree. Emitting a
- * disagreeing snapshot whole is what showed replies twice.
- */
 function reconcileAssistantSnapshot(shown: string, snapshot: string): { delta: string; divergedAt?: number } {
   if (snapshot.startsWith(shown)) return { delta: snapshot.slice(shown.length) }
   const shared = commonPrefixLength(shown, snapshot)
   return { delta: snapshot.slice(shared), divergedAt: shared }
 }
 
-/**
- * The frame as the first-level subagent it runs under owns it. An Agent call
- * in a subagent's own message is recorded as nested first, so every frame of
- * that nested subagent, at any depth, names the first-level key instead.
- */
 export function foldNestedSubagentFrame(frame: unknown, ledger: ClaudeTaskLedger): unknown {
   const message = asRecord(frame)
   const owner = claudeChildCorrelationKey(message)
@@ -467,14 +430,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
     const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
     if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId, ledger)
-    // A subagent's own Agent result reports a nested subagent, which has no row.
     if (claudeChildCorrelationKey(message)) return []
-    // `SDKUserMessage.tool_use_result` is one tool's Output, and `AgentOutput`
-    // names no tool call, so the agent it reports can only be attributed when
-    // the message carries a single tool_result block. Stamping every block of
-    // a batched delivery gives one agent a spawn edge on each of its siblings'
-    // rows. The turn's other terminals — `task_notification` and the turn-end
-    // sweep — settle the rows this drops.
     const blocks = toolResultBlocks(message)
     const sole = blocks.length === 1 ? blocks[0] : undefined
     if (!sole) return []
@@ -483,10 +439,6 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       ...(harnessExecutionId ? { harnessExecutionId } : {}),
       toolCallId: sole.toolCallId,
       toolCallRole: "spawn" as const,
-      // `forked` delivers the call's result through a forked execution — the
-      // delegation is done; no `task_notification` ever follows for it, so
-      // leaving it `running` strands the row until the turn-end sweep marks it
-      // interrupted. `async_launched` is the only result that keeps working.
       status: result?.status === "completed" || result?.status === "forked"
         ? "completed" as const
         : result?.status === "failed" || result?.status === "error"
@@ -501,20 +453,11 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
 
   if (message.type !== "system") return []
 
-  // Every backgrounded Bash command, workflow and housekeeping chore is a task
-  // too, and each one admitted here becomes a subagent row with its own chip and
-  // child session. Only `task_started` says which is which — `subagent_type`
-  // names a Task-tool subagent and `skip_transcript` an ambient chore — so every
-  // later frame, which carries the task id alone, is routed by what the ledger
-  // recorded rather than by fields it does not carry.
   switch (message.subtype) {
     case "task_started": {
       const taskId = text(message.task_id)
       if (!taskId) return []
       const toolUseId = text(message.tool_use_id)
-      // Claude Code 2.1.280 sends `spawn_depth` (the pinned SDK types predate
-      // it), which marks a nested task even before the subagent frame that made
-      // its call has arrived.
       const nested = (toolUseId !== undefined && ledger.isNestedSubagentCall(toolUseId)) ||
         (asFiniteNumber(message.spawn_depth) ?? 0) > 1
       const record: ClaudeTaskRecord = {
@@ -551,9 +494,6 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       const patch = asRecord(message.patch) ?? {}
       const status = taskStatus(patch.status)
       const mode = patch.is_backgrounded === true ? "background" as const : patch.is_backgrounded === false ? "foreground" as const : undefined
-      // The rest of the patch — `end_time`, `total_paused_ms` — is task
-      // bookkeeping no row renders, and an observation carrying none of the
-      // three fields below is a revision the reader cannot act on.
       if (!status && !mode && !text(patch.description)) return []
       return [taskObservation(message, wrapperId, {
         ...(status ? { status } : {}),
@@ -561,12 +501,6 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
         description: text(patch.description),
       })]
     }
-    // `SDKBackgroundTasksChangedMessage` replaces a set of live tasks, and the
-    // SDK offers it so a missed bookend cannot wedge a stale running indicator.
-    // Its members carry `task_id`/`task_type`/`description` and nothing that
-    // identifies a Task subagent or its tool call, so it can only settle rows
-    // the ledger already knows; read as edges it minted a row per live
-    // background chore, each with a child session no nested message could reach.
     case "background_tasks_changed":
       return ledger
         .replaceLive(liveTaskIds(message))
@@ -585,13 +519,6 @@ function liveTaskIds(message: Record<string, unknown>) {
   return tasks.flatMap((value) => text(asRecord(value)?.task_id) ?? [])
 }
 
-/**
- * The level reports a departure, never an outcome: the notification that would
- * have said `completed`, `failed` or `stopped` is exactly what a wedged row
- * never received. `interrupted` is what this runtime already calls a row whose
- * end was never reported, and it settles the child turn the same way a kill
- * does, so a notification arriving behind the level still states the truth.
- */
 function departedTaskObservation(record: ClaudeTaskRecord, wrapperId: string): ClaudeSubagentObservation {
   return {
     observationId: `claude:background_tasks_changed:${wrapperId}:${record.taskId}`,
@@ -663,12 +590,6 @@ function larger(previous: number | null, next: number | null) {
   return Math.max(previous, next)
 }
 
-/**
- * No count of one request ever shrinks: `message_start` opens it,
- * `message_delta` carries its final output, and an assistant frame or a
- * transcript entry repeats whichever of the two it was built from. Keeping the
- * larger value lets them arrive in any order.
- */
 function mergeRequestUsage(previous: ClaudeRequestUsage | undefined, next: ClaudeRequestUsage): ClaudeRequestUsage {
   if (!previous) return next
   return {
@@ -678,8 +599,6 @@ function mergeRequestUsage(previous: ClaudeRequestUsage | undefined, next: Claud
     cacheRead: larger(previous.cacheRead, next.cacheRead),
     cacheWrite: larger(previous.cacheWrite, next.cacheWrite),
     cacheWrite1h: larger(previous.cacheWrite1h, next.cacheWrite1h),
-    // Fixed at the first report: moving a request to another model's stream
-    // would leave its tokens in the cumulative that stream already reported.
     ...(previous.model ? { model: previous.model } : {}),
   }
 }
@@ -728,18 +647,11 @@ function ownerRequests(state: ClaudeSdkAdapterState, owner: string) {
   return own(state.requestUsageByOwner ?? {}, owner) ?? {}
 }
 
-/**
- * The stream an owner's requests on one model add to. An owner's requests are
- * summed per model, so every observation names the one model that served it:
- * the model of the owner's first request keeps the owner's own scope (none on
- * the main thread), and each other model a request names gets one beside it.
- */
 function modelScope(requests: Record<string, ClaudeRequestUsage>, owner: string, model: string | undefined) {
   if (Object.values(requests)[0]?.model === model) return owner || undefined
   return `${owner || "main"}@${model ?? "unknown"}`
 }
 
-/** The owner's whole-turn usage on `request`'s model. The context gauge reads `request` alone: every request resends the whole context. */
 function ownerUsageEvent(state: ClaudeSdkAdapterState, owner: string, request: ClaudeRequestUsage, nativeSessionId?: string) {
   const requestTotal = (request.input ?? 0) + (request.output ?? 0) + (request.cacheRead ?? 0) + (request.cacheWrite ?? 0)
   const contextSize = state.lastKnownContextWindow ?? requestTotal
@@ -760,7 +672,6 @@ function ownerUsageEvent(state: ClaudeSdkAdapterState, owner: string, request: C
   } satisfies AgentRuntimeEvent
 }
 
-/** Records one report of a request's usage; a report that changes nothing emits nothing. */
 function meterRequest(
   state: ClaudeSdkAdapterState,
   owner: string,
@@ -788,16 +699,6 @@ function meteredResult(state: ClaudeSdkAdapterState, metered: ReturnType<typeof 
     : []
 }
 
-/**
- * The main thread's usage as a `result` closes a CLI turn. `result.usage` is
- * not read: Claude Code 2.1.280 sums it from the same `message_start` and
- * `message_delta` events this adapter meters, but only for the CLI turn that
- * result ends, and one query can end several — a steer answered after a
- * reply, each Goal iteration.
- *
- * The context gauge reads the request the main thread streamed last: a
- * mirrored subagent request metered here was sent with that subagent's context.
- */
 function resultUsageEvent(state: ClaudeSdkAdapterState, nativeSessionId?: string) {
   const requests = ownerRequests(state, "")
   const latest = (state.lastMainRequest ? own(requests, state.lastMainRequest) : undefined) ?? Object.values(requests).at(-1)
@@ -905,10 +806,6 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
   }] satisfies AgentRuntimeEvent[]
 }
 
-/**
- * `resetsAt` arrives as Unix seconds. 1e12 ms is 2001, which no reset expressed
- * in seconds reaches and no reset expressed in milliseconds falls below.
- */
 function rateLimitResetMs(value: unknown) {
   const reset = asFiniteNumber(value)
   if (reset === undefined) return null
@@ -928,11 +825,6 @@ function claudeRateLimitEvent(info: Record<string, unknown>) {
   } satisfies AgentRuntimeEvent
 }
 
-/**
- * The CLI's own session title arrives only as a transcript entry through the
- * `sessionStore` observer, never as an SDK message: `ai-title` is the title
- * it generates from the first prompt, `custom-title` is a `/rename`.
- */
 function claudeTranscriptTitle(entry: Record<string, unknown>): AgentRuntimeEvent[] {
   if (entry.type === "ai-title") {
     const title = text(entry.aiTitle)?.trim()
@@ -1109,10 +1001,6 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                   if (!block || block.type !== "tool" || !partial) return []
                   const partialInputJson = `${block.partialInputJson ?? ""}${partial}`
                   const parsedInput = parseJsonRecord(partialInputJson)
-                  // Only a complete parse becomes the block's input: the result
-                  // handlers read it back for display and task tracking. What the
-                  // partial document already says still streams to the transcript,
-                  // so a command reads as it is typed instead of "Running command".
                   const streamedInput = parsedInput ?? readPartialJsonRecord(partialInputJson)
                   const streamedInputJson = streamedInput && Object.keys(streamedInput).length > 0
                     ? JSON.stringify(streamedInput)
@@ -1380,9 +1268,6 @@ function translateSystemMessage(
   state: ClaudeSdkAdapterState,
   event: { source: string; method?: string; payload: unknown },
 ): HarnessEventAdapterResult<ClaudeSdkAdapterState> | AgentRuntimeEvent[] {
-  // Claude Code 2.1.267 sends this after each model turn; the pinned SDK types
-  // (0.3.220) predate it, so it is read off the raw message. It summarises a
-  // turn already projected in full.
   if (text(rawMessage.subtype) === "post_turn_summary") {
     const summary = text(rawMessage.summary)
     return summary
@@ -1462,9 +1347,6 @@ function translateSystemMessage(
       return []
 
     case "task_notification":
-      // Task lifecycle is projected by claudeSubagentObservations. This frame
-      // can precede the tool_result carrying stdout or the actual tool error;
-      // it must not terminalize that tool call with an empty result or summary.
       return []
 
     case "files_persisted":

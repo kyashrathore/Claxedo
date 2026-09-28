@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
 import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases } from "@claxedo/harness/testing"
-import type { PendingRequest } from "@claxedo/harness/contract"
+import type { PendingRequest, RoutedEvent } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
 import { RuntimeStore } from "../store"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
@@ -345,10 +345,31 @@ describe("store broker ports", () => {
     ports.abortProviderTurn("s1")
     release()
     if (cancelled.admitted) expect(await cancelled.settled).toEqual({ state: "cancelled" })
-    const completed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
+    const completed = await ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
     if (completed.admitted) expect(await completed.settled).toEqual({ state: "completed" })
     const failed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => { throw new Error("failed") })
     if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
+  })
+
+  test("a provider turn settles from its own terminal event, and one exhausted without it fails", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")?.leaseId
+    if (!lease) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    const settle = async (events: RoutedEvent[]) => {
+      const admitted = await ports.admitProviderTurn("s1", { reason: "goal" }, async (turn) => {
+        for (const event of events) await ports.drainProviderEvent("s1", turn, event)
+      })
+      if (!admitted.admitted) throw new Error("Provider turn was not admitted")
+      return { settled: await admitted.settled, turn: store.getSession("s1")?.lastTurn }
+    }
+    expect(await settle([{ event: { type: "text-delta", delta: "unfinished" } }])).toMatchObject({
+      settled: { state: "failed", error: "Harness stream ended without a terminal event" }, turn: { status: "failed", detail: { code: "missing_terminal_event" } } })
+    expect(await settle([{ event: { type: "error", error: "provider refused" } }])).toMatchObject({
+      settled: { state: "failed", error: "provider refused" }, turn: { status: "failed" } })
   })
 
   test("session events and outside-turn usage enter the existing journal projection", async () => {

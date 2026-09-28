@@ -153,12 +153,15 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     // Capture the target before attachment yields. A replacement turn must
     // never inherit an input addressed to the previous one.
     const steeringTarget = turn.delivery === "steer" ? admissions.active(turn.sessionId) : undefined
-    const attached = await attachments.for(turn.sessionId)
+    let attached = await attachments.for(turn.sessionId)
     // Pinned before the first yield: a lease rotation or a removed connection
     // must not dispose the transport between this read and the turn's launch.
     const unpin = attached.handle.pin()
     let launched = false
     try {
+      if (!admissions.active(turn.sessionId) && attached.handle.transport.restore) {
+        attached = { ...attached, session: await attached.handle.transport.restore(attached.session) }
+      }
       const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId: turn.sessionId })
       if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
       if (turn.admission && !turn.admission.valid()) throw new Error("Durable session turn admission is no longer valid")

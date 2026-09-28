@@ -2,11 +2,12 @@ import { pathToFileURL } from "node:url"
 import path from "node:path"
 import type {
   ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationContentValue, McpServer, PromptCapabilities,
-  RequestPermissionRequest, RequestPermissionResponse,
+  RequestPermissionRequest, RequestPermissionResponse, ToolCallUpdate,
 } from "@agentclientprotocol/sdk"
 import type { McpServerSpec, RequestAnswer, SessionBroker, TurnBroker, TurnInput } from "../../contract"
 import type { PermissionDecision } from "@claxedo/agent-runtime-contract"
 import { AcpTransportError } from "./errors"
+import { grantIdentity } from "../../contract/grant-identity"
 import { elicitationAnswer, elicitationRequest, permissionRequest, permissionSelection } from "../../contract"
 import { flattenTurnPrompt } from "../../translate/prompt"
 import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles, type MaterializedFile, type PromptFile } from "../../translate/attachments"
@@ -55,16 +56,17 @@ export async function acpPermission(request: RequestPermissionRequest, broker: T
   askOptions?: { signal?: AbortSignal }): Promise<RequestPermissionResponse> {
   const options = request.options.map((option) => ({ optionId: option.optionId, kind: option.kind, name: option.name }))
   const answer = await broker.ask(permissionRequest({ sessionId, options,
-    grantKey: acpGrantKey(request.toolCall.kind, request.toolCall.title),
+    grantKey: acpGrantKey(request.toolCall),
     permission: request.toolCall.kind ?? "other",
     title: request.toolCall.title ?? undefined, patterns: request.toolCall.locations?.map((item) => item.path) ?? [],
     metadata: { toolCallId: request.toolCall.toolCallId }, harnessPayload: request }), askOptions)
   return permissionOutcome(answer, options)
 }
 
-export function acpGrantKey(kind: string | null | undefined, toolName: string | null | undefined): string | undefined {
-  if (typeof toolName !== "string" || toolName.length === 0) return undefined
-  return JSON.stringify([kind ?? "other", toolName])
+export function acpGrantKey(toolCall: Pick<ToolCallUpdate, "kind" | "rawInput" | "locations">): string | undefined {
+  const locations = toolCall.locations?.map((location) => location.path) ?? []
+  if (toolCall.rawInput === undefined && locations.length === 0) return undefined
+  return grantIdentity({ kind: toolCall.kind ?? "other", input: toolCall.rawInput ?? null, locations })
 }
 
 function permissionOutcome(answer: RequestAnswer, options: { optionId: string; kind: string }[]): RequestPermissionResponse {
