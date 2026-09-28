@@ -11,6 +11,7 @@ import type { AcpEntry, AcpMcpFilter } from "./index"
 import { acpModeState } from "./options"
 import type { AcpPeerOwnership } from "./ownership"
 import { acpElicitation, acpMcp, acpPermission } from "./protocol"
+import { acpMcpProjection } from "./projection"
 import { restoreAcp, type AcpRestored, type MissingSessionContext } from "./restore"
 
 export type AcpHost = {
@@ -119,10 +120,14 @@ export async function startAcpEntry(host: AcpHost, input: StartInput, broker: Se
   const entry = await openAcpEntry(host, input, broker)
   try {
     const { meta, notApplied } = claudeOptionsMeta(entry.peer.handshake, input)
+    const mcp = acpMcpProjection(entry, host.services, host.connection, host.filterMcp)
     entry.startup = acpStartupDeadline(host, "session/new")
-    const result = await entry.startup.run(entry.peer.agent.newSession({ cwd: input.directory, mcpServers: host.mcp(entry).map(acpMcp),
+    const result = await entry.startup.run(entry.peer.agent.newSession({ cwd: input.directory, mcpServers: mcp.servers.map(acpMcp),
       ...(meta ? { _meta: meta } : {}) }))
     const session = await adopt(host, entry, { upstreamSessionId: result.sessionId, modes: result.modes, configOptions: result.configOptions }, "startup")
+    if (mcp.notApplied.length) await broker.publish({ type: "harness-notice", code: "acp.mcp.not-applied", severity: "warn",
+      message: `MCP servers not applied: ${mcp.notApplied.map((item) => `${item.item} (${item.reason})`).join(", ")}`,
+      details: { notApplied: mcp.notApplied } })
     if (notApplied.length) await broker.publish({ type: "harness-notice", code: "acp.plugins.not-applied", severity: "warn",
       message: `${notApplied.length === 1 ? "Plugin" : "Plugins"} ${notApplied.map((item) => item.item).join(", ")} not applied: ${ACP_PLUGINS_NOT_APPLIED}`,
       details: { notApplied } })

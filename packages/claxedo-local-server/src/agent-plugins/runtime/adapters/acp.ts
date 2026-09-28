@@ -17,7 +17,7 @@ export function acpAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter {
       const root = path.join(generationRoot, "harnesses", "acp")
       await fs.mkdir(root, { recursive: true })
       const configFile = path.join(root, "mcp.json")
-      const servers = await acpSessionMcpServers(plugins, mcpServers)
+      const { servers, notApplied } = await acpSessionMcpServers(plugins, mcpServers)
       await fs.writeFile(configFile, `${JSON.stringify({ servers }, null, 2)}\n`)
       return {
         harnessId: "acp",
@@ -28,7 +28,7 @@ export function acpAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter {
           dataRoot: plugin.dataRoot,
           skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })),
-        diagnostics: [],
+        mcpServers: [], notApplied,
       }
     },
   }
@@ -43,8 +43,8 @@ function acpServer(name: string, value: unknown): AcpRuntimeMcpServer | undefine
   if (!isRecord(value) || value.name !== name || value.source !== "plugin") return undefined
   if (value.transport === "stdio") {
     const env = stringRecord(value.env)
-    if (typeof value.command !== "string" || !Array.isArray(value.args) || !value.args.every((item) => typeof item === "string") || !env) return undefined
-    return { name, source: "plugin", transport: "stdio", command: value.command, args: value.args.map(String), env }
+    if (typeof value.command !== "string" || !Array.isArray(value.args) || !value.args.every((item) => typeof item === "string") || !env || (value.cwd !== undefined && typeof value.cwd !== "string")) return undefined
+    return { name, source: "plugin", transport: "stdio", command: value.command, args: value.args.map(String), env, ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}) }
   }
   if (value.transport !== "remote" || typeof value.url !== "string") return undefined
   const headers = stringRecord(value.headers)

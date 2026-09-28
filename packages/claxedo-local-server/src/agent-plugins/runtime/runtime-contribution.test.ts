@@ -45,8 +45,6 @@ async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
     app,
     contributions: [agentPluginWorkspaceRuntimeContribution({
       runtimeRoot: root,
-      codexHome: path.join(root, "codex"),
-      userHomeDirectory: path.join(root, "home"),
       ...(input.env ? { env: input.env } : {}),
     })],
     context: {
@@ -92,6 +90,42 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     expect(second.status).toBe(200)
     expect((await second.json() as { generationId: string }).generationId).toBe(applied.generationId)
     expect(applyHarnessLaunch).toHaveBeenCalledTimes(2)
+  })
+
+  test("an apply queued behind a failed apply runs its own request", async () => {
+    const { artifact, app, applyHarnessLaunch } = await fixture()
+    let fail!: (error: Error) => void
+    applyHarnessLaunch.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject }))
+    let bodyRead!: () => void
+    const secondBodyRead = new Promise<void>((resolve) => { bodyRead = resolve })
+    const post = (revision: number, observed?: () => void) => {
+      const bytes = new TextEncoder().encode(JSON.stringify({
+        version: 1,
+        identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+        revision,
+        selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+        artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+        mcpServers: [],
+      }))
+      const body = new ReadableStream<Uint8Array>({ pull(controller) {
+        controller.enqueue(bytes)
+        controller.close()
+        observed?.()
+      } })
+      return app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, { method: "POST", headers: { "content-type": "application/json" }, body, duplex: "half" } as RequestInit)
+    }
+    const first = post(1)
+    await vi.waitFor(() => expect(applyHarnessLaunch).toHaveBeenCalledTimes(1))
+    const second = post(2, bodyRead)
+    // Once its body is drained, the handler parses and queues the request in
+    // microtasks, all of which run before the next macrotask.
+    await secondBodyRead
+    await new Promise((resolve) => setImmediate(resolve))
+    fail(new Error("runtime refused the first launch"))
+    expect((await first).status).toBe(500)
+    const queued = await second
+    expect(queued.status).toBe(200)
+    expect(await queued.json()).toMatchObject({ ok: true, revision: 2 })
   })
 
   test("refuses bytes outside the exact selected digest set", async () => {

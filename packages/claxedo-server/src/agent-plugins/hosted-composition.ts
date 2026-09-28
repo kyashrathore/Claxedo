@@ -8,7 +8,10 @@ import {
   acpSessionMcpServers,
   runtimeMcpServers,
   type AcpRuntimeMcpServer,
+  type RuntimeMcpServerProjection,
 } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
+import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
+import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -32,6 +35,7 @@ import { hostedRuntimeFetch } from "../workspace/hosted-runtime-fetch"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { D1AgentPluginSourceStore } from "./sources/d1-store"
 import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cache"
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
@@ -56,6 +60,8 @@ import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
 import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
+
+const log = Log.create({ service: "hosted-agent-plugins" })
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
@@ -174,6 +180,29 @@ function secretBrokering(plane: HostedControlPlane) {
  * and authorization come from the same D1 authority every other hosted route
  * uses.
  */
+/**
+ * The ACP snapshot map a cloud root receives, built here from retained
+ * artifacts. Nothing is materialized on this side, so a server that needs the
+ * plugin's files is left out and logged rather than failing the delivery.
+ */
+export async function hostedAcpMcpServers(
+  workspaceId: string,
+  selections: readonly { pluginInstanceId: string; artifactDigest: ArtifactDigest; harnessIds: readonly string[] }[],
+  artifacts: Pick<AgentPluginArtifactStore, "get">,
+  mcpServers: readonly RuntimeMcpServerProjection[],
+): Promise<Record<string, AcpRuntimeMcpServer>> {
+  const plugins = await Promise.all(selections
+    .filter((selection) => selection.harnessIds.includes("acp"))
+    .map(async (selection) => {
+      const artifact = await artifacts.get(selection.artifactDigest)
+      if (!artifact) throw new Error(`Retained Agent Plugin artifact ${selection.artifactDigest} is unavailable`)
+      return { pluginInstanceId: selection.pluginInstanceId, artifactDigest: selection.artifactDigest, plugin: artifact.plugin }
+    }))
+  const projected = await acpSessionMcpServers(plugins, mcpServers)
+  if (projected.notApplied.length) log.warn("Agent Plugins MCP servers not applied to ACP connections", { workspaceId, notApplied: projected.notApplied })
+  return projected.servers
+}
+
 export function createHostedAgentPluginsComposition(input: {
   env: HostedAgentPluginsWorkerEnv
   plane: HostedControlPlane
@@ -369,14 +398,8 @@ export function createHostedAgentPluginsComposition(input: {
     const selections = plan.execution
       ? plan.execution.selections.filter((selection) => selection.contribution.kind === "plugin")
       : desiredAgentPluginSelections(snapshot)
-    const plugins = await Promise.all(selections
-      .filter((selection) => selection.harnessIds.includes("acp"))
-      .map(async (selection) => {
-        const artifact = await artifacts.get(selection.artifactDigest)
-        if (!artifact) throw new Error(`Retained Agent Plugin artifact ${selection.artifactDigest} is unavailable`)
-        return { pluginInstanceId: selection.pluginInstanceId, artifactDigest: selection.artifactDigest, plugin: artifact.plugin }
-      }))
-    return acpSessionMcpServers(plugins, runtimeMcpServers(plan.mcpServers, brokeredPlaceholderEnv(preparation?.secrets)))
+    return hostedAcpMcpServers(workspaceId, selections, artifacts,
+      runtimeMcpServers(plan.mcpServers, brokeredPlaceholderEnv(preparation?.secrets)))
   }
   const reconcile = async (_revision: number, auth?: SignedControlPlaneAuth) => {
     if (!auth || !input.pluginsChanged) return { state: "scheduled" as const }

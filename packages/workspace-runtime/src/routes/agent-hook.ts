@@ -528,6 +528,10 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
       if (raw !== undefined && (eventType === "Idle" || eventType === "Error") && previous?.eventType === eventType) {
         return c.json({ success: true, duplicate: true })
       }
+      if (providerEvent?.subagent && eventType === "Busy"
+        && !(previous?.pendingUserActions ?? []).includes(providerEvent.toolCompletion?.toolKey ?? null)) {
+        return c.json({ success: true, ignored: true })
+      }
       const settled = raw === undefined ? undefined : settlePendingUserActions({
         pending: previous?.pendingUserActions ?? [],
         eventType,

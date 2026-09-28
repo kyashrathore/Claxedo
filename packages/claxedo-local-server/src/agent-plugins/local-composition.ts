@@ -107,8 +107,8 @@ export function createLocalAgentPluginsComposition(
   const adapters = () => [
     openCodeAgentPluginAdapter(),
     claudeAgentPluginAdapter(),
-    codexAgentPluginAdapter({ codexHome: env.CODEX_HOME }),
-    cursorAgentPluginAdapter({ userHomeDirectory: env.HOME }),
+    codexAgentPluginAdapter(),
+    cursorAgentPluginAdapter(),
     acpAgentPluginAdapter(),
   ]
 
@@ -156,6 +156,7 @@ export function createLocalAgentPluginsComposition(
       }))
     })
     activeGeneration = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "local" },
       revision,
@@ -166,7 +167,7 @@ export function createLocalAgentPluginsComposition(
     appliedRevision = revision
   }
   const applyRevision = (revision: number) => {
-    current = current.then(() => apply(revision))
+    current = current.then(() => apply(revision), () => apply(revision))
     return current
   }
   const reconcile: AgentPluginReconcilePort = {
@@ -251,8 +252,9 @@ export function createLocalAgentPluginsComposition(
     builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
   })
   const runtimeContribution = async () => {
-    await current
-    await signedWork.catch(() => undefined)
+    // A failed apply belongs to the caller that asked for it; a snapshot read
+    // waits for queued work to settle and serves the last good generation.
+    await Promise.allSettled([current, signedWork])
     const generation = signedGeneration ?? activeGeneration
     return { harnessLaunch: agentPluginHarnessLaunch(generation), mcp: await agentPluginAcpMcp(generation) }
   }

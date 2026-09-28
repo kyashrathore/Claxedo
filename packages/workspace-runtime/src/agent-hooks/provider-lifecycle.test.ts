@@ -37,6 +37,22 @@ describe("provider lifecycle normalization", () => {
     expect(providerLifecycle({ hook_event_name: "Stop", background_tasks: [{ status: "completed" }] })?.eventType).toBe("Idle")
   })
 
+  test("a subagent's hooks never settle the terminal's turn, and its asks still wait on the person", () => {
+    for (const hook_event_name of ["Stop", "SubagentStop", "SubagentStart", "SessionEnd", "Interrupt", "StopFailure"]) {
+      expect(providerLifecycle({ hook_event_name, session_id: "codex-main", agent_id: "child-1" })).toBeUndefined()
+    }
+    expect(providerLifecycle({ hook_event_name: "PermissionRequest", session_id: "codex-main", agentId: "child-1" })?.eventType).toBe("UserActionRequired")
+    expect(providerLifecycle({ hook_event_name: "SubagentStop", session_id: "codex-main" })).toBeUndefined()
+    expect(providerLifecycle({ hook_event_name: "SubagentStart", session_id: "codex-main" })).toBeUndefined()
+    expect(providerLifecycle({ hook_event_name: "Stop", session_id: "codex-main", turn_id: "turn-1" })?.eventType).toBe("Idle")
+  })
+
+  test("a Codex question to the person waits for them, and other tools do not", () => {
+    const question = { hook_event_name: "PreToolUse", tool_name: "request_user_input", tool_input: { questions: [{ id: "q" }] } }
+    expect(providerLifecycle(question)).toMatchObject({ eventType: "UserActionRequired", userAction: { toolKey: JSON.stringify(question.tool_input) } })
+    expect(providerLifecycle({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } })).toBeUndefined()
+  })
+
   test("preserves JSON string contents and takes the final Codex input message", () => {
     const prompt = 'Use "quoted" names\\paths\nand unicode π'
     expect(providerLifecycle({ type: "agent-turn-complete", "thread-id": "thread", "input-messages": ["earlier", prompt], "last-assistant-message": prompt })).toMatchObject({

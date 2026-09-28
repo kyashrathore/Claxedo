@@ -25,7 +25,7 @@ import { acpGoalOperations } from "./extensions/goals"
 import { acpSteerOperations } from "./extensions/steer"
 import { acpAgentOperations } from "./extensions/agents"
 import { AcpConnectionHealth } from "./health"
-import { acpMcpServers } from "./projection"
+import { acpMcpProjection } from "./projection"
 import { acpCancelDeadline, acpQuiet, trackedAcpCancel } from "./cancellation"
 import { acpEffortCatalog, acpModelSelection } from "./options"
 import { acpPrepareTurnConfig } from "./sync"
@@ -143,7 +143,7 @@ export class AcpTransport implements HarnessTransport {
   }
 
   private mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[] {
-    return acpMcpServers(entry, this.services, this.connection, this.filterMcp)
+    return acpMcpProjection(entry, this.services, this.connection, this.filterMcp).servers
   }
 
   private delivery(entry: AcpEntry): AcpPromptDelivery {

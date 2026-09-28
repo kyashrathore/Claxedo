@@ -5,6 +5,8 @@ set -uo pipefail
 # Preserve the full provider payload and finish delivery before the next hook.
 # notify.sh bounds HTTP delivery to two seconds; status reporting does not
 # change the provider's tool decision.
+# ~/.gemini/settings.json is global; only a Claxedo tab reports status.
+[ -n "${CLAXEDO_TAB_ID:-}" ] || { printf '{}\n'; exit 0; }
 if [ ! -t 0 ]; then
   INPUT=$(cat)
   if [ -n "$INPUT" ]; then

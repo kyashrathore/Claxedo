@@ -1,4 +1,3 @@
-import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
 
 export type UserMcpServer = {
   type: "stdio" | "remote"
@@ -53,20 +52,4 @@ export const resolveUserMcp = (input: Record<string, UserMcpServer>) => {
     }
   }
   return out
-}
-
-
-/** Servers a config payload declares, parsed rather than asserted. */
-export function resolvedMcpServers(value: unknown): Record<string, ResolvedMcpServer> | undefined {
-  const servers = asRecord(value)
-  if (!servers) return undefined
-  return Object.fromEntries(
-    Object.entries(servers).flatMap(([name, server]) => (isResolvedMcpServer(server) ? [[name, server]] : [])),
-  )
-}
-
-function isResolvedMcpServer(value: unknown): value is ResolvedMcpServer {
-  if (!isRecord(value) || typeof value.name !== "string") return false
-  if (value.transport === "stdio") return typeof value.command === "string" && Array.isArray(value.args) && isRecord(value.env)
-  return value.transport === "remote" && typeof value.url === "string" && isRecord(value.headers)
 }

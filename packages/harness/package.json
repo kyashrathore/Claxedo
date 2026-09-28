@@ -88,7 +88,8 @@
     "@cursor/sdk": "1.0.24",
     "@opencode-ai/plugin": "0.0.0-beta-19271",
     "@opencode-ai/schema": "0.0.0-beta-19271",
-    "@opencode-ai/sdk": "0.0.0-beta-19271"
+    "@opencode-ai/sdk": "0.0.0-beta-19271",
+    "smol-toml": "1.7.1"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.115.0",

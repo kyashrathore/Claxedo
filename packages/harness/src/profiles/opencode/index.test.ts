@@ -10,3 +10,12 @@ test("OpenCode profile keeps the directory MCP catalog and projected skill roots
   expect(document.mcp.shared).toEqual({ type: "remote", url: "http://127.0.0.1:9000/mcp" })
   expect(document.mcp.claxedo).toBeUndefined()
 })
+
+test("OpenCode profile launches a local MCP server in its declared working directory", () => {
+  const projection = { generation: "g1", notApplied: [], pluginRoots: [], mcpServers: [
+    { origin: "plugin", name: "local", kind: "stdio", command: "/plugin/server", args: ["--data"], env: { MODE: "x" }, cwd: "/plugin/work" },
+  ] } as const
+  expect(openCodeLaunchDocument(projection, projection.mcpServers).mcp.local).toEqual({
+    type: "local", command: ["/plugin/server", "--data"], environment: { MODE: "x" }, cwd: "/plugin/work",
+  })
+})

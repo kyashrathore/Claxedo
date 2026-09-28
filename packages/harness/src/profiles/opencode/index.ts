@@ -6,6 +6,7 @@ function mcp(server: McpServerSpec): Mcp.ServerConfig {
   if (server.kind === "stdio") return {
     type: "local", command: [server.command, ...server.args ?? []],
     ...(server.env ? { environment: { ...server.env } } : {}),
+    ...(server.cwd ? { cwd: server.cwd } : {}),
   }
   return { type: "remote", url: server.url, ...(server.headers ? { headers: { ...server.headers } } : {}) }
 }

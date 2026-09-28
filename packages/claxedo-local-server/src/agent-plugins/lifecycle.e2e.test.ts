@@ -162,12 +162,16 @@ describe("local Agent Plugins lifecycle", () => {
 
     const cursorRoots = pluginRoots(launch, "cursor").map((plugin) => plugin.root)
     expect(cursorRoots).toHaveLength(1)
-    expect(cursorRoots[0]).toContain(path.join(root, "home", ".cursor", "plugins", "local", "claxedo--"))
+    expect(cursorRoots[0]).toContain(path.join("harnesses", "cursor", "code-review-"))
     await expect(fs.readFile(path.join(cursorRoots[0], "plugin.json"), "utf8")).resolves.toContain("code-review")
 
-    expect(pluginRoots(launch, "codex")).toHaveLength(1)
-    await expect(fs.readFile(path.join(root, "codex-home", "config.toml"), "utf8"))
+    const codexRoots = pluginRoots(launch, "codex")
+    expect(codexRoots).toHaveLength(1)
+    await expect(fs.readFile(path.join(codexRoots[0].root, ".codex-plugin", "plugin.json"), "utf8"))
       .resolves.toContain("code-review")
+    await expect(fs.stat(path.join(root, "codex-home", "config.toml"))).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(fs.stat(path.join(root, "home", ".cursor"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect(launch.opencode.mcpServers).toEqual([expect.objectContaining({ origin: "plugin", kind: "http", name: expect.stringContaining("docs") })])
 
     // No projection may point back at the mutable catalog source.
     expect(JSON.stringify(launch)).not.toContain(collection)

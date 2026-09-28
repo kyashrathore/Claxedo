@@ -28,18 +28,16 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
     force = false,
     wrappers,
     replaceWrappers = false,
-    codexNativeHooks = process.env.CLAXEDO_CODEX_NATIVE_HOOKS !== "0",
   } = options
 
   log.info("Setting up agent hooks", { port, force })
 
-  const manifest = await setupStatusHooks({ port, force, wrappers, replaceWrappers, codexNativeHooks })
+  const manifest = await setupStatusHooks({ port, force, wrappers, replaceWrappers })
   const results = await materializeAgentHooks({
     homeDir: userHomeDir(),
     notifyPath: manifest.files.notify,
     geminiHookPath: manifest.files.geminiHook,
     cursorHookPath: manifest.files.cursorHook,
-    codexNativeHooks,
     force,
   })
   for (const result of results) {

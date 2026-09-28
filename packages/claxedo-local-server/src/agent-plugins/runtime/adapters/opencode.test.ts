@@ -12,7 +12,7 @@ afterEach(async () => {
 })
 
 describe("OpenCode Agent Plugins projection", () => {
-  test("generates module-owned skill and MCP config with expanded standard placeholders", async () => {
+  test("projects canonical skill roots and MCP entries with resolved relative paths", async () => {
     const generationRoot = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-opencode-view-"))
     roots.push(generationRoot)
     const root = path.join(generationRoot, "plugins", "review")
@@ -44,12 +44,11 @@ describe("OpenCode Agent Plugins projection", () => {
 
     expect(validated.diagnostics).toContainEqual(expect.objectContaining({ code: "skill_invalid", path: "skills/broken/SKILL.md" }))
     expect(projection.pluginRoots[0].skillNames).toEqual(["review"])
-    const config = JSON.parse(await fs.readFile(projection.configFile!, "utf8"))
-    expect(config.skills).toEqual([path.join(root, "skills", "review")])
-    expect(Object.values(config.mcp)).toEqual([{
-      type: "local",
-      command: ["./bin/server", `${dataRoot}/state`],
-      cwd: root,
+    expect(projection.mcpServers).toEqual([{
+      kind: "stdio", origin: "plugin", name: expect.stringMatching(/^review-.*-local$/),
+      command: path.join(root, "bin", "server"), args: [`${dataRoot}/state`], cwd: root,
     }])
+    expect(projection.notApplied).toEqual([])
+    await expect(fs.stat(path.join(generationRoot, "harnesses/opencode/opencode.json"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 })

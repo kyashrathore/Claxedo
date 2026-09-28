@@ -16,8 +16,10 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { execFile } from "child_process"
+import { createHash } from "crypto"
 import { createServer, Server } from "http"
-import { generateNotifyScript, generateGeminiHook } from "./agent-hooks/core/hooks"
+import { fileURLToPath } from "url"
+import { generateClaudeHookSettings, generateNotifyScript, generateGeminiHook } from "./agent-hooks/core/hooks"
 import { generateClaudeWrapper } from "./agent-hooks/core/wrappers"
 import { AgentHookRoutes } from "./routes/agent-hook"
 import { Pty } from "./pty/index"
@@ -38,6 +40,7 @@ describe("agent-hooks real-world execution", () => {
   let notifyPath: string
   let mockServer: Server
   let lastEvent: any = null
+  const received: any[] = []
   let serverPort: number
   const ptyGet = spyOn(Pty, "get").mockImplementation((id) => id
     ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
@@ -65,6 +68,7 @@ describe("agent-hooks real-world execution", () => {
             method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body,
           })
           lastEvent = await response.json()
+          received.push(lastEvent)
           res.writeHead(response.status, { "Content-Type": "application/json" })
           res.end(JSON.stringify(lastEvent))
         })
@@ -84,7 +88,9 @@ describe("agent-hooks real-world execution", () => {
     notifyPath = path.join(hooksDir, "notify.sh")
     await fs.writeFile(notifyPath, generateNotifyScript(serverPort), { mode: 0o755 })
     await fs.writeFile(path.join(hooksDir, "gemini-hook.sh"), generateGeminiHook(notifyPath), { mode: 0o755 })
-    await fs.writeFile(path.join(binDir, "claude"), generateClaudeWrapper(notifyPath), { mode: 0o755 })
+    const claudeSettings = path.join(hooksDir, "claude-settings.json")
+    await fs.writeFile(claudeSettings, generateClaudeHookSettings(notifyPath))
+    await fs.writeFile(path.join(binDir, "claude"), generateClaudeWrapper(notifyPath, claudeSettings), { mode: 0o755 })
   })
 
   afterAll(async () => {
@@ -228,4 +234,40 @@ describe("agent-hooks real-world execution", () => {
       tabId: "claude-tab-clean",
     })
   })
+
+  it("a real Claude CLI in a Claxedo terminal runs its lifecycle hooks from --settings without touching ~/.claude", async () => {
+    const sdk = path.dirname(fileURLToPath(import.meta.resolve("@anthropic-ai/claude-agent-sdk")))
+    const realClaude = path.join(sdk, "..", `claude-agent-sdk-${process.platform}-${process.arch}`, "claude")
+    const home = path.join(rootDir, "person")
+    const personalClaude = path.join(home, ".claude")
+    await fs.mkdir(personalClaude, { recursive: true })
+    await fs.writeFile(path.join(personalClaude, "settings.json"), '{"theme":"dark"}\n')
+    const settingsHash = async () => createHash("sha256").update(await fs.readFile(path.join(personalClaude, "settings.json"))).digest("hex")
+    const before = await settingsHash()
+    const realBin = path.join(rootDir, "real-claude-bin")
+    await fs.mkdir(realBin, { recursive: true })
+    await fs.symlink(realClaude, path.join(realBin, "claude"))
+    received.splice(0)
+
+    const result = await runShell("bash", [path.join(binDir, "claude"), "-p", "hello"], {
+      env: {
+        PATH: `${realBin}:/usr/bin:/bin`,
+        HOME: home,
+        ANTHROPIC_API_KEY: "sk-hook-test",
+        ANTHROPIC_BASE_URL: `http://127.0.0.1:${serverPort}`,
+        CLAXEDO_TAB_ID: "real-claude-tab",
+        CLAXEDO_TERMINAL_ID: "real-claude-terminal",
+        CLAXEDO_PORT: String(serverPort),
+      },
+      timeout: 60_000,
+    })
+
+    const hookEvents = () => received.filter((event) => event?.tabId === "real-claude-tab")
+    for (let attempt = 0; hookEvents().length < 2 && attempt < 200; attempt++) {
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    expect(result.status).not.toBe(0)
+    expect(hookEvents().map((event) => event.eventType)).toContain("Busy")
+    expect(await settingsHash()).toBe(before)
+  }, 90_000)
 })

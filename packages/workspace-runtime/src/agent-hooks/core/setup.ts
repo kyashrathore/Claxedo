@@ -10,10 +10,9 @@ import * as path from "path"
 import { Log } from "../../log"
 import {
   CLAXEDO_DIR,
-  CODEX_LOG_WATCHER,
-  CODEX_NOTIFY,
-  COPILOT_HOOK,
+  CLAUDE_HOOK_SETTINGS,
   CURSOR_HOOK,
+  COPILOT_HOOK,
   GEMINI_HOOK,
   NOTIFY_SCRIPT,
   SHIMMED_BINARIES,
@@ -21,10 +20,9 @@ import {
 } from "./constants"
 import { writeIfChanged } from "./utils"
 import {
-  generateCodexLogWatcher,
-  generateCodexNotify,
-  generateCopilotHook,
+  generateClaudeHookSettings,
   generateCursorHook,
+  generateCopilotHook,
   generateGeminiHook,
   generateNotifyScript,
 } from "./hooks"
@@ -47,7 +45,6 @@ export interface StatusHooksSetupOptions {
   force?: boolean
   wrappers?: string[]
   replaceWrappers?: boolean
-  codexNativeHooks?: boolean
 }
 
 export interface StatusHooksManifest {
@@ -60,8 +57,7 @@ export interface StatusHooksManifest {
   }
   files: {
     notify: string
-    codexNotify: string
-    codexWatcher: string
+    claudeSettings: string
     geminiHook: string
     cursorHook: string
     copilotHook: string
@@ -80,8 +76,7 @@ export function createStatusHooksManifest(root = CLAXEDO_DIR): StatusHooksManife
     dirs: { root, bin, hooks, shell, bash },
     files: {
       notify: path.join(hooks, NOTIFY_SCRIPT),
-      codexNotify: path.join(hooks, CODEX_NOTIFY),
-      codexWatcher: path.join(hooks, CODEX_LOG_WATCHER),
+      claudeSettings: path.join(hooks, CLAUDE_HOOK_SETTINGS),
       geminiHook: path.join(hooks, GEMINI_HOOK),
       cursorHook: path.join(hooks, CURSOR_HOOK),
       copilotHook: path.join(hooks, COPILOT_HOOK),
@@ -98,7 +93,6 @@ export async function writeStatusHooksArtifacts(
     force = false,
     wrappers,
     replaceWrappers = false,
-    codexNativeHooks = false,
   } = options
 
   await fs.promises.mkdir(manifest.dirs.bin, { recursive: true, mode: 0o755 })
@@ -107,32 +101,20 @@ export async function writeStatusHooksArtifacts(
   await fs.promises.mkdir(manifest.dirs.bash, { recursive: true, mode: 0o755 })
 
   await writeIfChanged(manifest.files.notify, generateNotifyScript(port), 0o755, force)
-  if (!codexNativeHooks) {
-    await writeIfChanged(manifest.files.codexWatcher, generateCodexLogWatcher(manifest.files.notify), 0o755, force)
-    await writeIfChanged(
-      manifest.files.codexNotify,
-      generateCodexNotify(manifest.files.notify, manifest.files.codexWatcher),
-      0o755,
-      force,
-    )
-  }
   await writeIfChanged(manifest.files.geminiHook, generateGeminiHook(manifest.files.notify), 0o755, force)
   await writeIfChanged(manifest.files.cursorHook, generateCursorHook(manifest.files.notify), 0o755, force)
+  await writeIfChanged(manifest.files.claudeSettings, generateClaudeHookSettings(manifest.files.notify), 0o644, force)
   await writeIfChanged(manifest.files.copilotHook, generateCopilotHook(manifest.files.notify), 0o755, force)
 
   await writeIfChanged(
     path.join(manifest.dirs.bin, "claude"),
-    generateClaudeWrapper(manifest.files.notify),
+    generateClaudeWrapper(manifest.files.notify, manifest.files.claudeSettings),
     0o755,
     force,
   )
   await writeIfChanged(
     path.join(manifest.dirs.bin, "codex"),
-    generateCodexWrapper({
-      notifyPath: codexNativeHooks ? manifest.files.notify : manifest.files.codexNotify,
-      watcherPath: manifest.files.codexWatcher,
-      native: codexNativeHooks,
-    }),
+    generateCodexWrapper(manifest.files.notify),
     0o755,
     force,
   )
@@ -201,6 +183,7 @@ export function isStatusHooksSetupComplete(): boolean {
   const manifest = createStatusHooksManifest()
   const required = [
     manifest.files.notify,
+    manifest.files.claudeSettings,
     manifest.files.geminiHook,
     manifest.files.cursorHook,
     manifest.files.copilotHook,

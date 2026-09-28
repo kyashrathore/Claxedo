@@ -132,7 +132,7 @@ test("a change the running turn's harness also reads is applied rather than held
 
   // Not projection-only: the MCP map changed too, and holding that back would
   // leave the apply claiming a server the runtime never handed over.
-  const mcp = { docs: { name: "docs", transport: "stdio", command: "docs", args: [], env: {} } }
+  const mcp = { docs: { name: "docs", source: "user", transport: "stdio", command: "docs", args: [], env: {} } }
   await f.host.apply(snapshot("first", mcp))
 
   expect(f.host.detail().configApply?.state).toBe("applied")
@@ -152,7 +152,7 @@ test("a rotation the harness refuses mid-turn fails the apply rather than being 
 
   // The placeholder AND the MCP map move together, so nothing can be held back
   // and the harness is asked to rotate while it is talking to the process.
-  await expect(f.host.apply(snapshot("renewed", { docs: { name: "docs", transport: "stdio", command: "docs", args: [], env: {} } }))).rejects.toThrow("refused")
+  await expect(f.host.apply(snapshot("renewed", { docs: { name: "docs", source: "user", transport: "stdio", command: "docs", args: [], env: {} } }))).rejects.toThrow("refused")
   expect(f.host.detail().configApply).toMatchObject({ state: "failed", error: { code: "runtime_config_refused" } })
 
   f.release()

@@ -10,7 +10,7 @@ const log = Log.create({ service: "agent-hooks" })
 
 export function loadTemplate(name: TemplateName, vars: Record<string, string>): string {
   return Object.entries(vars).reduce(
-    (content, [key, value]) => content.replaceAll(`{{${key}}}`, value),
+    (content, [key, value]) => content.replaceAll(`{{${key}}}`, () => value),
     templates[name],
   )
 }

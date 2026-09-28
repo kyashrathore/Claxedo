@@ -38,159 +38,34 @@ async function plugin(root: string, instanceId: string) {
 }
 
 describe("codexAgentPluginAdapter", () => {
-  test("resolves the suite's default Codex home before projecting an empty generation", async () => {
-    const generationRoot = await temporary("claxedo-codex-default-generation-")
-    await codexAgentPluginAdapter().project({ generationRoot, plugins: [] })
-    const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
-    await expect(fs.readFile(path.join(codexHome, "config.toml"), "utf8")).resolves.toBe("")
+  test("an empty generation needs no personal Codex configuration", async () => {
+    const generationRoot = await temporary("claxedo-codex-empty-")
+    expect(await codexAgentPluginAdapter().project({ generationRoot, plugins: [] })).toEqual({ harnessId: "codex", pluginRoots: [], mcpServers: [], notApplied: [] })
   })
 
-  test("generates a Codex local marketplace over the retained generation", async () => {
+  test("projects Codex metadata and MCP into the generation for the profile's sole marketplace writer", async () => {
     const generationRoot = await temporary("claxedo-codex-generation-")
-    const codexHome = await temporary("claxedo-codex-home-")
-    const retainedRoot = path.join(generationRoot, "plugins", "review-retained")
-    const adapter = codexAgentPluginAdapter({ codexHome })
-    const projected = await adapter.project({
-      generationRoot,
-      plugins: [await plugin(retainedRoot, "claxedo-review")],
-    })
-
-    const projectedRoot = projected.pluginRoots[0].root
-    expect(JSON.parse(await fs.readFile(path.join(generationRoot, ".agents", "plugins", "marketplace.json"), "utf8")))
-      .toEqual({
-        name: "claxedo-agent-plugins",
-        plugins: [{
-          name: "review",
-          source: {
-            source: "local",
-            path: `./${path.relative(generationRoot, projectedRoot).split(path.sep).join("/")}`,
-          },
-        }],
-      })
-    expect(JSON.parse(await fs.readFile(projected.configFile!, "utf8"))).toEqual({
-      marketplace: {
-        name: "claxedo-agent-plugins",
-        source: generationRoot,
-      },
-      plugins: ["review@claxedo-agent-plugins"],
-    })
-    expect(projected.pluginRoots).toEqual([{
-      pluginInstanceId: "claxedo-review",
-      root: projectedRoot,
-      dataRoot: path.join(generationRoot, "plugins", "data", "claxedo-review"),
-      skillNames: [],
-    }])
-    expect(projectedRoot.startsWith(path.join(generationRoot, "harnesses", "codex", "plugins"))).toBe(true)
-    expect(projectedRoot).not.toBe(retainedRoot)
-    expect(await fs.readFile(path.join(codexHome, "config.toml"), "utf8")).toBe([
-      "# BEGIN CLAXEDO AGENT PLUGINS",
-      "[marketplaces.claxedo-agent-plugins]",
-      'source_type = "local"',
-      `source = ${JSON.stringify(generationRoot)}`,
-      "",
-      '[plugins."review@claxedo-agent-plugins"]',
-      "enabled = true",
-      "",
-      "# END CLAXEDO AGENT PLUGINS",
-      "",
-    ].join("\n"))
-    await expect(fs.stat(path.join(codexHome, "claxedo-agent-plugins.config.toml")))
-      .rejects.toMatchObject({ code: "ENOENT" })
-    await expect(fs.readFile(path.join(
-      codexHome,
-      "plugins",
-      "cache",
-      "claxedo-agent-plugins",
-      "review",
-      "1.0.0",
-      "plugin.json",
-    ), "utf8")).resolves.toContain('"name":"review"')
-    expect(JSON.parse(await fs.readFile(path.join(
-      codexHome,
-      "plugins",
-      "cache",
-      "claxedo-agent-plugins",
-      "review",
-      "1.0.0",
-      ".mcp.json",
-    ), "utf8"))).toEqual({
-      mcpServers: {
-        review: {
-          type: "http",
-          url: "https://review.example/mcp",
-        },
-      },
-    })
-    expect(JSON.parse(await fs.readFile(path.join(
-      codexHome,
-      "plugins",
-      "cache",
-      "claxedo-agent-plugins",
-      "review",
-      "1.0.0",
-      ".codex-plugin",
-      "plugin.json",
-    ), "utf8"))).toEqual({
-      name: "review",
-      version: "1.0.0",
-      mcpServers: "./.mcp.json",
-    })
-
-    const disabled = await adapter.project({ generationRoot, plugins: [] })
-    expect(JSON.parse(await fs.readFile(disabled.configFile!, "utf8"))).toEqual({})
-    expect(await fs.readFile(path.join(codexHome, "config.toml"), "utf8")).toBe("")
+    const retainedRoot = path.join(generationRoot, "plugins", "review")
+    const retained = await plugin(retainedRoot, "claxedo-review")
+    const projected = await codexAgentPluginAdapter().project({ generationRoot, plugins: [retained] })
+    const root = projected.pluginRoots[0].root
+    expect(projected.pluginRoots).toEqual([{ pluginInstanceId: "claxedo-review", root, dataRoot: retained.dataRoot, skillNames: [] }])
+    expect(root.startsWith(path.join(generationRoot, "harnesses", "codex", "plugins"))).toBe(true)
+    expect(root).not.toBe(retainedRoot)
+    expect(JSON.parse(await fs.readFile(path.join(root, ".codex-plugin/plugin.json"), "utf8"))).toEqual({ name: "review", version: "1.0.0", mcpServers: "./.mcp.json" })
+    expect(JSON.parse(await fs.readFile(path.join(root, ".mcp.json"), "utf8"))).toEqual({ mcpServers: { review: { type: "http", url: "https://review.example/mcp" } } })
+    await expect(fs.stat(path.join(generationRoot, ".agents/plugins/marketplace.json"))).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(fs.stat(path.join(generationRoot, "harnesses/codex/launch.json"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect((await codexAgentPluginAdapter().project({ generationRoot, plugins: [] })).pluginRoots).toEqual([])
+    expect(await fs.readFile(path.join(retainedRoot, "mcp.json"), "utf8")).toContain("streamable-http")
   })
 
-  test("preserves unmanaged Codex config while replacing its owned activation block", async () => {
+  test("same-name instances remain separate roots for the profile to validate", async () => {
     const generationRoot = await temporary("claxedo-codex-generation-")
-    const codexHome = await temporary("claxedo-codex-home-")
-    await fs.writeFile(path.join(codexHome, "config.toml"), [
-      'model = "gpt-5"',
-      "",
-      "# BEGIN CLAXEDO AGENT PLUGINS",
-      '[plugins."old@claxedo-agent-plugins"]',
-      "enabled = true",
-      "",
-      "# END CLAXEDO AGENT PLUGINS",
-      "",
-      "[features]",
-      "web_search = true",
-      "",
-    ].join("\n"))
-
-    await codexAgentPluginAdapter({ codexHome }).project({
-      generationRoot,
-      plugins: [await plugin(path.join(generationRoot, "plugins", "review"), "claxedo-review")],
-    })
-
-    expect(await fs.readFile(path.join(codexHome, "config.toml"), "utf8")).toBe([
-      'model = "gpt-5"',
-      "",
-      "[features]",
-      "web_search = true",
-      "",
-      "# BEGIN CLAXEDO AGENT PLUGINS",
-      "[marketplaces.claxedo-agent-plugins]",
-      'source_type = "local"',
-      `source = ${JSON.stringify(generationRoot)}`,
-      "",
-      '[plugins."review@claxedo-agent-plugins"]',
-      "enabled = true",
-      "",
-      "# END CLAXEDO AGENT PLUGINS",
-      "",
-    ].join("\n"))
-  })
-
-  test("fails explicitly when Codex cannot represent two active same-name plugins", async () => {
-    const generationRoot = await temporary("claxedo-codex-generation-")
-    const codexHome = await temporary("claxedo-codex-home-")
-    await expect(codexAgentPluginAdapter({ codexHome }).project({
-      generationRoot,
-      plugins: [
-        await plugin(path.join(generationRoot, "plugins", "one"), "personal-review"),
-        await plugin(path.join(generationRoot, "plugins", "two"), "org-review"),
-      ],
-    })).rejects.toThrow("cannot activate two plugins named")
+    const projected = await codexAgentPluginAdapter().project({ generationRoot, plugins: [
+      await plugin(path.join(generationRoot, "plugins/one"), "personal-review"),
+      await plugin(path.join(generationRoot, "plugins/two"), "org-review"),
+    ] })
+    expect(new Set(projected.pluginRoots.map((item) => item.root)).size).toBe(2)
   })
 })

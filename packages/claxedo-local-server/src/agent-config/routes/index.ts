@@ -6,7 +6,6 @@ import { agentConfigCommandRoutes } from "./command-routes"
 import { agentConfigHarnessRoutes } from "./harness-routes"
 import { sandboxJson } from "../sandbox-json"
 import { localAgentConfigAllowed } from "../local-auth"
-import { agentConfigMcpRoutes } from "./mcp-routes"
 import { agentConfigProviderRoutes } from "./provider-routes"
 import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptions } from "./harness-routes"
@@ -16,7 +15,6 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
     .route("/", agentConfigProviderRoutes(options))
     .route("/", agentConfigConnectionRoutes(options))
     .route("/", agentConfigHarnessRoutes(options))
-    .route("/", agentConfigMcpRoutes(options))
     .route("/", agentConfigCommandRoutes(options))
 
     .get("/", async (c) => {

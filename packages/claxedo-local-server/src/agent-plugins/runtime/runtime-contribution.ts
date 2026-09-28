@@ -183,8 +183,6 @@ export async function runtimeArtifactStore(rows: AgentPluginRuntimeApplyRequest[
 /** Enabled VM image contribution. Disabled images do not import this file. */
 export function agentPluginWorkspaceRuntimeContribution(input: {
   runtimeRoot?: string
-  codexHome?: string
-  userHomeDirectory?: string
   env?: NodeJS.ProcessEnv
 } = {}): WorkspaceRuntimeRouteContribution {
   return {
@@ -213,7 +211,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
           ? { mode: "selected", selectionHash: body.execution.selectionHash }
           : { mode: "default" }
         const acknowledged = execution.mode === "selected" ? { selectionHash: execution.selectionHash } : {}
-        apply = apply.then(async () => {
+        const run = async (): Promise<AgentPluginRuntimeApplyResponse> => {
           const active = await readMaterializedAgentPluginGeneration(runtimeRoot)
           if (active?.revision === body.revision) {
             // An activation revision does not change when a root asks for a
@@ -246,19 +244,19 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             adapters: [
               openCodeAgentPluginAdapter(),
               claudeAgentPluginAdapter(),
-              codexAgentPluginAdapter({ codexHome: input.codexHome }),
-              cursorAgentPluginAdapter({ userHomeDirectory: input.userHomeDirectory }),
+              codexAgentPluginAdapter(),
+              cursorAgentPluginAdapter(),
               acpAgentPluginAdapter(),
             ],
           })
           const harnessLaunch = agentPluginHarnessLaunch(generation)
           await context.applyHarnessLaunch(harnessLaunch)
           return { ok: true, generationId: generation.generationId, revision: generation.revision, ...acknowledged, harnessLaunch }
-        })
+        }
+        apply = apply.then(run, run)
         try {
           return c.json(await apply)
         } catch (cause) {
-          apply = Promise.resolve(undefined)
           const conflict = cause instanceof AgentPluginMaterializationError && cause.code === "stale-revision"
           return c.json({
             error: {

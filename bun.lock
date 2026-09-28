@@ -334,7 +334,6 @@
         "@lydell/node-pty": "catalog:",
         "better-sqlite3": "13.0.1",
         "hono": "4.12.34",
-        "smol-toml": "1.7.1",
         "tokentracker-cli": "0.91.0",
         "zod": "4.4.3",
       },
@@ -563,6 +562,7 @@
         "@opencode-ai/plugin": "0.0.0-beta-19271",
         "@opencode-ai/schema": "0.0.0-beta-19271",
         "@opencode-ai/sdk": "0.0.0-beta-19271",
+        "smol-toml": "1.7.1",
       },
       "devDependencies": {
         "@anthropic-ai/sdk": "0.115.0",

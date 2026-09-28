@@ -14,7 +14,7 @@ export function nativeAgentPluginAdapter(harnessId: AgentPluginHarnessId): Agent
           dataRoot: plugin.dataRoot,
           skillNames: plugin.plugin.skills.map((skill) => skill.name),
         })),
-        diagnostics: [],
+        mcpServers: [], notApplied: [],
       }
     },
   }
