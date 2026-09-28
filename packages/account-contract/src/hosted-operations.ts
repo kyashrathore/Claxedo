@@ -251,8 +251,8 @@ export const HOSTED_OPERATIONS = {
   "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
   // Main-only like the enrollment pair: the route renames any enrollment the
   // owner holds, and the renderer's route is the connector's own `rename` IPC,
-  // which carries a name and no id. Declared here because this registry and
-  // main's table are held equal by `account-port.guard.test.ts`.
+  // which carries a name and no id. Declared here because main's table and
+  // this registry are both typed against every `HostedOperationName`.
   "host.renameCurrentMachine": { safe: false, decode: withStrings("enrollment_id", "display_name") },
   // Workspace placement under machine-wide enrollment: the owner names the
   // host a workspace runs on (pure data — the machine's consent is the Host
