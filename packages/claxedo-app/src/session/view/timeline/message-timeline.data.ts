@@ -260,7 +260,7 @@ export namespace Timeline {
 
     if (error && !interrupted) {
       const data = error.data?.message
-      const raw = typeof data === "string" ? data : data === undefined || data === null ? "" : String(data)
+      const raw = typeof data === "string" ? data : data === undefined || data === null ? "" : isRecord(data) ? JSON.stringify(data) : String(data)
       const message = unwrapErrorMessage(stripRelayPrefix(raw).message)
       const rawBody = readField(error.data, "responseBody")
       const body = typeof rawBody === "string" ? rawBody.trim() : ""
