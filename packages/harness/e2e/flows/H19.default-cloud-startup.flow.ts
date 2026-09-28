@@ -4,7 +4,7 @@ import { startCloudProductHost } from "../harness/cloud-product-host"
 import { frameType, openEventStream } from "../harness/stream"
 
 export async function run() {
-  const host = await startCloudProductHost("pi")
+  const host = await startCloudProductHost("pi", { accountOwner: "user_h19_owner" })
   try {
     const health = await fetch(`${host.url}/api/wr/health`)
     assert.equal(health.status, 200)
@@ -12,9 +12,15 @@ export async function run() {
       "C-9: the product host did not read the driver's startup harness key")
     const stream = await openEventStream(host.url, host.directory)
     try {
-      const created = await fetch(`${host.url}/session?directory=${encodeURIComponent(host.directory)}`, {
+      const create = () => fetch(`${host.url}/session?directory=${encodeURIComponent(host.directory)}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "H19 default" }),
       })
+      const unprovisioned = await create()
+      const refusal = await unprovisioned.text()
+      assert.equal(unprovisioned.status, 409, `a cloud session started before its owner's account arrived: ${refusal}`)
+      assert.equal((JSON.parse(refusal) as { error?: { code?: string } }).error?.code, "account_unavailable")
+      await host.provisionOwnerAccount()
+      const created = await create()
       const body = await created.text()
       assert.equal(created.status, 201, `H19 default session failed: ${body}`)
       const session = JSON.parse(body) as { id: string }

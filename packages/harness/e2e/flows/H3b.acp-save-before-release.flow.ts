@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
-import { ApiError, ClaxedoApi } from "../harness/api"
+import { ClaxedoApi } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { readPermissionReceipts } from "../harness/acp/receipts"
 import { acpScriptToken } from "../harness/acp/script"
-import { refusePermissionReplySave } from "../harness/refuse-permission-save"
+import { refusePermissionReplySave, refusedAsUnsaved } from "../harness/refuse-permission-save"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 
@@ -27,11 +27,7 @@ export async function run() {
     assert.ok(stream.frames.some((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === session.id))
     restore = await refusePermissionReplySave(stack.dataDir, session.id)
     await assert.rejects(() => api.replyPermission(directory, session.id, request.id, "once"),
-      (error: unknown) => {
-        if (!(error instanceof ApiError)) return false
-        console.log(`H3b ACP save refusal: HTTP ${error.status}`)
-        return error.status === 500
-      })
+      (error: unknown) => refusedAsUnsaved(error, "H3b ACP"))
     await Bun.sleep(100)
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), [],
       "H-3: ACP released the permission answer to the agent before saving the reply")

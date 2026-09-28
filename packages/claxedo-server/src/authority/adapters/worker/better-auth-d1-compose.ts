@@ -45,6 +45,7 @@ import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platf
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
+import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
 
 type BetterAuthD1AuthorityEnv = {
   CLAXEDO_ADAPTER_PROFILE: "better-auth-d1"
@@ -245,6 +246,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         settings,
         credentials: plane.orgCredentials,
         signingEnv: input.env,
+        provisionedRunner: provisionedRunner(input.env),
       })
     : undefined
 

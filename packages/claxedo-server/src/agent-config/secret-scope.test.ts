@@ -68,8 +68,8 @@ describe("runtime config secret scoping", () => {
       },
     })
 
-    const sharedSnapshot = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a" })
-    const localSnapshot = await getRuntimeConfigSnapshot(undefined, { orgId: "org-a" })
+    const sharedSnapshot = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-a" })
+    const localSnapshot = await getRuntimeConfigSnapshot({ orgId: "org-a" })
 
     expect(sharedSnapshot.auth).toEqual({ machineOwnerUserId: "", accounts: {} })
     expect(localSnapshot.auth).toEqual({ machineOwnerUserId: "", accounts: {} })
@@ -105,8 +105,8 @@ describe("runtime config secret scoping", () => {
       },
     })
 
-    const local = await getRuntimeConfigSnapshot(undefined, { orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
-    const shared = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" })
+    const local = await getRuntimeConfigSnapshot({ orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
+    const shared = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" })
 
     expect(local.auth.accounts.local).toEqual({ "claude-sdk": projection })
     expect(shared.auth.accounts.local).toEqual({})
@@ -125,8 +125,8 @@ describe("runtime config secret scoping", () => {
     await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({ projectAuth: selfHostedCredentialAuthority() })
 
-    const own = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native", sandboxOwner: "local" })
-    const foreign = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "native", sandboxOwner: "local" })
+    const own = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native", sandboxOwner: "local" })
+    const foreign = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "native", sandboxOwner: "local" })
 
     expect(own.auth.accounts.local).toEqual({
       "claude-sdk": {

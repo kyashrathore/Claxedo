@@ -1910,7 +1910,7 @@ describe("workspace-supervisor", () => {
 
       await supervisor.ensureSupervisorSandbox("ws-hosted-config")
 
-      expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith(undefined, {
+      expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith({
         secretScope: "shared",
         workspaceDir: "/remote/app",
         workspaceId: "ws-hosted-config",
@@ -1931,6 +1931,17 @@ describe("workspace-supervisor", () => {
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_ISSUER).toBe("claxedo-control-plane")
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE).toBe("supervisor-backplane")
       expect(env.CLAXEDO_RELAY_JWKS_URL).toBeUndefined()
+    })
+
+    test("a sandbox provisioned with a runner is pushed it as the default", async () => {
+      store.set("ws-runner", workspace("ws-runner"))
+      process.env.CLAXEDO_RUNTIME_RUNNER = "pi"
+      try {
+        await supervisor.ensureSupervisorSandbox("ws-runner")
+      } finally {
+        delete process.env.CLAXEDO_RUNTIME_RUNNER
+      }
+      expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws-runner", provisionedRunner: "pi" }))
     })
 
     test("a daytona sandbox boots on the host identity its lease routes on, not its provider resource id", async () => {

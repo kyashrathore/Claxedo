@@ -161,6 +161,31 @@ export function explicitDefaultHarness(input: {
   return input.defaultHarness
 }
 
+/** The native harness every sandbox this deployment provisions boots with, and every config push keeps as the default. */
+export function provisionedRunner(env: Record<string, string | undefined>): RuntimeNativeHarnessId | undefined {
+  const runner = env.CLAXEDO_RUNTIME_RUNNER?.trim()
+  if (!runner) return undefined
+  if (!isNativeHarnessId(runner)) throw new Error(`Unsupported CLAXEDO_RUNTIME_RUNNER: ${runner}`)
+  return runner
+}
+
+export function provisionedRunnerOption(env: Record<string, string | undefined>): { nativeHarness?: RuntimeNativeHarnessId } {
+  const runner = provisionedRunner(env)
+  return runner ? { nativeHarness: runner } : {}
+}
+
+/**
+ * The default a runtime snapshot carries. A snapshot replaces the runtime's
+ * default outright, so an owner who never chose one is pushed the runner the
+ * sandbox was provisioned with; pushing none would erase it.
+ */
+export function snapshotDefaultHarness(
+  input: Parameters<typeof explicitDefaultHarness>[0],
+  provisionedRunner: RuntimeNativeHarnessId | undefined,
+): RuntimeHarnessSelection | undefined {
+  return explicitDefaultHarness(input) ?? (provisionedRunner ? { kind: "native", harnessId: provisionedRunner } : undefined)
+}
+
 function descriptorCandidate(
   mapKey: string,
   row: Record<string, unknown>,

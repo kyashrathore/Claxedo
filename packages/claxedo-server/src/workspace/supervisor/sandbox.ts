@@ -56,6 +56,7 @@ import {
 import { now, runtimeBackoffMs, sleep } from "./clock"
 import type { WorkspaceRuntimeState } from "./store"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { provisionedRunnerOption } from "@claxedo/server-core/agent-config/connections"
 
 const log = Log.create({ service: "workspace-supervisor" })
 
@@ -596,7 +597,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...provisionedRunnerOption(process.env),
         env: () => runtimeEnvForHost(state, identity),
       })
     }
@@ -613,7 +614,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...provisionedRunnerOption(process.env),
         env: () => runtimeEnvForHost(state, identity),
       })
     }
@@ -632,7 +633,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...provisionedRunnerOption(process.env),
         env: () => runtimeEnvForHost(state, identity),
       })
     }
@@ -653,7 +654,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...provisionedRunnerOption(process.env),
         env: () => runtimeEnvForHost(state, identity),
       })
     }
@@ -671,7 +672,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...provisionedRunnerOption(process.env),
         env: () => runtimeEnvForHost(state, identity),
       })
     }
@@ -687,7 +688,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { nativeHarness: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        ...provisionedRunnerOption(process.env),
         env: () => runtimeEnvForHost(state, identity),
       })
     }

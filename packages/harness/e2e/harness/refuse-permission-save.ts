@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { ApiError } from "./api"
 
 const TRIGGER = "e2e_refuse_permission_reply"
 
@@ -28,4 +29,11 @@ export async function refusePermissionReplySave(dataDir: string, sessionId: stri
       restore.close()
     }
   }
+}
+
+export function refusedAsUnsaved(error: unknown, label: string) {
+  if (!(error instanceof ApiError)) return false
+  console.log(`${label} save refusal: HTTP ${error.status} ${error.body}`)
+  const body = JSON.parse(error.body) as { error?: { code?: string; details?: { retryable?: boolean } } }
+  return error.status === 503 && body.error?.code === "request_persistence" && body.error.details?.retryable === true
 }

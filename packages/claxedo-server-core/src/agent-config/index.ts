@@ -17,11 +17,12 @@ import type { SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
+  snapshotDefaultHarness,
   type ConnectionConfigHooks,
   type HarnessConnectionDescriptor,
   type HarnessConnectionRef,
 } from "./connections"
-import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+import type { RuntimeHarnessSelection, RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import type { AcpRuntimeMcpServer } from "../agent-plugins/runtime/mcp-projection"
 import type { CustomProviderDefinition } from "@claxedo/harness/contract"
 import { listCustomProviders } from "../credentials/custom-provider"
@@ -221,7 +222,6 @@ export function defaultHarness(
 }
 
 export async function getRuntimeConfigSnapshot(
-  current?: RuntimeHarnessSelection,
   options: {
     secretScope?: RuntimeConfigSecretScope
     orgId?: string
@@ -229,10 +229,11 @@ export async function getRuntimeConfigSnapshot(
     workspaceId?: string
     secretBrokering?: SandboxSecretBrokering
     sandboxOwner?: string
+    provisionedRunner?: RuntimeNativeHarnessId
   } = {},
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
-  const selected = current ?? defaultHarness(config)
+  const selected = snapshotDefaultHarness(config, options.provisionedRunner)
   if (selected?.kind === "connection") {
     const connection = config.connections[selected.connectionId]
     if (!connection || !connection.enabled) {

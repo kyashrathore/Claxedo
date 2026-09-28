@@ -192,6 +192,14 @@ describe("agent config", () => {
     expect(await mod.getRuntimeConfigSnapshot()).toHaveProperty("commands", [])
   })
 
+  test("a sandbox snapshot defaults to its provisioned runner until the owner chooses a default", async () => {
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() } })
+    expect((await mod.getRuntimeConfigSnapshot({ provisionedRunner: "pi" })).defaultHarness).toEqual({ kind: "native", harnessId: "pi" })
+    expect((await mod.getRuntimeConfigSnapshot()).defaultHarness).toBeUndefined()
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() }, defaultConnectionId: "conn-primary" })
+    expect((await mod.getRuntimeConfigSnapshot({ provisionedRunner: "pi" })).defaultHarness).toEqual({ kind: "connection", connectionId: "conn-primary" })
+  })
+
   /**
    * The producer holds no credential of its own any more. Everything in `auth`
    * comes from the installed authority, which hands out broker endpoints and
@@ -208,7 +216,7 @@ describe("agent config", () => {
     }
     mod.configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } }) })
 
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })
+    const snap = await mod.getRuntimeConfigSnapshot({ workspaceId: "ws_1" })
 
     expect(snap.auth.accounts.local).toEqual({ "claude-sdk": projection })
     expect(JSON.stringify(snap)).not.toContain("sk-openai-typed-into-the-config-file")
@@ -219,7 +227,7 @@ describe("agent config", () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
     mod.configureAgentConfig({})
 
-    expect((await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })).auth).toEqual({ machineOwnerUserId: "", accounts: {} })
+    expect((await mod.getRuntimeConfigSnapshot({ workspaceId: "ws_1" })).auth).toEqual({ machineOwnerUserId: "", accounts: {} })
   })
 
   test("snapshot remains unresolved when no harness is configured", async () => {
@@ -286,7 +294,7 @@ describe("agent config", () => {
       },
     })
 
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, {
+    const snap = await mod.getRuntimeConfigSnapshot({
       secretScope: "shared",
       workspaceDir: project,
       workspaceId: "ws_1",
