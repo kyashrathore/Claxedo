@@ -197,7 +197,7 @@ test("one embedded engine refuses a different owner", async () => {
   const context = await setupConformance({ name: "opencode-owner", backend,
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
   try {
-    await expect(context.transport.start({ ...context.start, sessionId: "foreign", owner: { kind: "person", userId: "foreign" } },
+    await expect(context.transport.start({ ...context.start, sessionId: "foreign", owner: { kind: "person", userId: "foreign" }, credentials: { ...context.start.credentials, accountOwner: "foreign" } },
       context.sessionBroker)).rejects.toBeInstanceOf(OpenCodeOwnerMismatchError)
   } finally { await context.close() }
 }, 60_000)

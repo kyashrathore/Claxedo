@@ -55,7 +55,7 @@ async function catalogHost() {
   app.use("*", async (c, next) => {
     const role = c.req.header("x-test-role")
     if (role) c.set("relayHostAuth" as never, {
-      actor_id: `actor_${role}`, actor_kind: "human", org_id: "org_1", workspace_id: "ws_1", host_id: "host_1", role,
+      actor_id: `actor_${role}`, actor_kind: "human", user_id: `user_${role}`, org_id: "org_1", workspace_id: "ws_1", host_id: "host_1", role,
     } as never)
     await next()
   })
@@ -87,8 +87,8 @@ test("only the workspace owner reaches a harness's provider catalog through a dr
     const models = await f.request(`http://runtime.test/api/wr/harness-providers?${f.query()}`, { role: "owner" })
     expect(models.status).toBe(200)
     expect(await models.json()).toEqual([{ id: "acme", name: "Acme", env: [], connected: true, models: [{ providerID: "acme", id: "one", cost: [] }] }])
-    expect(f.previews.map((target) => "draft" in target ? target.draft.owner : undefined)).toEqual([{ kind: "person", userId: "actor_owner" }])
-    expect(f.catalogReads.map((draft) => draft.owner)).toEqual([{ kind: "person", userId: "actor_owner" }])
+    expect(f.previews.map((target) => "draft" in target ? target.draft.owner : undefined)).toEqual([{ kind: "person", userId: "user_owner" }])
+    expect(f.catalogReads.map((draft) => draft.owner)).toEqual([{ kind: "person", userId: "user_owner" }])
 
     const created = await f.request(`http://runtime.test/session?directory=${encodeURIComponent(directory)}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "owner-session" }),

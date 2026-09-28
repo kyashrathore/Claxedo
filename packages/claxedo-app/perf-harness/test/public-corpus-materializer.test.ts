@@ -5,6 +5,7 @@ import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
   materializeClaxedoPublicCorpus,
@@ -93,6 +94,7 @@ describe("public OpenCode corpus materialization", () => {
           target: { workspaceId, directory: target.workspaceDirectory },
           storeRoot: path.join(dataDirectory, "agent-core", workspaceId),
           exposure: loopbackWorkspaceRuntimeExposure(),
+          placement: loopbackMachineLoginPolicy(),
         })
         try {
           const sessionResponse = await runtime.app.request(`http://localhost/session/${target.sessionId}`)

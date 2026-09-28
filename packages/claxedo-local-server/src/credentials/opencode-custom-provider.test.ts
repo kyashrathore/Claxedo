@@ -148,7 +148,7 @@ async function openCodeEngineModels() {
 test("a viewer cannot claim the engine through a draft preview before its owner", async () => {
   const viewer = new Hono()
   viewer.use("*", async (c, next) => {
-    c.set("relayHostAuth" as never, { actor_id: "viewer", actor_kind: "human", org_id: "org_1",
+    c.set("relayHostAuth" as never, { actor_id: "viewer", actor_kind: "human", user_id: "user_viewer", org_id: "org_1",
       workspace_id: "ws_custom_provider", host_id: "host_1", role: "viewer" } as never)
     await next()
   })

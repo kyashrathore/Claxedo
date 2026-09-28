@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createHarnessServices } from "../harness-services"
-import { createHostFixture, transportHandle, LOOPBACK_ORIGIN } from "../test-support/host-fixture"
+import { createHostFixture, transportHandle, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
 
 type RpcRequest = { id?: string | number; method: string; params?: { sessionId?: string } }
 
@@ -57,6 +57,7 @@ async function restorationFixture() {
   const f = createHostFixture({ transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} } })
   f.store.bindSession({ sessionId: "saved", workspaceId: "ws", directory: "/repo", connectionId: "connection:acp", upstreamSessionId: "upstream", agentSessionId: "upstream" })
   f.store.updateSessionConfig("saved", { harness, agent: "build", model: { providerID: "acp", modelID: "default" } })
+  f.store.recordSessionOwner("saved", MACHINE_OWNER)
   return {
     ...f, requests, restoring,
     release: () => { held = false; release?.() },

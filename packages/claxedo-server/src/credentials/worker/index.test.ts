@@ -228,7 +228,8 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
 
     expect(await credentials.deleteCredential(first.id)).toBe(true)
     const recreated = await credentials.putCredential({ ...write, secret: "fourth" })
-    expect(recreated).toMatchObject({ id: first.id, revision: first.revision })
+    expect(recreated.id).not.toBe(first.id)
+    expect(recreated.revision).toBe(1)
     expect(recreated.incarnation).toEqual(expect.stringMatching(/\S/))
     expect(recreated.incarnation).not.toBe(first.incarnation)
   })

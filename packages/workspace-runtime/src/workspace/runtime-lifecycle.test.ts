@@ -14,7 +14,7 @@ import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
 
-import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN } from "../test-support/host-fixture"
+import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
 
 const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []
@@ -978,6 +978,7 @@ describe("host lifecycle", () => {
     try {
       f.store.bindSession({ sessionId: "s", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "up", agentSessionId: "up", directory: "/repo" })
       f.store.updateSessionConfig("s", { harness: { id: "pi", access: "native" } })
+      f.store.recordSessionOwner("s", MACHINE_OWNER)
       await expect(f.runtime.turns.start({ sessionId: "s", text: "work", origin })).rejects.toThrow("No transport is composed")
       expect(f.store.getMessages("s")).toEqual([])
       expect(f.store.getSession("s")?.status).not.toBe("busy")
