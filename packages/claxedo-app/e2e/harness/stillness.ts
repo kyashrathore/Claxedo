@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test"
 
 export type StillFrame = { readonly at: number; readonly scrollTop: number; readonly scrollHeight: number; readonly clientHeight: number; readonly ready: boolean; readonly opened: number }
 
-export type ScrollEvent = { readonly at: number; readonly scrollTop: number }
+export type ScrollEvent = { readonly at: number; readonly scrollTop: number; readonly framesBefore: number }
 
 export type SessionRead = { readonly at: number; readonly kind: "first" | "outline" | "page" | "part" | "message" | "queue" | "row" | "open" | "other"; readonly path: string }
 
@@ -48,7 +48,7 @@ function installStillness({ sessionId, marker, scroller: inner }: { readonly ses
     const element = found?.checkVisibility({ opacityProperty: true, visibilityProperty: true }) ? found : undefined
     if (element && element !== watched) {
       watched = element
-      element.addEventListener("scroll", () => state.scrolls.push({ at: performance.now(), scrollTop: element.scrollTop }), { passive: true })
+      element.addEventListener("scroll", () => state.scrolls.push({ at: performance.now(), scrollTop: element.scrollTop, framesBefore: state.frames.length }), { passive: true })
     }
     ready ||= !!element && (element.textContent ?? "").includes(marker)
     if (element) state.frames.push({ at: performance.now(), scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, ready, opened: element.querySelectorAll('[aria-expanded="true"]').length })
@@ -71,14 +71,15 @@ export async function stillnessAfter(app: Page, quietMs: number): Promise<Stilln
 }
 
 export function sinceFirstReady(stillness: Stillness, from = 0) {
-  const first = stillness.frames.find((frame) => frame.ready && frame.at >= from)
+  const firstIndex = stillness.frames.findIndex((frame) => frame.ready && frame.at >= from)
+  const first = stillness.frames[firstIndex]
   if (!first) throw new Error("the transcript never showed its marker")
-  const after = stillness.frames.filter((frame) => frame.at >= first.at)
-  const secondFrame = after[1]?.at ?? Number.POSITIVE_INFINITY
-  const firstFrameScrollReport = stillness.scrolls.find((scroll) => scroll.at >= first.at && scroll.at < secondFrame && scroll.scrollTop === first.scrollTop)
+  const after = stillness.frames.slice(firstIndex)
+  const scrolls = stillness.scrolls.filter((scroll) => scroll.framesBefore > firstIndex)
+  const firstFrameScrollReport = scrolls.find((scroll) => scroll.framesBefore === firstIndex + 1 && scroll.scrollTop === first.scrollTop)
   return {
     first,
-    scrolls: stillness.scrolls.filter((scroll) => scroll.at >= first.at && scroll !== firstFrameScrollReport).length,
+    scrolls: scrolls.filter((scroll) => scroll !== firstFrameScrollReport).length,
     scrollTopDelta: Math.max(...after.map((frame) => Math.abs(frame.scrollTop - first.scrollTop))),
     scrollHeightDelta: Math.max(...after.map((frame) => Math.abs(frame.scrollHeight - first.scrollHeight))),
     readsAfter: stillness.reads.filter((read) => read.at >= first.at).map((read) => read.kind),
