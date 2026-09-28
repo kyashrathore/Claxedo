@@ -101,8 +101,8 @@ export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?:
       await deliver()
       return sources
     },
-    getCredentialByProvider: async (providerId, kind, org) =>
-      (await credentialRegistry()).credentialByProvider(providerId, { onOutage: "empty", kind, owner: null }, org),
+    getCredentialByProvider: async (providerId, { owner, kind }, org) =>
+      (await credentialRegistry()).credentialByProvider(providerId, { onOutage: "empty", kind, owner }, org),
     getCredential: async (id, org) => (await credentialRegistry()).credentialById(id, { onOutage: "empty" }, org),
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),
     resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),

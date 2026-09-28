@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import type { StartInput, TransportConfigUpdate } from "@claxedo/harness/contract"
+import type { HarnessSession, SessionBroker, StartInput, TransportConfigUpdate } from "@claxedo/harness/contract"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import type { RuntimeSnapshot } from "../routes/config"
@@ -54,10 +54,14 @@ afterEach(async () => {
 function runtimeApp(options: { failDefinitionsOnce?: boolean } = {}) {
   const starts: StartInput[] = []
   const configures: TransportConfigUpdate[] = []
+  const configuredSessions: HarnessSession[] = []
+  const brokers: SessionBroker[] = []
   const transport = new FakeTransport({
+    beforeStart: async (_input, broker) => { brokers.push(broker) },
     onStart: (start) => { starts.push(start) },
-    configure: (update) => {
+    configure: (update, _transport, session) => {
       configures.push(update)
+      configuredSessions.push(session)
       if (update.providerDefinitions && options.failDefinitionsOnce) {
         options.failDefinitionsOnce = false
         throw new Error("definition apply failed")
@@ -78,7 +82,7 @@ function runtimeApp(options: { failDefinitionsOnce?: boolean } = {}) {
     `http://runtime.test/session?directory=${encodeURIComponent(directory)}`,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) },
   ))
-  return { runtime, starts, configures, createSession }
+  return { runtime, starts, configures, configuredSessions, brokers, createSession }
 }
 
 test("a session starts on the projection under its registry id", async () => {
@@ -139,6 +143,21 @@ test("a snapshot carrying an unreadable projection leaves the binding already in
     await expect(f.runtime.host.apply(rejected)).rejects.toThrow("Invalid runtime config snapshot")
 
     expect(f.configures).toEqual([])
+  } finally {
+    await f.runtime.host.dispose()
+  }
+})
+
+test("a push reaches a session under the upstream id its harness rebound it to after start", async () => {
+  const f = runtimeApp()
+  try {
+    await f.runtime.host.apply(snapshot(selected))
+    expect((await f.createSession("s1")).status).toBe(201)
+    await f.brokers[0]?.rebind("upstream-s1-reported")
+
+    await f.runtime.host.apply(snapshot(selected, "http://127.0.0.1:2595/bindings/cursor2"))
+
+    expect(f.configuredSessions.map((session) => session.binding.upstreamSessionId)).toEqual(["upstream-s1-reported"])
   } finally {
     await f.runtime.host.dispose()
   }

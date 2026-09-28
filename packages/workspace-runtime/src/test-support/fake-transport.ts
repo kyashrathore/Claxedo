@@ -81,7 +81,7 @@ export type FakeTransportOptions = {
   /** What a cancel answers; the default reports the turn terminal and its cleanup verified. */
   cancel?: (input: FakeCancel) => Promise<AdapterCancelOutcome>
   /** What a configuration push answers; the default applies it. */
-  configure?: (update: TransportConfigUpdate, transport: FakeTransport) => ConfigApplied | Promise<ConfigApplied>
+  configure?: (update: TransportConfigUpdate, transport: FakeTransport, session: HarnessSession) => ConfigApplied | Promise<ConfigApplied>
   steer?: (session: HarnessSession, turn: TurnRef, input: TurnInput) => Promise<SteerResult>
   fork?: ForkOperations["fork"]
   config?: ConfigOperations
@@ -194,9 +194,9 @@ export class FakeTransport implements HarnessTransport {
     return Promise.resolve({ execution: "terminal", cleanup: "verified_clear" })
   }
 
-  async configure(_session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
+  async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     this.configures.push(update)
-    return this.options.configure ? await this.options.configure(update, this) : { state: "applied" }
+    return this.options.configure ? await this.options.configure(update, this, session) : { state: "applied" }
   }
 
   async close(session: HarnessSession): Promise<void> {

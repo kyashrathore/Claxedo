@@ -103,9 +103,10 @@ export type ControlPlaneCredentials = {
     harnesses?: readonly HarnessId[],
     options?: { fresh?: boolean },
   ) => Promise<MachineLogin[]>
+  /** A person's account for a provider when `owner` names them, else the org's own row; the marked account first. */
   getCredentialByProvider: (
     providerId: string,
-    kind?: CredentialKind,
+    read: { owner: string | null; kind?: CredentialKind },
     org?: string,
   ) => Promise<CredentialMetadata | undefined>
   getCredential?: (id: string, org?: string) => Promise<CredentialMetadata | undefined>

@@ -1,22 +1,29 @@
 import assert from "node:assert/strict"
+import { isRecord } from "@claxedo/helpers/guards"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { scriptedAcpWebSocketConnection } from "../harness/acp/connection"
 import { readAcpRequests, type RecordedAcpRequest } from "../harness/acp/requests"
 import { acpScriptToken } from "../harness/acp/script"
 import { startScriptedAcpWebSocket } from "../harness/acp/websocket"
-import { applyScriptedPluginProfile, scriptedPluginServerName } from "../harness/scripted-plugin-profile"
+import { applyScriptedPluginProfile, SCRIPTED_PLUGIN_NAME, scriptedPluginServerName } from "../harness/scripted-plugin-profile"
 import { startStack } from "../harness/stack"
-import { frameSessionId, frameType } from "../harness/stream"
+import { frameSessionId, frameType, type StreamFrame } from "../harness/stream"
 import { directTransport, sendJson } from "../harness/transport"
 
 type McpEntry = { name?: string; type?: string; url?: string; headers?: unknown }
+
+function remoteExclusions(frame: StreamFrame, sessionId: string): unknown[] {
+  const properties = (frame.data.payload as { properties?: { code?: unknown; details?: { notApplied?: unknown } } } | undefined)?.properties
+  if (frameType(frame) !== "runtime.diagnostic" || frameSessionId(frame) !== sessionId || properties?.code !== "acp.mcp.not-applied") return []
+  return Array.isArray(properties.details?.notApplied) ? properties.details.notApplied : []
+}
 
 function assertNoRemoteLeaks(requests: RecordedAcpRequest[], method: string, label: string): Error[] {
   const call = requests.find((request) => request.method === method && request.source === label)
   assert.ok(call, `${label}: remote agent received no ${method}`)
   const servers = call.params.mcpServers as McpEntry[] | undefined
   assert.ok(Array.isArray(servers), `${label}: ${method} omitted mcpServers`)
-  assert.ok(servers.some((server) => scriptedPluginServerName("h24_http").test(server.name ?? "") && server.type === "http"), `${label}: ${method} omitted the plugin's HTTP MCP server`)
+  assert.ok(!servers.some((server) => server.name?.startsWith(`${SCRIPTED_PLUGIN_NAME}-`)), `${label}: ${method} sent a plugin MCP server to a remote agent`)
   assert.equal(call.authorization, null, `${label}: ${method} carried a websocket Authorization header`)
   const errors: Error[] = []
   const check = (condition: boolean, message: string) => { if (!condition) errors.push(new Error(message)) }
@@ -55,6 +62,12 @@ export async function run() {
       await api.prompt(workspace.directory, session.id, acpScriptToken("h24-turn"))
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: `H24 ${restoreMode} idle` })
       assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H24 remote reply/)
+      const excluded = stream.frames.flatMap((frame) => remoteExclusions(frame, session.id))
+      for (const server of ["h24_http", "h24_local"]) {
+        assert.ok(excluded.some((entry) => isRecord(entry) && typeof entry.item === "string" && scriptedPluginServerName(server).test(entry.item)
+          && entry.reason === "remote-harness"),
+          `${restoreMode}: the session reported no remote-harness exclusion for the plugin's ${server} server: ${JSON.stringify(excluded)}`)
+      }
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id))
       assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
       const fork = await fetch(`${stack.url}/session/${session.id}/fork?directory=${encodeURIComponent(workspace.directory)}`, {
@@ -69,7 +82,7 @@ export async function run() {
     }
     assert.equal(stack.egress.attempts.length, 0)
     if (errors.length) throw new Error(errors.map((error) => error.message).join("\n"))
-    console.log("H24 remote ACP: no first-party MCP bearer or stdio server in new, load, resume and fork")
+    console.log("H24 remote ACP: no first-party MCP bearer, plugin server or stdio server in new, load, resume and fork")
   } finally {
     for (const remote of remotes) await remote.close()
     await stack.close()

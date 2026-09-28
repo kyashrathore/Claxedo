@@ -60,7 +60,7 @@ describe("workerCredentials (flag off — default)", () => {
   test("stays a fail-closed stub: reads are empty, writes throw", async () => {
     const credentials = workerCredentials({})
     expect(await credentials.listCredentials()).toEqual([])
-    expect(await credentials.getCredentialByProvider("github")).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("github", { owner: null })).toBeUndefined()
     expect(await credentials.resolveCredentialSecret?.("github")).toBeNull()
     await expect(credentials.putCredential(write)).rejects.toThrow(/not available in the hosted Worker/)
     await expect(credentials.deleteCredential("id")).rejects.toThrow(/not available in the hosted Worker/)
@@ -111,12 +111,12 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     const person = await credentials.putCredential({ ...write, owner: "local", provider_id: "integration:conn-1", secret: "person-secret" })
     expect(org.owner).toBeNull()
     expect(person.id).not.toBe(org.id)
-    expect((await credentials.getCredentialByProvider("integration:conn-1"))?.id).toBe(org.id)
+    expect((await credentials.getCredentialByProvider("integration:conn-1", { owner: null }))?.id).toBe(org.id)
     expect(await credentials.resolveCredentialSecret!("integration:conn-1")).toBe("org-secret")
     expect((await credentials.listCredentials()).filter((row) => row.owner === "local").map((row) => row.id)).toEqual([person.id])
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(1)
     expect(await credentials.resolveCredentialSecretById!(person.id)).toBe("person-secret")
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toBeUndefined()
   })
 
   test("two first writes for one person's provider racing each other land on one row", async () => {
@@ -184,13 +184,13 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     })
     expect(JSON.stringify(meta)).not.toContain("sk-hosted-secret-0042")
 
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toMatchObject({ status: "available" })
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toMatchObject({ status: "available" })
     expect(await credentials.listCredentials()).toEqual([expect.objectContaining({ provider_id: "integration:conn-1" })])
     expect(await credentials.resolveCredentialSecret?.("integration:conn-1")).toBe("sk-hosted-secret-0042")
 
     now = 2_000
     await credentials.updateCredentialStatus(meta.id, "error", "auth_failure_reported")
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toMatchObject({
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toMatchObject({
       status: "error",
       last_error: "auth_failure_reported",
       updated_at: 2_000,
@@ -204,7 +204,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(await credentials.resolveCredentialSecret?.("integration:conn-1")).toBe("sk-second")
 
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(1)
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toBeUndefined()
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(0)
   })
 
@@ -212,8 +212,8 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     const credentials = store(freshOrg("kind"))
     await credentials.putCredential({ ...write, provider_id: "openai", kind: "oauth_token", secret: "t" })
 
-    expect(await credentials.getCredentialByProvider("openai", "api_key")).toBeUndefined()
-    expect(await credentials.getCredentialByProvider("openai", "oauth_token")).toMatchObject({ kind: "oauth_token" })
+    expect(await credentials.getCredentialByProvider("openai", { owner: null, kind: "api_key" })).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("openai", { owner: null, kind: "oauth_token" })).toMatchObject({ kind: "oauth_token" })
     expect(await credentials.deleteCredentialsByProvider("openai", "api_key")).toBe(0)
     expect(await credentials.deleteCredentialsByProvider("openai", "oauth_token")).toBe(1)
   })
@@ -292,7 +292,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
 
     await orgA.putCredential({ ...write, provider_id: "integration:shared-id", secret: "org-a-secret" })
     // Org B cannot see org A's credential through any read.
-    expect(await orgB.getCredentialByProvider("integration:shared-id")).toBeUndefined()
+    expect(await orgB.getCredentialByProvider("integration:shared-id", { owner: null })).toBeUndefined()
     expect(await orgB.resolveCredentialSecret?.("integration:shared-id")).toBeNull()
     expect(await orgB.listCredentials()).toEqual([])
     // Org B writing the same provider id lands on its own row.

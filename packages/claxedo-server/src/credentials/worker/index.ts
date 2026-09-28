@@ -149,13 +149,13 @@ export function hostedOrgCredentials(
   const { database } = input
   const now = opts.now ?? Date.now
 
-  const metadataByProvider = async (providerId: string, kind?: CredentialKind) => {
+  const metadataByProvider = async (providerId: string, owner: string | null, kind?: CredentialKind) => {
     const row = await database
       .prepare(
         `select ${METADATA_COLUMNS} from hosted_provider_credentials
-         where org_id = ? and owner is null and provider_id = ?${kind ? " and kind = ?" : ""}`,
+         where org_id = ? and owner is ? and provider_id = ?${kind ? " and kind = ?" : ""}`,
       )
-      .bind(org, providerId, ...(kind ? [kind] : []))
+      .bind(org, owner, providerId, ...(kind ? [kind] : []))
       .first()
     return row ? credentialMetadataRow(row) : undefined
   }
@@ -229,7 +229,7 @@ export function hostedOrgCredentials(
         .all()
       return rows.results.map(credentialMetadataRow)
     },
-    getCredentialByProvider: (providerId, kind) => metadataByProvider(providerId, kind),
+    getCredentialByProvider: (providerId, { owner, kind }) => metadataByProvider(providerId, owner, kind),
     getCredential: async (id) => {
       const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
       return row ? credentialMetadataRow(row) : undefined
