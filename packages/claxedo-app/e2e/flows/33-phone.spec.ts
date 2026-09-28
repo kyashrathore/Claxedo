@@ -92,7 +92,7 @@ test("33 phone: the drawer stays open on a session while another project gains s
   expect((await api.sessions(other.directory)).map((session) => session.title)).toContain("Arrived 2")
 })
 
-test("33 phone: what a mouse reveals on hover shows on touch", async ({ stack, api, app }) => {
+test("33 phone: what a mouse reveals on hover shows on touch, and icon buttons keep a 44 px target", async ({ stack, api, app }) => {
   const pages = await stack.localPages({ "/preview.html": "<!doctype html><title>Preview</title><h1>Preview page</h1>" })
   const workspace = await stack.daemon.makeWorkspace("touch", "Touch")
   await stack.acp.write("link", { steps: [{ kind: "text", text: `Open the [preview page](${pages.url}/preview.html).` }] })
@@ -100,6 +100,10 @@ test("33 phone: what a mouse reveals on hover shows on touch", async ({ stack, a
   await api.prompt(workspace.directory, session.id, `Link the preview. ${acpScriptToken("link")}`)
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   await expect(app.getByRole("link", { name: "preview page" })).toBeVisible()
+
+  const panelButton = await app.getByRole("button", { name: UI.openPanel }).boundingBox()
+  expect(panelButton?.width).toBeGreaterThanOrEqual(44)
+  expect(panelButton?.height).toBeGreaterThanOrEqual(44)
 
   const chooser = app.waitForEvent("filechooser")
   await app.getByRole("button", { name: "Add", exact: true }).tap()
