@@ -1,8 +1,9 @@
 import { prefixedRandomId } from "@claxedo/helpers"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
-import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
+import { connectAcp, type AcpConnectionOptions } from "./connection"
 import type { AcpMcpFilter } from "./index"
+import type { AcpPeerOwnership } from "./ownership"
 import { AcpTransportError } from "./errors"
 import { claudeOptionsMeta } from "./extensions/claude-options"
 import { acpMcp } from "./protocol"
@@ -17,13 +18,12 @@ type Commands = Extract<SessionNotification["update"], { sessionUpdate: "availab
 type ProbeResult = { catalog: AcpCatalog; commands: Commands; agents: AgentAgent[] }
 
 export class AcpDraftProbes {
-  private readonly peers = new Set<AcpPeer>()
   private readonly cache: DraftProbeCache<ProbeResult>
   private readonly disposeAbort = new AbortController()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
-    private readonly filterMcp: AcpMcpFilter) {
+    private readonly filterMcp: AcpMcpFilter, private readonly peers: AcpPeerOwnership) {
     this.cache = new DraftProbeCache(services.clock)
   }
 
@@ -58,9 +58,8 @@ export class AcpDraftProbes {
       complete: () => {}, update: (notification) => {
         if (notification.update.sessionUpdate === "available_commands_update") resolveCommands(notification.update.availableCommands)
       }, extension: () => {}, unknown: () => {},
-    }, { role: "probe", signal: this.disposeAbort.signal })
-    if (this.disposed) { await peer.retire(); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
-    this.peers.add(peer)
+    }, { role: "probe", signal: this.disposeAbort.signal, owner: this.peers })
+    if (this.disposed) { await this.peers.retire(peer); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
     try {
       const projected = sessionMcpServers(input, this.services, { includeFirstParty: true,
         duplicate: (name) => new AcpTransportError("configuration", `Duplicate ACP MCP server ${name}`) })
@@ -79,14 +78,12 @@ export class AcpDraftProbes {
       const commandUpdate = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft commands")
       return { catalog, commands: await commandUpdate.run(commands), agents }
     } finally {
-      this.peers.delete(peer)
-      await peer.retire()
+      await this.peers.retire(peer)
     }
   }
 
-  async dispose(): Promise<void> {
+  dispose(): void {
     this.disposed = true
     this.disposeAbort.abort()
-    await Promise.all([...this.peers].map((peer) => peer.retire()))
   }
 }

@@ -56,6 +56,7 @@ function credentials(): ControlPlaneCredentials {
       created_at: 1,
       updated_at: 1,
       revision: 1,
+      incarnation: "cred_1",
     }]),
     getCredentialByProvider: vi.fn(async () => undefined),
     putCredential: vi.fn(async (input: Parameters<ControlPlaneCredentials["putCredential"]>[0]) => ({
@@ -73,6 +74,7 @@ function credentials(): ControlPlaneCredentials {
       created_at: 2,
       updated_at: 2,
       revision: 1,
+      incarnation: "cred_2",
     })),
     deleteCredential: vi.fn(async () => true),
     deleteCredentialsByProvider: vi.fn(async () => 3),

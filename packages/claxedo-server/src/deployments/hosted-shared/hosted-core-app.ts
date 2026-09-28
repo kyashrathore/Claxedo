@@ -464,6 +464,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       "/api/runtime-authority",
       RuntimeSessionAuthorityRoutes({
         authority: plane.runtimeSessionAuthority,
+        ...(options.agentConfigRepository && plane.orgCredentials ? { connectionSecrets: {
+          resolveWorkspaceOwner: (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
+          readConnections: async (userId: string) => (await options.agentConfigRepository!.read(userId)).connections,
+          credentials: plane.orgCredentials,
+        } } : {}),
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
         ...(options.usageLedger ? { usageWriter: options.usageLedger } : {}),
         ...(services.authority?.resolveWorkspaceOwner

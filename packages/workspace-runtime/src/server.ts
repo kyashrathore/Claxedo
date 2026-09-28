@@ -688,20 +688,21 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
 
-  let disposal: Promise<void> | undefined
+  let cleaned = false
   const dispose = () => {
-    if (disposal) return disposal
-    if (options.target && options.processObserver) {
-      options.processObserver.detachWorkspace(options.target.workspaceId)
-      if (options.target.directory !== options.target.workspaceId) {
-        options.processObserver.detachWorkspace(options.target.directory)
+    if (!cleaned) {
+      cleaned = true
+      if (options.target && options.processObserver) {
+        options.processObserver.detachWorkspace(options.target.workspaceId)
+        if (options.target.directory !== options.target.workspaceId) {
+          options.processObserver.detachWorkspace(options.target.directory)
+        }
+        ProcessManager.bindProcessObserver(options.target.directory)
       }
-      ProcessManager.bindProcessObserver(options.target.directory)
+      routeContributions.dispose()
+      worktrees?.close()
     }
-    routeContributions.dispose()
-    worktrees?.close()
-    disposal = host.dispose()
-    return disposal
+    return host.dispose()
   }
   return {
     app,

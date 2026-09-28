@@ -15,6 +15,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import type {
   AgentRuntimeStreamEvent,
+  ConnectionSecretAuthority,
   PromptDelivery,
   PromptDeliveryRequest,
   PromptInput,
@@ -146,6 +147,8 @@ export type AgentRuntimeSessionCreateInput = {
   group?: SessionModelGroup
   permissionCeiling?: SessionConfig["permissionCeiling"]
   title?: string
+  /** The proof the create request was admitted under; the connection's secrets are leased with it. */
+  secretAuthority?: ConnectionSecretAuthority
 }
 
 type AgentRuntimeTurnActor =
@@ -176,8 +179,12 @@ export type AgentRuntimeTurnStartInput = {
    * the admission conflict.
    */
   delivery?: PromptDeliveryRequest
-  /** Host-owned durable admission fence checked before producer mutations. */
-  admission?: { valid(): boolean; fencingToken(): number }
+  /**
+   * Host-owned durable admission fence checked before producer mutations.
+   * `proof` is the signed turn lease it holds, which the turn's connection
+   * secrets are leased under.
+   */
+  admission?: { valid(): boolean; fencingToken(): number; proof(): string }
 } & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {

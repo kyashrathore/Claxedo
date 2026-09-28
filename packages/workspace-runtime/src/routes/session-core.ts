@@ -4,7 +4,7 @@ import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { toolImageResponse } from "./tool-image"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, RuntimeDirectory, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, ConnectionSecretAuthority, RuntimeDirectory, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionStartBinding, AgentSessionStarts, PromptModel, SessionHarness } from "@claxedo/agent-runtime-contract"
 import {
   connectionIdForHarness,
@@ -153,13 +153,25 @@ function turnOriginOf(origin: SessionTurnOrigin | undefined, owner: TurnActor): 
 
 async function sessionConfigOf(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<SessionConfig> {
   if (opts.getSessionConfig) return await opts.getSessionConfig(c, directory, sessionId)
-  return await (await opts.runtime(c)).reads.sessionConfig(sessionId, directory)
+  return await (await opts.runtime(c)).reads.sessionConfig(sessionId, directory, requestSecretAuthority(c).secretAuthority)
 }
 
 type DraftTarget = Extract<HarnessTarget, { harness: SessionHarness }>
 
 function draftTarget(opts: Opts, c: Ctx, directory: RuntimeDirectory): DraftTarget {
-  return { harness: opts.requestedSessionHarness(c) ?? opts.defaultHarness(), directory: directory ?? "", owner: sessionOwner(c) }
+  return { harness: opts.requestedSessionHarness(c) ?? opts.defaultHarness(), directory: directory ?? "", owner: sessionOwner(c),
+    ...requestSecretAuthority(c) }
+}
+
+/** A read on one session, carrying the proof its connection is attached under when this process does not hold it yet. */
+function sessionTarget(c: Ctx, sessionId: string, directory: RuntimeDirectory): HarnessTarget {
+  return { sessionId, ...(directory ? { directory } : {}), ...requestSecretAuthority(c) }
+}
+
+/** The relay proof this request was admitted under, which a connection's secrets are leased with while the request runs. */
+function requestSecretAuthority(c: Ctx): { secretAuthority?: ConnectionSecretAuthority } {
+  const credential = sessionAccessContext(c).credential
+  return credential ? { secretAuthority: { kind: "request", credential } } : {}
 }
 
 /**
@@ -186,7 +198,7 @@ async function effectivePermissionCeiling(
   declared: AutoLevel | undefined,
 ): Promise<AutoLevel | undefined> {
   if (!parent) return declared
-  const state = await (await opts.runtime(c)).reads.permissionModes({ sessionId: parent.id, ...(directory ? { directory } : {}) })
+  const state = await (await opts.runtime(c)).reads.permissionModes(sessionTarget(c, parent.id, directory))
   const parentLevel = inheritedPermissionLevel(state)
   if (!parentLevel) return declared
   return declared ? narrowerPermissionLevel(parentLevel, declared) : parentLevel
@@ -206,7 +218,7 @@ async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDi
   if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
   const ceiling = await sessionPermissionCeiling(opts, c, directory, session)
   if (!ceiling) return undefined
-  return (await permissionModeUnderCeiling(c, await opts.runtime(c), { sessionId, ...(directory ? { directory } : {}) }, ceiling, modeId)).refusal
+  return (await permissionModeUnderCeiling(c, await opts.runtime(c), sessionTarget(c, sessionId, directory), ceiling, modeId)).refusal
 }
 
 /**
@@ -277,7 +289,7 @@ async function cascadeToChildren(
         const start = opts.sessionStarts?.get(childSessionId)?.binding
         await opts.beforeDeleteSession?.(c, directory, childSessionId)
         await disposeRuntimeSessionDocuments(childSessionId)
-        await (await opts.runtime(c)).sessions.delete(childSessionId, directory)
+        await (await opts.runtime(c)).sessions.delete(childSessionId, directory, requestSecretAuthority(c).secretAuthority)
         await after(opts.afterDeleteSession?.(c, directory, childSessionId))
         if (start) opts.sessionStarts!.retire(start)
         opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
@@ -293,7 +305,7 @@ async function cascadeToChildren(
       await cancelAdmittedTurn(childOwner, childSessionId, recoveryCaller(c), `archive-child:${childSessionId}:${randomUUID()}`)
     }
     const body = { time: { archived: updates.archived ?? Date.now() } }
-    const session = await (await opts.runtime(c)).sessions.update(childSessionId, body, directory)
+    const session = await (await opts.runtime(c)).sessions.update(childSessionId, body, directory, requestSecretAuthority(c).secretAuthority)
     await after(opts.afterUpdateSession?.(c, directory, session, body))
     opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionUpdated(session)))
   }
@@ -964,7 +976,7 @@ async function compensateRegistration(input: {
   const begun = await policy.beginRegistrationCompensation({ ...registration, reason: input.reason })
   if (!begun.allowed) throw new Error(`Session compensation was denied: ${begun.code}`)
   try {
-    await (await input.opts.runtime(input.c)).sessions.delete(input.sessionId, input.directory)
+    await (await input.opts.runtime(input.c)).sessions.delete(input.sessionId, input.directory, requestSecretAuthority(input.c).secretAuthority)
     await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
   } catch (error) {
     throw new Error("Session compensation could not delete runtime state", { cause: error })
@@ -1269,7 +1281,7 @@ async function rollbackCreatedSession(
   cause: unknown,
 ) {
   try {
-    await (await opts.runtime(c)).sessions.delete(sessionId, directory)
+    await (await opts.runtime(c)).sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
     await opts.afterDeleteSession?.(c, directory, sessionId)
   } catch (cleanupError) {
     throw new SessionRollbackError("runtime", cause, cleanupError)
@@ -1633,7 +1645,7 @@ export function createSessionRoutes(opts: Opts) {
           const runtime = await opts.runtime(c)
           const requestedHarness = opts.requestedSessionHarness(c)
           const owner = sessionOwner(c)
-          const draft = { harness: requestedHarness ?? opts.defaultHarness(), directory: directory ?? "", owner } satisfies HarnessTarget
+          const draft = { harness: requestedHarness ?? opts.defaultHarness(), directory: directory ?? "", owner, ...requestSecretAuthority(c) } satisfies HarnessTarget
           const draftCapabilities = await runtime.reads.capabilities(draft)
           const refusal = admitSessionInstructions({
             ...(requestedHarness ? { harness: requestedHarness.id } : {}),
@@ -1748,11 +1760,12 @@ export function createSessionRoutes(opts: Opts) {
             ...(ceiling ? { permissionCeiling: ceiling } : {}),
             ...(body.title !== undefined ? { title: body.title } : {}),
             ...createOptions,
+            ...requestSecretAuthority(c),
           })
           const pendingConfig = existing ? config : laterConfig
           if (Object.keys(pendingConfig).length > 0) {
             try {
-              await runtime.sessions.updateConfig(session.id, pendingConfig, directory)
+              await runtime.sessions.updateConfig(session.id, pendingConfig, directory, requestSecretAuthority(c).secretAuthority)
             } catch (error) {
               // Undo only what this request made. A session that was already
               // there belongs to the attempt that created it, and deleting it
@@ -1764,7 +1777,7 @@ export function createSessionRoutes(opts: Opts) {
           let subagentKey: string | undefined
           try {
             if (childMode.mode) {
-              await runtime.reads.setPermissionMode(session.id, childMode.mode.id, directory)
+              await runtime.reads.setPermissionMode(session.id, childMode.mode.id, directory, requestSecretAuthority(c).secretAuthority)
             }
             if (body.parentID && children) {
               const harness = requestedHarness ?? config.harness ?? (await sessionConfigOf(opts, c, directory, session.id)).harness
@@ -1923,7 +1936,7 @@ export function createSessionRoutes(opts: Opts) {
       try {
         const directory = await opts.resolveDirectory(c, { sessionId })
         return noStoreJson(c, {
-          ...await (await opts.runtime(c)).reads.capabilities({ sessionId, ...(directory ? { directory } : {}) }),
+          ...await (await opts.runtime(c)).reads.capabilities(sessionTarget(c, sessionId, directory)),
           prompt: await sessionPromptAdmitted(opts, c, sessionId),
         })
       } catch (error) {
@@ -1993,7 +2006,7 @@ export function createSessionRoutes(opts: Opts) {
         const config = await sessionConfigOf(opts, c, directory, sessionId)
         model = { providerID: config.model?.providerID ?? harnessKey(config.harness) ?? config.harness.id, modelID: requested }
       }
-      const preview = await runtime.reads.configOptions({ sessionId, ...(directory ? { directory } : {}) }, model)
+      const preview = await runtime.reads.configOptions(sessionTarget(c, sessionId, directory), model)
       if (!preview) return noStoreJson(c, { error: "Session harness does not expose config options" }, 404)
       return noStoreJson(c, preview)
     })
@@ -2017,7 +2030,7 @@ export function createSessionRoutes(opts: Opts) {
         ...(archived !== undefined ? { time: { archived } } : {}),
       }
       if (!await readSession(opts, c, directory, sessionId)) return c.json(sessionNotFound(), 404)
-      const session = await (await opts.runtime(c)).sessions.update(sessionId, body, directory)
+      const session = await (await opts.runtime(c)).sessions.update(sessionId, body, directory, requestSecretAuthority(c).secretAuthority)
       await after(opts.afterUpdateSession?.(c, directory, session, body))
       opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
       if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
@@ -2038,7 +2051,7 @@ export function createSessionRoutes(opts: Opts) {
       const requestedHarness = opts.requestedSessionHarness(c)
       if (requestedHarness) body.harness = requestedHarness
       try {
-        return c.json(await (await opts.runtime(c)).sessions.updateConfig(sessionId, body, directory))
+        return c.json(await (await opts.runtime(c)).sessions.updateConfig(sessionId, body, directory, requestSecretAuthority(c).secretAuthority))
       } catch (error) {
         const refusal = harnessUnavailableResponse(c, error)
         if (refusal) return refusal
@@ -2058,7 +2071,7 @@ export function createSessionRoutes(opts: Opts) {
         await cascadeToChildren(opts, c, directory, sessionId, "delete", {}, withSessionChange)
         await opts.beforeDeleteSession?.(c, directory, sessionId)
         await disposeRuntimeSessionDocuments(sessionId)
-        await (await opts.runtime(c)).sessions.delete(sessionId, directory)
+        await (await opts.runtime(c)).sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
         await after(opts.afterDeleteSession?.(c, directory, sessionId))
         // A deletion that got this far removed the session the creation owns, so
         // the id goes back. Anything that throws above keeps the owner, which is
@@ -2208,12 +2221,12 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const runtime = await opts.runtime(c)
-      const target = { sessionId, ...(directory ? { directory } : {}) } satisfies HarnessTarget
+      const target = sessionTarget(c, sessionId, directory)
       const unsupported = await unsupportedIfUnavailable(c, runtime, target, "todos", "todos")
       if (unsupported) return unsupported
       const replay = await opts.getTodos?.(c, directory, sessionId)
       if (replay) return noStoreJson(c, replay)
-      return noStoreJson(c, await runtime.reads.todos(sessionId, directory) ?? [])
+      return noStoreJson(c, await runtime.reads.todos(sessionId, directory, requestSecretAuthority(c).secretAuthority) ?? [])
     })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.
@@ -2255,9 +2268,9 @@ export function createSessionRoutes(opts: Opts) {
       // transport without the group is a harness with no mode surface, and the
       // picker needs to say WHICH harness and why rather than render a generic
       // unsupported-operation error where a list belongs.
-      const state = await runtime.reads.permissionModes({ sessionId, ...(directory ? { directory } : {}) })
+      const state = await runtime.reads.permissionModes(sessionTarget(c, sessionId, directory))
       if (!state) {
-        const caps = await runtime.reads.capabilities({ sessionId, ...(directory ? { directory } : {}) })
+        const caps = await runtime.reads.capabilities(sessionTarget(c, sessionId, directory))
         return noStoreJson(c, {
           modes: [],
           unsupported: `${caps.harness} has no permission modes of its own`,
@@ -2272,7 +2285,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const runtime = await opts.runtime(c)
-      const target = { sessionId, ...(directory ? { directory } : {}) } satisfies HarnessTarget
+      const target = sessionTarget(c, sessionId, directory)
       const caps = await runtime.reads.capabilities(target)
       if (!caps.configOptions) {
         return unsupportedOperation(c, caps, "set_permission_mode", {
@@ -2294,7 +2307,7 @@ export function createSessionRoutes(opts: Opts) {
       // a different mode than the one requested must reach the client as the
       // mode it kept, not as an echo of the request.
       try {
-        const state = await runtime.reads.setPermissionMode(sessionId, modeId, directory)
+        const state = await runtime.reads.setPermissionMode(sessionId, modeId, directory, requestSecretAuthority(c).secretAuthority)
         if (!state) {
           return unsupportedOperation(c, caps, "set_permission_mode", {
             capability: "permissions",
@@ -2334,7 +2347,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const runtime = await opts.runtime(c)
-      const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId, ...(directory ? { directory } : {}) }, "fork", "fork")
+      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, sessionId, directory), "fork", "fork")
       if (unsupported) return unsupported
       const wire = await boundedJsonRecord(c)
       const body = { id: str(wire.id), messageId: str(wire.messageId) }
@@ -2349,7 +2362,7 @@ export function createSessionRoutes(opts: Opts) {
         const refused = await creationReservationGuard(opts, c, body.id, operationId)
         if (refused) return refused
       }
-      const child = await runtime.sessions.fork(sessionId, body.messageId ?? "", body.id, directory)
+      const child = await runtime.sessions.fork(sessionId, body.messageId ?? "", body.id, directory, requestSecretAuthority(c).secretAuthority)
       const registration = await registerCreatedSession(opts, c, child.id, operationId)
       if (registration.kind === "ambiguous") return registration.response
       if (registration.kind === "denied") {
@@ -2619,7 +2632,7 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = permission?.sessionID
       if (!sessionId) return interactionNotFound(c, "permission", permId)
       if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
-      const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId, ...(directory ? { directory } : {}) }, "permissions", "permission_response")
+      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, sessionId, directory), "permissions", "permission_response")
       if (unsupported) return unsupported
       const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_response")
       if (guarded) return guarded

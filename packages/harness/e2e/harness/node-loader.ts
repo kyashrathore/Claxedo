@@ -3,6 +3,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
+export const CLOUD_PRODUCT_ENTRY = path.join(REPO_ROOT, "packages/claxedo-server/src/hosts/workspace-runtime/host-entry.agent-plugins.ts")
 export const SERVER_DIR = path.join(REPO_ROOT, "packages/claxedo-server")
 
 export const TSX_LOADER = pathToFileURL(

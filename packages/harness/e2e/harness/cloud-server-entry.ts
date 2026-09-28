@@ -2,7 +2,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { createLocalBrokeringSandboxDriver } from "@claxedo/sandbox-manager/drivers/local-brokering"
 import { startSelfHostedServer } from "../../../claxedo-server/src/deployments/self-hosted-node/start"
-import { REPO_ROOT, TSX_LOADER } from "./node-loader"
+import { CLOUD_PRODUCT_ENTRY, REPO_ROOT, TSX_LOADER } from "./node-loader"
 import { cloudFaultDriver, installCloudConfigFault } from "./cloud-faults"
 
 const port = Number(process.env.CLAXEDO_SERVER_PORT)
@@ -19,7 +19,7 @@ const sandboxDriver = createLocalBrokeringSandboxDriver({
     "--conditions=development",
     "--import", textImports,
     "--import", TSX_LOADER,
-    path.join(REPO_ROOT, "packages/workspace-runtime/src/cli.ts"),
+    CLOUD_PRODUCT_ENTRY,
   ],
   allowedOrigins: [`http://127.0.0.1:${port}`, modelUrl],
   upstreams: { "https://api.openai.com": modelUrl },

@@ -7,7 +7,7 @@ import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { HarnessServices, MachineLoginPolicy } from "@claxedo/harness/contract"
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { clearOpaqueTimer } from "@claxedo/helpers"
+import { clearOpaqueTimer, createKeyedSerializer, errorMessage } from "@claxedo/helpers"
 import { volatileLaunchOwnership, type LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import { workspaceCapabilities } from "../capabilities"
 import { createStoreBrokerPorts } from "../broker-ports"
@@ -36,7 +36,7 @@ import { createSessionConfiguration } from "./configure"
 import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspaceProcess, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { mountSessionRoutes } from "./session-routes"
-import { assertConnectionRevision, connectionConfigHooks, errorMessage, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
+import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
 import type { ConnectionSecretResolver } from "@claxedo/agent-sdk-runtime"
 
@@ -197,7 +197,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = {}
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
-  let applyQueue = Promise.resolve()
+  const snapshots = createKeyedSerializer<"snapshot">()
   const storeFactory = resolveStoreFactory(options)
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
   let launchReconciliation: Promise<LaunchOwnershipReconciliation> | undefined
@@ -285,6 +285,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     configuration: ReturnType<typeof createSessionConfiguration>
   }
   let engine: Engine | undefined
+  const retiredTransports = new Set<Engine["transports"]>()
+  const retireTransports = async (transports: Engine["transports"]) => {
+    retiredTransports.add(transports)
+    await transports.disposeAll()
+    retiredTransports.delete(transports)
+  }
   const patternEvaluator = createElicitationPatternEvaluator()
 
   function harnessEngine(): Engine {
@@ -307,7 +313,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const transports = createWorkspaceTransports({
       composer,
       connections: () => appliedConnections,
-      resolveSecrets: (descriptor, directory) => (options.resolveConnectionSecrets ?? resolveSnapshotConnectionSecrets)({ descriptor, directory }),
+      resolveSecrets: (descriptor, directory, access) => (options.resolveConnectionSecrets ?? resolveSnapshotConnectionSecrets)({
+        descriptor, directory, ...(access.authority ? { authority: access.authority } : {}),
+        owner: access.owner,
+      }),
     })
     const ports = createStoreBrokerPorts(runtimeStore, {
       ownerGeneration,
@@ -451,9 +460,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
     const normalized = normalizeRuntimeSnapshot(next)
     if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
-    const pending = applyQueue.then(() => applySnapshot(normalized), () => applySnapshot(normalized))
-    applyQueue = pending.catch(() => {})
-    return pending
+    return snapshots.run("snapshot", () => applySnapshot(normalized))
   }
 
   function mountGate(app: Hono) {
@@ -655,12 +662,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       const config = store().getSessionConfig(input.sessionId)
       const directory = store().getSession(input.sessionId)?.directory ?? options.target?.directory ?? workspaceDir()
       const running = harnessEngine()
-      const handle = config ? await running.transports.forHarness(config.harness, directory) : undefined
+      const attached = running.runtime.attachments.peek(input.sessionId)
+      // A connection's transport exists only under a secret lease, which a
+      // registration holds no proof for: until the session is attached, its
+      // tools travel in the prompt.
+      const handle = attached?.handle
+        ?? (config?.harness.access === "native"
+          ? await running.transports.forHarness(config.harness, directory, { owner: running.runtime.attachments.owner(input.sessionId) })
+          : undefined)
       if (!handle?.transport.sessionTools) {
         sessionToolPrompts.set(input.sessionId, input)
         return
       }
-      const { transport, session } = await running.runtime.transportFor(input.sessionId)
+      const { transport, session } = attached ? { transport: attached.handle.transport, session: attached.session }
+        : await running.runtime.transportFor(input.sessionId)
       if (!transport.sessionTools) throw new Error(`Session ${input.sessionId} moved to a harness without session tools`)
       sessionToolPrompts.delete(input.sessionId)
       await transport.sessionTools.register(session, {
@@ -684,14 +699,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       freeze: (policy, freezeOptions) => checkpoint.freeze(policy, freezeOptions),
       async flush() {
         if (checkpoint.state() !== "frozen") throw new Error("workspace_checkpoint_not_frozen")
-        await applyQueue
+        await snapshots.run("snapshot", async () => {})
         sessionConfigStore?.flush()
       },
       async scrub() {
         if (checkpoint.state() !== "frozen") throw new Error("workspace_checkpoint_not_frozen")
-        appliedSignature = undefined
-        await engine?.transports.disposeAll()
+        const retired = engine
         engine = undefined
+        appliedSignature = undefined
+        if (retired) await retireTransports(retired.transports)
       },
       async resume() {
         if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
@@ -708,12 +724,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       closing = true
       const deliveriesDone = disposeDeliveries?.()
       checkpoint.abortAll()
+      engine?.runtime.abortStarts()
       // Transport teardown starts first: a pending create, an unanswered
       // request or a running turn may only settle once its harness is stopped.
-      const transportsDone = engine?.transports.disposeAll()
+      const transportsDone = Promise.all([engine?.transports.disposeAll(), ...[...retiredTransports].map(retireTransports)])
       disposal = (async () => {
-        await Promise.allSettled([applyQueue, ...pendingRequests])
-        await Promise.all([deliveriesDone, engine?.runtime.dispose(), transportsDone])
+        const [, runtimeResult] = await Promise.all([
+          transportsDone,
+          (async () => {
+            await Promise.allSettled([snapshots.run("snapshot", async () => {}), ...pendingRequests])
+            return engine?.runtime.dispose()
+          })(),
+          deliveriesDone,
+        ])
+        if (runtimeResult && !runtimeResult.ok) throw runtimeResult.error
         checkpoint.clear()
         cleanupCompatObserver()
         cleanupRuntimeObserver()
@@ -723,7 +747,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         sessionConfigStore = undefined
         engine = undefined
       })()
-      void disposal.catch((error) => log.error("Workspace shutdown failed", { error }))
+      void disposal.catch((error) => {
+        disposal = undefined
+        log.error("Workspace shutdown failed", { error })
+      })
       return disposal
     },
   }

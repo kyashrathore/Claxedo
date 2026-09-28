@@ -1,5 +1,6 @@
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { HarnessTransport, Locality, TransportKind } from "@claxedo/harness/contract"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
+import type { HarnessTransport, Locality, TransportKind, TurnActor } from "@claxedo/harness/contract"
 
 /**
  * One composed transport the host may run sessions on: the runner it was
@@ -21,9 +22,16 @@ export type HarnessHandle = {
   pin: () => () => void
 }
 
+/** Whose accounts a connection spends, and the proof its secrets are leased under when the caller holds one. */
+export type TransportAccess = { owner: TurnActor; authority?: ConnectionSecretAuthority }
+
 export type TransportResolver = {
-  /** The transport for a runner in a directory, composed and configured on first use. */
-  forHarness(harness: SessionHarness, directory: string): Promise<HarnessHandle>
+  /**
+   * The transport for a runner in a directory, composed on first use. A
+   * connection's secrets are leased again on every call, for the owner in
+   * `access`, and one owner's transport never replaces another's.
+   */
+  forHarness(harness: SessionHarness, directory: string, access: TransportAccess): Promise<HarnessHandle>
   /** Every transport currently composed, for reads that span harnesses. */
   composed(): readonly HarnessHandle[]
 }

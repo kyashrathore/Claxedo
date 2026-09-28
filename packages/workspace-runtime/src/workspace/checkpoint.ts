@@ -1,4 +1,5 @@
 import { DEFAULT_RECOVERY_BUDGETS, type RecoveryOutcome, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { AgentRuntimeRecovery } from "../host/runtime"
 import type { WorkspaceCheckpointBlocker, WorkspaceCheckpointDetail, WorkspaceCheckpointFreezeResult } from "./host"
 
@@ -21,14 +22,12 @@ export type ActiveTurn = {
 
 /** Resolves true when `wait` settles first, false when the deadline does. */
 export function withinDeadline<T>(wait: Promise<T>, deadlineAt: number) {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const expiry = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), Math.max(0, deadlineAt - Date.now()))
-  })
-  timer?.unref?.()
-  return Promise.race([wait.then(() => true), expiry]).finally(() => {
-    if (timer) clearTimeout(timer)
-  })
+  const expired = new Error("Workspace checkpoint deadline exceeded")
+  return settleAtRequestDeadline("workspace checkpoint", { signal: new AbortController().signal, deadlineAt },
+    wait, () => {}, () => expired).then(() => true, (error: unknown) => {
+      if (error === expired) return false
+      throw error
+    })
 }
 
 /**

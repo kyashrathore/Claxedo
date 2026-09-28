@@ -18,6 +18,7 @@ import { acpReceiver } from "./events"
 import { acpConfig } from "./config"
 import { supportsAcpSubagents } from "./extensions/subagents"
 import { AcpDraftProbes } from "./probe"
+import { AcpPeerOwnership } from "./ownership"
 import { acpGroups } from "./extensions/groups"
 import { acpGoalOperations } from "./extensions/goals"
 import { acpSteerOperations } from "./extensions/steer"
@@ -72,6 +73,7 @@ export class AcpTransport implements HarnessTransport {
   private readonly startingAborts = new Set<AbortController>()
   private readonly restarts = new Map<string, Promise<void>>()
   private readonly restartFailures = new Map<string, unknown>()
+  private readonly peers = new AcpPeerOwnership()
   private readonly probes: AcpDraftProbes
   private readonly host: AcpHost
   private disposed = false
@@ -102,9 +104,9 @@ export class AcpTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
     private readonly filterMcp: AcpMcpFilter, private readonly missingContext: MissingSessionContext) {
-    this.probes = new AcpDraftProbes(services, connection, filterMcp)
+    this.probes = new AcpDraftProbes(services, connection, filterMcp, this.peers)
     this.host = { services, connection, filterMcp, missingContext, entries: this.entries, starting: this.starting,
-      startingAborts: this.startingAborts, disposed: () => this.disposed, mcp: (entry) => this.mcp(entry) }
+      startingAborts: this.startingAborts, peers: this.peers, disposed: () => this.disposed, mcp: (entry) => this.mcp(entry) }
   }
 
   async capabilities(context: { sessionId?: string; directory: string }): Promise<TransportCapabilities> {
@@ -254,17 +256,18 @@ export class AcpTransport implements HarnessTransport {
     const entry = this.entry(session)
     this.entries.delete(session.binding.sessionId)
     entry.startupAbort.abort()
-    await entry.peer.retire()
+    await this.peers.retire(entry.peer)
   }
 
   async dispose(): Promise<void> {
     this.disposed = true
     for (const controller of this.startingAborts) controller.abort()
-    const entries = [...this.entries.values(), ...this.starting]
-    for (const entry of entries) entry.startupAbort.abort()
+    for (const entry of [...this.entries.values(), ...this.starting]) entry.startupAbort.abort()
     this.entries.clear()
     this.starting.clear()
     this.restartFailures.clear()
-    await Promise.all([...entries.map((entry) => entry.peer.retire()), this.probes.dispose(), ...this.restarts.values()])
+    this.probes.dispose()
+    await Promise.all(this.restarts.values())
+    await this.peers.retireAll()
   }
 }

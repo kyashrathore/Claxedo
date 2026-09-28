@@ -301,7 +301,12 @@ function readConsent(raw: string | null): CredentialConsent | null {
 }
 
 function toMetadata(row: CredentialRow): CredentialMetadata {
-  return { ...row, consent: readConsent(row.consent_json), usage_windows: parseUsageWindows(row.usage_windows) }
+  return {
+    ...row,
+    incarnation: row.id,
+    consent: readConsent(row.consent_json),
+    usage_windows: parseUsageWindows(row.usage_windows),
+  }
 }
 
 /** List credential metadata (no secrets) for one org. */

@@ -1,5 +1,7 @@
 import type {
+  ConnectionSecretAuthority,
   ConnectionSecretLease,
+  ConnectionSecretOwner,
   ConnectionSecretResolver,
 } from "@claxedo/agent-sdk-runtime"
 import type { HarnessConnectionDescriptor } from "./connections"
@@ -18,8 +20,9 @@ export class ConnectionUnavailableError extends Error {
   constructor(
     readonly connectionId: string,
     readonly reason: ConnectionSecretUnavailableReason,
+    cause?: unknown,
   ) {
-    super(`Connection ${connectionId} is unavailable (${reason})`)
+    super(`Connection ${connectionId} is unavailable (${reason})`, cause === undefined ? undefined : { cause })
     this.name = "ConnectionUnavailableError"
   }
 }
@@ -65,8 +68,8 @@ export function createLocalConnectionSecretResolver(input: {
           name,
           reference,
         })
-      } catch {
-        throw unavailable(descriptor, "resolver_failed")
+      } catch (cause) {
+        throw unavailable(descriptor, "resolver_failed", cause)
       }
       if (lease.revoked) throw unavailable(descriptor, "revoked")
       if (lease.expiresAt !== undefined && lease.expiresAt <= (input.now?.() ?? Date.now())) {
@@ -91,6 +94,8 @@ export function createVmConnectionSecretResolver(input: {
     configRevision: number
     secretRefs: Readonly<Record<string, string>>
     workspace: { workspaceId: string; runtimeId?: string }
+    authority?: ConnectionSecretAuthority
+    owner: ConnectionSecretOwner
   }): Promise<{
     secrets: Record<string, string>
     secretLeaseGeneration: string
@@ -99,7 +104,7 @@ export function createVmConnectionSecretResolver(input: {
   }>
   now?: () => number
 }): ConnectionSecretResolver {
-  return async ({ descriptor, directory }) => {
+  return async ({ descriptor, directory, authority, owner }) => {
     assertEnabled(descriptor)
     const workspace = await input.workspaceForDirectory(directory)
     if (!workspace?.workspaceId) throw unavailable(descriptor, "invalid_resolution")
@@ -111,9 +116,11 @@ export function createVmConnectionSecretResolver(input: {
         configRevision: descriptor.configRevision,
         secretRefs: descriptor.secretRefs ?? {},
         workspace,
+        ...(authority ? { authority } : {}),
+        owner,
       })
-    } catch {
-      throw unavailable(descriptor, "resolver_failed")
+    } catch (cause) {
+      throw unavailable(descriptor, "resolver_failed", cause)
     }
     if (lease.revoked) throw unavailable(descriptor, "revoked")
     if (lease.expiresAt !== undefined && lease.expiresAt <= (input.now?.() ?? Date.now())) {
@@ -136,8 +143,9 @@ function assertEnabled(descriptor: HarnessConnectionDescriptor) {
 function unavailable(
   descriptor: HarnessConnectionDescriptor,
   reason: ConnectionSecretUnavailableReason,
+  cause?: unknown,
 ) {
-  return new ConnectionUnavailableError(descriptor.connectionId, reason)
+  return new ConnectionUnavailableError(descriptor.connectionId, reason, cause)
 }
 
 function secretLease(

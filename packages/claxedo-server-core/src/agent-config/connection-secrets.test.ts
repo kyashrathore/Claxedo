@@ -7,6 +7,8 @@ import {
   publicConnectionUnavailable,
 } from "./connection-secrets"
 
+const owner = { kind: "person" as const, userId: "user-1" }
+
 function descriptor(overrides: Partial<HarnessConnectionDescriptor> = {}): HarnessConnectionDescriptor {
   return {
     connectionId: "conn-primary",
@@ -33,7 +35,7 @@ describe("ConnectionSecretResolver", () => {
       now: () => 1_000,
     })
 
-    const first = await resolver({ descriptor: descriptor(), directory: "/repo" })
+    const first = await resolver({ descriptor: descriptor(), directory: "/repo", owner })
     expect(first).toEqual({
       secretLeaseGeneration: "token=local-1",
       secrets: { token: "secret-one" },
@@ -41,9 +43,20 @@ describe("ConnectionSecretResolver", () => {
 
     leaseGeneration = "local-2"
     value = "secret-two"
-    const rotated = await resolver({ descriptor: descriptor(), directory: "/repo" })
+    const rotated = await resolver({ descriptor: descriptor(), directory: "/repo", owner })
     expect(rotated.secretLeaseGeneration).toBe("token=local-2")
     expect(rotated.secretLeaseGeneration).not.toContain("secret-two")
+  })
+
+  test("a failed VM lease keeps why it failed", async () => {
+    const refused = new Error("Connection secret lease refused (401)")
+    const resolver = createVmConnectionSecretResolver({
+      workspaceForDirectory: () => ({ workspaceId: "ws_1" }),
+      resolveLease: async () => { throw refused },
+    })
+
+    await expect(resolver({ descriptor: descriptor(), directory: "/repo", owner }))
+      .rejects.toMatchObject({ code: "connection_unavailable", reason: "resolver_failed", cause: refused })
   })
 
   test("VM resolution derives trusted workspace scope from directory and rejects revocation", async () => {
@@ -65,7 +78,7 @@ describe("ConnectionSecretResolver", () => {
       now: () => 1_000,
     })
 
-    await expect(resolver({ descriptor: descriptor(), directory: "/repo" })).resolves.toEqual({
+    await expect(resolver({ descriptor: descriptor(), directory: "/repo", owner })).resolves.toEqual({
       secretLeaseGeneration: "lease-42",
       secrets: { token: "vm-secret" },
     })
@@ -75,12 +88,13 @@ describe("ConnectionSecretResolver", () => {
       configRevision: 7,
       secretRefs: { token: "credentials/fixture-token" },
       workspace: { workspaceId: "ws_1", runtimeId: "runtime_1" },
+      owner,
     }])
 
     revoked = true
-    await expect(resolver({ descriptor: descriptor(), directory: "/repo" }))
+    await expect(resolver({ descriptor: descriptor(), directory: "/repo", owner }))
       .rejects.toMatchObject({ code: "connection_unavailable", reason: "revoked" })
-    await expect(resolver({ descriptor: descriptor(), directory: "/missing" }))
+    await expect(resolver({ descriptor: descriptor(), directory: "/missing", owner }))
       .rejects.toMatchObject({ code: "connection_unavailable", reason: "invalid_resolution" })
   })
 
@@ -94,7 +108,7 @@ describe("ConnectionSecretResolver", () => {
 
     let caught: unknown
     try {
-      await resolver({ descriptor: descriptor(), directory: "/repo" })
+      await resolver({ descriptor: descriptor(), directory: "/repo", owner })
     } catch (error) {
       caught = error
     }
@@ -116,15 +130,15 @@ describe("ConnectionSecretResolver", () => {
       now: () => 100,
     })
 
-    await expect(local({ descriptor: descriptor({ enabled: false }), directory: "/repo" }))
+    await expect(local({ descriptor: descriptor({ enabled: false }), directory: "/repo", owner }))
       .rejects.toMatchObject({ reason: "disabled" })
-    await expect(local({ descriptor: descriptor(), directory: "/repo" }))
+    await expect(local({ descriptor: descriptor(), directory: "/repo", owner }))
       .rejects.toMatchObject({ reason: "expired" })
 
     const missing = createLocalConnectionSecretResolver({
       resolveReference: async () => ({ leaseGeneration: "1" }),
     })
-    await expect(missing({ descriptor: descriptor(), directory: "/repo" }))
+    await expect(missing({ descriptor: descriptor(), directory: "/repo", owner }))
       .rejects.toMatchObject({ reason: "missing_secret" })
   })
 })

@@ -581,6 +581,7 @@ function credentialFake(): ControlPlaneCredentials & { secretOf(providerId: stri
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: providerId,
       }
     : undefined
   return {

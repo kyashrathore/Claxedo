@@ -1,4 +1,5 @@
 import type { PluginProjection, ResolvedCredentials, TransportConfigUpdate } from "@claxedo/harness/contract"
+import { createKeyedSerializer } from "@claxedo/helpers"
 import type { AttachedSession } from "../host/attachments"
 import { RuntimeConfigApplyError } from "../routes/config"
 
@@ -27,42 +28,45 @@ function configurationRefusal(refusals: ReadonlyArray<{ sessionId: string; reaso
  * refused when its turn ends is reported to the host the same way.
  */
 export function createSessionConfiguration(input: SessionConfigurationInput) {
-  const held = new Map<string, TransportConfigUpdate>()
+  const pending = new WeakMap<AttachedSession, TransportConfigUpdate>()
+  const held = new WeakSet<AttachedSession>()
+  const pushes = createKeyedSerializer<AttachedSession>()
 
-  const push = async (attached: AttachedSession, update: TransportConfigUpdate): Promise<string | undefined> => {
-    const sessionId = attached.session.binding.sessionId
+  const push = (attached: AttachedSession): Promise<string | undefined> => pushes.run(attached, async () => {
+    const update = pending.get(attached)
+    if (!update) return undefined
     const applied = await attached.handle.transport.configure(attached.session, update)
     if (applied.state === "deferred" && applied.until === "after-active-turns") {
-      held.set(sessionId, update)
+      held.add(attached)
       return undefined
     }
-    held.delete(sessionId)
+    held.delete(attached)
+    if (applied.state !== "refused" && pending.get(attached) === update) pending.delete(attached)
     return applied.state === "refused" ? applied.reason : undefined
-  }
+  })
 
   return {
     async apply(change: { credentials: boolean; projection: boolean }): Promise<void> {
-      if (!change.credentials && !change.projection) return
       const credentials = change.credentials ? input.credentials() : undefined
       const refusals = (await Promise.all(input.attached().map(async (attached) => {
-        const reason = await push(attached, {
+        if (change.credentials || change.projection) pending.set(attached, {
+          ...pending.get(attached),
           ...(credentials ? { credentials } : {}),
           ...(change.projection ? { projection: input.projection(attached) } : {}),
         })
+        const reason = await push(attached)
         return reason === undefined ? [] : [{ sessionId: attached.session.binding.sessionId, reason }]
       }))).flat()
       if (refusals.length > 0) throw configurationRefusal(refusals)
     },
     async afterTurn(sessionId: string): Promise<void> {
-      const update = held.get(sessionId)
-      if (!update) return
       const attached = input.attached().find((entry) => entry.session.binding.sessionId === sessionId)
-      if (!attached) { held.delete(sessionId); return }
+      if (!attached || !held.has(attached)) return
       try {
-        const reason = await push(attached, update)
+        const reason = await push(attached)
         if (reason !== undefined) input.onHeldFailure(configurationRefusal([{ sessionId, reason }]))
       } catch (error) {
-        held.delete(sessionId)
+        held.delete(attached)
         input.onHeldFailure(error)
       }
     },

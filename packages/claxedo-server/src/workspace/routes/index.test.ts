@@ -203,6 +203,7 @@ function services(): ControlPlaneServices {
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: `cred_${providerId}`,
       })),
       putCredential: vi.fn(async (input) => ({
         id: `cred_${input.driver_id}`,
@@ -214,6 +215,7 @@ function services(): ControlPlaneServices {
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: `cred_${input.driver_id}`,
       })),
       deleteCredential: vi.fn(async () => true),
       deleteCredentialsByProvider: vi.fn(async () => 1),
@@ -1127,6 +1129,7 @@ describe("workspace routes signed control plane authority", () => {
       created_at: 1,
       updated_at: 1,
       revision: 1,
+      incarnation: "cred_1",
     })
     const missingSource = await app.request("http://localhost/create", {
       method: "POST",
@@ -1150,6 +1153,7 @@ describe("workspace routes signed control plane authority", () => {
       created_at: 1,
       updated_at: 1,
       revision: 1,
+      incarnation: "cred_2",
     })
     const missingManager = await app.request("http://localhost/create", {
       method: "POST",
@@ -1900,6 +1904,23 @@ describe("workspace routes signed control plane authority", () => {
       expect.objectContaining({ mode: "signed", token: "user_2" }),
     )
     expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("provisioning polls do not spend the runtime token mint budget", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const ready = await sandbox.target("ws_1")
+    sandbox.target.mockResolvedValue({ status: "unavailable", leaseStatus: "acquiring", retryAfterMs: 8000 } as never)
+    const signer = vi.fn(async () => ({ runtimeAccessToken: "rat_123", tokenExpiresAt: 123_000, jti: "jti_1" }))
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, relayUrl: "https://relay.example.test", runtimeAccessTokenSigner: signer })
+    const request = () => app.request("http://localhost/ws_1/connection", { headers: { Authorization: "Bearer user_1" } })
+    for (let i = 0; i < 8; i++) expect((await request()).status).toBe(200)
+    expect(signer).not.toHaveBeenCalled()
+    sandbox.target.mockResolvedValue(ready)
+    for (let i = 0; i < 6; i++) expect((await request()).status).toBe(200)
+    expect((await request()).status).toBe(429)
+    expect(signer).toHaveBeenCalledTimes(6)
   })
 
   test("signed cloud connection read mints and records a Runtime Access Token off the running lease", async () => {

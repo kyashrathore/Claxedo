@@ -1,6 +1,8 @@
 import { AgentRuntimeContractError, type AgentExecutionBinding, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { createSessionBroker, type BrokerOwner, type SessionBrokerContext } from "@claxedo/harness/broker"
 import type { HarnessSession, SessionBroker, TurnActor, TurnOrigin } from "@claxedo/harness/contract"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
+import { createKeyedSerializer } from "@claxedo/helpers"
 import type { AgentRuntimeStore } from "./contracts"
 import { attachInput, type LaunchComposer } from "./launch"
 import type { HarnessHandle, TransportResolver } from "./transports"
@@ -19,6 +21,7 @@ type AttachmentsInput = {
   launch: LaunchComposer
   broker: BrokerOwner
   workspaceId: string
+  executing: (sessionId: string, generation: object) => AttachedSession | undefined
 }
 
 function serviceOrigin(owner: TurnActor): TurnOrigin {
@@ -34,7 +37,7 @@ function serviceOrigin(owner: TurnActor): TurnOrigin {
  */
 export class SessionAttachments {
   private readonly attached = new Map<string, AttachedSession>()
-  private readonly attaching = new Map<string, Promise<AttachedSession>>()
+  private readonly attaching = createKeyedSerializer()
 
   constructor(private readonly input: AttachmentsInput) {}
 
@@ -74,14 +77,21 @@ export class SessionAttachments {
     return binding
   }
 
-  async for(sessionId: string, directory?: string): Promise<AttachedSession> {
-    const current = this.attached.get(sessionId)
-    if (current && !current.handle.retired()) return this.current(sessionId, current)
-    const pending = this.attaching.get(sessionId)
-    if (pending) return await pending
-    const attaching = this.attach(sessionId, directory).finally(() => this.attaching.delete(sessionId))
-    this.attaching.set(sessionId, attaching)
-    return await attaching
+  /**
+   * The attachment a control or read addresses: the executing one when it
+   * targets that turn's generation, else the one held now, reused without
+   * leasing its secrets again. Only admitting a turn revalidates a connection;
+   * `authority` is what a session not held yet is attached under.
+   */
+  async for(sessionId: string, directory?: string, generation?: object, authority?: ConnectionSecretAuthority): Promise<AttachedSession> {
+    const executing = generation ? this.input.executing(sessionId, generation) : undefined
+    if (executing) return executing
+    return await this.attaching.run(sessionId, async () => this.peek(sessionId) ?? await this.attach(sessionId, directory, authority))
+  }
+
+  /** The attachment a new turn runs on, after its connection and secret lease are resolved again under the turn's authority. */
+  async admit(sessionId: string, authority?: ConnectionSecretAuthority): Promise<AttachedSession> {
+    return await this.attaching.run(sessionId, () => this.attach(sessionId, undefined, authority))
   }
 
   private current(sessionId: string, entry: AttachedSession): AttachedSession {
@@ -91,13 +101,15 @@ export class SessionAttachments {
     return { ...entry, session: { ...entry.session, binding } }
   }
 
-  private async attach(sessionId: string, requestedDirectory?: string): Promise<AttachedSession> {
+  private async attach(sessionId: string, requestedDirectory?: string, authority?: ConnectionSecretAuthority): Promise<AttachedSession> {
     const config = this.input.store.getSessionConfig(sessionId)
     if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
     const binding = this.binding(sessionId)
     const directory = requestedDirectory ?? binding.directory
-    const handle = await this.input.transports.forHarness(config.harness, directory)
     const owner = this.owner(sessionId)
+    const handle = await this.input.transports.forHarness(config.harness, directory, { owner, ...(authority ? { authority } : {}) })
+    const current = this.attached.get(sessionId)
+    if (current?.handle === handle && !handle.retired()) return this.current(sessionId, current)
     const context: SessionBrokerContext = { sessionId, directory, workspaceId: this.input.workspaceId, origin: serviceOrigin(owner) }
     const broker = createSessionBroker(this.input.broker, context)
     const session = await handle.transport.attach(attachInput(this.input.launch, {
