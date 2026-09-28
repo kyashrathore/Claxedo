@@ -1814,7 +1814,7 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(signed.status).toBe(200)
     await expect(signed.json()).resolves.toEqual({
-      workspaces: [{ workspace_id: "ws_1", role: "owner" }],
+      workspaces: [{ workspace_id: "ws_1", role: "owner", reachable: false }],
     })
     expect(svc.authority?.usersMe).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_1" }),
@@ -1894,6 +1894,7 @@ describe("workspace routes signed control plane authority", () => {
           backing: "local-worktree",
           role: "viewer",
           host_online: false,
+          reachable: false,
         },
       ],
     })

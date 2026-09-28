@@ -11,6 +11,7 @@
  * `GET /:id/connection` is shared with the local server (`hostTunnelConnectionInfo`).
  */
 
+import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/placement-reachability"
 import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
@@ -232,11 +233,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             })
             if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
             const workspaces = await authority.listWorkspaces(auth)
+            const rows = Array.isArray(workspaces) ? workspaces : []
             return c.json({
-              workspaces:
-                Array.isArray(workspaces) && host === "machine"
-                  ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
-                  : workspaces,
+              workspaces: await withAuthorityRowReachability(
+                services?.sandbox.sandboxManager,
+                host === "machine" ? rows.filter((item) => asRecord(item)?.backing === "local-worktree") : rows,
+              ),
             })
           } catch (err) {
             if (err instanceof ControlPlaneAuthError)

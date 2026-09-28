@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono"
+import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/placement-reachability"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { globalWorkspace, isGlobalDirectory } from "../../session/global"
@@ -308,11 +309,12 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             })
             if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
             const workspaces = await authority.listWorkspaces(authResult.auth)
+            const rows = Array.isArray(workspaces) ? workspaces : []
             return c.json({
-              workspaces:
-                Array.isArray(workspaces) && host === "machine"
-                  ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
-                  : workspaces,
+              workspaces: await withAuthorityRowReachability(
+                services?.sandbox.sandboxManager,
+                host === "machine" ? rows.filter((item) => asRecord(item)?.backing === "local-worktree") : rows,
+              ),
             })
           } catch (err) {
             if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)

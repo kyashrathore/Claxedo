@@ -894,7 +894,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     const res = await app.fetch(get("/?host=machine"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
-    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", backing: "local-worktree" }])
+    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", backing: "local-worktree", reachable: false }])
     expect(authority!.usersMe).toHaveBeenCalledTimes(1)
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
@@ -905,10 +905,31 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([
-      { workspace_id: "ws_user", backing: "local-worktree" },
-      { workspace_id: "ws_cloud", backing: "cloud-vm" },
+      { workspace_id: "ws_user", backing: "local-worktree", reachable: false },
+      { workspace_id: "ws_cloud", backing: "cloud-vm", reachable: false },
     ])
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
+  })
+
+  test("each row says whether its runtime answers now: a machine row by host_online, a cloud row by a ready lease", async () => {
+    const authority = fakeAuthority({
+      listWorkspaces: vi.fn(async () => [
+        { workspace_id: "ws_online", backing: "local-worktree", host_online: true },
+        { workspace_id: "ws_offline", backing: "local-worktree", host_online: false },
+        { workspace_id: "ws_ready", backing: "cloud-vm" },
+        { workspace_id: "ws_stopped", backing: "cloud-vm" },
+      ]),
+    })
+    const target = vi.fn(async (id: string) => ({ status: id === "ws_ready" ? "ready" : "stopped" }))
+    const { app } = buildApp({ authority, sandboxManager: { target } as unknown as SandboxManager })
+    const res = await app.fetch(get("/?host=provisioner"))
+    const json = (await res.json()) as { workspaces: Array<{ workspace_id: string; reachable: boolean }> }
+    expect(json.workspaces.map((row) => [row.workspace_id, row.reachable])).toEqual([
+      ["ws_online", true],
+      ["ws_offline", false],
+      ["ws_ready", true],
+      ["ws_stopped", false],
+    ])
   })
 
   test("unsigned (no host query) returns an empty list and never touches the authority", async () => {
