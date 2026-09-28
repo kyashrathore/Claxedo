@@ -177,7 +177,7 @@ describe("build-sandbox-image", () => {
     ]))
     expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.220")
     expect(deps.zod).toBe("4.4.3")
-    expect(deps["@opencode-ai/sdk"]).toBe("0.0.0-beta-18684")
+    expect(deps["@opencode-ai/sdk"]).toBe("0.0.0-beta-19271")
   })
 
   test("the enabled image adds the feature package root while the disabled image does not", () => {

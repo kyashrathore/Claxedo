@@ -32,7 +32,7 @@ function client(input: Partial<ModalClientLike> = {}) {
 const baseOptions = {
   tokenId: "modal-token-id",
   tokenSecret: "modal-token-secret",
-  runner: "opencode",
+  nativeHarness: "opencode",
   controlEnv: {
     relayJwksUrl: "https://relay.test/.well-known/jwks.json",
     managementJwksUrl: "https://control.test/.well-known/jwks.json",
@@ -49,6 +49,27 @@ const input = {
 }
 
 describe("ModalSandboxDriver", () => {
+  test.each(["setTags", "tunnels"] as const)("%s errors reach the caller", async (method) => {
+    const error = new Error(`${method} denied`)
+    const created = sandbox({ [method]: vi.fn(async () => { throw error }) })
+    const driver = createModalSandboxDriver({ ...baseOptions, client: client({ sandboxes: {
+      create: async () => created,
+      fromId: async () => created,
+    } }) })
+    await expect(driver.ensureHost(input)).rejects.toBe(error)
+    if (method === "setTags") expect(created.tunnels).not.toHaveBeenCalled()
+  })
+
+  test("a tunnel timeout keeps the sandbox provisioning", async () => {
+    const timeout = Object.assign(new Error("tunnels not ready"), { name: "SandboxTimeoutError" })
+    const created = sandbox({ tunnels: vi.fn(async () => { throw timeout }) })
+    const driver = createModalSandboxDriver({ ...baseOptions, client: client({ sandboxes: {
+      create: async () => created,
+      fromId: async () => created,
+    } }) })
+    await expect(driver.ensureHost(input)).resolves.toMatchObject({ provisioning: true })
+  })
+
   test("ensureHost creates a Modal sandbox running workspace-runtime with boot env", async () => {
     const created = sandbox()
     const modal = client({
@@ -90,7 +111,7 @@ describe("ModalSandboxDriver", () => {
           WORKSPACE_RUNTIME_HOST_ID: "modal-host-ws_1",
           WORKSPACE_RUNTIME_DIRECTORY: "/work/app",
           WORKSPACE_RUNTIME_PORT: "2593",
-          WORKSPACE_RUNTIME_RUNNER: "opencode",
+          WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode",
           WORKSPACE_RUNTIME_RELAY_JWKS_URL: "https://relay.test/.well-known/jwks.json",
           WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: "https://control.test/.well-known/jwks.json",
           WORKSPACE_RUNTIME_SOURCE_KIND: "git",

@@ -33,6 +33,7 @@ import {
   createRepositoryDocumentWorkspace,
 } from "@claxedo/server-core/documents/repository/index"
 import type { DocumentEntry } from "@claxedo/server-core/documents/port"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const exec = promisify(execFile)
 const roots = new Set<string>()
@@ -114,11 +115,13 @@ describe("hosted remote documents genuine integration", () => {
     })
     const localRuntime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure({ key: signing.publicKey, workspaceId: "local_ws", hostId: "local_host" }),
+      placement: loopbackMachineLoginPolicy(),
       internalSecrets: { localDocumentBrokerToken: "installation-secret" },
       sessionAccessPolicy,
     })
     const cloudRuntime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure({ key: signing.publicKey, workspaceId: "cloud_ws", hostId: "cloud_host" }),
+      placement: loopbackMachineLoginPolicy(),
       internalSecrets: {},
       sessionAccessPolicy,
     })

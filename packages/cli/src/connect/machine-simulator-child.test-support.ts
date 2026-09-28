@@ -18,5 +18,4 @@ deps.host.setInterval = (fn) => {
   const handle = setInterval(fn, beatMs)
   return { cancel: () => clearInterval(handle) }
 }
-deps.host.openCodeRuntime = () => undefined
 process.exitCode = await connect(args, deps)

@@ -1,4 +1,4 @@
-import type { SessionConfig, SessionConfigUpdate } from "../index"
+import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 
 /**
  * A config field the harness itself accepted. A harness change invalidates it,

@@ -23,6 +23,7 @@ export async function resolveRuntimeActor(
     const actorName = trimToUndefined(row.actor_name)
     if (actorId && actorKind) return {
       actorId,
+      userId: auth.user.subject,
       actorKind,
       ...(actorPublicId && actorName
         ? {
@@ -39,4 +40,3 @@ export async function resolveRuntimeActor(
     "Canonical runtime actor identity is unavailable",
   )
 }
-

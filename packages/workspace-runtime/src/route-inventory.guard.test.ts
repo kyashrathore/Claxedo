@@ -10,6 +10,7 @@ import { relayWorkspaceRuntimeExposure } from "./exposure"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "./management-auth"
 import { WorkspaceRuntimeRouteManifest, workspaceRuntimeRoute } from "./routes/manifest"
 import type { RelayHostAuthOptions } from "./workspace-host-service-auth"
+import { loopbackMachineLoginPolicy } from "./testing"
 
 const tempDirs: string[] = []
 const originalWorkspaceDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
@@ -47,6 +48,7 @@ async function composedRuntime() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const relayHostAuth: RelayHostAuthOptions = { key: key.publicKey, workspaceId: "ws_1", hostId: "host_1" }
   const runtime = createWorkspaceRuntimeApp({
+    placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     target: { workspaceId: "ws_1", directory: dir },
     managementAuth,

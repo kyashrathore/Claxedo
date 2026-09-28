@@ -12,7 +12,7 @@ afterEach(async () => {
 })
 
 describe("OpenCode Agent Plugins projection", () => {
-  test("generates module-owned skill and MCP config with expanded standard placeholders", async () => {
+  test("projects canonical skill roots and MCP entries with resolved relative paths", async () => {
     const generationRoot = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-opencode-view-"))
     roots.push(generationRoot)
     const root = path.join(generationRoot, "plugins", "review")
@@ -30,6 +30,8 @@ describe("OpenCode Agent Plugins projection", () => {
         local: { type: "stdio", command: "./bin/server", args: ["${PLUGIN_DATA}/state"], cwd: "${PLUGIN_ROOT}" },
       },
     }))
+    await fs.mkdir(path.join(root, "skills", "broken"), { recursive: true })
+    await fs.writeFile(path.join(root, "skills", "broken", "SKILL.md"), "---\nname: [broken\ndescription: Invalid\n---\n")
     const validated = validatePluginTree(await loadAgentPluginTreeFromDirectory(root), root)
     expect(validated.status).toBe("valid")
     if (validated.status !== "valid") return
@@ -40,12 +42,13 @@ describe("OpenCode Agent Plugins projection", () => {
       plugins: [{ pluginInstanceId: "[\"claxedo\",\"review\"]", artifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", plugin: validated.plugin, root, dataRoot }],
     })
 
-    const config = JSON.parse(await fs.readFile(projection.configFile!, "utf8"))
-    expect(config.skills).toEqual([path.join(root, "skills")])
-    expect(Object.values(config.mcp)).toEqual([{
-      type: "local",
-      command: ["./bin/server", `${dataRoot}/state`],
-      cwd: root,
+    expect(validated.diagnostics).toContainEqual(expect.objectContaining({ code: "skill_invalid", path: "skills/broken/SKILL.md" }))
+    expect(projection.pluginRoots[0].skillNames).toEqual(["review"])
+    expect(projection.mcpServers).toEqual([{
+      kind: "stdio", origin: "plugin", name: expect.stringMatching(/^review-.*-local$/),
+      command: path.join(root, "bin", "server"), args: [`${dataRoot}/state`], cwd: root,
     }])
+    expect(projection.notApplied).toEqual([])
+    await expect(fs.stat(path.join(generationRoot, "harnesses/opencode/opencode.json"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 })

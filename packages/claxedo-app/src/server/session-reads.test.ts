@@ -185,3 +185,20 @@ test("session reads: a held latest turn and outline answer the page and outline,
   expect(first.row.title).toBe("Live title")
   expect(server.runtimeCalls.filter((path) => path.includes("/message") || path.includes("/outline"))).toEqual([])
 })
+
+test("session reads: a harness without todos reads as no todos, and any other todos refusal stays an error", async () => {
+  const opened = (todos: unknown) => fakeServer({
+    reachable: () => true,
+    machine: true,
+    runtime: (path) => {
+      if (path === firstPath) return firstRead()
+      if (path === openPath) return openView({ todos })
+      return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
+    },
+  })
+  const unsupported = { error: { status: 409, code: "unsupported_operation", message: "opencode does not support getTodos" } }
+  expect(await readSession(opened(unsupported).context, ref, shape).todos).toEqual([])
+
+  const refused = { error: { status: 403, code: "session_access_denied", message: "Not yours" } }
+  await expect(readSession(opened(refused).context, ref, shape).todos).rejects.toMatchObject({ class: "auth", code: "session_access_denied" })
+})

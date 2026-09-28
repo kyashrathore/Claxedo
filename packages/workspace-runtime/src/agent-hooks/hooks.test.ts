@@ -186,7 +186,7 @@ describe("generateNotifyScript", () => {
     }
   })
 
-  it("keeps the parent busy when a Claude subagent stops", async () => {
+  it("keeps the parent busy while a subagent's hooks fire", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-child-hook-"))
     const get = liveTerminal("parent")
     const app = AgentHookRoutes()
@@ -198,8 +198,8 @@ describe("generateNotifyScript", () => {
     try {
       const script = path.join(root, "notify.sh")
       await writeFile(script, generateNotifyScript(server.port))
-      const invoke = async (hook_event_name: string) => {
-        const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name, session_id: "parent", agent_id: "child" })], {
+      const invoke = async (hook_event_name: string, subagent?: string) => {
+        const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name, session_id: "parent", ...(subagent ? { agent_id: subagent } : {}) })], {
           env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "parent", WORKSPACE_RUNTIME_STATE_DIR: root },
           stdout: "ignore", stderr: "ignore",
         })
@@ -207,6 +207,11 @@ describe("generateNotifyScript", () => {
       }
       await invoke("UserPromptSubmit")
       const state = async () => (await (await app.request("http://localhost/terminal-session?terminalId=parent")).json()).session.eventType
+      expect(await state()).toBe("Busy")
+      await invoke("SubagentStart", "child")
+      await invoke("Stop", "child")
+      expect(await state()).toBe("Busy")
+      await invoke("SubagentStop", "child")
       expect(await state()).toBe("Busy")
       await invoke("SubagentStop")
       expect(await state()).toBe("Busy")
@@ -354,7 +359,55 @@ describe("generateCursorHook", () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+
+  it("outside a Claxedo tab it only answers Cursor and forwards nothing", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-cursor-outside-"))
+    let forwarded = 0
+    const server = await serveHookFake(async () => { forwarded++; return Response.json({ success: true }) })
+    try {
+      const notify = path.join(root, "notify.sh")
+      const hook = path.join(root, "cursor-hook.sh")
+      await writeFile(notify, generateNotifyScript(server.port))
+      await writeFile(hook, generateCursorHook(notify))
+      for (const [arg, reply] of [["PermissionRequest", '{"continue":true}'], ["Stop", "{}"]] as const) {
+        const child = Bun.spawn(["/bin/bash", hook, arg], {
+          env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
+          stdin: new Blob([JSON.stringify({ hook_event_name: "stop", conversation_id: "conv-1" })]), stdout: "pipe", stderr: "ignore",
+        })
+        expect((await new Response(child.stdout).text()).trim()).toBe(reply)
+        expect(await child.exited).toBe(0)
+      }
+      expect(forwarded).toBe(0)
+    } finally {
+      await server.stop()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
 })
+
+for (const [name, generate] of [["gemini", generateGeminiHook], ["copilot", generateCopilotHook]] as const) {
+  it(`${name} hook outside a Claxedo tab answers and forwards nothing`, async () => {
+    const root = await mkdtemp(path.join(tmpdir(), `claxedo-${name}-outside-`))
+    let forwarded = 0
+    const server = await serveHookFake(async () => { forwarded++; return Response.json({ success: true }) })
+    try {
+      const notify = path.join(root, "notify.sh")
+      const hook = path.join(root, `${name}-hook.sh`)
+      await writeFile(notify, generateNotifyScript(server.port))
+      await writeFile(hook, generate(notify))
+      const child = Bun.spawn(["/bin/bash", hook, "Stop"], {
+        env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
+        stdin: new Blob([JSON.stringify({ hook_event_name: "Stop" })]), stdout: "pipe", stderr: "ignore",
+      })
+      expect((await new Response(child.stdout).text()).trim()).toBe("{}")
+      expect(await child.exited).toBe(0)
+      expect(forwarded).toBe(0)
+    } finally {
+      await server.stop()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+}
 
 describe("generateCopilotHook", () => {
   it("includes marker and notify path", () => {

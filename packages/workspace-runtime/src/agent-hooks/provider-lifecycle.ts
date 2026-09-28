@@ -50,6 +50,7 @@ export type ProviderLifecycle = {
   lastAssistantMessage?: string
   userAction?: { toolKey: string | null }
   toolCompletion?: { toolKey: string | null }
+  subagent?: true
 }
 
 /** Normalize raw CLI hook JSON before it can mutate terminal lifecycle state. */
@@ -85,9 +86,17 @@ export function providerLifecycle(input: Record<string, unknown>): ProviderLifec
       prompt: str(event.message)?.slice(0, 800),
     }
   }
-  if (!type || type === "SubagentStop") return undefined
-  const eventType = Object.hasOwn(eventTypes, type) ? eventTypes[type] : undefined
+  if (!type || type === "SubagentStart" || type === "SubagentStop") return undefined
+  const eventType = hook === "PreToolUse"
+    ? first("tool_name") === "request_user_input" ? "UserActionRequired" as const : undefined
+    : Object.hasOwn(eventTypes, type) ? eventTypes[type] : undefined
   if (!eventType) return undefined
+  // Claude and Codex set agent_id only on hooks a subagent fires, and the
+  // parent's turn may end while one still runs. A subagent's ask still waits on
+  // the person, and its completion of that same tool settles it; nothing else
+  // a subagent reports is the terminal's turn.
+  const subagent = !!first("agent_id", "agentId")
+  if (subagent && eventType !== "UserActionRequired" && !(type && toolCompletionHooks.has(type) && toolKey(input) !== null)) return undefined
   // Claude can finish a response while waiting for its background agent. The
   // provider explicitly reports that work; this is not a completed terminal turn.
   if (hook === "Stop" && arr(input.background_tasks)?.some((task) => rec(task)?.status === "running")) return undefined
@@ -95,6 +104,7 @@ export function providerLifecycle(input: Record<string, unknown>): ProviderLifec
     .map((key) => arr(input[key])).find((value) => value?.length)
   return {
     eventType,
+    ...(subagent ? { subagent: true } : {}),
     ...(eventType === "UserActionRequired" ? { userAction: { toolKey: toolKey(input) } } : {}),
     ...(type && toolCompletionHooks.has(type) ? { toolCompletion: { toolKey: toolKey(input) } } : {}),
     ...(hook === "Interrupt" ? { outcome: "cancelled" as const } : {}),

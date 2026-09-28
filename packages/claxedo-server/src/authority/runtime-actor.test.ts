@@ -24,6 +24,7 @@ describe("resolveRuntimeActor", () => {
 
     await expect(resolveRuntimeActor({ usersMe } as never, auth)).resolves.toEqual({
       actorId: "actor_registry_1",
+      userId: "upstream-subject",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Ada",

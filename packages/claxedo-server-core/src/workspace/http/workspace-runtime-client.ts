@@ -14,7 +14,7 @@ export type WorkspaceRuntimeClientOptions = {
   relayProvider?: import("../../adapters/relay/index").RelayProvider
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
-  runtimeActor?: Pick<RelayTokenInput, "principalKind" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
+  runtimeActor?: Pick<RelayTokenInput, "principalKind" | "userId" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
   auth?: RelayTokenInput["auth"]
   delegatedActor?: boolean
   channelIdentity?: RelayTokenInput["channelIdentity"]

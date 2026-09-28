@@ -1,49 +1,45 @@
 import { randomUUID } from "node:crypto"
 import { HTTPException } from "hono/http-exception"
+import type { RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import { errorMessage } from "@claxedo/helpers"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
   isAgentRuntimeMessageIdConflictError,
-  isAgentRuntimeTurnConflictError,
-} from "@claxedo/agent-sdk-runtime"
-import type { AgentExecutionBinding, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { asRecord } from "@claxedo/helpers/guards"
+  isAgentRuntimeTurnAdmissionError,
+} from "../host/runtime"
 import { sessionError, withDir, type CompatEnvelope } from "../compat-events"
-import { errorMessage } from "../error-message"
 import {
-  admitSessionPromptTurn,
   compatScope,
   runRuntimePromptTurn,
-  runSessionPromptTurn,
-  sessionTurnRefusal,
   type ActiveTurnScope,
-  type AdmittedSessionPromptTurn,
   type SessionPromptBody,
   type SessionPromptTurnResult,
-  type SessionTurnRefusalCode,
 } from "../session/service"
 import type { QueuedPromptRequester } from "../session/delivery-owner"
 import {
   sessionAccessContext,
   sessionAccessDenied,
   sessionRequestProvenance,
+  sessionTurnOrigin,
   type SessionTurnGrantDecision,
 } from "../session-access-policy"
 import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
+import { harnessUnavailableResponse } from "./session-harness-refusal"
 import { rejectPermissionOverride } from "./session-permission-ceiling"
 import {
   after,
   managedSessionLifecycle,
-  readRuntimeSession,
-  requireExecutionBinding,
+  readSession,
+  turnOriginOf,
   type SessionRouteContext as Ctx,
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
-import { captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
+import { captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 
 /**
  * A headline for a turn/stream failure that keeps the cause: the real message
@@ -73,37 +69,12 @@ export async function settleChildTurn(opts: Opts, sessionId: string, directory: 
   }
 }
 
-/** Apply an optional per-turn permission mode before a direct harness prompt. */
-export async function applyTurnPermissionMode(input: {
-  adapter: AgentHarnessAdapter
-  binding: AgentExecutionBinding
-  modeId?: string
-}) {
-  if (!input.modeId || !input.adapter.setPermissionMode) return
-  try {
-    await input.adapter.setPermissionMode(input.binding, input.modeId)
-  } catch {
-    // A stale mode should not prevent the user's prompt from running under the
-    // harness's current mode. The explicit permission-mode endpoint still
-    // reports invalid mode changes synchronously.
-  }
-}
-
 export async function flushDocumentsAfterTurn(opts: Opts, sessionId: string) {
   try {
     await (opts.flushSessionDocuments ?? flushRuntimeSessionDocuments)(sessionId)
   } catch (error) {
     console.error(`[runtime-document] end-of-turn write-back failed for ${sessionId}:`, error)
   }
-}
-
-/**
- * The turn was refused before the harness was asked to run anything, so the
- * cause is external to it and the same message id may submit again once the
- * cause is gone. `code` is what carries that; the sentence beside it cannot.
- */
-export function turnRefused(c: Ctx, refusal: SessionTurnRefusalCode, message: string) {
-  return c.json(errorBody(refusal, message), 503)
 }
 
 export function messageIdConflict(c: Ctx) {
@@ -227,13 +198,15 @@ export async function queuedPromptRequester(
 
 export type PromptAdmission = { answer: Response; turn?: Promise<void>; failed?: { error: unknown } }
 
+/**
+ * `prompt_async`'s admission, which a create's first prompt goes through too.
+ * Retries are deduplicated by message id and nothing more: the per-session
+ * concurrency lease is the runtime host's. The checkpoint-freeze middleware
+ * runs before these routes, so a 423 may preempt admission entirely. A live
+ * entry is the owning request's pending answer: a retry that finds one joins
+ * it instead of deduplicating on sight or admitting the same prompt twice.
+ */
 export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: unknown, c: Ctx) => Response) {
-  // Deduplicates prompt_async retries by message id and nothing more: the
-  // per-session concurrency lease is AgentRuntime's. The checkpoint-freeze
-  // middleware runs before these routes, so a 423 may preempt admission
-  // entirely. A live entry is the owning request's pending answer: a retry
-  // that finds one joins it instead of deduplicating on sight or admitting
-  // the same prompt twice.
   const promptAdmissions = new Map<string, Map<string, Promise<Response>>>()
   const releasePromptAdmission = (sessionId: string, messageId: string | undefined) => {
     if (!messageId) return
@@ -265,13 +238,13 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
    * still answers 204; a create undoes the session instead, and waits out
    * `turn` before undoing anything the turn's own cleanup still writes to.
    */
-  const admitPrompt = async (
+  return async (
     c: Ctx,
-    input: { sessionId: string; directory: RuntimeDirectory; adapter: AgentHarnessAdapter; body: SessionPromptBody },
+    input: { sessionId: string; directory: RuntimeDirectory; body: SessionPromptBody },
   ): Promise<PromptAdmission> => {
-    const { sessionId: id, directory, adapter } = input
+    const { sessionId: id, directory } = input
     const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: input.body }) ?? input.body
-    const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
+    const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
     if (permissionRefusal) return { answer: permissionRefusal }
     let settleAdmissionAnswer: ((response: Response) => void) | undefined
     if (body.messageID) {
@@ -291,13 +264,13 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     let turn: Promise<void> | undefined
     let failed: { error: unknown } | undefined
     const admit = async (): Promise<Response> => {
+      const runtime = await opts.runtime(c)
       if (body.messageID && c.req.header("x-claxedo-idempotency-retry") === "1") {
-        const messages = await opts.getMessages?.(c, directory, id)
-          ?? await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
+        const messages = await opts.getMessages?.(c, directory, id) ?? await runtime.events.list(id, directory)
         const projected = messages.some((message) => asRecord(message.info)?.id === body.messageID)
         const session = projected
           ? undefined
-          : await readRuntimeSession(opts, c, directory, id, adapter)
+          : await readSession(opts, c, directory, id)
         if (
           projected
           || session?.status === "busy"
@@ -309,10 +282,6 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         }
       }
       body.messageID ??= `msg_${randomUUID()}`
-      const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
-      if (body.delivery && (!runtime || !opts.queuedPrompts)) {
-        return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-      }
       const access = sessionAccessContext(c)
       if (body.delivery) {
         if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
@@ -336,90 +305,51 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         c,
         sessionId: id,
         turnId: body.messageID,
-        onLost: () => containLostTurn({ runtime: runtime?.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
+        onLost: () => containLostTurn({ runtime: runtime.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
       })
       if (turnAdmission.rejected) return turnAdmission.rejected
       let settleAdmission: ((error?: unknown) => void) | undefined
-      const admission = runtime
-        ? new Promise<unknown>((resolve) => {
-            settleAdmission = resolve
-          })
-        : undefined
-      let runTurn: () => Promise<SessionPromptTurnResult>
-      if (runtime) {
-        runTurn = () => runRuntimePromptTurn({
-          runtime,
-          sessionId: id,
-          directory,
-          body,
-          publishGlobal: opts.publishGlobal,
-          createActiveTurnScope: opts.createActiveTurnScope
-            ? () => turnScope(
-                opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
-                turnAdmission.lease,
-              )
-            : undefined,
-          ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-          streamErrorMessage: streamTurnErrorMessage,
-          onTurnTarget: lostTurn.set,
-          onAdmissionSettled: settleAdmission,
-          actor: access.actor,
-          author: access.author,
-        })
-      } else {
-        const binding = await requireExecutionBinding(opts, c, directory, id, adapter)
-        await applyTurnPermissionMode({ adapter, binding, modeId: body.permissionMode })
-        let admitted: AdmittedSessionPromptTurn
-        try {
-          admitted = await admitSessionPromptTurn({ adapter, binding, sessionId: id, directory, body })
-        } catch (error) {
-          const refusal = sessionTurnRefusal(error)
-          if (!refusal) throw error
-          await turnAdmission.lease?.release().catch(() => undefined)
-          return turnRefused(c, refusal, streamTurnErrorMessage(error))
-        }
-        runTurn = () => runSessionPromptTurn({
-          adapter,
-          admitted,
-          sessionId: id,
-          directory,
-          body,
-          publishGlobal: opts.publishGlobal,
-          publishUserMessage: false,
-          streamErrorMessage: streamTurnErrorMessage,
-          createActiveTurnScope: opts.createActiveTurnScope
-            ? ({ adapter, directory, sessionId }) => turnScope(
-                opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
-                turnAdmission.lease,
-              )
-            : undefined,
-          ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-        })
-      }
+      const admission = new Promise<unknown>((resolve) => {
+        settleAdmission = resolve
+      })
+      const runTurn: () => Promise<SessionPromptTurnResult> = () => runRuntimePromptTurn({
+        runtime,
+        sessionId: id,
+        directory,
+        body,
+        origin: turnOriginOf(sessionTurnOrigin(c), c),
+        publishGlobal: opts.publishGlobal,
+        createActiveTurnScope: opts.createActiveTurnScope
+          ? () => turnScope(opts.createActiveTurnScope?.({ c, directory, sessionId: id }), turnAdmission.lease)
+          : undefined,
+        ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
+        streamErrorMessage: streamTurnErrorMessage,
+        onTurnTarget: lostTurn.set,
+        onAdmissionSettled: settleAdmission,
+        actor: access.actor,
+        author: access.author,
+      })
       await opts.childSessions?.onTurnStarted(id, directory)
       // The turn runs detached: the response must not wait for the model.
       admittedForExecution = true
-      const admissionAck = admission && awaitAdmissionAck(admission)
+      const admissionAck = awaitAdmissionAck(admission)
       turn = (async () => {
         try {
-          const turn = await runTurn()
+          const finished = await runTurn()
           if (!turnAdmission.lease?.lost()) {
-            await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+            await after(opts.afterMessageCheckpoint?.(c, directory, id, finished.messages))
           }
         } catch (error) {
           settleAdmission?.(error)
-          if (isAgentRuntimeTurnConflictError(error)) return
-          if (admissionAck && await admissionAck === error) return
+          if (isAgentRuntimeTurnAdmissionError(error)) return
+          if (await admissionAck === error) return
           publishTurnFailure(opts.publishGlobal, directory, id, error)
         } finally {
           const leaseLost = turnAdmission.lease?.lost() ?? false
           if (!leaseLost) {
             await flushDocumentsAfterTurn(opts, id)
             if (opts.afterMessageCheckpoint) {
-              const messages = runtime
-                ? await runtime.events.list(id, directory)
-                : await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
-              await after(opts.afterMessageCheckpoint(c, directory, id, messages))
+              await after(opts.afterMessageCheckpoint(c, directory, id, await runtime.events.list(id, directory)))
             }
           }
           await turnAdmission.lease?.release().catch(() => undefined)
@@ -430,13 +360,18 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
       // Admission did not settle within the bound — honor prompt_async's
       // fire-and-forget contract rather than block on a wedged turn.
       if (admissionError === ADMISSION_ACK_TIMED_OUT) return c.body(null, 204)
-      if (isAgentRuntimeTurnConflictError(admissionError)) {
+      if (isAgentRuntimeTurnAdmissionError(admissionError)) {
         releasePromptAdmission(id, body.messageID)
         return turnAdmissionConflict(c)
       }
       if (isAgentRuntimeMessageIdConflictError(admissionError)) {
         releasePromptAdmission(id, body.messageID)
         return messageIdConflict(c)
+      }
+      const refused = harnessUnavailableResponse(c, admissionError)
+      if (refused) {
+        releasePromptAdmission(id, body.messageID)
+        return refused
       }
       if (admissionError !== undefined) failed = { error: admissionError }
       return c.body(null, 204)
@@ -452,5 +387,4 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
       if (!admittedForExecution) releasePromptAdmission(id, body.messageID)
     }
   }
-  return admitPrompt
 }

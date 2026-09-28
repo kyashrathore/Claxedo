@@ -63,10 +63,8 @@ const ENTRIES = [
   // so a `claxedo connect` machine is revoked the same way on both planes.
   //
   // The workspace `SessionEnv` is split into focused factory, protocol,
-  // runtime-env, and admission modules. `@claxedo/opencode-server-adapter` is
-  // registered for operator-configured external OpenCode connections (no
-  // engine bundled), and the local signed-web composition's Better Auth
-  // native-client is reached as well.
+  // runtime-env, and admission modules, and the local signed-web
+  // composition's Better Auth native-client is reached as well.
   //
   // `@claxedo/helpers` is the canonical owner of the record-narrowing guards
   // that `workspace/signed-access.ts`, `workspace/routes/index.ts`,
@@ -105,7 +103,7 @@ const ENTRIES = [
   // owns revoke; `platform/http/status.ts` is how the two routes answer an
   // authority refusal with its own status.
   //
-  // The 41st package is `@claxedo/agent-runtime-contract`, reached from
+  // `@claxedo/agent-runtime-contract` is a package edge, reached from
   // `src/channels/control-plane.ts` so a channel Stop decodes the outcome its
   // workspace runtime answers with instead of reading fields off the JSON.
   // +2 modules: `session/deferred-turn-grant.ts`, the signed proof a
@@ -118,9 +116,12 @@ const ENTRIES = [
   // session rows an enrolled machine publishes. No package edge.
   // +1 module: `authority/pulled-session.ts`, the one reader of a session
   // pull's answer that both pulls share. No package edge.
+  // +1 module: `deployments/private-repo-hosts.ts`, the one reader of
+  // CLAXEDO_PRIVATE_REPO_HOSTS that the self-hosted and hosted deployments
+  // share. No package edge.
   // `script/product-boundary/policies/server.ts` holds the review; this is the
-  // same measurement recorded a second time, so the two must agree. 129/41.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 129, packages: 41 },
+  // same measurement recorded a second time, so the two must agree. 130/40.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 130, packages: 40 },
 ] as const
 
 /** The remaining cloud compositions. */

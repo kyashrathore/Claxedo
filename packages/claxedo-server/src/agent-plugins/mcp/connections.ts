@@ -96,9 +96,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
   oauth: HostedMcpOAuthConfiguration
 }>): HostedDynamicConnectionIntegrations {
   const authentication = hostedMcpCatalogAuthentication(input.oauth)
-  // The token exchange fetches the endpoints discovery retained, later and
-  // outside discovery's own redirect walk — the same destination policy is
-  // enforced on it here, at connection time and on every hop.
+  // Retained endpoints must pass address validation again when credentials are sent.
   const tokenFetch = createSafeEndpointFetch(input.oauth.fetch, input.oauth.resolve)
   return async (context) => {
     if (context.attemptContext && context.integrationId) {

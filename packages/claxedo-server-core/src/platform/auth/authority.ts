@@ -70,6 +70,7 @@ export type AuthoritySessionInventoryRow = {
 
 export type RuntimeActorIdentity = {
   actorId: string
+  userId?: string
   actorKind: "human" | "agent"
   actorPublicId?: string
   actorName?: string
@@ -457,6 +458,7 @@ export type WorkspaceAuthority = {
       repoUrl?: string
       repoName?: string
       gitBranch?: string
+      remoteDirectory?: string
       homeRegion?: string
     },
   ) => Promise<unknown>
@@ -481,6 +483,7 @@ export type WorkspaceAuthority = {
       repoUrl?: string
       repoName?: string
       gitBranch?: string
+      remoteDirectory?: string
       homeRegion?: string
     },
   ) => Promise<unknown>

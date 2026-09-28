@@ -7,11 +7,8 @@
  */
 
 import { resolve4 } from "dns/promises"
-import { formatDaytonaAllowList } from "./daytona-allow-list"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST } from "@claxedo/server-core/sandbox/network/types"
-
-export { formatDaytonaAllowList }
 
 const log = Log.create({ service: "network-resolve" })
 

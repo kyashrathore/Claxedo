@@ -36,7 +36,7 @@ for (const [entrypoint, target] of Object.entries(packageJson.exports)) {
 // package (the desktop unpacks it from the asar), so it must run with nothing
 // beside it. A lone copy that resolves a chunk or a package fails here with
 // ERR_MODULE_NOT_FOUND instead of the exit code for "no parent channel".
-const gateChild = path.join(dist, "launch/launch-gate-child.mjs")
+const gateChild = path.join(root, "../process-ownership/dist/launch-gate-child.mjs")
 const loneDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-gate-child-"))
 try {
   const lone = path.join(loneDirectory, "launch-gate-child.mjs")

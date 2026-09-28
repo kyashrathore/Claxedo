@@ -1,6 +1,6 @@
 import { createMemo, createResource, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import type { Server } from "@/server"
+import type { PlacementId, Server } from "@/server"
 import { catalogHarnessId, isCatalogHarness, type HarnessType } from "./profile"
 
 export const POPULAR_PROVIDERS: readonly string[] = ["opencode", "opencode-go", "anthropic", "github-copilot", "openai", "google", "openrouter", "vercel"]
@@ -12,9 +12,18 @@ export function hydrateConnectedProviderDetails(providers: {
   return Promise.allSettled(providers.connected().map((provider) => providers.load(provider.id)))
 }
 
-export function createProviderCatalog(input: { server: Server; harness: Accessor<string>; eager?: boolean }) {
+export function createProviderCatalog(input: {
+  server: Server
+  harness: Accessor<string>
+  placementId?: Accessor<PlacementId | undefined>
+  eager?: boolean
+}) {
   const [requested, setRequested] = createSignal(input.eager === true)
-  const query = useQuery(() => ({ ...input.server.queries.providerCatalogs.catalog(input.harness()), enabled: input.harness() !== "" && requested() }))
+  const placementId = () => input.placementId?.()
+  const query = useQuery(() => ({
+    ...input.server.queries.providerCatalogs.catalog(input.harness(), placementId()),
+    enabled: input.harness() !== "" && requested(),
+  }))
   const catalog = () => (input.harness() ? query.data : undefined)
   const all = createMemo(() => new Map((catalog()?.all ?? []).map((provider) => [provider.id, provider] as const)))
   const connected = createMemo(() => {
@@ -30,9 +39,9 @@ export function createProviderCatalog(input: { server: Server; harness: Accessor
       await query.refetch()
     },
     load: async (providerId: string) => {
-      if (input.harness()) await input.server.providerCatalogs.loadDetail(input.harness(), providerId)
+      if (input.harness()) await input.server.providerCatalogs.loadDetail(input.harness(), providerId, placementId())
     },
-    queryKey: () => [input.harness()] as const,
+    scopeKey: () => [input.harness(), placementId() ?? ""] as const,
     all,
     default: () => catalog()?.default ?? {},
     connected,
@@ -67,7 +76,7 @@ export type ProviderCatalogRows = ReturnType<ReturnType<typeof createProviderCat
 
 export function createProviderCatalogReadiness(input: { providers: ProviderCatalogRead; harness: Accessor<HarnessType | undefined> }) {
   const hydrationKey = () => JSON.stringify([
-    input.providers.queryKey(),
+    input.providers.scopeKey(),
     input.providers.connected().map((provider) => provider.id).sort(),
   ])
   const answered = () =>

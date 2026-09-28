@@ -1,0 +1,4 @@
+packages/opencode-server-adapter/src/adapter.test.ts
+packages/opencode-server-adapter/src/package-boundary.test.ts
+packages/opencode-server-adapter/src/stream.test.ts
+packages/opencode-server-adapter/src/translate.test.ts

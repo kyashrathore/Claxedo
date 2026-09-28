@@ -3,7 +3,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { MessageCreateParams } from "@anthropic-ai/sdk/resources/messages"
 import type { ChatCompletionCreateParams } from "openai/resources/chat/completions"
 import type { ResponseCreateParams } from "openai/resources/responses/responses"
-import { SESSION_TITLE_SYSTEM_PROMPT } from "../../../agent-sdk-runtime/src/title-generation"
+import { SESSION_TITLE_SYSTEM_PROMPT } from "../../../workspace-runtime/src/host/title-generation"
 
 export type ScriptedDialect = "chat" | "messages" | "responses"
 

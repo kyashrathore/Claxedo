@@ -6,6 +6,7 @@ import { responseError } from "./errors"
 import type { HarnessOptions } from "./harness-types"
 import type { FetchQuery } from "./types"
 import type { Workspaces } from "./workspaces"
+import { harnessCommandQuery } from "./harness-commands"
 import { harnessOptionsFromWire } from "./wire/harness-options"
 import { harnessSelectionQuery } from "./wire/harness-selection"
 
@@ -34,5 +35,6 @@ export function harnessQueries(transport: Transport, workspaces: Workspaces) {
   return {
     options: (placementId: PlacementId, harness: string): FetchQuery<HarnessOptions> =>
       fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, { placementId, harness })),
+    commands: harnessCommandQuery(transport, workspaces),
   }
 }

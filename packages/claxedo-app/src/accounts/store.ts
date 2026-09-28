@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/solid-query"
 import { toAppError, useServer, type Account, type AppError, type EffectiveAccounts, type MachineLogin, type Server } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
-import { harnesses, harnessRunnable, MACHINE_LOGIN_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"
+import { harnesses, harnessRunnable, MACHINE_LOGIN_KEY, TEAM_ACCOUNT_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"
 
-export type AccountActivity = { readonly kind: "selecting" | "checking" | "removing"; readonly key: string }
+export type AccountActivity = { readonly kind: "selecting" | "checking" | "removing" | "scoping"; readonly key: string }
 
 export type AccountsLoad =
   | { readonly kind: "loading" }
@@ -18,12 +18,14 @@ export type Accounts = {
   readonly scanning: Accessor<boolean>
   readonly activity: Accessor<AccountActivity | undefined>
   readonly liveChecks: Accessor<Readonly<Record<string, LiveCheck>>>
+  readonly scopeErrors: Accessor<Readonly<Record<string, string>>>
   readonly runnable: Accessor<boolean>
   readonly rescan: () => Promise<void>
   readonly select: (harness: Harness, key: string, ids: readonly string[]) => void
   readonly remove: (ids: readonly string[]) => Promise<void>
   readonly check: (id: string) => void
   readonly checkMachine: (harness: Harness) => void
+  readonly allowInCloud: (key: string, ids: readonly string[], allowed: boolean) => void
 }
 
 function effectiveByProvider(effective: EffectiveAccounts): ReadonlyMap<string, Account> | undefined {
@@ -34,10 +36,11 @@ function useAccountReads(server: Server) {
   const list = useQuery(() => server.queries.accounts.list())
   const effective = useQuery(() => server.queries.accounts.effective())
   const logins = useQuery(() => server.queries.accounts.machineLogins())
-  const queries = [list, effective, logins] as const
+  const sources = useQuery(() => server.queries.accounts.sources())
+  const queries = [list, effective, logins, sources] as const
   const load = createMemo((): AccountsLoad => {
-    if (list.data && effective.data && logins.data) {
-      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: logins.data as readonly MachineLogin[], scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
+    if (list.data && effective.data && logins.data && sources.data) {
+      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: logins.data as readonly MachineLogin[], sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
       return { kind: "ready", snapshot }
     }
     const error = queries.map((query) => query.error).find((candidate) => candidate)
@@ -59,13 +62,37 @@ function useActivity() {
       setActivity(undefined)
     }
   }
-  return { activity, run }
+  return { activity, setActivity, run }
+}
+
+async function selectAccount(server: Server, harness: Harness, key: string, ids: readonly string[]) {
+  if (key === TEAM_ACCOUNT_KEY) return server.accounts.setSource(harness.providerIds, "team")
+  await server.accounts.setSource(harness.providerIds, "own")
+  return key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(ids)
+}
+
+function useCloudConsent(server: Server, activity: Accessor<AccountActivity | undefined>, setActivity: (activity: AccountActivity | undefined) => void) {
+  const [scopeErrors, setScopeErrors] = createSignal<Readonly<Record<string, string>>>({})
+  const allowInCloud = async (key: string, ids: readonly string[], allowed: boolean) => {
+    if (activity()) return
+    setActivity({ kind: "scoping", key })
+    setScopeErrors((previous) => Object.fromEntries(Object.entries(previous).filter(([entry]) => entry !== key)))
+    try {
+      await server.accounts.setScope(ids, allowed ? "shared" : "local")
+    } catch (error) {
+      setScopeErrors((previous) => ({ ...previous, [key]: toAppError(error).message }))
+    } finally {
+      setActivity(undefined)
+    }
+  }
+  return { scopeErrors, allowInCloud: (key: string, ids: readonly string[], allowed: boolean) => void allowInCloud(key, ids, allowed) }
 }
 
 export function useAccounts(): Accounts {
   const server = useServer()
   const reads = useAccountReads(server)
-  const { activity, run } = useActivity()
+  const { activity, setActivity, run } = useActivity()
+  const consent = useCloudConsent(server, activity, setActivity)
   const [rescanning, setRescanning] = createSignal(false)
   const [liveChecks, setLiveChecks] = createSignal<Readonly<Record<string, LiveCheck>>>({})
   const remember = (id: string, check: LiveCheck) => setLiveChecks((previous) => ({ ...previous, [id]: check }))
@@ -79,6 +106,7 @@ export function useAccounts(): Accounts {
     scanning: () => rescanning() || reads.fetching(),
     activity,
     liveChecks,
+    scopeErrors: consent.scopeErrors,
     runnable: () => {
       const current = snapshot()
       return current !== undefined && harnesses.some((harness) => harnessRunnable(harness, current, liveChecks()))
@@ -88,7 +116,7 @@ export function useAccounts(): Accounts {
       setLiveChecks({})
       await server.accounts.rescan().finally(() => setRescanning(false))
     }),
-    select: (harness, key, ids) => void run("selecting", key, () => (key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(ids))),
+    select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, harness, key, ids)),
     remove: (ids) => run("removing", ids[0] ?? "", () => server.accounts.remove(ids)),
     check: (id) =>
       void run("checking", id, async () => {
@@ -96,5 +124,6 @@ export function useAccounts(): Accounts {
         remember(id, { at: Date.now(), ...check })
       }),
     checkMachine: (harness) => void run("checking", MACHINE_LOGIN_KEY, () => server.accounts.checkMachineLogin(harness.id)),
+    allowInCloud: consent.allowInCloud,
   }
 }

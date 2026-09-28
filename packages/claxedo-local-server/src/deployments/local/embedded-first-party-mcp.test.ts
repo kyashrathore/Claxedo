@@ -13,7 +13,6 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { createRuntimeCredentialIssuer } from "@claxedo/workspace-runtime"
-import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const roots: string[] = []
@@ -42,7 +41,6 @@ describe("embedded first-party MCP credential", () => {
     const b = await workspaceIn("embedded-first-party-b-", "ws_first_party_b")
     process.env.CLAXEDO_DATA_DIR = path.join(path.dirname(a.directory), "data")
     configureEmbeddedWorkspaceRuntime({
-      connectionProviders: [createAcpConnectionProvider()],
       firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:2593", userId: "user-1", enabledToolGroups: () => ["sessions"] },
     })
 
@@ -69,7 +67,7 @@ describe("embedded first-party MCP credential", () => {
   test("a process configured without the launch origin injects nothing and verifies nothing", async () => {
     const ws = await workspaceIn("embedded-first-party-off-", "ws_first_party_off")
     process.env.CLAXEDO_DATA_DIR = path.join(path.dirname(ws.directory), "data")
-    configureEmbeddedWorkspaceRuntime({ connectionProviders: [createAcpConnectionProvider()] })
+    configureEmbeddedWorkspaceRuntime({})
     const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
     expect(runtime.host.runtimeCredentialIssuer()).toBeUndefined()
     const stray = createRuntimeCredentialIssuer({ runtimeId: "stray", workspaceId: "ws_first_party_off" })

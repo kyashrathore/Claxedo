@@ -1,0 +1,33 @@
+import { prefixedRandomId } from "@claxedo/helpers"
+import type { PromptModel } from "@claxedo/agent-runtime-contract"
+import { draftProbeKey, DraftProbeCache, type DraftLaunch, type StartInput } from "../../contract"
+import { piProbeInputs, selectPiProfile } from "../../profiles/pi"
+import { piCommands } from "./commands"
+import { piCatalog, type PiCatalog } from "./config"
+import { launchPi, type PiLaunchHost } from "./launch"
+import type { PiRpc } from "./rpc"
+
+export class PiDraftProbes {
+  private readonly catalogs = new DraftProbeCache<PiCatalog>()
+
+  constructor(private readonly host: PiLaunchHost) {}
+
+  catalog(draft: DraftLaunch, model: PromptModel | undefined, mode: "probe" | "peek"): Promise<PiCatalog> {
+    const key = draftProbeKey(draft, model?.modelID)
+    const files = piProbeInputs(selectPiProfile(draft.credentials, draft.directory, "probe", this.host.options), draft.directory)
+    if (mode === "peek") return this.catalogs.peek(key, files).then((catalog) => catalog ?? { models: [], efforts: [] })
+    return this.catalogs.read(key, files, () => this.probe(draft, model, (rpc) => piCatalog(rpc, model)))
+  }
+
+  commands(draft: DraftLaunch) {
+    return this.probe(draft, undefined, piCommands)
+  }
+
+  private async probe<T>(draft: DraftLaunch, model: PromptModel | undefined, read: (rpc: PiRpc) => Promise<T>): Promise<T> {
+    const input: StartInput = { ...draft, sessionId: prefixedRandomId("probe", "-"), ...(model ? { model } : {}) }
+    const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.host.options)
+    const rpc = await launchPi(this.host, input, profile, undefined, { role: "probe" })
+    try { return await read(rpc) }
+    finally { await this.host.unsettled.retire(rpc) }
+  }
+}

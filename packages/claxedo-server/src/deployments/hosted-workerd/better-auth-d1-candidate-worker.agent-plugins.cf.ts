@@ -15,6 +15,7 @@ import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
+import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../../workspace/route-support"
 
 export { LiveSyncRoom }
 
@@ -68,7 +69,26 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     tasksGrant: createTasksRootCapability(tasksRoot),
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
+    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
   })
+  const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
+    const [basePreparation, featurePreparation] = await Promise.all([
+      base.options.productWorkspace?.prepareRuntime?.(context),
+      feature.prepareRuntime(context),
+    ])
+    return {
+      ...featurePreparation,
+      secrets: [...(basePreparation?.secrets ?? []), ...(featurePreparation.secrets ?? [])],
+      env: { ...basePreparation?.env, ...featurePreparation.env },
+    }
+  }
+  const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
+    await base.options.productWorkspace?.provisionRuntime?.(context, preparation)
+    await feature.provisionRuntime(context, preparation)
+  }
+  // A refresh of a running sandbox, from a settings, credential or plugin
+  // change, runs this composed stack rather than the base half alone.
+  base.runtimeDelivery?.composeRuntime({ prepareRuntime, provisionRuntime, acpMcp: feature.acpMcp })
   const tasks = hostedTasksRouteContributions({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
@@ -113,8 +133,8 @@ export function composeBetterAuthD1AgentPluginsCandidate(
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,
-        prepareRuntime: feature.prepareRuntime,
-        provisionRuntime: feature.provisionRuntime,
+        prepareRuntime,
+        provisionRuntime,
         releaseRuntime: feature.releaseRuntime,
       },
     },

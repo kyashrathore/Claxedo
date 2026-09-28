@@ -1,7 +1,8 @@
-import { Hono, type MiddlewareHandler } from "hono"
+import { Hono, type Context, type MiddlewareHandler } from "hono"
 import { HARNESS_TABLE, isHarnessId } from "@claxedo/agent-runtime-contract"
 import {
   CustomProviderInvalidError,
+  deleteCustomProvider,
   putCustomProvider,
   readCustomProvider,
 } from "@claxedo/server-core/credentials/custom-provider"
@@ -11,29 +12,29 @@ import {
   projectProviderCatalog,
   readProviderCatalogView,
 } from "@claxedo/server-core/credentials/provider-catalog-view"
-import { openCodeEngineModels } from "@claxedo/server-core/opencode/sdk-runtime"
-import { SdkCredentialSyncError, syncCredentialsToSdk } from "@claxedo/server-core/opencode/sdk-credential-bridge"
+import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
+import { customProviderEnvCredential } from "@claxedo/server-core/credentials/operations/sync"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { errorMessage } from "@claxedo/helpers"
+import { workspaceProviderCatalog } from "../workspace-provider-catalog"
+import { fanOutConfig } from "../fanout"
+import type { AgentConfigRouteOptions } from "../route-options"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
-import { requestOrg } from "../../credentials/routes/credential"
+import { requestActor, requestOrg } from "../../credentials/routes/credential"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
-import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
+import { controlPlaneRouteAuth } from "../../platform/http/control-plane-route-auth"
 
-/**
- * The harnesses whose provider/model catalog Claxedo owns and serves here.
- *
- * Pi's catalog is Claxedo's offline registry. OpenCode's is models.dev — the
- * catalog the engine itself reads — so the embedded-SDK harness can serve the
- * same picker without exposing a raw engine control route.
- */
+const log = Log.create({ service: "agent-config-providers" })
+
 const CATALOG_HARNESSES = new Set(["pi", "opencode"])
 
 function unsupportedHarness(message: string) {
   return { error: { code: "provider_catalog_unsupported", message } } as const
 }
 
-export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions = {}) {
+export function agentConfigProviderRoutes(options: AgentConfigRouteOptions = {}) {
   const authOptions = { ...options, authConfig: options.authConfig ?? controlPlaneAuthConfig() }
   const requireCatalogHarness: MiddlewareHandler = async (c, next) => {
     const harness = c.req.query("nativeHarness")
@@ -51,13 +52,10 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
         const org = await requestOrg(c.req.raw, authOptions)
         const view = readProviderCatalogView({ provider: c.req.query("provider"), view: c.req.query("view") })
         if (c.req.query("nativeHarness") === "opencode") {
-          // An unavailable catalog is a different fact from "no providers", so
-          // it surfaces as a failure rather than an empty picker.
-          return c.json(projectProviderCatalog(await opencodeProviderCatalog({ org, engineModels: openCodeEngineModels }), view))
+          const catalog = opencodeProviderCatalog({ engine: await workspaceProviderCatalog(c, authOptions, org), org, actor: await requestActor(c.req.raw, authOptions) })
+          return c.json(projectProviderCatalog(catalog, view))
         }
-        // Signed callers see only their credential partition, never the host's local OAuth or environment.
-        const env = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled ? process.env : {}
-        return c.json(projectProviderCatalog(piProviderCatalog(env, org), view))
+        return c.json(projectProviderCatalog(piProviderCatalog(await requestActor(c.req.raw, authOptions), org), view))
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
         if (error instanceof ProviderCatalogViewError) return c.json({ error: { code: error.code, message: error.message } }, error.status)
@@ -82,12 +80,24 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       }
       return c.json({ [providerId]: served })
     })
+    .delete("/providers/custom/:providerId", requireCatalogHarness, async (c) => {
+      if (c.req.query("nativeHarness") !== "opencode") return c.json(unsupportedHarness("Custom providers require OpenCode"), 400)
+      try {
+        deleteCustomProvider(c.req.param("providerId"), await requestOrg(c.req.raw, authOptions))
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        throw error
+      }
+      return await delivered(c, { ok: true })
+    })
     /**
      * Declare an OpenAI-compatible provider for the caller's org.
      *
-     * Configuration only. The API key is a credential and goes to
+     * Configuration only. A typed API key is a credential and goes to
      * `/api/claxedo/credentials`; a body carrying secret material is rejected by
-     * `readCustomProvider`'s allowlist rather than quietly persisted here.
+     * `readCustomProvider`'s allowlist rather than quietly persisted here. A
+     * provider that names an environment variable instead has its key read by
+     * the local credential collector and stored through the credential service.
      */
     .put("/providers/custom", requireCatalogHarness, async (c) => {
       if (c.req.query("nativeHarness") !== "opencode") {
@@ -96,24 +106,45 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       try {
         const org = await requestOrg(c.req.raw, authOptions)
         const body = await c.req.json().catch(() => undefined)
-        // Plaintext loopback destinations are a local-only allowance: on a
-        // signed server the loopback a tenant's base URL names is this
-        // server's own, so it must be HTTPS.
-        const allowInsecureLoopback = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled
-        const provider = putCustomProvider(readCustomProvider(body, { allowInsecureLoopback }), org)
-        await syncCredentialsToSdk(org, [provider.providerID])
-        return c.json(provider)
+        // The unsigned single-tenant caller is the machine owner. A plaintext
+        // loopback destination is theirs alone, and so is this server's
+        // environment: a signed caller's env-sourced provider is stored, its
+        // key is never read, and its sessions are refused at the transport.
+        const machineOwner = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled
+        const config = readCustomProvider(body, { allowInsecureLoopback: machineOwner })
+        const envCredential = machineOwner ? customProviderEnvCredential(config) : undefined
+        if (machineOwner && config.env.length && !envCredential) {
+          return c.json({ error: { code: "custom_provider_env_unset", message: `${config.env.join(", ")} is not set in this server's environment` } }, 400)
+        }
+        const provider = putCustomProvider(config, org)
+        if (envCredential) {
+          if (!options.services) throw new Error("An environment-sourced custom provider key needs the composed credential service")
+          await options.services.credentials.putCredential({ owner: await requestActor(c.req.raw, authOptions),
+            provider_id: envCredential.provider_id, kind: envCredential.kind, source: envCredential.source, label: envCredential.label,
+            secret: envCredential.secret }, org)
+        }
+        return await delivered(c, provider)
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-        if (error instanceof SdkCredentialSyncError) {
-          return c.json({
-            error: { code: "engine_credential_sync_failed", message: `Stored, but the running engine could not be updated: ${error.message}` },
-          }, 500)
-        }
         if (error instanceof CustomProviderInvalidError) {
           return c.json({ error: { code: error.code, message: error.message } }, 400)
         }
+        if (error instanceof CredentialDeliveryError) return deliveryFailure(c, error)
         throw error
       }
     })
+}
+
+async function delivered(c: Context, body: object) {
+  try {
+    await fanOutConfig()
+  } catch (error) {
+    return deliveryFailure(c, error)
+  }
+  return c.json(body)
+}
+
+function deliveryFailure(c: Context, error: unknown) {
+  log.error("Custom provider stored; running workspaces did not take it", { error: errorMessage(error) })
+  return c.json({ error: { code: "runtime_config_delivery_failed", message: "Stored, but running workspaces could not be updated" } }, 500)
 }

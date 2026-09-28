@@ -47,6 +47,67 @@ async function tempDir() {
 }
 
 describe("DockerSandboxDriver", () => {
+  test("resume inspect errors prevent start and ready target", async () => {
+    const error = new Error("inspect denied")
+    const docker = runner()
+    const command: DockerCommandRunner = vi.fn(async (args, timeout) => {
+      if (args[0] === "inspect") throw error
+      return docker.fn(args, timeout)
+    })
+    const driver = createDockerSandboxDriver({ image: "claxedo-sandbox:test", docker: command, syncLocalAuth: false, waitForHealth: false })
+    await expect(driver.resumeHost!({
+      lease: {
+        workspaceId: input.workspaceId, homeRegion: input.homeRegion, driver: "docker", epoch: 1,
+        status: "stopped", retryCount: 0, updatedAt: 1, createdAt: 1, sandboxId: "container-id",
+      },
+      ensure: input,
+    })).rejects.toBe(error)
+    expect(docker.calls).toEqual([])
+  })
+
+  test("auth staging stat errors are not treated as missing credentials", async () => {
+    const authHome = await tempDir()
+    await fs.mkdir(path.join(authHome, ".codex"))
+    await fs.symlink("auth.json", path.join(authHome, ".codex", "auth.json"))
+    const docker = runner()
+    const driver = createDockerSandboxDriver({ image: "claxedo-sandbox:test", docker: docker.fn, authHome, syncLocalAuth: true, waitForHealth: false })
+    await expect(driver.ensureHost(input)).rejects.toMatchObject({ code: "ELOOP" })
+    expect(docker.calls.some((args) => args[0] === "start")).toBe(false)
+  })
+
+  test("auth staging skips absent credentials", async () => {
+    const authHome = await tempDir()
+    const docker = runner()
+    const driver = createDockerSandboxDriver({ image: "claxedo-sandbox:test", docker: docker.fn, authHome, syncLocalAuth: true, waitForHealth: false })
+    expect(await driver.ensureHost(input)).toMatchObject({ sandboxId: "container-id" })
+    expect(docker.calls.some((args) => args[0] === "cp")).toBe(false)
+  })
+
+  test("auth staging cleanup failure prevents start", async () => {
+    const authHome = await tempDir()
+    await fs.mkdir(path.join(authHome, ".codex"))
+    await fs.writeFile(path.join(authHome, ".codex", "auth.json"), "{}")
+    const error = Object.assign(new Error("cleanup denied"), { code: "EACCES" })
+    const docker = runner()
+    const originalRm = fs.rm.bind(fs)
+    let stagedPath: string | undefined
+    const rm = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
+      if (String(target).includes("claxedo-docker-auth-")) {
+        stagedPath = String(target)
+        throw error
+      }
+      return originalRm(target, options)
+    })
+    try {
+      const driver = createDockerSandboxDriver({ image: "claxedo-sandbox:test", docker: docker.fn, authHome, syncLocalAuth: true, waitForHealth: false })
+      await expect(driver.ensureHost(input)).rejects.toBe(error)
+      expect(docker.calls.some((args) => args[0] === "start")).toBe(false)
+    } finally {
+      rm.mockRestore()
+      if (stagedPath) await originalRm(stagedPath, { recursive: true, force: true })
+    }
+  })
+
   test("resolves helper defaults and mapped loopback service ports", () => {
     expect(dockerSandboxSyncLocalAuth({})).toBe(false)
     expect(dockerSandboxSyncLocalAuth({ CLAXEDO_DOCKER_SANDBOX_SYNC_LOCAL_AUTH: "1" })).toBe(true)
@@ -78,7 +139,7 @@ describe("DockerSandboxDriver", () => {
       docker: docker.fn,
       syncLocalAuth: false,
       waitForHealth: false,
-      runner: "opencode",
+      nativeHarness: "opencode",
       env: (_input, host) => ({
         WORKSPACE_RUNTIME_LEASE_ID: `lease-${host.id}`,
         WORKSPACE_RUNTIME_SANDBOX_ID: host.id,
@@ -123,7 +184,7 @@ describe("DockerSandboxDriver", () => {
         "--env",
         "WORKSPACE_RUNTIME_HOST=0.0.0.0",
         "--env",
-        "WORKSPACE_RUNTIME_RUNNER=opencode",
+        "WORKSPACE_RUNTIME_NATIVE_HARNESS=opencode",
         "--env",
         "WORKSPACE_RUNTIME_SOURCE_KIND=git",
         "--env",

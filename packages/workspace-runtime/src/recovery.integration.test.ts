@@ -4,23 +4,20 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
 import {
-  NO_HARNESS_EFFORT,
   turnStopped,
-  type AgentExecutionBinding,
   type CleanupFact,
   type ExecutionFact,
   type RecoveryOutcome,
   type RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeRecoveryInspection } from "@claxedo/agent-sdk-runtime"
-import type { AgentSession, ConnectionProvider, SessionConfig } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceRuntimeClient } from "./client"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
+import type { AgentRuntimeRecoveryInspection } from "./host/contracts"
 import { managedWorkspaceSessionAccessPolicy, type ManagedSessionAuthority } from "./session-access-policy"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
 import { RuntimeStore } from "./store"
 import { withWorkspaceTarget } from "./target"
+import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "./testing"
 import { createWorkspaceHost } from "./workspace/runtime"
 import { CheckpointRoutes } from "./routes/checkpoint"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
@@ -50,8 +47,6 @@ type WorkspaceOptions = {
  */
 function openWorkspace(input: { directory: string; storeRoot: string; workspaceId?: string } & WorkspaceOptions) {
   const target = { workspaceId: input.workspaceId ?? "workspace-recovery", directory: input.directory }
-  const upstream = new Map<string, AgentSession>()
-  const configs = new Map<string, SessionConfig>()
   const turnOutcomes: Array<{ sessionId: string; status: string }> = []
   const cancels: Array<{ sessionId: string; turnId: string }> = []
   const stores: RuntimeStore[] = []
@@ -67,87 +62,52 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     held.delete(sessionId)
   }
 
-  const capabilities = {
-    abort: true, reconnect: false, replay: true, permissions: false, questions: false,
-    todos: false, commands: false, fork: false, revert: false, unrevert: false,
-    configOptions: false, subagents: false,
-  }
+  // The ref a harness is handed names the assistant message; the caller, the
+  // recovery target and these assertions name the message that was prompted.
+  const prompted = new Map<string, string>()
 
-  const provider: ConnectionProvider<{ name: string }> = {
+  const provider = fakeConnectionProvider({
     providerKey: "recovery-fixture",
-    validateConfig(config) { return config as { name: string } },
-    project() { return { label: "recovery", readiness: "ready", capabilities } },
-    resolve({ descriptor, directory }) { return { config: { ...descriptor.config, directory } } },
-    createAdapter({ descriptor }) {
-      const harness = { id: descriptor.connectionId, access: "connection" as const }
-      return {
-        sessionConfigOwner: "adapter",
-        instructionChannel: "none" as const,
-        async createSession(_directory, title, id) {
-          const sessionId = id ?? "generated"
-          upstream.set("upstream-" + sessionId, { id: sessionId, title, directory: input.directory, time: { created: 10, updated: 10 } })
-          configs.set(sessionId, { harness, agent: null, variant: null })
-          return { id: sessionId, agentSessionId: "upstream-" + sessionId }
-        },
-        async getSession(binding) { return upstream.get(binding.upstreamSessionId) ?? null },
-        async getMessages() { return [] },
-        async updateSession(binding, update) {
-          const session = upstream.get(binding.upstreamSessionId)
-          if (!session) return null
-          const next = { ...session, ...update, time: { ...session.time!, ...update.time } }
-          upstream.set(binding.upstreamSessionId, next)
-          return next
-        },
-        async deleteSession(binding) { upstream.delete(binding.upstreamSessionId) },
-        async getSessionConfig(binding) { return configs.get(binding.sessionId)! },
-        async updateSessionConfig(binding, update) {
-          const current = configs.get(binding.sessionId)!
-          const next: SessionConfig = {
-            ...current,
-            ...(update.agent !== undefined ? { agent: update.agent } : {}),
-            ...(update.harness !== undefined ? { harness: update.harness } : {}),
-          }
-          configs.set(binding.sessionId, next)
-          return next
-        },
-        async *executeTurn(binding: AgentExecutionBinding) {
-          starts.get(binding.sessionId)?.()
-          starts.delete(binding.sessionId)
-          await new Promise<void>((resolve) => held.set(binding.sessionId, resolve))
-          if (failing.delete(binding.sessionId)) throw new Error("the provider died")
-          yield { type: "text-delta", delta: "answer" }
-          yield { type: "finish", sessionId: binding.sessionId }
-        },
-        async cancelTurn(binding: AgentExecutionBinding, cancel: { turnId: string }): Promise<CancelAnswer> {
-          cancels.push({ sessionId: binding.sessionId, turnId: cancel.turnId })
-          // Taken now, not when the release runs: the runtime admits the
-          // replacement turn as soon as this answer is finalized, and a release
-          // that looked the session up later would free that turn instead and
-          // strand this one's producer.
-          const release = held.get(binding.sessionId)
-          held.delete(binding.sessionId)
-          if (input.cancel === "deferred") {
-            return await new Promise<CancelAnswer>((resolve) => {
-              answerCancel = (answer) => { release?.(); resolve(answer) }
-            })
-          }
-          // The producer is released only after this answer has been
-          // finalized, so the interlock under test is the runtime's released
-          // admission rather than whichever writer happened to run first.
-          setTimeout(() => release?.(), 0)
-          return { execution: "terminal", cleanup: "unknown" }
-        },
-        readHarnessCapabilities() {
-          return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: descriptor.connectionId }
-        },
-        dispose() {},
-      } satisfies AgentHarnessAdapter
-    },
-  }
+    label: "recovery",
+    transport: () => new FakeTransport({
+      capabilities: { instructionChannel: "none" },
+      turn: async function* ({ session, turn }) {
+        const sessionId = session.binding.sessionId
+        prompted.set(turn.assistantMessageId, turn.userMessageId)
+        starts.get(sessionId)?.()
+        starts.delete(sessionId)
+        await new Promise<void>((resolve) => held.set(sessionId, resolve))
+        if (failing.delete(sessionId)) throw new Error("the provider died")
+        yield { type: "text-delta", delta: "answer" }
+        yield { type: "finish", sessionId }
+      },
+      cancel: async ({ session, turn }): Promise<CancelAnswer> => {
+      const sessionId = session.binding.sessionId
+      cancels.push({ sessionId, turnId: prompted.get(turn.assistantMessageId) ?? turn.turnId })
+      // Taken now, not when the release runs: the runtime admits the
+      // replacement turn as soon as this answer is finalized, and a release
+      // that looked the session up later would free that turn instead and
+      // strand this one's producer.
+      const release = held.get(sessionId)
+      held.delete(sessionId)
+      if (input.cancel === "deferred") {
+        return await new Promise<CancelAnswer>((resolve) => {
+          answerCancel = (answer) => { release?.(); resolve(answer) }
+        })
+      }
+      // The producer is released only after this answer has been
+      // finalized, so the interlock under test is the runtime's released
+      // admission rather than whichever writer happened to run first.
+      setTimeout(() => release?.(), 0)
+      return { execution: "terminal", cleanup: "unknown" }
+      },
+    }),
+  })
 
   const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy(input.authority ? { authority: input.authority } : {})
 
   const host = createWorkspaceHost({
+    placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: input.storeRoot,
     connectionProviders: [provider],
@@ -172,7 +132,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     app.use("*", async (c, next) => {
       c.set("relayHostAuth", {
         iss: "workspace-relay", aud: "workspace-host-service", principal_kind: "user",
-        actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+        actor_id: "actor_1", user_id: "user_1", actor_kind: "human", org_id: "org_1",
         workspace_id: target.workspaceId, host_id: "host_1", role: "editor", backing: "cloud-vm",
         exp: issued + 600, iat: issued, jti: "jti_1", parent_jti: "rat_1",
       })
@@ -195,7 +155,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
   })
 
   const snapshot: RuntimeSnapshot = {
-    version: 4, mcp: {}, auth: {},
+    version: 4, commands: [], mcp: {}, auth: { machineOwnerUserId: "local", accounts: { user_1: { openai: { baseUrl: "https://fixture.example", placeholder: "user-1-key", authMode: "api-key" } } } },
     connections: [{ connectionId: "primary", providerKey: "recovery-fixture", configRevision: 1, enabled: true, config: { name: "primary" } }],
     defaultHarness: { kind: "connection", connectionId: "primary" },
   }
@@ -504,6 +464,7 @@ describe("a turn whose route lease was taken away", () => {
     })
     expect(f.cancels).toEqual([{ sessionId: "ses_lost", turnId: "msg_lost" }])
     await lost.catch(() => undefined)
+    await until(async () => (await inspect(f, "ses_lost")).operations[0]?.state !== "running", "the containment to drain its producer")
 
     const { prompt: replacement } = await promptHeldTurn(f, "ses_lost", "msg_kept")
     const live = (await inspect(f, "ses_lost")).target!

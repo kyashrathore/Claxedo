@@ -9,7 +9,7 @@ import { cursorAgentPluginAdapter } from "./adapters/cursor"
 import { openCodeAgentPluginAdapter } from "./adapters/opencode"
 import { readActiveGeneration } from "./generation"
 import { pluginDataDirectory } from "./plugin-data"
-import { materializeAgentPluginGeneration, readMaterializedAgentPluginGeneration } from "./materialize"
+import { AgentPluginMaterializationError, materializeAgentPluginGeneration, readMaterializedAgentPluginGeneration } from "./materialize"
 
 const roots: string[] = []
 async function temporary(prefix: string) {
@@ -28,6 +28,24 @@ async function plugin(name: string, marker: string) {
 }
 afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))))
 
+test.each(["mcpServers", "notApplied", "execution"])("invalid %s metadata is a recoverable materialization error", async (field) => {
+  const runtimeRoot = await temporary("claxedo-plugin-runtime-")
+  const artifacts = new LocalAgentPluginArtifactStore(await temporary("claxedo-plugin-artifacts-"))
+  const retained = await artifacts.put(await inspectPluginDirectory(await plugin("review", "one")))
+  const generation = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
+    runtimeRoot, identity: { mode: "unsigned", machineId: "machine" }, revision: 1, artifacts,
+    selections: [{ pluginInstanceId: "review", artifactDigest: retained.digest, harnessIds: ["opencode"] }],
+    adapters: [openCodeAgentPluginAdapter()],
+  })
+  const file = path.join(generation.root, "generation.json")
+  const manifest = JSON.parse(await fs.readFile(file, "utf8"))
+  if (field === "execution") delete manifest.execution
+  else manifest.projections.opencode[field] = [{ invalid: true }]
+  await fs.writeFile(file, JSON.stringify(manifest))
+  await expect(readMaterializedAgentPluginGeneration(runtimeRoot)).rejects.toBeInstanceOf(AgentPluginMaterializationError)
+})
+
 describe("materializeAgentPluginGeneration", () => {
   test("projects exact retained bytes only to selected harnesses", async () => {
     const dataRoot = await temporary("claxedo-plugin-artifacts-")
@@ -36,6 +54,7 @@ describe("materializeAgentPluginGeneration", () => {
     const retained = await artifacts.put(await inspectPluginDirectory(await plugin("review", "v1")))
 
     const result = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "machine-1" },
       revision: 1,
@@ -63,6 +82,7 @@ describe("materializeAgentPluginGeneration", () => {
       adapters: [nativeAgentPluginAdapter("cursor")],
     }
     const one = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       ...base,
       revision: 1,
       selections: [{ pluginInstanceId: instanceId, artifactDigest: first.digest, harnessIds: ["cursor"] }],
@@ -71,6 +91,7 @@ describe("materializeAgentPluginGeneration", () => {
     await fs.writeFile(path.join(persistent, "state.txt"), "keep")
 
     const two = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       ...base,
       revision: 2,
       selections: [{ pluginInstanceId: instanceId, artifactDigest: second.digest, harnessIds: ["cursor"] }],
@@ -88,6 +109,7 @@ describe("materializeAgentPluginGeneration", () => {
     const retained = await artifacts.put(await inspectPluginDirectory(await plugin("review", "v1")))
     const selection = [{ pluginInstanceId: "review", artifactDigest: retained.digest, harnessIds: ["cursor"] }]
     await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "machine-1" },
       revision: 1,
@@ -98,6 +120,7 @@ describe("materializeAgentPluginGeneration", () => {
     const before = await readActiveGeneration(runtimeRoot)
 
     await expect(materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "machine-1" },
       revision: 2,
@@ -122,6 +145,7 @@ describe("materializeAgentPluginGeneration", () => {
     const second = await artifacts.put(await inspectPluginDirectory(await plugin("review", "two")))
 
     const materialized = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "machine-1" },
       revision: 1,
@@ -145,6 +169,7 @@ describe("materializeAgentPluginGeneration", () => {
     const organization = await artifacts.put(await inspectPluginDirectory(await plugin("review", "organization")))
 
     const materialized = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
       revision: 1,
@@ -164,7 +189,7 @@ describe("materializeAgentPluginGeneration", () => {
       .toContain("organization")
   })
 
-  test("keeps generated harness config paths valid after activation", async () => {
+  test("keeps projected skill paths valid after activation", async () => {
     const dataRoot = await temporary("claxedo-plugin-artifacts-")
     const runtimeRoot = await temporary("claxedo-plugin-runtime-")
     const artifacts = new LocalAgentPluginArtifactStore(dataRoot)
@@ -174,6 +199,7 @@ describe("materializeAgentPluginGeneration", () => {
     const retained = await artifacts.put(await inspectPluginDirectory(source))
 
     const materialized = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "machine-1" },
       revision: 1,
@@ -182,43 +208,59 @@ describe("materializeAgentPluginGeneration", () => {
       adapters: [openCodeAgentPluginAdapter()],
     })
 
-    const configFile = materialized.projections.opencode?.configFile
-    expect(configFile).toBeTruthy()
-    const config = JSON.parse(await fs.readFile(configFile!, "utf8"))
-    expect(config.skills[0]).toContain(materialized.root)
-    await expect(fs.stat(config.skills[0])).resolves.toMatchObject({})
+    const skill = path.join(materialized.projections.opencode!.pluginRoots[0].root, "skills/review")
+    expect(skill).toContain(materialized.root)
+    await expect(fs.stat(skill)).resolves.toMatchObject({})
 
     const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)
+    expect(restored?.projections.opencode?.pluginRoots[0]?.skillNames).toEqual(["review"])
+    expect(restored?.projections.opencode?.pluginRoots).toEqual(materialized.projections.opencode?.pluginRoots)
     expect(restored?.revision).toBe(1)
-    expect(restored?.projections.opencode?.configFile).toBe(configFile)
     expect(restored?.projections.opencode?.pluginRoots[0]?.root).toContain(restored!.root)
   })
 
-  test("restores a generation whose Cursor projection lives in the harness-owned local plugins directory", async () => {
-    // Regression: the daemon died at startup after any restart following a
-    // Cursor activation, because the re-read required every projection root
-    // to sit inside the generation while Cursor's contract is
-    // ~/.cursor/plugins/local/<name>.
+  test("restores a Cursor projection inside the generation", async () => {
     const dataRoot = await temporary("claxedo-plugin-artifacts-")
     const runtimeRoot = await temporary("claxedo-plugin-runtime-")
-    const home = await temporary("claxedo-plugin-home-")
     const artifacts = new LocalAgentPluginArtifactStore(dataRoot)
     const source = await plugin("review", "one")
     const retained = await artifacts.put(await inspectPluginDirectory(source))
 
     const materialized = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "machine-1" },
       revision: 1,
       selections: [{ pluginInstanceId: "review", artifactDigest: retained.digest, harnessIds: ["cursor", "opencode"] }],
       artifacts,
-      adapters: [openCodeAgentPluginAdapter(), cursorAgentPluginAdapter({ userHomeDirectory: home })],
+      adapters: [openCodeAgentPluginAdapter(), cursorAgentPluginAdapter()],
     })
     const cursorRoot = materialized.projections.cursor!.pluginRoots[0].root
-    expect(cursorRoot.startsWith(path.join(home, ".cursor", "plugins", "local"))).toBe(true)
+    expect(cursorRoot.startsWith(path.join(materialized.root, "harnesses", "cursor"))).toBe(true)
 
     const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)
-    expect(restored?.projections.cursor?.pluginRoots[0]).toMatchObject({ pluginInstanceId: "review", root: cursorRoot, external: true })
+    expect(restored?.projections.cursor?.pluginRoots[0]).toMatchObject({ pluginInstanceId: "review", root: cursorRoot })
     expect(restored?.projections.opencode?.pluginRoots[0]?.root).toContain(restored!.root)
   })
 })
+
+test.each([undefined, null, [42], ["../broken"], [".."], ["/tmp/skill"], ["..\\broken"]])(
+  "rejects a generation with invalid approved skill names: %j",
+  async (skillNames) => {
+    const runtimeRoot = await temporary("claxedo-plugin-runtime-")
+    const artifacts = new LocalAgentPluginArtifactStore(await temporary("claxedo-plugin-artifacts-"))
+    const retained = await artifacts.put(await inspectPluginDirectory(await plugin("review", "one")))
+    const generation = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
+      runtimeRoot, identity: { mode: "unsigned", machineId: "machine" }, revision: 1, artifacts,
+      selections: [{ pluginInstanceId: "review", artifactDigest: retained.digest, harnessIds: ["opencode"] }],
+      adapters: [openCodeAgentPluginAdapter()],
+    })
+    expect((await readMaterializedAgentPluginGeneration(runtimeRoot))?.projections.opencode?.pluginRoots[0].skillNames).toEqual([])
+    const manifestPath = path.join(generation.root, "generation.json")
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"))
+    manifest.projections.opencode.pluginRoots[0].skillNames = skillNames
+    await fs.writeFile(manifestPath, JSON.stringify(manifest))
+    await expect(readMaterializedAgentPluginGeneration(runtimeRoot)).rejects.toThrow("invalid skill names")
+  },
+)

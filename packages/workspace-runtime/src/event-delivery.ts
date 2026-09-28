@@ -1,4 +1,4 @@
-import { createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { createSseReplayBuffer, type SseReplayBuffer } from "./projection/sse"
 import { randomUUID } from "node:crypto"
 import type { Context } from "hono"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"

@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
-import { EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-event-runtime/contracts"
+import { EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"

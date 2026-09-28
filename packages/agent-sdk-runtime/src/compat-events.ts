@@ -8,6 +8,7 @@ import type {
   PromptInput,
   AgentQuestion,
   AgentPresentationSession,
+  AgentRuntimeHealth,
   AgentSessionTitleSource,
   AgentSession,
   AgentTodo,
@@ -16,7 +17,6 @@ import type {
 import { parseAgentContentPart, promptPartId, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { AgentHarnessAdapterHealth } from "./harness-health"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 
@@ -66,7 +66,7 @@ export type EventHarnessHealth = {
   type: "harness.health"
   properties: {
     sessionID: string
-    harnessHealth: AgentHarnessAdapterHealth
+    harnessHealth: AgentRuntimeHealth
     connectionState?: ConnectionRuntimeStatus & { connectionId: string }
   }
 }
@@ -107,9 +107,11 @@ const kinds: ReadonlySet<string> = new Set<CompatEvent["type"]>([
   "message.completed",
   "permission.asked",
   "permission.replied",
+  "permission.expired",
   "question.asked",
   "question.replied",
   "question.rejected",
+  "question.expired",
   "todo.updated",
   "session.status",
   "session.idle",

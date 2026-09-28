@@ -42,7 +42,7 @@ import {
   type IdentityVerdict,
   type RetirementBudgets,
   type RetirementResult,
-} from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
 
 import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"

@@ -37,7 +37,7 @@ const baseOptions = {
   teamId: "team_1",
   projectId: "project_1",
   baseSnapshotId: "snap-base",
-  runner: "opencode",
+  nativeHarness: "opencode",
   controlEnv: {
     relayJwksUrl: "https://relay.test/.well-known/jwks.json",
     managementJwksUrl: "https://control.test/.well-known/jwks.json",
@@ -53,6 +53,13 @@ const input = {
 }
 
 describe("VercelSandboxDriver", () => {
+  test("touch propagates timeout-extension failures", async () => {
+    const error = new Error("extension denied")
+    const existing = sandbox({ extendTimeout: async () => { throw error } })
+    const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory({ get: async () => existing }) })
+    await expect(driver.touch!({ sandboxId: existing.sandboxId, hostId: "host", url: "https://r/" })).rejects.toBe(error)
+  })
+
   test("brokered secrets are injected via a firewall header-transform network policy, never in env", async () => {
     const created = sandbox()
     const vercel = factory({ create: vi.fn(async () => created) })
@@ -71,7 +78,7 @@ describe("VercelSandboxDriver", () => {
         allow: {
           "*": [],
           "api.notion.com": [{
-            match: { path: { startsWith: "/v1" }, method: ["POST"] },
+            match: { path: { startsWith: "/v1" }, method: ["POST"], headers: [{ key: { exact: "authorization" }, value: { exact: "claxedo-broker:NOTION_TOKEN" } }] },
             transform: [{ headers: { Authorization: "ntn-secret" } }],
           }],
         },
@@ -104,7 +111,7 @@ describe("VercelSandboxDriver", () => {
 
     const merged = (created.updateNetworkPolicy as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(merged.allow["api.anthropic.com"]).toEqual([{
-      match: { path: { startsWith: "/v1/messages" }, method: ["POST"] },
+      match: { path: { startsWith: "/v1/messages" }, method: ["POST"], headers: [{ key: { exact: "authorization" }, value: { exact: "Bearer claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK" } }] },
       transform: [{ headers: { Authorization: "Bearer sk-ant-oat01-fixture" } }],
     }])
     const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
@@ -141,7 +148,7 @@ describe("VercelSandboxDriver", () => {
     expect(merged.allow["github.com"]).toEqual([])
     expect(merged.allow["registry.npmjs.org"]).toEqual([])
     expect(merged.allow["api.anthropic.com"]).toEqual([{
-      match: { path: { startsWith: "/v1/messages" }, method: ["POST"] },
+      match: { path: { startsWith: "/v1/messages" }, method: ["POST"], headers: [{ key: { exact: "x-api-key" }, value: { exact: "claxedo-broker:ANTHROPIC" } }] },
       transform: [{ headers: { "x-api-key": "sk-ant" } }],
     }])
   })
@@ -155,7 +162,7 @@ describe("VercelSandboxDriver", () => {
     pathPrefixes: ["/v1"],
   }
   const brokeredRule = {
-    match: { path: { startsWith: "/v1" }, method: ["POST"] },
+    match: { path: { startsWith: "/v1" }, method: ["POST"], headers: [{ key: { exact: "x-key" }, value: { exact: "claxedo-broker:A" } }] },
     transform: [{ headers: { "x-key": "v" } }],
   }
 
@@ -178,6 +185,17 @@ describe("VercelSandboxDriver", () => {
     expect(vercelBrokeredNetworkPolicy([brokered], "deny-all")).toEqual({
       allow: { "api.a.test": [brokeredRule] },
     })
+  })
+
+  test("two people on the same vendor host have separate placeholder matches and secrets", () => {
+    const policy = vercelBrokeredNetworkPolicy([
+      { ...brokered, name: "PERSON_A", value: "account-A", header: "Authorization", scheme: "Bearer" },
+      { ...brokered, name: "PERSON_B", value: "account-B", header: "Authorization", scheme: "Bearer" },
+    ], "deny-all")
+    expect(policy).toMatchObject({ allow: { "api.a.test": [
+      { match: { headers: [{ value: { exact: "Bearer claxedo-broker:PERSON_A" } }] }, transform: [{ headers: { Authorization: "Bearer account-A" } }] },
+      { match: { headers: [{ value: { exact: "Bearer claxedo-broker:PERSON_B" } }] }, transform: [{ headers: { Authorization: "Bearer account-B" } }] },
+    ] } })
   })
 
   test("a create-time policy's subnet rules survive the brokered merge", async () => {
@@ -209,7 +227,7 @@ describe("VercelSandboxDriver", () => {
       {
         allow: {
           "api.anthropic.com": [{
-            match: { path: { startsWith: "/v1/messages" }, method: ["POST"] },
+            match: { path: { startsWith: "/v1/messages" }, method: ["POST"], headers: [{ key: { exact: "x-api-key" }, value: { exact: "claxedo-broker:ANTHROPIC" } }] },
             transform: [{ headers: { "x-api-key": "sk-ant" } }],
           }],
         },
@@ -268,7 +286,7 @@ describe("VercelSandboxDriver", () => {
           WORKSPACE_RUNTIME_HOST_ID: "vercel-host-ws_1",
           WORKSPACE_RUNTIME_DIRECTORY: "/work/app",
           WORKSPACE_RUNTIME_PORT: "2593",
-          WORKSPACE_RUNTIME_RUNNER: "opencode",
+          WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode",
           WORKSPACE_RUNTIME_RELAY_JWKS_URL: "https://relay.test/.well-known/jwks.json",
           WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: "https://control.test/.well-known/jwks.json",
           WORKSPACE_RUNTIME_SOURCE_KIND: "git",

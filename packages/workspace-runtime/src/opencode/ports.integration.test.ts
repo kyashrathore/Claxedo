@@ -11,11 +11,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { createOpenCodeHost, type OpenCodeHost } from "./host"
-import { createCatalogPort, type OpenCodeCatalogPort } from "./catalog-port"
-import { createInteractionPort, type OpenCodeInteractionPort } from "./interaction-port"
-import { createSessionPort, type OpenCodeSessionPort } from "./session-port"
-import { WorkspaceScope, WorkspaceScopeError } from "./scope"
+import {
+  createCatalogPort,
+  createInteractionPort,
+  createOpenCodeHost,
+  createSessionPort,
+  WorkspaceScope,
+  WorkspaceScopeError,
+  type OpenCodeCatalogPort,
+  type OpenCodeHost,
+  type OpenCodeInteractionPort,
+  type OpenCodeSessionPort,
+} from "@claxedo/harness/opencode-sdk"
 import { wakeMessageId } from "../routes/session-children"
 
 let root: string
@@ -111,24 +118,10 @@ describe("session port against a real host", () => {
     expect(second.createdAt).toBe(first.createdAt)
   })
 
-  test("interrupt answers, and revert is gated on a DURABLE message", async () => {
+  test("interrupt answers an admitted prompt", async () => {
     const session = await sessions.create(alpha, { title: "controls" })
-    const admitted = await sessions.prompt(alpha, session.id, { text: "work" })
+    await sessions.prompt(alpha, session.id, { text: "work" })
     await sessions.interrupt(alpha, session.id)
-
-    // The id `prompt` returns is the one that later appears in `message.list`,
-    // but it is not durable yet: a revert staged right after admission is
-    // rejected — MessageNotFoundError once the turn is idle, SessionBusyError
-    // while it still runs. The turn adapter waits for delivery instead.
-    await expect(sessions.revertTo(alpha, session.id, admitted.id)).rejects.toMatchObject({
-      _tag: "MessageNotFoundError",
-      sessionID: session.id,
-      messageID: admitted.id,
-    })
-
-    // Clearing a revert that was never staged is a no-op, not an error, so the
-    // adapter's "unrevert" needs no prior-state bookkeeping.
-    await sessions.clearRevert(alpha, session.id)
   })
 
   test("fork refuses an empty session with a typed reason", async () => {

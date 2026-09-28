@@ -356,7 +356,9 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_TOKEN: "idle-daemon-token",
       CLAXEDO_DAEMON_GENERATION: "idle-daemon-generation",
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
-      CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
+      // Longer than the creation-identity read the daemon does before it
+      // announces ready, which takes hundreds of milliseconds on a loaded machine.
+      CLAXEDO_DAEMON_IDLE_GRACE_MS: "1000",
       CLAXEDO_DATA_DIR: path.join(root, "data"),
     }, serverLog),
     execPath: electronExecutable(),

@@ -1,3 +1,4 @@
+import { isCustomProviderCredentialHeader, isCustomProviderMetadataHeader } from "@claxedo/agent-runtime-contract"
 import type { CustomProviderDraft } from "@/server"
 import { uuid } from "@/lib/uuid"
 import type { AccountsText } from "./i18n"
@@ -17,9 +18,10 @@ export type FormState = {
   name: string
   baseURL: string
   apiKey: string
+  keyHeader: string
   models: ModelRow[]
   headers: HeaderRow[]
-  err: { providerId?: string; name?: string; baseURL?: string }
+  err: { providerId?: string; name?: string; baseURL?: string; keyHeader?: string }
 }
 
 function fieldErrors(form: FormState, t: AccountsText, existing: ReadonlySet<string>) {
@@ -29,7 +31,9 @@ function fieldErrors(form: FormState, t: AccountsText, existing: ReadonlySet<str
   const existsError = idError || !existing.has(providerId) ? undefined : t("provider.custom.error.providerID.exists")
   const urlError = !baseURL ? t("provider.custom.error.baseURL.required") : !/^https?:\/\//.test(baseURL) ? t("provider.custom.error.baseURL.format") : undefined
   const nameError = form.name.trim() ? undefined : t("provider.custom.error.name.required")
-  return { providerId: idError ?? existsError, name: nameError, baseURL: urlError }
+  const keyHeader = form.keyHeader.trim()
+  const keyHeaderError = !keyHeader ? t("provider.custom.error.required") : !isCustomProviderCredentialHeader(keyHeader) ? t("provider.custom.error.keyHeader.invalid") : undefined
+  return { providerId: idError ?? existsError, name: nameError, baseURL: urlError, keyHeader: keyHeaderError }
 }
 
 function modelErrors(rows: readonly ModelRow[], t: AccountsText): ModelErr[] {
@@ -48,7 +52,13 @@ function headerErrors(rows: readonly HeaderRow[], t: AccountsText): HeaderErr[] 
     const key = header.key.trim()
     const value = header.value.trim()
     if (!key && !value) return {}
-    const keyError = !key ? t("provider.custom.error.required") : seen.has(key.toLowerCase()) ? t("provider.custom.error.duplicate") : undefined
+    const keyError = !key
+      ? t("provider.custom.error.required")
+      : !isCustomProviderMetadataHeader(key)
+        ? t("provider.custom.error.header.metadata")
+        : seen.has(key.toLowerCase())
+          ? t("provider.custom.error.duplicate")
+          : undefined
     seen.add(key.toLowerCase())
     return { key: keyError, value: value ? undefined : t("provider.custom.error.required") }
   })
@@ -59,6 +69,7 @@ function draftOf(form: FormState): CustomProviderDraft {
   const env = apiKey.match(/^\{env:([^}]+)\}$/)?.[1]?.trim()
   const key = apiKey && !env ? apiKey : undefined
   const headers = form.headers.map((header) => ({ key: header.key.trim(), value: header.value.trim() })).filter((header) => header.key && header.value)
+  const keyHeader = form.keyHeader.trim()
   return {
     ...(key === undefined ? {} : { key }),
     config: {
@@ -67,6 +78,7 @@ function draftOf(form: FormState): CustomProviderDraft {
       baseURL: form.baseURL.trim(),
       env: env ? [env] : [],
       headers: Object.fromEntries(headers.map((header) => [header.key, header.value])),
+      credentialHeader: keyHeader.toLowerCase() === "authorization" ? { name: keyHeader, scheme: "Bearer" } : { name: keyHeader },
       models: Object.fromEntries(form.models.map((model) => [model.id.trim(), { name: model.name.trim() }])),
     },
   }

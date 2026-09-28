@@ -1,0 +1,10 @@
+packages/agent-sdk-runtime/src/harnesses/claude/auth.ts
+packages/agent-sdk-runtime/src/harnesses/claude/config-dir.ts
+packages/agent-sdk-runtime/src/harnesses/claude/driver.ts
+packages/agent-sdk-runtime/src/harnesses/claude/executable.ts
+packages/agent-sdk-runtime/src/harnesses/claude/index.ts
+packages/agent-sdk-runtime/src/harnesses/claude/launch.ts
+packages/agent-sdk-runtime/src/harnesses/claude/permission-mode-parity.ts
+packages/agent-sdk-runtime/src/harnesses/claude/permission-state.ts
+packages/agent-sdk-runtime/src/harnesses/claude/subagent-usage.ts
+packages/agent-sdk-runtime/src/harnesses/claude/turn-input.ts

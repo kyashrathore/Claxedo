@@ -106,10 +106,10 @@ export function workspaceConnectionRoutes(
         ), 401)
       }
       try {
-        const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
+        const rateLimit = ws?.kind === "cloud" ? undefined : await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
         if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
         const result = ws?.kind === "cloud"
-          ? await cloudConnectionStatus(services, options, auth, ws)
+          ? await cloudConnectionStatus(services, options, auth, ws, connectionRateLimiter)
           : await hostTunnelConnectionInfo(services, options, auth, workspaceId)
         if ("error" in result) return c.json({ error: result.error }, result.status)
         return c.json(result.connection)

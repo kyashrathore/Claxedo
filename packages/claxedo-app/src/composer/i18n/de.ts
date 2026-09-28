@@ -34,6 +34,7 @@ export default {
   "prompt.slash.badge.skill": "Skill",
   "prompt.slash.badge.mcp": "MCP",
   "prompt.slash.badge.custom": "benutzerdefiniert",
+  "prompt.slash.badge.saved": "gespeichert",
   "prompt.context.removeFile": "Datei aus dem Kontext entfernen",
   "prompt.placeholder.shell": "Shell-Befehl eingeben... {{example}}",
   "prompt.placeholder.normal": "Fragen Sie alles... \"{{example}}\"",

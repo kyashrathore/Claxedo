@@ -34,6 +34,7 @@ export default {
   "prompt.popover.emptyCommands": "일치하는 명령어 없음",
   "prompt.slash.badge.skill": "스킬",
   "prompt.slash.badge.custom": "사용자 지정",
+  "prompt.slash.badge.saved": "저장됨",
   "prompt.context.removeFile": "컨텍스트에서 파일 제거",
   "prompt.placeholder.shell": "셸 명령어 입력... {{example}}",
   "prompt.placeholder.normal": "무엇이든 물어보세요... \"{{example}}\"",

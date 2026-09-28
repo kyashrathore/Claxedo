@@ -70,7 +70,8 @@ function supports(values: string[] | undefined, target: string) {
 export function stageOpenCodeSdk(
   nodeModules: string,
   target: { platform: string; arch: string } = { platform: process.platform, arch: process.arch },
-  owner = path.resolve(import.meta.dirname, ".."),
+  owner = path.resolve(import.meta.dirname, "../../harness"),
+  companions: readonly string[] = [],
 ) {
   const installed = new Map<string, string>()
   const inventory: Array<{ name: string; version: string; directory: string }> = []
@@ -119,9 +120,14 @@ export function stageOpenCodeSdk(
     return destination
   }
 
-  // koffi is the temporary core process-lock patch's declared host dependency.
-  for (const name of ["@opencode-ai/sdk", "koffi"]) {
-    const source = resolvePackage(name, owner)
+  // koffi is the temporary core process-lock patch's host dependency, declared
+  // by this package rather than the SDK's owner. Companions are other SDKs the
+  // same artifact loads, staged in this one pass so a dependency they share
+  // with the SDK is resolved once.
+  const roots: [string, string][] = [["@opencode-ai/sdk", owner], ["koffi", path.resolve(import.meta.dirname, "..")],
+    ...companions.map((name): [string, string] => [name, owner])]
+  for (const [name, from] of roots) {
+    const source = resolvePackage(name, from)
     if (!source) throw new Error("Missing embedded SDK dependency: " + name)
     install(source, path.dirname(nodeModules))
   }

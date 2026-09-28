@@ -242,7 +242,7 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
     })
     built.injectWebSocket(controlPlane)
     const address = await waitForServerAddress(controlPlane)
-    configureWorkspaceSupervisor({
+    configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: `http://127.0.0.1:${address.port}`,
     })
 

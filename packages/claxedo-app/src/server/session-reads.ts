@@ -7,7 +7,7 @@ import { withQuery, type RuntimeRoute } from "./transport"
 import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, SessionRef, SessionStatus } from "./types"
 import { GOAL_UNAVAILABLE } from "./wire/goal"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
-import { OPEN_VIEW, sessionOpenFromWire, type SessionFact, type SessionOpenView } from "./wire/session-open"
+import { OPEN_VIEW, sessionOpenFromWire, TODOS_UNSUPPORTED, type SessionFact, type SessionOpenView } from "./wire/session-open"
 import { sessionRowFromSession } from "./wire/session-row"
 import { viewportQuery } from "./wire/turn-page"
 
@@ -60,6 +60,10 @@ function goalOf(view: SessionOpenView) {
   return "error" in view.goal && view.goal.error.code === GOAL_UNAVAILABLE ? NO_GOAL : factValue(view.goal)
 }
 
+function todosOf(view: SessionOpenView) {
+  return "error" in view.todos && view.todos.error.code === TODOS_UNSUPPORTED ? [] : factValue(view.todos)
+}
+
 export function readSession(context: SessionContext, ref: SessionRef, shape: PageShape, held?: HeldSessionReads): SessionReads {
   const { transport } = context
   const first = held ? readHeldFirst(context, ref, held) : readFirst(context, ref, shape)
@@ -74,7 +78,7 @@ export function readSession(context: SessionContext, ref: SessionRef, shape: Pag
     first,
     status: Promise.all([first, opened]).then(([read, view]) => (view ? context.status.read(ref, read.row.lastTurn, view.status) : STOPPED_STATUS)),
     requests: fact((view) => factValue(view.requests), []),
-    todos: fact((view) => factValue(view.todos), []),
+    todos: fact(todosOf, []),
     goal: fact(goalOf, NO_GOAL),
     subagents: fact((view) => factValue(view.subagents), []),
   }

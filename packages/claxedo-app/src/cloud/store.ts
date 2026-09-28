@@ -5,7 +5,7 @@ import {
   toAppError,
   useServer,
   type AppError,
-  type CloudCreateInput,
+  type CloudProjectCreateInput,
   type CloudWorkspace,
   type CloudWorkspaceStatus,
   type PlacementId,
@@ -22,7 +22,7 @@ export type CloudList =
 
 export type CloudWorkspaces = {
   readonly list: Accessor<CloudList>
-  readonly create: (input: Omit<CloudCreateInput, "projectId">) => Promise<CloudWorkspace>
+  readonly create: (input: Omit<CloudProjectCreateInput, "projectId">) => Promise<CloudWorkspace>
   readonly start: (id: PlacementId) => Promise<void>
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>

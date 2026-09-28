@@ -1,10 +1,10 @@
-import { createSignal, Show } from "solid-js"
+import { createSignal, Show, type JSX } from "solid-js"
 import { connectContextFor } from "@/lib/harness-catalog"
 import { useDialog, Button, ProviderIcon } from "@/ui"
 import { useAccountsText } from "../i18n"
 import { DialogProviderConnect } from "./connect-dialog"
 
-export function ProviderSetupRow(props: { readonly id: string; readonly name: string; readonly harness: string; readonly note: string | undefined; readonly onConnected: () => Promise<void> }) {
+export function ProviderSetupRow(props: { readonly id: string; readonly name: string; readonly harness: string; readonly note: string | undefined; readonly onConnected: () => Promise<void>; readonly children?: JSX.Element }) {
   const t = useAccountsText()
   const dialog = useDialog()
   const [connecting, setConnecting] = createSignal(false)
@@ -29,6 +29,7 @@ export function ProviderSetupRow(props: { readonly id: string; readonly name: st
           </Show>
         </div>
       </div>
+      {props.children}
     </div>
   )
 }

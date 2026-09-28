@@ -42,6 +42,12 @@ export function controlPlaneMigrations(): readonly string[] {
   return readdirSync(CONTROL_PLANE_MIGRATIONS_DIRECTORY).filter((name) => name.endsWith(".sql")).sort()
 }
 
+/** The migrations that build today's hosted credential table. */
+export const HOSTED_CREDENTIAL_MIGRATIONS = [
+  "0039_hosted_provider_credentials.sql",
+  "0044_hosted_provider_credentials_by_person.sql",
+] as const
+
 export function controlPlaneMigrationPath(name: string): string {
   return `${CONTROL_PLANE_MIGRATIONS_DIRECTORY}${name}`
 }

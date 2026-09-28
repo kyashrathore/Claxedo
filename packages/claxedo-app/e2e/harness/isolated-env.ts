@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { isolatedHomeEnv } from "../../perf-harness/src/isolated-home"
 import { egressProxyEnv } from "./egress-guard"
-import { PINNED_PI } from "./pinned-pi"
+import { PINNED_PI } from "../../../harness/e2e/harness/pinned-pi"
 import { writePricingSnapshot } from "./usage-pricing"
 
 const STAND_INS = path.join(import.meta.dirname, "stand-ins")

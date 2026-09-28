@@ -18,9 +18,8 @@ describe("package boundary", () => {
   test("declares only Claxedo contract/runtime dependencies", async () => {
     const pkg = await Bun.file(path.join(root, "package.json")).json() as { dependencies?: Record<string, string> }
     expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual([
-      "@claxedo/agent-event-runtime",
       "@claxedo/agent-runtime-contract",
-      "@claxedo/agent-sdk-runtime",
+      "@claxedo/harness",
       "@claxedo/helpers",
     ])
   })

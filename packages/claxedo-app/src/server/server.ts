@@ -6,7 +6,6 @@ import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
 import { createAgentConnectionsApi } from "./agent-connections"
 import { createIntegrationsApi } from "./integrations"
-import { createSandboxProvidersApi } from "./sandbox-providers"
 import { createProviderConnectApi } from "./provider-connect"
 import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
@@ -106,16 +105,15 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
-    cloud: createCloudApi(transport, workspaces, wakes, project),
+    cloud: createCloudApi(transport, workspaces, wakes, project, account),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     tasks: createTasksApi(transport),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
     agentConnections: createAgentConnectionsApi(transport, queryClient),
-    sandboxProviders: createSandboxProvidersApi(transport, queryClient),
     providerConnect: createProviderConnectApi(transport, queryClient),
-    providerCatalogs: createProviderCatalogsApi(transport, queryClient),
+    providerCatalogs: createProviderCatalogsApi(transport, workspaces, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,

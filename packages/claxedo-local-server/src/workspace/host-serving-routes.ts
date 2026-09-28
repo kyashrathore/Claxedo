@@ -14,7 +14,7 @@
  * plane is the authoritative producer of this credential and every hop
  * (child → Electron main → here) carries it untouched. Its shape is the
  * signer's `HostTunnelTokenSignerResult` plus the route's own additions
- * (`hostId`, `enrollmentId`, `workspaceIds`, `relayUrl`); see
+ * (`hostId`, `enrollmentId`, `ownerUserId`, `workspaceIds`, `relayUrl`); see
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` and the type-level
  * pin in `host-serving-routes.test.ts`. The parser is strict, so a field
  * name that is not the producer's rejects every real ack with a 400 that
@@ -25,8 +25,10 @@
 import { Hono } from "hono"
 import { z } from "zod"
 import { setHostServing, hostServingState } from "@claxedo/host-serving/serving"
-import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
+import { embeddedWorkspaceRuntimeSessionAuthority, syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { adoptEnrolledOwner, hostServingUpdates } from "./host-provider-config"
 
 /**
  * The two addresses a relayed caller is admitted by, and the one this machine
@@ -66,10 +68,16 @@ const servingBody = z
         tokenExpiresAt: z.number().int().positive(),
         jti: z.string().min(1).max(300),
         workspaceIds: z.array(z.string().min(1).max(200)).max(200),
+        // The enrollment's owner; a relayed request authenticated as them is
+        // this machine's owner and spends the machine owner's accounts.
+        ownerUserId: z.string().min(1).max(300),
       })
       .nullable(),
   })
   .strict()
+
+const log = Log.create({ service: "host-serving-routes" })
+
 
 export function HostServingRoutes() {
   return new Hono()
@@ -79,33 +87,44 @@ export function HostServingRoutes() {
       if (!parsed.success) {
         return c.json({ error: { code: "invalid_request_body", message: "serving credential failed validation" } }, 400)
       }
-      const credential = parsed.data.credential
-      // Ahead of the tunnel: the first relayed request can arrive as soon as
-      // it opens, and it is verified against these.
-      setLocalHostEndpoints(credential ? { ...parsed.data.endpoints, ownerActorId: credential.ownerActorId } : undefined)
-      const state = await setHostServing(
-        credential
-          ? {
-              hostId: credential.hostId,
-              enrollmentId: credential.enrollmentId,
-              relayUrl: credential.relayUrl,
-              token: credential.hostTunnelToken,
-              workspaceIds: credential.workspaceIds,
-              // Serving is leased on this: no renewing ack before it passes
-              // and the tunnel closes, so the daemon cannot keep claiming to
-              // serve a machine the control plane has already expired.
-              expiresAt: credential.tokenExpiresAt,
-            }
-          : null,
-        {
-          // The daemon's own origin: this handler only ever runs on a loopback
-          // call to the very server whose runtimes the tunnel must reach.
-          localBaseUrl: new URL(c.req.url).origin,
-          // How this process composed the embedded runtimes the tunnel exposes;
-          // only this process can say, and the control plane refuses to infer it.
-          sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
-        },
-      )
-      return c.json(state)
+      return c.json(await hostServingUpdates.run("serving", () => applyServing(parsed.data, new URL(c.req.url).origin)))
     })
 }
+
+async function applyServing(body: z.infer<typeof servingBody>, localBaseUrl: string) {
+  const credential = body.credential
+  // Ahead of the tunnel: the first relayed request can arrive as soon as it
+  // opens, and it is verified against these and resolved as this owner.
+  setLocalHostEndpoints(credential ? { ...body.endpoints, ownerActorId: credential.ownerActorId } : undefined)
+  if (credential) {
+    try {
+      await adoptEnrolledOwner(credential.ownerUserId, syncEmbeddedWorkspaceRuntimes)
+    } catch (error) {
+      log.warn("re-applying the runtimes under the enrolled owner failed; the next ack retries", { error: String(error) })
+    }
+  }
+  return await setHostServing(
+    credential
+      ? {
+          hostId: credential.hostId,
+          enrollmentId: credential.enrollmentId,
+          relayUrl: credential.relayUrl,
+          token: credential.hostTunnelToken,
+          workspaceIds: credential.workspaceIds,
+          // Serving is leased on this: no renewing ack before it passes and the
+          // tunnel closes, so the daemon cannot keep claiming to serve a
+          // machine the control plane has already expired.
+          expiresAt: credential.tokenExpiresAt,
+        }
+      : null,
+    {
+      // The daemon's own origin: this handler only ever runs on a loopback
+      // call to the very server whose runtimes the tunnel must reach.
+      localBaseUrl,
+      // How this process composed the embedded runtimes the tunnel exposes;
+      // only this process can say, and the control plane refuses to infer it.
+      sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
+    },
+  )
+}
+

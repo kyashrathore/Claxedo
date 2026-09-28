@@ -6,7 +6,7 @@ import path from "node:path"
 import { readFileSync } from "node:fs"
 
 const desktopDir = path.resolve(import.meta.dirname, "..")
-const built = path.join(desktopDir, "../agent-sdk-runtime/dist/launch/launch-gate-child.mjs")
+const built = path.join(desktopDir, "../process-ownership/dist/launch-gate-child.mjs")
 
 const scratch: string[] = []
 afterEach(async () => {
@@ -44,7 +44,7 @@ test("the resolver finds the gate child in the built out/ layout", async () => {
 
   process.env.CLAXEDO_LAUNCH_GATE_CHILD = path.join(out, "launch-gate-child.mjs")
   try {
-    const { resolveLaunchGateChild } = await import("@claxedo/agent-sdk-runtime/launch")
+    const { resolveLaunchGateChild } = await import("@claxedo/process-ownership/launch")
     expect(resolveLaunchGateChild().file).toBe(path.join(out, "launch-gate-child.mjs"))
   } finally {
     delete process.env.CLAXEDO_LAUNCH_GATE_CHILD
@@ -60,7 +60,7 @@ test("an asar path resolves to its unpacked twin, because spawn cannot read an a
 
   process.env.CLAXEDO_LAUNCH_GATE_CHILD = path.join(packed, "launch-gate-child.mjs")
   try {
-    const { resolveLaunchGateChild } = await import("@claxedo/agent-sdk-runtime/launch")
+    const { resolveLaunchGateChild } = await import("@claxedo/process-ownership/launch")
     expect(resolveLaunchGateChild().file).toBe(path.join(unpacked, "launch-gate-child.mjs"))
   } finally {
     delete process.env.CLAXEDO_LAUNCH_GATE_CHILD
@@ -71,7 +71,7 @@ test("a gate child that is not on disk refuses the launch rather than crashing i
   const root = await layout()
   process.env.CLAXEDO_LAUNCH_GATE_CHILD = path.join(root, "absent.mjs")
   try {
-    const { resolveLaunchGateChild, LaunchRefusedError } = await import("@claxedo/agent-sdk-runtime/launch")
+    const { resolveLaunchGateChild, LaunchRefusedError } = await import("@claxedo/process-ownership/launch")
     expect(() => resolveLaunchGateChild()).toThrow(LaunchRefusedError)
   } finally {
     delete process.env.CLAXEDO_LAUNCH_GATE_CHILD

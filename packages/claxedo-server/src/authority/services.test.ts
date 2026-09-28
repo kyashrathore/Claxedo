@@ -68,11 +68,14 @@ function hostedOptions(
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: `cred_${input.provider_id}`,
       })),
       deleteCredential: vi.fn(async () => true),
       deleteCredentialsByProvider: vi.fn(async () => 0),
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => ({}),
     },
     relay: {
       relayUrl: "https://relay.example.test",
@@ -606,7 +609,7 @@ describe("control-plane services", () => {
     expect(text).toContain("configureWorkspaceSupervisor({")
     expect(text).toContain("relay_url: services.relay.relayUrl")
     expect(text).toContain("default_sandbox_driver: services.sandbox.defaultDriver")
-    expect(text).toContain("migrateCredentials()")
+    expect(text).not.toContain("migrateCredentials()")
     expect(text).toContain("captureControlPlaneStartupTelemetry(services, { port })")
     expect(text).toContain("export async function shutdownControlPlaneRuntime()")
     expect(text).toContain("shutdownEmbeddedWorkspaceRuntimes()")
@@ -618,7 +621,7 @@ describe("control-plane services", () => {
   test("workspace supervisor accepts an explicit default sandbox driver override", async () => {
     const supervisor = await import("../workspace/supervisor")
     const supervisorOptions = await import("../workspace/supervisor/options")
-    supervisor.configureWorkspaceSupervisor({
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://127.0.0.1:0",
       default_sandbox_driver: "daytona",
     })

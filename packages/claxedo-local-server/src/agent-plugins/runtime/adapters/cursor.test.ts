@@ -24,37 +24,26 @@ async function generationPlugin(root: string, marker: string) {
 }
 
 describe("cursorAgentPluginAdapter", () => {
-  test("maintains only marker-owned Cursor local plugins and clears them on disable", async () => {
-    const home = await temporary("claxedo-cursor-home-")
+  test("projects immutable generation roots and an empty selection has no roots", async () => {
     const source = await temporary("claxedo-cursor-plugin-")
-    const localRoot = path.join(home, ".cursor", "plugins", "local")
-    const userPlugin = path.join(localRoot, "user-owned")
-    await fs.mkdir(userPlugin, { recursive: true })
-    await fs.writeFile(path.join(userPlugin, "keep.txt"), "keep")
-    const adapter = cursorAgentPluginAdapter({ userHomeDirectory: home })
-
-    const enabled = await adapter.project({ generationRoot: source, plugins: [await generationPlugin(source, "v1")] })
+    const generationRoot = await temporary("claxedo-cursor-generation-")
+    const adapter = cursorAgentPluginAdapter()
+    const enabled = await adapter.project({ generationRoot, plugins: [await generationPlugin(source, "v1")] })
     expect(enabled.pluginRoots).toHaveLength(1)
-    expect(enabled.pluginRoots[0].root).toContain(path.join(".cursor", "plugins", "local", "claxedo--"))
+    expect(enabled.pluginRoots[0].root.startsWith(path.join(generationRoot, "harnesses", "cursor"))).toBe(true)
     expect(await fs.readFile(path.join(enabled.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v1")
-    expect(await fs.readFile(path.join(userPlugin, "keep.txt"), "utf8")).toBe("keep")
-
-    const disabled = await adapter.project({ generationRoot: source, plugins: [] })
-    expect(disabled.pluginRoots).toEqual([])
-    await expect(fs.stat(enabled.pluginRoots[0].root)).rejects.toMatchObject({ code: "ENOENT" })
-    expect(await fs.readFile(path.join(userPlugin, "keep.txt"), "utf8")).toBe("keep")
+    expect((await adapter.project({ generationRoot, plugins: [] })).pluginRoots).toEqual([])
+    expect(await fs.readFile(path.join(enabled.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v1")
+    await expect(fs.stat(path.join(enabled.pluginRoots[0].root, ".claxedo-agent-plugin.json"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 
-  test("refuses to overwrite a destination after its ownership marker is removed", async () => {
-    const home = await temporary("claxedo-cursor-home-")
+  test("refuses to overwrite a generation view", async () => {
     const source = await temporary("claxedo-cursor-plugin-")
-    const adapter = cursorAgentPluginAdapter({ userHomeDirectory: home })
+    const generationRoot = await temporary("claxedo-cursor-generation-")
+    const adapter = cursorAgentPluginAdapter()
     const plugin = await generationPlugin(source, "v1")
-    const first = await adapter.project({ generationRoot: source, plugins: [plugin] })
-    await fs.rm(path.join(first.pluginRoots[0].root, ".claxedo-agent-plugin.json"))
-
-    await expect(adapter.project({ generationRoot: source, plugins: [plugin] }))
-      .rejects.toThrow("is not owned by Claxedo")
+    const first = await adapter.project({ generationRoot, plugins: [plugin] })
+    await expect(adapter.project({ generationRoot, plugins: [plugin] })).rejects.toMatchObject({ code: "ERR_FS_CP_EEXIST" })
     expect(await fs.readFile(path.join(first.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v1")
   })
 })

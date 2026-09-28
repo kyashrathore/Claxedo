@@ -465,6 +465,7 @@ describe("the composition's own relay actor", () => {
           // serving is the machine identity a relay token is bound to.
           relayUrl: keySetOrigin,
           hostTunnelToken: "host-tunnel-token",
+          ownerUserId: "usr_machine_owner",
           tokenExpiresAt: Date.now() + 600_000,
           jti: "jti_serving",
           workspaceIds: [workspace],

@@ -39,7 +39,7 @@ afterAll(async () => {
 })
 
 function scanned(providerId: string, kind: "oauth_token" | "api_key" = "oauth_token") {
-  return putCredential({
+  return putCredential({ owner: "local",
     provider_id: providerId,
     kind,
     source: "local_only",
@@ -79,7 +79,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
     const scannedKey = await scanned("claude-sdk", "api_key")
     const vendorToken = await scanned("openrouter")
     const harnessVendorToken = await scanned("anthropic")
-    const typed = await putCredential({
+    const typed = await putCredential({ owner: "local",
       provider_id: "anthropic",
       kind: "api_key",
       source: "managed",
@@ -98,7 +98,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
   test("the mark moves to an account the user chose rather than being left nowhere", async () => {
     const copied = await scanned("claude-sdk")
-    const typed = await putCredential({
+    const typed = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",

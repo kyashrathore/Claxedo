@@ -30,6 +30,7 @@ import { z } from "zod"
 import {
   HostProviderConfigStaleError,
   hostProviderConfigState,
+  hostServingUpdates,
   installHostProviderConfigRevision,
 } from "./host-provider-config"
 
@@ -49,7 +50,7 @@ export function HostProviderConfigRoutes() {
         return c.json({ error: { code: "invalid_request_body", message: "provider configuration failed validation" } }, 400)
       }
       try {
-        return c.json(installHostProviderConfigRevision(parsed.data))
+        return c.json(await hostServingUpdates.run("serving", async () => installHostProviderConfigRevision(parsed.data)))
       } catch (error) {
         if (error instanceof HostProviderConfigStaleError) {
           return c.json({ error: { code: "provider_config_revision_stale", message: error.message } }, 409)

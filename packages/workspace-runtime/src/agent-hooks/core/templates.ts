@@ -1,9 +1,6 @@
 /// <reference path="../../asset-imports.d.ts" />
 
 import bashrc from "../templates/bashrc.template.sh?raw"
-import codexLogWatcher from "../templates/codex-log-watcher.template.sh?raw"
-import codexNotify from "../templates/codex-notify.template.sh?raw"
-import codexWrapperExecLegacy from "../templates/codex-wrapper-exec-legacy.template.sh?raw"
 import codexWrapperExec from "../templates/codex-wrapper-exec.template.sh?raw"
 import copilotHook from "../templates/copilot-hook.template.sh?raw"
 import cursorHook from "../templates/cursor-hook.template.sh?raw"
@@ -18,9 +15,6 @@ import zshrc from "../templates/zshrc.template.sh?raw"
 
 export const templates = {
   "bashrc.template.sh": bashrc,
-  "codex-log-watcher.template.sh": codexLogWatcher,
-  "codex-notify.template.sh": codexNotify,
-  "codex-wrapper-exec-legacy.template.sh": codexWrapperExecLegacy,
   "codex-wrapper-exec.template.sh": codexWrapperExec,
   "copilot-hook.template.sh": copilotHook,
   "cursor-hook.template.sh": cursorHook,

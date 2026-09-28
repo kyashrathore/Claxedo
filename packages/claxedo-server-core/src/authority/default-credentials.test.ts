@@ -10,10 +10,7 @@ mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const synced = vi.fn(async (_org?: string, _providers?: readonly string[]) => ({ bound: [], removed: [] }))
-vi.mock("@claxedo/server-core/opencode/sdk-credential-bridge", () => ({
-  syncCredentialsToSdk: (org?: string, providers?: readonly string[]) => synced(org, providers),
-}))
+const synced = vi.fn(async () => {})
 
 const { createTestBackend, setBackendOverride } = await import("../credentials/backend-registry")
 const { ClaxedoProviderCredentialTable } = await import("../credentials/provider-credential.sql")
@@ -32,8 +29,8 @@ afterAll(async () => {
   else process.env.CLAXEDO_DATA_DIR = prev
 })
 
-describe("the engine hears about the providers a mutation touched", () => {
-  const port = defaultControlPlaneCredentials()
+describe("running workspaces receive credential mutations", () => {
+  const port = defaultControlPlaneCredentials({ refreshLocalRuntimes: synced })
 
   beforeEach(() => {
     setBackendOverride(createTestBackend())
@@ -41,48 +38,47 @@ describe("the engine hears about the providers a mutation touched", () => {
     synced.mockClear()
   })
 
-  test("a stored key names its own provider", async () => {
-    await port.putCredential({ provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
+  test("a stored key reaches running workspaces", async () => {
+    await port.putCredential({ owner: "local", provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
 
     expect(synced).toHaveBeenCalledTimes(1)
-    expect(synced.mock.calls[0]?.[1]).toEqual(["cursor-sdk"])
   })
 
-  test("a switch names every provider whose mark moved", async () => {
-    const claude = await port.putCredential({
+  test("an account switch reaches running workspaces once", async () => {
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "oauth_token", source: "managed", account_id: "acc_a", secret: "tok_a",
     })
-    const cursor = await port.putCredential({
+    const cursor = await port.putCredential({ owner: "local",
       provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor",
     })
     synced.mockClear()
 
-    const result = await port.setActiveCredentials!([claude.id, cursor.id])
+    const result = await port.setActiveCredentials!([claude.id, cursor.id], undefined, "local")
 
     expect(result.ok).toBe(true)
-    expect(synced.mock.calls[0]?.[1]).toEqual(["claude-sdk", "cursor-sdk"])
+    expect(synced).toHaveBeenCalledTimes(1)
   })
 
-  test("a removed row names the provider it belonged to", async () => {
-    const cursor = await port.putCredential({ provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
+  test("only a removal that removed a row reaches running workspaces", async () => {
+    const cursor = await port.putCredential({ owner: "local", provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
     synced.mockClear()
 
     await port.deleteCredential(cursor.id)
     await port.deleteCredentialsByProvider("openai")
     await port.deleteCredentialsByProvider("claude-sdk")
 
-    expect(synced.mock.calls.map((call) => call[1])).toEqual([["cursor-sdk"]])
+    expect(synced).toHaveBeenCalledTimes(1)
   })
 
-  test("a renewed token names the row's provider", async () => {
-    const claude = await port.putCredential({
+  test("a renewed token reaches running workspaces", async () => {
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "oauth_token", source: "managed", account_id: "acc_a", secret: "tok_a",
     })
     synced.mockClear()
 
     await port.updateCredentialSecret!(claude.id, "tok_b")
 
-    expect(synced.mock.calls[0]?.[1]).toEqual(["claude-sdk"])
+    expect(synced).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -112,7 +108,7 @@ describe("the supervisor hears the delivered set change", () => {
   })
 
   test("a revocation runs the delivery reconcile", async () => {
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
     })
     reconciled.mockClear()
@@ -123,15 +119,15 @@ describe("the supervisor hears the delivered set change", () => {
   })
 
   test("an account switch and a removal run it", async () => {
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
     })
-    const cursor = await port.putCredential({
+    const cursor = await port.putCredential({ owner: "local",
       provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor",
     })
     reconciled.mockClear()
 
-    await port.setActiveCredentials!([claude.id])
+    await port.setActiveCredentials!([claude.id], undefined, "local")
     await port.deleteCredential(cursor.id)
 
     expect(reconciled).toHaveBeenCalledTimes(2)
@@ -143,11 +139,20 @@ describe("the supervisor hears the delivered set change", () => {
     expect(reconciled).not.toHaveBeenCalled()
   })
 
+  test("a sandbox that cannot reconcile still lets local runtimes take the change, and the write reports it", async () => {
+    const local = defaultControlPlaneCredentials({ refreshLocalRuntimes: synced })
+    reconciled.mockRejectedValueOnce(new Error("sandbox driver is down"))
+
+    await expect(local.putCredential({ owner: "local", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a" }))
+      .rejects.toMatchObject({ name: "CredentialDeliveryError", cause: expect.objectContaining({ message: "sandbox driver is down" }) })
+    expect(synced).toHaveBeenCalledOnce()
+  })
+
   test("a composition without a supervisor reconciles nothing and does not fail the write", async () => {
     const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
     configureWorkspaceSupervisorPort(undefined)
 
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
     })
 

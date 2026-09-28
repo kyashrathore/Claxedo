@@ -1,0 +1,89 @@
+export type RuntimeDisposeResult = { ok: true } | { ok: false; error: unknown }
+
+/** Fences new calls while admitted operations and their producer tails drain. */
+export function createRuntimeLifecycle(input: { onTeardownFailure: (error: unknown) => void }) {
+  let closing = false
+  let disposal: Promise<RuntimeDisposeResult> | undefined
+  let drained: Promise<void> | undefined
+  let cleaned = false
+  const pendingTasks = new Set<Promise<void>>()
+  const producers = new Map<string, Promise<void>>()
+
+  function track<T>(operation: () => T, leaseId?: string): T {
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => { finish = resolve })
+    pendingTasks.add(pending)
+    if (leaseId) producers.set(leaseId, pending)
+    const done = () => {
+      pendingTasks.delete(pending)
+      if (leaseId && producers.get(leaseId) === pending) producers.delete(leaseId)
+      finish()
+    }
+    try {
+      const result = operation()
+      if (result instanceof Promise) void result.then(done, done)
+      else done()
+      return result
+    } catch (error) { done(); throw error }
+  }
+
+  type ResourceMethods = Record<string, (...args: any[]) => Promise<any>>
+  function resource<T extends ResourceMethods>(methods: T): T
+  // Each wrapper has the signature of the method it replaces, so the wrapped map
+  // keeps the caller's type; the implementation is typed at the shape it walks.
+  function resource(methods: ResourceMethods): ResourceMethods {
+    return Object.fromEntries(Object.entries(methods).map(([name, method]) => [name, (...args: any[]) => {
+      if (closing) return Promise.reject(new Error("AgentRuntime is disposed"))
+      return track(() => method(...args))
+    }]))
+  }
+
+  return {
+    get closing() { return closing },
+    track,
+    producer: (leaseId: string) => producers.get(leaseId),
+    resource,
+    /**
+     * A teardown failure is reported and returned as soon as it happens. It
+     * cannot wait for `pendingTasks`, because the producer that will not drain
+     * is exactly the one whose owner needs to hear that its stop failed. The
+     * failure is not kept: the next call runs `stop` again.
+     *
+     * Resolving early is not permission to close what the failed teardown still
+     * owns: `cleanup` runs once, only after the producers have actually drained,
+     * so a caller that treats the result as final still leaves the store open to
+     * the writers that are live.
+     */
+    dispose(stop: () => Promise<unknown>, cleanup: () => void): Promise<RuntimeDisposeResult> {
+      if (disposal) return disposal
+      closing = true
+      drained ??= (async () => {
+        while (pendingTasks.size) await Promise.all(pendingTasks)
+      })()
+      const settled = drained
+      const cleanOnce = () => {
+        if (cleaned) return
+        cleaned = true
+        cleanup()
+      }
+      let attempt: Promise<RuntimeDisposeResult> | undefined
+      attempt = (async (): Promise<RuntimeDisposeResult> => {
+        const failure = await Promise.resolve().then(stop).then(
+          () => undefined,
+          (error: unknown) => error ?? new Error("AgentRuntime teardown failed"),
+        )
+        if (failure !== undefined) {
+          if (disposal === attempt) disposal = undefined
+          input.onTeardownFailure(failure)
+          void settled.then(cleanOnce, (error: unknown) => input.onTeardownFailure(error))
+          return { ok: false as const, error: failure }
+        }
+        await settled
+        cleanOnce()
+        return { ok: true as const }
+      })()
+      disposal = attempt
+      return attempt
+    },
+  }
+}

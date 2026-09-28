@@ -34,6 +34,7 @@ export default {
   "prompt.popover.emptyCommands": "Eşleşen komut yok",
   "prompt.slash.badge.skill": "beceri",
   "prompt.slash.badge.custom": "özel",
+  "prompt.slash.badge.saved": "kayıtlı",
   "prompt.context.removeFile": "Dosyayı bağlamdan çıkar",
   "prompt.placeholder.shell": "Kabuk komutu girin... {{example}}",
   "prompt.placeholder.normal": "Bir şeyler sorun... \"{{example}}\"",

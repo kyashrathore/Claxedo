@@ -20,6 +20,7 @@ import { LOCAL_BUILTIN_DEPLOYMENT } from "./builtin-groups"
 import { createLocalAgentPluginsModule } from "./module"
 import { LocalAgentPluginSourceRoutes } from "./sources/routes"
 import { SqliteAgentPluginSourceStore } from "./sources/sqlite-store"
+import { acpAgentPluginAdapter } from "./runtime/adapters/acp"
 import { claudeAgentPluginAdapter } from "./runtime/adapters/claude"
 import { codexAgentPluginAdapter } from "./runtime/adapters/codex"
 import { cursorAgentPluginAdapter } from "./runtime/adapters/cursor"
@@ -27,12 +28,16 @@ import { openCodeAgentPluginAdapter } from "./runtime/adapters/opencode"
 import { clearActiveGeneration, readActiveGeneration } from "./runtime/generation"
 import {
   AgentPluginMaterializationError,
+  agentPluginAcpMcp,
+  agentPluginHarnessLaunch,
   materializeAgentPluginGeneration,
   readMaterializedAgentPluginGeneration,
-  agentPluginHarnessLaunch,
   type MaterializedAgentPluginGeneration,
 } from "./runtime/materialize"
-import { runtimeArtifactStore, runtimeMcpServers } from "./runtime/runtime-contribution"
+import { runtimeArtifactStore } from "./runtime/runtime-contribution"
+import { runtimeMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
+import { fanOutConfig } from "../agent-config/fanout"
+import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/index"
 
 /**
  * The signed user's own runtime world, as the control plane hands it to a
@@ -52,7 +57,8 @@ export type SignedAgentPluginRuntimeState = {
 
 export type LocalAgentPluginsComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
-  harnessLaunch: () => Promise<Record<string, Record<string, unknown>>>
+  /** What the active generation contributes to every runtime snapshot this daemon builds. */
+  runtimeContribution: () => Promise<AgentPluginRuntimeContribution>
   ready: Promise<void>
   /** The signed world Electron main pulls; absent means the machine world launches. */
   signedRuntime: {
@@ -78,8 +84,13 @@ export type LocalAgentPluginsComposition = {
  */
 export function createLocalAgentPluginsComposition(
   env: NodeJS.ProcessEnv = process.env,
-  options: { sources?: CatalogSourceProvider } = {},
+  options: {
+    sources?: CatalogSourceProvider
+    /** Runs after an activation or signed-world change is materialized; by default the runtime config fan-out, so running runtimes receive the new contribution. */
+    changed?: () => Promise<void>
+  } = {},
 ): LocalAgentPluginsComposition {
+  const changed = options.changed ?? fanOutConfig
   const artifacts = new LocalAgentPluginArtifactStore(dataDir())
   const activations = new SqliteUnsignedAgentPluginActivationStore(ClaxedoDB.raw())
   const runtimeRoot = path.join(dataDir(), "runtime")
@@ -97,8 +108,9 @@ export function createLocalAgentPluginsComposition(
   const adapters = () => [
     openCodeAgentPluginAdapter(),
     claudeAgentPluginAdapter(),
-    codexAgentPluginAdapter({ codexHome: env.CODEX_HOME }),
-    cursorAgentPluginAdapter({ userHomeDirectory: env.HOME }),
+    codexAgentPluginAdapter(),
+    cursorAgentPluginAdapter(),
+    acpAgentPluginAdapter(),
   ]
 
   let appliedRevision: number | undefined
@@ -145,6 +157,7 @@ export function createLocalAgentPluginsComposition(
       }))
     })
     activeGeneration = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot,
       identity: { mode: "unsigned", machineId: "local" },
       revision,
@@ -154,10 +167,14 @@ export function createLocalAgentPluginsComposition(
     })
     appliedRevision = revision
   }
+  const applyRevision = (revision: number) => {
+    current = current.then(() => apply(revision), () => apply(revision))
+    return current
+  }
   const reconcile: AgentPluginReconcilePort = {
     async reconcile(revision) {
-      current = current.then(() => apply(revision))
-      await current
+      await applyRevision(revision)
+      await changed()
       return { state: "applied" }
     },
   }
@@ -168,7 +185,16 @@ export function createLocalAgentPluginsComposition(
   // token is a new projection of the same activation.
   let signedGeneration: MaterializedAgentPluginGeneration | undefined
   let signedIdentity: { userId: string; revision: number } | undefined
-  let signedWork = Promise.resolve()
+  // The world the desktop last pushed stays applied across a daemon restart:
+  // the desktop withdraws it explicitly at sign-out and re-pushes it with
+  // fresh gateway credentials, so an absent push is not an absent world.
+  const restoreSigned = async () => {
+    const restored = await readMaterializedAgentPluginGeneration(signedRuntimeRoot)
+    if (!restored || restored.identity.mode !== "signed") return
+    signedGeneration = restored
+    signedIdentity = { userId: restored.identity.userId, revision: restored.revision }
+  }
+  let signedWork = restoreSigned()
   const signedState = (): SignedAgentPluginRuntimeState =>
     signedGeneration && signedIdentity
       ? {
@@ -203,17 +229,19 @@ export function createLocalAgentPluginsComposition(
     async apply(input) {
       signedWork = signedWork.then(() => applySigned(input), () => applySigned(input))
       await signedWork
+      await changed()
       return signedState()
     },
     async clear() {
       signedWork = signedWork.then(clearSigned, clearSigned)
       await signedWork
+      await changed()
       return signedState()
     },
     state: signedState,
   }
 
-  const ready = reconcile.reconcile(activations.revision()).then(() => undefined)
+  const ready = applyRevision(activations.revision())
   const module = createLocalAgentPluginsModule({
     sources,
     artifacts,
@@ -222,10 +250,12 @@ export function createLocalAgentPluginsComposition(
     signedRuntime,
     builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: LOCAL_BUILTIN_DEPLOYMENT },
   })
-  const harnessLaunch = async () => {
-    await current
-    await signedWork.catch(() => undefined)
-    return await agentPluginHarnessLaunch(signedGeneration ?? activeGeneration)
+  const runtimeContribution = async () => {
+    // A failed apply belongs to the caller that asked for it; a snapshot read
+    // waits for queued work to settle and serves the last good generation.
+    await Promise.allSettled([current, signedWork])
+    const generation = signedGeneration ?? activeGeneration
+    return { harnessLaunch: agentPluginHarnessLaunch(generation), mcp: await agentPluginAcpMcp(generation) }
   }
   return {
     routeContributions: [
@@ -236,7 +266,7 @@ export function createLocalAgentPluginsComposition(
         routes: LocalAgentPluginSourceRoutes({ registry: sourceRegistry, cache: sourceProviders }),
       },
     ],
-    harnessLaunch,
+    runtimeContribution,
     signedRuntime,
     ready: ready.then(() => {
       if (appliedRevision !== activations.revision()) {

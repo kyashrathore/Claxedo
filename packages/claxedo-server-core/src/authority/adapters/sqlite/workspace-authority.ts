@@ -430,14 +430,15 @@ function redeemResult(db: SqliteAuthorityDb, input: {
   enrollment: HostEnrollmentRow
   invitation: HostInvitationRowRecord
 }) {
-  const owner = db.prepare<unknown[], { name: string | null }>(`SELECT name FROM users WHERE token_identifier = ?`)
+  const owner = db.prepare<unknown[], { name: string | null; subject: string | null }>(`SELECT name, subject FROM users WHERE token_identifier = ?`)
     .get(input.invitation.owner_token_identifier)
+  if (!owner?.subject) throw new Error("host_enrollment_owner_subject_missing")
   const scope = enrollmentScope(input.enrollment)
   if (!scope) throw new Error("host_enrollment_scope_missing")
   return {
     resumed: input.resumed,
     enrollment: toHostEnrollment(input.enrollment),
-    owner_user_id: input.invitation.owner_token_identifier,
+    owner_user_id: owner.subject,
     owner_actor_id: input.invitation.owner_token_identifier,
     ...(input.invitation.org_id ? { org_id: input.invitation.org_id } : {}),
     ...(owner?.name ? { owner_display_name: owner.name } : {}),
@@ -1517,8 +1518,8 @@ export function createSqliteWorkspaceAuthority(
       db.prepare(`
         INSERT INTO workspaces (
           workspace_id, org_id, project_id, owner_token_identifier, backing,
-          display_name, home_region, repo_url, repo_name, git_branch, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'cloud-vm', ?, ?, ?, ?, ?, ?, ?)
+          display_name, home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'cloud-vm', ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         args.workspaceId,
         orgId,
@@ -1529,6 +1530,7 @@ export function createSqliteWorkspaceAuthority(
         args.repoUrl ?? null,
         args.repoName ?? null,
         args.gitBranch ?? null,
+        args.remoteDirectory === undefined ? null : normalizeStoredDirectory(args.remoteDirectory),
         now,
         now,
       )
@@ -2443,15 +2445,19 @@ export function createSqliteWorkspaceAuthority(
     machineAuth: {
       async lookupEnrollment(enrollmentId) {
         const db = database()
-        const row = db.prepare<unknown[], HostEnrollmentRow & { owner_eligible: number }>(`
-          SELECT enrollment.*, ${ownerEligibleSql("enrollment")} AS owner_eligible
-          FROM host_enrollments enrollment WHERE enrollment.enrollment_id = ?
+        const row = db.prepare<unknown[], HostEnrollmentRow & { owner_eligible: number; owner_subject: string | null }>(`
+          SELECT enrollment.*, ${ownerEligibleSql("enrollment")} AS owner_eligible, owner.subject AS owner_subject
+          FROM host_enrollments enrollment
+          LEFT JOIN users owner ON owner.token_identifier = enrollment.owner_token_identifier
+          WHERE enrollment.enrollment_id = ?
         `).get(enrollmentId)
         if (!row) return undefined
+        if (row.owner_eligible === 1 && !row.owner_subject) throw new Error("host_enrollment_owner_subject_missing")
         return {
           enrollment_id: row.enrollment_id,
           host_id: row.host_id,
-          owner_user_id: row.owner_token_identifier,
+          // An ineligible owner has no person to name; the verifier refuses the row before reading it.
+          owner_user_id: row.owner_subject ?? "",
           owner_actor_id: row.owner_token_identifier,
           public_key_json: row.public_key,
           key_version: row.key_version,
@@ -2700,7 +2706,7 @@ export function createSqliteWorkspaceAuthority(
       const workspace = requireWorkspace(db, who, workspaceId, "write")
       const role = workspaceRoleForUser(db, workspace, who)
       if (!role || !workspace.org_id) denied()
-      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION, ...(who.subject ? { userId: who.subject } : {}), ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async recordChannelRuntimeAccessToken(identity, args) {
       const db = database()

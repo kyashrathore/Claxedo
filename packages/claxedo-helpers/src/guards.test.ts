@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
   asArray,
+  asArrayOrUndefined,
   asBoolean,
   asFiniteNumber,
+  asNumber,
   asRecord,
   asRecordOrEmpty,
   asString,
@@ -82,6 +84,11 @@ describe("string guards", () => {
 })
 
 describe("number guards", () => {
+  test("asNumber preserves every number without coercion", () => {
+    expect(asNumber(0)).toBe(0)
+    expect(asNumber(Number.NaN)).toBeNaN()
+    expect(asNumber("1")).toBeUndefined()
+  })
   test("finite excludes NaN and Infinity", () => {
     expect(isFiniteNumber(Number.NaN)).toBe(false)
     expect(isFiniteNumber(Number.POSITIVE_INFINITY)).toBe(false)
@@ -123,6 +130,11 @@ describe("claims", () => {
 })
 
 describe("asArray", () => {
+  test("optional form preserves arrays and distinguishes absent values", () => {
+    const source = [1]
+    expect(asArrayOrUndefined(source)).toBe(source)
+    expect(asArrayOrUndefined("x")).toBeUndefined()
+  })
   test("returns the array BY REFERENCE and totalizes everything else", () => {
     const source = [1]
     expect(asArray(source)).toBe(source)

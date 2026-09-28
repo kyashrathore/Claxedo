@@ -13,7 +13,8 @@ import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/plat
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
-import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { HOSTED_CREDENTIAL_MIGRATIONS, controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-agent-config"
 import { fetchUrl } from "../../test-support/fetch-calls"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
@@ -176,8 +177,8 @@ describe("hosted production Pi and connection discovery", () => {
     expect(catalog.connected).toEqual([])
     expect((await app.request("/auth/openai?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "secret" } }) })).status).toBe(503)
     const connections = "/api/claxedo/agent-config/connections"
-    expect((await app.request(connections)).status).toBe(401)
-    expect(await (await app.request(connections, { headers: headers() })).json()).toEqual({ status: "unsupported", reason: "operator_local_configuration" })
+    expect((await app.request(connections)).status).toBe(404)
+    expect((await app.request(connections, { headers: headers() })).status).toBe(404)
     expect((await app.request("/api/claxedo/agent-config/harness/acp-connections", { headers: headers() })).status).toBe(404)
   })
 
@@ -185,7 +186,7 @@ describe("hosted production Pi and connection discovery", () => {
     const base = plane()
     base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") }
     base.services.authority!.resolveOrgId = vi.fn(async (auth) => `internal-${auth.user.subject}` as never)
-    const controlPlane = await miniflareControlPlaneDatabase(["0039_hosted_provider_credentials.sql"])
+    const controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
     let broken = false
     base.orgCredentials = (orgId) => {
       if (broken) throw new Error("CONTROL_PLANE_DB unavailable")
@@ -198,10 +199,10 @@ describe("hosted production Pi and connection discovery", () => {
       expect(await connected("alice")).toEqual(["openai"])
       expect(await connected("bob")).toEqual([])
       const credentials = hostedOrgCredentials("internal-alice", { database: controlPlane.database, env: base.env })
-      await credentials.putCredential({ provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "oauth-secret" })
+      const oauth = await credentials.putCredential({ owner: "alice", provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "oauth-secret" })
       expect((await connected("alice")).sort()).toEqual(["openai", "openai-codex"])
       expect((await app.request("/auth/openai-codex?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "not-oauth" } }) })).status).toBe(400)
-      await credentials.updateCredentialStatus("codex-app-server", "revoked")
+      await credentials.updateCredentialStatus(oauth.id, "revoked")
       expect(await connected("alice")).toEqual(["openai"])
       expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers("bob") })).status).toBe(200)
       expect(await connected("alice")).toEqual(["openai"])
@@ -214,6 +215,74 @@ describe("hosted production Pi and connection discovery", () => {
       expect(stored.results.every((row) => row.secret_envelope.startsWith("cenc1:") && !row.secret_envelope.includes("oauth-secret"))).toBe(true)
       broken = true
       expect((await app.request(catalogPath, { headers: headers() })).status).toBe(500)
+    } finally {
+      await controlPlane.dispose()
+    }
+  })
+})
+
+describe("hosted agent connection deletion", () => {
+  const headers = (subject: string) => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
+  const connection = (connectionId: string) => ({
+    connectionId,
+    providerKey: "acp",
+    configRevision: 1,
+    enabled: true,
+    config: {
+      label: `Agent ${connectionId}`,
+      connection: { kind: "streamable-http", url: "https://agent.example.test" },
+      modelSelection: { status: "optional" },
+    },
+  })
+
+  async function hostedApp() {
+    const base = plane()
+    base.services.authority!.usersMe = vi.fn(async (auth) => ({ user_id: `user-${auth.user.subject}` })) as never
+    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    for (const userId of ["user-alice", "user-bob"]) {
+      await controlPlane.database.prepare("insert into users values (?, 'active', 1, 1, null, null)").bind(userId).run()
+    }
+    const changed = vi.fn(async (_userId: string) => {})
+    const app = createHostedCoreApp(base, {
+      ...options,
+      agentConfigRepository: d1UserAgentConfigRepository(controlPlane.database),
+      settingsChanged: changed,
+    }) as unknown as Hono
+    const remove = (subject: string, connectionId: string) =>
+      app.request(`/api/claxedo/agent-config/connections/${connectionId}`, { method: "DELETE", headers: headers(subject) })
+    const listed = async (subject: string) =>
+      ((await (await app.request("/api/claxedo/agent-config/connections", { headers: headers(subject) })).json()) as { connections: Array<{ connectionId: string }> })
+        .connections.map((row) => row.connectionId)
+    return { app, changed, controlPlane, remove, listed }
+  }
+
+  test("deleting an absent connection twice succeeds and publishes both times", async () => {
+    const { changed, controlPlane, remove } = await hostedApp()
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await remove("alice", "conn-absent")
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+      }
+      expect(changed.mock.calls).toEqual([["user-alice"], ["user-alice"]])
+    } finally {
+      await controlPlane.dispose()
+    }
+  })
+
+  test("deleting another account's connection id answers exactly as an absent id and leaves it in place", async () => {
+    const { app, changed, controlPlane, remove, listed } = await hostedApp()
+    try {
+      const installed = await app.request("/api/claxedo/agent-config/connections/conn-bob", {
+        method: "PUT", headers: headers("bob"), body: JSON.stringify(connection("conn-bob")),
+      })
+      expect(installed.status).toBe(200)
+      const foreign = await remove("alice", "conn-bob")
+      const absent = await remove("alice", "conn-absent")
+      expect([foreign.status, await foreign.json()]).toEqual([absent.status, await absent.json()])
+      expect(await listed("bob")).toEqual(["conn-bob"])
+      expect(await listed("alice")).toEqual([])
+      expect(changed.mock.calls).toEqual([["user-bob"], ["user-alice"], ["user-alice"]])
     } finally {
       await controlPlane.dispose()
     }

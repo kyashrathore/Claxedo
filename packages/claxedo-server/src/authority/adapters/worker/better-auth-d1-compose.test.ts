@@ -157,7 +157,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     })
     expect(await composed.plane.services.credentials.listCredentials("org_deployment")).toEqual([])
     const store = composed.plane.orgCredentials!("org_deployment")
-    await store.putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-composed" })
+    await store.putCredential({ owner: null, provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-composed" })
     expect(await store.resolveCredentialSecret?.("openai")).toBe("sk-composed")
     const stored = await controlPlaneDatabase
       .prepare("select org_id, secret_envelope from hosted_provider_credentials")

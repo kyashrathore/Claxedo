@@ -8,6 +8,7 @@ import { relayWorkspaceRuntimeExposure } from "../exposure"
 import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 import { fetchDouble } from "../test-support/fetch-double"
 import { flushRuntimeDocument, forgetRuntimeDocuments } from "./document-hydration"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 const target = { workspaceId: "ws_documents", hostId: "host_documents" }
 const sessionId = "session_docs"
@@ -29,6 +30,7 @@ async function fixture() {
   process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(documentKeys.publicKey)
   const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
   const runtime = createWorkspaceRuntimeApp({
+    placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, ...target }),
     sessionAccessPolicy: {
       ...managedWorkspaceSessionAccessPolicy({ requireActor: true }),

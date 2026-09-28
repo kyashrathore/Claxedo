@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { HostedShellRoutes } from "./shell"
 

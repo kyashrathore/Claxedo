@@ -1,66 +1,12 @@
-import type { NativeSdkHarnessId, TurnAccount } from "@claxedo/agent-runtime-contract"
-
-/**
- * What a harness receives in place of a credential.
- *
- * A bound row carries one binding's broker path, a signed capability for that
- * binding alone, and the mode naming the header the harness must carry it in.
- * The credential's own bytes stay with the authority that minted the binding
- * and never reach this process.
- *
- * An unavailable row says the operator selected an account for this provider
- * that cannot be bound. Without it a withdrawn account reaches a harness as an
- * absent projection, and the turn runs on whatever login the machine holds —
- * under an identity the operator did not choose.
- */
-export type ProviderBinding = {
-  baseUrl: string
-  placeholder: string
-  authMode: "api-key" | "bearer"
-  /**
-   * Absent when the placeholder has no lifetime of its own: a sandbox provider
-   * that substitutes on egress holds the value until the authority withdraws
-   * it, so there is no moment at which the harness must stop using it.
-   */
-  expiresAt?: number
-  /**
-   * Where the vendor's API root sits under `baseUrl`. A client that appends the
-   * whole vendor path itself (Claude Code, the Cursor SDK) is configured with
-   * `baseUrl`; one configured with an API root (Codex, Pi, the OpenCode engine)
-   * appends this. Absent from an authority that does not model vendor paths,
-   * which means `baseUrl` is already the root.
-   */
-  apiPath?: string
-  /** The stored credential the placeholder spends, by its non-secret metadata, so a turn can say which account it ran on. */
-  account?: BindingAccount
-}
-
-export type BindingAccount = { credentialId: string; providerId: string; label?: string }
-
-export type ProviderUnavailable = {
-  unavailable: true
-  reason: string
-}
-
-export type ProviderProjection = ProviderBinding | ProviderUnavailable
-
-/**
- * What an authority puts on the wire, before the runtime resolves it.
- *
- * An authority that mints the placeholder itself sends it. One whose sandbox
- * provider issues the placeholder — Daytona substitutes the value of an env var
- * it filled, and only the sandbox can read it — names that env var instead, and
- * `providerProjection` reads it off the runtime's own environment. Exactly one
- * of the two is a projection; both or neither is not.
- */
-export type ProviderBindingSource =
-  & Omit<ProviderBinding, "placeholder">
-  & ({ placeholder: string; placeholderEnv?: undefined } | { placeholderEnv: string; placeholder?: undefined })
-
-export type ProviderProjectionSource = ProviderBindingSource | ProviderUnavailable
-
-/** The environment a `placeholderEnv` row is resolved against. */
-export type PlaceholderEnvironment = Record<string, string | undefined>
+import {
+  isRecord,
+  isProviderUnavailable,
+  type BindingAccount,
+  type CredentialSnapshot,
+  type PlaceholderEnvironment,
+  type ProviderBinding,
+  type ProviderProjection,
+} from "@claxedo/agent-runtime-contract"
 
 const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath", "account"])
@@ -74,10 +20,6 @@ const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
  * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
  * the predicate beside each of them is how two of them came to disagree.
  */
-export function isProviderUnavailable(row: object): row is ProviderUnavailable {
-  return "unavailable" in row
-}
-
 export function providerProjection(
   input: unknown,
   env: PlaceholderEnvironment = {},
@@ -124,8 +66,8 @@ export function providerProjection(
 }
 
 function bindingAccount(input: unknown): BindingAccount | undefined {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
-  const { credentialId, providerId, label } = input as Record<string, unknown>
+  if (!isRecord(input)) return undefined
+  const { credentialId, providerId, label } = input
   if (typeof credentialId !== "string" || !credentialId || typeof providerId !== "string" || !providerId) return undefined
   if (label !== undefined && typeof label !== "string") return undefined
   return { credentialId, providerId, ...(label ? { label } : {}) }
@@ -146,6 +88,21 @@ function bindingAccount(input: unknown): BindingAccount | undefined {
 type ProviderProjectionRowPolicy = "reject" | "unavailable"
 
 const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
+
+export function credentialSnapshot(input: unknown, env: PlaceholderEnvironment): CredentialSnapshot<ProviderProjection> | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  if (Object.keys(row).some((key) => key !== "machineOwnerUserId" && key !== "accounts")) return undefined
+  if (typeof row.machineOwnerUserId !== "string" || typeof row.accounts !== "object" || row.accounts === null || Array.isArray(row.accounts)) return undefined
+  const accounts: Record<string, Record<string, ProviderProjection>> = Object.create(null)
+  for (const [userId, value] of Object.entries(row.accounts)) {
+    if (!userId) return undefined
+    const providers = providerProjectionRecord(value, env, { onInvalid: "reject" })
+    if (!providers) return undefined
+    accounts[userId] = providers
+  }
+  return { machineOwnerUserId: row.machineOwnerUserId, accounts }
+}
 
 export function providerProjectionRecord(
   input: unknown,
@@ -270,15 +227,4 @@ export function providerProjectionKey(projection: ProviderProjection | undefined
   if (!projection) return ""
   if (isProviderUnavailable(projection)) return `unavailable\n${projection.reason}`
   return `${projection.baseUrl}${projection.apiPath ?? ""}\n${projection.placeholder}\n${projection.authMode}`
-}
-
-/**
- * The account a turn launched on this projection runs on. None bound means the
- * harness's own login on this machine; a binding from an authority that names
- * no account, or one that cannot be bound, names nothing.
- */
-export function turnAccountFor(harnessId: NativeSdkHarnessId, projection: ProviderProjection | undefined): TurnAccount | undefined {
-  if (!projection) return { kind: "machine", harnessId }
-  if (isProviderUnavailable(projection) || !projection.account) return undefined
-  return { kind: "stored", harnessId, ...projection.account }
 }

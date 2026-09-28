@@ -1,5 +1,6 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import { readTurnOutline, type TurnOutline } from "./session/turn-outline"
+import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
@@ -22,30 +23,16 @@ import {
 import {
   acceptsSessionTitle,
   boundSessionTitleSource,
-  createMemorySubagentAdmissionStore,
   firstTurnErrorData,
   normalizeHarnessIdentity,
   parseStoredSessionModelGroup,
   sessionModelGroupJson,
 } from "@claxedo/agent-sdk-runtime"
+import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "@claxedo/agent-sdk-runtime/stores/session-start"
-import type {
-  AdmittedSubagentObservation,
-  AgentMessage,
-  AgentMessageAuthor,
-  AgentPermission,
-  AgentQuestion,
-  AgentTurnOutcome,
-  PromptFormat,
-  PromptInput,
-  SessionConfig,
-  SessionConfigUpdate,
-  SessionHandoff,
-  SessionHandoffSource,
-  SessionHarness,
-  SessionModelGroup,
-  SubagentObservation,
-} from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-sdk-runtime"
+import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
+import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import {
   effectivePermissionModeId,
@@ -54,7 +41,8 @@ import {
   parseRecoveryOperation,
   type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
-import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
+import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   type CompatEvent,
@@ -71,7 +59,7 @@ import {
 } from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
-import type { LaunchOwnershipOwner } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
 
@@ -103,7 +91,7 @@ type Turn = {
   parentMessageId?: string
   assistantMessageId: string
   agent: string
-  model: Model
+  model?: Model
   parts: PromptInput["parts"]
   tools?: Record<string, boolean>
   format?: PromptFormat
@@ -225,7 +213,7 @@ type SqliteStatement<Row> = {
   finalize?: () => unknown
 }
 
-type SqliteDatabase = {
+export type SqliteDatabase = {
   exec(sql: string): unknown
   prepare<Row = unknown>(sql: string): SqliteStatement<Row>
   close?: (throwOnError?: boolean) => unknown
@@ -249,7 +237,6 @@ export type RuntimeEventSource = {
   dir: "in" | "out"
   method: string
   requestId?: string
-  frame?: unknown
 }
 
 export type RuntimeStoreAppendOutput = {
@@ -259,6 +246,8 @@ export type RuntimeStoreAppendOutput = {
   agentSessionId?: string
   payload: CompatEvent
   source?: RuntimeEventSource
+  /** The assistant message a committed `session.usage` folded into, for its publisher to stream after the usage. */
+  messageUpdate?: CompatEvent
 }
 
 export type RuntimeStoreTurnStartOutput = {
@@ -363,11 +352,12 @@ function storedTurnOrigin(row: {
   origin_provenance?: string | null
   origin_actor_id?: string | null
   origin_actor_kind?: string | null
+  origin_user_id?: string | null
   origin_authority_json?: string | null
   wake_grant?: string | null
 } | null | undefined): SessionTurnOrigin | undefined {
   if (row?.origin_provenance === "loopback-direct") {
-    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_authority_json ?? row.wake_grant
+    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_user_id ?? row.origin_authority_json ?? row.wake_grant
     return named ? undefined : { provenance: "loopback-direct" }
   }
   if (row?.origin_provenance !== "relay-replayed") return undefined
@@ -375,7 +365,7 @@ function storedTurnOrigin(row: {
   if (!row.origin_actor_id || !kind || !row.origin_authority_json) return undefined
   return {
     provenance: "relay-replayed",
-    actor: { actorId: row.origin_actor_id, actorKind: kind },
+    actor: { actorId: row.origin_actor_id, actorKind: kind, ...(row.origin_user_id ? { userId: row.origin_user_id } : {}) },
     authority: JSON.parse(row.origin_authority_json),
     ...(row.wake_grant ? { grant: row.wake_grant } : {}),
   }
@@ -494,7 +484,7 @@ function sqliteConstructor(mod: unknown, exportName: string): SqliteDatabaseCons
   throw new Error(`sqlite driver export ${exportName} missing`)
 }
 
-function openDatabase(file: string): SqliteDatabase {
+export function openDatabase(file: string): SqliteDatabase {
   const driver = process.versions.bun
     ? sqliteConstructor(requireDatabase("bun:sqlite"), "Database")
     : sqliteConstructor(requireDatabase("better-sqlite3"), "default")
@@ -650,6 +640,8 @@ const readColumn = {
   turnFinish: (json: string): TurnFinish => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='event'` row: an engine envelope. */
   eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
+  /** `runtime_journal.payload_json` on a `kind='event'`, `type='session.usage'` row. */
+  usagePayload: (json: string): Extract<CompatEvent, { type: "session.usage" }> => JSON.parse(json),
   /** `pending_permission.patterns_json`. */
   permissionPatterns: (json: string): string[] => JSON.parse(json),
   /** `pending_permission.options_json`: absent is distinct from no offered options. */
@@ -661,6 +653,20 @@ const readColumn = {
    * straight from the event's own `properties.questions`.
    */
   questions: (json: string): AgentQuestion["questions"] => JSON.parse(json),
+}
+
+/**
+ * An assistant message's tokens are every usage observation reported for it;
+ * the message schema has no unknown, so an unreported category reads as zero.
+ */
+function assistantMessageTokens(observations: Iterable<RuntimeUsageObservation>) {
+  const usage = foldUsageObservations(observations)
+  return {
+    input: usage.input ?? 0,
+    output: usage.output ?? 0,
+    reasoning: usage.reasoning ?? 0,
+    cache: { read: usage.cache.read ?? 0, write: usage.cache.write ?? 0 },
+  }
 }
 
 /** Keep host-stamped `claxedo.author` when an engine envelope omits it. */
@@ -692,10 +698,6 @@ function subagentCorrelationKeys(observation: SubagentObservation) {
       : undefined,
     observation.toolCallId ? `tool:${observation.harnessExecutionId ?? ""}:${observation.toolCallId}` : undefined,
   ].filter((key): key is string => !!key)
-}
-
-function terminalSubagentStatus(status: string | undefined) {
-  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
 }
 
 function nullable(input: unknown): string | null | undefined {
@@ -1010,6 +1012,11 @@ export class RuntimeStore {
       // column already exists
     }
     this.db.exec(`
+      CREATE INDEX IF NOT EXISTS runtime_journal_message_usage_idx
+      ON runtime_journal (session_id, assistant_message_id, seq)
+      WHERE kind = 'event' AND type = 'session.usage'
+    `)
+    this.db.exec(`
       CREATE INDEX IF NOT EXISTS runtime_journal_part_snapshot_idx
       ON runtime_journal (session_id, part_id, seq)
       WHERE kind = 'event' AND type = 'message.part.updated' AND part_id IS NOT NULL
@@ -1137,6 +1144,7 @@ export class RuntimeStore {
         parent_session_id TEXT NOT NULL,
         subagent_key TEXT NOT NULL,
         child_session_id TEXT,
+        assistant_message_id TEXT,
         revision INTEGER NOT NULL DEFAULT 0,
         mode TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
@@ -1169,6 +1177,7 @@ export class RuntimeStore {
       ["origin_provenance", "TEXT"],
       ["origin_actor_id", "TEXT"],
       ["origin_actor_kind", "TEXT"],
+      ["origin_user_id", "TEXT"],
       ["origin_authority_json", "TEXT"],
       ["wake_grant", "TEXT"],
     ] as const) {
@@ -1241,6 +1250,12 @@ export class RuntimeStore {
       )
     `)
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_owner (
+        session_id TEXT PRIMARY KEY,
+        owner_json TEXT NOT NULL
+      )
+    `)
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS message (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -1285,16 +1300,22 @@ export class RuntimeStore {
     }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_permission (
-        id TEXT PRIMARY KEY,
+        id TEXT NOT NULL,
         session_id TEXT NOT NULL,
         tool TEXT NOT NULL,
         patterns_json TEXT NOT NULL,
         metadata_json TEXT NOT NULL,
         always_json TEXT NOT NULL,
         options_json TEXT,
+        broker_request_json TEXT,
+        broker_upstream_session_id TEXT,
+        broker_start_json TEXT,
+        broker_answer_json TEXT,
+        broker_automatic INTEGER,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, id)
       )
     `)
     if (!hasColumn(this.db, "pending_permission", "options_json")) {
@@ -1302,12 +1323,18 @@ export class RuntimeStore {
     }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_question (
-        id TEXT PRIMARY KEY,
+        id TEXT NOT NULL,
         session_id TEXT NOT NULL,
         questions_json TEXT NOT NULL,
+        broker_request_json TEXT,
+        broker_upstream_session_id TEXT,
+        broker_start_json TEXT,
+        broker_answer_json TEXT,
+        broker_automatic INTEGER,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, id)
       )
     `)
     this.db.exec(`
@@ -1371,7 +1398,6 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN goal_json TEXT",
       "ALTER TABLE session ADD COLUMN commands_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
-      "ALTER TABLE session ADD COLUMN permission_mode_label TEXT",
       "ALTER TABLE session ADD COLUMN permission_ceiling TEXT",
       "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
       // Existing rows stay null: a session whose last human turn predates this column
@@ -1532,10 +1558,32 @@ export class RuntimeStore {
     observation: SubagentObservation
     allocateKey: () => string
     allocateChildSessionId?: () => string
+    child?: ChildSessionRef
   }): AdmittedSubagentObservation {
     const admitted = this.admitObservation(input)
     this.linkChildSession(input.parentSessionId, admitted.event.childSessionId)
+    if (input.child) {
+      if (admitted.event.childSessionId !== input.child.sessionId) throw new Error("Host child binding does not match admission")
+      const existing = this.db.prepare<{ assistant_message_id: string | null }>(`
+        SELECT assistant_message_id FROM session_subagent
+        WHERE parent_session_id = ? AND subagent_key = ?
+      `).get(input.parentSessionId, admitted.event.subagentKey)
+      if (existing?.assistant_message_id && existing.assistant_message_id !== input.child.assistantMessageId) {
+        throw new Error("Host child assistant message differs from the stored binding")
+      }
+      this.db.prepare(`UPDATE session_subagent SET assistant_message_id = ?, created_at = ?
+        WHERE parent_session_id = ? AND subagent_key = ?`).run(
+        input.child.assistantMessageId, input.child.created, input.parentSessionId, admitted.event.subagentKey,
+      )
+    }
     return admitted
+  }
+
+  hasChild(parentSessionId: string, childSessionId: string): boolean {
+    return !!this.db.prepare<{ child_session_id: string }>(`
+      SELECT child_session_id FROM session_subagent
+      WHERE parent_session_id = ? AND child_session_id = ?
+    `).get(parentSessionId, childSessionId)
   }
 
   /**
@@ -1563,6 +1611,8 @@ export class RuntimeStore {
       agentSessionId: this.getAgentSessionId(childSessionId) ?? childSessionId,
       parentSessionId,
     })
+    const owner = this.sessionOwner(parentSessionId)
+    if (owner) this.recordSessionOwner(childSessionId, owner)
   }
 
   private admitObservation(input: {
@@ -1750,11 +1800,12 @@ export class RuntimeStore {
       .prepare(
         `
       UPDATE session_subagent
-      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_authority_json = ?, wake_grant = ?, updated_at = ?
+      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_user_id = ?, origin_authority_json = ?, wake_grant = ?, updated_at = ?
       WHERE parent_session_id = ? AND subagent_key = ?
         AND origin_provenance IS NULL
         AND origin_actor_id IS NULL
         AND origin_actor_kind IS NULL
+        AND origin_user_id IS NULL
         AND origin_authority_json IS NULL
         AND wake_grant IS NULL
     `,
@@ -1763,6 +1814,7 @@ export class RuntimeStore {
         origin.provenance,
         relayed?.actor.actorId ?? null,
         relayed?.actor.actorKind ?? null,
+        relayed?.actor.userId ?? null,
         relayed ? JSON.stringify(relayed.authority) : null,
         relayed?.grant ?? null,
         Date.now(),
@@ -1787,11 +1839,12 @@ export class RuntimeStore {
         origin_provenance: string | null
         origin_actor_id: string | null
         origin_actor_kind: string | null
+        origin_user_id: string | null
         origin_authority_json: string | null
         wake_grant: string | null
       }>(
         `
-      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_authority_json, wake_grant
+      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_user_id, origin_authority_json, wake_grant
       FROM session_subagent
       WHERE parent_session_id = ? AND subagent_key = ?
     `,
@@ -1887,8 +1940,8 @@ export class RuntimeStore {
           .get(parentSessionId, event.subagentKey),
         "session_subagent",
       )
-      const currentTerminal = terminalSubagentStatus(current.status)
-      const incomingTerminal = terminalSubagentStatus(event.status)
+      const currentTerminal = isTerminalSubagentStatus(current.status)
+      const incomingTerminal = isTerminalSubagentStatus(event.status)
       if (
         (!currentTerminal && incomingTerminal) ||
         (currentTerminal === incomingTerminal && event.revision > current.status_revision)
@@ -2557,6 +2610,40 @@ export class RuntimeStore {
     }
   }
 
+  brokerDatabase(): SqliteDatabase {
+    return this.db
+  }
+
+  brokerTransaction<T>(run: () => T): T {
+    return this.transaction(run, "immediate")
+  }
+
+  brokerAppendInside(sessionId: string, payload: CompatEvent): void {
+    this.commitInside({
+      seq: this.next(sessionId), ts: Date.now(), sessionId, kind: "event", payload,
+    }, undefined)
+  }
+
+  brokerPersistGrantInside(sessionId: string, grantKey: string): void {
+    const row = this.db.prepare<{ permission_state_json: string | null }>(
+      "SELECT permission_state_json FROM session WHERE id = ?",
+    ).get(sessionId)
+    if (!row) throw new Error(`Unknown grant session ${sessionId}`)
+    const state = row.permission_state_json ? rec(JSON.parse(row.permission_state_json)) : {}
+    if (!state) throw new Error(`Invalid permission state for ${sessionId}`)
+    const storedGrants = state.brokerGrants
+    if (storedGrants !== undefined && (!Array.isArray(storedGrants) || !storedGrants.every((item: unknown) => typeof item === "string"))) {
+      throw new Error(`Invalid broker grants for ${sessionId}`)
+    }
+    const grants: string[] = Array.isArray(storedGrants) ? storedGrants.filter((item): item is string => typeof item === "string") : []
+    this.commitInside({
+      seq: this.next(sessionId), ts: Date.now(), sessionId, kind: "control",
+      control: { type: "config.update", patch: {
+        permissionState: { ...state, brokerGrants: [...new Set([...grants, grantKey])] },
+      } },
+    }, undefined)
+  }
+
   private insertRuntimeJournal(
     row: Row,
     seq = this.next(row.sessionId),
@@ -2578,7 +2665,9 @@ export class RuntimeStore {
     const assistantMessageId =
       row.kind === "control" && (row.control.type === "turn.start" || row.control.type === "turn.finish")
         ? row.control.assistantMessageId
-        : null
+        : row.kind === "event" && row.payload.type === "session.usage"
+          ? (row.payload.properties.messageID ?? null)
+          : null
     const insert = () => {
       if (partId && !options.ignoreDuplicate) {
         this.db
@@ -2768,11 +2857,35 @@ export class RuntimeStore {
       .prepare<{ created_at: number; info_json: string }>("SELECT created_at, info_json FROM message WHERE id = ?")
       .get(id)
     const merged = preserveClaxedoAuthor(prev ? readColumn.messageRecord(prev.info_json) : undefined, info)
+    const observations = role === "assistant" ? this.messageUsageObservations(sessionId, id) : []
+    if (observations.length) merged.tokens = assistantMessageTokens(observations)
     this.db
       .prepare(
         "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
       .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? ts)
+  }
+
+  /** Usage folds from the journal, not the previous row, so a later rebuild of the message cannot drop it. */
+  private messageUsageObservations(sessionId: string, messageId: string): RuntimeUsageObservation[] {
+    return this.db
+      .prepare<{ payload_json: string }>(`
+        SELECT payload_json FROM runtime_journal
+        WHERE session_id = ? AND assistant_message_id = ? AND kind = 'event' AND type = 'session.usage'
+        ORDER BY seq ASC
+      `)
+      .all(sessionId, messageId)
+      .flatMap((row) => {
+        const observation = readColumn.usagePayload(row.payload_json).properties.observation
+        return observation ? [observation] : []
+      })
+  }
+
+  private storedAssistantMessage(sessionId: string, messageId: string) {
+    const row = this.db
+      .prepare<{ info_json: string }>("SELECT info_json FROM message WHERE id = ? AND session_id = ? AND role = 'assistant'")
+      .get(messageId, sessionId)
+    return row ? readColumn.messageInfo(row.info_json) : undefined
   }
 
   private upsertPart(envelope: object, ts: number) {
@@ -2985,6 +3098,7 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM message WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_map WHERE session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_owner WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session WHERE id = ?").run(id)
   }
 
@@ -3260,7 +3374,9 @@ export class RuntimeStore {
         return
 
       case "permission.replied":
-        this.db.prepare("DELETE FROM pending_permission WHERE id = ?").run(event.properties.requestID)
+      case "permission.expired":
+        this.db.prepare("UPDATE pending_permission SET status = 'answered', updated_at = ? WHERE session_id = ? AND id = ?")
+          .run(row.ts, event.properties.sessionID, event.properties.requestID)
         return
 
       case "question.asked":
@@ -3281,8 +3397,17 @@ export class RuntimeStore {
 
       case "question.replied":
       case "question.rejected":
-        this.db.prepare("DELETE FROM pending_question WHERE id = ?").run(event.properties.requestID)
+      case "question.expired":
+        this.db.prepare("UPDATE pending_question SET status = 'answered', updated_at = ? WHERE session_id = ? AND id = ?")
+          .run(row.ts, event.properties.sessionID, event.properties.requestID)
         return
+
+      case "session.usage": {
+        const messageId = event.properties.messageID
+        const info = messageId ? this.storedAssistantMessage(row.sessionId, messageId) : undefined
+        if (info && event.properties.observation) this.upsertMessage(info, row.ts)
+        return
+      }
 
       case "message.completed": {
         const rowInfo = this.db
@@ -3468,7 +3593,7 @@ export class RuntimeStore {
     parentMessageId?: string
     assistantMessageId: string
     agent: string
-    model: Model
+    model?: Model
     parts: PromptInput["parts"]
     tools?: Record<string, boolean>
     format?: PromptFormat
@@ -3540,7 +3665,7 @@ export class RuntimeStore {
         parentMessageId: input.parentMessageId,
         assistantMessageId: input.assistantMessageId,
         agent: input.agent,
-        model: input.model,
+        ...(input.model ? { model: input.model } : {}),
         parts: input.parts,
         ...(input.tools ? { tools: input.tools } : {}),
         ...(input.format ? { format: input.format } : {}),
@@ -3661,6 +3786,8 @@ export class RuntimeStore {
     }
     const committed = this.commit(row, (input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}))
     if (committed.kind !== "event") throw new Error("Expected event journal row")
+    const usage = committed.payload.type === "session.usage" ? committed.payload.properties : undefined
+    const folded = usage?.observation && usage.messageID ? this.storedAssistantMessage(committed.sessionId, usage.messageID) : undefined
     return {
       sessionId: committed.sessionId,
       seq: committed.seq,
@@ -3668,6 +3795,7 @@ export class RuntimeStore {
       ...(committed.agentSessionId ? { agentSessionId: committed.agentSessionId } : {}),
       payload: committed.payload,
       ...(committed.source ? { source: committed.source } : {}),
+      ...(folded ? { messageUpdate: messageUpdated(folded) } : {}),
     } satisfies RuntimeStoreAppendOutput
   }
 
@@ -3746,7 +3874,7 @@ export class RuntimeStore {
               directory: session?.directory ?? "",
               created: active.created_at,
               completed: input.outcome.completedAt,
-              error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed", input.outcome) },
+              error: { name: "UnknownError", data: { ...firstTurnErrorData(input.outcome.error ?? "turn failed", input.outcome), ...input.outcome.detail } },
               ...(control.variant ? { variant: control.variant } : {}),
             }),
           ),
@@ -3986,6 +4114,11 @@ export class RuntimeStore {
         FROM session
         LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
         WHERE session.directory = ?
+          -- A creation still waiting on its harness, or one that never finished, is nobody's session yet.
+          AND NOT EXISTS (
+            SELECT 1 FROM session_start start
+            WHERE start.session_id = session.id AND json_extract(start.data_json, '$.status') <> 'created'
+          )
         ORDER BY created_at DESC
       `,
         )
@@ -4154,6 +4287,36 @@ export class RuntimeStore {
       connectionId: row.connection_id,
       upstreamSessionId: row.upstream_session_id,
     }
+  }
+
+  recordSessionOwner(sessionId: string, owner: TurnActor) {
+    this.db
+      .prepare("INSERT INTO session_owner (session_id, owner_json) VALUES (?, ?) ON CONFLICT(session_id) DO NOTHING")
+      .run(sessionId, JSON.stringify(owner))
+  }
+
+  sessionOwner(sessionId: string): TurnActor | undefined {
+    const row = this.db.prepare<{ owner_json: string }>("SELECT owner_json FROM session_owner WHERE session_id = ?").get(sessionId)
+    if (!row) return undefined
+    const owner: unknown = JSON.parse(row.owner_json)
+    if (!isRecord(owner)) throw new Error(`Session ${sessionId} has an unreadable owner`)
+    if (owner.kind === "machine-owner") return { kind: "machine-owner" }
+    if (owner.kind === "person" && typeof owner.userId === "string") return { kind: "person", userId: owner.userId }
+    throw new Error(`Session ${sessionId} has an unreadable owner`)
+  }
+
+  /** The child session and assistant message a routed correlation key names under a parent, once the broker bound it. */
+  childRouteBinding(parentSessionId: string, correlationKey: string): { childSessionId: string; assistantMessageId: string } | undefined {
+    const child = this.db.prepare<{ child_session_id: string; assistant_message_id: string }>(`
+      SELECT subagent.child_session_id, subagent.assistant_message_id FROM session_subagent subagent
+      LEFT JOIN session_subagent_correlation correlation
+        ON correlation.parent_session_id = subagent.parent_session_id
+        AND correlation.subagent_key = subagent.subagent_key
+      WHERE subagent.parent_session_id = ? AND (subagent.subagent_key = ? OR subagent.provider_id = ?
+        OR correlation.correlation_key = ?)
+        AND child_session_id IS NOT NULL AND assistant_message_id IS NOT NULL
+    `).get(parentSessionId, correlationKey, correlationKey, `route:${correlationKey}`)
+    return child ? { childSessionId: child.child_session_id, assistantMessageId: child.assistant_message_id } : undefined
   }
 
   getSessionOwnerKey(id: string) {
@@ -5129,12 +5292,21 @@ export class RuntimeStore {
     return row?.goal_json ? JSON.parse(row.goal_json) : null
   }
 
-  setGoal(id: string, goal: RuntimeGoalSnapshot | null) {
-    if (!this.getSession(id)) return
-    this.commit({
-      seq: this.next(id), ts: Date.now(), sessionId: id, kind: "control",
-      control: { type: "goal.update", goal },
-    })
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null): CompatEvent[] {
+    this.assertProjectionCurrent(id)
+    this.settleDeltas(id)
+    return this.transaction(() => {
+      if (!this.getSession(id) || JSON.stringify(this.getGoal(id)) === JSON.stringify(goal)) return []
+      const payload: CompatEvent = goal
+        ? { type: "goal.updated", properties: { sessionID: id, goal } }
+        : { type: "goal.cleared", properties: { sessionID: id } }
+      this.commitInside({
+        seq: this.next(id), ts: Date.now(), sessionId: id, kind: "control",
+        control: { type: "goal.update", goal },
+      }, undefined)
+      this.brokerAppendInside(id, payload)
+      return [payload]
+    }, "immediate")
   }
 
   updateSessionConfig(id: string, update: SessionConfigUpdate, input: { directory?: string } = {}) {

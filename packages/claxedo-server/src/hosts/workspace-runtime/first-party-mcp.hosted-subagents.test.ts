@@ -1,3 +1,4 @@
+import type { AgentPermissionMode, AgentPermissionModeState } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -5,10 +6,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
-import { NO_HARNESS_EFFORT, type ConnectionProvider, type HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
-import type { AgentMessage, AgentPermissionMode, SessionConfig } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
+import type { HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
+import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -97,66 +96,35 @@ const CAPABILITIES: HarnessConnectionCapabilities = {
 }
 
 /**
- * An in-process harness: sessions and turns in memory, permission modes with
- * rungs, no model of its own. A held turn never settles until released, which
- * is how a child is kept active for the cap rule.
+ * An in-process harness: turns in memory, permission modes with rungs, no
+ * model of its own. A held turn never settles until released, which is how a
+ * child is kept active for the cap rule.
  */
 function fakeHarness() {
-  const store = new MemoryRuntimeStore()
   const prompts: Array<{ sessionId: string; messageID?: string }> = []
   let holding = false
   const held: Array<() => void> = []
-  const config: SessionConfig = { harness: { id: CONNECTION, access: "connection" }, variant: null, agent: null }
-  let counter = 0
-  const adapter: AgentHarnessAdapter = {
-    instructionChannel: "turn-system-prompt",
-    // The runtime keeps the config, so the group a create names is read back from the runtime's own store.
-    sessionConfigOwner: "runtime",
-    getSession: async (binding) => store.getSession(binding.sessionId) ?? null,
-    createSession: async (directory, title, id) => {
-      const sessionId = id ?? `ses_fake_${++counter}`
-      store.bindSession({ sessionId, directory: directory ?? process.cwd(), ...(title ? { title } : {}), agentSessionId: sessionId })
-      store.updateSessionConfig(sessionId, config)
-      return { id: sessionId }
+  let currentMode = "workspace-write"
+  const modes = (): AgentPermissionModeState => ({ modes: [...MODES], currentModeId: currentMode, appliesFrom: "next-turn" })
+  const transport = new FakeTransport({
+    capabilities: { configOwner: "runtime", instructionChannel: "turn-system-prompt", subagents: true, requests: { permissions: true, questions: true, elicitation: false } },
+    turn: async function* ({ session, turn }) {
+      prompts.push({ sessionId: session.binding.sessionId, messageID: turn.userMessageId })
+      if (holding) await new Promise<void>((resolve) => held.push(resolve))
     },
-    updateSession: async (binding, updates) => store.updateSession(binding.sessionId, updates),
-    getSessionConfig: async (binding) => store.getSessionConfig(binding.sessionId) ?? config,
-    updateSessionConfig: async (binding, patch) => store.updateSessionConfig(binding.sessionId, patch) ?? config,
-    deleteSession: async (binding) => { store.deleteSession(binding.sessionId) },
-    readHarnessCapabilities: () => ({
-      harness: CONNECTION,
-      ...CAPABILITIES,
-      effortLevels: NO_HARNESS_EFFORT,
-      instructionChannel: "turn-system-prompt",
-      goals: false,
-    }),
-    executeTurn: (binding, prompt) => {
-      prompts.push({ sessionId: binding.sessionId, messageID: prompt.userMessageId })
-      const hold = holding
-      return (async function* () {
-        if (hold) await new Promise<void>((resolve) => held.push(resolve))
-      })()
+    config: {
+      read: async () => { throw new Error("runtime-owned config") },
+      update: async () => { throw new Error("runtime-owned config") },
+      options: async () => ({ options: [] }),
+      permissionModes: async () => modes(),
+      setPermissionMode: async (_session, modeId) => {
+        currentMode = modeId
+        return modes()
+      },
     },
-    getMessages: async (): Promise<AgentMessage[]> => [],
-    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
-    executeCommand: async () => {},
-    listCommands: async () => [],
-    listAgents: async () => [],
-    getTodos: async () => [],
-    listPermissions: async () => [],
-    respondPermission: async () => {},
-    listQuestions: async () => [],
-    replyQuestion: async () => {},
-    rejectQuestion: async () => {},
-    applyConfig: async () => {},
-    probeConfigOptions: async () => ({ options: [] }),
-    listDraftPermissionModes: async () => ({ modes: [...MODES], appliesFrom: "next-turn" }),
-    listPermissionModes: async () => ({ modes: [...MODES], currentModeId: "workspace-write", appliesFrom: "next-turn" }),
-    setPermissionMode: async (_binding, modeId) => ({ modes: [...MODES], currentModeId: modeId, appliesFrom: "next-turn" }),
-    dispose: () => {},
-  }
+  })
   return {
-    adapter,
+    transport,
     prompts,
     hold: () => { holding = true },
     release: () => {
@@ -166,15 +134,8 @@ function fakeHarness() {
   }
 }
 
-function fakeProvider(adapter: AgentHarnessAdapter): ConnectionProvider<Record<string, never>> {
-  return {
-    providerKey: "fake",
-    validateConfig: () => ({}),
-    project: () => ({ label: "Fake harness", readiness: "ready", capabilities: CAPABILITIES }),
-    resolve: () => ({ config: {} }),
-    createAdapter: () => adapter,
-  }
-}
+const fakeProvider = (transport: FakeTransport) =>
+  fakeConnectionProvider({ providerKey: "fake", label: "Fake harness", capabilities: CAPABILITIES, transport: () => transport })
 
 /** The parent's model group: the one way `create_subagent` names a connection harness for the child. */
 const GROUP = { implementation: { harness: { id: CONNECTION, access: "connection" }, model: { providerID: "fake", modelID: "m1" } } }
@@ -242,7 +203,8 @@ beforeAll(async () => {
     exposure: relayWorkspaceRuntimeExposure({ key: relayKey.publicKey, workspaceId: WORKSPACE, hostId: HOST }),
     target: { workspaceId: WORKSPACE, directory },
     storeRoot: path.join(directory, "state"),
-    connectionProviders: [fakeProvider(harness.adapter)],
+    placement: loopbackMachineLoginPolicy(),
+    connectionProviders: [fakeProvider(harness.transport)],
     firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:3002", issuer, enabledToolGroups: () => enabledToolGroups },
     ownerGrantIdentity: ownerGrantIdentity({ key: key.publicKey, workspaceId: WORKSPACE }),
     sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({
@@ -259,9 +221,10 @@ beforeAll(async () => {
   })
   await runtime.host.apply({
     version: 4,
+    commands: [],
     mcp: {},
     connections: [{ connectionId: CONNECTION, providerKey: "fake", configRevision: 1, enabled: true, config: {} }],
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
   })
 }, 60_000)
 
@@ -278,6 +241,7 @@ async function createRoot(sessionId: string, creator: WorkspaceOwnerIdentity) {
   const token = await mintRelayHostToken({
     principalKind: "user",
     actorId: creator.actorId,
+    userId: creator.userId,
     actorKind: "human",
     orgId: creator.orgId,
     workspaceId: WORKSPACE,

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onMount, Show, type JSX } from "solid-js"
 import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
@@ -7,6 +7,7 @@ import { ClaxedoIcon as Icon, showToast, useDialog, Button, ProviderIcon, Tag } 
 import { canDisconnectProvider, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
 import { DialogCustomProvider } from "./custom-provider-dialog"
+import { createHostedAccountSources, HostedAccountSourceChoice } from "./hosted-account-source"
 import { ProviderSetupRow } from "./provider-setup-row"
 import { SearchField } from "./search-field"
 
@@ -20,9 +21,10 @@ export function createHarnessProviders(harness: () => string) {
     if (unsourced.length > 0) void Promise.allSettled(unsourced.map((provider) => catalog.load(provider.id)))
   })
   const t = useAccountsText()
+  const sources = createHostedAccountSources(harness)
   const disconnect = async (provider: CatalogProvider) => {
     try {
-      await server.providerConnect.disconnect(harness(), provider.id)
+      await server.providerConnect.disconnect(harness(), provider)
       showToast({
         variant: "success",
         icon: <Icon name="circle-check" />,
@@ -34,28 +36,31 @@ export function createHarnessProviders(harness: () => string) {
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     }
   }
-  return { harness, catalog, disconnect, connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.thisMachine?.name ?? "" }
+  return { harness, catalog, sources, disconnect, connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.thisMachine?.name ?? "" }
 }
 
-function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly onDisconnect: () => void }) {
+function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly onDisconnect: () => void; readonly children: JSX.Element }) {
   const t = useAccountsText()
   return (
-    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none" data-provider={props.provider.id}>
-      <div class="flex min-w-0 items-center gap-3">
-        <ProviderIcon id={props.provider.id} class="size-5 shrink-0 icon-strong-base" />
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-14-medium text-text-strong">{props.provider.name}</span>
-          <Show when={providerNote(props.provider.id)}>{(key) => <span class="text-12-regular text-text-weak">{t(key())}</span>}</Show>
+    <div class="border-b border-border-weak-base last:border-none" data-provider={props.provider.id}>
+      <div class="flex flex-wrap items-center justify-between gap-4 py-3">
+        <div class="flex min-w-0 items-center gap-3">
+          <ProviderIcon id={props.provider.id} class="size-5 shrink-0 icon-strong-base" />
+          <div class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-14-medium text-text-strong">{props.provider.name}</span>
+            <Show when={providerNote(props.provider.id)}>{(key) => <span class="text-12-regular text-text-weak">{t(key())}</span>}</Show>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <Tag>{t(providerSourceTag(props.provider.source))}</Tag>
+          <Show when={canDisconnectProvider(props.provider.source)}>
+            <Button size="large" variant="ghost" onClick={() => props.onDisconnect()}>
+              {t("common.disconnect")}
+            </Button>
+          </Show>
         </div>
       </div>
-      <div class="flex shrink-0 items-center gap-2">
-        <Tag>{t(providerSourceTag(props.provider.source))}</Tag>
-        <Show when={canDisconnectProvider(props.provider.source)}>
-          <Button size="large" variant="ghost" onClick={() => props.onDisconnect()}>
-            {t("common.disconnect")}
-          </Button>
-        </Show>
-      </div>
+      {props.children}
     </div>
   )
 }
@@ -96,21 +101,35 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
       <Show when={catalog().error() || (!catalog().loading() && catalog().resolved() && items().length === 0)}>
         <CatalogNote harness={harness()} machine={props.providers.machine()} error={catalog().error()} />
       </Show>
+      <Show when={props.providers.sources.error()}>
+        {(message) => (
+          <SettingsEmpty>
+            <span role="alert">{message()}</span>
+          </SettingsEmpty>
+        )}
+      </Show>
       <Show when={items().length > 1}>
         <SearchField value={search()} onChange={setSearch} placeholder={t("settings.providers.search.placeholder")} action="settings-providers-search" />
       </Show>
       <SettingsList>
         <For each={rows()}>
-          {(item) => (
-            <Show
-              when={connectedIds().has(item.id)}
-              fallback={
-                <ProviderSetupRow id={item.id} name={item.name} harness={harness()} note={note(item.id)} onConnected={() => catalog().refresh()} />
-              }
-            >
-              <ConnectedProvider provider={item} onDisconnect={() => void props.providers.disconnect(item)} />
-            </Show>
-          )}
+          {(item) => {
+            const choice = () => <HostedAccountSourceChoice providerId={item.id} providerName={item.name} sources={props.providers.sources} />
+            return (
+              <Show
+                when={connectedIds().has(item.id)}
+                fallback={
+                  <ProviderSetupRow id={item.id} name={item.name} harness={harness()} note={note(item.id)} onConnected={() => catalog().refresh()}>
+                    {choice()}
+                  </ProviderSetupRow>
+                }
+              >
+                <ConnectedProvider provider={item} onDisconnect={() => void props.providers.disconnect(item)}>
+                  {choice()}
+                </ConnectedProvider>
+              </Show>
+            )
+          }}
         </For>
       </SettingsList>
     </div>

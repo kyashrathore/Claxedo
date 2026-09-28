@@ -207,7 +207,7 @@ describe("machine verifier through the SQLite adapter", () => {
       machine: {
         enrollmentId: enrollment.enrollment_id,
         hostId,
-        ownerUserId: owner.user.tokenIdentifier,
+        ownerUserId: owner.user.subject,
         ownerActorId: owner.user.tokenIdentifier,
         scope: undefined,
         keyVersion: 1,
@@ -566,7 +566,7 @@ describe("invitations", () => {
     expect(result).toMatchObject({
       resumed: false,
       enrollment: { host_id: "host_build", display_name: "Build box" },
-      owner_user_id: owner.user.tokenIdentifier,
+      owner_user_id: owner.user.subject,
       owner_actor_id: owner.user.tokenIdentifier,
       org_id: expect.stringMatching(/^org_/),
       owner_display_name: "Owner Person",
@@ -591,7 +591,7 @@ describe("invitations", () => {
       scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
     }])
     expect(await verify(api, keys, { enrollmentId: result.enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
-      .toMatchObject({ ok: true, machine: { ownerUserId: owner.user.tokenIdentifier, scope: { revision: 1 } } })
+      .toMatchObject({ ok: true, machine: { ownerUserId: owner.user.subject, scope: { revision: 1 } } })
   })
 
   test("a wrong secret and an unknown id are the same refusal, with no redeemed-by detail", async () => {

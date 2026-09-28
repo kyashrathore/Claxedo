@@ -82,7 +82,7 @@ export function selectAt(context: ControllerContext, item: AtItem): void {
 export function selectSlash(context: ControllerContext, item: SlashItem): void {
   closePopover(context)
   if (item.type === "custom") {
-    const text = `/${item.trigger} `
+    const text = item.origin === "saved" ? item.content : `/${item.trigger} `
     context.input.store.setPrompt(context.input.key(), [{ type: "text", content: text, start: 0, end: text.length }], text.length)
     requestAnimationFrame(() => context.focusEditor(text.length))
     return

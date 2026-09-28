@@ -45,6 +45,7 @@ describe("timingSafeEqualStrings", () => {
 describe("prefixedRandomId", () => {
   test("prefix, underscore, and exactly 32 lowercase hex characters", () => {
     expect(prefixedRandomId("ws")).toMatch(/^ws_[0-9a-f]{32}$/)
+    expect(prefixedRandomId("probe", "-")).toMatch(/^probe-[0-9a-f]{32}$/)
   })
 
   test("distinct across calls", () => {

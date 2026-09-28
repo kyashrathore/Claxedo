@@ -1,16 +1,16 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import type { Hono } from "hono"
 import type { PtyRoutes } from "../routes/pty"
 import type { RuntimeHarnessSelection, RuntimeSnapshot } from "../routes/config"
 import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
-import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceRuntimeExposure } from "../exposure"
 import type { WorkspaceEventFramesTap } from "../routes/events"
-import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import type { RuntimeSessionTime } from "../session/session-time"
 
@@ -153,13 +153,13 @@ export type WorkspaceHost = {
     healthStatus: "ok" | "degraded" | "unavailable"
     harness?: RuntimeHarnessSelection
     error: string
-    harnessHealth: AgentHarnessAdapterHealth
+    harnessHealth: AgentRuntimeHealth
     connectionState?: WorkspaceConnectionState
     workspaceHarnessEnabled: boolean
     configApply: RuntimeConfigApplyStatus
   }
   /** Read health for one session's resolved harness, without unrelated session history. */
-  readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentHarnessAdapterHealth>
+  readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentRuntimeHealth>
   readConnectionState: (input?: { sessionId?: string; directory?: string }) => WorkspaceConnectionState | undefined
   capabilities: () => WorkspaceCapabilities
   /** Canonical in-process work that prevents daemon quiescence. */
@@ -178,6 +178,7 @@ export type WorkspaceHost = {
     harness?: string
     callbackUrl: string
     tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; callbackUrl?: string }>
+    dispatch?: (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => Promise<unknown>
   }) => Promise<void>
   unregisterSessionTools: (sessionId: string) => Promise<void>
   checkpoint: WorkspaceCheckpointControl

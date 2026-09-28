@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 const body = (value: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) })
 async function until<T>(read: () => Promise<T>, accepts: (value: T) => boolean): Promise<T> {
@@ -16,12 +17,12 @@ async function until<T>(read: () => Promise<T>, accepts: (value: T) => boolean):
 
 test.each(["accept", "decline"] as const)("draft initialization uses ordinary durable question routes (%s)", async (action) => {
   const directory = await mkdtemp(join(tmpdir(), "draft-connection-wire-"))
-  const host = createWorkspaceHost({ target: { workspaceId: "ws", directory }, storeRoot: join(directory, "state") })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target: { workspaceId: "ws", directory }, storeRoot: join(directory, "state") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (path: string, init?: RequestInit) => withWorkspaceTarget({ workspaceId: "ws", directory }, () => app.request(path, init))
   try {
-    await host.apply({ version: 4, mcp: {}, auth: {}, connections: [{ connectionId: "draft-agent", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Fixture", modelSelection: { status: "unsupported" }, connection: { kind: "process", command: process.execPath, args: [fileURLToPath(new URL("./fixtures/acp-initialize-question-peer.mjs", import.meta.url))] } } }], defaultHarness: { kind: "connection", connectionId: "draft-agent" } })
+    await host.apply({ version: 4, commands: [], mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } }, connections: [{ connectionId: "draft-agent", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Fixture", modelSelection: { status: "unsupported" }, connection: { kind: "process", command: process.execPath, args: [fileURLToPath(new URL("./fixtures/acp-initialize-question-peer.mjs", import.meta.url))] } } }], defaultHarness: { kind: "connection", connectionId: "draft-agent" } })
     const creating = request(`/session?directory=${encodeURIComponent(directory)}`, body({ id: "draft-session", title: "Explicit draft" }))
     const readStart = () => Promise.resolve(request(`/session-start/draft-session?directory=${encodeURIComponent(directory)}`)).then(response => response.json())
     const start = await until(readStart, result => result.status === "starting")

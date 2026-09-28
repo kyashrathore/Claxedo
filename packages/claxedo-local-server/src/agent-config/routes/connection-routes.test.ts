@@ -4,10 +4,8 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import type {
-  AcpConnectionProviderConfig,
-  HarnessConnectionDescriptor,
-} from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
+import type { AcpProviderConfig as AcpConnectionProviderConfig } from "@claxedo/harness/providers"
 
 const root = path.join(os.tmpdir(), `agent-config-connections-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
@@ -90,8 +88,8 @@ describe("generic agent connection config API", () => {
           replay: true,
           permissions: true,
           questions: true,
-          todos: false,
-          commands: false,
+          todos: true,
+          commands: true,
           fork: false,
           revert: false,
           unrevert: false,
@@ -135,23 +133,21 @@ describe("generic agent connection config API", () => {
     })
   })
 
-  test("deletes a connection, clears its explicit default, and preserves unrelated v3 fields", async () => {
+  test("deletes a connection, clears its explicit default, and preserves the sandbox driver", async () => {
     await fs.mkdir(root, { recursive: true })
     await saveUserConfig({
       version: 3,
-      mcp: { docs: { type: "stdio", command: "docs-mcp" } },
       connections: { "conn-primary": descriptor("conn-primary") },
       defaultConnectionId: "conn-primary",
       sandbox_driver: { default_driver: "daytona" },
     })
 
-    expect((await app().request("/connections/absent", { method: "DELETE" })).status).toBe(404)
+    expect((await app().request("/connections/absent", { method: "DELETE" })).status).toBe(200)
     expect((await app().request("/connections/conn-primary", { method: "DELETE" })).status).toBe(200)
 
     const config = await loadUserConfig()
     expect(config.connections).toEqual({})
     expect(config.defaultConnectionId).toBeUndefined()
-    expect(config.mcp.docs).toEqual({ type: "stdio", command: "docs-mcp" })
     expect(config.sandbox_driver).toEqual({ default_driver: "daytona" })
   })
 

@@ -41,27 +41,23 @@ async function source(input: { name: string; skills: readonly string[]; server?:
   return root
 }
 
-function adapters(homes: { codexHome: string; userHomeDirectory: string }) {
+function adapters() {
   return [
     openCodeAgentPluginAdapter(),
     claudeAgentPluginAdapter(),
-    codexAgentPluginAdapter({ codexHome: homes.codexHome }),
-    cursorAgentPluginAdapter({ userHomeDirectory: homes.userHomeDirectory }),
+    codexAgentPluginAdapter(),
+    cursorAgentPluginAdapter(),
   ]
 }
 
 async function harness() {
   const runtimeRoot = await temporary("claxedo-selected-runtime-")
-  const codexHome = path.join(await temporary("claxedo-selected-codex-"), ".codex")
-  const userHomeDirectory = await temporary("claxedo-selected-home-")
   const artifacts = new LocalAgentPluginArtifactStore(await temporary("claxedo-selected-artifacts-"))
   return {
     runtimeRoot,
-    codexHome,
-    userHomeDirectory,
     artifacts,
     identity: { mode: "signed" as const, userId: "user_1", projectId: "project_1" },
-    adapters: adapters({ codexHome, userHomeDirectory }),
+    adapters: adapters(),
   }
 }
 
@@ -133,18 +129,13 @@ describe("selected capability projection through every harness adapter", () => {
       expect(await listed(path.join(whole, "skills"))).toEqual(["deploy"])
     }
 
-    const openCodeConfig = JSON.parse(await fs.readFile(generation.projections.opencode!.configFile!, "utf8")) as {
-      skills: string[]
-      mcp?: Record<string, unknown>
-    }
-    expect(openCodeConfig.skills).toHaveLength(2)
-    // OpenCode's server map is keyed per plugin, and only the selected plugin
-    // is in it: the guidance-only library contributes no `mcp` entry at all.
-    expect(Object.keys(openCodeConfig.mcp ?? {}).join(",")).toContain("toolsrv")
-    expect(Object.keys(openCodeConfig.mcp ?? {}).join(",")).not.toContain("libsrv")
+    const openCode = generation.projections.opencode!
+    expect(openCode.pluginRoots.flatMap((root) => root.skillNames)).toHaveLength(2)
+    expect(openCode.mcpServers.map((server) => server.name).join(",")).toContain("toolsrv")
+    expect(openCode.mcpServers.map((server) => server.name).join(",")).not.toContain("libsrv")
   })
 
-  test("an empty selection projects nothing through any adapter and is readable again after a restart", async () => {
+  test("an empty selection carries exclusion policy for every harness after a restart", async () => {
     const kit = await harness()
     const generation = await materializeAgentPluginGeneration({
       runtimeRoot: kit.runtimeRoot,
@@ -156,17 +147,16 @@ describe("selected capability projection through every harness adapter", () => {
       adapters: kit.adapters,
     })
 
+    expect(Object.keys(generation.projections).sort()).toEqual(kit.adapters.map((adapter) => adapter.harnessId).sort())
     for (const projection of Object.values(generation.projections)) {
       expect(projection.pluginRoots).toEqual([])
     }
-    expect(await listed(path.join(kit.userHomeDirectory, ".cursor", "plugins", "local"))).toEqual([])
-    expect(await fs.readFile(path.join(kit.codexHome, "config.toml"), "utf8")).toBe("")
 
     const active = await readMaterializedAgentPluginGeneration(kit.runtimeRoot)
     expect(active?.execution).toEqual({ mode: "selected", selectionHash: "b".repeat(64) })
   })
 
-  test("default activation records no selection and keeps the whole plugin", async () => {
+  test("default activation records its policy and keeps the whole plugin", async () => {
     const kit = await harness()
     const library = await kit.artifacts.put(await inspectPluginDirectory(await source({
       name: "library",
@@ -175,6 +165,7 @@ describe("selected capability projection through every harness adapter", () => {
     })))
 
     const generation = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
       runtimeRoot: kit.runtimeRoot,
       identity: kit.identity,
       revision: 1,
@@ -212,6 +203,7 @@ describe("selected capability projection through every harness adapter", () => {
 
     await expect(materializeAgentPluginGeneration({
       ...base,
+      execution: { mode: "default" },
       selections: [{
         pluginInstanceId: '["claxedo","library"]',
         artifactDigest: library.digest,
@@ -223,16 +215,9 @@ describe("selected capability projection through every harness adapter", () => {
     expect(await readMaterializedAgentPluginGeneration(kit.runtimeRoot)).toBeUndefined()
   })
 
-  test("a harness already carrying globally installed plugins cannot be given an exact capability set", async () => {
+  test("selected generations contain only the selection", async () => {
     const kit = await harness()
     const library = await kit.artifacts.put(await inspectPluginDirectory(await source({ name: "library", skills: ["review"] })))
-    await fs.mkdir(kit.codexHome, { recursive: true })
-    await fs.writeFile(
-      path.join(kit.codexHome, "config.toml"),
-      '[marketplaces.baked-in]\nsource_type = "local"\nsource = "/opt/plugins"\n\n[plugins."ops@baked-in"]\nenabled = true\n',
-    )
-    const cursorLocal = path.join(kit.userHomeDirectory, ".cursor", "plugins", "local")
-    await fs.mkdir(path.join(cursorLocal, "baked-in-ops"), { recursive: true })
 
     const selection = {
       runtimeRoot: kit.runtimeRoot,
@@ -248,28 +233,11 @@ describe("selected capability projection through every harness adapter", () => {
       artifacts: kit.artifacts,
       adapters: kit.adapters,
     }
-    await expect(materializeAgentPluginGeneration(selection)).rejects.toThrow("did not choose")
-
-    await expect(materializeAgentPluginGeneration({
-      ...selection,
-      selections: [{ ...selection.selections[0], harnessIds: ["cursor" as const] }],
-    })).rejects.toThrow("an exact capability set cannot be projected onto it")
-
-    // The same globals are the user's own configuration under ordinary
-    // activation, and are left exactly as they were.
-    await materializeAgentPluginGeneration({
-      runtimeRoot: kit.runtimeRoot,
-      identity: kit.identity,
-      revision: 1,
-      selections: [{
-        pluginInstanceId: '["claxedo","library"]',
-        artifactDigest: library.digest,
-        harnessIds: ["codex"],
-      }],
-      artifacts: kit.artifacts,
-      adapters: kit.adapters,
+    const codex = await materializeAgentPluginGeneration(selection)
+    expect(codex.projections.codex!.pluginRoots.map((root) => root.pluginInstanceId)).toEqual(['["claxedo","library"]'])
+    const cursor = await materializeAgentPluginGeneration({ ...selection, revision: 2,
+      selections: [{ ...selection.selections[0], harnessIds: ["cursor"] }],
     })
-    expect(await fs.readFile(path.join(kit.codexHome, "config.toml"), "utf8")).toContain('[plugins."ops@baked-in"]')
-    expect(await listed(cursorLocal)).toContain("baked-in-ops")
+    expect(cursor.projections.cursor!.pluginRoots.map((root) => root.pluginInstanceId)).toEqual(['["claxedo","library"]'])
   })
 })

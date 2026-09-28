@@ -1,5 +1,5 @@
 import type { PlacementId, ProjectId } from "./ids"
-import type { AppError } from "./types"
+import type { AppError, ProjectSource } from "./types"
 
 export type CloudWorkspaceStatus =
   | { readonly kind: "provisioning"; readonly step: string }
@@ -27,11 +27,18 @@ export type WorkspaceRuntime =
   | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode }
   | { readonly kind: "wakeFailed"; readonly error: AppError }
 
-export type CloudCreateInput = {
+export type CloudProjectCreateInput = {
   readonly projectId: ProjectId
   readonly name?: string
   readonly branch?: string
 }
+
+export type CloudSourceCreateInput = {
+  readonly source: Exclude<ProjectSource, { readonly kind: "folder" }>
+  readonly name?: string
+}
+
+export type CloudCreateInput = CloudProjectCreateInput | CloudSourceCreateInput
 
 export type CodeHostConnection = {
   readonly id: string

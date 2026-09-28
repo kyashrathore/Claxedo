@@ -1,0 +1,135 @@
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { dropRecoveryContext, releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
+import { refuseGoalStart } from "./acp/goals"
+import { forgetSessionsOnRestart } from "./acp/sessions"
+import { staleCodexInventory } from "./codex-inventory-fault"
+import { startDaemon, type Daemon } from "./daemon"
+import { startEgressGuard, type EgressGuard } from "./egress-guard"
+import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
+import { injectPiRpcFault } from "./pi-rpc-fault"
+import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
+import { withholdSteerReply } from "./steer-reply-fault"
+import { interruptClaudeSteer } from "./claude-steer-fault"
+import { startScriptedCursorBackend, type ScriptedCursorBackend } from "./cursor/backend"
+import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
+export { startHostedStack } from "./hosted-stack"
+
+export type Stack = {
+  url: string
+  dataDir: string
+  daemon: Daemon
+  scripted: ScriptedModelServer
+  egress: EgressGuard
+  cursor: ScriptedCursorBackend[]
+  acp: {
+    scriptDir: string
+    write(name: string, script: AcpScript): Promise<void>
+    release(name: string): Promise<void>
+    refuseGoalStart(): void
+    dropRecoveryContext(): void
+    forgetSessionsOnRestart(): void
+  }
+  events(directory: string, options?: EventStreamOptions): Promise<EventStream>
+  close(): Promise<void>
+}
+
+export type StackInput = { label: string; red?: boolean; cloud?: boolean; cloudMcpUrl?: string; coldStartWithoutKeys?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; piRpcFault?: boolean; cursorBackends?: number; resistantChild?: boolean; retirementFault?: boolean }
+
+export function safeLabel(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "flow"
+}
+
+export async function startStack(input: StackInput): Promise<Stack> {
+  const red = input.red ?? process.env.CLAXEDO_E2E_RED === "1"
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
+  const inventoryFault = input.codexInventoryFault ? await staleCodexInventory(dataDir) : undefined
+  const steerFault = input.steerReplyFault ? await withholdSteerReply(dataDir, input.steerReplyFault) : undefined
+  const rpcFault = input.piRpcFault ? await injectPiRpcFault(dataDir) : undefined
+  const claudeFault = input.claudeSteerFault ? await interruptClaudeSteer(dataDir) : undefined
+  const fixed = fixedDaemonPort()
+  const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? await claimPort(fixed) : await reservePort()
+  const modelPort = await reservePort()
+  const guardPort = await reservePort()
+  const cursorPorts = await Promise.all(Array.from({ length: input.cursorBackends ?? 0 }, () => reservePort()))
+  const keepData = process.env.CLAXEDO_E2E_KEEP_DATA === "1"
+  const cleanup = async () => {
+    releasePort(guardPort)
+    releasePort(modelPort)
+    cursorPorts.forEach(releasePort)
+    if (!(await portFreed(daemonPort, 10_000))) throw new Error(`Daemon port ${daemonPort} stayed occupied`)
+    releasePort(daemonPort)
+    if (!keepData) await fs.rm(dataDir, { recursive: true, force: true })
+  }
+  const egress = await startEgressGuard(guardPort)
+  const cursor: ScriptedCursorBackend[] = []
+  try {
+    for (const port of cursorPorts) cursor.push(await startScriptedCursorBackend(port))
+  } catch (error) {
+    await Promise.all(cursor.map((backend) => backend.close()))
+    await egress.close()
+    await cleanup()
+    throw error
+  }
+  let scripted: ScriptedModelServer
+  try {
+    scripted = await startScriptedModelServer({ port: modelPort, red })
+  } catch (error) {
+    await egress.close()
+    await Promise.all(cursor.map((backend) => backend.close()))
+    await cleanup()
+    throw error
+  }
+  let daemon: Daemon
+  try {
+    daemon = await startDaemon({ dataDir, scripted, guardUrl: egress.url, port: daemonPort, red,
+      cloud: input.cloud,
+      cloudMcpUrl: input.cloudMcpUrl,
+      coldStartWithoutKeys: input.coldStartWithoutKeys,
+      resistantChild: input.resistantChild,
+      retirementFault: input.retirementFault,
+      ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
+      ...(input.steerReplyFault === "codex" ? { pathPrefix: steerFault!.bin } : {}),
+      ...(inventoryFault ? { pathPrefix: inventoryFault.bin } : {}),
+      ...(rpcFault ? { piExecutable: rpcFault.executable } : {}),
+      ...(claudeFault ? { claudeExecutable: claudeFault.executable } : {}),
+    })
+  } catch (error) {
+    await egress.close()
+    await Promise.all(cursor.map((backend) => backend.close()))
+    await scripted.close()
+    await cleanup()
+    throw error
+  }
+  const streams: EventStream[] = []
+  return {
+    url: daemon.url,
+    dataDir,
+    daemon,
+    scripted,
+    egress,
+    cursor,
+    acp: {
+      scriptDir: daemon.acpScriptDir,
+      write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
+      release: (name) => releaseAcpHold(daemon.acpScriptDir, name),
+      refuseGoalStart: () => refuseGoalStart(daemon.acpScriptDir),
+      dropRecoveryContext: () => dropRecoveryContext(daemon.acpScriptDir),
+      forgetSessionsOnRestart: () => forgetSessionsOnRestart(daemon.acpScriptDir),
+    },
+    events: async (directory, options) => {
+      const stream = await openEventStream(daemon.url, directory, options)
+      streams.push(stream)
+      return stream
+    },
+    close: async () => {
+      for (const stream of streams) stream.close()
+      await daemon.close()
+      await scripted.close()
+      await egress.close()
+      await Promise.all(cursor.map((backend) => backend.close()))
+      await cleanup()
+    },
+  }
+}

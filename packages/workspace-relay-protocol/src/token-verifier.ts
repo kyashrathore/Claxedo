@@ -34,6 +34,7 @@ export type RuntimeAccessVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> &
   role: "viewer" | "editor" | "admin" | "owner"
   principal_kind: "user" | "service"
   actor_id: string
+  user_id?: string
   actor_kind: "human" | "agent"
   actor_public_id?: string
   actor_name?: string
@@ -45,6 +46,7 @@ export type RelayHostVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   role: "viewer" | "editor" | "admin" | "owner"
   principal_kind: "user" | "service"
   actor_id: string
+  user_id?: string
   actor_kind: "human" | "agent"
   actor_public_id?: string
   actor_name?: string

@@ -5,7 +5,8 @@
     "moduleResolution": "bundler",
     "customConditions": ["development"],
     "noUncheckedIndexedAccess": false,
-    "lib": ["ESNext", "DOM"]
+    "lib": ["ESNext", "DOM"],
+    "types": ["node"]
   },
   "include": ["src"]
 }

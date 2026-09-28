@@ -1117,18 +1117,18 @@ describe("local egress broker — the mounted authority", () => {
   /** A real authority over a real registry row, mounted on a real local app. */
   async function mounted() {
     setBackendOverride(createTestBackend())
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
       account_id: "acc-mounted",
       secret: upstreamValue,
     })
-    expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
-    const local = createLocalCredentialBroker({ dataDir, brokerOrigin: "http://127.0.0.1" })
+    expect(setActiveCredentials([credential.id], undefined, "local")).toMatchObject({ ok: true })
+    const local = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir, brokerOrigin: "http://127.0.0.1" })
     // Read the way a runtime reads it, so the placeholder here is the one a
     // harness would actually present.
-    const row = providerProjection((await local.projectAuth({ workspaceId: "ws-mounted" }))["claude-sdk"], {})
+    const row = providerProjection((await local.projectAuth({ workspaceId: "ws-mounted" })).accounts.local["claude-sdk"], {})
     if (!row) throw new Error("expected a valid projection")
     if ("unavailable" in row) throw new Error(`expected a bound projection, got ${row.reason}`)
     return {

@@ -7,14 +7,16 @@ import {
   workerCredentials,
   type HostedCredentialDatabase,
 } from "./index"
+import { hostedPiCredentials } from "./pi"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
-import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { HOSTED_CREDENTIAL_MIGRATIONS, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 const KEK_ENV = { [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 3).toString("base64") }
 const FULL_ENV = { ...KEK_ENV, [HOSTED_CREDENTIALS_FLAG]: "1" }
 
 const write = {
+  owner: null,
   provider_id: "github",
   kind: "api_key" as const,
   source: "managed" as const,
@@ -24,7 +26,7 @@ const write = {
 let controlPlane: ControlPlaneDatabase
 
 beforeAll(async () => {
-  controlPlane = await miniflareControlPlaneDatabase(["0039_hosted_provider_credentials.sql"])
+  controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
 })
 
 afterAll(async () => {
@@ -58,7 +60,7 @@ describe("workerCredentials (flag off — default)", () => {
   test("stays a fail-closed stub: reads are empty, writes throw", async () => {
     const credentials = workerCredentials({})
     expect(await credentials.listCredentials()).toEqual([])
-    expect(await credentials.getCredentialByProvider("github")).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("github", { owner: null })).toBeUndefined()
     expect(await credentials.resolveCredentialSecret?.("github")).toBeNull()
     await expect(credentials.putCredential(write)).rejects.toThrow(/not available in the hosted Worker/)
     await expect(credentials.deleteCredential("id")).rejects.toThrow(/not available in the hosted Worker/)
@@ -68,7 +70,7 @@ describe("workerCredentials (flag off — default)", () => {
     await expect(credentials.updateCredentialStatus("id", "revoked")).rejects.toThrow(
       /not available in the hosted Worker/,
     )
-    expect(await credentials.syncLocalCredentials()).toEqual({ synced: [], existing: [], missing: [], failed: [] })
+    expect(await credentials.syncLocalCredentials(undefined, undefined, "local")).toEqual({ synced: [], existing: [], missing: [], failed: [] })
   })
 
   test("flag off never touches the KEK (no construction-time requirement)", () => {
@@ -91,6 +93,66 @@ describe("workerCredentials (flag on)", () => {
 })
 
 describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
+  test("two people in one org retain independent accounts for the same provider", async () => {
+    const credentials = store(freshOrg("people"))
+    const a = await credentials.putCredential({ ...write, owner: "A", provider_id: "openai", secret: "account-A" })
+    const b = await credentials.putCredential({ ...write, owner: "B", provider_id: "openai", secret: "account-B" })
+    expect(a.id).not.toBe(b.id)
+    expect((await credentials.listCredentials()).map((row) => row.owner).sort((a, b) => String(a).localeCompare(String(b)))).toEqual(["A", "B"])
+    expect(await credentials.resolveCredentialSecretById!(a.id)).toBe("account-A")
+    expect(await credentials.resolveCredentialSecretById!(b.id)).toBe("account-B")
+    await credentials.putCredential({ ...write, owner: "A", provider_id: "openai", secret: "rotated-A" })
+    expect(await credentials.resolveCredentialSecretById!(b.id)).toBe("account-B")
+    expect(await credentials.resolveCredentialSecretById!(a.id)).toBe("rotated-A")
+  })
+  test("a person whose id is \"local\" never reads, lists as theirs, or deletes the org's own row", async () => {
+    const credentials = store(freshOrg("org-row"))
+    const org = await credentials.putCredential({ ...write, owner: null, provider_id: "integration:conn-1", secret: "org-secret" })
+    const person = await credentials.putCredential({ ...write, owner: "local", provider_id: "integration:conn-1", secret: "person-secret" })
+    expect(org.owner).toBeNull()
+    expect(person.id).not.toBe(org.id)
+    expect((await credentials.getCredentialByProvider("integration:conn-1", { owner: null }))?.id).toBe(org.id)
+    expect(await credentials.resolveCredentialSecret!("integration:conn-1")).toBe("org-secret")
+    expect((await credentials.listCredentials()).filter((row) => row.owner === "local").map((row) => row.id)).toEqual([person.id])
+    expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(1)
+    expect(await credentials.resolveCredentialSecretById!(person.id)).toBe("person-secret")
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toBeUndefined()
+  })
+
+  test("two first writes for one person's provider racing each other land on one row", async () => {
+    const credentials = store(freshOrg("race"))
+    const [first, second] = await Promise.all([
+      credentials.putCredential({ ...write, owner: "A", provider_id: "openai", secret: "first" }),
+      credentials.putCredential({ ...write, owner: "A", provider_id: "openai", secret: "second" }),
+    ])
+    expect(first.id).toBe(second.id)
+    expect((await credentials.listCredentials()).filter((row) => row.owner === "A")).toHaveLength(1)
+    expect(["first", "second"]).toContain(await credentials.resolveCredentialSecretById!(first.id))
+  })
+
+  test("a person's own-or-team choice is theirs alone and answers back what they chose", async () => {
+    const credentials = store(freshOrg("sources"))
+    expect(await credentials.accountSelections()).toEqual({})
+    expect(await credentials.setAccountSources(["anthropic", "claude-sdk"], "team", undefined, "A")).toEqual({ anthropic: "team", "claude-sdk": "team" })
+    expect(await credentials.setAccountSources(["anthropic"], "own", undefined, "A")).toEqual({ anthropic: "own", "claude-sdk": "team" })
+    await credentials.setAccountSources(["anthropic"], "team", undefined, "B")
+    expect(await credentials.accountSelections()).toEqual({ A: { anthropic: "own", "claude-sdk": "team" }, B: { anthropic: "team" } })
+    expect(await store(freshOrg("other-org")).accountSelections()).toEqual({})
+  })
+
+  test("the hosted Pi catalog shows the team account connected only for the person who chose it", async () => {
+    const orgId = freshOrg("pi-team")
+    const credentials = store(orgId)
+    await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic", secret: "sk-ant-team" })
+    const pi = hostedPiCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials })
+    const as = (subject: string) => ({ mode: "signed" as const, user: { subject, tokenIdentifier: subject, issuer: "test" } })
+    expect((await pi.piProviderCatalog(as("A"))).connected).not.toContain("anthropic")
+    await pi.putPiAccountSource(as("A"), "anthropic", "team")
+    expect((await pi.piProviderCatalog(as("A"))).connected).toContain("anthropic")
+    expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
+    expect(await pi.piAccountSources(as("A"))).toMatchObject({ sources: { anthropic: "team" }, team: ["anthropic"] })
+  })
+
   test("fails closed: flag off, blank org, or missing KEK all throw", () => {
     const database = controlPlane.database
     expect(() => hostedOrgCredentials("org-a", { database, env: KEK_ENV })).toThrow(new RegExp(HOSTED_CREDENTIALS_FLAG))
@@ -111,7 +173,8 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
       secret: "sk-hosted-secret-0042",
     })
     expect(meta).toMatchObject({
-      id: "integration:conn-1",
+      scope: "shared",
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       org_id: org,
       provider_id: "integration:conn-1",
       kind: "api_key",
@@ -121,13 +184,13 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     })
     expect(JSON.stringify(meta)).not.toContain("sk-hosted-secret-0042")
 
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toMatchObject({ status: "available" })
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toMatchObject({ status: "available" })
     expect(await credentials.listCredentials()).toEqual([expect.objectContaining({ provider_id: "integration:conn-1" })])
     expect(await credentials.resolveCredentialSecret?.("integration:conn-1")).toBe("sk-hosted-secret-0042")
 
     now = 2_000
-    await credentials.updateCredentialStatus("integration:conn-1", "error", "auth_failure_reported")
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toMatchObject({
+    await credentials.updateCredentialStatus(meta.id, "error", "auth_failure_reported")
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toMatchObject({
       status: "error",
       last_error: "auth_failure_reported",
       updated_at: 2_000,
@@ -141,7 +204,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(await credentials.resolveCredentialSecret?.("integration:conn-1")).toBe("sk-second")
 
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(1)
-    expect(await credentials.getCredentialByProvider("integration:conn-1")).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toBeUndefined()
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(0)
   })
 
@@ -149,18 +212,34 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     const credentials = store(freshOrg("kind"))
     await credentials.putCredential({ ...write, provider_id: "openai", kind: "oauth_token", secret: "t" })
 
-    expect(await credentials.getCredentialByProvider("openai", "api_key")).toBeUndefined()
-    expect(await credentials.getCredentialByProvider("openai", "oauth_token")).toMatchObject({ kind: "oauth_token" })
+    expect(await credentials.getCredentialByProvider("openai", { owner: null, kind: "api_key" })).toBeUndefined()
+    expect(await credentials.getCredentialByProvider("openai", { owner: null, kind: "oauth_token" })).toMatchObject({ kind: "oauth_token" })
     expect(await credentials.deleteCredentialsByProvider("openai", "api_key")).toBe(0)
     expect(await credentials.deleteCredentialsByProvider("openai", "oauth_token")).toBe(1)
+  })
+
+  test("a credential deleted and stored again under the same provider id is a new incarnation", async () => {
+    const credentials = store(freshOrg("incarnation"))
+    const first = await credentials.putCredential({ ...write, secret: "first" })
+    expect(first.incarnation).toEqual(expect.stringMatching(/\S/))
+    expect(await credentials.putCredential({ ...write, secret: "second" })).toMatchObject({ incarnation: first.incarnation, revision: 2 })
+    await expect(credentials.updateCredentialSecret?.(first.id, "third")).resolves.toBe(true)
+    expect(await credentials.getCredential?.(first.id)).toMatchObject({ incarnation: first.incarnation, revision: 3 })
+
+    expect(await credentials.deleteCredential(first.id)).toBe(true)
+    const recreated = await credentials.putCredential({ ...write, secret: "fourth" })
+    expect(recreated.id).not.toBe(first.id)
+    expect(recreated.revision).toBe(1)
+    expect(recreated.incarnation).toEqual(expect.stringMatching(/\S/))
+    expect(recreated.incarnation).not.toBe(first.incarnation)
   })
 
   test("the schema refuses a row outside the credential enums, so a read never has to re-validate one", async () => {
     await expect(
       controlPlane.database
         .prepare(
-          `insert into hosted_provider_credentials (org_id, provider_id, kind, source, status, secret_envelope, revision, created_at, updated_at)
-           values ('org-schema', 'p', 'password', 'managed', 'available', 'cenc1:x', 1, 1, 1)`,
+          `insert into hosted_provider_credentials (id, owner, org_id, provider_id, kind, source, status, secret_envelope, revision, created_at, updated_at)
+           values ('fixture-id', 'local', 'org-schema', 'p', 'password', 'managed', 'available', 'cenc1:x', 1, 1, 1)`,
         )
         .run(),
     ).rejects.toThrow(/CHECK/)
@@ -169,7 +248,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
   test("only the envelope reaches the row, and a row copied between orgs fails authentication", async () => {
     const orgA = freshOrg("seal-a")
     const orgB = freshOrg("seal-b")
-    await store(orgA).putCredential({ ...write, provider_id: "openai", secret: "hosted-secret" })
+    const sealed = await store(orgA).putCredential({ ...write, provider_id: "openai", secret: "hosted-secret" })
 
     const [stored] = await rows(orgA)
     expect(stored.secret_envelope).toMatch(/^cenc1:[0-9a-f]{16}:/)
@@ -177,10 +256,10 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
 
     await controlPlane.database
       .prepare(
-        `insert into hosted_provider_credentials (org_id, provider_id, kind, source, status, secret_envelope, revision, created_at, updated_at)
-         values (?, 'openai', 'api_key', 'managed', 'available', ?, 1, 1, 1)`,
+        `insert into hosted_provider_credentials (id, owner, org_id, provider_id, kind, source, status, secret_envelope, revision, created_at, updated_at)
+         values (?, null, ?, 'openai', 'api_key', 'managed', 'available', ?, 1, 1, 1)`,
       )
-      .bind(orgB, stored.secret_envelope)
+      .bind(sealed.id, orgB, stored.secret_envelope)
       .run()
     await expect(store(orgB).resolveCredentialSecret?.("openai")).rejects.toThrow(/failed authentication/)
     expect(await store(orgA).resolveCredentialSecret?.("openai")).toBe("hosted-secret")
@@ -213,7 +292,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
 
     await orgA.putCredential({ ...write, provider_id: "integration:shared-id", secret: "org-a-secret" })
     // Org B cannot see org A's credential through any read.
-    expect(await orgB.getCredentialByProvider("integration:shared-id")).toBeUndefined()
+    expect(await orgB.getCredentialByProvider("integration:shared-id", { owner: null })).toBeUndefined()
     expect(await orgB.resolveCredentialSecret?.("integration:shared-id")).toBeNull()
     expect(await orgB.listCredentials()).toEqual([])
     // Org B writing the same provider id lands on its own row.
@@ -410,13 +489,13 @@ describe("hostedCredentialSecretSlots (the rotation view of the secret column)",
   test("reads and re-seals an existing row's secret in place and never mints a row", async () => {
     const org = freshOrg("slots")
     const credentials = store(org)
-    await credentials.putCredential({ ...write, provider_id: "openai", secret: "slot-secret" })
+    const meta = await credentials.putCredential({ ...write, provider_id: "openai", secret: "slot-secret" })
     const slots = hostedCredentialSecretSlots(org, { database: controlPlane.database, env: FULL_ENV })
 
-    expect(await slots.inspect("d1:openai")).toMatchObject({ state: "envelope" })
-    expect(await slots.get("d1:openai")).toBe("slot-secret")
+    expect(await slots.inspect(`d1:${meta.id}`)).toMatchObject({ state: "envelope" })
+    expect(await slots.get(`d1:${meta.id}`)).toBe("slot-secret")
     const [before] = await rows(org)
-    expect(await slots.put("openai", "slot-secret")).toBe("d1:openai")
+    expect(await slots.put(meta.id, "slot-secret")).toBe(`d1:${meta.id}`)
     const [after] = await rows(org)
     expect(after.secret_envelope).not.toBe(before.secret_envelope)
     expect(await credentials.resolveCredentialSecret?.("openai")).toBe("slot-secret")

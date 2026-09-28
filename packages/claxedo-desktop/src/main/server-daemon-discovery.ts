@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 
 import { CLAXEDO_DAEMON_DISCOVERY_FILE, CLAXEDO_DAEMON_PROTOCOL, CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { isMissingFile, writeFileAtomicSync } from "@claxedo/helpers/fs"

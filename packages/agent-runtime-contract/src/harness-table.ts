@@ -14,7 +14,6 @@ import {
   CLAUDE_PERMISSION_MODES,
   CODEX_PERMISSION_MODES,
   CURSOR_PERMISSION_MODES,
-  defaultPermissionModeId,
   type HarnessPermissionModes,
 } from "./harness-permission-modes"
 import { harnessKey, type SessionHarness } from "./harnesses"
@@ -116,14 +115,15 @@ export function declaredPermissionModes(harness: SessionHarness): HarnessPermiss
 
 /**
  * The mode a session runs under: the stored one while its harness still offers
- * it, else the harness's `auto` rung. A harness the table does not describe
- * runs what was stored, or nothing that anyone chose.
+ * it, else the harness's declared default, or none where the harness's own
+ * configuration decides. A harness the table does not describe runs what was
+ * stored, or nothing that anyone chose.
  */
 export function effectivePermissionModeId(harness: SessionHarness, stored: string | null | undefined): string | null {
   const table = declaredPermissionModes(harness)
   if (!table) return stored ?? null
   if (stored && table.modes.some((mode) => mode.id === stored)) return stored
-  return defaultPermissionModeId(table) ?? null
+  return table.defaultModeId ?? null
 }
 
 /** The model a session runs on: the stored one, else the row its harness declares as default. */

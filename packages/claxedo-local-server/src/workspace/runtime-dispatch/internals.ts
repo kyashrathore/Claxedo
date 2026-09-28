@@ -3,16 +3,20 @@ import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-p
 import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
-import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
+import { routeOwnership, RouteDomain, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
+import type { RelayTokenInput } from "@claxedo/server-core/adapters/relay-port"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
 import { resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
 
-const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
+const log = Log.create({ service: "runtime-dispatch" })
+
+const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/harness-providers", "/api/wr/capabilities"]
 
 export type Hit = {
   workspaceId: string
@@ -30,6 +34,7 @@ export type Hit = {
 export type RuntimeProxyOptions = {
   sandboxManager?: Pick<SandboxManagerPort, "ensure" | "touch">
   relayProvider?: RelayProvider
+  mintLocalRelayHostToken?: (input: RelayTokenInput & { parentJti: string }) => Promise<string>
   defaultHomeRegion?: ClaxedoRegion
   resolveRelayActor?: (request: Request, workspaceId: string) => Promise<(RuntimeActor & {
     orgId: string
@@ -205,6 +210,19 @@ function sandboxUnavailableDetail(result: Exclude<SandboxEnsureResult, { status:
   return result.error ?? "sandbox unavailable"
 }
 
+/**
+ * A session path belongs to exactly one workspace's runtime, and nothing after
+ * this dispatch serves it; a request that names no workspace can only be told
+ * so, before any runtime or harness is chosen.
+ */
+export function unnamedSessionWorkspace(c: Context, pathname: string) {
+  const owner = routeOwnership(pathname)
+  if (!("domain" in owner) || owner.domain !== RouteDomain.AgentSessionRuntime) return undefined
+  const input = requestWorkspace(c.req.raw)
+  if (input.workspaceId !== undefined || input.directory !== undefined) return undefined
+  return c.json(errorBody("invalid_execution_binding", "A session request must name its workspace by directory or workspaceId", { field: "directory" }), 400)
+}
+
 export function noWr(c: Context, err?: unknown) {
   const input = requestWorkspace(c.req.raw)
   const msg = err instanceof Error ? err.message : undefined
@@ -245,12 +263,13 @@ export async function proxy(c: Context, hit: Hit, options?: {
   forwardedBy?: string
   sandboxManager?: Pick<SandboxManagerPort, "ensure" | "touch">
   relayProvider?: RelayProvider
+  mintLocalRelayHostToken?: RuntimeProxyOptions["mintLocalRelayHostToken"]
   defaultHomeRegion?: ClaxedoRegion
   resolveRelayActor?: RuntimeProxyOptions["resolveRelayActor"]
   requireRelayActor?: boolean
 }) {
   const url = new URL(c.req.url)
-  const target = await proxyTarget(hit, options, (options?.pathname ?? url.pathname) + url.search)
+  const path = (options?.pathname ?? url.pathname) + url.search
   const headers = new Headers(c.req.raw.headers)
   headers.set("x-workspace-id", hit.workspaceId)
   if (hit.workspaceName) headers.set("x-workspace-name", hit.workspaceName)
@@ -282,6 +301,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
       ? {
           principalKind: actor.actorKind === "human" ? "user" as const : "service" as const,
           actorId: actor.actorId,
+          userId: actor.userId,
           actorKind: actor.actorKind,
           ...(actor.actorPublicId && actor.actorName
             ? {
@@ -301,16 +321,36 @@ export async function proxy(c: Context, hit: Hit, options?: {
           orgId: hit.relay.orgId,
           role: "owner" as const,
         }
-    const token = await options.relayProvider.mintRuntimeAccessToken({
+    const tokenInput = {
       workspaceId: hit.workspaceId,
       hostId: hit.relay.hostId,
       routingId: hit.relay.routingId,
       ...principal,
+      ...(actor?.auth ? { auth: actor.auth } : {}),
       ttlMs: 10 * 60_000,
-    })
+    }
+    const token = await options.relayProvider.mintRuntimeAccessToken(tokenInput)
+    if (options.mintLocalRelayHostToken) {
+      if (!actor?.auth) throw new Error("Local cloud relay requires a signed caller")
+      headers.set("authorization", `Bearer ${await options.mintLocalRelayHostToken({ ...tokenInput, parentJti: token.jti })}`)
+      const target = new URL(path, hit.url)
+      if (target.searchParams.has("directory")) target.searchParams.set("directory", hit.directory)
+      return await forwardRuntimeRequest(c, target, headers, hit, options, url)
+    }
     headers.set("authorization", `Bearer ${token.token}`)
   }
+  const target = await proxyTarget(hit, options, path)
+  return await forwardRuntimeRequest(c, target, headers, hit, options, url)
+}
 
+async function forwardRuntimeRequest(
+  c: Context,
+  target: URL,
+  headers: Headers,
+  hit: Hit,
+  options: Parameters<typeof proxy>[2],
+  url: URL,
+) {
   const req = new Request(target.toString(), {
     method: c.req.method,
     headers,
@@ -321,7 +361,11 @@ export async function proxy(c: Context, hit: Hit, options?: {
 
   const res = await fetch(req)
   workspaceSupervisor().markUse(hit.workspaceId)
-  if (options?.sandboxManager?.touch) void options.sandboxManager.touch(hit.workspaceId).catch(() => undefined)
+  if (options?.sandboxManager?.touch) {
+    void options.sandboxManager.touch(hit.workspaceId).catch((error: unknown) => {
+      log.warn("Sandbox keepalive failed", { workspaceId: hit.workspaceId, error: String(error) })
+    })
+  }
   if (!options?.sandboxManager) workspaceSupervisor().touch(hit.workspaceId)
   const responseHeaders = runtimeProxyResponseHeaders(res.headers)
   const contentType = res.headers.get("content-type") ?? ""
@@ -512,4 +556,3 @@ export async function dispatchEmbedded(
     headers: runtimeProxyResponseHeaders(res.headers),
   })
 }
-

@@ -15,6 +15,7 @@ import type {
   SignedActivationSnapshot,
   SignedAgentPluginActivationStore,
 } from "@claxedo/server-core/agent-plugins/activation/store"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP, builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { bearerToken, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -54,7 +55,7 @@ const OWNERS: Record<string, typeof OWNER> = {
 }
 const TASKS_ID = builtinPluginInstanceId(BUILTIN_TASKS_TOOL_GROUP)
 const SUBAGENTS_ID = builtinPluginInstanceId(BUILTIN_SUBAGENTS_TOOL_GROUP)
-const HARNESSES: AgentPluginHarnessId[] = ["opencode", "claude", "codex", "cursor"]
+const HARNESSES: AgentPluginHarnessId[] = [...SUPPORTED_AGENT_PLUGIN_HARNESSES]
 
 /** The one activation fact this test writes and reads: whether Tasks is on, per project, for alice. */
 class ProjectSwitches implements SignedAgentPluginActivationStore {

@@ -70,9 +70,9 @@ function useHarnessModels(selection: HarnessSelection, placement: Accessor<Setti
   })
 }
 
-function useCatalogModels(harness: string): Accessor<ModelSource> {
+function useCatalogModels(harness: string, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
   const server = useServer()
-  const catalog = createProviderCatalog({ server, harness: () => harness, eager: true })
+  const catalog = createProviderCatalog({ server, harness: () => harness, placementId: () => placement().placementId, eager: true })
   const [hydrating, setHydrating] = createSignal(true)
   const providers = createMemo(() => catalogProviders([...catalog.all().values()], catalog.connected().map((item) => item.id), "", []))
   let hydrated = ""
@@ -105,6 +105,6 @@ function useCatalogModels(harness: string): Accessor<ModelSource> {
 }
 
 export function useModelSource(selection: HarnessSelection, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
-  if (selection.kind === "native" && isCatalogHarnessId(selection.harnessId)) return useCatalogModels(selection.harnessId)
+  if (selection.kind === "native" && isCatalogHarnessId(selection.harnessId)) return useCatalogModels(selection.harnessId, placement)
   return useHarnessModels(selection, placement)
 }

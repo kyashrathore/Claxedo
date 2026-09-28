@@ -1,4 +1,5 @@
 export { workspaceRuntimeBus } from "./bus"
+export { createSpawnService } from "./spawn-service"
 export type { WorkspaceRuntimeEvent, PtyInfo } from "./bus"
 export {
   createIdentityAwareEventSource,
@@ -13,13 +14,13 @@ export type {
   EventDeliveryPrincipal,
   IdentityAwareEventSource,
 } from "./event-delivery"
-export { createRuntimeEventHub } from "./runtime-event-hub"
+export { createRuntimeEventHub } from "./projection/runtime-event-hub"
 export type {
   RuntimeEventEnvelope,
   RuntimeEventEnvelopeInput,
   RuntimeEventHub,
   RuntimeEventPublishers,
-} from "./runtime-event-hub"
+} from "./projection/runtime-event-hub"
 export {
   createWorkspaceHost,
   mountWorkspaceAgentHooks,
@@ -51,11 +52,5 @@ export { createBoundedGit, optionalGit, runGit, GitCredentialError, GitEnvironme
 export { buildSafeEnv } from "./pty/env"
 export type { GitHttpCredential, GitRunOptions } from "./git"
 export type { WorkspaceWorktreeRecord } from "./store"
-export type {
-  AgentRuntimeEvent,
-  AgentRuntimeStreamEvent,
-  HarnessCapabilities,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
-export type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+export type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+export type { AgentRuntimeStreamEvent, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"

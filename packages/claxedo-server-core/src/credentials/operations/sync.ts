@@ -2,6 +2,7 @@ import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { credentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
+import { listCustomProviders, type CustomProviderConfig } from "@claxedo/server-core/credentials/custom-provider"
 import type { CredentialKind, CredentialSource } from "@claxedo/server-core/credentials/types"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
@@ -115,6 +116,15 @@ function vercelSandboxDriverCredentialItem(
   }
 }
 
+/** The key a custom provider declared an environment variable for, when this server's environment holds one. */
+export function customProviderEnvCredential(provider: Pick<CustomProviderConfig, "providerID" | "env">): LocalCredentialItem | undefined {
+  for (const name of provider.env) {
+    const secret = trimToUndefined(process.env[name])
+    if (secret) return { provider_id: provider.providerID, kind: "api_key", source: "env", label: `Synced from ${name}`, origin: `Environment variable ${name}`, secret }
+  }
+  return undefined
+}
+
 /**
  * The user's agent config, or nothing when it cannot be read.
  *
@@ -134,7 +144,7 @@ async function userConfigOrNone() {
 /**
  * Every credential this machine has handed Claxedo on purpose: keys in the
  * user's agent config, sandbox driver settings, and provider secrets in the
- * environment.
+ * environment, including the variable a custom provider declared for its key.
  *
  * Not the CLI logins. A harness's own login is asked about, never copied
  * (`credentials/machine-login.ts`), so nothing here opens the Keychain,
@@ -210,6 +220,8 @@ export async function collectLocalCredentials() {
     })
   }
 
+  for (const provider of listCustomProviders()) put(map, customProviderEnvCredential(provider))
+
   put(
     map,
     sandboxDriverCredentialItem("daytona", "env", "Synced from DAYTONA_API_KEY", process.env.DAYTONA_API_KEY),
@@ -272,7 +284,7 @@ export async function collectLocalCredentialItems() {
  * writes `__local__` only, so it can neither observe nor clobber another
  * tenant's provider credentials.
  */
-export async function syncLocalCredentials(ids?: string[], org?: string) {
+export async function syncLocalCredentials(ids: string[] | undefined, org: string | undefined, owner: string) {
   log.warn("Deprecated sync-local credential path called; migrate to explicit discovery (automatic discovery, explicit upload)")
   const all = await collectLocalCredentials()
   const list = ids?.length ? [...new Set(ids)] : [...new Set([...all.values()].map((item) => item.provider_id))]
@@ -282,7 +294,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
   const failed: Array<{ provider_id: string; error: string }> = []
 
   for (const providerId of list) {
-    const current = credentialByProvider(providerId, { onOutage: "empty" }, org)
+    const current = credentialByProvider(providerId, { onOutage: "empty", owner }, org)
     if (current?.source === "managed") {
       existing.push(providerId)
       continue
@@ -297,7 +309,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
       continue
     }
     try {
-      await Promise.all(items.map((item) => putCredential(item, org)))
+      await Promise.all(items.map((item) => putCredential({ ...item, owner }, org)))
       synced.push(providerId)
     } catch (err) {
       failed.push({

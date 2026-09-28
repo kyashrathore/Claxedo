@@ -103,7 +103,7 @@ vi.mock("@claxedo/server-core/agent-config/index", () => ({
     version: 1,
     mcp: {},
     runner: { type: "opencode" },
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
   })),
 }))
 
@@ -203,6 +203,7 @@ function services(): ControlPlaneServices {
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: `cred_${providerId}`,
       })),
       putCredential: vi.fn(async (input) => ({
         id: `cred_${input.driver_id}`,
@@ -214,11 +215,14 @@ function services(): ControlPlaneServices {
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: `cred_${input.driver_id}`,
       })),
       deleteCredential: vi.fn(async () => true),
       deleteCredentialsByProvider: vi.fn(async () => 1),
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => ({}),
     },
     relay: {},
     sandbox: {},
@@ -992,6 +996,7 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     expect(svc.credentials.putCredential).toHaveBeenCalledWith({
+      owner: null,
       provider_id: "vercel",
       kind: "sandbox_driver",
       source: "managed",
@@ -1131,6 +1136,7 @@ describe("workspace routes signed control plane authority", () => {
       created_at: 1,
       updated_at: 1,
       revision: 1,
+      incarnation: "cred_1",
     })
     const missingSource = await app.request("http://localhost/create", {
       method: "POST",
@@ -1154,6 +1160,7 @@ describe("workspace routes signed control plane authority", () => {
       created_at: 1,
       updated_at: 1,
       revision: 1,
+      incarnation: "cred_2",
     })
     const missingManager = await app.request("http://localhost/create", {
       method: "POST",
@@ -1176,7 +1183,7 @@ describe("workspace routes signed control plane authority", () => {
     // Scoped to the sandbox_driver kind: `vercel` is both a sandbox driver and
     // a model provider, so an unscoped lookup lets a model API key satisfy this
     // gate and creation passes here to fail later at launch.
-    expect(getCredentialByProvider).toHaveBeenCalledWith("daytona", "sandbox_driver")
+    expect(getCredentialByProvider).toHaveBeenCalledWith("daytona", { owner: null, kind: "sandbox_driver" })
   })
 
   test("docker cloud create can start from a project without a remote URL", async () => {
@@ -1907,6 +1914,23 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.listProjects).not.toHaveBeenCalled()
   })
 
+  test("provisioning polls do not spend the runtime token mint budget", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const ready = await sandbox.target("ws_1")
+    sandbox.target.mockResolvedValue({ status: "unavailable", leaseStatus: "acquiring", retryAfterMs: 8000 } as never)
+    const signer = vi.fn(async () => ({ runtimeAccessToken: "rat_123", tokenExpiresAt: 123_000, jti: "jti_1" }))
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, relayUrl: "https://relay.example.test", runtimeAccessTokenSigner: signer })
+    const request = () => app.request("http://localhost/ws_1/connection", { headers: { Authorization: "Bearer user_1" } })
+    for (let i = 0; i < 8; i++) expect((await request()).status).toBe(200)
+    expect(signer).not.toHaveBeenCalled()
+    sandbox.target.mockResolvedValue(ready)
+    for (let i = 0; i < 6; i++) expect((await request()).status).toBe(200)
+    expect((await request()).status).toBe(429)
+    expect(signer).toHaveBeenCalledTimes(6)
+  })
+
   test("signed cloud connection read mints and records a Runtime Access Token off the running lease", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
@@ -1957,6 +1981,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",
@@ -2046,6 +2071,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",
@@ -2527,6 +2553,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_2",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",
@@ -2858,6 +2885,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
       actorId: "actor_1",
+      userId: "user_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
       actorName: "Test User",

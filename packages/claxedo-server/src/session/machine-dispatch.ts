@@ -99,9 +99,9 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
     const actor = runtimeOptions.runtimeActor
     const runtimeActor =
       actor?.actorKind === "human"
-        ? { actorId: actor.actorId, actorKind: "human" as const, principalKind: "user" as const }
+        ? { userId: actor.userId, actorId: actor.actorId, actorKind: "human" as const, principalKind: "user" as const }
         : actor?.actorKind === "agent"
-          ? { actorId: actor.actorId, actorKind: "agent" as const, principalKind: "service" as const }
+          ? { userId: actor.userId, actorId: actor.actorId, actorKind: "agent" as const, principalKind: "service" as const }
           : undefined
     return {
       workspace,
@@ -210,18 +210,17 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       const queue: unknown[] = []
       let wake: (() => void) | undefined
       // One turn's state, mutated by three concurrent closures — the SSE
-      // reader, the prompt POST, and this generator's own `finally`. Held
-      // together in one object rather than five `let`s so a reader can see
+      // reader, the prompt admission, and this generator's own `finally`. Held
+      // together in one object rather than separate `let`s so a reader can see
       // which flags belong to the same handshake, and so each closure is
       // visibly writing shared state rather than a local of its own.
       const progress = {
         turnObserved: false,
         terminalObserved: false,
-        responseComplete: false,
+        admitted: false,
         closed: false,
         failure: undefined as unknown,
       }
-      let terminalDeadline: ReturnType<typeof setTimeout> | undefined
       const reading = (async () => {
         let buffer = ""
         while (!progress.closed && !progress.terminalObserved) {
@@ -254,7 +253,6 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
               (event.type === "session.status" && event.properties?.status?.type === "idle")
             ) {
               progress.terminalObserved = true
-              if (terminalDeadline) clearTimeout(terminalDeadline)
             }
             wake?.()
             if (progress.terminalObserved) break
@@ -267,8 +265,10 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
           wake?.()
         }
       })
+      // Admission only: a request held open for the whole turn is cut by the
+      // fetch deadline (300 s in Bun), so the turn's end comes from the stream.
       const turn = client
-        .request(`/session/${encodeURIComponent(sessionId)}/message`, {
+        .request(`/session/${encodeURIComponent(sessionId)}/prompt_async`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ...prompt, messageID }),
@@ -277,21 +277,14 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         .then(async (response) => {
           if (!response.ok) throw await workspaceRuntimeRequestError("channel prompt", response)
           await response.arrayBuffer()
-          progress.responseComplete = true
-          // HTTP and SSE are independent transports. Completion of the POST is
-          // not evidence that the observer has received the machine's terminal.
-          if (!progress.terminalObserved)
-            terminalDeadline = setTimeout(() => {
-              progress.failure = new Error("Machine prompt completed without an observed terminal event")
-              wake?.()
-            }, 15_000)
+          progress.admitted = true
         })
         .catch((error) => {
           progress.failure = error
         })
         .finally(() => wake?.())
       try {
-        while (!progress.responseComplete || !progress.terminalObserved || queue.length) {
+        while (!progress.admitted || !progress.terminalObserved || queue.length) {
           if (progress.failure) throw progress.failure
           if (queue.length) {
             yield queue.shift()
@@ -304,7 +297,6 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         if (progress.failure) throw progress.failure
       } finally {
         progress.closed = true
-        if (terminalDeadline) clearTimeout(terminalDeadline)
         abort.abort()
         await reader.cancel().catch(() => {})
         await reading
@@ -329,4 +321,3 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
 function signedCaller(caller: MachineSessionCaller | undefined): SignedControlPlaneAuth | undefined {
   return caller === undefined || "kind" in caller ? undefined : caller
 }
-

@@ -35,6 +35,7 @@ export type ComposerTextKey =
   | "prompt.slash.badge.skill"
   | "prompt.slash.badge.mcp"
   | "prompt.slash.badge.custom"
+  | "prompt.slash.badge.saved"
   | "prompt.context.removeFile"
   | "prompt.placeholder.shell"
   | "prompt.placeholder.normal"
@@ -142,6 +143,7 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.slash.badge.custom": "custom",
+  "prompt.slash.badge.saved": "saved",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.placeholder.shell": "Enter shell command... {{example}}",
   "prompt.placeholder.normal": "Ask anything... \"{{example}}\"",

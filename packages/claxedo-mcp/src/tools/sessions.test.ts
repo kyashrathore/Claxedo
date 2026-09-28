@@ -34,6 +34,8 @@ import {
 import { registerSessionTools } from "./sessions"
 import { controlPlaneWorkspaceRow, workspaceListHostRows } from "../client/control-plane-workspaces.fixture"
 
+type SessionRuntime = Awaited<ReturnType<Parameters<typeof createSessionRoutes>[0]["runtime"]>>
+
 type FixtureSession = {
   id: string
   title: string
@@ -217,59 +219,54 @@ function recoveryOwner(state: Workspace, _sessionId: string) {
  */
 function runtimeApp(state: Workspace) {
   const find = (id: string) => state.sessions.find((row) => row.id === id) ?? null
-  const routes = createSessionRoutes({
-    resolveDirectory: () => state.directory,
-    resolveExecutionBinding: (_c, directory, sessionId) => ({
-      workspaceId: state.id,
-      directory: directory ?? state.directory,
-      sessionId,
-      connectionId: "conn",
-      upstreamSessionId: sessionId,
-    }),
-    listSessions: async () => state.sessions.map((row) => ({ ...row })),
-    getSession: (_c, _directory, sessionId) => find(sessionId),
-    getStatus: () => state.status,
-    getMessagePage: () => ({ messages: state.messages, nextCursor: "cursor_1" }),
-    requestedSessionHarness: (c) => {
-      const nativeHarness = c.req.query("nativeHarness")
-      return nativeHarness ? { id: nativeHarness, access: "native" as const } : undefined
-    },
-    // Production routes a harness change to the handoff transaction; the
-    // fixture records the switch the same way it records a config update.
-    switchSessionHarness: async (_c, _directory, sessionId, update) => {
-      const row = find(sessionId)
-      const harness = update.harness?.id
-      if (row && harness) row.harness = harness
-      return { harness: { id: row?.harness ?? "claude", access: "native" as const }, agent: "build", variant: null }
-    },
-    publishGlobal: () => {},
-    resolveRecoveryOwner: (_c, { sessionId }) => recoveryOwner(state, sessionId),
-    resolveAdapter: () => ({
-      instructionChannel: "none" as const,
-      getSession: async (binding) => find(binding.sessionId),
-      createSession: async (_directory, title, id) => {
-        const created: FixtureSession = { id: id ?? `ses_${state.sessions.length + 1}`, title: title ?? "", harness: "claude" }
+  const subscribers = new Set<{ sessionId?: string; push: (event: { sessionId: string; directory: string; payload: unknown }) => void }>()
+  const settle = (sessionId: string) => {
+    state.running.delete(sessionId)
+    state.releases.delete(sessionId)
+    for (const subscriber of subscribers) {
+      if (!subscriber.sessionId || subscriber.sessionId === sessionId) subscriber.push({ sessionId, directory: state.directory, payload: { id: `session.idle:${sessionId}`, type: "session.idle", properties: { sessionID: sessionId } } })
+    }
+  }
+  const config = (sessionId: string) => {
+    const row = find(sessionId)
+    return {
+      harness: { id: row?.harness ?? "claude", access: "native" as const },
+      agent: "build",
+      variant: null,
+      ...(row?.permissionCeiling ? { permissionCeiling: row.permissionCeiling } : {}),
+    }
+  }
+  // The runtime host the routes drive, reduced to what these tools exercise:
+  // sessions kept in `state`, one permission-mode surface, and turns that the
+  // test holds open until it releases or cancels them.
+  const runtime = {
+    sessions: {
+      create: async (input: { id?: string; title?: string; harness: { id: string }; parentID?: string; permissionCeiling?: string }) => {
+        const created: FixtureSession = {
+          id: input.id ?? `ses_${state.sessions.length + 1}`,
+          title: input.title ?? "",
+          harness: input.harness.id,
+          ...(input.parentID ? { parentID: input.parentID } : {}),
+          ...(input.permissionCeiling ? { permissionCeiling: input.permissionCeiling } : {}),
+        }
         state.sessions.push(created)
-        return created
+        return { ...created, time: { created: 1, updated: 1 } }
       },
-      updateSession: async (binding, updates) => {
-        const row = find(binding.sessionId)
+      get: async (sessionId: string) => find(sessionId),
+      update: async (sessionId: string, updates: { title?: string }) => {
+        const row = find(sessionId)
         if (row && typeof updates.title === "string") row.title = updates.title
         return row
       },
-      getSessionConfig: async (binding) => ({
-        harness: { id: find(binding.sessionId)?.harness ?? "claude", access: "native" as const },
-        agent: "build",
-        variant: null,
-      }),
-      updateSessionConfig: async (binding, update) => {
-        const row = find(binding.sessionId)
-        const harness = update.harness?.id
-        if (row && harness) row.harness = harness
-        return { harness: { id: row?.harness ?? "claude", access: "native" as const }, agent: "build", variant: null }
+      updateConfig: async (sessionId: string, update: { harness?: { id: string } }) => {
+        const row = find(sessionId)
+        if (row && update.harness) row.harness = update.harness.id
+        return config(sessionId)
       },
-      deleteSession: async (binding) => { state.deleted.push(binding.sessionId) },
-      readHarnessCapabilities: () => ({
+      delete: async (sessionId: string) => { state.deleted.push(sessionId) },
+    },
+    reads: {
+      capabilities: async () => ({
         harness: "claude",
         abort: true,
         reconnect: false,
@@ -287,31 +284,72 @@ function runtimeApp(state: Workspace) {
         effortLevels: NO_HARNESS_EFFORT,
         instructionChannel: "none",
       }),
-      executeTurn: (binding, input) => {
-        const text = input.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
-        state.prompts.push({ session: binding.sessionId, text })
-        const holding = state.holdTurns
-        state.running.add(binding.sessionId)
-        return (async function* () {
-          try {
-            if (holding) await new Promise<void>((resolve) => { state.releases.set(binding.sessionId, resolve) })
-          } finally {
-            state.running.delete(binding.sessionId)
-            state.releases.delete(binding.sessionId)
-          }
-        })()
-      },
-      getMessages: async () => state.messages,
-      dispose: () => {},
-      listPermissions: async () => [],
-      listQuestions: async () => [],
-      listDraftPermissionModes: async () => ({ modes: PERMISSION_MODES, appliesFrom: "next-turn" as const }),
-      listPermissionModes: async (binding) => ({ modes: PERMISSION_MODES, currentModeId: state.modes[binding.sessionId] ?? "ask", appliesFrom: "next-turn" as const }),
-      setPermissionMode: async (binding, modeId) => {
-        state.modes[binding.sessionId] = modeId
+      permissionModes: async (target: { sessionId?: string }) => target.sessionId
+        ? { modes: PERMISSION_MODES, currentModeId: state.modes[target.sessionId] ?? "ask", appliesFrom: "next-turn" as const }
+        : { modes: PERMISSION_MODES, appliesFrom: "next-turn" as const },
+      setPermissionMode: async (sessionId: string, modeId: string) => {
+        state.modes[sessionId] = modeId
         return { modes: PERMISSION_MODES, currentModeId: modeId, appliesFrom: "next-turn" as const }
       },
-    }),
+      sessionConfig: async (sessionId: string) => config(sessionId),
+    },
+    turns: {
+      start: async (turn: { sessionId: string; messageId?: string; parts?: Array<{ type: string; text?: string }>; onAdmitted?: () => void }) => {
+        const text = (turn.parts ?? []).flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("")
+        state.prompts.push({ session: turn.sessionId, text })
+        state.running.add(turn.sessionId)
+        turn.onAdmitted?.()
+        if (state.holdTurns) state.releases.set(turn.sessionId, () => settle(turn.sessionId))
+        else setTimeout(() => settle(turn.sessionId), 0)
+        const userMessageId = turn.messageId ?? `msg_${state.prompts.length}`
+        return {
+          sessionId: turn.sessionId,
+          userMessageId,
+          assistantMessageId: `${userMessageId}_r`,
+          directory: state.directory,
+          prompt: { parts: turn.parts ?? [], userMessageId, assistantMessageId: `${userMessageId}_r`, agent: "build" },
+          delivery: "start" as const,
+        }
+      },
+    },
+    events: {
+      subscribe: (input: { sessionId?: string } = {}) => {
+        const queue: Array<{ sessionId: string; directory: string; payload: unknown }> = []
+        let wake: (() => void) | undefined
+        const subscriber = { ...(input.sessionId ? { sessionId: input.sessionId } : {}), push: (event: { sessionId: string; directory: string; payload: unknown }) => { queue.push(event); wake?.() } }
+        subscribers.add(subscriber)
+        return {
+          async *[Symbol.asyncIterator]() {
+            try {
+              while (true) {
+                const next = queue.shift()
+                if (next) { yield next; continue }
+                await new Promise<void>((resolve) => { wake = resolve })
+              }
+            } finally {
+              subscribers.delete(subscriber)
+            }
+          },
+        }
+      },
+      list: async () => state.messages,
+    },
+  }
+  const routes = createSessionRoutes({
+    runtime: async () => runtime as unknown as SessionRuntime,
+    defaultHarness: () => ({ id: "claude", access: "native" }),
+    requestedSessionHarness: (c) => {
+      const nativeHarness = c.req.query("nativeHarness")
+      return nativeHarness ? { id: nativeHarness, access: "native" as const } : undefined
+    },
+    resolveDirectory: () => state.directory,
+    resolveWorkspaceId: () => state.id,
+    listSessions: async () => state.sessions.map((row) => ({ ...row })),
+    getSession: (_c, _directory, sessionId) => find(sessionId),
+    getStatus: () => state.status,
+    getMessagePage: () => ({ messages: state.messages, nextCursor: "cursor_1" }),
+    publishGlobal: () => {},
+    resolveRecoveryOwner: (_c, { sessionId }) => recoveryOwner(state, sessionId),
   })
   const app = new Hono()
     .post("/experimental/worktree", async (c) => {

@@ -1,0 +1,27 @@
+packages/agent-event-runtime/src/harnesses/acp/state.ts:119:let unserializableContentSeq = 0
+packages/agent-event-runtime/src/harnesses/acp/validation.ts:165:const SESSION_UPDATE_REQUIRED_FIELDS = new Map<string, readonly RequiredField[]>(Object.entries({
+packages/agent-event-runtime/src/projections/client-presentation/projection.ts:284:const PART_BEARING_COMPAT_EVENTS = new Set([
+packages/agent-runtime-contract/src/content.ts:407:const FILE_PART_URL_SCHEMES = new Set(["data", "file", "http", "https"])
+packages/agent-sdk-runtime/src/harnesses/acp/elicitation.ts:20:const liveOwners = new WeakMap<AgentRuntimeStoreWithRecovery, Set<AcpElicitationInteractions>>()
+packages/agent-sdk-runtime/src/harnesses/acp/pattern-validation.ts:8:let active = 0
+packages/agent-sdk-runtime/src/harnesses/acp/session.ts:344:const liveModesSeen = new Map<string, readonly AgentPermissionMode[]>()
+packages/agent-sdk-runtime/src/harnesses/acp/subagents.ts:32:const ACP_SUBAGENT_STATUS = new Map<string, NonNullable<SubagentObservation["status"]>>([
+packages/agent-sdk-runtime/src/harnesses/acp/transport.ts:79:const retiring = new Map<string, Set<ACPRetirement>>()
+packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:52:const activePromptCounts = new Map<string, number>()
+packages/agent-sdk-runtime/src/harnesses/acp/turn-runner.ts:53:const activePromptWaiters = new Map<string, Set<() => void>>()
+packages/agent-sdk-runtime/src/harnesses/claude/config-dir.ts:15:const MIRRORED_ENTRIES = new Set([
+packages/agent-sdk-runtime/src/harnesses/claude/permission-state.ts:6:const callbackFields = new Set(["signal", "toolUseID", "requestId", "title", "displayName", "description"])
+packages/agent-sdk-runtime/src/harnesses/codex/permission-state.ts:8:const callbackFields = new Set(["threadId", "turnId", "itemId", "approvalId", "startedAtMs", "reason", "commandActions"])
+packages/agent-sdk-runtime/src/harnesses/codex/server-request.ts:144:const APPROVAL_METHODS = new Set([
+packages/agent-sdk-runtime/src/harnesses/codex/thread-projection.ts:19:const DESCENDANT_SESSION_LIFECYCLE = new Set([
+packages/agent-sdk-runtime/src/harnesses/cursor/auth.ts:29:let appliedBindingUrl: string | undefined
+packages/agent-sdk-runtime/src/harnesses/cursor/auth.ts:61:let loadedBackendUrl: { value: string | undefined; binding: boolean } | undefined
+packages/agent-sdk-runtime/src/harnesses/pi/auth.ts:129:const profiles = new Map<string, { owners: number; operations: number; pending: Promise<void> }>()
+packages/agent-sdk-runtime/src/harnesses/pi/executable.ts:127:const verified = new Map<string, Promise<void>>()
+packages/agent-sdk-runtime/src/harnesses/shared/prompt-attachments.ts:38:const MIME_EXTENSIONS = new Map([
+packages/agent-sdk-runtime/src/harnesses/shared/spawn-env.ts:28:const ALLOWED_INTERNAL_ENV = new Set([
+packages/agent-sdk-runtime/src/launch/identity.ts:91:let bootTime: Promise<string> | undefined
+packages/agent-sdk-runtime/src/launch/launch-gate.ts:259:let gateChild: { file: string; runner: string[] } | undefined
+packages/agent-sdk-runtime/src/provider-projection.ts:60:const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
+packages/agent-sdk-runtime/src/provider-projection.ts:61:const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
+packages/agent-sdk-runtime/src/target.ts:3:let id: string | undefined

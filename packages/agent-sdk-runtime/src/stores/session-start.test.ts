@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
+import { removeTestTempDir } from "./test-temp-dir"
 import { MemoryRuntimeStore } from "./memory"
 import { SqliteRuntimeStore } from "./sqlite"
 

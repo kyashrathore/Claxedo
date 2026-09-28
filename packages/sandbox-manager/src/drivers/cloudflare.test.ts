@@ -8,7 +8,7 @@ type Call = { url: string; method: string; body: any }
 function harness(responder: (call: Call) => { status: number; json: any }) {
   const calls: Call[] = []
   const fetch = vi.fn(async (url: any, init: any) => {
-    expect(init?.redirect).toBe("error")
+    expect(init?.redirect).toBe("manual")
     const call: Call = {
       url: String(url),
       method: init?.method ?? "GET",
@@ -28,7 +28,7 @@ const baseOptions = {
     relayJwksUrl: "https://relay.test/.well-known/jwks.json",
     managementJwksUrl: "https://control.test/.well-known/jwks.json",
   },
-  runner: "opencode",
+  nativeHarness: "opencode",
 }
 
 const createInput = {
@@ -50,7 +50,18 @@ describe("CloudflareSandboxDriver", () => {
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await expect(driver.ensureHost(createInput)).rejects.toThrow(/redirects/)
     expect(calls).toHaveLength(1)
+    expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "manual" }))
   })
+  test.each(["{}", "null", '{"sandboxes":{}}', '{"sandboxes":[null]}', '{"sandboxes":[{}]}', "invalid-json"])("listing rejects malformed successful payload %s", async (payload) => {
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => new Response(payload)) as typeof fetch })
+    await expect(driver.list!()).rejects.toThrow()
+  })
+
+  test("listing accepts an explicitly empty inventory", async () => {
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => Response.json({ sandboxes: [] })) as typeof fetch })
+    expect(await driver.list!()).toEqual([])
+  })
+
   test("ensureHost boots the runtime, sends the credential env, and returns the worker-proxied url", async () => {
     // The worker now returns its own data-plane proxy URL (no exposePort preview
     // subdomain) — the driver passes it through as the host URL unchanged.
@@ -83,7 +94,7 @@ describe("CloudflareSandboxDriver", () => {
       WORKSPACE_RUNTIME_HOST_ID: "claxedo-ws_1",
       WORKSPACE_RUNTIME_DIRECTORY: "/workspace",
       WORKSPACE_RUNTIME_PORT: "2593",
-      WORKSPACE_RUNTIME_RUNNER: "opencode",
+      WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode",
       WORKSPACE_RUNTIME_RELAY_JWKS_URL: "https://relay.test/.well-known/jwks.json",
       WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: "https://control.test/.well-known/jwks.json",
     })
@@ -280,8 +291,26 @@ describe("CloudflareSandboxDriver", () => {
     expect(seen).toContain("DELETE https://sbx.example.com/sandbox/claxedo-ws_1")
   })
 
-  test("touch refreshes the sandbox without throwing", async () => {
-    const { calls, fetch } = harness(() => ({ status: 200, json: { ok: true } }))
+  test("touch propagates transport failures", async () => {
+    const error = new Error("connection refused")
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => { throw error }) as unknown as typeof fetch })
+    await expect(driver.touch!({ sandboxId: "sb", hostId: "host", url: "https://r/" })).rejects.toBe(error)
+  })
+
+  test.each([401, 404, 500])("touch rejects HTTP %s", async (status) => {
+    const { fetch } = harness(() => ({ status, json: { error: "touch failed" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.touch!({ sandboxId: "sb", hostId: "host", url: "https://r/" })).rejects.toThrow(/touch.*failed/)
+  })
+
+  test.each([{}, { ok: false, ready: true }])("touch rejects an unconfirmed touch: %j", async (json) => {
+    const { fetch } = harness(() => ({ status: 200, json }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.touch!({ sandboxId: "sb", hostId: "host", url: "https://r/" })).rejects.toThrow(/touch.*failed/)
+  })
+
+  test("touch keeps a sandbox alive while its runtime is still booting", async () => {
+    const { calls, fetch } = harness(() => ({ status: 200, json: { ok: true, ready: false } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await driver.touch!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1" })
     expect(calls[0].url).toBe("https://sbx.example.com/sandbox/claxedo-ws_1/touch-runtime")

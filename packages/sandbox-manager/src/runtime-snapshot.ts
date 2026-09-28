@@ -2,7 +2,7 @@ import type {
   SandboxLeaseStore,
   SandboxMutationResult,
   SandboxRuntimeSnapshotInput,
-} from "."
+} from "./contract"
 
 /**
  * How a deployment moves a lease's retry budget when its runtime reports on

@@ -1,0 +1,2 @@
+[test]
+preload = ["../workspace-runtime/src/test-support/home/isolated-home.mjs"]

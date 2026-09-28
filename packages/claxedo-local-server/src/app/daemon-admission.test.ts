@@ -64,6 +64,7 @@ function servingBody(workspaceIds: string[] = []) {
       ownerActorId: "actor_attacker",
       relayUrl: "https://relay.attacker.test",
       hostTunnelToken: "attacker-tunnel-token",
+      ownerUserId: "usr_machine_owner",
       tokenExpiresAt: Date.now() + 300_000,
       jti: "jti_forged",
       workspaceIds,

@@ -154,8 +154,10 @@ function requestEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
     case "question.asked":
       return isQuestionWire(properties) ? { type: "requestOpened", ref, request: questionRequest(properties) } : undefined
     case "permission.replied":
+    case "permission.expired":
     case "question.replied":
-    case "question.rejected": {
+    case "question.rejected":
+    case "question.expired": {
       const id = nonEmptyString(properties.requestID)
       return id ? { type: "requestClosed", ref, requestId: requestId(id) } : undefined
     }

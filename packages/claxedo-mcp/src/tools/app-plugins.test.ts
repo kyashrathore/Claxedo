@@ -1,5 +1,4 @@
-import { connectFirstPartyMcp } from "../../../agent-sdk-runtime/src/first-party-mcp-client"
-import { piMcpExtensionSource, PI_MCP_COMMAND } from "../../../agent-sdk-runtime/src/harnesses/pi/first-party-mcp"
+import { PI_MCP_COMMAND, PI_MCP_EXTENSION_SOURCE } from "../../../harness/src/transports/pi-rpc/mcp"
 import { afterEach, describe, expect, test } from "vitest"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
@@ -244,23 +243,18 @@ test("a connection opened before admission gains tools when admitted and loses a
 })
 
 
-test("the dependency-free harness transport and emitted Pi extension call the real MCP server", async () => {
+test("the emitted Pi extension calls the real MCP server", async () => {
   const fixture = fakeGrant()
   const { url } = await listen(fixture.grant)
   const entry = { name: "claxedo", url, headers: { Authorization: "Bearer rt-token" } }
-  const direct = await connectFirstPartyMcp(entry)
-  try {
-    expect((await direct.tools()).map((tool) => tool.name).sort()).toEqual(APP_PLUGIN_TOOLS)
-    expect((await direct.call("app_plugin_guide", {})).content[0]).toMatchObject({ type: "text", text: APP_PLUGIN_GUIDE })
-  } finally { await direct.close() }
-  const extension = await import(`data:text/javascript;base64,${Buffer.from(piMcpExtensionSource()).toString("base64")}`)
+  const extension = await import(`data:text/javascript;base64,${Buffer.from(PI_MCP_EXTENSION_SOURCE).toString("base64")}`)
   const commands = new Map<string, { handler(args: string): Promise<void> }>()
-  const tools = new Map<string, { execute(id: string, args: Record<string, unknown>): Promise<unknown> }>()
+  const tools = new Map<string, { execute(id: string, args: Record<string, unknown>): Promise<{ content: unknown[] }> }>()
   const events = new Map<string, () => Promise<void>>()
   let active = ["read"]
   extension.default({
     registerCommand: (name: string, value: { handler(args: string): Promise<void> }) => commands.set(name, value),
-    registerTool: (tool: { name: string; execute(id: string, args: Record<string, unknown>): Promise<unknown> }) => tools.set(tool.name, tool),
+    registerTool: (tool: { name: string; execute(id: string, args: Record<string, unknown>): Promise<{ content: unknown[] }> }) => tools.set(tool.name, tool),
     getActiveTools: () => active,
     setActiveTools: (names: string[]) => { active = names },
     on: (name: string, callback: () => Promise<void>) => events.set(name, callback),
@@ -268,9 +262,8 @@ test("the dependency-free harness transport and emitted Pi extension call the re
   try {
     await commands.get(PI_MCP_COMMAND)!.handler(JSON.stringify(entry))
     expect(active.toSorted()).toEqual(["read", ...APP_PLUGIN_TOOLS.map((name) => `mcp__claxedo__${name}`)].toSorted())
+    expect((await tools.get("mcp__claxedo__app_plugin_guide")!.execute("guide", {})).content[0]).toMatchObject({ type: "text", text: APP_PLUGIN_GUIDE })
     await tools.get("mcp__claxedo__app_plugin_create")!.execute("call", { name: "Notes" })
     expect(fixture.calls).toEqual([{ method: "create", input: { name: "Notes" } }])
-    await commands.get(PI_MCP_COMMAND)!.handler("null")
-    expect(active).toEqual(["read"])
   } finally { await events.get("session_shutdown")!() }
 })

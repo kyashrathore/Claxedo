@@ -80,7 +80,6 @@ export {
 export { sessionMetaProjectionTap } from "./session/session-meta-tap"
 
 /** Migrates legacy plaintext provider credentials into the managed backend. */
-export { migrateCredentials } from "./credentials/operations/migrate"
 export { dropCopiedHarnessLogins } from "./credentials/operations/drop-copied-harness-logins"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 

@@ -33,6 +33,7 @@ export default {
   "prompt.popover.emptyResults": "Nenhum resultado correspondente",
   "prompt.popover.emptyCommands": "Nenhum comando correspondente",
   "prompt.slash.badge.custom": "personalizado",
+  "prompt.slash.badge.saved": "salvo",
   "prompt.context.removeFile": "Remover arquivo do contexto",
   "prompt.placeholder.shell": "Digite comando do shell... {{example}}",
   "prompt.placeholder.normal": "Pergunte qualquer coisa... \"{{example}}\"",

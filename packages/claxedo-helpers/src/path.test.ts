@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { homedir } from "node:os"
 import { sep } from "node:path"
-import { absoluteConfiguredDir, inside } from "./path"
+import { absoluteConfiguredDir, inside, userHomeDir } from "./path"
 
 describe("inside", () => {
   const root = ["", "a", "workspace"].join(sep)
@@ -50,5 +51,19 @@ describe("absoluteConfiguredDir", () => {
   test("any other relative directory is refused, because cwd decides where it lands", () => {
     expect(() => absoluteConfiguredDir("CLAXEDO_STATE_DIR", "data")).toThrow("CLAXEDO_STATE_DIR")
     expect(() => absoluteConfiguredDir("CLAXEDO_STATE_DIR", ["..", "data"].join(sep))).toThrow("CLAXEDO_STATE_DIR")
+  })
+})
+
+describe("userHomeDir", () => {
+  const key = process.platform === "win32" ? "USERPROFILE" : "HOME"
+
+  test("the env's home wins over the OS account's", () => {
+    const home = ["", "tmp", "test-home"].join(sep)
+    expect(userHomeDir({ [key]: home })).toBe(home)
+  })
+
+  test("an absent or blank home falls back to the OS account's", () => {
+    expect(userHomeDir({})).toBe(homedir())
+    expect(userHomeDir({ [key]: "  " })).toBe(homedir())
   })
 })

@@ -13,11 +13,11 @@ const issuer = "test-management-issuer"
 const audience = "workspace-runtime-management"
 
 const validSnapshot: RuntimeSnapshot = {
-  version: 4,
+  version: 4, commands: [],
   mcp: {},
   connections: [],
   defaultHarness: { kind: "native", harnessId: "codex" },
-  auth: {},
+  auth: { machineOwnerUserId: "local", accounts: { local: {} } },
 }
 
 async function mintManagementToken(privateKey: CryptoKey, opts: {

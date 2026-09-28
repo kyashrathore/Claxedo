@@ -112,6 +112,8 @@ export type WorkspaceRouteOptions = {
   sessionRowsUrl?: string
   defaultHomeRegion?: ClaxedoRegion
   sandboxEgressExtraHosts?: string[]
+  /** The origin a hosted sandbox is told to reach this control plane at, which its egress allows. */
+  sandboxControlPlaneOrigin?: string
   runtimeAccessTokenSigner?: RuntimeAccessTokenSigner
   hostTunnelTokenSigner?: HostTunnelTokenSigner
   connectionRateLimiter?: ConnectionRateLimiter
@@ -285,7 +287,7 @@ export function configuredHostTunnelTokenSigner(options: WorkspaceRouteOptions) 
   return options.hostTunnelTokenSigner
 }
 
-export function configuredRelayUrl(options: WorkspaceRouteOptions, homeRegion?: ClaxedoRegion) {
+export function configuredRelayUrl(options: Pick<WorkspaceRouteOptions, "relayUrl" | "relayUrls" | "defaultHomeRegion">, homeRegion?: ClaxedoRegion) {
   const region = homeRegion ?? options.defaultHomeRegion ?? "us-east"
   return regionValue(options.relayUrls, region)?.trim() ?? options.relayUrl?.trim()
 }

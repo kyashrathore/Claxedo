@@ -7,6 +7,7 @@ import { Hono } from "hono"
 import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", "cancel"]) {
   test(`public ACP history survives runtime restart; restoration outcome ${recovery}`, async () => {
@@ -14,9 +15,9 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
     const target = { workspaceId: "recovery-workspace", directory }
     const logFile = join(directory, "peer.jsonl")
     const peer = fileURLToPath(new URL("./fixtures/acp-recovery-peer.mjs", import.meta.url))
-    const config = { version: 4 as const, auth: {}, mcp: {}, connections: [{ connectionId: "recovery", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Recovery peer", connection: { kind: "process", command: "node", args: [peer, logFile, recovery] } } }], defaultHarness: { kind: "connection" as const, connectionId: "recovery" } }
+    const config = { version: 4 as const, commands: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } }, mcp: {}, connections: [{ connectionId: "recovery", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Recovery peer", connection: { kind: "process", command: "node", args: [peer, logFile, recovery] } } }], defaultHarness: { kind: "connection" as const, connectionId: "recovery" } }
     const open = async () => {
-      const host = createWorkspaceHost({ target, storeRoot: join(directory, "store") })
+      const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
       await host.apply(config)
       const app = new Hono()
       host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
@@ -46,8 +47,8 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         const previousTimeout = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
         let operation: Record<string, any>
         try {
-          // The peer holds its prompt, so the cancel notification is never
-          // acknowledged inside this window.
+          // The peer takes the cancel notification but holds its prompt open,
+          // so the cancellation cannot settle inside this window.
           process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "50"
           const stopped = await active.request("/session/saved/recovery", "POST", {
             requestId: `req-${Date.now()}`,
@@ -64,16 +65,17 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
           if (previousTimeout === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
           else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = previousTimeout
         }
-        // Nothing established that the peer stopped, so the operation does not
-        // succeed and execution stays unknown. A "cancelled" answer here would
-        // be the exact lie this contract exists to prevent.
+        // The prompt is still open, so the operation does not succeed and the
+        // turn reads as still running. A "cancelled" answer here would be the
+        // exact lie this contract exists to prevent.
         expect(operation.state).not.toBe("succeeded")
-        expect(operation.facts.execution.value).toBe("unknown")
+        expect(operation.facts.execution.value).toBe("running")
+        expect(operation.initiatingError).toMatchObject({ code: "cancellation_timeout", executionMayContinue: true })
         expect(operation.action).toBe("cancel_turn")
 
         // The same operation is readable by its receipt, with the same facts.
         const reread = await (await active.request(`/session/saved/recovery/operations/${operation.operationId}`)).json()
-        expect(reread.operation.facts.execution.value).toBe("unknown")
+        expect(reread.operation.facts.execution.value).toBe("running")
 
         // An unresolved cancellation is retained where an owner can see it.
         const afterStop = await (await active.request("/session/saved/recovery")).json()
@@ -86,8 +88,13 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         expect(JSON.stringify(await (await active.request("/session/saved/message")).json())).toContain("Late output after cancellation.")
         expect((await active.request("/session/saved/message", "POST", { parts: [{ type: "text", text: "Continue after settlement." }] })).status).toBe(200)
         const log = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
-        expect(log.filter(row => row.method === "session/prompt")).toHaveLength(3)
-        expect(new Set(log.map(row => row.pid)).size).toBe(1)
+        const prompts = log.filter(row => row.method === "session/prompt")
+        expect(prompts).toHaveLength(3)
+        const pidOf = (text: string) => prompts.find(row => JSON.stringify(row.params).includes(text))?.pid
+        // Each session runs its own agent process, and the stopped one keeps its
+        // process through the unresolved cancellation.
+        expect(pidOf("Continue after settlement.")).toBe(pidOf("Wait for cancellation."))
+        expect(pidOf("Independent sibling.")).not.toBe(pidOf("Wait for cancellation."))
         expect(JSON.stringify(log)).not.toContain("Must not run.")
         return
       }

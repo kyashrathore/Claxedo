@@ -1,15 +1,9 @@
+import { readProviderDefinitions, type CustomProviderDefinition } from "@claxedo/harness/contract"
+import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource, SavedCommand } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import {
-  isAgentHarnessId,
-  providerProjectionRecord,
-  type HarnessConnectionDescriptor,
-  type PlaceholderEnvironment,
-  type ProviderProjection,
-  type ProviderProjectionSource,
-  type SessionHarness,
-} from "@claxedo/agent-sdk-runtime"
+import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
@@ -49,14 +43,10 @@ export function requestedSessionHarness(req: { query(name: string): string | und
   return undefined
 }
 
-export type RuntimeCommandItem = {
-  name: string
-  content: string
-}
-
 export type { ProviderProjection, ProviderProjectionSource }
 
 export type RuntimeSnapshot = {
+  providerDefinitions?: readonly CustomProviderDefinition[]
   version: 4
   mcp: Record<string, unknown>
   connections: RuntimeConnectionDescriptor[]
@@ -66,7 +56,7 @@ export type RuntimeSnapshot = {
    * with the authority that minted the binding; this carries only the broker
    * endpoint and a placeholder scoped to it.
    */
-  auth: Record<string, ProviderProjectionSource>
+  auth: CredentialSnapshot
   /**
    * Opaque per-harness launch options a containing product projects (Claxedo's
    * Agent Plugins module contributes plugin roots this way). Keyed by agent
@@ -75,7 +65,7 @@ export type RuntimeSnapshot = {
    */
   harnessLaunch?: Record<string, Record<string, unknown>>
   workspaceHarnessEnabled?: boolean
-  commands?: RuntimeCommandItem[]
+  commands: SavedCommand[]
 }
 /**
  * The snapshot after this runtime resolved it: every projection carries the
@@ -83,7 +73,7 @@ export type RuntimeSnapshot = {
  * name as an environment variable its sandbox provider fills.
  */
 export type AppliedRuntimeSnapshot = Omit<RuntimeSnapshot, "auth"> & {
-  auth: Record<string, ProviderProjection>
+  auth: CredentialSnapshot<ProviderProjection>
 }
 
 export class RuntimeConfigApplyError extends Error {
@@ -96,6 +86,15 @@ export class RuntimeConfigApplyError extends Error {
     super(message)
     this.name = "RuntimeConfigApplyError"
   }
+}
+
+/**
+ * A harness refused a session's configuration. The runtime records it against
+ * the revision that asked, so a caller re-configuring many runtimes carries on
+ * rather than failing the change that triggered it.
+ */
+export function isSessionConfigRefusal(error: unknown): boolean {
+  return error instanceof RuntimeConfigApplyError && error.code === "runtime_config_refused"
 }
 
 export type ConfigRouteOptions = ManagementAccessOptions
@@ -152,7 +151,7 @@ function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, u
 }
 
 /** One command entry as the wire may carry it, or `undefined` when malformed. */
-function normalizeCommand(input: unknown): RuntimeCommandItem | undefined {
+function normalizeCommand(input: unknown): SavedCommand | undefined {
   if (!record(input)) return undefined
   const name = str(input.name)
   const content = str(input.content)
@@ -166,6 +165,7 @@ const RUNTIME_SNAPSHOT_KEYS = new Set([
   "defaultHarness",
   "auth",
   "harnessLaunch",
+  "providerDefinitions",
   "workspaceHarnessEnabled",
   "commands",
 ])
@@ -185,7 +185,7 @@ export function normalizeRuntimeSnapshot(
     || !isRecord(input.mcp)
     || !Array.isArray(input.connections)
   ) return undefined
-  const auth = providerProjectionRecord(input.auth, env, { onInvalid: "reject" })
+  const auth = credentialSnapshot(input.auth, env)
   if (!auth) return undefined
   // Unknown fields are rejected rather than silently dropped: a producer that
   // sends a field this runtime does not model would otherwise believe it took.
@@ -203,18 +203,17 @@ export function normalizeRuntimeSnapshot(
   const defaultHarness = input.defaultHarness === undefined ? undefined : normalizeSelection(input.defaultHarness)
   if (input.defaultHarness !== undefined && !defaultHarness) return undefined
   if (defaultHarness?.kind === "connection" && !connections.some((row) => row.connectionId === defaultHarness.connectionId)) return undefined
+  const providerDefinitions = readProviderDefinitions(input.providerDefinitions)
+  if (!providerDefinitions) return undefined
   const harnessLaunch = normalizeHarnessLaunch(input.harnessLaunch)
   if (!harnessLaunch) return undefined
   if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return undefined
-  let commands: RuntimeCommandItem[] | undefined
-  if (input.commands !== undefined) {
-    if (!Array.isArray(input.commands)) return undefined
-    commands = []
-    for (const row of input.commands) {
-      const command = normalizeCommand(row)
-      if (!command) return undefined
-      commands.push(command)
-    }
+  if (!Array.isArray(input.commands)) return undefined
+  const commands: SavedCommand[] = []
+  for (const row of input.commands) {
+    const command = normalizeCommand(row)
+    if (!command) return undefined
+    commands.push(command)
   }
   return {
     version: 4,
@@ -222,9 +221,10 @@ export function normalizeRuntimeSnapshot(
     connections,
     ...(defaultHarness ? { defaultHarness } : {}),
     auth,
+    ...(input.providerDefinitions !== undefined ? { providerDefinitions } : {}),
     ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
-    ...(commands ? { commands } : {}),
+    commands,
   }
 }
 

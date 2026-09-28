@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from "node:util"
 import { isRecord } from "./json-fields"
-import type { EventMessagePartUpdated, EventMessageUpdated } from "@claxedo/agent-event-runtime/client-presentation"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import {
   importOpenCodeFixtureSessions,
-  openCodePartId,
   type OpenCodeFixtureSession,
   type OpenCodeFixtureReadback,
+  openCodePartId,
 } from "@claxedo/workspace-runtime/testing"
 
 type Data = Record<string, unknown>
@@ -16,9 +16,9 @@ const ASSISTANT_FINISH_REASONS = ["stop", "length", "tool-calls", "content-filte
 type Session = { id: string; projectId: string; directory: string; title: string; created: number; updated: number }
 type Message = { id: string; sessionId: string; data: Data }
 type Part = { id: string; messageId: string; ordinal: number; data: Data; updatedAt?: number }
-type TranscriptEvent = EventMessageUpdated | EventMessagePartUpdated
-type TranscriptMessageInfo = EventMessageUpdated["properties"]["info"]
-type TranscriptPart = EventMessagePartUpdated["properties"]["part"]
+type TranscriptEvent = Extract<AgentPresentationEvent, { type: "message.updated" | "message.part.updated" }>
+type TranscriptMessageInfo = Extract<AgentPresentationEvent, { type: "message.updated" }>["properties"]["info"]
+type TranscriptPart = Extract<AgentPresentationEvent, { type: "message.part.updated" }>["properties"]["part"]
 /** The part discriminants the transcript owner accepts, pinned to its own union. */
 const TRANSCRIPT_PART_TYPES = [
   "text", "reasoning", "file", "tool", "subtask", "step-start", "step-finish",
@@ -110,7 +110,9 @@ export class OpenCodeCorpus {
       },
       messages: (this.sessionMessages.get(session.id) ?? []).map((message) => this.message(message)),
     })) satisfies OpenCodeFixtureSession[]
+    const importStartedAt = Date.now()
     const restored = await importOpenCodeFixtureSessions(databasePath, transfers)
+    const importFinishedAt = Date.now()
     for (const [index, actual] of restored.entries()) {
       const expected = transfers[index]
       if (
@@ -118,8 +120,10 @@ export class OpenCodeCorpus {
         actual.info.title !== expected.info.title ||
         actual.info.location.directory !== expected.info.location.directory ||
         actual.info.time.created !== expected.info.time.created ||
-        actual.info.time.updated !== expected.info.time.updated ||
-        !isDeepStrictEqual(actual.messages, expected.messages)
+        actual.info.time.updated < importStartedAt ||
+        actual.info.time.updated > importFinishedAt ||
+        actual.messages.length !== expected.messages.length ||
+        actual.messages.some((message, messageIndex) => !isDeepStrictEqual(message, expected.messages[messageIndex]))
       ) {
         throw new Error(`SDK corpus readback differs for ${expected.info.id}`)
       }

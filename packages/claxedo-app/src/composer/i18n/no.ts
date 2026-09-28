@@ -31,6 +31,7 @@ export default {
   "prompt.popover.emptyResults": "Ingen matchende resultater",
   "prompt.popover.emptyCommands": "Ingen matchende kommandoer",
   "prompt.slash.badge.custom": "egendefinert",
+  "prompt.slash.badge.saved": "lagret",
   "prompt.context.removeFile": "Fjern fil fra kontekst",
   "prompt.placeholder.shell": "Skriv inn shell-kommando... {{example}}",
   "prompt.placeholder.normal": "Spør om hva som helst... \"{{example}}\"",

@@ -1,3 +1,4 @@
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { createMachineWakes } from "../../session/machine-wakes"
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
@@ -11,8 +12,8 @@ import { HTTPException } from "hono/http-exception"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { createNodeWebSocket } from "@hono/node-ws"
-import { importJWK, importSPKI } from "jose"
-import { verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { importJWK, importPKCS8, importSPKI } from "jose"
+import { mintRelayHostToken, verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
 import {
   optionalGit,
   setupAgentHooks,
@@ -30,8 +31,8 @@ import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/
 import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
-import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { loadUserConfig, configureAgentConfig, type AgentConfigOptions } from "@claxedo/server-core/agent-config/index"
+import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { projectNativeProviderAuth } from "@claxedo/server-core/credentials/native-delivery"
 import {
   mountControlPlaneRouteContributions,
@@ -60,8 +61,6 @@ import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
-import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
@@ -82,8 +81,9 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { dropCopiedHarnessLogins, migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
-import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg } from "@claxedo/local-server/self-hosted-execution"
+import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg, syncEmbeddedWorkspaceRuntimes } from "@claxedo/local-server/self-hosted-execution"
+import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRemoteRoutes } from "../../workspace/routes/project-remote"
@@ -159,7 +159,8 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { operatorOwnsWorkspace, selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedPrivateRepoHosts } from "./operator"
+import { operatorOwnsWorkspace, selfHostedOperatorAuthorizer, selfHostedOperatorGuard } from "./operator"
+import { privateRepoHosts } from "../private-repo-hosts"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -195,6 +196,7 @@ import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history
 import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
+import type { InjectedSandboxDriver } from "../../workspace/supervisor/options"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 
@@ -863,6 +865,7 @@ export function createSelfHostedApp(
      * caller as a route contribution.
      */
     tasksGrants?: TasksSessionGrants
+    localBrokeringRelay?: boolean
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -907,6 +910,26 @@ export function createSelfHostedApp(
   const runtimeProxyOptions = {
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
+    ...(options.localBrokeringRelay ? {
+      mintLocalRelayHostToken: async (input: import("@claxedo/server-core/adapters/relay-port").RelayTokenInput & { parentJti: string }) => {
+        const privatePem = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?.replaceAll("\\n", "\n")
+        if (!privatePem) throw new Error("Local cloud relay signing key is unavailable")
+        return await mintRelayHostToken({
+          workspaceId: input.workspaceId,
+          hostId: input.hostId,
+          orgId: input.orgId,
+          principalKind: input.principalKind,
+          actorId: input.actorId,
+          userId: input.userId,
+          actorKind: input.actorKind,
+          ...(input.actorPublicId && input.actorName ? { actorPublicId: input.actorPublicId, actorName: input.actorName } : {}),
+          ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
+          role: input.role,
+          backing: "cloud-vm",
+          parentJti: input.parentJti,
+        }, await importPKCS8(privatePem, "EdDSA"), "EdDSA")
+      },
+    } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
     subject: "control-plane",
     principalKind: "service" as const,
@@ -1339,7 +1362,7 @@ export function createSelfHostedApp(
       ...(projectAuthority ? { authority: projectAuthority } : {}),
       authorizeFolderSource: authorizeOperator,
       repositories: {
-        admission: { resolve: systemRepoAddresses, privateHosts: selfHostedPrivateRepoHosts() },
+        admission: { resolve: systemRepoAddresses, privateHosts: privateRepoHosts(process.env) },
         repositoryForAuth: async (auth, connectionId, fullName) => {
           const id = connectionId
             ?? (await connectionsHost.service.list({ owner: auth.user.subject }))
@@ -1369,6 +1392,11 @@ export function createSelfHostedApp(
   }))
   app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
     authority: selfHostedRuntimeAuthority(services.authority),
+    connectionSecrets: {
+      resolveWorkspaceOwner: (workspaceId) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
+      readConnections: async () => (await loadUserConfig()).connections,
+      credentials: () => services.credentials,
+    },
     turnAuthority: selfHostedTurnAuthority(services.authority),
     turnCredentials,
     // A cloud sandbox this box provisions reports into the store its own
@@ -1387,6 +1415,19 @@ export function createSelfHostedApp(
     "/api/claxedo/credentials",
     CredentialRoutes(services.credentials, {
       agentUsage: readMachineAgentUsage,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      ...(services.auth.config.enabled ? {
+        resolveOrg: async (request: Request) => {
+          const auth = await controlPlaneAuthContext(request, {
+            config: services.auth.config,
+            ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          })
+          if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+          if (!services.authority) throw new Error("Signed credential organization authority is unavailable")
+          return await services.authority.resolveOrgId(auth)
+        },
+      } : {}),
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
       ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
@@ -1640,11 +1681,14 @@ export function createSelfHostedApp(
 
 export type ControlPlaneStackOptions = {
   services: ControlPlaneServices
+  sandboxDriver?: InjectedSandboxDriver
   egressBroker?: (request: Request) => Promise<Response>
   port?: number
   processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
+  /** Agent Plugins' contribution to every runtime snapshot this box pushes; absent in the disabled product. */
+  pluginRuntime?: AgentConfigOptions["pluginRuntime"]
   /** Issued to this box's own sessions; the Tasks routes in `routeContributions` verify them. */
   tasksGrants?: TasksSessionGrants
 }
@@ -1661,7 +1705,10 @@ export type ControlPlaneStackOptions = {
 export function selfHostedCredentialAuthority(
   broker?: Pick<LocalCredentialBroker, "projectAuth">,
 ): NonNullable<NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"]> {
-  return (input) => broker ? broker.projectAuth(input) : projectNativeProviderAuth(input)
+  return (input) => {
+    if (broker) return broker.projectAuth(input)
+    return projectNativeProviderAuth({ ...input, machineOwnerUserId: LOCAL_USER_ID })
+  }
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1715,7 +1762,10 @@ export function createDefaultLocalControlPlaneServices() {
       // so they are offered only where that person is the only principal. With
       // the embedded issuer on, several signed accounts share one box and one
       // of them would otherwise be shown — and handed — the operator's login.
-      ...(embeddedAuth ? {} : { credentials: localControlPlaneCredentials() }),
+      // Either way this server hosts embedded runtimes a credential change must reach.
+      credentials: embeddedAuth
+        ? defaultControlPlaneCredentials({ refreshLocalRuntimes: syncEmbeddedWorkspaceRuntimes })
+        : localControlPlaneCredentials(),
       // Embedded Better Auth issuer (CLAXEDO_EMBEDDED_AUTH=1) => signed mode
       // backed by the in-process better-auth instance; otherwise local-only.
       ...(embeddedAuth
@@ -1784,7 +1834,6 @@ function localRelayFromEnv(
 
 export async function shutdownControlPlaneRuntime() {
   await shutdownEmbeddedWorkspaceRuntimes()
-  await drainOpenCodeSdkRuntime()
   await shutdownWorkspaceSupervisor()
   await shutdownPostHog()
 }
@@ -1811,10 +1860,6 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
 function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services
-  const connectionProviders = [
-    createAcpConnectionProvider(),
-    createOpenCodeServerConnectionProvider(),
-  ] as const
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
   const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
@@ -1857,8 +1902,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
   // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
-  // One process-owned public embedded-SDK runtime: the native `opencode` harness.
-  const opencodeRuntime = openCodeSdkRuntime()
   // One reader for both halves: the runtime decides whether a session gets the
   // endpoint at all, and the mount decides which tools it serves, from the
   // same machine-wide activation rows this node's Marketplace writes.
@@ -1869,8 +1912,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // reads, and it dies with the lease that admitted it.
   const connectionTurnCredentials = createConnectionTurnCredentials()
   configureEmbeddedWorkspaceRuntime({
-    opencodeRuntime,
-    connectionProviders,
     // The origin this process serves `/api/claxedo/mcp` on; `port` is the one
     // `startServer` binds and every caller reads back as this node's address.
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, enabledToolGroups: builtinToolGroups },
@@ -1901,6 +1942,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     onSessionMetaSnapshot: async (workspace, sessions) => {
       await services.projectionStore.sync_session_metas(workspace, sessions)
     },
+    sessionIdWorkspace: async (sessionId) => (await services.projectionStore.session_meta(sessionId))?.workspaceID,
   })
   async function refreshLocalSessionProjection() {
     await Promise.allSettled(
@@ -1912,38 +1954,41 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   // The credential authority for this box: a local runtime's harness receives a
   // broker endpoint on this same listener and the value stays in this process.
-  // The per-harness launch projection is the one other agent-config option;
-  // this deployment does not contribute it.
   const credentialBroker = options.egressBroker
     ? undefined
-    : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}` })
+    : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}`, machineOwnerUserId: () => LOCAL_USER_ID })
   configureAgentConfig({
-    connectionProviders,
+    connectionConfigs: defaultConnectionConfigs(),
     projectAuth: selfHostedCredentialAuthority(credentialBroker),
+    ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
   const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal()
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
+    machineOwnerUserId: LOCAL_USER_ID,
+    sandboxOwner: async (workspaceId) => {
+      const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
+      if (!owner) throw new Error(`workspace ${workspaceId} has no owner to deliver accounts for`)
+      return owner.userId
+    },
+    ...(options.sandboxDriver ? { sandboxDriver: options.sandboxDriver } : {}),
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
     ...(isSandboxDriverID(services.sandbox.defaultDriver)
       ? { default_sandbox_driver: services.sandbox.defaultDriver }
       : {}),
   })
 
-  // Migrate legacy plaintext credentials into the managed secret backend.
   dropCopiedHarnessLogins().catch((err: unknown) => {
     console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
-  })
-  migrateCredentials().catch((err) => {
-    console.error("[claxedo-server] WARN  credential migration failed:", err)
   })
 
   captureControlPlaneStartupTelemetry(services, { port })
 
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
+    ...(options.sandboxDriver?.id === "local-brokering-test" ? { localBrokeringRelay: true } : {}),
     egressBroker: options.egressBroker ?? credentialBroker?.handler,
     usageRevisionStore,
     usageSourceCoverage,

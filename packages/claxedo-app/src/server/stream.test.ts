@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, expect, jest, test } from "bun:test"
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { openStream } from "./stream"
 
 afterEach(() => {

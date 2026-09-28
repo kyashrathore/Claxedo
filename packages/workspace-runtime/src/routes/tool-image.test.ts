@@ -27,7 +27,9 @@ test("route reads do not start a harness, publish events or change messages, inc
   const before = JSON.stringify(messages)
   let events = 0
   const app = createSessionRoutes({
-    resolveAdapter: () => { throw new Error("Image reads must not start a harness") },
+    runtime: async () => { throw new Error("Image reads must not start a harness") },
+    defaultHarness: () => ({ id: "codex", access: "native" }),
+    requestedSessionHarness: () => undefined,
     resolveDirectory: () => "/workspace",
     getMessages: (_c, _dir, id) => id === "session" ? messages : undefined,
     publishGlobal: () => { events++ },
@@ -82,7 +84,9 @@ test("authorizes image reads before looking up any stored message", async () => 
   let reads = 0
   const operations: string[] = []
   const app = createSessionRoutes({
-    resolveAdapter: () => { throw new Error("Unexpected adapter") },
+    runtime: async () => { throw new Error("Image reads must not start a harness") },
+    defaultHarness: () => ({ id: "codex", access: "native" }),
+    requestedSessionHarness: () => undefined,
     resolveDirectory: () => "/workspace",
     getMessages: () => { reads++; return [] },
     publishGlobal() {},

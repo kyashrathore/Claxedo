@@ -26,6 +26,7 @@ import {
   requestWorkspace,
   resolveWorkspaceHit,
   runtimeOwned,
+  unnamedSessionWorkspace,
   type RuntimeProxyOptions,
 } from "./internals"
 
@@ -51,6 +52,8 @@ async function workspaceRuntimeProxyWithOptions(
   // workspace's runtime is unavailable".
   const aggregate = hostAggregateEvents(c, pathname, options)
   if (aggregate) return await aggregate
+  const unnamed = unnamedSessionWorkspace(c, pathname)
+  if (unnamed) return unnamed
 
   try {
     const input = requestWorkspace(c.req.raw)
@@ -69,6 +72,7 @@ async function workspaceRuntimeProxyWithOptions(
     return await proxy(c, hit, {
       sandboxManager: options.sandboxManager,
       ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
+      ...(options.mintLocalRelayHostToken ? { mintLocalRelayHostToken: options.mintLocalRelayHostToken } : {}),
       ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
       ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
       ...(options.requireRelayActor ? { requireRelayActor: true } : {}),

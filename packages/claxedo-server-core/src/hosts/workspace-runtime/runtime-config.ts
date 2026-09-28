@@ -1,5 +1,5 @@
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
-import { getRuntimeConfigSnapshot, type RuntimeConfigSnapshot } from "../../agent-config"
+import { getRuntimeConfigSnapshot, type RuntimeConfigSnapshot, type RuntimeNativeHarnessId } from "../../agent-config"
 import type { SandboxSecretBrokering } from "../../credentials/native-delivery"
 
 type ClaxedoRuntimeConfigInput = {
@@ -8,10 +8,11 @@ type ClaxedoRuntimeConfigInput = {
   secretScope?: "local" | "shared"
   orgId?: string
   secretBrokering?: SandboxSecretBrokering
+  provisionedRunner?: RuntimeNativeHarnessId
 }
 
 export async function createClaxedoRuntimeConfig(input: ClaxedoRuntimeConfigInput = {}): Promise<RuntimeConfigSnapshot> {
-  return getRuntimeConfigSnapshot(undefined, input)
+  return getRuntimeConfigSnapshot(input)
 }
 
 /**

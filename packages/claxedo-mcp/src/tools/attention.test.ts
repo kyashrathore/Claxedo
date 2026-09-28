@@ -25,6 +25,8 @@ import { boundedWaitMs, registerAttentionTools, replyToPermission, WAIT_FOR_ATTE
 
 const DIRECTORY = "/w"
 
+type SessionRuntime = Awaited<ReturnType<Parameters<typeof createSessionRoutes>[0]["runtime"]>>
+
 type FixtureSession = { id: string; title: string; parentID?: string }
 
 type Harness = {
@@ -102,31 +104,9 @@ function runtimeApp(state: Harness) {
     },
     read: () => undefined,
   }
-  const routes = createSessionRoutes({
-    resolveRecoveryOwner: () => recovery as never,
-    resolveDirectory: () => DIRECTORY,
-    resolveExecutionBinding: (_c, directory, sessionId) => ({
-      workspaceId: "ws_local",
-      directory: directory ?? DIRECTORY,
-      sessionId,
-      connectionId: "conn",
-      upstreamSessionId: sessionId,
-    }),
-    listSessions: async () => state.sessions.filter((row) => !row.parentID).map((row) => ({ ...row })),
-    getSession: (_c, _directory, sessionId) => state.sessions.find((row) => row.id === sessionId) ?? null,
-    getStatus: () => state.status,
-    listPermissions: async () => state.pendingPermissions,
-    listQuestions: async () => state.pendingQuestions,
-    publishGlobal: () => {},
-    resolveAdapter: () => ({
-      instructionChannel: "none" as const,
-      getSession: async (binding) => state.sessions.find((row) => row.id === binding.sessionId) ?? null,
-      createSession: async () => ({ id: "ses_new" }),
-      updateSession: async (binding) => state.sessions.find((row) => row.id === binding.sessionId) ?? null,
-      getSessionConfig: async () => ({ harness: { id: "codex", access: "native" as const }, agent: "build", variant: null }),
-      updateSessionConfig: async () => ({ harness: { id: "codex", access: "native" as const }, agent: "build", variant: null }),
-      deleteSession: async () => {},
-      readHarnessCapabilities: () => ({
+  const runtime = {
+    reads: {
+      capabilities: async () => ({
         harness: "codex",
         abort: true,
         reconnect: false,
@@ -144,24 +124,39 @@ function runtimeApp(state: Harness) {
         effortLevels: NO_HARNESS_EFFORT,
         instructionChannel: "none",
       }),
-      executeTurn: () => (async function* () {})(),
-      getMessages: async () => [],
-      dispose: () => {},
-      listPermissions: async () => state.pendingPermissions,
-      respondPermission: async (_binding, permId, decision) => {
+    },
+    permissions: {
+      list: async () => state.pendingPermissions,
+      respond: async (permId: string, decision: string) => {
         state.answered.push({ id: permId, decision })
         state.pendingPermissions = state.pendingPermissions.filter((row) => row.id !== permId)
+        return { events: [] }
       },
-      listQuestions: async () => state.pendingQuestions,
-      replyQuestion: async (_binding, id, answers) => {
+    },
+    questions: {
+      list: async () => state.pendingQuestions,
+      answer: async (id: string, answers: string[][]) => {
         state.replied.push({ id, answers })
         state.pendingQuestions = state.pendingQuestions.filter((row) => row.id !== id)
+        return { events: [] }
       },
-      rejectQuestion: async (_binding, id) => {
+      reject: async (id: string) => {
         state.rejected.push(id)
         state.pendingQuestions = state.pendingQuestions.filter((row) => row.id !== id)
+        return { events: [] }
       },
-    }),
+    },
+  }
+  const routes = createSessionRoutes({
+    runtime: async () => runtime as unknown as SessionRuntime,
+    defaultHarness: () => ({ id: "codex", access: "native" }),
+    requestedSessionHarness: () => undefined,
+    resolveRecoveryOwner: () => recovery as never,
+    resolveDirectory: () => DIRECTORY,
+    listSessions: async () => state.sessions.filter((row) => !row.parentID).map((row) => ({ ...row })),
+    getSession: (_c, _directory, sessionId) => state.sessions.find((row) => row.id === sessionId) ?? null,
+    getStatus: () => state.status,
+    publishGlobal: () => {},
   })
   const app = new Hono().route("/", routes)
   return (request: Request) => {

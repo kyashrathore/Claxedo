@@ -34,6 +34,7 @@ export default {
   "prompt.popover.emptyCommands": "沒有符合的命令",
   "prompt.slash.badge.skill": "技能",
   "prompt.slash.badge.custom": "自訂",
+  "prompt.slash.badge.saved": "已儲存",
   "prompt.context.removeFile": "從上下文移除檔案",
   "prompt.placeholder.shell": "輸入 shell 命令... {{example}}",
   "prompt.placeholder.normal": "隨便問點什麼... \"{{example}}\"",

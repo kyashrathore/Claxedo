@@ -62,6 +62,19 @@ export function generateAntigravityHook(notifyPath: string): string {
   return loadTemplate("antigravity-hook.template.sh", { MARKER: NOTIFY_MARKER, NOTIFY_PATH: notifyPath })
 }
 
+export function generateClaudeHookSettings(notifyPath: string): string {
+  const command = { type: "command", command: `${shellQuote(notifyPath)} --harness=claude` }
+  const every = { matcher: "*", hooks: [command] }
+  return JSON.stringify({ hooks: {
+    UserPromptSubmit: [{ hooks: [command] }],
+    Stop: [{ hooks: [command] }],
+    PostToolUse: [every],
+    PostToolUseFailure: [every],
+    PermissionRequest: [every],
+    PermissionDenied: [every],
+  } }, null, 2) + "\n"
+}
+
 export function generateCursorHook(notifyPath: string): string {
   return loadTemplate("cursor-hook.template.sh", {
     MARKER: NOTIFY_MARKER,
@@ -75,23 +88,6 @@ export function generateCopilotHook(notifyPath: string): string {
     NOTIFY_PATH: notifyPath,
   })
 }
-
-export function generateCodexLogWatcher(notifyPath: string): string {
-  return loadTemplate("codex-log-watcher.template.sh", {
-    MARKER: NOTIFY_MARKER,
-    CODEX_NOTIFY_PATH: notifyPath,
-  })
-}
-
-export function generateCodexNotify(notifyPath: string, watcherPath: string): string {
-  return loadTemplate("codex-notify.template.sh", {
-    MARKER: NOTIFY_MARKER,
-    CODEX_NOTIFY_PATH: notifyPath,
-    CODEX_WATCHER_PATH: watcherPath,
-  })
-}
-
-// ── Hook config generation ──────────────────────────────────────────────────
 
 export function generateCopilotProjectHooks(copilotHookPath: string): string {
   const command = (event: string) => `bash ${shellQuote(copilotHookPath)} ${event}`

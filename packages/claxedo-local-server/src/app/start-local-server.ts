@@ -30,15 +30,13 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
-import { createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
+import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
-import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig, disposeAgentConfig, watchUserConfigFile } from "@claxedo/server-core/agent-config/index"
-import { fanOutConfig } from "../agent-config/fanout"
+import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import {
@@ -55,11 +53,9 @@ import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { startSessionRowsPublisher } from "../session/publish/start-session-rows-publisher"
-import { migrateCredentials } from "../credentials/operations/migrate"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
-import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/host-provider-config"
-import { hostProviderConfig } from "../workspace/host-provider-config"
+import { hostCredentialProjectAuth, localMachineOwnerUserId } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
@@ -83,8 +79,8 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
-  /** Opaque launch options supplied by an optional harness feature module. */
-  harnessLaunch?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["harnessLaunch"]
+  /** The Agent Plugins module's contribution to every runtime snapshot. */
+  pluginRuntime?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["pluginRuntime"]
 }
 
 export type LocalServer = {
@@ -162,13 +158,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services ?? createLocalControlPlaneServices()
   const sessionRows = startSessionRowsPublisher(services.projectionStore)
-  const connectionProviders = [
-    createAcpConnectionProvider(),
-    createOpenCodeServerConnectionProvider(),
-  ] as const
-  // One process-owned public embedded-SDK runtime, shared by every embedded
-  // workspace runtime this server creates; it is the native `opencode` harness.
-  const opencodeRuntime = openCodeSdkRuntime()
 
   type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
   let settleTurnOutcome: TurnOutcomeHandler = () => undefined
@@ -186,8 +175,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // same machine-wide activation rows.
   const builtinToolGroups = localBuiltinToolGroupsReader()
   configureEmbeddedWorkspaceRuntime({
-    connectionProviders,
-    opencodeRuntime,
     // One policy for both kinds of caller: the machine's own user reaches
     // these runtimes over loopback and owns every session on them, while a
     // relayed org member is admitted only by the control plane's session
@@ -214,24 +201,20 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     onSessionMetaSnapshot: async (workspace, sessions) => {
       await services.projectionStore.sync_session_metas(workspace, sessions)
     },
+    sessionIdWorkspace: async (sessionId) => (await services.projectionStore.session_meta(sessionId))?.workspaceID,
   })
   // The broker is a route on this same listener, so its origin is this server's.
   const credentialBroker = createLocalCredentialBroker({
     dataDir: dataDir(),
     brokerOrigin: firstPartyMcpBaseUrl,
+    machineOwnerUserId: localMachineOwnerUserId,
   })
   configureAgentConfig({
-    connectionProviders,
-    // The owner's pushed rows are written over the broker's answer: a
-    // provider the owner named resolves to the owner's account, every other
-    // one to whatever this machine holds.
-    projectAuth: hostProviderConfigProjectAuth((input) => credentialBroker.projectAuth(input), hostProviderConfig),
-    ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
-  })
-  const stopConfigWatch = watchUserConfigFile(() => {
-    fanOutConfig().catch((error: unknown) => {
-      log.warn("config fan-out after an on-disk edit failed", { error: String(error) })
-    })
+    connectionConfigs: defaultConnectionConfigs(),
+    // The broker answers with this machine's rows, the operator's named for
+    // the enrolled owner; the owner's pushed rows are written over theirs.
+    projectAuth: hostCredentialProjectAuth((input) => credentialBroker.projectAuth(input)),
+    ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
@@ -241,12 +224,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // repair checks and statement preparation.
   ClaxedoDB.raw()
 
-  // Deferred and non-blocking: a credential migration must never gate startup.
   dropCopiedHarnessLogins().catch((error: unknown) => {
     log.warn("Failed to forget copied harness logins", { error: String(error) })
-  })
-  migrateCredentials().catch((error) => {
-    log.warn("credential migration failed", { error: String(error) })
   })
 
   const usageRevisionStore = createSqliteUsageLedger()
@@ -437,7 +416,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     })
     stopOperation = (async () => {
       try {
-        stopConfigWatch()
         stopConfigRenewal()
         sessionRows.stop()
         options.daemon?.lifecycle.stop()
@@ -459,7 +437,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       } finally {
         await listenerClosed
         disposeAgentConfig()
-        await drainOpenCodeSdkRuntime()
         ClaxedoDB.close()
         process.off("exit", release)
         release()

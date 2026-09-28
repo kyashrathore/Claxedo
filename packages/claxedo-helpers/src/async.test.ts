@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createKeyedSerializer, sleep, waitForHealth } from "./async"
+import { createKeyedSerializer, singleFlightUntil, sleep, waitForHealth } from "./async"
 
 describe("sleep", () => {
   test("sleep(0) is a macrotask yield, not a microtask resolve", async () => {
@@ -130,3 +130,36 @@ describe("waitForHealth", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(100)
   })
 })
+
+describe("singleFlightUntil", () => {
+  test("concurrent calls share one attempt, and a settled result answers every later call", async () => {
+    let runs = 0
+    let finish!: (value: { stopped: boolean }) => void
+    const retire = singleFlightUntil(() => { runs++; return new Promise<{ stopped: boolean }>((resolve) => { finish = resolve }) }, (result) => result.stopped)
+    const first = retire()
+    expect(retire()).toBe(first)
+    finish({ stopped: true })
+    expect(await first).toEqual({ stopped: true })
+    expect(retire()).toBe(first)
+    expect(runs).toBe(1)
+  })
+
+  test("an unsettled result lets the next call try again", async () => {
+    const results = [{ stopped: false }, { stopped: true }]
+    let runs = 0
+    const retire = singleFlightUntil(async () => results[runs++]!, (result) => result.stopped)
+    expect(await retire()).toEqual({ stopped: false })
+    expect(await retire()).toEqual({ stopped: true })
+    expect(await retire()).toEqual({ stopped: true })
+    expect(runs).toBe(2)
+  })
+
+  test("a rejected attempt lets the next call try again", async () => {
+    let runs = 0
+    const retire = singleFlightUntil(async () => { runs++; if (runs === 1) throw new Error("first attempt failed"); return { stopped: true } }, (result) => result.stopped)
+    await expect(retire()).rejects.toThrow("first attempt failed")
+    expect(await retire()).toEqual({ stopped: true })
+    expect(runs).toBe(2)
+  })
+})
+

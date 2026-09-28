@@ -146,22 +146,6 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
           ),
         },
         {
-          find: "@claxedo/agent-event-runtime/contracts",
-          replacement: normalizePath(
-            fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url)),
-          ),
-        },
-        {
-          find: "@claxedo/agent-event-runtime/client-presentation",
-          replacement: normalizePath(
-            fileURLToPath(new URL("../agent-event-runtime/src/projections/client-presentation/index.ts", import.meta.url)),
-          ),
-        },
-        {
-          find: "@claxedo/agent-event-runtime",
-          replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/index.ts", import.meta.url))),
-        },
-        {
           find: /^@shikijs\/themes\/(.+)$/,
           replacement: `${shikiThemesDist}$1.mjs`,
         },

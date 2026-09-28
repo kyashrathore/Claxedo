@@ -101,6 +101,13 @@ describe("host enrollment", () => {
     expect(await api.activeHostEnrollment(owner)).toMatchObject({ active: true, host_id: hostId })
   })
 
+  test("names its owner as the person relayed requests carry, not the token identifier", async () => {
+    const api = authority()
+    const { hostId } = await enroll(api)
+    const principal = await machinePrincipal(api, hostId)
+    expect(principal.ownerUserId).toBe("user_owner")
+  })
+
   test("never returns the host public key to the owner", async () => {
     // The owner-facing shape carries display state. Key material leaving the
     // authority is how a "show me my machines" screen becomes a key disclosure.

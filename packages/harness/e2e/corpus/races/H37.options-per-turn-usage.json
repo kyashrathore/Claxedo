@@ -1,0 +1,74 @@
+{
+  "flow": "H37.options-per-turn",
+  "difference": "$.observations.2.entities.4.frames.3 adds a title usage delta after message.completed",
+  "recorded": {
+    "key": "message:<id:http:9:1>",
+    "frames": [
+      {
+        "index": 1,
+        "type": "session.usage",
+        "observation": {
+          "kind": "cumulative",
+          "scope": "<id:http:8:2>:<id:entity:2:4:1>",
+          "nativeSessionId": "<id:http:8:2>",
+          "providerObservationId": "<id:entity:2:4:1>",
+          "model": "gpt-5.5",
+          "tokens": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": null
+            }
+          }
+        }
+      }
+    ]
+  },
+  "observed": {
+    "key": "message:<id:http:9:1>",
+    "frames": [
+      {
+        "index": 1,
+        "type": "session.usage",
+        "observation": {
+          "kind": "cumulative",
+          "scope": "<id:http:8:2>:<id:entity:2:4:1>",
+          "nativeSessionId": "<id:http:8:2>",
+          "providerObservationId": "<id:entity:2:4:1>",
+          "model": "gpt-5.5",
+          "tokens": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": null
+            }
+          }
+        }
+      },
+      {
+        "index": 3,
+        "type": "session.usage",
+        "observation": {
+          "kind": "delta",
+          "scope": "title:<id:entity:2:4:2>",
+          "nativeSessionId": "<id:entity:2:4:2>",
+          "providerObservationId": "<id:entity:2:4:2>:<id:entity:2:4:3>:{\"totalTokens\":2,\"inputTokens\":1,\"cachedInputTokens\":0,\"cacheWriteInputTokens\":0,\"outputTokens\":1,\"reasoningOutputTokens\":0}",
+          "model": "gpt-5.5",
+          "tokens": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": null
+            }
+          }
+        }
+      }
+    ]
+  }
+}

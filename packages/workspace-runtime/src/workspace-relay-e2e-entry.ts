@@ -10,6 +10,7 @@
 import { isLoopbackHostname, startServer, waitForWorkspaceRuntimeServerPort, workspaceRuntimeListenHostname } from "./server"
 import { workspaceDir, workspaceId } from "./target"
 import { workspaceRelayRuntimeOptionsFromEnv } from "./workspace-relay-env"
+import { workspaceRuntimePlacementFromEnv } from "./env"
 import {
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,
@@ -22,6 +23,7 @@ const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(process.env, port
 
 const server = startServer(port, {
   target: { workspaceId: workspaceId(), directory: workspaceDir() },
+  placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relayOptions.relayHostAuth) }),
   ...relayOptions,
   exposure: relayOptions.relayHostAuth
     ? relayWorkspaceRuntimeExposure(relayOptions.relayHostAuth)

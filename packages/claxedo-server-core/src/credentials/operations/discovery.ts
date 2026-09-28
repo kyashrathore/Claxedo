@@ -72,7 +72,7 @@ function preview(
 export function createCredentialDiscovery(input: {
   collect: () => Promise<LocalCredentialItem[]>
   save: (item: CredentialWrite, org?: string) => Promise<{ id: string }>
-  connected?: (org?: string) => Array<{ provider_id: string; kind: LocalCredentialItem["kind"] }>
+  connected?: (org?: string) => Array<{ provider_id: string; kind: LocalCredentialItem["kind"]; owner?: string | null }>
   /**
    * Live-probes a candidate before it is offered. Omitted (or throwing) leaves
    * every row `unknown` — discovery still works, it just cannot promise
@@ -114,10 +114,10 @@ export function createCredentialDiscovery(input: {
   }
 
   return {
-    async discover(org?: string) {
+    async discover(org: string | undefined, owner: string) {
       const collected = await input.collect()
       const discovery_id = (input.id ?? randomUUID)()
-      const connected = new Set((input.connected?.(org) ?? []).map(localCredentialKey))
+      const connected = new Set((input.connected?.(org) ?? []).filter((row) => row.owner === owner).map(localCredentialKey))
       // Probe every candidate before offering it. Reading a token off disk says
       // nothing about whether the provider will accept it, and a credential that
       // is saved and then fails is worse than one that was never found — the
@@ -136,7 +136,7 @@ export function createCredentialDiscovery(input: {
         items: collected.map((item, index) => preview(item, connected, probes[index])),
       }
     },
-    async save(request: { discovery_id: string; items: CredentialDiscoverySelection[] }, org?: string) {
+    async save(request: { discovery_id: string; items: CredentialDiscoverySelection[] }, org: string | undefined, owner: string) {
       const discovery = stash.get(request.discovery_id)
       if (!discovery) throw new CredentialDiscoveryError("discovery_not_found")
       if (now() > discovery.expiresAt) throw new CredentialDiscoveryError("discovery_expired")
@@ -151,6 +151,7 @@ export function createCredentialDiscovery(input: {
       if (selected.length !== keys.length) throw new CredentialDiscoveryError("discovery_item_not_found")
 
       const credentials = await Promise.all(selected.map(({ item }, index) => input.save({
+        owner,
         provider_id: item.provider_id,
         kind: item.kind,
         source: request.items[index].scope === "shared" ? "managed" : "local_only",

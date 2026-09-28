@@ -1,17 +1,16 @@
+import type { SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import fs from "fs"
 import path from "path"
 import { createRequire } from "module"
 import type { CompatEvent } from "../compat-events"
-import type { SessionConfigUpdate } from "../index"
-import type { AgentRuntimeStore } from "../runtime"
-import { recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
+import { recoveryScopeKey, recoveryTargetSessionId } from "../runtime-store"
 import type {
   AgentRuntimeAppendEventInput,
   AgentRuntimeSessionBinding,
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnFinishInput,
   AgentRuntimeTurnStartInput,
-} from "../harnesses/shared/runtime-store"
+} from "../runtime-store"
 import { MemoryRuntimeStore, type MemoryRuntimeStoreSnapshot } from "./memory"
 import {
   persistedMessageRow,
@@ -19,7 +18,6 @@ import {
   persistedQuestionRow,
   persistedSessionConfig,
   persistedSessionRow,
-  persistedSubagentObservation,
   persistedTodoRow,
 } from "./persisted-rows"
 import {
@@ -30,7 +28,6 @@ import {
   type AgentSessionStarts,
   type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
-import type { SubagentObservation } from "../subagent-admission"
 import { sqliteSessionStarts } from "./session-start"
 
 type SqliteStatement = {
@@ -168,10 +165,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }) {
     return this.write(() => {
       const result = this.memory.updateSession(id, updates)
-      if (result) {
-        this.persistSession(id)
-        this.replaceSubagents(id)
-      }
+      if (result) this.persistSession(id)
       return result
     })
   }
@@ -264,24 +258,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     })
   }
 
-  admit(input: { parentSessionId: string; observation: SubagentObservation; allocateKey: () => string }) {
-    return this.write(() => {
-      const result = this.memory.admit(input)
-      this.replaceSubagents(input.parentSessionId)
-      return result
-    })
-  }
-
-  markPublished(parentSessionId: string, observationId: string) {
-    return this.write(() => {
-      this.memory.markPublished(parentSessionId, observationId)
-      this.replaceSubagents(parentSessionId)
-    })
-  }
-
-  listSubagentEvents(parentSessionId: string) { return this.memory.listSubagentEvents(parentSessionId) }
-  listSubagents(parentSessionId: string) { return this.memory.listSubagents(parentSessionId) }
-
   markRecovering(sessionId: string, message?: string) {
     return this.write(() => {
       this.memory.markRecovering(sessionId, message)
@@ -354,10 +330,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       );
       CREATE TABLE IF NOT EXISTS runtime_recovery_errors (session_id TEXT PRIMARY KEY, message TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS runtime_session_seq (session_id TEXT PRIMARY KEY, seq INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS runtime_subagents (
-        parent_session_id TEXT NOT NULL, observation_id TEXT NOT NULL, data_json TEXT NOT NULL, published INTEGER NOT NULL,
-        PRIMARY KEY (parent_session_id, observation_id)
-      );
       CREATE TABLE IF NOT EXISTS runtime_recovery_operations (
         operation_id TEXT PRIMARY KEY, scope_key TEXT NOT NULL, caller_id TEXT NOT NULL, request_id TEXT NOT NULL,
         session_id TEXT, state TEXT NOT NULL, cleanup_fact TEXT NOT NULL, persistence_fact TEXT NOT NULL,
@@ -534,16 +506,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
         .map((row) => ({ sessionId: columnText(row, "session_id"), message: columnText(row, "message") })),
       seq: this.rows("SELECT session_id, seq FROM runtime_session_seq")
         .map((row) => ({ sessionId: columnText(row, "session_id"), seq: columnNumber(row, "seq") })),
-      subagents: this.rows("SELECT parent_session_id, observation_id, data_json, published FROM runtime_subagents").map((row) => ({
-        parentSessionId: columnText(row, "parent_session_id"),
-        observation: this.parse(
-          "runtime_subagents",
-          `${columnText(row, "parent_session_id")}/${columnText(row, "observation_id")}`,
-          columnText(row, "data_json"),
-          persistedSubagentObservation,
-        ),
-        published: columnNumber(row, "published") === 1,
-      })),
     }
     this.memory = new MemoryRuntimeStore(this.sessionStarts)
     this.memory.importSnapshot(snapshot)
@@ -579,11 +541,11 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       this.persistMessage(sessionId, event.properties.messageID)
     } else if (event.type === "permission.asked") {
       this.persistInteraction("runtime_permissions", sessionId, event.properties.id)
-    } else if (event.type === "permission.replied") {
+    } else if (event.type === "permission.replied" || event.type === "permission.expired") {
       this.run("DELETE FROM runtime_permissions WHERE id = ?", event.properties.requestID)
     } else if (event.type === "question.asked") {
       this.persistInteraction("runtime_questions", sessionId, event.properties.id)
-    } else if (event.type === "question.replied" || event.type === "question.rejected") {
+    } else if (event.type === "question.replied" || event.type === "question.rejected" || event.type === "question.expired") {
       this.run("DELETE FROM runtime_questions WHERE id = ?", event.properties.requestID)
     } else if (event.type === "todo.updated") {
       this.replaceTodos(sessionId)
@@ -632,22 +594,11 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     })
   }
 
-  private replaceSubagents(parentSessionId: string) {
-    this.run("DELETE FROM runtime_subagents WHERE parent_session_id = ?", parentSessionId)
-    for (const row of this.memory.readPersistenceState(parentSessionId).subagents) {
-      this.run(
-        "INSERT INTO runtime_subagents(parent_session_id, observation_id, data_json, published) VALUES (?, ?, ?, ?)",
-        parentSessionId, row.observation.observationId, JSON.stringify(row.observation), row.published ? 1 : 0,
-      )
-    }
-  }
-
   private deletePersistedSession(sessionId: string) {
     for (const [table, column] of [
       ["runtime_sessions", "id"], ["runtime_configs", "session_id"], ["runtime_messages", "session_id"],
       ["runtime_permissions", "session_id"], ["runtime_questions", "session_id"], ["runtime_todos", "session_id"],
       ["runtime_recovery_errors", "session_id"], ["runtime_session_seq", "session_id"],
-      ["runtime_subagents", "parent_session_id"],
     ] as const) this.run(`DELETE FROM ${table} WHERE ${column} = ?`, sessionId)
   }
 
@@ -743,6 +694,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
 }
 
-export function createSqliteRuntimeStore(options: SqliteRuntimeStoreOptions): AgentRuntimeStore {
+export function createSqliteRuntimeStore(options: SqliteRuntimeStoreOptions): AgentRuntimeStoreWithRecovery {
   return new SqliteRuntimeStore(options)
 }

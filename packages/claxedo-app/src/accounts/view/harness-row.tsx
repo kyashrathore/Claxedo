@@ -1,11 +1,11 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
-import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem } from "@/ui"
+import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Switch } from "@/ui"
 import { useWindowName } from "@/usage"
-import { machineLoginWords, storedAccountWords, type AccountWords } from "../account-words"
+import { machineLoginWords, storedAccountWords, teamAccountWords, type AccountWords, type CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { harnessAccounts, machineLoginOf, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
+import { harnessAccounts, machineLoginOf, selectedAccountKey, TEAM_ACCOUNT_KEY, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
 import { CheckedAge } from "./account-status"
@@ -26,7 +26,8 @@ function useAccountRows(props: HarnessRowProps) {
     const words = { t, windowName }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
-    return login ? [...stored, machineLoginWords(words, login, props.harness, props.snapshot)] : stored
+    const team = teamAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === TEAM_ACCOUNT_KEY)
+    return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), team]
   })
 }
 
@@ -49,6 +50,28 @@ function AccountLabel(props: { readonly account: AccountWords }) {
   )
 }
 
+function CloudConsentSwitch(props: { readonly account: AccountWords; readonly consent: CloudConsent; readonly accounts: Accounts }) {
+  const t = useAccountsText()
+  const error = () => props.accounts.scopeErrors()[props.account.key]
+  return (
+    <div class="flex flex-col gap-1 pl-6 text-12-regular text-text-weak">
+      <Show when={props.consent.deliverable} fallback={<span>{t("settings.providers.cloudConsent.unavailable")}</span>}>
+        <Switch
+          checked={props.consent.allowed}
+          disabled={props.accounts.activity() !== undefined}
+          onChange={(allowed) => props.accounts.allowInCloud(props.account.key, props.account.ids, allowed)}
+        >
+          {t("settings.providers.cloudConsent.allow")}
+        </Switch>
+        <Show when={props.consent.partial}>
+          <span>{t("settings.providers.cloudConsent.partial")}</span>
+        </Show>
+      </Show>
+      <Show when={error()}>{(message) => <span role="alert" class="text-icon-warning-base">{message()}</span>}</Show>
+    </div>
+  )
+}
+
 function AccountItem(props: { readonly account: AccountWords; readonly row: HarnessRowProps; readonly selected: boolean; readonly openConnect: (credentialId?: string) => void }) {
   const t = useAccountsText()
   const i18n = useI18n()
@@ -57,38 +80,41 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
   const activity = () => accounts().activity()
   const account = () => props.account
   return (
-    <div class="group flex items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
-      <RadioItem
-        class="min-w-0 flex-1"
-        value={account().key}
-        disabled={account().disabled}
-        data-invalid={account().refused ? "" : undefined}
-        title={account().identity}
-        label={<AccountLabel account={account()} />}
-        description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
-      />
-      <span class="relative flex shrink-0 items-center justify-end">
-        <Show when={account().checkedAt}>
-          {(at) => (
-            <CheckedAge
-              at={at()}
-              t={t}
-              locale={i18n.intlTag()}
-              class="pointer-events-none absolute right-0 whitespace-nowrap text-13-regular text-text-weak transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
-            />
-          )}
-        </Show>
-        <AccountActions
-          account={account()}
-          confirming={confirming()}
-          checking={activity()?.kind === "checking"}
-          removing={activity()?.kind === "removing" ? activity()?.key : undefined}
-          onReconnect={(credentialId) => props.openConnect(credentialId)}
-          onCheck={() => (account().machine ? accounts().checkMachine(props.row.harness) : accounts().check(account().ids[0] ?? account().key))}
-          onConfirm={setConfirming}
-          onRemove={() => void accounts().remove(account().ids).finally(() => setConfirming(false))}
+    <div class="flex flex-col">
+      <div class="group flex items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
+        <RadioItem
+          class="min-w-0 flex-1"
+          value={account().key}
+          disabled={account().disabled}
+          data-invalid={account().refused ? "" : undefined}
+          title={account().identity}
+          label={<AccountLabel account={account()} />}
+          description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
         />
-      </span>
+        <span class="relative flex shrink-0 items-center justify-end">
+          <Show when={account().checkedAt}>
+            {(at) => (
+              <CheckedAge
+                at={at()}
+                t={t}
+                locale={i18n.intlTag()}
+                class="pointer-events-none absolute right-0 whitespace-nowrap text-13-regular text-text-weak transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
+              />
+            )}
+          </Show>
+          <AccountActions
+            account={account()}
+            confirming={confirming()}
+            checking={activity()?.kind === "checking"}
+            removing={activity()?.kind === "removing" ? activity()?.key : undefined}
+            onReconnect={(credentialId) => props.openConnect(credentialId)}
+            onCheck={() => (account().machine ? accounts().checkMachine(props.row.harness) : accounts().check(account().ids[0] ?? account().key))}
+            onConfirm={setConfirming}
+            onRemove={() => void accounts().remove(account().ids).finally(() => setConfirming(false))}
+          />
+        </span>
+      </div>
+      <Show when={account().cloudConsent}>{(consent) => <CloudConsentSwitch account={account()} consent={consent()} accounts={accounts()} />}</Show>
     </div>
   )
 }

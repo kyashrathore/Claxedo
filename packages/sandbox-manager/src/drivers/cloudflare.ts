@@ -30,23 +30,24 @@ import {
   type SandboxDriverEnsureInput,
   type SandboxListingUnsupported,
   type SandboxTarget,
-} from ".."
+  type SandboxResource,
+} from "../contract"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 
-/**
- * The Worker's sandbox registry rows. Every value is a label string, so a row
- * with a non-string value is a Worker on a different contract: drop the value
- * rather than let it reach GC's ownership checks as something other than text.
- */
 function registryEntries(input: unknown): Record<string, string>[] {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => {
+  if (!Array.isArray(input)) throw new Error("Invalid Cloudflare sandbox listing: expected sandboxes array")
+  return input.map((item) => {
     const row = record(item)
-    if (!row) return []
-    const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    return [Object.fromEntries(entries)]
+    if (!row || typeof row.sandboxId !== "string" || !row.sandboxId) {
+      throw new Error("Invalid Cloudflare sandbox listing entry: expected sandboxId")
+    }
+    const entries = Object.entries(row).map(([key, value]): [string, string] => {
+      if (typeof value !== "string") throw new Error(`Invalid Cloudflare sandbox listing label: ${key}`)
+      return [key, value]
+    })
+    return Object.fromEntries(entries)
   })
 }
 
@@ -70,8 +71,8 @@ export type CloudflareSandboxDriverOptions = {
  *   managementJwksUrl → WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL (config apply)
    */
   controlEnv?: WorkspaceRuntimeControlEnv
-  /** Default runner injected as WORKSPACE_RUNTIME_RUNNER, for example "opencode". */
-  runner?: string
+  /** Default native harness injected as WORKSPACE_RUNTIME_NATIVE_HARNESS, for example "opencode". */
+  nativeHarness?: string
   /** Dynamic runtime env that needs the sandbox id or current lease. */
   env?: (input: SandboxDriverEnsureInput, sandbox: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   /** Injected for tests. */
@@ -149,7 +150,7 @@ export function createCloudflareSandboxDriver(
 ): SandboxDriver {
   const fetchWorker = options.fetch ?? fetch
   const doFetch = async (url: string, init: RequestInit) => {
-    const response = await fetchWorker(url, { ...init, redirect: "error" })
+    const response = await fetchWorker(url, { ...init, redirect: "manual" })
     if (response.redirected || (response.status >= 300 && response.status < 400)) throw new Error("Cloudflare Worker redirects are not allowed")
     return response
   }
@@ -211,7 +212,7 @@ export function createCloudflareSandboxDriver(
         // for a placeholder the outbound handler matches on.
         ...brokeredPlaceholderEnv(input.secrets),
       },
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
       controlEnv: options.controlEnv,
     })
   }
@@ -327,12 +328,7 @@ export function createCloudflareSandboxDriver(
     // So the Worker records each sandbox on `ensure-runtime` and drops it on
     // destroy — the pattern Cloudflare recommends for precisely this reason.
     //
-    // A Worker predating that route (or deployed with no R2 binding) answers
-    // 404/501, which THROWS `CloudflareSandboxListingUnsupportedError` rather
-    // than returning `[]`. An empty list from an old Worker would mean "nothing
-    // is orphaned" and hand GC a silent success — the defect this whole
-    // workstream removes. The manager turns that throw back into
-    // `listingUnsupported`, so an un-upgraded Worker is loudly visible.
+    // A missing registry route or R2 binding cannot establish an empty inventory.
     async list() {
       const deadline = deadlineSignal(timeoutMs)
       try {
@@ -341,8 +337,12 @@ export function createCloudflareSandboxDriver(
           headers,
           signal: deadline.signal,
         })
-        const data = record(await res.json().catch(() => ({}))) ?? {}
-        if (res.status === 404 || res.status === 501 || data.supported === false) {
+        if (res.status === 404 || res.status === 501) {
+          throw new CloudflareSandboxListingUnsupportedError(`Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}); requires the /sandboxes registry route and BACKUP_BUCKET binding`)
+        }
+        const data = record(await res.json())
+        if (!data) throw new Error("Invalid Cloudflare sandbox listing envelope")
+        if (data.supported === false) {
           throw new CloudflareSandboxListingUnsupportedError(
             text(data.error)
               ?? `Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}) — `
@@ -354,7 +354,6 @@ export function createCloudflareSandboxDriver(
         }
         return registryEntries(data.sandboxes).flatMap((entry) => {
           const sandboxId = entry.sandboxId
-          if (!sandboxId) return []
           // Labels come from the registry as the Worker recorded them, so GC's
           // ownership (`app`) and identity (`workspaceId`/`epoch`) checks run
           // against real provider state, never a local reconstruction.
@@ -391,7 +390,10 @@ export function createCloudflareSandboxDriver(
     ensureHost,
 
     async touch(target: SandboxTarget) {
-      await call(target.sandboxId, "touch-runtime", { port: runtimePort }).catch(() => undefined)
+      const { status, data } = await call(target.sandboxId, "touch-runtime", { port: runtimePort })
+      if (status < 200 || status >= 300 || data.ok !== true) {
+        throw new Error(`Cloudflare touch failed (${status}) for ${target.sandboxId}`)
+      }
     },
 
     async stop(target: SandboxTarget) {
@@ -400,7 +402,7 @@ export function createCloudflareSandboxDriver(
       void target
     },
 
-    async destroy(target: SandboxTarget) {
+    async destroy(target: SandboxResource) {
       const { status } = await call(target.sandboxId, "", {}, "DELETE")
       if (status >= 400 && status !== 404) {
         throw new Error(`Cloudflare destroy failed (${status}) for ${target.sandboxId}`)

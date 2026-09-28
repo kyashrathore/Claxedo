@@ -9,6 +9,7 @@ describe("embedded relay host auth stamp", () => {
   test("builds hop claims from a resolved control-plane actor", () => {
     expect(embeddedRelayHostAuthFromActor({
       actorId: "issuer|user_bob",
+      userId: "user_bob",
       actorKind: "human",
       actorPublicId: "usr_bob",
       actorName: "Bob",
@@ -17,6 +18,7 @@ describe("embedded relay host auth stamp", () => {
     }, "ws_1")).toEqual({
       principal_kind: "user",
       actor_id: "issuer|user_bob",
+      user_id: "user_bob",
       actor_kind: "human",
       actor_public_id: "usr_bob",
       actor_name: "Bob",
@@ -29,6 +31,7 @@ describe("embedded relay host auth stamp", () => {
   test("round-trips the hop header payload", () => {
     const auth = embeddedRelayHostAuthFromActor({
       actorId: "issuer|user_bob",
+      userId: "user_bob",
       actorKind: "human",
       actorPublicId: "usr_bob",
       actorName: "Bob",

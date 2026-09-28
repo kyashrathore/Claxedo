@@ -21,7 +21,7 @@ import {
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
 } from "../src/main/server-daemon-discovery"
-import { launchErrorText, readCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { launchErrorText, readCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 import path from "node:path"
 
 // The V8 compile cache is already enabled and already seeded by the time this
@@ -119,7 +119,7 @@ const server = startLocalServer({
   ...(transport ? { processObserver: transport.observer } : {}),
   routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
   tasksGrants: tasks.grants,
-  harnessLaunch: agentPlugins.harnessLaunch,
+  pluginRuntime: agentPlugins.runtimeContribution,
 })
 const discovery: ClaxedoDaemonDiscovery = {
   service: CLAXEDO_DAEMON_SERVICE,

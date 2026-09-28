@@ -5,6 +5,11 @@ import { appendFileSync } from "node:fs"
 
 const pending = new Map()
 const logFile = process.argv[2]
+// "patterns" asks for a name the runtime validates against a pattern, beside
+// one whose pattern backtracks catastrophically, before any answer is sent.
+const schema = process.argv[3] === "patterns"
+  ? { type: "object", properties: { name: { type: "string", pattern: "^[A-Z][a-z]+$" }, bounded: { type: "string", pattern: "^(a+)+$" } }, required: ["name"] }
+  : { type: "object", properties: { label: { type: "string", title: "Launch label" } }, required: ["label"] }
 const send = (body) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...body }) + "\n")
 const configOptions = [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "test", options: [{ value: "test", name: "Deterministic test" }] }]
 
@@ -12,13 +17,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line)
   if (logFile) appendFileSync(logFile, JSON.stringify({ pid: process.pid, ...message }) + "\n")
   if (message.method === "initialize") {
-    send({ id: message.id, result: { protocolVersion: 1, agentInfo: { name: "Startup Acceptance", version: "1" }, agentCapabilities: {} } })
+    send({ id: message.id, result: { protocolVersion: 1, agentInfo: { name: "Startup Acceptance", version: "1" }, agentCapabilities: {}, _meta: { claxedo: { version: 1 } } } })
   } else if (message.method === "session/new") {
     const id = `form-${message.id}`
     pending.set(id, message.id)
     send({ id, method: "elicitation/create", params: {
       requestId: message.id, mode: "form", message: "Enter a launch label before this session is created.",
-      requestedSchema: { type: "object", properties: { label: { type: "string", title: "Launch label" } }, required: ["label"] },
+      requestedSchema: schema,
     } })
   } else if (!message.method && pending.has(message.id)) {
     const id = pending.get(message.id)

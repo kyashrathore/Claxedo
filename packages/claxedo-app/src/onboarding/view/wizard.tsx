@@ -3,6 +3,7 @@ import { ProjectCreateForm } from "@/projects"
 import { animateHeightChanges, ScrollView } from "@/ui"
 import { useOnboardingText } from "../i18n"
 import { onboardingSteps } from "../steps"
+import type { ExecutionFacts } from "../model"
 import { createOnboardingWizard, draftName, type OnboardingWizard as Wizard } from "../wizard"
 import { AiStep } from "./ai-step"
 import { ExecutionStep } from "./execution-step"
@@ -46,7 +47,7 @@ function WizardLede(props: { readonly wizard: Wizard; readonly localExecution: b
   )
 }
 
-function StepPanels(props: { readonly wizard: Wizard; readonly localExecution: boolean; readonly pickFolder: () => Promise<string | undefined> }) {
+function StepPanels(props: { readonly wizard: Wizard; readonly facts: ExecutionFacts; readonly pickFolder: () => Promise<string | undefined> }) {
   const wizard = () => props.wizard
   const t = useOnboardingText()
   return (
@@ -54,7 +55,7 @@ function StepPanels(props: { readonly wizard: Wizard; readonly localExecution: b
       <div hidden={wizard().step() !== "project"} data-step-panel="project">
         <ProjectCreateForm
           size="comfortable"
-          localExecution={props.localExecution}
+          localExecution={props.facts.localExecution}
           pickFolder={props.pickFolder}
           submitLabel={t("onboarding.continue")}
           onSubmit={(source, name) => wizard().chooseSource({ source, ...(name ? { name } : {}) })}
@@ -62,21 +63,21 @@ function StepPanels(props: { readonly wizard: Wizard; readonly localExecution: b
       </div>
       <Show when={wizard().visited().has("ai")}>
         <div hidden={wizard().step() !== "ai"} data-step-panel="ai">
-          <AiStep localExecution={props.localExecution} onReady={wizard().setAiReady} />
+          <AiStep localExecution={props.facts.localExecution} onReady={wizard().setAiReady} />
         </div>
       </Show>
       <Show when={wizard().visited().has("execution")}>
-        <div hidden={wizard().step() !== "execution"} data-step-panel="execution">
-          <ExecutionStep localExecution={props.localExecution} choice={wizard().choice()} onChoice={wizard().choose} onReady={wizard().setExecutionReady} />
+        <div hidden={wizard().step() !== "execution"} data-step-panel="execution" inert={wizard().finish.working() || wizard().finish.created() !== undefined}>
+          <ExecutionStep facts={props.facts} choice={wizard().choice()} onChoice={wizard().choose} />
         </div>
       </Show>
     </>
   )
 }
 
-export function OnboardingWizard(props: { readonly localExecution: boolean; readonly pickFolder: () => Promise<string | undefined> }) {
+export function OnboardingWizard(props: { readonly facts: ExecutionFacts; readonly pickFolder: () => Promise<string | undefined> }) {
   const t = useOnboardingText()
-  const wizard = createOnboardingWizard(() => props.localExecution)
+  const wizard = createOnboardingWizard(() => props.facts)
   let card!: HTMLDivElement
   let steps!: HTMLDivElement
   onMount(() => onCleanup(animateHeightChanges(card, [steps])))
@@ -84,15 +85,15 @@ export function OnboardingWizard(props: { readonly localExecution: boolean; read
     <div class="flex min-h-0 flex-col" data-testid="onboarding-wizard" data-step={wizard.step()}>
       <WizardSteps wizard={wizard} />
       <h1 class="first-project-headline first-project-reveal">{t(wizard.current().headline)}</h1>
-      <WizardLede wizard={wizard} localExecution={props.localExecution} />
+      <WizardLede wizard={wizard} localExecution={props.facts.localExecution} />
       <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }} ref={card}>
         <ScrollView class="first-project-card-body">
           <div ref={steps}>
-            <StepPanels wizard={wizard} localExecution={props.localExecution} pickFolder={props.pickFolder} />
+            <StepPanels wizard={wizard} facts={props.facts} pickFolder={props.pickFolder} />
           </div>
         </ScrollView>
         <Show when={wizard.step() !== "project"}>
-          <WizardFooter wizard={wizard} localExecution={props.localExecution} />
+          <WizardFooter wizard={wizard} localExecution={props.facts.localExecution} />
         </Show>
       </div>
     </div>

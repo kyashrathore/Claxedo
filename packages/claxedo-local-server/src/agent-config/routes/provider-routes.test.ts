@@ -4,34 +4,40 @@ import os from "node:os"
 import path from "node:path"
 
 const engineSync = vi.hoisted(() => ({ calls: [] as unknown[][], fail: undefined as Error | undefined }))
-vi.mock("@claxedo/server-core/opencode/sdk-credential-bridge", async (original) => ({
-  ...await original<typeof import("@claxedo/server-core/opencode/sdk-credential-bridge")>(),
-  syncCredentialsToSdk: async (...args: unknown[]) => {
+vi.mock("../fanout", () => ({
+  fanOutConfig: async (...args: unknown[]) => {
     engineSync.calls.push(args)
     if (engineSync.fail) throw engineSync.fail
     return { bound: [], removed: [] }
   },
 }))
 
-vi.mock("@claxedo/server-core/opencode/sdk-runtime", () => ({
-  openCodeEngineModels: async () => [{ providerID: "anthropic", id: "claude-opus", cost: [{ input: 15, output: 75 }] }],
-}))
+const ENGINE_WORKSPACE = vi.hoisted(() => "ws_engine")
+vi.mock("../workspace-provider-catalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../workspace-provider-catalog")>()
+  return {
+    ...actual,
+    workspaceProviderCatalog: async (...args: Parameters<typeof actual.workspaceProviderCatalog>) =>
+      args[0].req.query("workspaceId") === ENGINE_WORKSPACE
+        ? [
+            { id: "anthropic", name: "Anthropic", env: ["ANTHROPIC_API_KEY"], connected: true, models: [
+              { providerID: "anthropic", id: "claude-opus", name: "Claude Opus", cost: [{ input: 15, output: 75 }] },
+              { providerID: "anthropic", id: "claude-haiku", name: "Claude Haiku", cost: [{ input: 1, output: 5 }] },
+            ] },
+            { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], connected: false, models: [
+              { providerID: "openai", id: "gpt-5", name: "GPT-5", cost: [{ input: 1, output: 10 }] },
+            ] },
+          ]
+        : actual.workspaceProviderCatalog(...args),
+  }
+})
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-provider-route-"))
 const previous = process.env.CLAXEDO_DATA_DIR
-const previousCatalog = process.env.CLAXEDO_OPENCODE_CATALOG_CACHE
 process.env.CLAXEDO_DATA_DIR = root
-process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = path.join(root, "opencode-model-catalog.json")
-await fs.writeFile(process.env.CLAXEDO_OPENCODE_CATALOG_CACHE, JSON.stringify({
-  at: Date.now(),
-  body: {
-    anthropic: { id: "anthropic", name: "Anthropic", env: ["ANTHROPIC_API_KEY"], models: { "claude-opus": { id: "claude-opus", name: "Claude Opus" }, "claude-haiku": { id: "claude-haiku", name: "Claude Haiku" } } },
-    openai: { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], models: { "gpt-5": { id: "gpt-5", name: "GPT-5" } } },
-  },
-}))
 const [
   { agentConfigProviderRoutes },
-  { putCredential },
+  { putCredential, listCredentials },
   { listCustomProviders },
   { createTestBackend, setBackendOverride },
   { ClaxedoDB },
@@ -46,14 +52,15 @@ const [
 ])
 
 /** The bearers the issuer signed; every other token is refused the way the real verifier refuses one. */
-const SIGNED_TOKENS = new Set(["org_a", "org_b", "org_custom", "org_secret"])
+const SIGNED_TOKENS = new Set(["org_a", "org_b", "org_custom", "org_secret", "org_env"])
 
 const ACME = {
   providerID: "acme",
   name: "Acme",
   baseURL: "https://api.acme.test/v1",
-  env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"],
-  headers: { "X-Acme-Tenant": "prod" },
+  env: [],
+  headers: { "X-Title": "prod" },
+  credentialHeader: { name: "Authorization", scheme: "Bearer" },
   models: { "acme-1": { name: "Acme One" } },
 }
 
@@ -77,17 +84,15 @@ const app = agentConfigProviderRoutes({
 
 beforeAll(async () => {
   setBackendOverride(createTestBackend())
-  await putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "test-key-a" }, "org_a")
-  await putCredential({ provider_id: "anthropic", kind: "api_key", source: "managed", secret: "test-key-b" }, "org_b")
-  await putCredential({ provider_id: "anthropic", kind: "api_key", source: "managed", secret: "host-key" })
+  await putCredential({ owner: "org_a", provider_id: "openai", kind: "api_key", source: "managed", secret: "test-key-a" }, "org_a")
+  await putCredential({ owner: "org_b", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "test-key-b" }, "org_b")
+  await putCredential({ owner: "local", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "host-key" })
 })
 afterAll(async () => {
   ClaxedoDB.close()
   setBackendOverride(undefined)
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
-  if (previousCatalog === undefined) delete process.env.CLAXEDO_OPENCODE_CATALOG_CACHE
-  else process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = previousCatalog
   await fs.rm(root, { recursive: true, force: true })
 })
 
@@ -150,7 +155,7 @@ describe("control-plane Pi catalog", () => {
 
 describe("the OpenCode catalog's forms", () => {
   const catalog = async (query: string) => {
-    const response = await app.request(`/providers?nativeHarness=opencode${query}`, { headers: { authorization: "Bearer org_a" } })
+    const response = await app.request(`/providers?nativeHarness=opencode&workspaceId=${ENGINE_WORKSPACE}${query}`, { headers: { authorization: "Bearer org_a" } })
     return { status: response.status, body: await response.json() }
   }
 
@@ -165,8 +170,8 @@ describe("the OpenCode catalog's forms", () => {
     const { status, body } = await catalog("&view=summary")
     expect(status).toBe(200)
     expect(Object.keys(body.all[0].models).sort()).toEqual(["claude-haiku", "claude-opus"])
-    expect(body.all[1]).toEqual({ id: "openai", name: "OpenAI", source: "config", models: {} })
-    expect(body.default).toEqual({ anthropic: "claude-opus", openai: "gpt-5" })
+    expect(body.all[1]).toEqual({ id: "openai", name: "OpenAI", source: "api", models: {} })
+    expect(body.default).toEqual({ anthropic: "claude-haiku", openai: "gpt-5" })
   })
 
   test("provider answers that provider alone, and an unknown one is not found", async () => {
@@ -239,18 +244,17 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     engineSync.calls.length = 0
     const response = await putCustom("org_custom", ACME)
     expect(response.status).toBe(200)
-    expect(engineSync.calls).toEqual([["org_custom", ["acme"]]])
+    expect(engineSync.calls).toEqual([[]])
   })
 
   test("a provider the store took and the engine did not is answered by name, not as a failed save", async () => {
-    const { SdkCredentialSyncError } = await import("@claxedo/server-core/opencode/sdk-credential-bridge")
-    engineSync.fail = new SdkCredentialSyncError(new Error("engine down"))
+    engineSync.fail = new Error("workspace down")
     try {
       const response = await putCustom("org_custom", { ...ACME, name: "Acme Renamed" })
       expect(response.status).toBe(500)
       expect((await response.json()).error).toEqual({
-        code: "engine_credential_sync_failed",
-        message: "Stored, but the running engine could not be updated: engine down",
+        code: "runtime_config_delivery_failed",
+        message: "Stored, but running workspaces could not be updated",
       })
       expect(listCustomProviders("org_custom")[0]?.name).toBe("Acme Renamed")
     } finally {
@@ -262,6 +266,30 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     const response = await putCustom("org_secret", { ...ACME, secret: "sk-live" })
     expect(response.status).toBe(400)
     expect((await response.json()).error.code).toBe("custom_provider_invalid")
+    expect(listCustomProviders("org_secret")).toEqual([])
+  })
+
+  test("stores a signed tenant's env-sourced provider without reading this server's environment", async () => {
+    const name = "CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"
+    const previous = process.env[name]
+    process.env[name] = "operator-secret"
+    try {
+      const response = await putCustom("org_env", { ...ACME, env: [name] })
+      expect(response.status).toBe(200)
+      expect(listCustomProviders("org_env")).toEqual([{ ...ACME, env: [name] }])
+      expect(listCredentials("org_env")).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    }
+  })
+
+  test("refuses metadata headers outside the allow-list, so no credential reaches the snapshot", async () => {
+    for (const headers of [{ "X-Auth-Token": "secret" }, { "X-Goog-Api-Key": "secret" }, { Authorization: "Bearer secret" }]) {
+      const response = await putCustom("org_secret", { ...ACME, headers })
+      expect(response.status).toBe(400)
+      expect((await response.json()).error.code).toBe("custom_provider_invalid")
+    }
     expect(listCustomProviders("org_secret")).toEqual([])
   })
 

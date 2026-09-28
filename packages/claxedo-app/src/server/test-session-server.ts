@@ -41,7 +41,7 @@ export const storedTool: TranscriptPart = { id: "prt_3", sessionID: "ses_1", mes
 
 const MACHINE_ROW = { backing: "local-worktree", placement: { host_enrollment_id: "enr_laptop" } }
 
-function bootstrap(reachable: () => boolean, machine: boolean) {
+export function bootstrap(reachable: () => boolean, machine: boolean) {
   return {
     events: { hostAggregate: false },
     deployment: { issuesSessions: true },

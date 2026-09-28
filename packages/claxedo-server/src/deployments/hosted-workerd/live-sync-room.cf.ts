@@ -43,8 +43,8 @@
  * else, and a cursor-less connection served nothing from the ring.
  */
 
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
-import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
+import { createSseReplayBuffer } from "@claxedo/workspace-runtime/projection"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"

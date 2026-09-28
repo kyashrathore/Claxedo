@@ -25,9 +25,8 @@
     "test": "bun test src"
   },
   "dependencies": {
-    "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
-    "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*"
   },
   "devDependencies": {

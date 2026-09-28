@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { afterEach, expect, test } from "bun:test"
 import { SessionRoutes } from "../routes/session"
 import { sessionIdle } from "../compat-events"
-import type { AgentRuntime, AgentRuntimeTurnStartInput } from "@claxedo/agent-sdk-runtime"
+import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
+import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "./delivery-owner"
@@ -33,6 +34,9 @@ function root() {
   return created
 }
 
+/** The harness a draft read runs on; no test here reads a draft. */
+const HARNESS = (requested: SessionHarness | undefined): SessionHarness => requested ?? { id: "codex", access: "native" }
+
 function port(runtimeStore: RuntimeStore, directory: string | undefined): SessionDeliveryStore {
   return {
     queuePrompt: (input) => runtimeStore.queuePrompt(input),
@@ -44,6 +48,7 @@ function port(runtimeStore: RuntimeStore, directory: string | undefined): Sessio
     completeQueuedPrompt: (sessionId, seq, operationId) => runtimeStore.completeQueuedPrompt(sessionId, seq, operationId),
     settleQueuedPromptDelivery: (sessionId, seq, steering) => runtimeStore.settleQueuedPromptDelivery(sessionId, seq, steering),
     sessionDirectory: () => directory,
+    sessionArchived: () => false,
   }
 }
 
@@ -243,7 +248,7 @@ test("managed recovery reacquires turn authority and keeps its fence until execu
     } },
     events: { list: async () => [], subscribe: () => (async function* () { await finished.promise; yield { payload: sessionIdle("session_1") } })() },
   } as unknown as AgentRuntime
-  const host = SessionRoutes(() => ({} as never), { queuedPrompts: () => port(runtimeStore, "/workspace"), resolveRuntime: () => runtime, sessionAccessPolicy: policy })
+  const host = SessionRoutes(async () => runtime, { queuedPrompts: () => port(runtimeStore, "/workspace"), requestedSessionHarness: HARNESS, sessionAccessPolicy: policy })
   await host.recoverQueuedPrompts()
   await until(() => starts.length === 1)
   expect(acquired[0]).toMatchObject({ actor: requester.actor, authority, turnId: "managed", sessionId: "session_1" })
@@ -260,7 +265,7 @@ test("managed recovery reacquires turn authority and keeps its fence until execu
   expect(released).toBe(true)
   deny = true
   runtimeStore.queuePrompt({ sessionId: "session_1", messageId: "denied", parts: [], delivery: "queue", actor: requester.actor, authority, provenance: "relay-replayed" })
-  const recovered = SessionRoutes(() => ({} as never), { queuedPrompts: () => port(runtimeStore, "/workspace"), resolveRuntime: () => runtime, sessionAccessPolicy: policy })
+  const recovered = SessionRoutes(async () => runtime, { queuedPrompts: () => port(runtimeStore, "/workspace"), requestedSessionHarness: HARNESS, sessionAccessPolicy: policy })
   await recovered.recoverQueuedPrompts()
   await until(() => runtimeStore.listQueuedPrompts()[0]?.steering?.state === "rejected")
   expect(starts).toHaveLength(1)
@@ -299,7 +304,7 @@ test("a recovered relayed row presents its stored grant in place of a credential
     } },
     events: { list: async () => [], subscribe: () => (async function* () { yield { payload: sessionIdle("session_1") } })() },
   } as unknown as AgentRuntime
-  const host = SessionRoutes(() => ({} as never), { queuedPrompts: () => port(runtimeStore, "/workspace"), resolveRuntime: () => runtime, sessionAccessPolicy: policy })
+  const host = SessionRoutes(async () => runtime, { queuedPrompts: () => port(runtimeStore, "/workspace"), requestedSessionHarness: HARNESS, sessionAccessPolicy: policy })
   await host.recoverQueuedPrompts()
   await until(() => runtimeStore.listQueuedPrompts().find((row) => row.messageId === "ungranted")?.steering?.state === "rejected")
 
@@ -344,7 +349,7 @@ test("a local queue continues after restart on the daemon shape, unleased, while
     } },
     events: { list: async () => [], subscribe: () => (async function* () { yield { payload: sessionIdle("session_1") } })() },
   } as unknown as AgentRuntime
-  const host = SessionRoutes(() => ({} as never), { queuedPrompts: () => port(runtimeStore, "/workspace"), resolveRuntime: () => runtime, sessionAccessPolicy: policy })
+  const host = SessionRoutes(async () => runtime, { queuedPrompts: () => port(runtimeStore, "/workspace"), requestedSessionHarness: HARNESS, sessionAccessPolicy: policy })
   await host.recoverQueuedPrompts()
   await until(() => starts.length === 1)
 

@@ -20,7 +20,7 @@ const parts: readonly Part[] = [
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review, git, files (re-based to its measured size: the Changes row and its muted counts in files of their own, the kit Textarea and ghost-muted buttons in the commit area, and the folder label that shows its last segment whole or not at all, with its unit test; owner 2026-09-28)", budget: 4334, folders: ["src/review", "src/files", "src/git"] },
   { name: "Projects and cloud", budget: 3000, folders: ["src/projects", "src/cloud"] },
-  { name: "Onboarding and usage", budget: 1800, folders: ["src/onboarding", "src/usage"] },
+  { name: "Onboarding and usage (re-based to its measured size: the first run's execution facts, finish machine and placement steps with their unit tests, which the wizard had none of)", budget: 1893, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host (re-based to its measured size after the frame split: per-manifest approval and the App plugins settings; DECISIONS 2026-09-26)", budget: 2070, folders: ["src/plugins"] },
   { name: "Web plugin frame: the sandboxed frame runtime and its host bridge (split from the plugin host; DECISIONS 2026-09-26)", budget: 864, folders: ["src/plugins/frame"] },
   { name: "Marketplace (re-based to its measured size: v1's directory ported under the parity rule; DECISIONS 2026-09-26)", budget: 2353, folders: ["src/marketplace"] },

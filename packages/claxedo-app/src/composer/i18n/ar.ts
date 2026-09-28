@@ -34,6 +34,7 @@ export default {
   "prompt.popover.emptyCommands": "لا توجد أوامر مطابقة",
   "prompt.slash.badge.skill": "مهارة",
   "prompt.slash.badge.custom": "مخصص",
+  "prompt.slash.badge.saved": "محفوظ",
   "prompt.context.removeFile": "إزالة الملف من السياق",
   "prompt.placeholder.shell": "أدخل أمر shell... {{example}}",
   "prompt.placeholder.normal": "اسأل أي شيء... \"{{example}}\"",

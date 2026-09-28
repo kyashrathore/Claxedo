@@ -715,6 +715,14 @@ describe("sqlite workspace authority", () => {
     })).toMatchObject({ messages: [{ info: { id: "msg_keep", role: "user" }, parts: [] }] })
   })
 
+  test("a channel's machine access names the bound person, so the session it starts is theirs", async () => {
+    const authority = memoryAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_bound", displayName: "Bound" })
+    await authority.bindChannelIdentity(owner, { channel: "telegram", externalUserId: "tg_bound" })
+    expect(await authority.resolveChannelMachineAccess({ channel: "telegram", externalUserId: "tg_bound", threadKey: "t_1" }, "ws_bound"))
+      .toMatchObject({ actorId: owner.user.tokenIdentifier, userId: owner.user.subject })
+  })
+
   test("channel authorization denies without an identity mapping", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_ch", displayName: "Ch" })

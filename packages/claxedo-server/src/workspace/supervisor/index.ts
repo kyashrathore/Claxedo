@@ -1,9 +1,12 @@
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { configureWorkspaceSupervisorPort } from "@claxedo/server-core/workspace/supervisor-port"
+import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { IDLE_MS, now } from "./clock"
 import {
   pushRuntimeConfig,
+  pushRuntimeConfigIfStale,
+  recordRuntimeConfigChange,
   runtimeHasActiveWork,
 } from "./config-sync"
 import {
@@ -14,7 +17,7 @@ import {
   sandboxAuthoritySatisfied,
   startSandbox,
   stopSandbox,
-  touchSandbox,
+  keepSandboxAlive,
   type SandboxBindings,
 } from "./sandbox"
 import {
@@ -48,14 +51,14 @@ import {
   configureWorkspaceSupervisorOptions,
   workspaceSupervisorServerUrl,
 } from "./options"
-import type { WorkspaceSupervisorOptions } from "./runtime-env"
+import type { ConfiguredWorkspaceSupervisorOptions } from "./options"
 
 export { verifyWorkspaceRuntimeControlToken } from "./control-token"
 export { workspaceSupervisorServerUrl }
 
 const log = Log.create({ service: "workspace-supervisor" })
 
-export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) {
+export function configureWorkspaceSupervisor(input: ConfiguredWorkspaceSupervisorOptions) {
   configureWorkspaceSupervisorOptions(input)
   // The supervisor owns sandbox leases, so it is the one that can teach the
   // workspace store to read them. Wiring the store to import the lease table
@@ -115,12 +118,18 @@ async function ensureRelayProtectedSandbox(
   return started
 }
 
+/**
+ * A settings save answers once every running runtime has applied it. A runtime
+ * still starting is not waited for — a cold start can take minutes — and
+ * applies the latest snapshot when its start finishes.
+ */
 export async function broadcastRuntimeConfig() {
-  await Promise.allSettled(
-    [...runtimes.values()]
-      .filter((item) => item.status === "ready" && item.url)
-      .map((item) => pushRuntimeConfig(item)),
-  )
+  recordRuntimeConfigChange()
+  const results = await Promise.allSettled([...runtimes.values()]
+    .filter((item) => !item.start && item.status === "ready" && item.url)
+    .map((item) => pushRuntimeConfig(item)))
+  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+  if (failures.length) throw new AggregateError(failures, `${failures.length} runtime config push(es) failed`)
 }
 
 /**
@@ -132,49 +141,42 @@ export async function broadcastRuntimeConfig() {
  * projection is pushed so the runtime stops offering the account.
  */
 export async function reconcileCredentialDelivery() {
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     [...runtimes.values()]
       .filter((item) => (item.status === "ready" && item.url) || item.start)
       .map((item) => reconcileRuntimeCredentialDelivery(item)),
   )
+  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+  if (failures.length) {
+    // The mutation stands in the registry either way; each failed sandbox keeps
+    // its last installed set until the next mutation or ensure reconciles it.
+    throw new CredentialDeliveryError(new AggregateError(failures, `${failures.length} sandbox credential reconcile(s) failed`))
+  }
 }
 
 async function reconcileRuntimeCredentialDelivery(state: WorkspaceRuntimeState) {
-  try {
-    if (state.ws.kind !== "cloud") {
-      // No provider edge holds a local runtime's credentials — the loopback
-      // broker refuses a revoked account on its next resolve — so the push is
-      // the whole reconcile here.
-      await pushRuntimeConfig(state)
-      return
-    }
-    // A start already in flight resolved its authority before this change and
-    // can settle having installed the stale set, so satisfaction is checked
-    // after each pass rather than assumed from one ensure.
-    let settled = false
-    for (let pass = 0; pass < 2 && !settled; pass++) {
-      await startRuntime(state)
-      settled = sandboxAuthoritySatisfied(state, await resolveSandboxBindings(state))
-    }
-    if (!settled) {
-      log.warn("sandbox still holds a superseded credential set after reconcile", {
-        workspaceId: state.ws.id,
-      })
-    }
-    state.used_at = now()
-    scheduleStop(state)
-    // The ensure's own push only runs when the digest moved; a revocation that
-    // changed only the projection — a reason string, an account that never
-    // delivered — still has to reach the runtime.
+  if (state.ws.kind !== "cloud") {
+    // No provider edge holds a local runtime's credentials — the loopback
+    // broker refuses a revoked account on its next resolve — so the push is
+    // the whole reconcile here.
     await pushRuntimeConfig(state)
-  } catch (error) {
-    // The mutation stands in the registry either way; this sandbox keeps its
-    // last installed set until the next mutation or ensure reconciles it.
-    log.warn("sandbox credential delivery reconcile failed", {
-      workspaceId: state.ws.id,
-      error: error instanceof Error ? error.message : String(error),
-    })
+    return
   }
+  // A start already in flight resolved its authority before this change and
+  // can settle having installed the stale set, so satisfaction is checked
+  // after each pass rather than assumed from one ensure.
+  let settled = false
+  for (let pass = 0; pass < 2 && !settled; pass++) {
+    await startRuntime(state)
+    settled = sandboxAuthoritySatisfied(state, await resolveSandboxBindings(state))
+  }
+  state.used_at = now()
+  scheduleStop(state)
+  // The ensure's own push only runs when the digest moved; a revocation that
+  // changed only the projection — a reason string, an account that never
+  // delivered — still has to reach the runtime.
+  await pushRuntimeConfig(state)
+  if (!settled) throw new Error(`sandbox ${state.ws.id} still holds a superseded credential set after reconcile`)
 }
 
 export function listSupervisorSandboxs() {
@@ -200,7 +202,7 @@ export function getSupervisorSandboxTarget(workspaceId: string) {
 export function touchSupervisorSandbox(workspaceId: string) {
   const item = runtimes.get(workspaceId)
   if (!item?.remote) return
-  touchSandbox(item).catch(() => {})
+  keepSandboxAlive(item)
 }
 
 export function getSupervisorSandboxStatus(workspaceId: string) {
@@ -529,11 +531,14 @@ async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindin
   }
   if (state.start) return state.start
   state.start = (async () => {
+    let started: WorkspaceRuntimeState
     try {
-      return await startSandbox(state, { scheduleStop }, authority)
+      started = await startSandbox(state, { scheduleStop }, authority)
     } finally {
       state.start = undefined
     }
+    if (started.status === "ready" && started.url) await pushRuntimeConfigIfStale(started)
+    return started
   })()
   return state.start
 }

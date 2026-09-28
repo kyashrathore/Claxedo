@@ -9,6 +9,7 @@ import path from "node:path"
 import { createServer } from "node:http"
 import { createWorkspaceRuntimeApp } from "./server"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
+import { loopbackMachineLoginPolicy } from "./testing"
 
 void test(
   "lazy Pi admission clears crash-left credentials before its first unauthenticated HTTP turn",
@@ -40,6 +41,7 @@ void test(
       }),
     )
     const runtime = createWorkspaceRuntimeApp({
+      placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "cold-auth", directory },
       storeRoot,
       exposure: loopbackWorkspaceRuntimeExposure(),
@@ -51,7 +53,7 @@ void test(
         body: JSON.stringify(body),
       })
     try {
-      await runtime.host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
+      await runtime.host.apply({ version: 4, commands: [], mcp: {}, connections: [], auth: { machineOwnerUserId: "local", accounts: {} } })
       const model = { providerID: "pi", modelID: "openai/gpt-4.1" }
       const created = await post("session?nativeHarness=pi", { model })
       assert.equal(created.status, 201, await created.clone().text())
@@ -137,6 +139,7 @@ void test(
     )
     const create = () =>
       createWorkspaceRuntimeApp({
+        placement: loopbackMachineLoginPolicy(),
         target: { workspaceId: "workspace-proof", directory },
         storeRoot,
         harness: { kind: "native", harnessId: "pi" },
@@ -148,7 +151,8 @@ void test(
       defaultHarness: { kind: "native" as const, harnessId: "pi" as const },
       mcp: {},
       connections: [],
-      auth: {},
+      auth: { machineOwnerUserId: "local", accounts: {} },
+      commands: [],
     }
     const call = async (resource: string, body: object) => {
       const response = await runtime.app.request(

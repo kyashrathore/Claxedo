@@ -25,9 +25,13 @@ export async function registerWorkspace(input: {
   })
 }
 
-/** The native SDK and the Claxedo journal own different persisted views of a session. */
+/**
+ * The native SDK and the Claxedo journal own different persisted views of a
+ * session. The SDK view is the benchmark's own engine database, read by its
+ * fake engine and import readback; no product runtime opens it.
+ */
 export async function persistClaxedoCorpus(input: { dataDirectory: string; corpus: OpenCodeCorpus }) {
-  const directory = path.join(input.dataDirectory, "opencode-runtime")
+  const directory = path.join(input.dataDirectory, "benchmark-engine")
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const databasePath = path.join(directory, "opencode.db")
   await input.corpus.persist(databasePath)

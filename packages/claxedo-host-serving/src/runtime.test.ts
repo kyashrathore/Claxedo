@@ -9,7 +9,8 @@ import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { projectRuntimeAuth } from "@claxedo/server-core/agent-config/index"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 
-import { createHostRuntimeListener, HostRuntimeRetirementUnresolvedError, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
+import { adoptConnectedHostOwner, createHostRuntimeListener, HostRuntimeRetirementUnresolvedError, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
+import { resetHostEnrolledOwner } from "./serving"
 
 const HOST_ID = "host_machine-1"
 const WS_A = "11111111-1111-4111-8111-111111111111"
@@ -267,16 +268,17 @@ describe("host workspace runtime behind the loopback listener", () => {
     await fs.mkdir(path.join(root, WS_D), { recursive: true })
     const row = { baseUrl: "https://broker.example/b/1", placeholder: "sk-pushed-secret", authMode: "bearer" as const }
 
+    await adoptConnectedHostOwner("owner", { applyRuntimeConfig: async () => {} })
     const live = await listener.ensure(workspace(WS_C))
     expect(live.host.detail().configApply, "creation applied the snapshot once").toMatchObject({ state: "applied", revision: 1 })
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({})
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ machineOwnerUserId: "owner", accounts: {} })
 
-    setHostProviderConfig(JSON.stringify({ version: 1, providers: { "claude-sdk": row } }))
+    setHostProviderConfig(JSON.stringify({ version: 1, credentials: { machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } } }))
 
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ "claude-sdk": row })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
     const created = await listener.ensure(workspace(WS_D))
     expect(created.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
-    expect((await createClaxedoAppliedRuntimeConfig({ workspaceDir: path.join(root, WS_D), workspaceId: WS_D })).auth, "the snapshot a new runtime applied").toEqual({ "claude-sdk": row })
+    expect((await createClaxedoAppliedRuntimeConfig({ workspaceDir: path.join(root, WS_D), workspaceId: WS_D })).auth, "the snapshot a new runtime applied").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
     expect(live.host.detail().configApply.revision, "a live runtime holds its snapshot until re-applied").toBe(1)
 
     await listener.applyRuntimeConfig()
@@ -287,14 +289,15 @@ describe("host workspace runtime behind the loopback listener", () => {
     setHostProviderConfig(null)
     await listener.applyRuntimeConfig()
 
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({})
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ machineOwnerUserId: "owner", accounts: {} })
     expect(live.host.detail().configApply).toMatchObject({ state: "applied", revision: 3 })
     expect(created.host.detail().configApply).toMatchObject({ state: "applied", revision: 2 })
 
-    setHostProviderConfig(JSON.stringify({ version: 1, providers: { "claude-sdk": row } }))
+    setHostProviderConfig(JSON.stringify({ version: 1, credentials: { machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } } }))
     expect(() => setHostProviderConfig(JSON.stringify({ version: 2, providers: {} }))).toThrow("version 2, not 1")
     expect(() => setHostProviderConfig("{")).toThrow("not JSON")
-    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "an unreadable payload leaves the rows in place").toEqual({ "claude-sdk": row })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "an unreadable payload leaves the rows in place").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
+    resetHostEnrolledOwner()
   })
 
   test("a failed retirement stays fenced and visible, and an explicit retry reruns only what is left", async () => {

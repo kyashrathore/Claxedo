@@ -47,12 +47,13 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
 import { relayRole } from "../../authority/pulled-session"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { isAccountSource, type AccountSource } from "@claxedo/server-core/credentials/account-holder"
 import { asRecord, asString } from "@claxedo/helpers/guards"
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
-import { AGENT_HARNESS_IDS } from "@claxedo/agent-runtime-contract"
+import { AGENT_HARNESS_IDS, EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -91,6 +92,8 @@ export type HostedShellRouteOptions = {
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
+  piAccountSources?: (auth: SignedControlPlaneAuth) => Promise<{ sources: Record<string, AccountSource>; team: string[] }>
+  putPiAccountSource?: (auth: SignedControlPlaneAuth, providerID: string, source: AccountSource) => Promise<void>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
    * identity,
@@ -242,7 +245,7 @@ const HARNESS_WORKSPACE_ID = /^(ws_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][
 function harnessWorkspaceId(directory: string) {
   const trimmed = directory.trim()
   if (!trimmed) return undefined
-  const candidate = trimmed.match(/^workspace:(.+)$/)?.[1] ?? trimmed
+  const candidate = workspaceIdFromWorkspaceRef(trimmed) ?? trimmed
   return HARNESS_WORKSPACE_ID.test(candidate) ? candidate : undefined
 }
 
@@ -710,6 +713,29 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         return authErrorResponse(c, err)
       }
     })
+    .get("/auth/sources", async (c) => {
+      if (c.req.query("harness") !== "pi" || !options.piAccountSources) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        return c.json(await options.piAccountSources(auth))
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    .put("/auth/:providerID/source", async (c) => {
+      if (c.req.query("harness") !== "pi" || !options.putPiAccountSource) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        const source = (await readJsonRecord(c.req.raw))?.source
+        if (!isAccountSource(source)) return c.json({ error: { code: "account_source_invalid", message: "source must be \"own\" or \"team\"" } }, 400)
+        await options.putPiAccountSource(auth, c.req.param("providerID"), source)
+        return c.json({})
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
     .put("/auth/:providerID", async (c) => {
       if (c.req.query("harness") !== "pi" || !options.putPiCredential) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
       try {
@@ -730,16 +756,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
         await options.deletePiCredential(auth, c.req.param("providerID"))
         return c.json({})
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    // Connection configuration belongs to the operator's local host.
-    .get("/api/claxedo/agent-config/connections", async (c) => {
-      try {
-        const auth = await signedAuth(c, options)
-        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        return c.json({ status: "unsupported", reason: "operator_local_configuration" })
       } catch (err) {
         return authErrorResponse(c, err)
       }

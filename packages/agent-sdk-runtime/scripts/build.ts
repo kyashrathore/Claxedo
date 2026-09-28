@@ -11,26 +11,13 @@ const packageJson = readPackageJson(ROOT)
 
 const ENTRIES = [
   "src/index.ts",
-  "src/harnesses/index.ts",
-  "src/harness-factories/acp.ts",
-  "src/harness-factories/claude.ts",
-  "src/harness-factories/codex.ts",
-  "src/harness-factories/cursor.ts",
-  "src/harness-factories/pi.ts",
   "src/adapters.ts",
   "src/message-page.ts",
   "src/turn-outline.ts",
   "src/turn-page.ts",
   "src/compat-events.ts",
   "src/status.ts",
-  "src/capabilities.ts",
-  "src/runtime-event-hub.ts",
-  "src/runtime.ts",
-  "src/sse.ts",
   "src/provider-projection.ts",
-  "src/mcp-resolver.ts",
-  "src/subagent-admission.ts",
-  "src/launch/index.ts",
   "src/stores/memory.ts",
   "src/stores/sqlite.ts",
   "src/session-start-store.ts",
@@ -71,20 +58,6 @@ run([
   "--out-extension:.js=.mjs",
   "--chunk-names=chunks/[name]-[hash]",
   ...EXTERNALS.map((item) => `--external:${item}`),
-].join(" "))
-// The gate child is spawned by path from wherever a consumer copies it (the
-// desktop unpacks the one file beside its main bundle, outside the asar), so
-// it can share nothing: no split chunk, no package it would have to resolve
-// from a directory that has no node_modules. Node builtins are all it may
-// import.
-run([
-  path.join(ROOT, "node_modules/.bin/esbuild"),
-  "src/launch/launch-gate-child.ts",
-  "--bundle",
-  "--platform=node",
-  "--format=esm",
-  "--target=node22",
-  "--outfile=dist/launch/launch-gate-child.mjs",
 ].join(" "))
 run(`${path.join(ROOT, "node_modules/.bin/tsc")} -p tsconfig.build.json`)
 run("bun scripts/check-package.ts")

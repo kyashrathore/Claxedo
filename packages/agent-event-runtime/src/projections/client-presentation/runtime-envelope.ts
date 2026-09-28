@@ -1,5 +1,5 @@
 import type { AgentEventEnvelope, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 
 /**
  * The runtime-channel events a client renders that the turn projection does

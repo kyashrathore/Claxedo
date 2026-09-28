@@ -8,6 +8,8 @@ import { subagentsFromWire } from "./subagents"
 
 export const OPEN_VIEW = { view: "open" } as const
 
+export const TODOS_UNSUPPORTED = "unsupported_operation"
+
 export type SessionFact<T> = { readonly value: T } | { readonly error: ServerError }
 
 export type SessionOpenView = {

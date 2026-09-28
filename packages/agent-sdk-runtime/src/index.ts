@@ -1,3 +1,4 @@
+import type { SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type {
   AgentAgent,
   AgentCommand,
@@ -6,7 +7,6 @@ import type {
   AgentPermission,
   AgentQuestion,
   AgentQuestionAnswer,
-  AgentRuntimeEvent,
   AgentSession,
   AgentTurnOutcome,
   PromptDelivery,
@@ -16,46 +16,15 @@ import type {
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
-import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-runtime-contract"
+export type { AgentRuntimeTurnStartInput as AgentRuntimeStoreTurnStartInput } from "./runtime-store"
 import type {
   AgentHarnessId,
   AgentHarnessTransport,
-  AutoLevel,
   SessionHarness,
   SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
 
-export {
-  AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
-  AgentRuntimeMessageIdConflictError,
-  isAgentRuntimeMessageIdConflictError,
-} from "./runtime/contracts"
-export {
-  AGENT_RUNTIME_TURN_CONFLICT_CODE,
-  AgentRuntimeTurnConflictError,
-  AgentRuntimeTurnConflictError as AgentRuntimeTurnAdmissionError,
-  createAgentRuntime,
-  isAgentRuntimeTurnConflictError,
-  isAgentRuntimeTurnConflictError as isAgentRuntimeTurnAdmissionError,
-} from "./runtime"
-export type {
-  AgentHarnessFactory,
-  AgentRuntime,
-  AgentRuntimeEventEnvelope,
-  AgentRuntimeGoalErrorCode,
-  AgentRuntimeGoalStartInput,
-  AgentRuntimeHealth,
-  AgentRuntimeInteractionResult,
-  AgentRuntimePermissionDecision,
-  AgentRuntimeRecovery,
-  AgentRuntimeRecoveryInspection,
-  AgentRuntimeSessionCreateInput,
-  AgentRuntimeSubscribeInput,
-  AgentRuntimeStore,
-  AgentRuntimeTurnStartInput,
-  AgentRuntimeTurnStartResult,
-  RecoveryCaller,
-} from "./runtime"
 export type {
   AgentAgent,
   AgentCommand,
@@ -67,7 +36,6 @@ export type {
   AgentPermission,
   AgentQuestion,
   AgentQuestionAnswer,
-  AgentRuntimeEvent,
   AgentSession,
   AgentTurnOutcome,
   AgentWorkspaceIdentity,
@@ -80,59 +48,27 @@ export type {
   PromptInput,
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
-export { connectionIdForHarness, isAgentMessage } from "@claxedo/agent-runtime-contract"
-export type { AgentPermissionMode, AutoLevel } from "@claxedo/agent-runtime-contract"
-export { AgentRuntimeGoalError, isAgentRuntimeGoalError } from "./runtime"
-export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-event-runtime"
-export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
+export { connectionIdForHarness, isAgentMessage, isProviderUnavailable } from "@claxedo/agent-runtime-contract"
+export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-runtime-contract"
+export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-runtime-contract"
 export {
   GOAL_ACTIONS,
   GOAL_OPTIONAL_FIELDS,
   GoalCapabilityError,
   goalActionAvailable,
   goalCapabilities,
-  harnessCapabilities,
   requireGoalAction,
 }
   from "./capabilities"
-export type {
-  GoalAction,
-  GoalCapabilities,
-  GoalOptionalField,
-  GoalRecovery,
-  HarnessCapabilities,
-  HarnessCapabilityTarget,
-} from "./capabilities"
-export { requireGoalResource } from "./adapter-contract"
-export type {
-  AgentConfigOptions,
-  AgentPermissionModeState,
-  ResolvedHarnessModel,
-  AgentGoalMutationFailure,
-  AgentGoalMutationResult,
-  AgentGoalResource,
-  AgentGoalStartInput,
-  SupportsGoals,
-} from "./adapter-contract"
+export type { HarnessCapabilities, HarnessCapabilityTarget } from "./capabilities"
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData } from "./first-turn-error"
 export { FIRST_TURN_ERROR_CLASSES } from "@claxedo/agent-runtime-contract"
-export { isTerminalRuntimePayload } from "./runtime/turn-outcome"
 export type { FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
-export {
-  ConnectionProviderError,
-  createConnectionProviderRegistry,
-} from "./connection-provider"
-export { createAcpConnectionProvider } from "./harnesses/acp/connection-provider"
-export type { AcpConnectionProviderConfig } from "./harnesses/acp/connection-provider"
 export type {
-  ConnectionGeneration,
-  ConnectionProvider,
-  ConnectionProviderAdapterContext,
-  ConnectionProviderErrorCode,
-  ConnectionProviderProjection,
-  ConnectionProviderResolution,
+  ConnectionSecretAuthority,
   ConnectionSecretLease,
+  ConnectionSecretOwner,
   ConnectionSecretResolver,
   ConnectionReadiness,
   HarnessConnectionCapabilities,
@@ -140,18 +76,7 @@ export type {
   HarnessConnectionRef,
 } from "./connection-provider"
 export { defaultSessionModel, resolveSessionModel, resolveTurnSystem } from "./session-model"
-export { renderSessionHandoff } from "./session-handoff"
-export {
-  createMemorySubagentAdmissionStore,
-  createSubagentAdmissionBoundary,
-  UnknownHostSubagentKeyError,
-} from "./subagent-admission"
-export type {
-  AdmittedSubagentObservation,
-  SubagentAdmissionBoundary,
-  SubagentAdmissionStore,
-  SubagentObservation,
-} from "./subagent-admission"
+export { renderSessionHandoff, renderSessionTranscript } from "./session-handoff"
 export {
   AUTO_LEVEL_ORDER,
   comparePermissionLevels,
@@ -188,24 +113,16 @@ export {
   sessionModelGroupJson,
 } from "@claxedo/agent-runtime-contract"
 export {
-  isProviderUnavailable,
   liveProviderBinding,
   providerBinding,
   providerProjection,
   providerProjectionKey,
   providerProjectionRecord,
+  credentialSnapshot,
   projectionRenewalDue,
   projectionRenewalDueAt,
   ProviderCredentialUnavailableError,
   ProviderProjectionExpiredError,
-} from "./provider-projection"
-export type {
-  PlaceholderEnvironment,
-  ProviderBinding,
-  ProviderBindingSource,
-  ProviderProjection,
-  ProviderProjectionSource,
-  ProviderUnavailable,
 } from "./provider-projection"
 export type {
   AgentHarnessAccess,
@@ -231,113 +148,6 @@ export {
   sessionInstructionsByteLength,
 } from "./session-instructions"
 export type { SessionInstructionsRefusal } from "./session-instructions"
-export { modelConfigOption } from "./sdk-model-options"
-export type { SdkModelEntry } from "./sdk-model-options"
-export { harnessEffortLevels } from "./harness-effort"
-export { createLiveModelSource } from "./live-model-source"
-export type { LiveModelSource } from "./live-model-source"
-export {
-  AGENT_PROCESS_ATTRIBUTION_SCENARIOS,
-  observeAgentProcess,
-  safeAgentProcessDescriptor,
-  type AgentProcessCapabilities,
-  type AgentProcessAttributionScenario,
-  type AgentProcessConfidence,
-  type AgentProcessDescriptor,
-  type AgentProcessLifecycle,
-  type AgentProcessLocality,
-  type AgentProcessObserver,
-  type AgentProcessObserverHandle,
-  type AgentProcessRole,
-} from "./process-observer"
-
-/**
- * Conversation context owed to a session's fresh native thread, carried on
- * every turn until one completes. `announced` records that the harness change
- * was written onto a sent user message, so a retried first turn does not mark
- * it again.
- */
-export type SessionHandoff = {
-  from: SessionHarness
-  pending: true
-  transcript: string
-  reason?: "missing-session"
-  announced?: true
-  source?: SessionHandoffSource
-}
-
-/**
- * The native session of the harness a handoff left, and the config it ran
- * under. It is kept until a message is sent on the new harness, so picking the
- * left harness back resumes its own thread instead of a transcript copy.
- */
-export type SessionHandoffSource = {
-  agentSessionId: string
-  upstreamSessionId: string
-  ownerKey: string | null
-  model?: PromptModel
-  variant?: string | null
-  agent?: string | null
-  handoff?: Omit<SessionHandoff, "source">
-}
-
-export type SessionConfig = {
-  /** Host-owned maximum permission level, retained across harness changes. */
-  permissionCeiling?: AutoLevel
-  /** Accepted harness mode, persisted by the permission-mode operation. */
-  permissionMode?: string
-  /**
-   * The accepted mode's name as the agent listed it when the mode was stored.
-   * Only a harness whose modes the runtime contract does not declare has one,
-   * so a client can name the mode without asking the agent for its list.
-   */
-  permissionModeLabel?: string
-  /** Native permission state accepted by the driver; opaque to shared consumers. */
-  permissionState?: Record<string, unknown>
-  harness: SessionHarness
-  model?: PromptModel
-  variant?: string | null
-  agent?: string | null
-  /**
-   * Standing instructions this session was created with. Retained so a session
-   * reopened after a restart keeps them without the caller resending anything;
-   * where they reach the harness is that harness's own `instructionChannel`,
-   * and one with none refuses the create rather than dropping them.
-   */
-  instructions?: string | null
-  /**
-   * The resolved model group this session was created under, machine-readable
-   * so a later reader — a delegation request naming a slot, say — resolves the
-   * same harness/model/effort the creator chose instead of re-parsing the
-   * instruction prose the group was also rendered into.
-   */
-  group?: SessionModelGroup | null
-  handoff?: SessionHandoff | null
-}
-
-/**
- * Partial update for a session config.
- *
- * - `undefined` leaves a field unchanged.
- * - `null` clears optional nullable fields.
- * - a value replaces the field.
- *
- * `harness` is a full replacement, not a deep merge.
- */
-export type SessionConfigUpdate = {
-  permissionCeiling?: SessionConfig["permissionCeiling"]
-  permissionMode?: string | null
-  permissionModeLabel?: string | null
-  permissionState?: Record<string, unknown> | null
-  harness?: SessionHarness
-  model?: PromptModel | null
-  variant?: string | null
-  agent?: string | null
-  instructions?: string | null
-  group?: SessionModelGroup | null
-  handoff?: SessionHandoff | null
-}
-
 /**
  * Fixed at create, so a later edit cannot rewrite what an already-running
  * session was told or delegated under. An update naming one is refused rather
@@ -357,4 +167,4 @@ export type SessionConfigRequestUpdate = Omit<
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined
 
-export { acceptsSessionTitle, boundSessionTitleSource } from "./session-title"
+export { acceptsSessionTitle, boundSessionTitleSource, deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "./session-title"

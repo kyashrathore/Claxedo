@@ -13,10 +13,7 @@ const log = Log.create({ service: "credentials-codex-auth-file" })
  * OpenAI may rotate the refresh token on every `grant_type=refresh_token`. When
  * Claxedo renews an *imported* login it would otherwise hold the new pair while
  * `~/.codex` keeps the superseded one, and the user's `codex` CLI could be left
- * holding a token the provider no longer honours. The Codex harness driver
- * already writes back for exactly this reason
- * (`agent-sdk-runtime/src/harnesses/codex/driver.ts`); this is the same contract
- * for the credential-verification path.
+ * holding a token the provider no longer honours.
  *
  * Deliberately conservative: only files that already exist are touched, only
  * when their `tokens.account_id` matches the credential being renewed, and any

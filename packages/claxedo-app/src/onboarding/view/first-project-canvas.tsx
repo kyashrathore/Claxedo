@@ -1,4 +1,5 @@
 import { Show } from "solid-js"
+import { useAuth } from "@/auth"
 import { pickProjectFolderWith } from "@/projects"
 import { useServer } from "@/server"
 import type { PageProps } from "@/shell"
@@ -8,6 +9,7 @@ import "./first-project-canvas.css"
 
 export function FirstProjectCanvas(_props: PageProps) {
   const server = useServer()
+  const auth = useAuth()
   const dialog = useDialog()
   const capabilities = () => server.capabilities()
   return (
@@ -17,7 +19,12 @@ export function FirstProjectCanvas(_props: PageProps) {
       <div class="first-project-vignette" aria-hidden="true" />
       <div class="first-project-content">
         <Show when={capabilities()}>
-          {(known) => <OnboardingWizard localExecution={known().thisMachine !== undefined} pickFolder={pickProjectFolderWith(dialog)} />}
+          {(known) => (
+            <OnboardingWizard
+              facts={{ localExecution: known().thisMachine !== undefined, cloudAvailable: auth.state().kind === "signedIn" }}
+              pickFolder={pickProjectFolderWith(dialog)}
+            />
+          )}
         </Show>
       </div>
     </main>

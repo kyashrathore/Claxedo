@@ -1,4 +1,4 @@
-export type PluginHarness = "opencode" | "claude" | "codex" | "cursor"
+export type PluginHarness = "opencode" | "claude" | "codex" | "cursor" | "acp"
 
 export type PluginActivation = {
   readonly explicit?: boolean | null

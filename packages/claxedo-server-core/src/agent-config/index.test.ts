@@ -1,6 +1,6 @@
-import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
-import { realpathSync } from "fs"
+import nodeFs, { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -24,10 +24,6 @@ function closeSqliteHandles() {
 
 function cfgFile() {
   return path.join(root, "user-agent-config.json")
-}
-
-function backupFile(legacyVersion: number) {
-  return path.join(root, `user-agent-config.legacy-v${legacyVersion}.json`)
 }
 
 function trustedConnection(overrides: Partial<HarnessConnectionDescriptor> = {}): HarnessConnectionDescriptor {
@@ -64,47 +60,26 @@ describe("agent config", () => {
     else process.env.CLAXEDO_DATA_DIR = prev
   })
 
-  // ── watchUserConfigFile ────────────────────────────────────────────────
-
-  test("an edit made outside the API is reported, an API save is not", async () => {
-    const changes: number[] = []
-    const stop = mod.watchUserConfigFile(() => changes.push(Date.now()))
-    try {
-      await mod.saveUserConfig({ version: 3, mcp: {}, connections: {} })
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      expect(changes).toHaveLength(0)
-
-      const edited = { version: 3 as const, mcp: {}, connections: { [trustedConnection().connectionId]: trustedConnection() } }
-      await fs.writeFile(cfgFile(), JSON.stringify(edited, null, 2) + "\n")
-      const deadline = Date.now() + 5_000
-      while (changes.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(changes).toHaveLength(1)
-
-      await mod.saveUserConfig({ ...edited, defaultConnectionId: trustedConnection().connectionId })
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      expect(changes).toHaveLength(1)
-
-      // Reverting by hand to what the API last wrote is still an external edit.
-      await fs.writeFile(cfgFile(), JSON.stringify(edited, null, 2) + "\n")
-      const revertDeadline = Date.now() + 5_000
-      while (changes.length < 2 && Date.now() < revertDeadline) await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(changes).toHaveLength(2)
-    } finally {
-      stop()
-    }
+  test("stores settings in SQLite and ignores an old JSON file", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "claude" } }))
+    expect((await mod.loadUserConfig()).defaultHarness).toBeUndefined()
+    await mod.saveUserConfig({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "pi" } })
+    ClaxedoDB.close()
+    expect((await mod.loadUserConfig()).defaultHarness).toEqual({ kind: "native", harnessId: "pi" })
+    expect((await fs.readFile(cfgFile(), "utf8"))).toContain("claude")
   })
 
   // ── defaultHarness ────────────────────────────────────────────────────
 
   test("leaves the default unresolved when no explicit selection is configured", () => {
     expect(mod.defaultHarness()).toBeUndefined()
-    expect(mod.defaultHarness({ version: 3, connections: {}, mcp: {} })).toBeUndefined()
+    expect(mod.defaultHarness({ version: 3, connections: {} })).toBeUndefined()
   })
 
   test("selects an explicit default connection without exposing its trusted config", () => {
     const selected = mod.defaultHarness({
       version: 3,
-      mcp: {},
       connections: { "conn-primary": trustedConnection() },
       defaultConnectionId: "conn-primary",
     })
@@ -116,166 +91,45 @@ describe("agent config", () => {
     expect(mod.defaultHarness({
       version: 3,
       connections: {},
-      mcp: {},
       defaultHarness: { kind: "native", harnessId: "claude" },
     })).toEqual({ kind: "native", harnessId: "claude" })
   })
 
-  test("rejects a v3 file that carries legacy runner, harness, and ACP keys", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
-      mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
-    }))
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
-    })
+  test("rejects obsolete config keys", async () => {
+    await expect(mod.saveUserConfig({ version: 3, connections: {}, harness: { id: "pi" } } as never))
+      .rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
   })
 
   test("accepts the embedded-SDK OpenCode harness as a native default", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      version: 3,
-      connections: {},
-      mcp: {},
-      defaultHarness: { kind: "native", harnessId: "opencode" },
-    }))
+    await mod.saveUserConfig({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "opencode" } })
     expect((await mod.loadUserConfig()).defaultHarness).toEqual({ kind: "native", harnessId: "opencode" })
   })
 
-  test("still rejects an unknown native default", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      version: 3,
-      connections: {},
-      mcp: {},
-      defaultHarness: { kind: "native", harnessId: "mystery" },
-    }))
+  test("rejects an unknown native default", async () => {
+    await expect(mod.saveUserConfig({ version: 3, connections: {}, defaultHarness: { kind: "native", harnessId: "mystery" } } as never))
+      .rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
+  })
+
+  test("returns default config when the SQLite row does not exist", async () => {
+    expect(await mod.loadUserConfig()).toEqual({ version: 3, connections: {}, sandbox_driver: {} })
+  })
+
+  test("rejects an invalid schema stored in SQLite", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {} })
+    ClaxedoDB.raw().prepare("update claxedo_user_agent_config set config_json = ? where user_id = ?")
+      .run(JSON.stringify({ version: 4, mcp: {}, connections: {} }), "__local__")
     await expect(mod.loadUserConfig()).rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
   })
 
-  // ── loadUserConfig / saveUserConfig ──────────────────────────────────
-
-  test("returns default config when file does not exist", async () => {
-    const config = await mod.loadUserConfig()
-    expect(config).toEqual({ version: 3, connections: {}, mcp: {}, sandbox_driver: {} })
-  })
-
-  test("migrates the operator's unversioned file to v3, backs it up, and stays migrated", async () => {
-    await fs.mkdir(root, { recursive: true })
-    const legacy = JSON.stringify({
-      mcp: {},
-      harness: { id: "opencode", access: "native" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
-      sandbox_driver: { default_driver: "daytona" },
-    })
-    await fs.writeFile(cfgFile(), legacy)
-
-    const expected = {
-      version: 3,
-      mcp: {},
-      connections: {},
-      defaultHarness: { kind: "native", harnessId: "opencode" },
-      sandbox_driver: { default_driver: "daytona" },
-    }
-    expect(await mod.loadUserConfig()).toEqual(expected)
-    expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
-    expect(JSON.parse(await fs.readFile(cfgFile(), "utf-8"))).toEqual(expected)
-
-    expect(await mod.loadUserConfig()).toEqual(expected)
-    expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
-  })
-
-  test("migrates declared v1 and v2 files, keeping mcp and the sandbox driver", async () => {
-    await fs.mkdir(root, { recursive: true })
-    for (const version of [1, 2]) {
-      await fs.rm(backupFile(version), { force: true })
-      await fs.writeFile(cfgFile(), JSON.stringify({
-        version,
-        mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
-          sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
-        harnesses: [],
-      }))
-
-      expect(await mod.loadUserConfig()).toEqual({
-        version: 3,
-        mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
-        connections: {},
-          sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
-      })
-      expect(JSON.parse(await fs.readFile(backupFile(version), "utf-8")).version).toBe(version)
-    }
-  })
-
-  test("drops legacy ACP and runner selections that have no v3 equivalent", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      model: "some-model",
-      runner: { type: "claude-sdk" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
-    }))
-
-    const migrated = await mod.loadUserConfig()
-    expect(migrated).toEqual({ version: 3, mcp: {}, connections: {}, sandbox_driver: {} })
-    expect(migrated.defaultHarness).toBeUndefined()
-    expect(await fs.readFile(cfgFile(), "utf-8")).not.toContain("openclaw")
-    expect(await fs.readFile(backupFile(2), "utf-8")).toContain("openclaw")
-  })
-
-  test("fails closed on a malformed legacy file without backing it up or rewriting it", async () => {
-    await fs.mkdir(root, { recursive: true })
-    const malformed = JSON.stringify({ mcp: "not-a-map", harness: { id: "opencode", access: "native" } })
-    await fs.writeFile(cfgFile(), malformed)
-
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
-    })
-    expect(await fs.readFile(cfgFile(), "utf-8")).toBe(malformed)
-    await expect(fs.stat(backupFile(2))).rejects.toMatchObject({ code: "ENOENT" })
-  })
-
-  test("rejects a file declaring a version that is neither legacy nor current", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 4, mcp: {}, connections: {} }))
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
-    })
-  })
-
-  test("rejects malformed config without exposing or overwriting its contents", async () => {
+  test("rejects invalid SQLite JSON without logging its contents or overwriting the row", async () => {
     const secret = "sk-secret-that-must-stay-private"
+    await mod.saveUserConfig({ version: 3, connections: {} })
     const malformed = `{"mcp":{},"auth":{"openai":"${secret}"},`
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), malformed)
-
-    const mutation = async () => {
-      const config = await mod.loadUserConfig()
-      config.mcp.added = { type: "remote", url: "https://example.test" }
-      await mod.saveUserConfig(config)
-    }
-
-    const result = mutation()
-    await expect(result).rejects.toMatchObject({
-      name: "UserAgentConfigLoadError",
-      code: "user_agent_config_invalid_json",
-      message: "User agent config contains invalid JSON",
-    })
-    await expect(result).rejects.not.toThrow(secret)
-    expect(await fs.readFile(cfgFile(), "utf-8")).toBe(malformed)
-  })
-
-  test("propagates non-missing config read errors instead of treating them as first run", async () => {
-    await fs.mkdir(cfgFile(), { recursive: true })
-
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      name: "UserAgentConfigLoadError",
-      code: "user_agent_config_read_failed",
-      message: "Failed to read user agent config",
-    })
-    expect((await fs.stat(cfgFile())).isDirectory()).toBe(true)
+    ClaxedoDB.raw().prepare("update claxedo_user_agent_config set config_json = ? where user_id = ?")
+      .run(malformed, "__local__")
+    await expect(mod.loadUserConfig()).rejects.not.toThrow(secret)
+    const row = ClaxedoDB.raw().prepare("select config_json from claxedo_user_agent_config where user_id = ?").get("__local__") as { config_json: string }
+    expect(row.config_json).toBe(malformed)
   })
 
   test("round-trips config through save and load", async () => {
@@ -283,20 +137,11 @@ describe("agent config", () => {
       version: 3 as const,
       connections: { "conn-primary": trustedConnection() },
       defaultConnectionId: "conn-primary",
-      mcp: {
-        "my-server": {
-          type: "stdio" as const,
-          command: "node",
-          args: ["server.js"],
-          env: { PORT: "3000" },
-        },
-      },
       sandbox_driver: { default_driver: "daytona" as const },
     }
     await mod.saveUserConfig(original)
     const loaded = await mod.loadUserConfig()
 
-    expect(loaded.mcp["my-server"]).toEqual(original.mcp["my-server"])
     expect(loaded.connections).toEqual(original.connections)
     expect(loaded.defaultConnectionId).toEqual(original.defaultConnectionId)
     expect(loaded.sandbox_driver).toEqual(original.sandbox_driver)
@@ -304,77 +149,55 @@ describe("agent config", () => {
   })
 
   test("keeps only canonical sandbox driver config", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
-      mcp: {},
-      sandbox_driver: {
-        default_provider: "vercel",
-        default_driver: "modal",
-        auth: {
-          default_provider: { api_key: "legacy" },
-          daytona: { api_key: " dtn ", provider_secret: "legacy-secret" },
-          modal: { token_id: "id", token_secret: " secret ", extra: "ignored" },
-          unknown: { api_key: "ignored" },
-        },
-      },
-    }))
-
-    const loaded = await mod.loadUserConfig()
-
-    expect(loaded.sandbox_driver).toEqual({
+    await mod.saveUserConfig({ version: 3, connections: {}, sandbox_driver: {
       default_driver: "modal",
       auth: {
-        daytona: { api_key: "dtn" },
-        modal: { token_id: "id", token_secret: "secret" },
+        daytona: { api_key: " dtn " },
+        modal: { token_id: "id", token_secret: " secret " },
       },
-    })
-    expect(mod.sandboxDriverConfig(loaded)).toEqual(loaded.sandbox_driver)
-  })
-
-  test("rejects legacy sandbox provider config", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
-      mcp: {},
-      sandbox: {
-        default_driver: "modal",
-        auth: {
-          modal: {
-            token_id: "id",
-            token_secret: "secret",
-          },
-        },
-      },
-    }))
-
-    await expect(mod.loadUserConfig()).rejects.toMatchObject({
-      code: "user_agent_config_invalid_schema",
+    } })
+    const loaded = await mod.loadUserConfig()
+    expect(loaded.sandbox_driver).toEqual({
+      default_driver: "modal",
+      auth: { daytona: { api_key: "dtn" }, modal: { token_id: "id", token_secret: "secret" } },
     })
   })
 
-  test("save creates directory if it doesn't exist", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
-    const exists = await fs
-      .stat(cfgFile())
-      .then(() => true)
-      .catch(() => false)
-    expect(exists).toBe(true)
+  test("rejects the removed sandbox provider config", async () => {
+    await expect(mod.saveUserConfig({ version: 3, connections: {}, sandbox: { default_driver: "modal" } } as never))
+      .rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
+  })
+
+  test("save creates the SQLite database under the data directory", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {} })
+    expect((await fs.stat(path.join(root, "claxedo.db"))).isFile()).toBe(true)
   })
 
   // ── getRuntimeConfigSnapshot ────────────────────────────────────────
 
-  test("snapshot includes v4 connections, explicit default, mcp, and no command side channel", async () => {
+  test("snapshot includes v4 connections, explicit default, and saved commands", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
-      mcp: { "test-mcp": { type: "remote", url: "http://localhost:9000" } },
       defaultConnectionId: "conn-primary",
     })
     await mod.saveCommand("triage", "Triage $ARGUMENTS")
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.version).toBe(4)
-    expect(snap.mcp["test-mcp"]).toBeDefined()
+    expect(snap.mcp).toEqual({})
     expect(snap.connections).toEqual([trustedConnection()])
     expect(snap.defaultHarness).toEqual({ kind: "connection", connectionId: "conn-primary" })
-    expect("commands" in snap).toBe(false)
+    expect(snap).toHaveProperty("commands", [{ name: "triage", content: "Triage $ARGUMENTS" }])
+    expect(normalizeRuntimeSnapshot(snap)?.commands).toEqual([{ name: "triage", content: "Triage $ARGUMENTS" }])
     expect(await mod.listCommands()).toContainEqual({ name: "triage", content: "Triage $ARGUMENTS" })
+    await mod.deleteCommand("triage")
+    expect(await mod.getRuntimeConfigSnapshot()).toHaveProperty("commands", [])
+  })
+
+  test("a sandbox snapshot defaults to its provisioned runner until the owner chooses a default", async () => {
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() } })
+    expect((await mod.getRuntimeConfigSnapshot({ provisionedRunner: "pi" })).defaultHarness).toEqual({ kind: "native", harnessId: "pi" })
+    expect((await mod.getRuntimeConfigSnapshot()).defaultHarness).toBeUndefined()
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() }, defaultConnectionId: "conn-primary" })
+    expect((await mod.getRuntimeConfigSnapshot({ provisionedRunner: "pi" })).defaultHarness).toEqual({ kind: "connection", connectionId: "conn-primary" })
   })
 
   /**
@@ -384,7 +207,6 @@ describe("agent config", () => {
    */
   test("snapshot auth is exactly what the credential authority projects", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
-      mcp: {},
     })
     const projection = {
       baseUrl: "http://127.0.0.1:2595/bindings/61b4",
@@ -392,46 +214,50 @@ describe("agent config", () => {
       authMode: "api-key" as const,
       expiresAt: 1_800_000_000_000,
     }
-    mod.configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": projection }) })
+    mod.configureAgentConfig({ projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } }) })
 
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })
+    const snap = await mod.getRuntimeConfigSnapshot({ workspaceId: "ws_1" })
 
-    expect(snap.auth).toEqual({ "claude-sdk": projection })
+    expect(snap.auth.accounts.local).toEqual({ "claude-sdk": projection })
     expect(JSON.stringify(snap)).not.toContain("sk-openai-typed-into-the-config-file")
-    expect(normalizeRuntimeSnapshot(snap)?.auth).toEqual({ "claude-sdk": projection })
+    expect(normalizeRuntimeSnapshot(snap)?.auth.accounts.local).toEqual({ "claude-sdk": projection })
   })
 
   test("a composition with no authority sends no credentials at all", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
+    await mod.saveUserConfig({ version: 3, connections: {} })
     mod.configureAgentConfig({})
 
-    expect((await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })).auth).toEqual({})
+    expect((await mod.getRuntimeConfigSnapshot({ workspaceId: "ws_1" })).auth).toEqual({ machineOwnerUserId: "", accounts: {} })
   })
 
   test("snapshot remains unresolved when no harness is configured", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
+    await mod.saveUserConfig({ version: 3, connections: {} })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.defaultHarness).toBeUndefined()
     expect(snap.connections).toEqual([])
   })
 
-  test("snapshot obtains opaque harness launch options from the composition", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
+  test("snapshot carries the plugin module's launch rows and its ACP MCP map", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {} })
+    const docs = { name: "review-1a2b3c4d-docs", source: "plugin" as const, transport: "remote" as const, url: "https://docs.example/mcp", headers: {} }
     mod.configureAgentConfig({
-      harnessLaunch: async () => ({
-        claude: { pluginRoots: ["/runtime/plugins/review"] },
+      pluginRuntime: async () => ({
+        harnessLaunch: { claude: { pluginRoots: ["/runtime/plugins/review"] } },
+        mcp: { [docs.name]: docs },
       }),
     })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.harnessLaunch).toEqual({
       claude: { pluginRoots: ["/runtime/plugins/review"] },
     })
-    expect(normalizeRuntimeSnapshot(snap)?.harnessLaunch).toEqual(snap.harnessLaunch)
+    expect(snap.mcp).toEqual({ [docs.name]: docs })
+    const applied = normalizeRuntimeSnapshot(snap)
+    expect(applied?.harnessLaunch).toEqual(snap.harnessLaunch)
+    expect(applied?.mcp).toEqual(snap.mcp)
   })
 
   test("snapshot emits only the clean v4 connection contract", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
-      mcp: {},
       defaultConnectionId: "conn-primary",
     })
     const snap = await mod.getRuntimeConfigSnapshot()
@@ -452,23 +278,23 @@ describe("agent config", () => {
   test("a shared cloud snapshot carries what the authority projects for that scope", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
+    await mod.saveUserConfig({ version: 3, connections: {} })
     const scopes: string[] = []
     mod.configureAgentConfig({
       projectAuth: async ({ scope }) => {
         scopes.push(scope)
-        return {
+        return { machineOwnerUserId: "local", accounts: { local: {
           "claude-sdk": {
             baseUrl: "https://api.anthropic.com",
             placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
             authMode: "api-key",
             apiPath: "/v1",
           },
-        }
+        } } }
       },
     })
 
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, {
+    const snap = await mod.getRuntimeConfigSnapshot({
       secretScope: "shared",
       workspaceDir: project,
       workspaceId: "ws_1",
@@ -477,7 +303,7 @@ describe("agent config", () => {
     expect(snap.version).toBe(4)
     expect(snap.connections).toEqual([])
     expect(scopes).toEqual(["shared"])
-    expect(snap.auth).toEqual({
+    expect(snap.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
         placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
@@ -485,7 +311,7 @@ describe("agent config", () => {
         apiPath: "/v1",
       },
     })
-    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn-placeholder" })?.auth).toEqual({
+    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn-placeholder" })?.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
         placeholder: "dtn-placeholder",
@@ -496,53 +322,16 @@ describe("agent config", () => {
     expect(snap.defaultHarness).toBeUndefined()
   })
 
-  test("the snapshot retains its canonical version when no user MCP servers exist", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
+  test("the snapshot retains its canonical version", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {} })
     const config = await mod.getRuntimeConfigSnapshot()
-    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
+    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: { machineOwnerUserId: "", accounts: {} }, providerDefinitions: [], commands: [] })
   })
 
-  test("the snapshot resolves stdio servers into the provider-neutral format", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {},
-      mcp: {
-        "my-tool": {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "tool-server"],
-          env: { TOOL_MODE: "test" },
-        },
-      },
-    })
-    const config = await mod.getRuntimeConfigSnapshot()
-    expect(config.mcp).toBeDefined()
-    expect(config.mcp).toEqual({ "my-tool": { name: "my-tool", source: "user", transport: "stdio", command: "npx", args: ["-y", "tool-server"], env: { TOOL_MODE: "test" } } })
-  })
-
-  test("the snapshot transforms remote servers", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {},
-      mcp: {
-        "remote-tool": {
-          type: "remote",
-          url: "https://mcp.example.com",
-          headers: { Authorization: "Bearer token" },
-        },
-      },
-    })
-    const config = await mod.getRuntimeConfigSnapshot()
-    expect(config.mcp).toEqual({ "remote-tool": { name: "remote-tool", source: "user", transport: "remote", url: "https://mcp.example.com", headers: { Authorization: "Bearer token" } } })
-  })
-
-  test("the snapshot excludes disabled servers", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {},
-      mcp: {
-        active: { type: "stdio", command: "node", args: [] },
-        disabled: { type: "stdio", command: "node", args: [], disabled: true },
-      },
-    })
-    const config = await mod.getRuntimeConfigSnapshot()
-    const mcp = config.mcp as Record<string, unknown>
-    expect(mcp["active"]).toBeDefined()
-    expect(mcp["disabled"]).toBeUndefined()
+  test("refuses to publish an empty command set when command storage cannot be read", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {} })
+    await fs.writeFile(path.join(root, "commands"), "not a directory")
+    await expect(mod.getRuntimeConfigSnapshot()).rejects.toMatchObject({ code: "EEXIST" })
   })
 
   // ── Commands ────────────────────────────────────────────────────────
@@ -570,16 +359,37 @@ describe("agent config", () => {
 
   test("deletes an existing command", async () => {
     await mod.saveCommand("temp-cmd", "temporary")
-    const deleted = await mod.deleteCommand("temp-cmd")
-    expect(deleted).toBe(true)
+    await mod.deleteCommand("temp-cmd")
 
     const after = await mod.getCommand("temp-cmd")
     expect(after).toBeNull()
   })
 
-  test("delete returns false for nonexistent command", async () => {
-    const deleted = await mod.deleteCommand("nonexistent-" + randomUUID())
-    expect(deleted).toBe(false)
+  test("delete propagates filesystem failures instead of claiming absence", async () => {
+    await mod.saveCommand("blocked", "content")
+    await fs.unlink(path.join(root, "commands", "blocked.md"))
+    await fs.mkdir(path.join(root, "commands", "blocked.md"))
+    await expect(mod.deleteCommand("blocked")).rejects.toThrow()
+  })
+
+  test("get propagates filesystem failures instead of claiming absence", async () => {
+    await fs.mkdir(path.join(root, "commands", "unreadable.md"), { recursive: true })
+    await expect(mod.getCommand("unreadable")).rejects.toMatchObject({ code: "EISDIR" })
+  })
+
+  test("deleting a nonexistent command succeeds", async () => {
+    await expect(mod.deleteCommand("nonexistent-" + randomUUID())).resolves.toBeUndefined()
+  })
+
+  test("a command removed between listing and reading is left out of the list", async () => {
+    await mod.saveCommand("kept", "Kept")
+    const listed = await nodeFs.promises.readdir(path.join(root, "commands"))
+    const readdir = vi.spyOn(nodeFs.promises, "readdir").mockResolvedValueOnce([...listed, "vanished.md"] as never)
+    try {
+      expect(await mod.listCommands()).toEqual([{ name: "kept", content: "Kept" }])
+    } finally {
+      readdir.mockRestore()
+    }
   })
 
   test("get returns null for nonexistent command", async () => {

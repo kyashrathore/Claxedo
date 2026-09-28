@@ -3,9 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
 
@@ -16,22 +18,12 @@ afterEach(async () => {
 })
 
 const snapshot: RuntimeSnapshot = {
-  version: 4,
-  mcp: {},
-  connections: [],
-  defaultHarness: { kind: "native", harnessId: "pi" },
-  harnessLaunch: { pi: { agentDir: "/profiles/pi" } },
-  auth: {
-    pi: {
-      baseUrl: "http://127.0.0.1:2595/bindings/pi1",
-      placeholder: "placeholder",
-      authMode: "bearer",
-      expiresAt: Date.now() + 60 * 60 * 1000,
-    },
-  },
+  version: 4, commands: [], mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } },
+  connections: [{ connectionId: "scripted", providerKey: "scripted", configRevision: 1, enabled: true, config: {} }],
+  defaultHarness: { kind: "connection", connectionId: "scripted" },
 }
 
-type TurnEvents = (sessionId: string) => Array<Record<string, unknown>>
+type TurnEvents = (sessionId: string) => AgentRuntimeEvent[]
 
 const answer: TurnEvents = (sessionId) => [
   { type: "text-delta", delta: "answer" },
@@ -42,35 +34,13 @@ async function fixture(turn = answer) {
   const directory = await mkdtemp(join(tmpdir(), "prompt-ids-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws_ids", directory }
-  const adapter = {
-    adapterCapabilities: ["runtime-config"] as const,
-    setModel() {},
-    async applyConfig() {},
-    sessionConfigOwner: "runtime" as const,
-    async createSession(_directory: string, _title: string | undefined, id?: string) {
-      return { id: id ?? "generated", agentSessionId: `upstream-${id}` }
-    },
-    async getSession() { return null },
-    async getMessages() { return [] },
-    async updateSession() { return null },
-    async deleteSession() {},
-    async getSessionConfig() { throw new Error("runtime-owned config") },
-    async updateSessionConfig() { throw new Error("runtime-owned config") },
-    readHarnessCapabilities: () => ({
-      abort: false, reconnect: false, replay: true, permissions: false, questions: false,
-      todos: false, commands: false, fork: false, revert: false, unrevert: false,
-      configOptions: false, subagents: false, goals: false, harness: "pi",
+  const provider = fakeConnectionProvider({
+    providerKey: "scripted",
+    transport: () => new FakeTransport({
+      turn: async function* ({ session }) { yield* turn(session.binding.sessionId) },
     }),
-    async *executeTurn(binding: { sessionId: string }) {
-      yield* turn(binding.sessionId)
-    },
-    dispose() {},
-  } as unknown as AgentHarnessAdapter
-  const host = createWorkspaceHost({
-    target,
-    storeRoot: join(directory, "state"),
-    harnesses: [{ match: (runner: { id: string }) => runner.id === "pi", create: () => adapter }],
-  } as never)
+  })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
   cleanups.push(() => host.dispose())
   await host.apply(snapshot)
   const app = new Hono()

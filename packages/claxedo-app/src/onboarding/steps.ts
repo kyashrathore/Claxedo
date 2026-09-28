@@ -29,5 +29,3 @@ export const onboardingSteps: readonly OnboardingStep[] = [
     lede: { local: "onboarding.execution.lede.local", hosted: "onboarding.execution.lede.hosted" },
   },
 ]
-
-export type ExecutionChoice = "local" | "cloud" | "connected"

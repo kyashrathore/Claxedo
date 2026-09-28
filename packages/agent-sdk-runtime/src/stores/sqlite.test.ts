@@ -16,8 +16,8 @@ import {
   sessionUpdated,
   todoUpdated,
 } from "../compat-events"
-import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
-import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
+import { removeTestTempDir } from "./test-temp-dir"
+import { AgentRuntimeStaleTurnError } from "../runtime-store"
 import { RecoveryOperationIdCollisionError, RuntimeStoreCorruptionError, SqliteRuntimeStore, UnsupportedRuntimeStoreSchemaError } from "./sqlite"
 
 function recoveryFact<V extends string>(value: V) {
@@ -160,12 +160,6 @@ describe("SqliteRuntimeStore", () => {
       payload: todoUpdated("ses_1", [{ content: "Ship", status: "pending", priority: "high" }]),
     })
     first.markRecovering("ses_1", "restart required")
-    first.admit({
-      parentSessionId: "ses_1",
-      observation: { observationId: "spawn", harnessExecutionId: "run", status: "running" },
-      allocateKey: () => "child_1",
-    })
-    first.markPublished("ses_1", "spawn")
     first.close()
 
     const reopened = new SqliteRuntimeStore({ root })
@@ -173,7 +167,6 @@ describe("SqliteRuntimeStore", () => {
     expect(reopened.listQuestions("/repo")).toHaveLength(1)
     expect(reopened.getTodos("ses_1")).toEqual([{ content: "Ship", status: "pending", priority: "high" }])
     expect(reopened.consumeRecoveryError("ses_1")).toBe("restart required")
-    expect(reopened.listSubagentEvents("ses_1")).toHaveLength(1)
     reopened.close()
   })
 

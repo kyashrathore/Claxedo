@@ -51,7 +51,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     connectionRows: optionList.connectionRows,
   })
   const visibility = useModelVisibility()
-  const catalog = createSelectorCatalog({ server, harness, sessionId })
+  const catalog = createSelectorCatalog({ server, harness, sessionId, placementId })
   const modelNames = useModelNames()
   const { rows, picked } = createHarnessModelRows({ harness, selection, catalog, visibility })
   watchCatalogDraftDefault({

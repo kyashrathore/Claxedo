@@ -1354,6 +1354,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       repoUrl?: string
       repoName?: string
       gitBranch?: string
+      remoteDirectory?: string
       homeRegion?: string
     },
   ) {
@@ -1392,6 +1393,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       repoUrl?: string
       repoName?: string
       gitBranch?: string
+      remoteDirectory?: string
       homeRegion?: string
     },
   ) {

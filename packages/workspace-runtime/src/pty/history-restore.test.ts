@@ -6,7 +6,7 @@ import type { WSContext } from "hono/ws"
 import { historyPath } from "./history-disk"
 import xterm from "@xterm/headless"
 import { terminalCheckpointSchema, applyTerminalCheckpointState } from "./terminal-checkpoint-state"
-import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 
 /** History restore is about transcripts, not recovery: these records die with the test. */
 const ownership = volatileLaunchOwnership()

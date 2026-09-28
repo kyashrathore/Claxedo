@@ -32,6 +32,7 @@ export default {
   "prompt.popover.emptyResults": "Nema rezultata",
   "prompt.popover.emptyCommands": "Nema komandi",
   "prompt.slash.badge.custom": "prilagođeno",
+  "prompt.slash.badge.saved": "sačuvano",
   "prompt.context.removeFile": "Ukloni datoteku iz konteksta",
   "prompt.placeholder.shell": "Unesi shell naredbu... {{example}}",
   "prompt.placeholder.normal": "Pitaj bilo šta... \"{{example}}\"",

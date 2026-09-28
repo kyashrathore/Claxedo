@@ -39,11 +39,13 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 129 modules / 41 packages, with no headroom.
+   * Measured 130 modules / 40 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
    * Tasks compositions, which the desktop's server entry mounts too;
+   * `src/deployments/private-repo-hosts.ts`, shared by the self-hosted and
+   * hosted deployments so both read the same private-host input;
    * `src/tasks/self-hosted-composition.ts`, owned here rather than in
    * `@claxedo/local-server` because it binds THIS deployment's identity — the
    * embedded issuer's bearer verifier and the local SQLite workspace authority
@@ -51,11 +53,9 @@ export const serverSelfHosted: Policy = {
    * every project unconditionally; `src/tasks/session-grants.ts`, owned here
    * for the same reason — it is how a box that is its own runtime host hands
    * its sessions a Tasks grant, which a deployment with a real control-plane
-   * boundary does with a signed capability instead;
-   * `@claxedo/opencode-server-adapter`, for
-   * operator-configured external OpenCode connections, no engine bundled; and
-   * `src/mcp/`, which mounts the first-party MCP endpoint and answers for its
-   * RFC 9728 document and its own OAuth provider's tokens.
+   * boundary does with a signed capability instead; and `src/mcp/`, which
+   * mounts the first-party MCP endpoint and answers for its RFC 9728 document
+   * and its own OAuth provider's tokens.
    *
    * Package edges beyond those: `@claxedo/helpers` for the record-narrowing
    * guards five modules here used to define privately, `@claxedo/tasks` reached
@@ -139,7 +139,7 @@ export const serverSelfHosted: Policy = {
    * read through it rather than each keeping a copy. No package edge:
    * `@claxedo/helpers` and `@claxedo/server-core` were already here.
    */
-  ceilings: { modules: 129, packages: 41 },
+  ceilings: { modules: 130, packages: 40 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -164,19 +164,20 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-helpers" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/process-ownership" },
       { packageDir: "packages/agent-sdk-runtime" },
-      { packageDir: "packages/opencode-server-adapter" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/sandbox-contract" },
+      // The credential broker this deployment mounts; its published entry is
+      // dist-only, and sandbox-manager's local brokering driver and
+      // claxedo-local-server bundle against it.
+      { packageDir: "packages/egress-broker" },
       { packageDir: "packages/sandbox-manager" },
       { packageDir: "packages/workspace-relay" },
       { packageDir: "packages/claxedo-connections" },
       { packageDir: "packages/claxedo-channels" },
       { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
-      // The credential broker this deployment mounts; its published entry is
-      // dist-only and claxedo-local-server bundles against it.
-      { packageDir: "packages/egress-broker" },
       { packageDir: "packages/claxedo-local-server" },
     ],
     packageExports: [{

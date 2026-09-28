@@ -1,6 +1,6 @@
-import type { AgentRuntimeRecovery, RecoveryCaller } from "@claxedo/agent-sdk-runtime"
 import type { RecoveryOutcome, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import { errorMessage as thrownMessage } from "../error-message"
+import { errorMessage as thrownMessage } from "@claxedo/helpers"
+import type { AgentRuntimeRecovery, RecoveryCaller } from "../host/runtime"
 import { sessionAccessContext, sessionRequestProvenance } from "../session-access-policy"
 import type { SessionRouteContext as Ctx } from "./session-route-options"
 

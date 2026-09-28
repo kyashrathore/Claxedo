@@ -35,6 +35,7 @@ export async function probeDiscoveredCredential(
     created_at: at,
     updated_at: at,
     revision: 1,
+    incarnation: `discovery:${item.provider_id}`,
   }
 
   try {

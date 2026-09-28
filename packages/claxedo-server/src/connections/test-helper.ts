@@ -14,7 +14,7 @@ type CredentialRegistry = typeof import("@claxedo/server-core/credentials/regist
 export function registryCredentialsPort(registry: CredentialRegistry): ControlPlaneCredentials {
   return {
     listCredentials: async () => registry.listCredentials(),
-    getCredentialByProvider: async (providerId) => registry.credentialByProvider(providerId, { onOutage: "empty" }),
+    getCredentialByProvider: async (providerId, { owner, kind }) => registry.credentialByProvider(providerId, { onOutage: "empty", kind, owner }),
     resolveCredentialSecret: (providerId) => registry.resolveSecret(providerId),
     // The status-independent re-verify seam. Omitting it used to be invisible:
     // the SQLite adapter implemented `readSecret` by repairing status instead,
@@ -25,5 +25,7 @@ export function registryCredentialsPort(registry: CredentialRegistry): ControlPl
     deleteCredentialsByProvider: async (providerId) => registry.deleteCredentialsByProvider(providerId),
     updateCredentialStatus: async (id, status, error) => registry.updateCredentialStatus(id, status, error),
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => ({}),
+    setAccountSources: async () => { throw new Error("connection suites choose no provider account") },
   }
 }

@@ -6,6 +6,7 @@ import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import { customProviderBody } from "./wire/custom-provider"
+import type { ProviderSource } from "./wire/provider-catalog"
 import type { FetchQuery } from "./types"
 
 const AUTH_PATH = "/api/claxedo/agent-config/providers/auth"
@@ -26,6 +27,7 @@ export type CustomProviderConfig = {
   readonly baseURL: string
   readonly env: readonly string[]
   readonly headers: Readonly<Record<string, string>>
+  readonly credentialHeader: { readonly name: string; readonly scheme?: "Bearer" }
   readonly models: Readonly<Record<string, { readonly name: string }>>
 }
 
@@ -39,7 +41,7 @@ export type ProviderConnectApi = {
   readonly saveKey: (input: ProviderKeyInput) => Promise<void>
   readonly reconnect: (credentialId: string, secret: string) => Promise<void>
   readonly saveHostedKey: (input: { readonly providerId: string; readonly harness: string; readonly key: string }) => Promise<void>
-  readonly disconnect: (harness: string, providerId: string) => Promise<void>
+  readonly disconnect: (harness: string, provider: { readonly id: string; readonly source?: ProviderSource }) => Promise<void>
   readonly saveCustomProvider: (draft: CustomProviderDraft) => Promise<void>
 }
 
@@ -102,9 +104,10 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
       await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
       await changed()
     },
-    disconnect: async (harness, providerId) => {
-      await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(providerId)}`, { method: "DELETE" })
-      await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(providerId)}`, { harness }), { method: "DELETE" })
+    disconnect: async (harness, provider) => {
+      await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
+      if (provider.source === "custom") await transport.json<unknown>(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
+      else await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(provider.id)}`, { harness }), { method: "DELETE" })
       await changed()
     },
   }

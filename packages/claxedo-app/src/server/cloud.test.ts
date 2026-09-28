@@ -1,0 +1,87 @@
+/// <reference types="bun" />
+import { expect, test } from "bun:test"
+import { QueryClient } from "@tanstack/solid-query"
+import { createRoot } from "solid-js"
+import { createHostedAccount } from "./account"
+import { createCloudApi } from "./cloud"
+import { placementId, projectId, type ProjectId } from "./ids"
+import type { Transport } from "./transport"
+import type { Project } from "./types"
+import type { WorkspaceWakes } from "./workspace-wakes"
+import { createWorkspaces } from "./workspaces"
+
+const bootstrap = { deployment: { issuesSessions: false }, project: [] }
+const created = { workspace_id: "ws_new", project_id: "prj_widgets", backing: "cloud-vm", repo_url: "https://github.com/acme/widgets", workspace_name: "Widgets", status: "provisioning" }
+const wakes: WorkspaceWakes = {
+  runtime: () => ({ kind: "live" }),
+  start: async () => undefined,
+  wakeIfStopped: async () => undefined,
+}
+
+type Posted = { readonly path: string; readonly body: unknown }
+
+function transport(posted: Posted[]): Transport {
+  const json = async (path: string, init?: RequestInit) => {
+    if (path === "/api/claxedo/bootstrap") return bootstrap
+    if (path !== "/api/workspace/create") throw new Error(`unexpected ${path}`)
+    posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
+    return { workspaceId: "ws_new", directory: "/workspace/widgets" }
+  }
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, json } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+}
+
+function world(signed: boolean) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const posted: Posted[] = []
+  const operations: Array<{ readonly operation: string; readonly input: unknown }> = []
+  let made = false
+  const account = createHostedAccount(async (operation, input) => {
+    operations.push({ operation, input })
+    if (operation === "workspace.create") {
+      made = true
+      return { workspaceId: "ws_new", directory: "/workspace/widgets" }
+    }
+    return { workspaces: operation === "workspace.list.provisioner" && made ? [created] : [] }
+  })
+  const wire = transport(posted)
+  const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
+  const project = async (id: ProjectId) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
+  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
+  return { cloud, workspaces, posted, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
+}
+
+test("signed desktop: a repository's cloud workspace is created on the account's control plane and read back from its catalog", async () => {
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, posted, operations } = world(true)
+    const workspace = await cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets" })
+    expect(workspace).toMatchObject({ id: placementId("ws_new"), projectId: projectId("prj_widgets") })
+    expect(operations()).toEqual([{ operation: "workspace.create", input: { workspaceName: "Widgets", repoUrl: "https://github.com/acme/widgets" } }])
+    expect(posted).toEqual([])
+    expect(workspaces.byId(placementId("ws_new"))?.kind).toBe("cloud")
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("signed desktop: a connected repository names its connection and full name in main's flat operation input", async () => {
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, operations } = world(true)
+    await cloud.create({ source: { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" } })
+    expect(operations()).toEqual([{ operation: "workspace.create", input: { connectionId: "gh_1", repoFullName: "acme/widgets" } }])
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("without an account the project's cloud workspace is created on this server, and a bare repository's is refused", async () => {
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, posted, operations } = world(false)
+    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" } })).rejects.toThrow("created on a signed control plane")
+    const workspace = await cloud.create({ projectId: projectId("prj_widgets"), branch: "main" })
+    expect(workspace).toMatchObject({ id: placementId("ws_new"), projectId: projectId("prj_widgets") })
+    expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", gitBranch: "main", repoUrl: "https://github.com/acme/widgets" } }])
+    expect(operations()).toEqual([])
+    workspaces.dispose()
+    dispose()
+  })
+})

@@ -16,7 +16,30 @@ export type ConnectionRuntimeStatus = {
   processes: ConnectionRuntimeObservation[]
 }
 
+/** A harness's health as the runtime reads it, for the runtime or for one session. */
+export type AgentRuntimeHealth = {
+  status: "ok" | "degraded" | "unavailable"
+  reason?: string
+  message?: string
+  sessions?: Array<{
+    id: string
+    status?: string | null
+    message?: string | null
+  }>
+}
+
 export type HarnessConnectionCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection">
+
+/** An operator-configured connection as the control plane stores it; `config` is readable only by its provider. */
+export type HarnessConnectionDescriptor<TConfig = unknown> = {
+  connectionId: string
+  providerKey: string
+  configRevision: number
+  enabled: boolean
+  config: TConfig
+  /** Opaque host-persistence references. Raw secret values never enter config. */
+  secretRefs?: Readonly<Record<string, string>>
+}
 
 /** Public discovery metadata. Provider configuration and credentials stay on the host. */
 export type HarnessConnectionRef = {

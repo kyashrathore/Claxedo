@@ -238,6 +238,41 @@ export function hostServingState(input: Pick<HostServingComposition, "sessionAut
   }
 }
 
+let enrolledOwner: string | undefined
+let reapplyPending = false
+
+/**
+ * The person the control plane enrolled this machine to, as the heartbeat ack
+ * names them. The relay authenticates that same person, so their relayed
+ * sessions are this machine owner's own.
+ */
+export function hostEnrolledOwner(): string | undefined {
+  return enrolledOwner
+}
+
+/** Forgets the enrolled owner, as a fresh process holds none. */
+export function resetHostEnrolledOwner() {
+  enrolledOwner = undefined
+  reapplyPending = false
+}
+
+/**
+ * Make `owner` the person this machine is enrolled to. The ack is the control
+ * plane's fact, so it is recorded whatever happens next; `forget` drops what
+ * an earlier owner left behind for the new one. A re-apply that fails stays
+ * pending, and the next ack retries it even though it names the same owner.
+ */
+export async function adoptHostEnrolledOwner(owner: string, change: { forget(owner: string): void; reapply(): Promise<void> }): Promise<void> {
+  if (owner === enrolledOwner && !reapplyPending) return
+  if (owner !== enrolledOwner) {
+    enrolledOwner = owner
+    change.forget(owner)
+  }
+  reapplyPending = true
+  await change.reapply()
+  reapplyPending = false
+}
+
 /**
  * The machine identity and relay this process is serving under, or nothing.
  *

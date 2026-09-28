@@ -1,6 +1,6 @@
 # Upstream OpenCode SDK diagnostic probes
 
-This isolated, unpatched npm fixture characterizes beta-18684. It is not a
+This isolated, unpatched npm fixture characterizes beta-19271. It is not a
 workspace member or a production execution path. Its own lockfile prevents
 repository patches or workspace aliases from hiding upstream defects.
 
@@ -20,7 +20,7 @@ that known upstream defect; it is not a product acceptance check.
 The product installs the public SDK with the exact-version patches in
 `patches/README.opencode-node.md`. Node 24 or newer is required; Electron
 is 44.4.3. No Bun sidecar, private host import, or old engine fallback
-is used. Its owner is `workspace-runtime/src/opencode`.
+is used. Its owner is `harness/src/transports/opencode-sdk`.
 
 Run product acceptance from `packages/workspace-runtime`:
 
@@ -28,7 +28,7 @@ Run product acceptance from `packages/workspace-runtime`:
 bun run build
 node scripts/node-sdk-smoke.mjs
 node scripts/node-host-smoke.mjs
-bun test src/opencode
+bun test ../harness/src/transports/opencode-sdk
 ```
 
 Run both smoke scripts with `ELECTRON_RUN_AS_NODE=1 /path/to/electron` to

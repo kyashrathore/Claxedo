@@ -89,10 +89,6 @@ export const localServer: Policy = {
   //  - `platform/json.ts`: the one dependency-free leaf every reader of
   //    untrusted JSON (request bodies, runtime event payloads, subprocess
   //    output) narrows through.
-  //  - `agent-config/hosted-mcp-install.ts` (owner: local-server platform): the
-  //    one-click write of the hosted `claxedo` MCP entry into the Claude Code,
-  //    Cursor and Codex configs on this machine; smol-toml validates the Codex
-  //    configuration before any file is written.
   //  - `shell/event-stream-response.ts`: the authorized event producer over
   //    HTTP or WebSocket.
   //  - `shell/host-events.ts`: the host aggregate `wr/events`, which serves
@@ -127,8 +123,7 @@ export const localServer: Policy = {
   // the shared server-core surface; @claxedo/mcp, the first-party MCP endpoint
   // mounted at `/api/claxedo/mcp` for the sessions this composition launches
   // (runtime credential only; reaches the MCP SDK, hono, zod, helpers and the
-  // runtime contract); @claxedo/opencode-server-adapter, the transport for
-  // external OpenCode connections; @claxedo/agent-runtime-contract, the
+  // runtime contract); @claxedo/agent-runtime-contract, the
   // dependency-free owner of the harness table and the credential-broker
   // error vocabulary; @claxedo/host-serving and @claxedo/egress-broker as
   // above.
@@ -198,14 +193,18 @@ export const localServer: Policy = {
   //    session's workspace, checks it with `@claxedo/plugin-build` and
   //    registers it through the live-plugin service. It reaches the plugin
   //    packages and the service, all already here.
-  //  - @claxedo/agent-event-runtime/contracts via `shell/events.ts` (owner:
-  //    the event-stream liveness contract): the local `cp/events` beats on the
-  //    same `EVENT_STREAM_HEARTBEAT_MS` as every `wr/events`, so the app's one
-  //    reader budget is sized against one constant. The package already ships
-  //    in this bundle under @claxedo/agent-sdk-runtime and
-  //    @claxedo/workspace-runtime; this makes it a direct edge.
-  //    81/31, no headroom.
-  ceilings: { modules: 81, packages: 31 },
+  //  - `shell/events.ts` beats on @claxedo/agent-runtime-contract's
+  //    `EVENT_STREAM_HEARTBEAT_MS` (owner: the event-stream liveness contract):
+  //    the local `cp/events` beats on the same constant as every `wr/events`,
+  //    so the app's one reader budget is sized against one constant. The
+  //    package was already here.
+  //  - `@claxedo/process-ownership/launch` through `app/local-daemon-lifecycle.ts`
+  //    (owner: local daemon lifecycle): creation identity and bounded retirement
+  //    keep daemon replacement tied to the process this machine launched.
+  //    It provides dependency-free data and OS reads, with no server, runtime
+  //    or store closure behind them.
+  //    80/29, no headroom.
+  ceilings: { modules: 80, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
@@ -235,8 +234,8 @@ export const localServer: Policy = {
       { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/process-ownership" },
       { packageDir: "packages/agent-sdk-runtime" },
-      { packageDir: "packages/opencode-server-adapter" },
       // The loopback credential broker the desktop composition mounts; its
       // published entry is dist-only and it bundles against
       // @claxedo/agent-runtime-contract, built above it.

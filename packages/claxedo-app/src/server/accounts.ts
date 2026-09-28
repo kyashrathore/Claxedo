@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
+import { accountSourceQueries, createAccountSourceWrites } from "./account-sources"
 import type { AccountsApi } from "./api"
 import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -37,7 +38,7 @@ export function accountQueries(transport: Transport) {
       return { kind: "listed", accounts: rowsFromWire(body, "credentials", accountFromWire) ?? [] }
     })
   const machineLogins = (): FetchQuery<readonly MachineLogin[]> => fetchQuery(queryKeys.machineLogins(server), () => fetchMachineLogins(transport, {}))
-  return { list, effective, machineLogins }
+  return { list, effective, machineLogins, ...accountSourceQueries(transport) }
 }
 
 export function createAccountsApi(transport: Transport, queryClient: QueryClient): AccountsApi {
@@ -45,6 +46,7 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
   const changed = () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
+    ...createAccountSourceWrites(transport, queryClient, changed),
     select: async (ids) => {
       await post("/activate", { ids })
       await changed()

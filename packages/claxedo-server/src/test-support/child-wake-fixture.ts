@@ -6,7 +6,9 @@ import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/a
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
+import { randomUUID } from "node:crypto"
 import { RuntimeStore } from "../../../workspace-runtime/src/store"
+import type { AgentRuntime } from "../../../workspace-runtime/src/host/runtime"
 import type { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
 import { removeTestDataDir } from "./test-data-dir"
 
@@ -26,8 +28,8 @@ export const REPLY = "msg_child_reply"
 export const WAKE_TURN = `msg_wake_${CHILD}_${REPLY}`
 
 export type WakeAuthority = ReturnType<typeof createSqliteWorkspaceAuthority>
-type HostOptions = NonNullable<Parameters<typeof SessionRoutes>[1]>
-export type HostRuntime = NonNullable<Awaited<ReturnType<NonNullable<HostOptions["resolveRuntime"]>>>>
+type HostOptions = Parameters<typeof SessionRoutes>[1]
+export type HostRuntime = AgentRuntime
 
 const hosts: Array<() => Promise<void>> = []
 const closers: Array<() => void> = []
@@ -219,7 +221,11 @@ export function storeBackedHostOptions(store: RuntimeStore): Pick<HostOptions, "
       ? [{ info: { id: REPLY, role: "assistant", sessionID: CHILD }, parts: [{ id: "p1", sessionID: CHILD, messageID: REPLY, type: "text", text: "Ship it." }] }]
       : []),
     childSessions: {
-      admission: { admit: (row) => store.admit(row), markPublished: (parent, id) => store.markPublished(parent, id) },
+      admit: async (parentSessionId, observation) => {
+        const admitted = store.admit({ parentSessionId, observation, allocateKey: () => randomUUID() })
+        store.markPublished(parentSessionId, admitted.observationId)
+        return admitted.event
+      },
       secret: () => store.runtimeSecret("child-session"),
       pendingWakes: () => store.listPendingSubagentWakes(),
       origins: {

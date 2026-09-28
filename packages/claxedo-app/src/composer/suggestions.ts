@@ -1,8 +1,8 @@
-import { createMemo, createResource, type Accessor } from "solid-js"
+import { createEffect, createMemo, createResource, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import fuzzysort from "fuzzysort"
 import type { PlacementId } from "@/server"
-import { useServer } from "@/server"
+import { placementId as asPlacementId, useServer } from "@/server"
 import type { CommandOption, MentionEntry, ShellRegistries } from "@/shell"
 import { promptSlashCommands } from "./view/prompt-options"
 import type { SlashCommand } from "./view/slash-popover"
@@ -21,6 +21,7 @@ type SuggestionInput = {
   registries: Pick<ShellRegistries, "mentions">
   commandOptions: Accessor<CommandOption[]>
   placementId: Accessor<PlacementId | undefined>
+  harness: Accessor<string | undefined>
   query: Accessor<SuggestionQuery>
 }
 
@@ -48,11 +49,26 @@ function createAtItems(input: SuggestionInput, atQuery: Accessor<string | undefi
   return { items, loading: () => files.isPending && atQuery() !== undefined, failed: () => files.error ?? undefined }
 }
 
+function createHarnessCommands(input: SuggestionInput, slashQuery: Accessor<string | undefined>) {
+  const server = useServer()
+  const commands = useQuery(() => {
+    const placementId = input.placementId()
+    const harness = input.harness()
+    const options = server.queries.harnesses.commands(placementId ?? asPlacementId(""), harness ?? "")
+    return { ...options, enabled: placementId !== undefined && harness !== undefined && slashQuery() !== undefined }
+  })
+  createEffect(() => {
+    if (commands.error) console.warn(`The commands of harness ${input.harness()} in placement ${input.placementId()} could not be read`, commands.error)
+  })
+  return () => commands.data
+}
+
 function createSlashItems(input: SuggestionInput, slashQuery: Accessor<string | undefined>) {
+  const customCommands = createHarnessCommands(input, slashQuery)
   return createMemo((): SlashItem[] => {
     const query = slashQuery()
     if (query === undefined) return []
-    const all = promptSlashCommands({ commandOptions: input.commandOptions() }).filter((command) => command.id !== DOCUMENTS_COMMAND)
+    const all = promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: customCommands() }).filter((command) => command.id !== DOCUMENTS_COMMAND)
     if (!query) return all
     return fuzzysort.go(query, all, { keys: ["trigger", "title"] }).map((result) => result.obj)
   })

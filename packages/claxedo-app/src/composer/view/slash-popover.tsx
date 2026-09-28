@@ -1,4 +1,5 @@
 import { Component, For, Match, Show, Switch } from "solid-js"
+import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { ComposerTextKey } from "../i18n"
 import { AtOptionRow } from "./at-option-row"
 import { SlashCommandRow } from "./slash-command-row"
@@ -15,15 +16,18 @@ export type AtOption =
       status: string
     }
 
-export interface SlashCommand {
+type SlashCommandFields = {
   id: string
   trigger: string
   title: string
   description?: string
   keybind?: string
-  type: "builtin" | "custom"
-  source?: "command" | "mcp" | "skill"
+  source?: RuntimeCommand["source"]
 }
+
+export type SlashCommand =
+  | (SlashCommandFields & { type: "builtin" })
+  | (SlashCommandFields & { type: "custom" } & ({ origin: "saved"; content: string } | { origin: "transport" }))
 
 export const PROMPT_POPOVER_LISTBOX_ID = "prompt-popover-listbox"
 

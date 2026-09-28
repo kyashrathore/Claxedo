@@ -465,6 +465,27 @@ describe("MCP OAuth discovery", () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it("follows public redirects for resource metadata discovery", async () => {
+    const fetch = mappedFetch({
+      "https://mcp.example/mcp": new Response(null, { status: 401 }),
+      "https://mcp.example/.well-known/oauth-protected-resource/mcp": new Response(null, {
+        status: 302, headers: { location: "https://metadata.example/resource.json" },
+      }),
+      "https://metadata.example/resource.json": json({
+        resource: "https://mcp.example/mcp", authorization_servers: ["https://login.example"],
+      }),
+      "https://login.example/.well-known/oauth-authorization-server": json({
+        issuer: "https://login.example", authorization_endpoint: "https://login.example/authorize",
+        token_endpoint: "https://login.example/token", code_challenge_methods_supported: ["S256"],
+      }),
+    })
+    await expect(discoverMcpOAuth({
+      fetch, resolve: resolvePublic, resourceUrl: "https://mcp.example/mcp",
+      preRegistered: { "https://login.example": { clientId: "claxedo" } },
+    })).resolves.toMatchObject({ status: "protected" })
+    expect(fetch.mock.calls.map(([url]) => url)).toContain("https://metadata.example/resource.json")
+  })
+
   it("refuses a redirect to a hostname that resolves privately", async () => {
     const fetch = vi.fn(async (url: string) =>
       url === "https://mcp.example/mcp"

@@ -20,7 +20,6 @@ const baseline: readonly Baselined[] = [
   { file: "src/tasks/presets/capabilities.ts", matcher: "staleTime: 60_000", owner: "tasks", reason: "the preset editor re-reads the plugin catalog after a minute; marketplace is declared once" },
   { file: "src/marketplace/directory-state.ts", matcher: 'refetchOnMount: "always"', owner: "marketplace", reason: "the directory re-reads the plugin catalog on every open; marketplace is declared once" },
   { file: "src/server/account-placements.ts", matcher: "staleTime", owner: "server", reason: "the staleTime is a parameter, 0 on reread and infinity on load; two explicit reads would let the check see both" },
-  { file: "src/composer/harness/provider-catalog.ts", matcher: "queryKey: () => [input.harness()]", owner: "composer", reason: "a hydration key named queryKey, not a query; rename it" },
 ]
 
 type Reference = { readonly file: string; readonly line: number }

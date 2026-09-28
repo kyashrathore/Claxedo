@@ -2,7 +2,7 @@ import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
   SandboxTarget,
-} from ".."
+} from "../contract"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -61,7 +61,7 @@ export type ModalSandboxDriverOptions = {
   runtimePort?: number
   runtimeCommand?: string
   workspaceDir?: string
-  runner?: string
+  nativeHarness?: string
   controlEnv?: WorkspaceRuntimeControlEnv
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   timeoutMs?: number
@@ -150,7 +150,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       host: "0.0.0.0",
       source: input.source,
       env: input.env,
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
       controlEnv: options.controlEnv,
     })
   }
@@ -171,8 +171,11 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
   }
 
   async function readyTarget(input: SandboxDriverEnsureInput, sandbox: ModalSandboxLike, hostId: string): Promise<SandboxTarget | { provisioning: true; retryAfterMs: number }> {
-    await sandbox.setTags(input.labels).catch(() => undefined)
-    const tunnels = await sandbox.tunnels(tunnelTimeoutMs).catch(() => undefined)
+    await sandbox.setTags(input.labels)
+    const tunnels = await sandbox.tunnels(tunnelTimeoutMs).catch((error: unknown) => {
+      if (error instanceof Error && error.name === "SandboxTimeoutError") return undefined
+      throw error
+    })
     const tunnel = tunnels?.[runtimePort]
     if (!tunnel?.url) return { provisioning: true as const, retryAfterMs: 2_000 }
     return {
@@ -220,7 +223,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
     return readyTarget(input, sandbox, hostId)
   }
 
-  async function sandboxById(target: SandboxTarget) {
+  async function sandboxById(target: Pick<SandboxTarget, "sandboxId">) {
     return (await resolveClient()).sandboxes.fromId(target.sandboxId)
   }
 

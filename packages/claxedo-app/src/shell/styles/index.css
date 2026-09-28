@@ -201,7 +201,7 @@
   left: calc(var(--effort-stop-inset) + var(--effort-stop) * (100% - 2 * var(--effort-stop-inset)));
   width: 4px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--overlay-icon-muted);
   transform: translate(-50%, -50%);
 }
@@ -219,7 +219,7 @@
   border-radius: 3px 3px max(calc(var(--effort-outer-radius) - var(--effort-thumb-gap)), 3px)
     max(calc(var(--effort-outer-radius) - var(--effort-thumb-gap)), 3px);
   background: var(--overlay-surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  box-shadow: var(--shadow-thumb);
   transition: left 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 

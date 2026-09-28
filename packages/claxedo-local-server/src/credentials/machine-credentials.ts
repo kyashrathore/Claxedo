@@ -1,8 +1,7 @@
-import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
+import { defaultControlPlaneCredentials, deliverCredentialChange } from "@claxedo/server-core/authority/default-credentials"
 import { readMachineLogins } from "@claxedo/server-core/credentials/machine-login"
 import { clearActiveCredentials } from "@claxedo/server-core/credentials/registry"
-import { syncCredentialsToSdk } from "@claxedo/server-core/opencode/sdk-credential-bridge"
-import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
+import { syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 
 /**
@@ -17,18 +16,11 @@ import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/con
  */
 export function localControlPlaneCredentials(): ControlPlaneCredentials {
   return {
-    ...defaultControlPlaneCredentials(),
+    ...defaultControlPlaneCredentials({ refreshLocalRuntimes: syncEmbeddedWorkspaceRuntimes }),
     machineLogins: (harnesses, options) => readMachineLogins(harnesses, { fresh: options?.fresh === true }),
-    clearActiveCredentials: async (providerIds, org) => {
-      const result = clearActiveCredentials(providerIds, org)
-      // The engine resolves auth from a store Claxedo does not otherwise write:
-      // without this the next embedded turn still runs on the account just
-      // withdrawn. Running sandboxes hold the same accounts at their provider
-      // edge, which only the supervisor's reconcile withdraws.
-      if (result.cleared.length > 0) {
-        await syncCredentialsToSdk(org, providerIds)
-        await workspaceSupervisor().reconcileCredentialDelivery()
-      }
+    clearActiveCredentials: async (providerIds, org, actor) => {
+      const result = clearActiveCredentials(providerIds, org, actor)
+      if (result.cleared.length > 0) await deliverCredentialChange(syncEmbeddedWorkspaceRuntimes)
       return result
     },
   }

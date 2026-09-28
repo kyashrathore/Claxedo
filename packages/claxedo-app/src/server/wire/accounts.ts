@@ -1,6 +1,6 @@
 import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import type { QuotaWindow } from "@claxedo/usage-contract"
-import type { Account, AccountCheck, AccountDelivery, AccountVerdict, MachineLogin, MachineLoginState } from "../account-types"
+import type { Account, AccountCheck, AccountDelivery, AccountScope, AccountSource, AccountSources, AccountVerdict, HostedAccountSources, MachineLogin, MachineLoginState } from "../account-types"
 
 function texts(value: unknown) {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : undefined
@@ -29,6 +29,10 @@ function definedFields<T extends object>(fields: T): Partial<T> {
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as Partial<T>
 }
 
+export function accountScopeFromWire(value: unknown): AccountScope | undefined {
+  return value === "local" || value === "shared" ? value : undefined
+}
+
 export function accountFromWire(value: unknown): Account | undefined {
   const row = asRecord(value)
   const id = asString(row?.id)
@@ -42,8 +46,8 @@ export function accountFromWire(value: unknown): Account | undefined {
     source: asString(row.source) ?? "unknown",
     active: row.is_active === true,
     hasSecret: row.has_secret === true,
-    scope: asString(row.scope) ?? "local",
     ...definedFields({
+      scope: accountScopeFromWire(row.scope),
       label: asString(row.label),
       accountId: asString(row.account_id),
       status: asString(row.status),
@@ -99,4 +103,27 @@ export function rowsFromWire<T>(value: unknown, field: string, parse: (row: unkn
     const parsed = parse(row)
     return parsed === undefined ? [] : [parsed]
   })
+}
+
+function sourcesFromWire(value: unknown): ReadonlyMap<string, AccountSource> | undefined {
+  const row = asRecord(value)
+  if (!row) return undefined
+  const sources = new Map<string, AccountSource>()
+  for (const [providerId, source] of Object.entries(row)) {
+    if (source !== "own" && source !== "team") return undefined
+    sources.set(providerId, source)
+  }
+  return sources
+}
+
+export function accountSourcesFromWire(value: unknown): AccountSources | undefined {
+  const sources = sourcesFromWire(asRecord(value)?.sources)
+  const team = rowsFromWire(value, "team", accountFromWire)
+  return sources && team ? { sources, team } : undefined
+}
+
+export function hostedAccountSourcesFromWire(value: unknown): HostedAccountSources | undefined {
+  const sources = sourcesFromWire(asRecord(value)?.sources)
+  const team = texts(asRecord(value)?.team)
+  return sources && team ? { sources, team: new Set(team) } : undefined
 }

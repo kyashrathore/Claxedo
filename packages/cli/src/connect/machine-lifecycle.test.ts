@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import http from "node:http"
 import os from "node:os"
@@ -6,7 +6,7 @@ import path from "node:path"
 import type { HostStateStore } from "@claxedo/host-connector/host-state"
 import { sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
 import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/host-serving/runtime"
-import { setHostServing, stopHostServing, hostServingState } from "@claxedo/host-serving/serving"
+import { resetHostEnrolledOwner, setHostServing, stopHostServing, hostServingState } from "@claxedo/host-serving/serving"
 import { connect, type ConnectDeps } from "../commands/connect"
 import { processAlive, statusLines } from "../commands/status"
 import { desktopDaemonDiscoveryFiles, desktopDaemonState } from "./desktop-daemon"
@@ -387,7 +387,6 @@ async function inProcessHost() {
         listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 })
         return listener
       },
-      openCodeRuntime: () => undefined,
       setServing: setHostServing,
       servingState: hostServingState,
       stopServing: stopHostServing,
@@ -468,14 +467,18 @@ async function inProcessHost() {
 }
 
 const SECRET = "sk-owner-secret-0123456789abcdef"
-const providerConfig = (placeholder: string) =>
-  JSON.stringify({ version: 1, providers: { "claude-sdk": { baseUrl: "https://broker.example/b/1", placeholder, authMode: "bearer" } } })
+const providerConfig = (placeholder: string) => JSON.stringify({ version: 1, credentials: {
+  machineOwnerUserId: "alice",
+  accounts: { alice: { "claude-sdk": { baseUrl: "https://broker.example/b/1", placeholder, authMode: "bearer" } } },
+} })
 
 describe("provider configuration on a running claxedo connect host", () => {
   let h: Awaited<ReturnType<typeof inProcessHost>>
   const previousDataDir = process.env.CLAXEDO_DATA_DIR
+  beforeEach(() => resetHostEnrolledOwner())
   afterEach(async () => {
     await h?.close()
+    resetHostEnrolledOwner()
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
   })
@@ -505,7 +508,10 @@ describe("provider configuration on a running claxedo connect host", () => {
       sessionAuthorityUrl: served!.authority!.sessionAuthorityUrl,
       storeRoot: path.join(served!.storage_root, "ws_api"),
     })
-    expect(runtime.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
+    // The first apply prepared the runtime; the ack that let it serve named the
+    // enrollment's owner, which re-names whose accounts it holds.
+    await until(() => runtime.host.detail().configApply.revision === 2, "the enrolled owner's re-apply")
+    expect(runtime.host.detail().configApply.state).toBe("applied")
 
     const first = await h.cp.pushProviderConfig(id, providerConfig(SECRET))
     await h.beat()
@@ -515,7 +521,7 @@ describe("provider configuration on a running claxedo connect host", () => {
     expect(text).not.toContain(SECRET)
     expect(h.lines).toContain("provider configuration revision 1: claude-sdk")
     expect(h.lines.join("\n")).not.toContain(SECRET)
-    await until(() => runtime.host.detail().configApply.revision === 2, "the live runtime to re-apply")
+    await until(() => runtime.host.detail().configApply.revision === 3, "the live runtime to re-apply")
     expect(runtime.host.detail().configApply.state).toBe("applied")
 
     expect((await h.beat()).providerConfigRevision).toBe(first)
@@ -532,7 +538,7 @@ describe("provider configuration on a running claxedo connect host", () => {
     expect((await h.beat()).providerConfigRevision, "re-delivered, stored, then declared").toBe(second)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(second)
     expect(await h.stateText()).not.toContain(SECRET)
-    await until(() => runtime.host.detail().configApply.revision === 3, "the rotated placeholder to reach the runtime")
+    await until(() => runtime.host.detail().configApply.revision === 4, "the rotated placeholder to reach the runtime")
 
     const third = await h.cp.pushProviderConfig(id, null)
     await h.beat()
@@ -541,7 +547,7 @@ describe("provider configuration on a running claxedo connect host", () => {
     expect(h.lines).toContain(`provider configuration revision ${third}: withdrawn; harnesses run on this machine's own logins`)
     expect((await h.beat()).providerConfigRevision).toBe(third)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(third)
-    await until(() => runtime.host.detail().configApply.revision === 4, "the withdrawal to reach the runtime")
+    await until(() => runtime.host.detail().configApply.revision === 5, "the withdrawal to reach the runtime")
 
     expect(await h.stop()).toBe(0)
   }, 30_000)

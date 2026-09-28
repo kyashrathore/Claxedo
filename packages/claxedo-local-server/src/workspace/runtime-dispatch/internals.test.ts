@@ -13,7 +13,7 @@ import { ensureWorkspace, resolveWorkspace } from "@claxedo/server-core/workspac
 
 describe("embedded workspace runtime configuration boundary", () => {
   test("read dispatch defers adapter configuration to the acquisition owner", () => {
-    for (const pathname of ["/api/wr/harness-config-options", "/permission/modes", "/agent", "/session/capabilities", "/session/s1/capabilities", "/session/s1/config-options", "/session/s1/config", "/session/s1/permission-mode"]) {
+    for (const pathname of ["/api/wr/harness-config-options", "/api/wr/harness-providers", "/permission/modes", "/agent", "/session/capabilities", "/session/s1/capabilities", "/session/s1/config-options", "/session/s1/config", "/session/s1/permission-mode"]) {
       expect(embeddedConfigModeForPath(pathname, "GET")).toBe("skip")
     }
   })
@@ -103,6 +103,17 @@ describe("the host aggregate's place in runtime dispatch", () => {
     expect(served.status).toBe(bare.status)
     expect(await served.text()).toBe(await bare.text())
     expect(bare.status).toBe(404)
+  })
+
+  test.each([
+    ["POST", "http://127.0.0.1/session?connectionId=scripted-acp"],
+    ["GET", "http://127.0.0.1/session/ses_1"],
+    ["POST", "http://127.0.0.1/question/que_1/reply"],
+  ])("a session request (%s %s) naming no workspace is refused as a typed binding error", async (method, url) => {
+    const { app } = dispatcher()
+    const response = await app.request(url, { method })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "invalid_execution_binding", details: { field: "directory" } } })
   })
 
   test("a composition that mounts no aggregate leaves a workspace-less wr/events on the workspace dispatch path", async () => {

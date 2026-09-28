@@ -28,6 +28,7 @@ const acme = {
   baseURL: "https://api.acme.test/v1/",
   env: [],
   headers: {},
+  credentialHeader: { name: "Authorization", scheme: "Bearer" as const },
   models: { "acme-1": { name: "Acme One" } },
 }
 
@@ -46,6 +47,12 @@ describe("a custom provider's destination", () => {
     expect(hasProviderDestination("acme", "org_dest")).toBe(true)
   })
 
+  test("injects the key at the header the operator declared for it", () => {
+    putCustomProvider({ ...acme, providerID: "gemini-proxy", credentialHeader: { name: "X-Goog-Api-Key" } }, "org_dest")
+    expect(providerDestination({ providerId: "gemini-proxy", kind: "api_key", secret: "sk-g", org: "org_dest" })?.injection)
+      .toEqual({ header: "X-Goog-Api-Key" })
+  })
+
   test("does not exist for another org or for a caller naming none", () => {
     putCustomProvider(acme, "org_dest")
 
@@ -60,5 +67,23 @@ describe("a custom provider's destination", () => {
       .toBe("https://api.acme.test")
     expect(providerDestination({ providerId: "anthropic", kind: "api_key", secret: "sk" })?.origin)
       .toBe("https://api.anthropic.com")
+  })
+})
+
+describe("Cursor SDK 1.0.24 dist/esm/index.js service descriptors", () => {
+  test("the standard row declares each Agent, Bidi, Dashboard and ServerConfig method and excludes Analytics", () => {
+    const destination = providerDestination({ providerId: "cursor-sdk", kind: "api_key", secret: "cursor-key" })!
+    expect(destination.exchange).toEqual({ path: "/auth/exchange_user_api_key", tokenField: "accessToken" })
+    expect(destination.pathPrefixes).toEqual([])
+    expect(destination.exactPaths).toHaveLength(552)
+    expect(new Set(destination.exactPaths).size).toBe(552)
+    expect(destination.exactPaths).toContain("/v1/models")
+    expect(destination.exactPaths).toContain("/agent.v1.AgentService/RunSSE")
+    expect(destination.exactPaths).toContain("/aiserver.v1.BidiService/BidiAppend")
+    expect(destination.exactPaths).toContain("/aiserver.v1.DashboardService/GetTeamReposOrEmptyIfNotInTeam")
+    expect(destination.exactPaths).toContain("/aiserver.v1.DashboardService/CreateOrganizationApiKey")
+    expect(destination.exactPaths).toContain("/aiserver.v1.ServerConfigService/GetServerConfig")
+    expect(destination.exactPaths?.some((path) => path.includes("AnalyticsService"))).toBe(false)
+    expect(destination.exactPaths?.every((path) => !path.endsWith("/"))).toBe(true)
   })
 })

@@ -63,7 +63,7 @@ function PairRows(props: { readonly list: RowList; readonly form: FormState; rea
 
 function ProviderFields(props: { readonly form: FormState; readonly setForm: SetStoreFunction<FormState> }) {
   const t = useAccountsText()
-  const set = (key: "providerId" | "name" | "baseURL" | "apiKey", value: string) => {
+  const set = (key: "providerId" | "name" | "baseURL" | "apiKey" | "keyHeader", value: string) => {
     props.setForm(key, value)
     if (key !== "apiKey") props.setForm("err", key, undefined)
   }
@@ -73,6 +73,7 @@ function ProviderFields(props: { readonly form: FormState; readonly setForm: Set
       <TextField label={t("provider.custom.field.name.label")} placeholder={t("provider.custom.field.name.placeholder")} value={props.form.name} onChange={(value) => set("name", value)} invalid={!!props.form.err.name} error={props.form.err.name} />
       <TextField label={t("provider.custom.field.baseURL.label")} placeholder={t("provider.custom.field.baseURL.placeholder")} value={props.form.baseURL} onChange={(value) => set("baseURL", value)} invalid={!!props.form.err.baseURL} error={props.form.err.baseURL} />
       <TextField label={t("provider.custom.field.apiKey.label")} placeholder={t("provider.custom.field.apiKey.placeholder")} description={t("provider.custom.field.apiKey.description")} value={props.form.apiKey} onChange={(value) => set("apiKey", value)} />
+      <TextField label={t("provider.custom.field.keyHeader.label")} placeholder={t("provider.custom.field.keyHeader.placeholder")} description={t("provider.custom.field.keyHeader.description")} value={props.form.keyHeader} onChange={(value) => set("keyHeader", value)} invalid={!!props.form.err.keyHeader} error={props.form.err.keyHeader} />
     </div>
   )
 }
@@ -110,7 +111,7 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
 export function DialogCustomProvider(props: { readonly existing: ReadonlySet<string>; readonly onSaved: () => Promise<void> }) {
   const t = useAccountsText()
   const dialog = useDialog()
-  const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", models: [modelRow()], headers: [headerRow()], err: {} })
+  const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", keyHeader: "Authorization", models: [modelRow()], headers: [headerRow()], err: {} })
   const { saving, save } = useSave(props, form, setForm)
   return (
     <Dialog size="large" fit containerClass="long-dialog-container">

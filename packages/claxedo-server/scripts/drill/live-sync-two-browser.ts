@@ -125,7 +125,7 @@ const BOB = "user_bob"
 
 /**
  * The retention ring is 256 events + 64 terminal (`createSseReplayBuffer`
- * defaults, `agent-sdk-runtime/src/sse.ts:29-30`). `document.changed` counts as
+ * defaults, `workspace-runtime/src/projection/sse.ts:29-30`). `document.changed` counts as
  * TERMINAL (`event-retention.ts:53`), so it lands in both, and overrunning the
  * gap threshold means pushing past the wider of the two.
  */

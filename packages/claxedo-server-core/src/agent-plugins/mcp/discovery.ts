@@ -168,7 +168,7 @@ async function safeFetch(
   fetcher: Fetch,
   input: URL,
   init: RequestInit | undefined,
-  options: { loopback?: boolean; resolve: McpOAuthAddressResolver },
+  options: { loopback?: boolean; resolve: McpOAuthAddressResolver; redirect?: "error" },
 ) {
   let url = input
   let loopback = options.loopback === true
@@ -183,6 +183,10 @@ async function safeFetch(
       cf: { resolveOverride: addresses[0] },
     } as RequestInit)
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
+    if (options.redirect === "error") {
+      await response.body?.cancel()
+      throw new Error("MCP OAuth endpoint redirect is unsafe")
+    }
     const location = response.headers.get("location")
     const next = location ? safeEndpoint(new URL(location, url).toString(), { loopback: url.protocol === "http:" }) : undefined
     if (!next) throw new Error("discovery redirect is unsafe")
@@ -192,17 +196,12 @@ async function safeFetch(
   throw new Error("discovery redirected too many times")
 }
 
-/**
- * The same destination policy as a fetch wrapper, for the OAuth token
- * exchange that runs AFTER discovery against the endpoints it retained —
- * `callback` and `refresh` POST the code and refresh token there, so the
- * connection-time check and per-hop redirect policy must hold there too.
- */
+// Token POST bodies carry credentials bound to the retained endpoint, never a redirect recipient.
 export function createSafeEndpointFetch(fetcher: Fetch, resolve: McpOAuthAddressResolver): Fetch {
   return async (url, init) => {
     const endpoint = safeEndpoint(url, { loopback: true })
     if (!endpoint) throw new Error("MCP OAuth endpoint is unsafe")
-    return safeFetch(fetcher, endpoint, init, { loopback: true, resolve })
+    return safeFetch(fetcher, endpoint, init, { loopback: true, resolve, redirect: "error" })
   }
 }
 

@@ -44,14 +44,31 @@ function machineRow(hostId: string, enrolledVia: "account" | "invitation") {
   return { enrollment_id: `enr_${hostId}`, host_id: hostId, enrolled_via: enrolledVia }
 }
 
+type CloudCreateArgs = { workspaceId: string; projectId?: string; repoUrl?: string; gitBranch?: string; remoteDirectory?: string; homeRegion?: string }
+
+/** The row an authority stores for a cloud create, which the route reads back to provision from. */
+function cloudRow(args: CloudCreateArgs) {
+  return {
+    workspace_id: args.workspaceId,
+    project_id: args.projectId ?? "proj_derived",
+    backing: "cloud-vm",
+    ...(args.homeRegion ? { home_region: args.homeRegion } : {}),
+    ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
+    ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
+    ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
+  }
+}
+
 function fakeAuthority(overrides: Record<string, unknown> = {}) {
+  const created = new Map<string, ReturnType<typeof cloudRow>>()
+  const createCloudWorkspace = overrides.createCloudWorkspace as ((auth: unknown, args: CloudCreateArgs) => Promise<unknown>) | undefined
   return {
     usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
     authorizeWorkspaceCreate: vi.fn(async () => {}),
-    openWorkspace: vi.fn(async () => ({
+    openWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => ({
       allowed: true,
       role: "owner",
-      workspace: { workspace_id: "ws_1", backing: "local-worktree" },
+      workspace: created.get(args.workspaceId) ?? { workspace_id: "ws_1", backing: "local-worktree" },
     })),
     activeWorkspaceHost: vi.fn(async () => ({
       active: true,
@@ -79,6 +96,15 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     auditAllow: vi.fn(async () => ({})),
     auditDeny: vi.fn(async () => ({})),
     ...overrides,
+    ...(createCloudWorkspace
+      ? {
+          createCloudWorkspace: async (auth: unknown, args: CloudCreateArgs) => {
+            const result = await createCloudWorkspace(auth, args)
+            created.set(args.workspaceId, cloudRow(args))
+            return result
+          },
+        }
+      : {}),
   }
 }
 
@@ -455,7 +481,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "apac-south" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "apac-south" },
       })),
     })
     const sandboxManager = {
@@ -466,6 +492,9 @@ describe("hosted connection", () => {
     expect(res.status).toBe(200)
     expect(sandboxManager.ensure).toHaveBeenCalledWith("ws_1", {
       homeRegion: "apac-south",
+      labels: { projectId: "proj_1" },
+      workspaceRoot: "/workspace",
+      source: { kind: "empty" },
       net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["api.anthropic.com"]) }),
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
@@ -495,7 +524,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "apac-south" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "apac-south" },
       })),
     })
     // No `ensure` on this fake: the read resolves the lease row through
@@ -533,7 +562,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
       })),
     })
     const ensure = vi.fn()
@@ -564,7 +593,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
       })),
     })
     const ensure = vi.fn()
@@ -588,7 +617,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "editor",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "eu-west" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "eu-west" },
       })),
     })
     const sandboxManager = {
@@ -670,7 +699,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "eu-west" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "eu-west" },
       })),
     })
     const sandboxManager = {
@@ -714,7 +743,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm" },
       })),
     })
     const { app } = buildApp({ authority: authority })
@@ -752,7 +781,7 @@ describe("hosted connection rate limiting (mint-only)", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
       })),
     })
   }

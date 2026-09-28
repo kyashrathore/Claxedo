@@ -5,6 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { createWorkspaceHost } from "@claxedo/workspace-runtime/host"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-secret-scope-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
@@ -45,7 +46,7 @@ describe("runtime config secret scoping", () => {
    * authority, as a placeholder.
    */
   test("no runtime snapshot carries credential material, in either scope", async () => {
-    const put = (name: string, extra: object = {}, org = "org-a") => putCredential({
+    const put = (name: string, extra: object = {}, org = "org-a") => putCredential({ owner: "local",
       provider_id: name, kind: "api_key", source: "managed", secret: `${name}-secret`,
       scope: "shared", consent: { at: Date.now(), surface: "cli" }, ...extra,
     }, org)
@@ -55,7 +56,6 @@ describe("runtime config secret scoping", () => {
     await updateCredentialStatus(revoked.id, "revoked", undefined, "org-a")
     await saveUserConfig({
       version: 3,
-      mcp: {},
       connections: {
         external: {
           connectionId: "external",
@@ -68,17 +68,17 @@ describe("runtime config secret scoping", () => {
       },
     })
 
-    const sharedSnapshot = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a" })
-    const localSnapshot = await getRuntimeConfigSnapshot(undefined, { orgId: "org-a" })
+    const sharedSnapshot = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-a" })
+    const localSnapshot = await getRuntimeConfigSnapshot({ orgId: "org-a" })
 
-    expect(sharedSnapshot.auth).toEqual({})
-    expect(localSnapshot.auth).toEqual({})
+    expect(sharedSnapshot.auth).toEqual({ machineOwnerUserId: "", accounts: {} })
+    expect(localSnapshot.auth).toEqual({ machineOwnerUserId: "", accounts: {} })
     // The descriptor still names its references; an id is not secret material.
     expect(JSON.stringify([sharedSnapshot, localSnapshot])).not.toContain("-secret")
 
     // A descriptor that still names secret references has no source in a v4
     // snapshot, so selecting it fails closed rather than starting unauthenticated.
-    const host = createWorkspaceHost({ target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied") })
+    const host = createWorkspaceHost({ target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied"), placement: loopbackMachineLoginPolicy() })
     try {
       await expect(host.apply({
         ...localSnapshot,
@@ -97,19 +97,19 @@ describe("runtime config secret scoping", () => {
       expiresAt: 1_800_000_000_000,
     }
     const calls: unknown[] = []
-    await saveUserConfig({ version: 3, mcp: {}, connections: {} })
+    await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({
-      projectAuth: async (input): Promise<Record<string, typeof projection>> => {
+      projectAuth: async (input): Promise<import("@claxedo/agent-runtime-contract").CredentialSnapshot<typeof projection>> => {
         calls.push(input)
-        return input.scope === "local" ? { "claude-sdk": projection } : {}
+        return { machineOwnerUserId: "local", accounts: { local: input.scope === "local" ? { "claude-sdk": projection } : {} } }
       },
     })
 
-    const local = await getRuntimeConfigSnapshot(undefined, { orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
-    const shared = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" })
+    const local = await getRuntimeConfigSnapshot({ orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
+    const shared = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" })
 
-    expect(local.auth).toEqual({ "claude-sdk": projection })
-    expect(shared.auth).toEqual({})
+    expect(local.auth.accounts.local).toEqual({ "claude-sdk": projection })
+    expect(shared.auth.accounts.local).toEqual({})
     expect(calls).toEqual([
       { scope: "local", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" },
       { scope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "none" },
@@ -117,60 +117,27 @@ describe("runtime config secret scoping", () => {
   })
 
   test("the self-hosted authority projects an org's marked account to that org's sandboxes and to no other org", async () => {
-    const marked = await putCredential({
+    const marked = await putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-ant-api03-org-a",
       scope: "shared", consent: { at: Date.now(), surface: "cli" },
     }, "org-a")
-    expect(setActiveCredentials([marked.id], "org-a")).toMatchObject({ ok: true })
-    await saveUserConfig({ version: 3, mcp: {}, connections: {} })
+    expect(setActiveCredentials([marked.id], "org-a", "local")).toMatchObject({ ok: true })
+    await saveUserConfig({ version: 3, connections: {} })
     configureAgentConfig({ projectAuth: selfHostedCredentialAuthority() })
 
-    const own = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native" })
-    const foreign = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "native" })
+    const own = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-a", workspaceId: "ws_1", secretBrokering: "native", sandboxOwner: "local" })
+    const foreign = await getRuntimeConfigSnapshot({ secretScope: "shared", orgId: "org-b", workspaceId: "ws_2", secretBrokering: "native", sandboxOwner: "local" })
 
-    expect(own.auth).toEqual({
+    expect(own.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
-        placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
         authMode: "api-key",
         apiPath: "/v1",
       },
     })
-    expect(foreign.auth).toEqual({})
+    expect(foreign.auth.accounts).toEqual({})
     expect(JSON.stringify([own, foreign])).not.toContain("sk-ant-")
   })
 
-  test("shared runtime snapshots exclude local-only MCP overlays", async () => {
-    await saveUserConfig({
-      version: 3,
-      connections: {},
-      mcp: {
-        "local-stdio": {
-          type: "stdio",
-          command: "node",
-          args: ["local.js"],
-          env: { LOCAL_SECRET: "local-secret" },
-        },
-        "local-remote": {
-          type: "remote",
-          url: "https://mcp.example.test",
-          headers: { Authorization: "Bearer local-secret" },
-        },
-      },
-    })
-
-    const shared = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared" })
-    expect(shared.mcp["local-stdio"]).toBeUndefined()
-    expect(shared.mcp["local-remote"]).toBeUndefined()
-
-    const local = await getRuntimeConfigSnapshot(undefined, { secretScope: "local" })
-    expect(local.mcp["local-stdio"]).toMatchObject({
-      source: "user",
-      env: { LOCAL_SECRET: "local-secret" },
-    })
-    expect(local.mcp["local-remote"]).toMatchObject({
-      source: "user",
-      headers: { Authorization: "Bearer local-secret" },
-    })
-  })
 })

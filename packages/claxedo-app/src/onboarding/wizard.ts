@@ -1,12 +1,13 @@
-import { createSignal, type Accessor } from "solid-js"
+import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { draftProjectName, primaryPlacement } from "@/projects"
-import { createOrOpenFolderProject, toAppError, useServer, type PlacementId, type ProjectSource } from "@/server"
+import { useServer } from "@/server"
 import { draftPath } from "@/shell"
+import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
-import { onboardingSteps, type ExecutionChoice, type OnboardingStepId } from "./steps"
-
-export type OnboardingDraft = { readonly source: ProjectSource; readonly name?: string }
+import { executionBlock, type ExecutionChoice, type ExecutionFacts, type OnboardingDraft } from "./model"
+import { createOnboardingTarget, finishFailure, openedPlacement, type Placing } from "./place"
+import { onboardingSteps, type OnboardingStepId } from "./steps"
 
 export function draftName(draft: OnboardingDraft): string {
   return draft.name ?? draftProjectName(draft.source)
@@ -24,64 +25,47 @@ function createStepper() {
   return { step, visited, goTo, index, current }
 }
 
-function usePlaceProject(localExecution: Accessor<boolean>): (draft: OnboardingDraft) => Promise<PlacementId> {
+function useOnboardingFinish(placing: Accessor<Placing | undefined>) {
   const server = useServer()
-  const t = useOnboardingText()
-  return async (draft) => {
-    const input = { source: draft.source, ...(draft.name ? { name: draft.name } : {}) }
-    if (!localExecution()) {
-      const project = await server.projects.create(input)
-      return (await server.cloud.create({ projectId: project.id })).id
-    }
-    const project = await createOrOpenFolderProject(server, input)
-    const placement = primaryPlacement(server.placements.list(), project.id)
-    if (!placement) throw new Error(t("onboarding.failed.noPlacement", { project: project.name }))
-    return placement.id
-  }
-}
-
-function createFinisher(localExecution: Accessor<boolean>, draft: Accessor<OnboardingDraft | undefined>) {
-  const place = usePlaceProject(localExecution)
   const navigate = useNavigate()
-  const [finishing, setFinishing] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
-  const finish = async () => {
-    const held = draft()
-    if (!held || finishing()) return
-    setFinishing(true)
-    setFailure(undefined)
-    try {
-      navigate(draftPath(await place(held)))
-    } catch (error) {
-      setFailure(toAppError(error).message)
-    } finally {
-      setFinishing(false)
-    }
+  const t = useOnboardingText()
+  const held = () => {
+    const current = placing()
+    if (!current) throw new Error("Finish ran before the project step chose a source")
+    return current
   }
-  return { finishing, failure, setFailure, finish }
+  return createFinish({
+    create: (created) => createOnboardingTarget(server, t, held(), created),
+    open: async (created) => navigate(draftPath(openedPlacement(t, created, (project) => primaryPlacement(server.placements.list(), project)?.id))),
+    describe: (error, created) => finishFailure(t, error, created),
+  })
 }
 
-export function createOnboardingWizard(localExecution: Accessor<boolean>) {
+export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
   const stepper = createStepper()
   const [draft, setDraft] = createSignal<OnboardingDraft>()
   const [aiReady, setAiReady] = createSignal(false)
   const [chosen, setChosen] = createSignal<ExecutionChoice>()
-  const [executionReady, setExecutionReady] = createSignal(false)
-  const finisher = createFinisher(localExecution, draft)
+  const choice = (): ExecutionChoice => chosen() ?? (facts().localExecution ? "local" : "cloud")
+  const placing = () => {
+    const held = draft()
+    return held && { draft: held, choice: choice(), localExecution: facts().localExecution }
+  }
+  const finish = useOnboardingFinish(placing)
+  const blocked = createMemo(() => executionBlock(choice(), facts(), draft()?.source))
   const move = (index: number) => {
-    finisher.setFailure(undefined)
+    finish.moved()
     const target = onboardingSteps[index]
     if (target) stepper.goTo(target.id)
   }
   return {
     ...stepper,
-    ...finisher,
+    finish,
     draft,
     aiReady,
     setAiReady,
-    executionReady,
-    setExecutionReady,
-    choice: (): ExecutionChoice => chosen() ?? (localExecution() ? "local" : "cloud"),
+    blocked,
+    choice,
     choose: setChosen,
     chooseSource: (source: OnboardingDraft) => {
       setDraft(source)
@@ -89,6 +73,10 @@ export function createOnboardingWizard(localExecution: Accessor<boolean>) {
     },
     advance: () => move(stepper.index() + 1),
     back: () => move(stepper.index() - 1),
+    complete: () => {
+      if (!placing() || (!finish.created() && blocked())) return
+      void finish.run()
+    },
   }
 }
 

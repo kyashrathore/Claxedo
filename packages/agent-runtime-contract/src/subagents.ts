@@ -20,6 +20,10 @@ export function isRuntimeGoalStatus(value: unknown): value is RuntimeGoalStatus 
 }
 
 export type SubagentStatus = "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
+
+export function isTerminalSubagentStatus(status: string | undefined): boolean {
+  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
+}
 export type SubagentMode = "foreground" | "background"
 export type SubagentToolCallRole = "spawn" | "interaction"
 /**
@@ -50,4 +54,35 @@ export type AgentSubagentUpdate = {
   /** Permission and question requests the child is holding open, to be answered by a human. */
   attention?: number
   wake?: SubagentWake
+}
+
+export type SubagentObservation = {
+  observationId: string
+  harnessExecutionId?: string
+  subagentKey?: string
+  stableCorrelationId?: string
+  toolCallId?: string
+  toolCallRole?: SubagentToolCallRole
+  mode?: SubagentMode
+  status?: SubagentStatus
+  label?: string
+  subagentType?: string
+  description?: string
+  providerId?: string
+  providerKind?: string
+  childSessionId?: string
+  transcript?: SubagentTranscript
+  attention?: number
+  wake?: SubagentWake
+}
+
+export class UnknownHostSubagentKeyError extends Error {
+  constructor(
+    readonly parentSessionId: string,
+    readonly observationId: string,
+    readonly subagentKey: string | undefined,
+  ) {
+    super(`subagent observation ${observationId} names claxedo row ${subagentKey ?? "<none>"}, which ${parentSessionId} never created`)
+    this.name = "UnknownHostSubagentKeyError"
+  }
 }

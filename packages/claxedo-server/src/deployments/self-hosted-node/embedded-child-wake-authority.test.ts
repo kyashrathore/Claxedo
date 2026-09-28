@@ -95,9 +95,9 @@ async function childWakeGrant(authority: WakeAuthority, bobRuntime: PrivateSessi
  */
 function restartedHost(store: RuntimeStore, authority: unknown) {
   const { runtime, prompts } = hostRuntimeDouble()
-  const host = SessionRoutes(() => ({}) as never, {
+  const host = SessionRoutes(async () => runtime, {
     sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority as never),
-    resolveRuntime: () => runtime,
+    requestedSessionHarness: (requested) => requested ?? { id: "connection_wake", access: "connection" },
     ...storeBackedHostOptions(store),
   })
   lifecycle.host(() => host.dispose())

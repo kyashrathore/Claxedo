@@ -35,8 +35,7 @@ import { projectEnv } from "@claxedo/server-core/workspace/store/index"
 import { configToken, supervisorBackplaneHeaders } from "./control-token"
 import { pushRuntimeConfig } from "./config-sync"
 import { sandboxBrokeredSecrets } from "../../credentials/sandbox-delivery"
-import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
-import { supervisorSandboxDriverId } from "./driver-id"
+import { supervisorDriverIdentity, type SupervisorDriverIdentity } from "./driver-id"
 import {
   createSupervisorSandboxLeaseStore,
   getSupervisorSandboxLease,
@@ -56,8 +55,8 @@ import {
 } from "./runtime-env"
 import { now, runtimeBackoffMs, sleep } from "./clock"
 import type { WorkspaceRuntimeState } from "./store"
-import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { provisionedRunnerOption } from "@claxedo/server-core/agent-config/connections"
 
 const log = Log.create({ service: "workspace-supervisor" })
 
@@ -106,10 +105,12 @@ export async function resolveSandboxBindings(
   bindings?: SandboxBindings,
 ): Promise<SandboxAuthority> {
   const plan = await sandboxBrokeredSecrets({
+    owner: await needWorkspaceSupervisorOptions().sandboxOwner(state.ws.id),
+    machineOwnerUserId: needWorkspaceSupervisorOptions().machineOwnerUserId,
     ...(bindings?.secrets ? { stated: bindings.secrets } : {}),
     ...(state.ws.org_id ? { org: state.ws.org_id } : {}),
     ...(state.installed_secrets === undefined ? {} : { installed: state.installed_secrets }),
-    secretBrokering: sandboxDriverCatalog[await supervisorSandboxDriverId(state)].metadata.secretBrokering,
+    secretBrokering: (await supervisorDriverIdentity(state)).entry.metadata.secretBrokering,
   })
   return {
     stated: sandboxBindingsRequested(bindings),
@@ -137,8 +138,9 @@ export async function startSandbox(
   authority: SandboxAuthority = { stated: false },
 ): Promise<WorkspaceRuntimeState> {
   const bindings = authority.bindings
-  const driverId = await supervisorSandboxDriverId(state)
-  const placement = sandboxDriverPlacement(driverId)
+  const identity = await supervisorDriverIdentity(state)
+  const driverId = identity.id
+  const placement = sandboxDriverPlacement(identity.entry)
   const recorded = getSupervisorSandboxLease(state.ws.id)
   const recordedHostUrl = recorded?.status === "ready" ? sandboxLeaseUrl(recorded) : undefined
 
@@ -195,9 +197,9 @@ export async function startSandbox(
     // workspace's egress decided on. Recomputing it here would replace a stated
     // restriction with whatever the local policy table happens to hold, which
     // for an empty table is allow-all.
-    const net = bindings?.net ?? await resolveSupervisorSandboxNetworkPolicy(state, driverId, action)
+    const net = bindings?.net ?? await resolveSupervisorSandboxNetworkPolicy(state, identity, action)
     const result = await (
-      await createSupervisorSandboxManager(state, driverId)
+      await createSupervisorSandboxManager(state, identity)
     ).ensure(state.ws.id, {
       // Was hardcoded "us-east". This is the sole non-test producer of a
       // workspace's home region, and the relay now derives its Durable Object
@@ -214,7 +216,10 @@ export async function startSandbox(
       workspaceRoot: state.ws.remote_directory || WORKSPACE_DIR,
       // The project's environment (`projectEnv`): every sandbox of the project,
       // first or re-provisioned, starts the same way.
-      env: (await projectEnv(state.ws.project_id)) ?? {},
+      env: {
+        ...(await projectEnv(state.ws.project_id)),
+        ...(identity.entry.runtimeEnv === "ensure" ? runtimeEnvForHost(state, identity) : {}),
+      },
       source: state.ws.repo_url
         ? { kind: "git", repoUrl: state.ws.repo_url, branch: state.ws.git_branch ?? undefined }
         : { kind: "empty" },
@@ -254,14 +259,15 @@ export async function startSandbox(
 
 export async function stopSandbox(state: WorkspaceRuntimeState, reason: string) {
   if (!state.remote) return { keepSandbox: false }
-  const driverId = sandboxDriverId(state)
-  if (!driverId) return { keepSandbox: false }
+  const identity = await supervisorDriverIdentity(state, "existing")
+  if (!identity) return { keepSandbox: false }
+  const driverId = identity.id
   const lease = getSupervisorSandboxLease(state.ws.id)
   if (!state.sandbox_target && !lease?.sandbox_id) {
     return { keepSandbox: false }
   }
-  const keepSandbox = sandboxDriverPlacement(driverId).canPauseAndRestartSameResource
-  const manager = await createSupervisorSandboxManager(state, driverId)
+  const keepSandbox = sandboxDriverPlacement(identity.entry).canPauseAndRestartSameResource
+  const manager = await createSupervisorSandboxManager(state, identity)
   const canonical = lease?.status === "ready"
     && lease.persistence
     && lease.persistence.capture !== "none"
@@ -339,11 +345,17 @@ function checkpointRuntime(state: WorkspaceRuntimeState): SandboxCheckpointRunti
   }
 }
 
-export async function touchSandbox(state: WorkspaceRuntimeState) {
+async function touchSandbox(state: WorkspaceRuntimeState) {
   if (!state.remote) return
-  const driverId = sandboxDriverId(state)
-  if (!driverId) return
-  await (await createSupervisorSandboxManager(state, driverId)).touch(state.ws.id)
+  const identity = await supervisorDriverIdentity(state, "existing")
+  if (!identity) return
+  await (await createSupervisorSandboxManager(state, identity)).touch(state.ws.id)
+}
+
+export function keepSandboxAlive(state: WorkspaceRuntimeState) {
+  touchSandbox(state).catch((error: unknown) => {
+    log.warn("Sandbox keepalive failed", { workspaceId: state.ws.id, error: String(error) })
+  })
 }
 
 type RecordedSandboxAttach =
@@ -368,7 +380,7 @@ async function attachRecordedSandbox(
   state: WorkspaceRuntimeState,
   callbacks: SandboxCallbacks,
   input: {
-    driverId: SandboxDriverID
+    driverId: string
     lease: SandboxLeaseRow
     hostUrl: string
   },
@@ -493,11 +505,11 @@ function sandboxStartAction(
 
 async function resolveSupervisorSandboxNetworkPolicy(
   state: WorkspaceRuntimeState,
-  driverId: SandboxDriverID,
+  identity: SupervisorDriverIdentity,
   action: SandboxDecision,
 ) {
   const net =
-    driverId === "docker"
+    identity.entry.runtimeNetwork.controlPlane === "docker-host"
       ? undefined
       : await resolveWorkspaceSandboxNetworkPolicy({
           workspaceId: state.ws.id,
@@ -506,10 +518,10 @@ async function resolveSupervisorSandboxNetworkPolicy(
         })
   log.info("Sandbox network policy resolved", {
     workspaceId: state.ws.id,
-    driver: driverId,
+    driver: identity.id,
     action: action.action,
     ruleCount: net?.rules?.length ?? 0,
-    netMode: net?.mode ?? (driverId === "docker" ? `skipped-${driverId}` : "allow-all"),
+    netMode: net?.mode ?? (identity.entry.runtimeNetwork.controlPlane === "docker-host" ? `skipped-${identity.id}` : "allow-all"),
   })
   return net
 }
@@ -522,8 +534,8 @@ async function markSandboxAcquiring(state: WorkspaceRuntimeState) {
   if (pending) state.ws = pending
 }
 
-async function createSupervisorSandboxManager(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
-  const driver = await sandboxDriverForSupervisor(state, driverId)
+async function createSupervisorSandboxManager(state: WorkspaceRuntimeState, identity: SupervisorDriverIdentity) {
+  const driver = identity.driver ?? await sandboxDriverForSupervisor(state, identity.id, identity)
   return createSandboxManager({
     leaseStore: createSupervisorSandboxLeaseStore(),
     driver,
@@ -535,9 +547,9 @@ export async function captureSupervisorSandboxCheckpoint(
   state: WorkspaceRuntimeState,
   input: Parameters<SandboxManager["checkpoint"]>[1],
 ) {
-  const driverId = sandboxDriverId(state)
-  if (!driverId) throw new Error("workspace_checkpoint_driver_missing")
-  return await (await createSupervisorSandboxManager(state, driverId)).checkpoint(state.ws.id, input)
+  const identity = await supervisorDriverIdentity(state, "existing")
+  if (!identity) throw new Error("workspace_checkpoint_driver_missing")
+  return await (await createSupervisorSandboxManager(state, identity)).checkpoint(state.ws.id, input)
 }
 
 /**
@@ -550,14 +562,14 @@ export async function restoreSupervisorSandboxCheckpoint(
   state: WorkspaceRuntimeState,
   input: Parameters<SandboxManager["restore"]>[1],
 ) {
-  const driverId = sandboxDriverId(state)
-  if (!driverId) throw new Error("workspace_restore_driver_missing")
+  const identity = await supervisorDriverIdentity(state, "existing")
+  if (!identity) throw new Error("workspace_restore_driver_missing")
   const authority = await resolveSandboxBindings(
     state,
     input.ensure?.secrets ? { secrets: input.ensure.secrets } : undefined,
   )
   const secrets = authority.bindings?.secrets
-  const restored = await (await createSupervisorSandboxManager(state, driverId)).restore(state.ws.id, {
+  const restored = await (await createSupervisorSandboxManager(state, identity)).restore(state.ws.id, {
     ...input,
     ...(secrets ? { ensure: { ...input.ensure, secrets } } : {}),
   })
@@ -565,7 +577,7 @@ export async function restoreSupervisorSandboxCheckpoint(
   return restored
 }
 
-async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
+async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId: SandboxDriverID, identity: SupervisorDriverIdentity) {
   const cfg = sandboxDriverConfig(await loadUserConfig())
   if (driverId === "daytona") {
     const auth = await sandboxDriverAuthAsync(cfg, "daytona")
@@ -585,8 +597,8 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: () => runtimeEnvForHost(state, driverId),
+        ...provisionedRunnerOption(process.env),
+        env: () => runtimeEnvForHost(state, identity),
       })
     }
     throw missingSandboxDriverAuth(driverId, "api_key")
@@ -602,8 +614,8 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: () => runtimeEnvForHost(state, driverId),
+        ...provisionedRunnerOption(process.env),
+        env: () => runtimeEnvForHost(state, identity),
       })
     }
     throw missingSandboxDriverAuth(driverId, "api_token and worker_url")
@@ -621,8 +633,8 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: () => runtimeEnvForHost(state, driverId),
+        ...provisionedRunnerOption(process.env),
+        env: () => runtimeEnvForHost(state, identity),
       })
     }
     throw missingSandboxDriverAuth(driverId, "token_id and token_secret")
@@ -642,8 +654,8 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: () => runtimeEnvForHost(state, driverId),
+        ...provisionedRunnerOption(process.env),
+        env: () => runtimeEnvForHost(state, identity),
       })
     }
     throw missingSandboxDriverAuth(driverId, "access_token, team_id, and project_id")
@@ -660,8 +672,8 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: () => runtimeEnvForHost(state, driverId),
+        ...provisionedRunnerOption(process.env),
+        env: () => runtimeEnvForHost(state, identity),
       })
     }
     throw missingSandboxDriverAuth(driverId, "api_key")
@@ -676,26 +688,14 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: () => runtimeEnvForHost(state, driverId),
+        ...provisionedRunnerOption(process.env),
+        env: () => runtimeEnvForHost(state, identity),
       })
     }
     throw missingSandboxDriverAuth(driverId, "image")
   }
 
   throw new Error(`Unsupported sandbox driver: ${driverId}`)
-}
-
-function sandboxDriverId(state: WorkspaceRuntimeState): SandboxDriverID | undefined {
-  // `SandboxTarget.driver.id` and the lease row's `driver` are both plain
-  // strings — the manager dispatches on whatever id a driver was registered
-  // under — so an unrecognized one falls through to the next source rather than
-  // being asserted into the catalog's union.
-  const targetDriver = state.sandbox_target?.driver?.id
-  if (isSandboxDriverID(targetDriver)) return targetDriver
-  if (isSandboxDriverID(state.ws.driver)) return state.ws.driver
-  const leaseDriver = getSupervisorSandboxLease(state.ws.id)?.driver
-  return isSandboxDriverID(leaseDriver) ? leaseDriver : undefined
 }
 
 /**
@@ -709,13 +709,13 @@ function sandboxDriverId(state: WorkspaceRuntimeState): SandboxDriverID | undefi
  * binds. Daytona hands its env callback the provider sandbox, whose id is the
  * provider's resource id rather than the hostId.
  */
-function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
+function runtimeEnvForHost(state: WorkspaceRuntimeState, identity: SupervisorDriverIdentity) {
   const options = needWorkspaceSupervisorOptions()
-  const controlPlaneUrl = sandboxControlPlaneUrl(driverId, options.server_url)
+  const controlPlaneUrl = sandboxControlPlaneUrl(identity.entry, options.server_url)
   const lease = getSupervisorSandboxLease(state.ws.id)
   return {
     ...controlPlaneVerificationEnv(controlPlaneUrl, { options }),
-    ...relayHostVerificationEnv(driverId, { options }),
+    ...relayHostVerificationEnv(identity.entry, { options }),
     ...runtimeConfigTokenEnv(configToken(state)),
     WORKSPACE_RUNTIME_DISABLE_CORS: "1",
     ...(lease
@@ -780,7 +780,7 @@ async function markSandboxReady(
 }
 
 function sandboxTarget(
-  driverId: SandboxDriverID,
+  driverId: string,
   sandboxId: string,
   url: string,
   hostId = sandboxId,
@@ -807,7 +807,7 @@ function startSandboxHealthMonitor(state: WorkspaceRuntimeState) {
         signal: AbortSignal.timeout(10_000),
       })
       if (res.ok) {
-        touchSandbox(state).catch(() => {})
+        keepSandboxAlive(state)
         updateSupervisorSandboxLease(state.ws.id, { last_activity_at: now() })
         return
       }

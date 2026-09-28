@@ -3,17 +3,16 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
+import type { PromptDelivery } from "@claxedo/agent-sdk-runtime"
 import { createSessionRoutes } from "./session-core"
 import { createSessionDeliveryOwner, type SessionDeliveryOwner } from "../session/delivery-owner"
-import type { AgentRuntime, AgentRuntimeTurnStartInput, PromptDelivery } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
 import { sessionIdle } from "../compat-events"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
-import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
+import { FakeTransport } from "../test-support/fake-transport"
+import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []
@@ -32,32 +31,7 @@ function storeRoot() {
   return root
 }
 
-function adapter(): AgentHarnessAdapter {
-  return {
-    instructionChannel: "none",
-    getSession: async (binding) => ({ id: binding.sessionId }),
-    createSession: async () => ({ id: "session_1" }),
-    updateSession: async (binding) => ({ id: binding.sessionId }),
-    getSessionConfig: async () => ({
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "test", modelID: "fixture" },
-      agent: "build",
-      variant: null,
-    }),
-    updateSessionConfig: async (_binding, patch) => ({
-      harness: patch.harness ?? { id: "codex", access: "native" },
-      agent: null,
-      variant: null,
-    }),
-    deleteSession: async () => {},
-    readHarnessCapabilities: () => ({ harness: "codex", abort: true }) as never,
-    executeTurn: () => (async function* () {})(),
-    getMessages: async () => [],
-    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
-    dispose: () => {},
-  }
-}
-
+/** A harness whose running turn can be steered; what the steer answers is the test's own script. */
 function runtimeDouble(input: {
   starts: AgentRuntimeTurnStartInput[]
   deliveries: PromptDelivery[]
@@ -104,16 +78,18 @@ function runtimeDouble(input: {
 function routes(runtime: AgentRuntime, queuedPrompts = durableQueue().host, published: unknown[] = [], policy?: SessionAccessPolicy) {
   runtimes.get(queuedPrompts)?.(runtime)
   return createSessionRoutes({
-    resolveAdapter: () => adapter(),
-    resolveRuntime: () => runtime,
+    runtime: async () => runtime,
+    defaultHarness: () => ({ id: "codex", access: "native" }),
+    requestedSessionHarness: () => undefined,
     resolveDirectory: () => undefined,
+    getSession: (_c, _directory, sessionId) => ({ id: sessionId, title: "Held", time: { created: 1, updated: 1 } }),
     publishGlobal: (event) => { published.push(event) },
     ...(queuedPrompts ? { queuedPrompts } : {}),
     ...(policy ? { sessionAccessPolicy: policy } : {}),
   })
 }
 
-const RELAYED_ACTOR = { actorId: "actor_1", actorKind: "human" as const }
+const RELAYED_ACTOR = { userId: "user_1", actorId: "actor_1", actorKind: "human" as const }
 const RELAYED_AUTHORITY = { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const }
 
 /**
@@ -147,6 +123,7 @@ function grantingRoutes(runtime: AgentRuntime, queuedPrompts: SessionDeliveryOwn
         org_id: RELAYED_AUTHORITY.orgId,
         role: RELAYED_AUTHORITY.role,
         actor_id: RELAYED_ACTOR.actorId,
+        user_id: RELAYED_ACTOR.userId,
         actor_kind: RELAYED_ACTOR.actorKind,
       } as never)
       await next()
@@ -189,10 +166,11 @@ function durableQueue() {
       setQueuedPromptHeld: (sessionId, seq, held) => store.setQueuedPromptHeld(sessionId, seq, held),
       completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
       sessionDirectory: () => "/workspace",
+      sessionArchived: () => false,
     }),
     whenIdle: (sessionId) => runtime.turns.whenIdle(sessionId),
-    startTurn: (input) => new Promise<void>((resolve, reject) => {
-      void runRuntimePromptTurn({ ...input, runtime, publishGlobal: () => {}, onAdmissionSettled: (error) => error ? reject(error) : resolve() }).catch(reject)
+    startTurn: ({ origin: _origin, ...turn }) => new Promise<void>((resolve, reject) => {
+      void runRuntimePromptTurn({ ...turn, runtime, origin: LOOPBACK_ORIGIN, publishGlobal: () => {}, onAdmissionSettled: (error) => error ? reject(error) : resolve() }).catch(reject)
     }),
   })
   owners.push(host)
@@ -206,7 +184,6 @@ function prompt(body: Record<string, unknown>) {
 
 test("acceptance after the original turn finishes remains visible without inventing a transcript position", async () => {
   const queue = durableQueue()
-  const eventHub = createRuntimeEventHub()
   let finish!: () => void
   let accept!: () => void
   let dispatched!: () => void
@@ -215,16 +192,14 @@ test("acceptance after the original turn finishes remains visible without invent
   const acknowledgement = new Promise<void>((resolve) => { accept = resolve })
   const dispatch = new Promise<void>((resolve) => { dispatched = resolve })
   const idle = new Promise<void>((resolve) => { publishedIdle = resolve })
-  const provider: AgentHarnessAdapter = {
-    ...adapter(),
-    async *executeTurn(binding) { await completion; yield sessionIdle(binding.sessionId) },
-    async steerTurn() { dispatched(); await acknowledgement; return { ok: true } },
-  }
-  const runtime = createAgentRuntime({
-    store: createMemoryRuntimeStore(), eventHub,
-    harnesses: [{ id: "codex", access: "native", create: () => provider }],
+  const transport = new FakeTransport({
+    kind: "codex-app-server",
+    async *turn({ session }) { await completion; yield { type: "finish", sessionId: session.binding.sessionId } },
+    steer: async () => { dispatched(); await acknowledgement; return { ok: true } },
   })
-  await runtime.sessions.create({ id: "session_1", workspaceId: "workspace", directory: "/workspace", harness: { id: "codex", access: "native" } })
+  const host = createHostFixture({ transports: { codex: transport }, launch: testLaunch("ws", ["user_1"]) })
+  const { runtime, eventHub } = host
+  await runtime.sessions.create(sessionCreate({ id: "session_1", workspaceId: "workspace", directory: "/workspace", harness: { id: "codex", access: "native" } }))
   const userIds: string[] = []
   const unsubscribe = eventHub.subscribeGlobal(({ payload }) => {
     if (payload.type === "session.idle") publishedIdle()
@@ -246,7 +221,7 @@ test("acceptance after the original turn finishes remains visible without invent
     expect((await runtime.events.list("session_1", "/workspace")).filter((message) => message.info.role === "user").map((message) => message.info.id)).toEqual(["opening"])
   } finally {
     finish(); accept(); unsubscribe()
-    await runtime.dispose()
+    await host.dispose()
   }
 })
 

@@ -1,10 +1,9 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { createHmac, randomUUID } from "crypto"
-import { createSubagentAdmissionBoundary, type SubagentAdmissionStore, type SubagentObservation } from "@claxedo/agent-sdk-runtime"
 import type { AgentMessage, AgentSession, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import type { SubagentStatus, SubagentWake } from "@claxedo/agent-event-runtime"
+import type { SubagentStatus, SubagentUpdatedEvent, SubagentWake } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { CompatEnvelope } from "../compat-events"
-import type { RuntimeEventEnvelopeInput } from "../runtime-event-hub"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import { num, str } from "../json-value"
@@ -46,7 +45,8 @@ export type ChildOriginStore = {
 }
 
 export type ChildSessionHostInput = {
-  admission: SubagentAdmissionStore
+  /** Admits and publishes one observation about a child this host made; the broker owns the rules. */
+  admit: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
   /** Keyed material for idempotent child ids; must survive restarts (S12). */
   secret: () => string
   origins?: ChildOriginStore
@@ -54,7 +54,6 @@ export type ChildSessionHostInput = {
   pendingWakes: () => Promise<PendingChildWake[]> | PendingChildWake[]
   getSession: (sessionId: string, directory: string) => Promise<AgentSession | null | undefined> | AgentSession | null | undefined
   getMessages: (sessionId: string, directory: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
-  publishRuntime: (event: RuntimeEventEnvelopeInput) => void
   subscribeGlobal?: (fn: (event: CompatEnvelope) => void) => () => void
   /**
    * Starts the parent turn that carries a child's summary. Resolves once the
@@ -98,12 +97,8 @@ export type ChildSessionHost = {
 }
 
 export function createChildSessionHost(input: ChildSessionHostInput): ChildSessionHost {
-  const boundary = (directory: string) => createSubagentAdmissionBoundary({
-    store: input.admission,
-    publish: (parentSessionId, event) => input.publishRuntime({ directory, sessionId: parentSessionId, payload: event }),
-  })
-  const admit = (parentSessionId: string, directory: string, observation: SubagentObservation) =>
-    boundary(directory).admit(parentSessionId, observation)
+  const admit = (parentSessionId: string, _directory: string, observation: SubagentObservation) =>
+    input.admit(parentSessionId, observation)
   const offering = new Set<string>()
   const creations = new Map<string, Promise<void>>()
   const pendingAttention = new Map<string, Set<string>>()
@@ -376,15 +371,17 @@ function attentionChange(payload: CompatEnvelope["payload"]): { kind: "add" | "r
     case "permission.asked":
       return { kind: "add", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.id}` }
     case "permission.replied":
+    case "permission.expired":
       return { kind: "remove", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.requestID}` }
     case "question.asked":
       return { kind: "add", sessionId: payload.properties.sessionID, requestId: `question:${payload.properties.id}` }
     case "question.replied":
     case "question.rejected":
+    case "question.expired":
       return { kind: "remove", sessionId: payload.properties.sessionID, requestId: `question:${payload.properties.requestID}` }
     default:
       return undefined
   }
 }
 
-export type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+export type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"

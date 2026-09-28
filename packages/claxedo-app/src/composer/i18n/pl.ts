@@ -32,6 +32,7 @@ export default {
   "prompt.popover.emptyResults": "Brak pasujących wyników",
   "prompt.popover.emptyCommands": "Brak pasujących poleceń",
   "prompt.slash.badge.custom": "własne",
+  "prompt.slash.badge.saved": "zapisane",
   "prompt.context.removeFile": "Usuń plik z kontekstu",
   "prompt.placeholder.shell": "Wpisz polecenie terminala... {{example}}",
   "prompt.placeholder.normal": "Zapytaj o cokolwiek... \"{{example}}\"",

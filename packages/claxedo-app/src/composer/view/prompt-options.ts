@@ -1,3 +1,4 @@
+import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { AtOption, SlashCommand } from "./slash-popover"
 
 export type PromptCommandOption = {
@@ -7,13 +8,6 @@ export type PromptCommandOption = {
   keybind?: string
   slash?: string
   disabled?: boolean
-}
-
-export type PromptCustomCommand = {
-  name: string
-  description?: string
-  input?: { hint: string } | null
-  source?: SlashCommand["source"]
 }
 
 export function promptAtOptionKey(x: AtOption | undefined) {
@@ -32,8 +26,8 @@ const slashRank = (trigger: string) => {
 
 export function promptSlashCommands(input: {
   commandOptions: PromptCommandOption[]
-  customCommands?: PromptCustomCommand[]
-}) {
+  customCommands?: readonly RuntimeCommand[]
+}): SlashCommand[] {
   const builtin = input.commandOptions
     .filter((opt) => !opt.disabled && !opt.id.startsWith("suggested.") && opt.slash)
     .map((opt) => ({
@@ -47,12 +41,13 @@ export function promptSlashCommands(input: {
     .sort((a, b) => slashRank(a.trigger) - slashRank(b.trigger))
 
   const goalReserved = builtin.some((command) => command.trigger.toLowerCase() === "goal")
-  const custom = (input.customCommands ?? []).filter((cmd) => !(goalReserved && cmd.name.toLowerCase() === "goal")).map((cmd) => ({
-    id: `custom.${cmd.name}`,
+  const custom = (input.customCommands ?? []).filter((cmd) => !(goalReserved && cmd.name.toLowerCase() === "goal")).map((cmd): SlashCommand => ({
+    id: `custom.${cmd.origin}.${cmd.name}`,
+    ...(cmd.origin === "saved" ? { origin: "saved" as const, content: cmd.content } : { origin: "transport" as const }),
     trigger: cmd.name,
     title: cmd.name,
     description: cmd.input?.hint ? [cmd.description, cmd.input.hint].filter(Boolean).join(" · ") : cmd.description,
-    type: "custom" as const,
+    type: "custom",
     source: cmd.source,
   }))
 

@@ -25,7 +25,7 @@ import {
   type SessionAccessOperation,
   type SessionAccessPolicy,
 } from "../session-access-policy"
-import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)

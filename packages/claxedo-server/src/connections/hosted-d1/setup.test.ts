@@ -111,6 +111,7 @@ function credentialFake(): CredentialFake {
       created_at: NOW,
       updated_at: NOW,
       revision: 1,
+      incarnation: providerId,
     }
   }
   return {
@@ -134,6 +135,8 @@ function credentialFake(): CredentialFake {
       if (row) rows.set(id, { ...row, status })
     },
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => ({}),
+    setAccountSources: async () => ({}),
     statusOf: (providerId) => rows.get(providerId)?.status,
     secretOf: (providerId) => rows.get(providerId)?.secret,
   }

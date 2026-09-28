@@ -18,6 +18,7 @@ import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/l
 import { DEFAULT_WORKSPACE_HOST_DECISION_CONFIG } from "@claxedo/sandbox-manager/lease-policy"
 import { controlBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { workspaceRuntimeTargetEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { accountPlaceholderEnv } from "@claxedo/server-core/credentials/native-delivery-plan"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -294,12 +295,12 @@ const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
   destroy: vi.fn(async () => {}),
 }))
 
-const mockLoadUserConfig = vi.fn(() => Promise.resolve({ mcp: {}, auth: {} }))
+const mockLoadUserConfig = vi.fn(() => Promise.resolve({ mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } } }))
 const mockGetRuntimeConfigSnapshot = vi.fn(
   async (): Promise<any> => ({
     version: 2,
     mcp: {},
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
     runners: [{ type: "opencode" }],
     commands: [],
   }),
@@ -387,6 +388,10 @@ vi.mock("@claxedo/server-core/credentials/registry", () => ({
     return credentials.secrets.get(id)
   }),
   SINGLE_TENANT_ORG: "__local__",
+}))
+
+vi.mock("@claxedo/server-core/credentials/account-source", () => ({
+  accountSelections: vi.fn(() => ({})),
 }))
 
 vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
@@ -793,7 +798,7 @@ describe("workspace-supervisor", () => {
       async (): Promise<any> => ({
         version: 2,
         mcp: {},
-        auth: {},
+        auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         runners: [{ type: "opencode" }],
         commands: [],
       }),
@@ -804,7 +809,7 @@ describe("workspace-supervisor", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = runtimePrivateKeyPem
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = runtimePublicKeyPem
 
-    supervisor.configureWorkspaceSupervisor({
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://localhost:3000",
       relay_url: "https://relay.example.test",
     })
@@ -1106,6 +1111,7 @@ describe("workspace-supervisor", () => {
     test("the operator's active account reaches the driver as a brokered secret no caller stated", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1132,7 +1138,7 @@ describe("workspace-supervisor", () => {
       expect(launch.secrets).toEqual([
         { name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic clone-token", hosts: ["github.com"], header: "Authorization" },
         {
-          name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }),
           value: "sk-ant-api03-fixture",
           hosts: ["api.anthropic.com"],
           header: "x-api-key",
@@ -1147,6 +1153,7 @@ describe("workspace-supervisor", () => {
     test("an account the vendor rejected is withdrawn from the driver on the next ensure", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1173,6 +1180,7 @@ describe("workspace-supervisor", () => {
     test("an unchanged account set answers from the warm runtime without a driver call", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1198,6 +1206,7 @@ describe("workspace-supervisor", () => {
     test("a rotated account set goes back through the driver", async () => {
       const row = {
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1218,7 +1227,7 @@ describe("workspace-supervisor", () => {
 
       expect(result.status).toBe("ready")
       expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
-        expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK", value: "sk-ant-api03-rotated" }),
+        expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }), value: "sk-ant-api03-rotated" }),
       ])
     })
 
@@ -1227,6 +1236,7 @@ describe("workspace-supervisor", () => {
       store.set("ws-provider-docker", { ...workspace("ws-provider-docker"), driver: "docker" })
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1251,6 +1261,7 @@ describe("workspace-supervisor", () => {
     test("a caller and a provider account claiming one secret name is refused by name", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1264,7 +1275,7 @@ describe("workspace-supervisor", () => {
       const result = await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-provider-collide", {
         homeRegion: "us-east",
         secrets: [{
-          name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }),
           value: "caller-token",
           hosts: ["api.anthropic.com"],
           header: "x-api-key",
@@ -1272,12 +1283,13 @@ describe("workspace-supervisor", () => {
       })
 
       expect(result).toMatchObject({ status: "unavailable" })
-      expect(result.status === "unavailable" && result.error).toContain("CLAXEDO_PROVIDER_CLAUDE_SDK")
+      expect(result.status === "unavailable" && result.error).toContain(accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }))
     })
 
     test("a restored checkpoint carries the operator's accounts into the replacement sandbox", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1314,13 +1326,14 @@ describe("workspace-supervisor", () => {
       // `startRuntime`; one that mounted only the empty slot answers every turn
       // with a placeholder its provider never filled.
       expect(mockDaytonaLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
-        expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK" }),
+        expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }) }),
       ])
     })
 
     test("removing the last account withdraws it from a warm sandbox", async () => {
       const row = {
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1347,6 +1360,7 @@ describe("workspace-supervisor", () => {
     test("an account whose secret cannot be read holds what the sandbox installed", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1373,6 +1387,7 @@ describe("workspace-supervisor", () => {
       credentials.active.push(
         {
           credential: {
+            owner: "local",
             id: "cred-1",
             provider_id: "claude-sdk",
             kind: "api_key",
@@ -1383,6 +1398,7 @@ describe("workspace-supervisor", () => {
         },
         {
           credential: {
+            owner: "local",
             id: "cred-2",
             provider_id: "openrouter",
             kind: "api_key",
@@ -1401,7 +1417,7 @@ describe("workspace-supervisor", () => {
 
       expect(result.status).toBe("ready")
       expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
-        expect.objectContaining({ name: "CLAXEDO_PROVIDER_OPENROUTER" }),
+        expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-2", provider_id: "openrouter" }) }),
       ])
     })
 
@@ -1538,6 +1554,7 @@ describe("workspace-supervisor", () => {
       ;(policy.listPolicies as any).mockReturnValueOnce([{ target: "api.example.test", kind: "host" }])
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1896,13 +1913,14 @@ describe("workspace-supervisor", () => {
 
       await supervisor.ensureSupervisorSandbox("ws-hosted-config")
 
-      expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith(undefined, {
+      expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith({
         secretScope: "shared",
         workspaceDir: "/remote/app",
         workspaceId: "ws-hosted-config",
         // What the sandbox's provider can carry decides what the projection may
         // promise; a "none" driver's projection has to refuse the turn.
         secretBrokering: "native",
+        sandboxOwner: "local",
       })
       const env = latestSandboxBootEnv("daytona")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()
@@ -1916,6 +1934,17 @@ describe("workspace-supervisor", () => {
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_ISSUER).toBe("claxedo-control-plane")
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE).toBe("supervisor-backplane")
       expect(env.CLAXEDO_RELAY_JWKS_URL).toBeUndefined()
+    })
+
+    test("a sandbox provisioned with a runner is pushed it as the default", async () => {
+      store.set("ws-runner", workspace("ws-runner"))
+      process.env.CLAXEDO_RUNTIME_RUNNER = "pi"
+      try {
+        await supervisor.ensureSupervisorSandbox("ws-runner")
+      } finally {
+        delete process.env.CLAXEDO_RUNTIME_RUNNER
+      }
+      expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws-runner", provisionedRunner: "pi" }))
     })
 
     test("a daytona sandbox boots on the host identity its lease routes on, not its provider resource id", async () => {
@@ -1972,7 +2001,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("local managed cloud runtime can start direct unsigned without relay auth", async () => {
-      supervisor.configureWorkspaceSupervisor({
+      supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
         server_url: "http://localhost:3000",
       })
 
@@ -1985,7 +2014,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("non-local managed cloud runtime fails closed when relay auth verification cannot be provisioned", async () => {
-      supervisor.configureWorkspaceSupervisor({
+      supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
         server_url: "https://control.example.test",
       })
 
@@ -2049,6 +2078,7 @@ describe("workspace-supervisor", () => {
   describe("reconcileCredentialDelivery", () => {
     const activeAccount = (id: string, providerId = "claude-sdk", revision = 1) => ({
       credential: {
+        owner: "local",
         id,
         provider_id: providerId,
         kind: "api_key",
@@ -2161,7 +2191,7 @@ describe("workspace-supervisor", () => {
       })
 
       credentials.active[0].unavailable = "revoked"
-      await expect(supervisor.reconcileCredentialDelivery()).resolves.toBeUndefined()
+      await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
       mockDaytonaLaunch.mockImplementation(realLaunch)
 
       // The healthy sandbox withdrew on the same sweep. The failed one is
@@ -2171,6 +2201,25 @@ describe("workspace-supervisor", () => {
       // applied.
       expect(runtimes.get("ws-reconcile-down")!.installed_secrets).toBe(installedBefore)
       expect(runtimes.get("ws-reconcile-up")!.installed_secrets).not.toBe(installedBefore)
+    })
+
+    test("a sandbox still holding a superseded set after both passes fails the reconcile instead of acknowledging it", async () => {
+      credentials.active.push(activeAccount("cred-1"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-churn")
+      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      let revision = 1
+      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+        const launched = await realLaunch(input)
+        credentials.active[0] = activeAccount("cred-1", "claude-sdk", ++revision)
+        return launched
+      })
+      credentials.active[0] = activeAccount("cred-1", "claude-sdk", ++revision)
+      try {
+        await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
+      } finally {
+        mockDaytonaLaunch.mockImplementation(realLaunch)
+      }
     })
   })
 
@@ -2183,6 +2232,84 @@ describe("workspace-supervisor", () => {
 
     expect(supervisor.getSandboxLease("ws-discard-1")).toBeUndefined()
     expect(supervisor.getSupervisorSandboxTarget("ws-discard-1")).toBeUndefined()
+  })
+
+  describe("broadcastRuntimeConfig", () => {
+    const snapshotWith = (content: string) => async (): Promise<any> => ({
+      version: 4, mcp: {}, auth: {}, connections: [], commands: [{ name: "review", content }],
+    })
+    const pushedCommands = (url: string) => configPush
+      .filter((push) => push.url === `${url}/api/wr/config`)
+      .map((push) => (push.body as { commands: Array<{ content: string }> }).commands[0]?.content)
+
+    test("reports every refused push after all ready runtimes settled", async () => {
+      const runtimes = (await import("./store")).runtimes
+      const local = (id: string) => ({ ...workspace(id), kind: "local" as const, directory: `/tmp/${id}` })
+      for (const [id, port] of [["ws-broadcast-a", 2601], ["ws-broadcast-b", 2602]] as const) {
+        runtimes.set(id, {
+          ws: local(id) as never, status: "ready", url: `http://127.0.0.1:${port}`,
+          used_at: Date.now(), crashes: 0, retry_at: 0, active: 0, holds: [],
+        })
+      }
+      configPushResponse = () => new Response("refused", { status: 503 })
+      try {
+        const error = await supervisor.broadcastRuntimeConfig().then(() => undefined, (reason: unknown) => reason)
+        expect(error).toBeInstanceOf(AggregateError)
+        expect((error as AggregateError).errors).toHaveLength(2)
+      } finally {
+        runtimes.delete("ws-broadcast-a")
+        runtimes.delete("ws-broadcast-b")
+      }
+    })
+
+    test("a save during a slow sandbox start returns without waiting for it", async () => {
+      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      const entered = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+        entered.resolve()
+        await release.promise
+        return realLaunch(input)
+      })
+      try {
+        const starting = supervisor.ensureSupervisorSandbox("ws-broadcast-slow-start")
+        await entered.promise
+        mockGetRuntimeConfigSnapshot.mockImplementation(snapshotWith("saved during start"))
+        let broadcastDone = false
+        await supervisor.broadcastRuntimeConfig().then(() => { broadcastDone = true })
+        expect(broadcastDone).toBe(true)
+        release.resolve()
+        const entry = await starting
+        expect(pushedCommands(entry.url!)).toEqual(["saved during start"])
+      } finally {
+        release.resolve()
+        mockDaytonaLaunch.mockImplementation(realLaunch)
+      }
+    })
+
+    test("a runtime still starting when the save lands ends on the saved snapshot once ready", async () => {
+      const workspaceId = "ws-broadcast-attach"
+      leases.set(workspaceId, {
+        ...lease(workspaceId),
+        status: "ready",
+        sandbox_id: "daytona-existing-sb",
+        driver_resource_id: "daytona-existing-sb",
+        url: "http://existing-runtime.test",
+      })
+      store.set(workspaceId, { ...workspace(workspaceId), status: "ready" })
+      mockGetRuntimeConfigSnapshot.mockImplementation(snapshotWith("before save"))
+      let broadcast: Promise<void> | undefined
+      // Runs inside the attach's own config push, after it read "before save"
+      // and before the runtime is marked ready.
+      duringConfigPush = () => {
+        mockGetRuntimeConfigSnapshot.mockImplementation(snapshotWith("saved"))
+        broadcast = supervisor.broadcastRuntimeConfig()
+      }
+      const entry = await supervisor.ensureSupervisorSandbox(workspaceId)
+      await broadcast
+      expect(entry.status).toBe("ready")
+      expect(pushedCommands("http://existing-runtime.test")).toEqual(["before save", "saved"])
+    })
   })
 
   // ── State transitions ──────────────────────────────────────────────
@@ -2652,6 +2779,50 @@ describe("workspace-supervisor", () => {
     })
   })
 
+  describe("broadcastRuntimeConfig", () => {
+    test("a settings save does not wait for a start in progress, and the started runtime ends on the saved snapshot once", async () => {
+      let revision = 1
+      mockGetRuntimeConfigSnapshot.mockImplementation(async () => ({
+        version: 2, mcp: {}, auth: {}, runners: [{ type: "opencode" }], commands: [], revision,
+      }))
+      const realFetch = (globalThis.fetch as any).getMockImplementation()
+      let releasePush!: () => void
+      let pushHeld!: () => void
+      const held = new Promise<void>((resolve) => { pushHeld = resolve })
+      const gate = new Promise<void>((resolve) => { releasePush = resolve })
+      let gated = false
+      ;(globalThis.fetch as any).mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+        const target = url instanceof Request ? url.url : url instanceof URL ? url.href : url
+        if (!gated && target.includes("/api/wr/config")) {
+          gated = true
+          pushHeld()
+          await gate
+        }
+        return realFetch(url, init)
+      })
+      try {
+        const starting = supervisor.ensureSupervisorSandbox("ws-save-during-start")
+        await held
+        revision = 2
+        const saved = await Promise.race([
+          supervisor.broadcastRuntimeConfig().then(() => "returned"),
+          new Promise((resolve) => setTimeout(() => resolve("waited for the start"), 1_000)),
+        ])
+        expect(saved).toBe("returned")
+        releasePush()
+        await starting
+        await vi.waitFor(() => expect(configPush.at(-1)?.body).toMatchObject({ revision: 2 }))
+        const pushed = configPush.filter((push) => push.url.includes("daytona-sdk.example.com")).map((push) => (push.body as { revision: number }).revision)
+        expect(pushed).toEqual([1, 2])
+      } finally {
+        releasePush()
+        ;(globalThis.fetch as any).mockImplementation(realFetch)
+        mockGetRuntimeConfigSnapshot.mockReset()
+        mockGetRuntimeConfigSnapshot.mockImplementation(async () => ({ version: 2, mcp: {}, auth: {}, runners: [{ type: "opencode" }], commands: [] }))
+      }
+    })
+  })
+
   // ── syncSupervisorSandbox ────────────────────────────────────
 
   describe("syncSupervisorSandbox", () => {
@@ -2701,7 +2872,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
       if (id === "daytona") return { api_key: "dtn-default" }
       return undefined
     })
-    supervisor.configureWorkspaceSupervisor({
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://localhost:3000",
       relay_url: "https://relay.example.test",
     })

@@ -35,6 +35,7 @@ export default {
   "prompt.slash.badge.skill": "ทักษะ",
   "prompt.slash.badge.mcp": "MCP",
   "prompt.slash.badge.custom": "กำหนดเอง",
+  "prompt.slash.badge.saved": "บันทึกไว้",
   "prompt.context.removeFile": "เอาไฟล์ออกจากบริบท",
   "prompt.placeholder.shell": "ป้อนคำสั่งเชลล์... {{example}}",
   "prompt.placeholder.normal": "ถามอะไรก็ได้... \"{{example}}\"",

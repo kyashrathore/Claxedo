@@ -19,7 +19,7 @@ import type { ControlPlaneServices } from "../authority/services"
 
 const mock = vi.hoisted(() => {
   const workspace = { id: "ws_cloud", kind: "cloud", directory: "/workspace", org_id: "org", project_id: "prj_1" }
-  return { workspace, workspaces: [workspace], request: vi.fn() }
+  return { workspace, workspaces: [workspace], request: vi.fn(), clients: [] as Array<{ runtimeActor?: { userId?: string } }> }
 })
 vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: async ({ workspaceId }: { workspaceId: string }) =>
@@ -27,7 +27,10 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   listWorkspaces: async () => mock.workspaces,
 }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
-  createWorkspaceRuntimeClient: () => ({ request: mock.request }),
+  createWorkspaceRuntimeClient: (input: { options?: { runtimeActor?: { userId?: string } } }) => {
+    const client = { ...input.options }
+    return { request: (path: string, init?: unknown) => { mock.clients.push(client); return mock.request(path, init) } }
+  },
 }))
 
 const HARNESS = { id: "codex", access: "native" as const }
@@ -343,6 +346,26 @@ describe("hosted tasks session bridge", () => {
       sessionId,
       expect.objectContaining({ workspaceID: "ws_cloud", host: "workspace", model: MODEL }),
     )
+  })
+
+  test("creates the session as the person who started it, so it spends their accounts and not the workspace owner's", async () => {
+    const host = runtime()
+    mock.clients.length = 0
+    const kit = createHostedTasksSessionBridge({
+      services: services().value,
+      runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
+      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
+      principal: async (starter) => ({ principalKind: "user", actorId: `act_${starter.ownerId}`, actorKind: "human" }),
+      auth: (starter) => ({ mode: "signed", user: { subject: starter.ownerId, tokenIdentifier: starter.ownerId, issuer: "test" },
+        principal: { userId: `usr_${starter.ownerId}` } as never }),
+    })
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    expect(await kit.start(await startCommand(previewed.preview.digest))).toMatchObject({ ok: true })
+
+    const create = host.calls.findIndex((call) => call.path.startsWith("/session?"))
+    expect(create).toBeGreaterThanOrEqual(0)
+    expect(mock.clients[create]?.runtimeActor).toEqual({ principalKind: "service", actorId: "control-plane", actorKind: "agent", userId: "usr_owner" })
   })
 
   test("reserves for the signed caller's own actor, so the person who started the session can open it", async () => {

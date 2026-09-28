@@ -104,6 +104,7 @@ try {
       version: 4,
       mcp: {},
       connections: [],
+      commands: [],
       defaultHarness: { kind: "native", harnessId: "pi" },
       auth: { groq: { baseUrl: `http://127.0.0.1:${provider.address().port}`, apiPath: "/openai/v1", placeholder: "image-proof-placeholder", authMode: "bearer" } },
     }),

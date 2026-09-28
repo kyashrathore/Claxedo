@@ -12,10 +12,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs"
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isMissingFile, isOwnerOnlyFile, PrivateFileError, readJsonFile, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
+import { isMissingFile, isOwnerOnlyFile, PrivateFileError, readJsonFile, readTextIfExists, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
 import { expectedOwnerOnlyDescription, ownerOnlyDescription, widenWindowsPath, windowsSddl } from "./private-file.test-support"
 
 let dir: string
@@ -341,5 +341,17 @@ describe("resolvePem", () => {
 
   test("a missing path surfaces the read error", async () => {
     await expect(resolvePem(join(dir, "missing.pem"))).rejects.toThrow("ENOENT")
+  })
+})
+
+describe("readTextIfExists", () => {
+  test("reads a file, answers undefined for a missing one and rethrows anything else", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "read-text-if-exists-"))
+    try {
+      await writeFile(join(dir, "present.txt"), "present")
+      expect(await readTextIfExists(join(dir, "present.txt"))).toBe("present")
+      expect(await readTextIfExists(join(dir, "missing.txt"))).toBeUndefined()
+      await expect(readTextIfExists(dir)).rejects.toMatchObject({ code: "EISDIR" })
+    } finally { await rm(dir, { recursive: true, force: true }) }
   })
 })

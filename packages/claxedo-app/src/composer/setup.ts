@@ -119,6 +119,16 @@ function createControllerFor(input: {
   })
 }
 
+function createSuggestionsFor(props: ComposerProps, selection: HarnessSelection, commands: Commands, query: Accessor<SuggestionQuery>) {
+  return createSuggestions({
+    registries: useShellRegistries(),
+    commandOptions: commands.slashOptions,
+    placementId: () => props.placementId,
+    harness: () => selection.harness()?.id,
+    query,
+  })
+}
+
 export function createComposer(props: ComposerProps) {
   const server = useServer()
   const store = useComposerStore()
@@ -132,9 +142,8 @@ export function createComposer(props: ComposerProps) {
   const goalAvailable = createMemo(() => goalCapable(props, selection))
   const [query, setQuery] = createSignal<SuggestionQuery>({ kind: "closed" })
   const [dragging, setDragging] = createSignal<DraggingType>(null)
-  const registries = useShellRegistries()
   const commands = useCommands()
-  const suggestions = createSuggestions({ registries, commandOptions: commands.slashOptions, placementId: () => props.placementId, query })
+  const suggestions = createSuggestionsFor(props, selection, commands, query)
   const send = createSendFor(props, store, key, selection, late, t)
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { RetainedAgentPluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
@@ -12,9 +12,7 @@ const resolvePublic = async () => ["93.184.216.34"]
 const digest = `sha256:${"a".repeat(64)}` as const
 
 function snapshot(): SignedAgentPluginRuntimeSnapshot {
-  const harnesses = Object.fromEntries(([
-    "opencode", "claude", "codex", "cursor",
-  ] as AgentPluginHarnessId[]).map((harnessId) => [harnessId, {
+  const harnesses = Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
     revision: 4,
     pluginInstanceId: "claxedo/docs",
     harnessId,
@@ -71,6 +69,8 @@ async function subject(input: {
   brokering?: "native" | "none"
   connected?: boolean
   multipleIssuers?: boolean
+  withLocalCommand?: boolean
+  imageCommands?: readonly string[]
 } = {}) {
   const env = await signingEnv()
   const resolveConnection = vi.fn(async () => input.connected === false
@@ -102,7 +102,10 @@ async function subject(input: {
           root: ".",
           manifest: { $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "docs" },
           skills: [{ name: "docs", description: "Docs", path: "skills/docs/SKILL.md" }],
-          mcp: { status: "valid", servers: [{ name: "docs", type: "streamable-http", url: "https://mcp.example/mcp" }] },
+          mcp: { status: "valid", servers: [
+            { name: "docs", type: "streamable-http", url: "https://mcp.example/mcp" },
+            ...(input.withLocalCommand ? [{ name: "local", type: "stdio" as const, command: "missing-from-image" }] : []),
+          ] },
         },
       }),
     },
@@ -115,6 +118,7 @@ async function subject(input: {
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
     secretBrokering: input.brokering ?? "native",
+    ...(input.imageCommands ? { imageCommands: input.imageCommands } : {}),
   } satisfies Parameters<typeof createHostedMcpRuntimePreparation>[0]
   const prepare = createHostedMcpRuntimePreparation(preparerInput)
   const preparer = createHostedMcpRuntimePreparer(preparerInput)
@@ -122,19 +126,40 @@ async function subject(input: {
 }
 
 describe("hosted MCP runtime preparation", () => {
+  test("reports an unavailable local command without minting a credential", async () => {
+    const value = await subject({ withLocalCommand: true })
+    const plan = agentPluginMcpRuntimePlan(value.preparation)
+    const local = plan.mcpServers.filter((server) => server.serverName === "local")
+    expect(local).toHaveLength(2)
+    expect(local.every((server) => server.state === "unavailable" && server.reason === "mcp_command_not_in_image")).toBe(true)
+    expect(value.preparation.secrets).toHaveLength(2)
+    expect(value.oauthFetch).toHaveBeenCalled()
+  })
+
+  test("a local command the image declares passes through as the plugin declared it", async () => {
+    const value = await subject({ withLocalCommand: true, imageCommands: ["missing-from-image"] })
+    const plan = agentPluginMcpRuntimePlan(value.preparation)
+    expect(plan.mcpServers.filter((server) => server.serverName === "local")).toEqual([])
+    expect(plan.mcpServers.filter((server) => server.serverName === "docs").every((server) => server.state === "gateway")).toBe(true)
+  })
+
   test("delivers one unreadable, exact-scope gateway credential per active harness", async () => {
     const value = await subject()
     expect(value.preparation.secrets).toHaveLength(2)
     const plan = agentPluginMcpRuntimePlan(value.preparation)
     expect(plan.revision).toBe(4)
     expect(plan.mcpServers).toHaveLength(2)
-    expect(new Set(value.preparation.secrets!.map((secret) => secret.hosts[0])).size).toBe(2)
+    expect(new Set(value.preparation.secrets!.map((secret) => secret.hosts[0]))).toEqual(new Set(["mcp-gateway.example"]))
     expect(value.resolveConnection).toHaveBeenCalledTimes(1)
 
     const first = value.preparation.secrets![0]
     expect(first.header).toBe("Authorization")
     expect(first.value).not.toContain("upstream")
-    expect(first.hosts[0]).toMatch(/^mcp-[a-f0-9]{32}-mcp-gateway\.example$/)
+    // An edge attaches the credential only within a stated policy; an empty
+    // one would refuse every gateway request the sandbox makes.
+    expect(first.methods).toEqual(["GET", "POST", "DELETE"])
+    expect(first.pathPrefixes).toEqual([new URL(plan.mcpServers.find((server) => server.state === "gateway")!.url!).pathname])
+    expect(first.hosts).toEqual(["mcp-gateway.example"])
     const scope = await verifyMcpGatewayToken(first.value.replace(/^Bearer /, ""), {
       integrationId: await mcpOAuthIntegrationId({ pluginInstanceId: "claxedo/docs", serverName: "docs" }),
     }, value.env)
@@ -322,7 +347,7 @@ describe("hosted MCP runtime preparation", () => {
       ] as const).map(([name, digest]) => ({
         pluginInstanceId: `["acme","${name}"]`,
         pins: { user: { digest, sourceId: "acme", relativePath: name, sourceRevision: "rev-1" } },
-        harnesses: Object.fromEntries((["opencode", "claude", "codex", "cursor"] as AgentPluginHarnessId[])
+        harnesses: Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES
           .map((harnessId) => [harnessId, {
             revision: 4,
             pluginInstanceId: `["acme","${name}"]`,

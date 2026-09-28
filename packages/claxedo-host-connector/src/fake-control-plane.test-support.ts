@@ -183,7 +183,7 @@ export function createFakeControlPlane(
       .map((assignment) => assignment.workspace_id)
       .sort()
 
-  /** The real route's shape: the signer's result plus `hostId`, `enrollmentId`, `workspaceIds`, `relayUrl`, with a decodable claim. */
+  /** The real route's shape: the signer's result plus `hostId`, `enrollmentId`, `ownerUserId`, `workspaceIds`, `relayUrl`, with a decodable claim. */
   const hostTunnel = (enrollment: FakeEnrollment) => {
     const workspaceIds = routable(enrollment)
     if (workspaceIds.length === 0) return undefined
@@ -194,6 +194,7 @@ export function createFakeControlPlane(
       jti: nextId("jti"),
       hostId: enrollment.host_id,
       enrollmentId: enrollment.enrollment_id,
+      ownerUserId: enrollment.owner,
       workspaceIds,
       relayUrl,
     }

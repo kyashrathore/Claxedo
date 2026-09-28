@@ -13,9 +13,6 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
  * derives `expires_at` from the access token's JWT `exp`, which goes stale
  * long before the refresh token does — this module renews the pair so
  * `verifyCredential` never mistakes an idle Codex login for an expired one.
- *
- * Request shape matches `agent-sdk-runtime/src/harnesses/codex/driver.ts` and
- * `core/src/plugin/provider/openai.ts` — form-encoded, no client secret.
  */
 
 export class CredentialRefreshError extends Error {}

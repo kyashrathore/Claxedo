@@ -1,0 +1,4 @@
+packages/agent-sdk-runtime/src/harnesses/cursor/auth.ts
+packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts
+packages/agent-sdk-runtime/src/harnesses/cursor/index.ts
+packages/agent-sdk-runtime/src/harnesses/cursor/title.ts

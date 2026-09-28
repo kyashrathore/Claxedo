@@ -89,7 +89,12 @@ async function productionFiles() {
     // here would otherwise stop being audited without anything saying so.
     "packages/claxedo-server-core/src",
     "packages/workspace-runtime/src",
-    "packages/agent-sdk-runtime/src",
+    // Every harness transport: the SDK-owned CLIs it starts are seams the
+    // scanner cannot see through `child_process`, so they are keyed below.
+    "packages/harness/src",
+    // The launch gate, creation identity probes and retirement start children
+    // for every harness and terminal the desktop runs.
+    "packages/process-ownership/src",
     // Electron main reaches this package's credential writer, whose Windows
     // permission step is a spawn. Leaving the package unscanned would let a
     // child the app can start sit outside the inventory this file claims is
@@ -148,8 +153,9 @@ function childProcessNames(text: string) {
 function specialSeams(classified: Map<string, number>): Array<readonly [string, number]> {
   return [
     "packages/workspace-runtime/src/pty/index.ts:ptySpawn",
-    "packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:sdkQuery",
-    "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentSpawn",
+    "packages/harness/src/transports/claude-sdk/query-options.ts:sdkQuery",
+    "packages/harness/src/transports/claude-sdk/models.ts:sdkQuery",
+    "packages/harness/src/transports/cursor-sdk/host.ts:agentSpawn",
   ].map((key) => [key, classified.get(key) ?? 0] as const)
 }
 
@@ -160,7 +166,7 @@ function expression(callee: string) {
   // can see. Counting only the direct form leaves the seam that runs on every
   // turn reading as absent while the model probe alone is classified, so the
   // inline default is counted as the callsite it is.
-  if (callee === "sdkQuery") return /\bquery\s*\(|\?\?\s*query\s*\)\s*\(/g
+  if (callee === "sdkQuery") return /\bquery\s*\(|\?\?\s*query\s*\)\s*\(|=\s*query\s*\)/g
   // `Agent.resume` carries the same `local: { cwd }` as `Agent.create` and
   // starts the same CLI, so a seam that stopped creating and only resumed would
   // otherwise read as gone.

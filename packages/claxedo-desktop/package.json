@@ -51,6 +51,7 @@
     "@claxedo/account-contract": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/process-ownership": "workspace:*",
     "@claxedo/app": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/host-connector": "workspace:*",

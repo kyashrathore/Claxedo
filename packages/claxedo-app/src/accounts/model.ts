@@ -1,5 +1,5 @@
 import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, type HarnessId } from "@claxedo/agent-runtime-contract"
-import type { Account, AccountDelivery, AccountVerdict, MachineLogin } from "@/server"
+import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin } from "@/server"
 
 export type AccountReach = "local-and-cloud" | "local-only"
 
@@ -9,6 +9,7 @@ export type AccountsSnapshot = {
   readonly stored: readonly Account[]
   readonly effective: ReadonlyMap<string, Account> | undefined
   readonly machineLogins: readonly MachineLogin[]
+  readonly sources: AccountSources
   readonly scannedAt: number
 }
 
@@ -19,7 +20,7 @@ export type LiveCheck = {
   readonly reason?: string
 }
 
-export type HarnessAccount = Account & { readonly ids: readonly string[] }
+export type HarnessAccount = Account & { readonly ids: readonly string[]; readonly partialCloudConsent: boolean }
 
 export type Harness = {
   readonly id: HarnessId
@@ -42,6 +43,8 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
 }))
 
 export const MACHINE_LOGIN_KEY = "machine"
+
+export const TEAM_ACCOUNT_KEY = "team"
 
 export const isRefusal = (verdict: string) => verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
 
@@ -73,15 +76,20 @@ function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {
   if (first === undefined) return undefined
   const pick = <K extends keyof Account>(key: K) => ordered.find((row) => row[key] !== undefined)?.[key]
   const usageRead = ordered.find((row) => row.usage !== undefined)
+  const shared = ordered.some((row) => row.scope === "shared")
+  const scope = shared ? "shared" : ordered.every((row) => row.scope === "local") ? "local" : undefined
+  const delivery = ordered.find((row) => row.delivery?.cloud === false)?.delivery ?? (ordered.every((row) => row.delivery?.cloud === true) ? first.delivery : undefined)
   return {
     ...first,
     ids: ordered.map((row) => row.id),
     active: ordered.every((row) => row.active),
+    scope,
+    delivery,
+    partialCloudConsent: shared && ordered.some((row) => row.scope !== "shared"),
     ...(pick("health") === undefined ? {} : { health: pick("health") }),
     ...(pick("lastValidatedAt") === undefined ? {} : { lastValidatedAt: pick("lastValidatedAt") }),
     ...(pick("expiresAt") === undefined ? {} : { expiresAt: pick("expiresAt") }),
     ...(usageRead?.usage === undefined ? {} : { usage: usageRead.usage, ...(usageRead.usageAt === undefined ? {} : { usageAt: usageRead.usageAt }) }),
-    ...(pick("delivery") === undefined ? {} : { delivery: pick("delivery") }),
   }
 }
 
@@ -123,17 +131,31 @@ export function partialMachineLogin(login: MachineLogin) {
   return bindings.some((id) => !serves.includes(id))
 }
 
-export function strandedBinding(login: MachineLogin, harness: Harness, effective: ReadonlyMap<string, Account> | undefined) {
+function ownAccountInUse(harness: Harness, snapshot: AccountsSnapshot) {
+  const inUse = snapshot.effective ? accountInUse(harness, snapshot.effective) : undefined
+  return inUse && snapshot.stored.some((row) => row.id === inUse.id) ? inUse : undefined
+}
+
+export function teamAccountOf(harness: Harness, snapshot: AccountsSnapshot): HarnessAccount | undefined {
+  return harnessAccounts(harness, snapshot.sources.team)[0]
+}
+
+function teamChosen(harness: Harness, snapshot: AccountsSnapshot) {
+  return harness.providerIds.length > 0 && harness.providerIds.every((id) => snapshot.sources.sources.get(id) === "team")
+}
+
+export function strandedBinding(login: MachineLogin, harness: Harness, snapshot: AccountsSnapshot) {
   const serves = login.serves
-  if (serves === undefined || !effective) return false
-  const inUse = accountInUse(harness, effective)
+  if (serves === undefined) return false
+  const inUse = ownAccountInUse(harness, snapshot)
   if (inUse === undefined) return false
   return harnessBindingIds(harness.id).includes(inUse.providerId) && !serves.includes(inUse.providerId)
 }
 
 export function selectedAccountKey(harness: Harness, snapshot: AccountsSnapshot): string | undefined {
+  if (teamChosen(harness, snapshot)) return TEAM_ACCOUNT_KEY
   const rows = harnessAccounts(harness, snapshot.stored)
-  const inUse = snapshot.effective ? accountInUse(harness, snapshot.effective) : undefined
+  const inUse = ownAccountInUse(harness, snapshot)
   const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined
   if (match) return match.id
   const active = rows.find((row) => row.active)
@@ -159,9 +181,9 @@ export function harnessRunnable(harness: Harness, snapshot: AccountsSnapshot, li
   if (selected === undefined) return false
   if (selected === MACHINE_LOGIN_KEY) {
     const login = machineLoginOf(harness, snapshot)
-    return login?.state === "signed_in" && !strandedBinding(login, harness, snapshot.effective)
+    return login?.state === "signed_in" && !strandedBinding(login, harness, snapshot)
   }
-  const row = harnessAccounts(harness, snapshot.stored).find((account) => account.id === selected)
+  const row = selected === TEAM_ACCOUNT_KEY ? teamAccountOf(harness, snapshot) : harnessAccounts(harness, snapshot.stored).find((account) => account.id === selected)
   const verdict = row ? storedCheck(row, live[row.id])?.verdict : undefined
   return row !== undefined && !(verdict !== undefined && isRefusal(verdict))
 }

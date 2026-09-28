@@ -372,7 +372,7 @@ describe("driver egress capability declarations", () => {
         relayJwksUrl: "https://relay.test/.well-known/jwks.json",
         managementJwksUrl: "https://control.test/.well-known/jwks.json",
       },
-      runner: "opencode",
+      nativeHarness: "opencode",
       fetch,
     })
     const { events, sink } = warnings()
@@ -488,7 +488,7 @@ describe("daytona egress translation", () => {
     const sandbox = {
       id: "sbx_1",
       state: "started",
-      process: { executeCommand: async () => ({}) },
+      process: { executeCommand: async () => ({ exitCode: 0 }) },
       getPreviewLink: async () => ({ url: "https://preview.test" }),
       getSignedPreviewUrl: async () => ({ url: "https://preview.test" }),
       refreshActivity: async () => {},

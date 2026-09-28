@@ -8,7 +8,7 @@ import { Miniflare } from "miniflare"
 import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
-import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { mountRouteContributions } from "@claxedo/workspace-runtime/route-contribution"
 import { agentPluginWorkspaceRuntimeContribution } from "@claxedo/local-server/agent-plugins/runtime/runtime-contribution"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
@@ -130,7 +130,7 @@ afterAll(async () => {
 })
 
 function harnesses(enabled: boolean): SignedAgentPluginRuntimeSnapshot["plugins"][number]["harnesses"] {
-  return Object.fromEntries((["opencode", "claude", "codex", "cursor"] as AgentPluginHarnessId[]).map((harnessId) => [harnessId, {
+  return Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
     revision: enabled ? 1 : 0,
     pluginInstanceId: PLUGIN_INSTANCE_ID,
     harnessId,
@@ -210,8 +210,6 @@ async function runtimeVm(workspaceId: string, env: NodeJS.ProcessEnv) {
     app,
     contributions: [agentPluginWorkspaceRuntimeContribution({
       runtimeRoot: root,
-      codexHome: path.join(root, "codex"),
-      userHomeDirectory: path.join(root, "home"),
       env,
     })],
     context: {
@@ -332,12 +330,12 @@ describe("signed Composio Gmail on Miniflare", () => {
     const local = await connect("ws_local")
     const cloud = await connect("ws_cloud")
 
-    expect(local.preparation.secrets).toHaveLength(4)
-    expect(cloud.preparation.secrets).toHaveLength(4)
+    expect(local.preparation.secrets).toHaveLength(SUPPORTED_AGENT_PLUGIN_HARNESSES.length)
+    expect(cloud.preparation.secrets).toHaveLength(SUPPORTED_AGENT_PLUGIN_HARNESSES.length)
     expect(new Set([
       ...(local.preparation.secrets ?? []).map((secret) => secret.name),
       ...(cloud.preparation.secrets ?? []).map((secret) => secret.name),
-    ]).size).toBe(8)
+    ]).size).toBe(2 * SUPPORTED_AGENT_PLUGIN_HARNESSES.length)
     expect(JSON.stringify(local.preparation.secrets)).not.toContain("composio-gmail-access-token")
     expect(JSON.stringify(cloud.preparation.secrets)).not.toContain(COMPOSIO_MCP)
 
@@ -351,8 +349,8 @@ describe("signed Composio Gmail on Miniflare", () => {
     expect(resolveConnection.mock.calls.every((call) => call[0].ownerUserId === USER.userId)).toBe(true)
     expect(resolveConnection).toHaveBeenCalledTimes(2)
 
-    const localClaude = (local.receipt.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
-    const cloudClaude = (cloud.receipt.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
+    const localClaude = (local.receipt.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
+    const cloudClaude = (cloud.receipt.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
     expect(localClaude).toBeTruthy()
     expect(cloudClaude).toBeTruthy()
     expect(await fs.readFile(path.join(localClaude!, "plugin.json"), "utf8")).toContain("composio")
@@ -366,7 +364,11 @@ describe("signed Composio Gmail on Miniflare", () => {
     expect(localMcp.mcpServers.gmail.url).toContain("mcp-gateway.claxedo.test")
     expect(cloudMcp.mcpServers.gmail.url).toContain("mcp-gateway.claxedo.test")
     expect(localMcp.mcpServers.gmail.url).not.toBe(COMPOSIO_MCP)
-    expect(cloudMcp.mcpServers.gmail.url).not.toBe(localMcp.mcpServers.gmail.url)
+    // One gateway origin and path for every runtime; each runtime's own credential is what sets them apart.
+    expect(cloudMcp.mcpServers.gmail.url).toBe(localMcp.mcpServers.gmail.url)
+    expect(localMcp.mcpServers.gmail.headers?.Authorization).toMatch(/^Bearer /)
+    expect(cloudMcp.mcpServers.gmail.headers?.Authorization).toMatch(/^Bearer /)
+    expect(cloudMcp.mcpServers.gmail.headers?.Authorization).not.toBe(localMcp.mcpServers.gmail.headers?.Authorization)
     expect(JSON.stringify(localMcp)).not.toContain("composio-gmail-access-token")
     expect(JSON.stringify(cloudMcp)).not.toContain("composio-gmail-access-token")
   })
@@ -476,6 +478,7 @@ describe("signed Composio Gmail on Miniflare", () => {
           workspace: {
             workspace_id: "ws_cloud_mint",
             org_id: USER.organizationId,
+            project_id: "project_cloud_mint",
             backing: "cloud-vm",
             home_region: "us-east",
           },
@@ -505,7 +508,7 @@ describe("signed Composio Gmail on Miniflare", () => {
       provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
         await provisionForMint(workspaceId, preparation)
       },
-    }, auth, "ws_cloud_mint", "https://control.test")
+    }, auth, "ws_cloud_mint")
 
     expect(local).toMatchObject({ connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" } })
     expect(cloud).toMatchObject({ connection: { backing: "cloud-vm", runtimeAccessToken: "runtime-token" } })
@@ -514,8 +517,8 @@ describe("signed Composio Gmail on Miniflare", () => {
     expect(resolveConnection.mock.calls.every((call) => call[0].ownerUserId === USER.userId)).toBe(true)
     expect(signer).toHaveBeenCalledTimes(2)
 
-    const localClaude = (receipts.get("ws_local_mint")?.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
-    const cloudClaude = (receipts.get("ws_cloud_mint")?.harnessLaunch.claude?.pluginRoots as string[] | undefined)?.[0]
+    const localClaude = (receipts.get("ws_local_mint")?.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
+    const cloudClaude = (receipts.get("ws_cloud_mint")?.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
     expect(localClaude).toBeTruthy()
     expect(cloudClaude).toBeTruthy()
     const localMcp = JSON.parse(await fs.readFile(path.join(localClaude!, ".mcp.json"), "utf8")) as {
@@ -577,6 +580,7 @@ function credentialFake(): ControlPlaneCredentials & { secretOf(providerId: stri
         created_at: 1,
         updated_at: 1,
         revision: 1,
+        incarnation: providerId,
       }
     : undefined
   return {
@@ -592,6 +596,8 @@ function credentialFake(): ControlPlaneCredentials & { secretOf(providerId: stri
     deleteCredentialsByProvider: async (providerId) => (rows.delete(providerId) ? 1 : 0),
     updateCredentialStatus: async () => {},
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => ({}),
+    setAccountSources: async () => ({}),
     secretOf: (providerId) => rows.get(providerId),
   }
 }

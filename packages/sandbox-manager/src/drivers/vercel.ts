@@ -5,7 +5,7 @@ import {
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxTarget,
-} from ".."
+} from "../contract"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { workspaceRuntimeVersion } from "../runtime-version"
 import { shell } from "../command"
@@ -75,7 +75,7 @@ export type VercelSandboxDriverOptions = {
   runtimePort?: number
   runtimeCommand?: string
   workspaceDir?: string
-  runner?: string
+  nativeHarness?: string
   controlEnv?: WorkspaceRuntimeControlEnv
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   timeoutMs?: number
@@ -203,7 +203,8 @@ export function vercelBrokeredNetworkPolicy(
       const rules = (allow[host] ??= [])
       for (const prefix of methods.length ? pathPrefixes : []) {
         rules.push({
-          match: { path: { startsWith: prefix }, method: methods },
+          match: { path: { startsWith: prefix }, method: methods,
+            headers: [{ key: { exact: secret.header.toLowerCase() }, value: { exact: `${secret.scheme ? `${secret.scheme} ` : ""}claxedo-broker:${secret.name}` } }] },
           transform: [{ headers: { [secret.header]: value } }],
         })
       }
@@ -282,7 +283,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       host: "0.0.0.0",
       source: input.source,
       env: input.env,
-      runner: options.runner,
+      nativeHarness: options.nativeHarness,
       controlEnv: options.controlEnv,
     })
   }
@@ -316,7 +317,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       })
       await runSetup(builder, "sudo dnf install -y git make gcc-c++ python3 > /dev/null 2>&1")
       await runSetup(builder, [
-        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.85.1",
+        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.150 @openai/codex@0.156.1 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.85.1",
         "curl https://cursor.com/install -fsS | bash",
         "curl -fsSL https://ampcode.com/install.sh | bash",
         "curl -fsSL https://app.factory.ai/cli | sh",
@@ -435,7 +436,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     return readyTarget(input, sandbox, hostId)
   }
 
-  async function sandboxById(target: SandboxTarget) {
+  async function sandboxById(target: Pick<SandboxTarget, "sandboxId">) {
     return (await resolveFactory()).get({
       ...credentials(),
       sandboxId: target.sandboxId,
@@ -455,7 +456,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),
     async touch(target) {
-      await (await sandboxById(target)).extendTimeout(keepAliveMs).catch(() => undefined)
+      await (await sandboxById(target)).extendTimeout(keepAliveMs)
     },
     async suspend(target) {
       await (await sandboxById(target)).stop({ blocking: false })

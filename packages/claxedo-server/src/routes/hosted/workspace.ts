@@ -15,7 +15,6 @@ import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/pla
 import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
-import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
 import { admittedRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
@@ -28,7 +27,9 @@ import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } fr
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo, hostedConnectionStatus } from "../../connections/hosted-connection-info"
-import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
+import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
+import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
@@ -184,7 +185,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // start billable compute (P-118).
       const result = input.readOnly
         ? await hostedConnectionStatus(services, options, auth, workspaceId)
-        : await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, input.previousJti)
+        : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so
@@ -320,7 +321,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             400,
           )
         }
-        let provisionRepoUrl = repoUrl
         let provisionSecrets: Array<{ name: string; value: string; hosts: string[]; header?: string }> | undefined
         if (body.connectionId && body.repo) {
           // Same resolution the local create route performs: the connection
@@ -342,11 +342,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               400,
             )
           }
-          const source = authenticatedGitHubCloneSource(access.repository.cloneUrl, access.token)
-          provisionRepoUrl = source.repoUrl
-          provisionSecrets = [source.secret]
+          provisionSecrets = [authenticatedGitHubCloneSource(repoUrl, access.token).secret]
         }
-        if (!repoUrl || !provisionRepoUrl) {
+        if (!repoUrl) {
           return c.json(
             { error: apiError("cloud_workspace_source_required", "repoUrl is required for hosted cloud workspaces") },
             400,
@@ -357,10 +355,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // and publishes its own creation time; the random suffix is what makes
         // this one unguessable.
         const workspaceId = newWorkspaceId()
-        const projectId = body.projectId?.trim() || workspaceId
         const displayName =
           body.workspaceName?.trim() || body.repoName?.trim() || workspaceId
-        const directory = body.remoteDirectory?.trim() || "/workspace"
+        const directory = body.remoteDirectory?.trim() || WORKSPACE_DIR
         const homeRegion = normalizeClaxedoRegion(undefined, options.defaultHomeRegion)
 
         try {
@@ -379,6 +376,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             repoUrl,
             ...(body.repoName?.trim() ? { repoName: body.repoName.trim() } : {}),
             ...(body.gitBranch?.trim() ? { gitBranch: body.gitBranch.trim() } : {}),
+            remoteDirectory: directory,
             homeRegion,
           })
         } catch (err) {
@@ -389,6 +387,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
         }
+        const row = (await requireAuthority(services).openWorkspace(auth, { workspaceId })).workspace
+        if (!row) throw new Error(`workspace ${workspaceId} was created but its row cannot be read back`)
 
         // Sandbox-compute metering: the create path is the
         // one lease-open site that holds a signed tenant, so the opening event is
@@ -406,14 +406,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           ...(services ? { services } : {}),
         })
 
-        const source = {
-          kind: "git" as const,
-          // The PROVISION url (token via brokered secret for connected repos);
-          // the plain `repoUrl` is what the workspace row records.
-          repoUrl: provisionRepoUrl,
-          ...(body.gitBranch?.trim() ? { branch: body.gitBranch.trim() } : {}),
-        }
-
         // Kick off provisioning. The lease state machine + driver.ensureHost are
         // idempotent and re-polled by the app via /connection, so the response
         // does not wait for it: a slow cold-start must not block the create.
@@ -425,21 +417,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
             const runtimePreparation = await options.prepareRuntime?.(runtimeContext)
-            const runtimeSecrets = runtimePreparation?.secrets ?? []
-            const result = await sandboxManager.ensure(workspaceId, {
-            homeRegion,
-            labels: {
-              projectId,
-            },
-            workspaceRoot: directory,
-            source,
-            ...(runtimePreparation?.env ? { env: runtimePreparation.env } : {}),
-            // Clone token for connected private repos — rides the brokered
+            // The clone token for a connected private repo rides the brokered
             // secret channel (fail-closed in the manager for drivers that
-            // cannot broker), never labels or env.
-            ...((provisionSecrets !== undefined || runtimePreparation?.secrets !== undefined)
-              ? { secrets: [...(provisionSecrets ?? []), ...runtimeSecrets] }
-              : {}),
+            // cannot broker), never labels, env or the stored row.
+            //
             // This is the hosted, multi-tenant create path: the sandbox runs
             // agent-authored code over someone's private checkout, and an
             // omitted `net` means allow-all, so the policy is always supplied.
@@ -462,16 +443,16 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // Only `sandbox_egress_policy_unenforceable` fails closed; it is the
             // sole reason that reaches the refusal branch below.
             //
-            // The allowlist is assembled from this request (its own relay/control
-            // plane, the one git host it clones from) plus the model-provider and
-            // package-registry floor. See `hostedSandboxNetworkPolicy` for what
-            // is excluded and why.
-            net: hostedSandboxNetworkPolicy({
-              controlPlane: [configuredRelayUrl(options, homeRegion), new URL(c.req.url).origin],
-              source,
-              ...(options.sandboxEgressExtraHosts ? { extraHosts: options.sandboxEgressExtraHosts } : {}),
-            }),
-            })
+            // The allowlist is the relay of the workspace's region, the
+            // control-plane origin the sandbox is given and the one git host
+            // the row records, plus the model-provider and package-registry
+            // floor.
+            // See `hostedSandboxNetworkPolicy` for what is excluded and why.
+            const result = await sandboxManager.ensure(workspaceId, hostedSandboxInput(row, {
+              egress: options,
+              preparation: runtimePreparation,
+              ...(provisionSecrets ? { secrets: provisionSecrets } : {}),
+            }))
             return { result, runtimePreparation }
           })
           // The lease row exists once `ensure` has acquired it, so the tenant is
@@ -519,7 +500,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    than an org id we invent to make the count work.
             await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId })).catch(() => undefined)
           })
-          .catch(() => undefined))
+          .catch((cause: unknown) => {
+            console.error(`[workspace] background provisioning of ${workspaceId} failed`, cause instanceof Error ? cause.message : String(cause))
+          }))
 
         return c.json({ workspaceId, directory })
       })

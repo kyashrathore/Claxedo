@@ -34,6 +34,7 @@ export default {
   "prompt.popover.emptyCommands": "Нет совпадающих команд",
   "prompt.slash.badge.skill": "навык",
   "prompt.slash.badge.custom": "своё",
+  "prompt.slash.badge.saved": "сохранённое",
   "prompt.context.removeFile": "Удалить файл из контекста",
   "prompt.placeholder.shell": "Введите команду оболочки... {{example}}",
   "prompt.placeholder.normal": "Спросите что угодно... \"{{example}}\"",

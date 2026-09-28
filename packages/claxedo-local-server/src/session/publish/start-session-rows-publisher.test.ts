@@ -121,6 +121,7 @@ async function boot() {
               hostId: "host_machine-1",
               enrollmentId: "enr_this_machine",
               ownerActorId: "actor_owner",
+              ownerUserId: "usr_machine_owner",
               workspaceIds: credential.workspaceIds,
               relayUrl: cp.origin,
             }

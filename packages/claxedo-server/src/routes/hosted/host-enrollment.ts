@@ -1,3 +1,4 @@
+import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * Machine-wide remote-access routes.
  *
@@ -47,7 +48,7 @@ import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/a
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
 import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { providerProjectionRecord, type ProviderProjectionSource } from "@claxedo/agent-sdk-runtime/provider-projection"
+import { providerProjectionRecord } from "@claxedo/agent-sdk-runtime/provider-projection"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKey } from "../../platform/auth/request-guard"
@@ -481,6 +482,9 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         // it ever receives.
         enrollmentId: caller.enrollmentId,
         ownerActorId: caller.ownerActorId,
+        // The person the enrollment belongs to, whom the relay authenticates
+        // as this machine's own owner.
+        ownerUserId: caller.ownerUserId,
         workspaceIds: ready,
         ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
       },
@@ -634,7 +638,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           ? null
           : await sealForMachine(
             target.sealing_public_key,
-            serializeHostProviderConfig(providers),
+            serializeHostProviderConfig(providers, auth.user.subject),
             machineSealAad({ enrollmentId, revision }),
           )
         const result = await authority.pushHostProviderConfig(auth, {

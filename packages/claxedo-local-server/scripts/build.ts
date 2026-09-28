@@ -2,6 +2,7 @@ import { createRequire } from "node:module"
 import fs from "node:fs"
 import path from "node:path"
 import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
+import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
 
 import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 import {
@@ -41,7 +42,8 @@ const result = await runBunBuild("Local Server bundle failed", {
     },
   }],
 })
-stageOpenCodeSdk(path.join(DIST, "node_modules"))
+const cursorWorker = await bundleCursorWorker(DIST)
+stageOpenCodeSdk(path.join(DIST, "node_modules"), undefined, undefined, cursorWorker.packages)
 
 const journalModule = require.resolve("@claxedo/server-core/platform/db/journal")
 const migrations = path.join(path.dirname(journalModule), "claxedo-migration")

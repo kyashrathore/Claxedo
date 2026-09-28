@@ -181,10 +181,6 @@ describe("@claxedo/local-server closure", () => {
     // Why the modules the desktop owns are owned here:
     //  - `platform/json.ts` — the one leaf every module reading untrusted JSON
     //    narrows through instead of writing its own `record`/`text` pair.
-    //  - `agent-config/hosted-mcp-install.ts` — the one-click write of the
-    //    hosted `claxedo` entry into the Claude Code, Cursor and Codex configs
-    //    on this machine; the desktop's own agent-config routes are what a user
-    //    clicks.
     //  - `shell/event-stream-response.ts` — the one writer that serves the
     //    daemon's `cp/events` over HTTP SSE or a loopback WebSocket alike.
     //  - `app/local-documents.ts` — the desktop composition of shared Documents.
@@ -241,13 +237,14 @@ describe("@claxedo/local-server closure", () => {
     //    scope-key owner in `@claxedo/agent-sdk-runtime/adapters`, all already
     //    here.
     //
-    // And the packages: `@claxedo/opencode-server-adapter` is the isolated
-    // HTTP/SSE provider, with no embedded engine or generated client;
-    // `@claxedo/mcp` is the first-party endpoint mounted at
+    // And the packages: `@claxedo/harness` is the harness contract, registry
+    // and provider list the embedded runtimes and the Agent Plugins projection
+    // type against; `@claxedo/mcp` is the first-party endpoint mounted at
     // `/api/claxedo/mcp`; `@claxedo/egress-broker` is the request policy,
     // header injection and runtime-token verification behind the broker
-    // handler; `smol-toml` is the hosted MCP installer's configuration
-    // validator; `@claxedo/agent-runtime-contract` is the dependency-free data
+    // handler; `@claxedo/process-ownership` supplies dependency-free data and
+    // OS reads, with no server, runtime or store closure behind them;
+    // `@claxedo/agent-runtime-contract` is the dependency-free data
     // this product reads rather than restating — the harness/provider-id table
     // the credential routes, the reaper and the agent-config auth route all
     // key on, and the login-document claim readers the provider-auth exchange
@@ -288,6 +285,6 @@ describe("@claxedo/local-server closure", () => {
     //    plugins above.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(110)
-    expect(packages.size).toBeLessThanOrEqual(31)
+    expect(packages.size).toBeLessThanOrEqual(29)
   })
 })

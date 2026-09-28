@@ -15,7 +15,8 @@ const {
   credentialById,
   putCredential,
   readSecretById,
-  resolveSecret,
+  resolveSecretById,
+  credentialByProvider,
   activeCredentialsForScope,
   usableCredentials,
   setActiveCredentials,
@@ -48,7 +49,7 @@ describe("credential fanout fence", () => {
   test("only model/AI-provider auth fans out; drivers, connections, channels do not", async () => {
     // Model/AI providers (allowed): the whole point of the fanout — the agent
     // in the sandbox uses the user's own subscription/keys.
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "openai",
       kind: "api_key",
       source: "managed",
@@ -56,7 +57,7 @@ describe("credential fanout fence", () => {
       scope: "shared",
       consent: { at: 1, surface: "scope_change" },
     })
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "claude-acp",
       kind: "oauth_token",
       source: "managed",
@@ -64,7 +65,7 @@ describe("credential fanout fence", () => {
       scope: "shared",
       consent: { at: 1, surface: "scope_change" },
     })
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "anthropic",
       kind: "api_key",
       source: "managed",
@@ -72,11 +73,11 @@ describe("credential fanout fence", () => {
     })
     // Sandbox-driver credential (fenced): the driver API token controls EVERY
     // sandbox and must never land in a sandbox's own runtime config.
-    await putCredential({ provider_id: "daytona", kind: "sandbox_driver", source: "managed", secret: "daytona-master-key" })
+    await putCredential({ owner: "local", provider_id: "daytona", kind: "sandbox_driver", source: "managed", secret: "daytona-master-key" })
     // Connection secret (fenced): reaches consumers only via the token endpoint.
-    await putCredential({ provider_id: "integration:notion", kind: "api_key", source: "managed", secret: "ntn-connection-secret" })
+    await putCredential({ owner: "local", provider_id: "integration:notion", kind: "api_key", source: "managed", secret: "ntn-connection-secret" })
     // Channel session state (fenced): namespaced, host-internal.
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "channel:whatsapp:baileys:auth-state",
       kind: "subscription_session",
       source: "managed",
@@ -96,7 +97,7 @@ describe("credential fanout fence", () => {
   })
 
   test("multi-account fanout selects the same preferred provider row as single resolution", async () => {
-    await putCredential({
+    await putCredential({ owner: "local",
       provider_id: "multi-account-fanout",
       kind: "oauth_token",
       source: "managed",
@@ -104,7 +105,7 @@ describe("credential fanout fence", () => {
       expires_at: Date.now() + 60_000,
       secret: "healthy-token",
     })
-    const expired = await putCredential({
+    const expired = await putCredential({ owner: "local",
       provider_id: "multi-account-fanout",
       kind: "oauth_token",
       source: "managed",
@@ -113,7 +114,7 @@ describe("credential fanout fence", () => {
     })
     updateCredentialHealth(expired.id, "expired", Date.now())
 
-    await expect(resolveSecret("multi-account-fanout")).resolves.toBe("healthy-token")
+    await expect(resolveSecretById(credentialByProvider("multi-account-fanout", { onOutage: "throw", owner: "local" })!.id)).resolves.toBe("healthy-token")
     expect((await fannedOut("local"))["multi-account-fanout"]).toBe("healthy-token")
   })
 
@@ -122,14 +123,14 @@ describe("credential fanout fence", () => {
   // qualify. Running a sandbox on a login the user did not pick is the silent
   // substitution the mark exists to end.
   test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {
-    const local = await putCredential({
+    const local = await putCredential({ owner: "local",
       provider_id: "multi-account-scope",
       kind: "oauth_token",
       source: "managed",
       account_id: "active-local",
       secret: "local-token",
     })
-    const shared = await putCredential({
+    const shared = await putCredential({ owner: "local",
       provider_id: "multi-account-scope",
       kind: "oauth_token",
       source: "managed",
@@ -145,7 +146,7 @@ describe("credential fanout fence", () => {
     expect((await fannedOut("local"))["multi-account-scope"]).toBe("local-token")
     expect(await fannedOut("shared")).not.toHaveProperty("multi-account-scope")
 
-    expect(setActiveCredentials([shared.id])).toMatchObject({ ok: true })
+    expect(setActiveCredentials([shared.id], undefined, "local")).toMatchObject({ ok: true })
 
     expect((await fannedOut("shared"))["multi-account-scope"]).toBe("consented-shared-token")
     expect((await fannedOut("local"))["multi-account-scope"]).toBe("consented-shared-token")

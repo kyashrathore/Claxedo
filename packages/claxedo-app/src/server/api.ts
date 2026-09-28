@@ -1,12 +1,12 @@
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
+import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
+import type { Account, AccountCheck, AccountScope, AccountSource, AccountSources, EffectiveAccounts, HostedAccountSources, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
 import type { IntegrationQueries, IntegrationsApi } from "./integrations"
-import type { SandboxProviderQueries, SandboxProvidersApi } from "./sandbox-providers"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
 import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
 import type { FolderQueries, FoldersApi } from "./folders"
@@ -145,6 +145,9 @@ export type CloudApi = {
 export type AccountsApi = {
   readonly select: (ids: readonly string[]) => Promise<void>
   readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
+  readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
+  readonly setHostedSource: (harness: string, providerId: string, source: AccountSource) => Promise<void>
+  readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
   readonly remove: (ids: readonly string[]) => Promise<void>
   readonly check: (id: string) => Promise<AccountCheck>
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
@@ -201,6 +204,8 @@ export type ServerQueries = {
     readonly list: () => FetchQuery<readonly Account[]>
     readonly effective: () => FetchQuery<EffectiveAccounts>
     readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
+    readonly sources: () => FetchQuery<AccountSources>
+    readonly hostedSources: (harness: string) => FetchQuery<HostedAccountSources>
   }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
   readonly marketplace: {
@@ -217,11 +222,11 @@ export type ServerQueries = {
   readonly folders: FolderQueries
   readonly integrations: IntegrationQueries
   readonly agentConnections: AgentConnectionsQueries
-  readonly sandboxProviders: SandboxProviderQueries
   readonly providerConnect: ProviderConnectQueries
   readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
+    readonly commands: (placementId: PlacementId, harness: string) => FetchQuery<readonly RuntimeCommand[]>
   }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
@@ -255,7 +260,6 @@ export type Server = {
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
   readonly agentConnections: AgentConnectionsApi
-  readonly sandboxProviders: SandboxProvidersApi
   readonly providerConnect: ProviderConnectApi
   readonly providerCatalogs: ProviderCatalogsApi
   readonly livePlugins: LivePluginsApi

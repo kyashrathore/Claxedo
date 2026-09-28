@@ -22,6 +22,7 @@ import {
 } from "@claxedo/server-core/session/meta/index"
 import { parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
 import { getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { asRecord } from "@claxedo/helpers/guards"
 import { localSessionListPage, signedSessionListPage } from "../list/session-list-page"
@@ -42,9 +43,7 @@ async function workspace(c: {
 }) {
   const projectId = c.req.query("projectId")
   const directoryHeader = c.req.header("x-claxedo-directory")
-  const headerWorkspaceId = directoryHeader?.startsWith("workspace:")
-    ? directoryHeader.slice("workspace:".length)
-    : undefined
+  const headerWorkspaceId = workspaceIdFromWorkspaceRef(directoryHeader)
   const workspaceId = c.req.query("workspaceId") ??
     c.req.query("workspace") ??
     c.req.header("x-workspace-id") ??

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { mkdtemp, realpath, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { WorkspaceScope, createOpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import { WorkspaceScope, createOpenCodeRuntime } from "@claxedo/workspace-runtime/testing"
 import { OpenCodeCorpus } from "../src/opencode-corpus"
 
 function corpus(directory: string) {
@@ -23,7 +23,7 @@ function corpus(directory: string) {
   return value
 }
 
-test("the native SDK copy preserves transcript content and migrated snapshot metadata", async () => {
+test("the native SDK copy preserves transcript content and imported creation metadata", async () => {
   const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "claxedo-corpus-port-")))
   const databasePath = path.join(directory, "opencode.db")
   const runtime = createOpenCodeRuntime({ databasePath, configContent: "{}" })

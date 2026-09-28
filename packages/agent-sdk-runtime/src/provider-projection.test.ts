@@ -7,7 +7,6 @@ import {
   providerProjection,
   providerProjectionKey,
   providerProjectionRecord,
-  turnAccountFor,
 } from "./provider-projection"
 
 const minted = {
@@ -149,12 +148,5 @@ describe("the account a binding spends", () => {
   test("a malformed account makes the row unreadable rather than unnamed", () => {
     expect(providerProjection({ ...minted, account: { providerId: "claude-sdk" } })).toBeUndefined()
     expect(providerProjection({ ...minted, account: { ...account, label: 7 } })).toBeUndefined()
-  })
-
-  test("names a stored credential, the machine's login, or nothing it cannot know", () => {
-    expect(turnAccountFor("claude", { ...minted, account })).toEqual({ kind: "stored", harnessId: "claude", ...account })
-    expect(turnAccountFor("codex", undefined)).toEqual({ kind: "machine", harnessId: "codex" })
-    expect(turnAccountFor("claude", minted)).toBeUndefined()
-    expect(turnAccountFor("claude", { unavailable: true, reason: "revoked" })).toBeUndefined()
   })
 })

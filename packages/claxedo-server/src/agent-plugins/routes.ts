@@ -20,7 +20,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/catalog/presentation"
 import { readPluginSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
-import type { ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
+import type { AgentPluginMcpServer, ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import {
   builtinCatalogEntry,
@@ -34,6 +34,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
+  agentPluginHarnessTargets,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -138,21 +139,37 @@ function pin(candidate: AgentPluginCatalogCandidate, digest: AgentPluginArtifact
   }
 }
 
+/**
+ * How one server reaches a cloud sandbox: HTTP through the plugin gateway, a
+ * local command only when the image ships it, and otherwise not at all, with
+ * the reason the runtime plan will carry.
+ */
+function cloudReach(server: AgentPluginMcpServer, imageCommands: readonly string[]) {
+  if (server.type === "streamable-http") return { state: "gateway" as const }
+  if (server.type !== "stdio") return { state: "unavailable" as const, reason: "mcp_transport_unsupported" }
+  const name = server.command.split("/").at(-1) ?? server.command
+  return imageCommands.includes(name)
+    ? { state: "image-command" as const }
+    : { state: "unavailable" as const, reason: "mcp_command_not_in_image" }
+}
+
 async function mcpServerViews(input: {
   pluginInstanceId: string
   mcp: ValidatedAgentPlugin["mcp"]
   authentication?: AgentPluginMcpCatalogAuthenticationResolver
+  imageCommands: readonly string[]
 }) {
   if (input.mcp.status !== "valid") return []
   return Promise.all(input.mcp.servers.map(async (server) => {
-    if (server.type === "stdio") return { name: server.name, type: server.type, authentication: { state: "local" as const } }
+    const cloud = cloudReach(server, input.imageCommands)
+    if (server.type === "stdio") return { name: server.name, type: server.type, authentication: { state: "local" as const }, cloud }
     if (server.type === "sse") {
-      return { name: server.name, type: server.type, authentication: { state: "unavailable" as const, reason: "mcp_transport_unsupported" } }
+      return { name: server.name, type: server.type, authentication: { state: "unavailable" as const, reason: "mcp_transport_unsupported" }, cloud }
     }
     const authentication = input.authentication
       ? await input.authentication({ pluginInstanceId: input.pluginInstanceId, server })
       : { state: "unavailable" as const, reason: "mcp_auth_management_unavailable" }
-    return { name: server.name, type: server.type, authentication }
+    return { name: server.name, type: server.type, authentication, cloud }
   }))
 }
 
@@ -188,6 +205,7 @@ async function candidateView(input: {
   activations: SignedAgentPluginActivationStore
   artifacts: AgentPluginArtifactStore
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
+  imageCommands: readonly string[]
 }) {
   const states = await Promise.all(SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) => {
     const snapshot = await input.activations.read(input.auth, {
@@ -239,6 +257,7 @@ async function candidateView(input: {
       pluginInstanceId: input.candidate.pluginInstanceId,
       mcp: retainedArtifact?.plugin.mcp ?? input.candidate.mcp,
       ...(input.mcpAuthentication ? { authentication: input.mcpAuthentication } : {}),
+      imageCommands: input.imageCommands,
     }),
     componentDiagnostics: input.candidate.componentDiagnostics,
     harnesses: Object.fromEntries(states),
@@ -252,6 +271,7 @@ async function retainedView(input: {
   activations: SignedAgentPluginActivationStore
   artifacts: AgentPluginArtifactStore
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
+  imageCommands: readonly string[]
 }) {
   const retainedPin = input.known.pins.user ?? input.known.pins.organization ?? input.known.pins.claxedo
   let retained: Awaited<ReturnType<AgentPluginArtifactStore["get"]>>
@@ -303,6 +323,7 @@ async function retainedView(input: {
           pluginInstanceId: input.known.pluginInstanceId,
           mcp: retained.plugin.mcp,
           ...(input.mcpAuthentication ? { authentication: input.mcpAuthentication } : {}),
+          imageCommands: input.imageCommands,
         })
       : [],
     componentDiagnostics: [],
@@ -328,6 +349,8 @@ export function HostedAgentPluginRoutes(input: {
   builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: HostedMcpClientMetadata
+  /** The commands the sandbox image ships; a plugin's local command reaches a sandbox only when named here. */
+  imageCommands?: readonly string[]
   /** The signed user's own runtime world for a machine they own; absent in compositions without one. */
   selfRuntime?: AgentPluginSelfRuntimeReader
   /**
@@ -386,10 +409,10 @@ export function HostedAgentPluginRoutes(input: {
     })
   }
 
-  const apply = async (revision: number, consent?: { auth: SignedControlPlaneAuth; groupId: string }) => {
+  const apply = async (revision: number, auth: SignedControlPlaneAuth, consent?: { groupId: string }) => {
     try {
-      const applied = await input.reconcile.reconcile(revision)
-      if (consent) await input.builtInConsentChanged?.(consent.auth, consent.groupId)
+      const applied = await input.reconcile.reconcile(revision, auth)
+      if (consent) await input.builtInConsentChanged?.(auth, consent.groupId)
       return applied
     } catch (cause) {
       return { state: "failed" as const, message: cause instanceof Error ? cause.message : "Agent Plugins reconciliation failed" }
@@ -449,6 +472,7 @@ export function HostedAgentPluginRoutes(input: {
         activations: input.activations,
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
+        imageCommands: input.imageCommands ?? [],
       }))),
       // A group's activation row is the built-in entry's own state; listed
       // on its own it would be a plugin with no source and no artifact.
@@ -461,6 +485,7 @@ export function HostedAgentPluginRoutes(input: {
           activations: input.activations,
           artifacts: input.artifacts,
           ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
+          imageCommands: input.imageCommands ?? [],
         }))),
     ])
     timing.mark("views")
@@ -482,6 +507,7 @@ export function HostedAgentPluginRoutes(input: {
       canManageOrganizationDefaults: organizationManager,
       canManageOrganizationConnections: organizationManager,
       supportedHarnesses: SUPPORTED_AGENT_PLUGIN_HARNESSES,
+      harnessTargets: agentPluginHarnessTargets(),
       projects,
       selectedProjectId: projectId ?? null,
       candidates: [...candidates, ...retained, builtIn],
@@ -554,7 +580,7 @@ export function HostedAgentPluginRoutes(input: {
       // The built-in comes from no source: there is nothing to fetch, hash or
       // retain, so a choice about one of its groups is only ever the row.
       const committed = await input.activations.mutateUser(auth, body)
-      const applied = await apply(committed, { auth, groupId })
+      const applied = await apply(committed, auth, { groupId })
       return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
     }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
@@ -572,7 +598,7 @@ export function HostedAgentPluginRoutes(input: {
     } else {
       revision = await input.activations.mutateUser(auth, body)
     }
-    const reconciliation = await apply(revision!)
+    const reconciliation = await apply(revision!, auth)
     return c.json({ revision, reconciliation }, reconciliation.state === "failed" ? 202 : 200)
   })
 
@@ -594,7 +620,7 @@ export function HostedAgentPluginRoutes(input: {
         return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
       }
       const committed = await input.activations.mutateOrganizationDefault(auth, body)
-      const applied = await apply(committed, { auth, groupId })
+      const applied = await apply(committed, auth, { groupId })
       return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
     }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
@@ -615,7 +641,7 @@ export function HostedAgentPluginRoutes(input: {
     } else {
       revision = await input.activations.mutateOrganizationDefault(auth, body)
     }
-    const reconciliation = await apply(revision!)
+    const reconciliation = await apply(revision!, auth)
     return c.json({ revision, reconciliation }, reconciliation.state === "failed" ? 202 : 200)
   })
 
@@ -654,7 +680,7 @@ export function HostedAgentPluginRoutes(input: {
           : await input.activations.updateOrganizationArtifact(auth, mutation)
       },
     })
-    const reconciliation = await apply(revision!)
+    const reconciliation = await apply(revision!, auth)
     return c.json({ revision, reconciliation }, reconciliation.state === "failed" ? 202 : 200)
   })
 

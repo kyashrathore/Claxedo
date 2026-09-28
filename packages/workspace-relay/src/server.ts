@@ -992,6 +992,7 @@ function relayHostMintInput(
   return {
     principalKind: claims.principal_kind,
     actorId: claims.actor_id,
+    userId: claims.user_id,
     actorKind: claims.actor_kind,
     parentJti: claims.jti,
     ...(claims.actor_public_id && claims.actor_name

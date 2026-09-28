@@ -4,6 +4,7 @@ import * as path from "node:path"
 
 import { resolveLocalServerMigrationJournal } from "./local-server"
 import { OPENCODE_SDK_EXTERNALS, stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
+import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
 import { PLUGIN_TOOLCHAIN_EXTERNALS, stagePluginToolchain } from "./stage-plugin-toolchain"
 import { resolveTargetOsArch } from "./target-platform"
 import { runBunBuild } from "../../../script/bun-build"
@@ -21,7 +22,11 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   const pending = `${destination}.pending-${process.pid}`
   const { outputBytes } = await emitClaxedoServerBundle(source, pending)
   const [platform, arch] = resolveTargetOsArch().split("-")
-  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch })
+  // The Cursor transport spawns its SDK worker by path: the server's code finds
+  // it beside its own chunk, and the SDK the worker loads is staged with
+  // OpenCode's, where Node resolves it from `chunks/`.
+  const cursorWorker = await bundleCursorWorker(path.join(pending, "chunks"))
+  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch }, undefined, cursorWorker.packages)
   await stagePluginToolchain(path.join(pending, "node_modules"), { platform: platform, arch: arch })
 
   fs.rmSync(destination, { recursive: true, force: true })
@@ -118,10 +123,6 @@ export async function emitClaxedoServerBundle(source: string, outdir: string) {
     fs.cpSync(migrationsSource, path.join(parent, "claxedo-migration"), { recursive: true })
   }
 
-  // @cursor/sdk ships as a webpack bundle with numeric lazy chunks (986.js, …).
-  // Bun inlines the entry into chunks/index-*.js but does not emit those siblings,
-  // so cursor-sdk session create fails at runtime until they sit beside the entry.
-  copyCursorSdkLazyChunks(path.join(outdir, "chunks"))
   return { outputBytes }
 }
 
@@ -149,34 +150,4 @@ export function resolveDeferredServerEntry(entry: string) {
   const resolved = path.resolve(path.dirname(entry), specifiers[0])
   if (!fs.existsSync(resolved)) throw new Error(`deferred server entry ${specifiers[0]} does not exist at ${resolved}`)
   return resolved
-}
-
-function copyCursorSdkLazyChunks(chunksDir: string) {
-  const desktopDir = path.resolve(import.meta.dirname, "..")
-  const searchRoots = [
-    desktopDir,
-    path.resolve(desktopDir, "../agent-sdk-runtime"),
-    path.resolve(desktopDir, "../claxedo-local-server"),
-  ]
-
-  let cursorSdkEsmDir: string | undefined
-  for (const root of searchRoots) {
-    try {
-      const pkgJson = path.join(root, "package.json")
-      if (!fs.existsSync(pkgJson)) continue
-      cursorSdkEsmDir = path.join(
-        path.dirname(createRequire(pkgJson).resolve("@cursor/sdk/package.json")),
-        "dist/esm",
-      )
-      break
-    } catch {
-      continue
-    }
-  }
-  if (!cursorSdkEsmDir || !fs.existsSync(cursorSdkEsmDir)) return
-
-  for (const entry of fs.readdirSync(cursorSdkEsmDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !/^\d+\.js$/.test(entry.name)) continue
-    fs.copyFileSync(path.join(cursorSdkEsmDir, entry.name), path.join(chunksDir, entry.name))
-  }
 }

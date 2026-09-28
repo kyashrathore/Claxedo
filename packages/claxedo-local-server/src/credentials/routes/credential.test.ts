@@ -10,7 +10,7 @@ import { localControlPlaneCredentials } from "../machine-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { SdkCredentialSyncError } from "@claxedo/server-core/opencode/sdk-credential-bridge"
+import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 
@@ -48,6 +48,7 @@ function credentials(): ControlPlaneCredentials {
       source: "managed" as const,
       label: "OpenAI",
       account_id: null,
+      owner: "local",
       secure_ref: "local:secret",
       status: "available" as const,
       expires_at: null,
@@ -56,6 +57,7 @@ function credentials(): ControlPlaneCredentials {
       created_at: 1,
       updated_at: 1,
       revision: 1,
+      incarnation: "cred_1",
     }]),
     getCredentialByProvider: vi.fn(async () => undefined),
     putCredential: vi.fn(async (input: Parameters<ControlPlaneCredentials["putCredential"]>[0]) => ({
@@ -65,6 +67,7 @@ function credentials(): ControlPlaneCredentials {
       source: input.source,
       label: input.label ?? null,
       account_id: input.account_id ?? null,
+      owner: input.owner,
       secure_ref: "local:new",
       status: "available" as const,
       expires_at: input.expires_at ?? null,
@@ -73,6 +76,7 @@ function credentials(): ControlPlaneCredentials {
       created_at: 2,
       updated_at: 2,
       revision: 1,
+      incarnation: "cred_2",
     })),
     deleteCredential: vi.fn(async () => true),
     deleteCredentialsByProvider: vi.fn(async () => 3),
@@ -83,6 +87,9 @@ function credentials(): ControlPlaneCredentials {
       missing: [],
       failed: [],
     })),
+    accountSelections: vi.fn(async () => ({})),
+    setAccountSources: vi.fn(async (providerIds: readonly string[], source: "own" | "team") =>
+      Object.fromEntries(providerIds.map((providerId) => [providerId, source]))),
   }
 }
 
@@ -104,7 +111,7 @@ describe("credential routes", () => {
     const registry = Object.assign(credentials(), {
       effectiveCredentials: vi.fn(async (scope: "local" | "shared") => scope === "local"
         ? [{
-            id: "cred_1", provider_id: "codex-app-server", kind: "oauth_token" as const, source: "managed" as const,
+            id: "cred_1", owner: "local", provider_id: "codex-app-server", kind: "oauth_token" as const, source: "managed" as const,
             label: "ChatGPT OAuth", account_id: "acc_1", secure_ref: "local:1", status: "available" as const,
             health: null, expires_at: null, last_validated_at: null, last_error: null, created_at: 1, updated_at: 1, revision: 1,
           }]
@@ -154,7 +161,7 @@ describe("credential routes", () => {
     expect(registry.saveDiscoveredCredentials).toHaveBeenCalledWith({
       discovery_id: "discovery-1",
       items: [{ provider_id: "openai", kind: "oauth_token", scope: "shared" }],
-    }, SINGLE_TENANT_ORG)
+    }, SINGLE_TENANT_ORG, "local")
     expect({ preview, saved }).toMatchInlineSnapshot(`
       {
         "preview": {
@@ -247,7 +254,7 @@ describe("credential routes", () => {
   test("a discovered login the store took and the engine did not is answered by name", async () => {
     const registry = Object.assign(credentials(), {
       saveDiscoveredCredentials: vi.fn(async () => {
-        throw new SdkCredentialSyncError(new Error("OpenCode answered 500 to the integration list"))
+        throw new CredentialDeliveryError(new Error("OpenCode answered 500 to the integration list"))
       }),
     })
     const response = await CredentialRoutes(registry).request("http://localhost/save-discovered", {
@@ -256,7 +263,7 @@ describe("credential routes", () => {
     })
 
     expect(response.status).toBe(500)
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "engine_credential_sync_failed" } })
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_delivery_failed" } })
   })
 
   test("changes credential scope with explicit consent timing", async () => {
@@ -548,7 +555,7 @@ describe("credential routes", () => {
               "last_error": null,
               "last_used_at": null,
               "last_validated_at": 1,
-              "owner": null,
+              "owner": "local",
               "provider_id": "unsupported-provider",
               "scope": "local",
               "source": "managed",
@@ -687,7 +694,7 @@ describe("credential routes", () => {
         source: "managed",
         label: "OpenAI",
         account_id: null,
-        owner: null,
+        owner: "local",
         is_active: false,
         status: "available",
         health: null,
@@ -716,6 +723,7 @@ describe("credential routes", () => {
       listCredentials: async () => [
         { ...row, id: "cred_key", provider_id: "openai", kind: "api_key" as const },
         { ...row, id: "cred_sub", provider_id: "openai", kind: "oauth_token" as const },
+        { ...row, id: "cred_cursor", provider_id: "cursor-sdk", kind: "api_key" as const },
       ],
     })
     const app = CredentialRoutes(registry)
@@ -727,6 +735,7 @@ describe("credential routes", () => {
     expect(list.credentials.map((row) => [row.id, row.deliverable])).toEqual([
       ["cred_key", { local: true, cloud: true }],
       ["cred_sub", { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }],
+      ["cred_cursor", { local: true, cloud: false, reason: "native_delivery_needs_token_exchange" }],
     ])
   })
 
@@ -776,6 +785,7 @@ describe("credential routes", () => {
     })
     expect(put.status).toBe(200)
     expect(registry.putCredential).toHaveBeenCalledWith({
+      owner: "local",
       provider_id: "openai",
       kind: "api_key",
       source: "managed",
@@ -788,19 +798,19 @@ describe("credential routes", () => {
       body: JSON.stringify({ provider_ids: ["openai"] }),
     })
     expect(sync.status).toBe(200)
-    expect(registry.syncLocalCredentials).toHaveBeenCalledWith(["openai"], SINGLE_TENANT_ORG)
+    expect(registry.syncLocalCredentials).toHaveBeenCalledWith(["openai"], SINGLE_TENANT_ORG, "local")
 
-    const status = await app.request("http://localhost/cred_2/status", {
+    const status = await app.request("http://localhost/cred_1/status", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "revoked", error: "rotated" }),
     })
     expect(status.status).toBe(200)
-    expect(registry.updateCredentialStatus).toHaveBeenCalledWith("cred_2", "revoked", "rotated", SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialStatus).toHaveBeenCalledWith("cred_1", "revoked", "rotated", SINGLE_TENANT_ORG)
 
-    const deleted = await app.request("http://localhost/cred_2", { method: "DELETE" })
+    const deleted = await app.request("http://localhost/cred_1", { method: "DELETE" })
     expect(deleted.status).toBe(200)
-    expect(registry.deleteCredential).toHaveBeenCalledWith("cred_2", SINGLE_TENANT_ORG)
+    expect(registry.deleteCredential).toHaveBeenCalledWith("cred_1", SINGLE_TENANT_ORG)
   })
 
   test("returns structured validation errors", async () => {
@@ -817,7 +827,7 @@ describe("credential routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider_ids: [""] }),
       }),
-      new Request("http://localhost/cred_2/status", {
+      new Request("http://localhost/cred_1/status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "missing" }),
@@ -871,7 +881,7 @@ describe("credential routes", () => {
       },
     })
 
-    const status = await app.request("http://localhost/cred_2/status", {
+    const status = await app.request("http://localhost/cred_1/status", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "error", error: "sk-status-secret" }),
@@ -887,14 +897,14 @@ describe("credential routes", () => {
 
   test("a key the store took and the engine did not is answered by name, never as a failed store", async () => {
     const registry = credentials()
-    const engine = new SdkCredentialSyncError(new Error("OpenCode answered 500 to the integration list"))
+    const engine = new CredentialDeliveryError(new Error("OpenCode answered 500 to the integration list"))
     ;(registry.putCredential as ReturnType<typeof vi.fn>).mockRejectedValueOnce(engine)
     ;(registry.syncLocalCredentials as ReturnType<typeof vi.fn>).mockRejectedValueOnce(engine)
     const app = CredentialRoutes(registry)
     const expected = {
       error: {
-        code: "engine_credential_sync_failed",
-        message: "Stored, but the running engine could not be updated: OpenCode answered 500 to the integration list",
+        code: "credential_delivery_failed",
+        message: "Stored, but running workspaces could not be updated: OpenCode answered 500 to the integration list",
         details: { detail: { name: "Error", message: "OpenCode answered 500 to the integration list" } },
       },
     }
@@ -1182,7 +1192,7 @@ describe("choosing which account a provider runs on", () => {
   })
 
   async function account(providerId: string, accountId: string) {
-    return await registry.putCredential({
+    return await registry.putCredential({ owner: "local",
       provider_id: providerId,
       kind: "oauth_token",
       source: "managed",
@@ -1208,13 +1218,13 @@ describe("choosing which account a provider runs on", () => {
       credentials: Array<{ id: string; owner: string | null; is_active: boolean }>
     }
     expect(listed.credentials.filter((row) => row.is_active).map((row) => row.id)).toEqual([first.id])
-    expect(listed.credentials.every((row) => row.owner === null)).toBe(true)
+    expect(listed.credentials.every((row) => row.owner === "local")).toBe(true)
 
     const response = await activate([second.id])
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
-      credentials: [{ id: second.id, is_active: true, owner: null, label: "acc_second" }],
+      credentials: [{ id: second.id, is_active: true, owner: "local", label: "acc_second" }],
     })
     expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
     const effective = await (await app.request("http://localhost/effective")).json() as {
@@ -1222,6 +1232,32 @@ describe("choosing which account a provider runs on", () => {
     }
     expect(effective.credentials.filter((row) => row.provider_id === "claude-sdk").map((row) => row.id))
       .toEqual([second.id])
+    const byProvider = await (await app.request("http://localhost/claude-sdk")).json() as { credential: { id: string; is_active: boolean } }
+    expect(byProvider.credential).toMatchObject({ id: second.id, is_active: true })
+  })
+
+  test("the org's team account is what a person spends only once they choose it, and choosing their own puts theirs back", async () => {
+    const own = await account("team-choice", "acc_own")
+    const team = await registry.putCredential({ owner: null, provider_id: "team-choice", kind: "oauth_token", source: "managed",
+      account_id: "acc_team", label: "Team", secret: "team-secret" })
+    const spent = async () => ((await (await app.request("http://localhost/effective")).json()) as { credentials: Array<{ id: string; provider_id: string }> })
+      .credentials.filter((row) => row.provider_id === "team-choice").map((row) => row.id)
+    const choose = (source: string) => app.request("http://localhost/account-sources", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["team-choice"], source }),
+    })
+
+    expect(await spent()).toEqual([own.id])
+    const chosen = await choose("team")
+    expect(chosen.status).toBe(200)
+    await expect(chosen.json()).resolves.toMatchObject({ sources: { "team-choice": "team" } })
+    expect(await spent()).toEqual([team.id])
+    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, string>; team: Array<{ id: string }> }
+    expect(listed.sources).toMatchObject({ "team-choice": "team" })
+    expect(listed.team.map((row) => row.id)).toContain(team.id)
+
+    expect((await choose("own")).status).toBe(200)
+    expect(await spent()).toEqual([own.id])
+    expect((await choose("everyone")).status).toBe(400)
   })
 
   test("every binding named in one call is marked together", async () => {
@@ -1238,8 +1274,8 @@ describe("choosing which account a provider runs on", () => {
     expect(registry.credentialById(sdk.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
-  test("an unknown id is 404, a credential no harness runs on is 409, and neither writes", async () => {
-    const driver = await registry.putCredential({
+  test("an unknown id and the org's own sandbox-driver row are both not the caller's to mark, and neither writes", async () => {
+    const driver = await registry.putCredential({ owner: null,
       provider_id: "daytona",
       kind: "sandbox_driver",
       source: "managed",
@@ -1251,9 +1287,9 @@ describe("choosing which account a provider runs on", () => {
     expect(missing.status).toBe(404)
     await expect(missing.json()).resolves.toMatchObject({ error: { code: "credential_not_found" } })
 
-    const ineligible = await activate([waiting.id, driver.id])
-    expect(ineligible.status).toBe(409)
-    await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
+    const foreign = await activate([waiting.id, driver.id])
+    expect(foreign.status).toBe(404)
+    await expect(foreign.json()).resolves.toMatchObject({ error: { code: "credential_not_found" } })
     expect(registry.credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
   })
 
@@ -1263,8 +1299,8 @@ describe("choosing which account a provider runs on", () => {
     const failing = CredentialRoutes({
       ...localControlPlaneCredentials(),
       setActiveCredentials: async (ids, org) => {
-        registry.setActiveCredentials(ids, org)
-        throw new SdkCredentialSyncError(new Error("OpenCode returned an invalid integration list"))
+        registry.setActiveCredentials(ids, org, "local")
+        throw new CredentialDeliveryError(new Error("OpenCode returned an invalid integration list"))
       },
     }, {})
 
@@ -1277,8 +1313,8 @@ describe("choosing which account a provider runs on", () => {
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({
       error: {
-        code: "engine_credential_sync_failed",
-        message: "Stored, but the running engine could not be updated: OpenCode returned an invalid integration list",
+        code: "credential_delivery_failed",
+        message: "Stored, but running workspaces could not be updated: OpenCode returned an invalid integration list",
         details: { detail: { name: "Error", message: "OpenCode returned an invalid integration list" } },
       },
     })
@@ -1414,7 +1450,7 @@ describe("how much of a plan is left, kept between reads", () => {
   })
 
   test("a Check stores the windows it reported, and both list reads carry them afterwards", async () => {
-    const stored = await registry.putCredential({
+    const stored = await registry.putCredential({ owner: "local",
       provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "managed",
@@ -1453,7 +1489,7 @@ describe("how much of a plan is left, kept between reads", () => {
   })
 
   test("a row no Check has reached reports no windows rather than an empty plan", async () => {
-    const unread = await registry.putCredential({
+    const unread = await registry.putCredential({ owner: "local",
       provider_id: "usage-unread",
       kind: "api_key",
       source: "managed",

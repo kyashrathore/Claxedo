@@ -86,6 +86,7 @@ const runtime = createWorkspaceRuntimeApp({
     workspaceId: "local_ws",
     hostId: "host_live_relay",
   }),
+  placement: { placement: "self-hosted", machineOwnerUserId: "", canUseOwnLogin: false },
   internalSecrets,
 })
 const runtimeServer = Bun.serve({ port: 0, fetch: runtime.app.fetch })

@@ -133,7 +133,20 @@ describe("a session's effective selections", () => {
   test("a stored mode wins while the harness offers it; otherwise the harness default", () => {
     expect(effectivePermissionModeId(codex, "read-only")).toBe("read-only")
     expect(effectivePermissionModeId(codex, "plan")).toBe("workspace-write")
-    expect(effectivePermissionModeId(cursor, null)).toBe("auto-review")
+    expect(effectivePermissionModeId(cursor, "unsandboxed")).toBe("unsandboxed")
+  })
+
+  test("Cursor names no mode until one is chosen, because its own configured defaults decide", () => {
+    expect(effectivePermissionModeId(cursor, null)).toBeNull()
+    expect(effectivePermissionModeId(cursor, "plan")).toBeNull()
+  })
+
+  test("a declared default is one of the harness's own modes, and every table lands on the next turn", () => {
+    for (const harness of HARNESS_IDS) {
+      const table = HARNESS_TABLE[harness].permissionModes
+      if (table.defaultModeId !== undefined) expect(table.modes.map((mode) => mode.id), harness).toContain(table.defaultModeId)
+      expect(table.appliesFrom, harness).toBe("next-turn")
+    }
   })
 
   test("a harness the table does not describe runs only what was stored", () => {

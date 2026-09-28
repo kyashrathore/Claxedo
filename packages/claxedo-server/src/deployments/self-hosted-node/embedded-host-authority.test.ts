@@ -14,6 +14,7 @@ import { sessionEventDeliveryPolicy } from "../../../../workspace-runtime/src/ev
 import { workspaceEventsHandler } from "../../../../workspace-runtime/src/routes/events"
 import { sessionStreamLeaseVerifier } from "../../routes/runtime-session-authority"
 import { embeddedManagedPrivateSessionPolicy } from "./app"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const keyNames = ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", "CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM"] as const
 const previous = keyNames.map((name) => process.env[name])
@@ -137,6 +138,7 @@ test("checkpoint HTTP mutations reject a stale admin token after SQLite membersh
   const key = await generateKeyPair("EdDSA")
   const runtime = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure({ workspaceId: "ws_current", hostId: "host_local", key: key.publicKey }),
+    placement: loopbackMachineLoginPolicy(),
     sessionAccessPolicy: f.policy,
   })
   try {

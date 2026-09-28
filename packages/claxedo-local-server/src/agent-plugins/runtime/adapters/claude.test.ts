@@ -26,10 +26,13 @@ describe("claudeAgentPluginAdapter", () => {
       version: "1.0.0",
     }))
     await fs.writeFile(path.join(pluginRoot, "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Review code\n---\n")
+    await fs.writeFile(path.join(pluginRoot, "server"), "#!/bin/sh\n", { mode: 0o755 })
+    await fs.mkdir(path.join(pluginRoot, "data"))
     await fs.writeFile(path.join(pluginRoot, "mcp.json"), JSON.stringify({
       $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       mcpServers: {
         review: { type: "stdio", command: "review-server", args: ["${PLUGIN_DATA}/state"] },
+        cwd: { type: "stdio", command: "./server", cwd: "./data" },
       },
     }))
     const validated = validatePluginTree(await loadAgentPluginTreeFromDirectory(pluginRoot), pluginRoot)
@@ -46,8 +49,10 @@ describe("claudeAgentPluginAdapter", () => {
       version: "1.0.0",
     })
     expect(JSON.parse(await fs.readFile(path.join(view, ".mcp.json"), "utf8"))).toMatchObject({
-      mcpServers: { review: { command: "review-server", args: ["${CLAUDE_PLUGIN_DATA}/state"] } },
+      mcpServers: { review: { command: "review-server", args: [`${dataRoot}/state`] } },
     })
+    expect(JSON.parse(await fs.readFile(path.join(view, ".mcp.json"), "utf8")).mcpServers.cwd).toBeUndefined()
+    expect(result.notApplied).toEqual([{ item: expect.stringMatching(/^review-[0-9a-f]{8}-cwd$/), reason: "unsupported-by-harness" }])
     expect(await fs.stat(path.join(view, "skills", "review", "SKILL.md")).then((item) => item.isFile())).toBe(true)
   })
 })

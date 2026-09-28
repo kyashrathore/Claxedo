@@ -28,7 +28,8 @@ A snapshot is a serializable checkpoint for resuming one state boundary:
 
 ### Contracts
 
-`src/contracts` defines the cross-harness data model.
+`@claxedo/agent-runtime-contract` defines the cross-harness data model; this
+package imports it and re-exports none of it.
 
 - `RawHarnessEvent` is the ingress envelope. It carries `source`, optional
   `method`, raw `payload`, and optional `receivedAt`.
@@ -126,7 +127,7 @@ callers can omit them and use the defaults.
 
 ## Adding A Harness Adapter
 
-1. Add a folder under `src/harnesses/<harness>`.
+1. Add the translator under `packages/harness/src/transports/<kind>/translate/`.
 2. Export an adapter factory from that folder (existing adapters use the
    `<harness>Adapter()` naming style, e.g. `claudeSdkAdapter()`).
 3. Keep harness payload parsing local to the adapter.

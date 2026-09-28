@@ -31,7 +31,7 @@ import {
   originCloudWorkspaceId,
 } from "../workspace/origin-cloud-workspace"
 import type { TasksRootIdentity } from "./root-capability"
-import { configuredRelayUrl, type WorkspaceRuntimePreparation } from "../workspace/route-support"
+import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
 
 export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
@@ -114,15 +114,15 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
   return createTasksSessionBridge({
-    async target(workspaceId) {
+    async target(workspaceId, starter) {
       const workspace = await resolveWorkspace({ workspaceId }).catch(() => undefined)
-      return workspace ? dispatchTarget(workspace, input.runtimeClient) : null
+      return workspace ? dispatchTarget(workspace, startingAs(input, starter)) : null
     },
 
-    async projectTarget(projectId) {
+    async projectTarget(projectId, starter) {
       const chosen = chooseProjectWorkspace(projectId, await listWorkspaces().catch(() => []))
       if (!("workspace" in chosen)) return chosen
-      const target = dispatchTarget(chosen.workspace, input.runtimeClient)
+      const target = dispatchTarget(chosen.workspace, startingAs(input, starter))
       return target ? { target } : {
         detail: `Workspace ${chosen.workspace.id} is not reachable from this control plane`,
       }
@@ -216,15 +216,11 @@ function createTasksCloudTarget(
       },
       services: input.services,
       egress: {
-        controlPlane: [
-          configuredRelayUrl({
-            ...(input.services.relay.relayUrl ? { relayUrl: input.services.relay.relayUrl } : {}),
-            ...(input.services.relay.relayUrls ? { relayUrls: input.services.relay.relayUrls } : {}),
-            ...(input.services.defaultHomeRegion ? { defaultHomeRegion: input.services.defaultHomeRegion } : {}),
-          }),
-          input.sandboxEgress.controlPlaneOrigin,
-        ],
-        ...(input.sandboxEgress.extraHosts ? { extraHosts: input.sandboxEgress.extraHosts } : {}),
+        ...(input.services.relay.relayUrl ? { relayUrl: input.services.relay.relayUrl } : {}),
+        ...(input.services.relay.relayUrls ? { relayUrls: input.services.relay.relayUrls } : {}),
+        ...(input.services.defaultHomeRegion ? { defaultHomeRegion: input.services.defaultHomeRegion } : {}),
+        ...(input.sandboxEgress.extraHosts ? { sandboxEgressExtraHosts: [...input.sandboxEgress.extraHosts] } : {}),
+        ...(input.sandboxEgress.controlPlaneOrigin ? { sandboxControlPlaneOrigin: input.sandboxEgress.controlPlaneOrigin } : {}),
       },
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       projectId: origin.task.projectId,
@@ -242,6 +238,7 @@ function createTasksCloudTarget(
           ...(workspace.repo_url ? { repoUrl: workspace.repo_url } : {}),
           ...(workspace.repo_name ? { repoName: workspace.repo_name } : {}),
           ...(workspace.git_branch ? { gitBranch: workspace.git_branch } : {}),
+          ...(workspace.remote_directory ? { remoteDirectory: workspace.remote_directory } : {}),
           ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
         })
         // Same position the create route fires it: the authority row exists,
@@ -284,7 +281,7 @@ function createTasksCloudTarget(
     } catch (error) {
       return { blocker: capabilityBlocker(origin, error) }
     }
-    const target = dispatchTarget(allocated.workspace, input.runtimeClient)
+    const target = dispatchTarget(allocated.workspace, startingAs(input, origin.actor))
     return target ? { target } : {
       blocker: {
         code: "source_unavailable",
@@ -301,6 +298,7 @@ type RootWorkspaceArgs = {
   repoUrl?: string
   repoName?: string
   gitBranch?: string
+  remoteDirectory?: string
   homeRegion?: string
 }
 
@@ -361,6 +359,19 @@ function capabilityBlocker(origin: TasksCloudOrigin, error: unknown): StartBlock
     code: "capability_unavailable",
     detail: `The capability set for ${origin.task.id} (${origin.slot}, attempt ${origin.attempt}) could not be applied: ${error instanceof Error ? error.message : String(error)}`,
   }
+}
+
+/**
+ * The runtime client a Start dispatches through: the control plane's service
+ * actor, carrying the person it starts for, so a session it creates is theirs
+ * and spends their accounts. The signed caller, or the owner a grant resolved
+ * to; the reservation refuses a starter neither names before anything is
+ * created.
+ */
+function startingAs(input: HostedTasksSessionBridgeInput, starter: TasksActor | null): WorkspaceRuntimeClientOptions {
+  const userId = starter ? input.auth?.(starter)?.principal?.userId ?? input.owner?.(starter)?.userId : undefined
+  if (!userId || !input.runtimeClient.runtimeActor) return input.runtimeClient
+  return { ...input.runtimeClient, runtimeActor: { ...input.runtimeClient.runtimeActor, userId } }
 }
 
 function dispatchTarget(workspace: Workspace, options: WorkspaceRuntimeClientOptions): TasksRuntimeTarget | null {

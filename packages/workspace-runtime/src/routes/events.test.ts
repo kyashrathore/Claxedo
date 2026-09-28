@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Hono, type Context } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
-import { createRuntimeEventHub } from "../runtime-event-hub"
+import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler, type WorkspaceEventStreamFrame } from "./events"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
 import type { AgentSessionStart, AgentSessionStarts } from "@claxedo/agent-runtime-contract"

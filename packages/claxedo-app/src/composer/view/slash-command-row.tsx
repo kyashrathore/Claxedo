@@ -2,6 +2,15 @@ import { Show } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
 import type { SlashCommand } from "./slash-popover"
 
+export function slashCommandBadge(command: SlashCommand): ComposerTextKey | undefined {
+  if (command.type !== "custom") return undefined
+  if (command.origin === "saved") return "prompt.slash.badge.saved"
+  if (command.source === "command") return undefined
+  if (command.source === "skill") return "prompt.slash.badge.skill"
+  if (command.source === "mcp") return "prompt.slash.badge.mcp"
+  return "prompt.slash.badge.custom"
+}
+
 export function SlashCommandRow(props: {
   command: SlashCommand
   id: string
@@ -31,14 +40,8 @@ export function SlashCommandRow(props: {
         </Show>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Show when={props.command.type === "custom" && props.command.source !== "command"}>
-          <span class="text-11-regular text-text-weak px-1.5 py-0.5 bg-surface-base rounded">
-            {props.command.source === "skill"
-              ? props.t("prompt.slash.badge.skill")
-              : props.command.source === "mcp"
-                ? props.t("prompt.slash.badge.mcp")
-                : props.t("prompt.slash.badge.custom")}
-          </span>
+        <Show when={slashCommandBadge(props.command)}>
+          {(badge) => <span class="text-11-regular text-text-weak px-1.5 py-0.5 bg-surface-base rounded">{props.t(badge())}</span>}
         </Show>
         <Show when={props.keybind}>
           <span class="text-12-regular text-text-weak">{props.keybind}</span>

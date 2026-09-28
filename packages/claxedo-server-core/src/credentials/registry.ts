@@ -136,6 +136,7 @@ export async function putCredential(
 
   // The fingerprint keys on what the caller pasted, so the same token pasted
   // twice stays one row whichever kind it settles under.
+  const owner = input.owner
   const accountId = input.account_id ?? pastedAccountId(input)
   const kind = storedCredentialKind(input)
 
@@ -150,6 +151,7 @@ export async function putCredential(
         and(
           inOrg(orgId),
           eq(ClaxedoProviderCredentialTable.provider_id, input.provider_id),
+          ownedBy(owner),
           eq(ClaxedoProviderCredentialTable.kind, kind),
         ),
       )
@@ -172,6 +174,7 @@ export async function putCredential(
             and(
               inOrg(orgId),
               eq(ClaxedoProviderCredentialTable.provider_id, input.provider_id),
+              ownedBy(owner),
               inArray(ClaxedoProviderCredentialTable.kind, [...exclusiveAuthKinds]),
             ),
           )
@@ -182,7 +185,6 @@ export async function putCredential(
 
   const id = existing?.id ?? randomUUID()
   const replaced = replacing.filter((cred) => cred.id !== id)
-  const owner = existing?.owner ?? null
 
   const ref = await backend.put(id, input.secret)
 
@@ -301,7 +303,12 @@ function readConsent(raw: string | null): CredentialConsent | null {
 }
 
 function toMetadata(row: CredentialRow): CredentialMetadata {
-  return { ...row, consent: readConsent(row.consent_json), usage_windows: parseUsageWindows(row.usage_windows) }
+  return {
+    ...row,
+    incarnation: row.id,
+    consent: readConsent(row.consent_json),
+    usage_windows: parseUsageWindows(row.usage_windows),
+  }
 }
 
 /** List credential metadata (no secrets) for one org. */
@@ -351,6 +358,7 @@ function markPartition(row: CredentialRow) {
 export function setActiveCredentials(
   ids: readonly string[],
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
+  actor: string,
 ): SetActiveCredentialsResult {
   const orgId = credentialOrg(org)
   return ClaxedoDB.transaction((db) => {
@@ -361,7 +369,7 @@ export function setActiveCredentials(
         .from(ClaxedoProviderCredentialTable)
         .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
         .get()
-      if (!row) return { ok: false, reason: "not_found" }
+      if (!row || row.owner !== actor) return { ok: false, reason: "not_found" }
       if (!fanoutEligible(toMetadata(row))) return { ok: false, reason: "not_eligible" }
       rows.push(row)
     }
@@ -409,6 +417,7 @@ export function setActiveCredentials(
 export function clearActiveCredentials(
   providerIds: readonly string[],
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
+  actor: string,
 ): { cleared: string[] } {
   const orgId = credentialOrg(org)
   return ClaxedoDB.transaction((db) => {
@@ -420,6 +429,7 @@ export function clearActiveCredentials(
         .where(
           and(
             inOrg(orgId),
+            ownedBy(actor),
             eq(ClaxedoProviderCredentialTable.provider_id, providerId),
             eq(ClaxedoProviderCredentialTable.is_active, true),
           ),
@@ -431,6 +441,7 @@ export function clearActiveCredentials(
         .where(
           and(
             inOrg(orgId),
+            ownedBy(actor),
             eq(ClaxedoProviderCredentialTable.provider_id, providerId),
             eq(ClaxedoProviderCredentialTable.is_active, true),
           ),
@@ -458,10 +469,10 @@ function readRow(label: string, onOutage: RegistryOutage, read: () => Credential
   return row ? toMetadata(row) : undefined
 }
 
-/** One provider's credential in one org, the marked account first. */
+/** One person's account for a provider, or the org's own row for it when `owner` is null, the marked account first. */
 export function credentialByProvider(
   providerId: string,
-  { onOutage, kind }: ProviderCredentialRead,
+  { onOutage, kind, owner }: ProviderCredentialRead & { owner: string | null },
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata | undefined {
   const kinds = kind === undefined ? undefined : typeof kind === "string" ? [kind] : [...kind]
@@ -473,6 +484,7 @@ export function credentialByProvider(
         .where(
           and(
             inOrg(org),
+            ownedBy(owner),
             eq(ClaxedoProviderCredentialTable.provider_id, providerId),
             kinds && inArray(ClaxedoProviderCredentialTable.kind, kinds),
           ),
@@ -500,13 +512,13 @@ export function credentialById(
   )
 }
 
-/** Resolve a credential's raw secret material — only call at trusted fanout points. */
+/** Resolve the org's own row's raw secret material — only call at trusted fanout points. */
 export async function resolveSecret(
   providerId: string,
   kind?: CredentialKind,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<string | null> {
-  const cred = credentialByProvider(providerId, { onOutage: "empty", kind }, org)
+  const cred = credentialByProvider(providerId, { onOutage: "empty", kind, owner: null }, org)
   if (!cred?.secure_ref) return null
   if (cred.status !== "available") return null
 
@@ -861,10 +873,11 @@ export async function deleteCredentialsByProvider(
   const scope = kind
     ? and(
         inOrg(org),
+        ownedBy(null),
         eq(ClaxedoProviderCredentialTable.provider_id, providerId),
         eq(ClaxedoProviderCredentialTable.kind, kind),
       )
-    : and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+    : and(inOrg(org), ownedBy(null), eq(ClaxedoProviderCredentialTable.provider_id, providerId))
 
   const creds = ClaxedoDB.use((db) =>
     db
@@ -919,7 +932,8 @@ function fanoutEligibleAuth(kind: CredentialKind, providerId: string): boolean {
   return FANOUT_ELIGIBLE_KINDS.has(kind) && !providerId.includes(":")
 }
 
-function fanoutEligible(cred: CredentialMetadata): boolean {
+/** Whether a stored row is an account a harness runs on, rather than a driver, connection or channel secret. */
+export function fanoutEligible(cred: CredentialMetadata): boolean {
   return fanoutEligibleAuth(cred.kind, cred.provider_id)
 }
 

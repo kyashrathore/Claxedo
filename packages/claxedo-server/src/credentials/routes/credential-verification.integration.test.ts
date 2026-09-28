@@ -31,7 +31,7 @@ describe("credential verification integration", () => {
 
   test("persists the route result and returns that same redacted health from listing", async () => {
     setBackendOverride(createTestBackend())
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "openai",
       kind: "api_key",
       source: "managed",
@@ -65,7 +65,7 @@ describe("credential verification integration", () => {
   // must verify ok — and the renewed token must be the one left in storage.
   test("refreshes a stale Codex credential through the route and persists the renewed secret", async () => {
     setBackendOverride(createTestBackend())
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "local_only",
@@ -129,7 +129,7 @@ describe("credential verification integration", () => {
 
   test("a Codex credential whose refresh token is rejected stays expired", async () => {
     setBackendOverride(createTestBackend())
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "local_only",

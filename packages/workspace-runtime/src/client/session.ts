@@ -1,3 +1,4 @@
+import type { AgentGoalMutationResult, AgentPermissionModeState, GoalCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type {
   AgentContentPart,
   AgentSessionStart,
@@ -13,17 +14,9 @@ import type {
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type {
-  AgentConfigOptions,
-  AgentGoalMutationResult,
-  AgentRuntimeRecoveryInspection,
-  AgentPermissionModeState,
-  GoalCapabilities,
-  HarnessCapabilities,
-  RuntimeGoalSnapshot,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
+import type { HarnessCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-sdk-runtime"
+import type { ConfigOptionsPreview } from "@claxedo/harness/contract"
+import type { AgentRuntimeRecoveryInspection } from "../host/contracts"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import type { FirstRead, TurnPage } from "@claxedo/agent-sdk-runtime/turn-page"
 import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
@@ -98,7 +91,7 @@ export type WorkspaceSessionClient = {
   create(input?: SessionCreateInput, options?: Options): Reply<AgentPresentationSession>
   get(input: SessionInput, options?: Options): Reply<AgentPresentationSession>
   start(input: SessionInput, options?: Options): Reply<AgentSessionStart>
-  configOptions(input: SessionInput, options?: Options): Reply<AgentConfigOptions>
+  configOptions(input: SessionInput, options?: Options): Reply<ConfigOptionsPreview>
   attachment(input: SessionInput & { messageID: string; attachmentID: string }, options?: Options): Promise<Response>
   delete(input: SessionInput, options?: Options): Reply<Ok>
   update(input: SessionUpdateInput, options?: Options): Reply<AgentPresentationSession>

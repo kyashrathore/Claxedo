@@ -7,11 +7,12 @@ LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SHELL=/bin/bash
 ENV PATH=/root/.local/bin:/root/.amp/bin:$PATH
+ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 
 # System tools needed for git clone, native compilation, and process management
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      bash zsh ca-certificates curl git openssh-client \
+      bash zsh ca-certificates curl git gzip openssh-client \
       procps iproute2 netcat-openbsd \
       python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
@@ -20,15 +21,15 @@ RUN apt-get update && \
 RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
       @anthropic-ai/claude-code@2.1.150 \
-      @openai/codex@0.133.0 \
+      @openai/codex@0.156.1 \
       @google/gemini-cli@0.43.0 \
-      @earendil-works/pi-coding-agent@0.85.1 && \
-    curl https://cursor.com/install -fsS | bash && \
-    curl -fsSL https://ampcode.com/install.sh | bash && \
-    curl -fsSL https://app.factory.ai/cli | sh && \
+      @earendil-works/pi-coding-agent@0.85.1
+
+COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
+RUN sh /tmp/install-agent-artifacts.sh && \
     ln -sf /root/.local/bin/agent /usr/local/bin/agent && \
     ln -sf /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent && \
-    ln -sf /root/.local/bin/amp /usr/local/bin/amp && \
+    ln -sf /root/.amp/bin/amp /usr/local/bin/amp && \
     ln -sf /root/.local/bin/droid /usr/local/bin/droid && \
     command -v claude && \
     command -v codex && \
@@ -49,6 +50,7 @@ RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
     test -f /opt/workspace-runtime/launch-gate-child.mjs && \
+    test -f /opt/workspace-runtime/cursor-worker.mjs && \
     chmod 0755 /opt/workspace-runtime/workspace-runtime-host.mjs && \
     ln -sf /opt/workspace-runtime/workspace-runtime-host.mjs /usr/local/bin/workspace-runtime && \
     command -v workspace-runtime && \

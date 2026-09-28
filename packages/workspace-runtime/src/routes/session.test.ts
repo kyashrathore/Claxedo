@@ -1,596 +1,375 @@
-import { describe, expect, it, spyOn } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { RuntimeStore } from "../store"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
-import { Hono } from "hono"
+import { afterEach, describe, expect, it } from "bun:test"
+import type { GoalCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { CompatEnvelope, CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
+import type { Hono } from "hono"
+import { createStoreBrokerPorts } from "../broker-ports"
+import { workspaceRuntimeBus } from "../bus"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "../session-access-policy"
 import { fetchDouble } from "../test-support/fetch-double"
-import type {
-  AgentMessage,
-  AgentRuntime,
-  AgentRuntimeStreamEvent,
-  AgentSession,
-  PromptInput,
-  RuntimeDirectory,
-  SessionConfig,
-  SessionConfigUpdate,
-} from "@claxedo/agent-sdk-runtime"
-import { AgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
-import type {
-  AgentHarnessAdapter,
-  AgentMessagePage,
-  AgentMessagePageInput,
-} from "@claxedo/agent-sdk-runtime/adapters"
-import {
-  buildAssistantMessage,
-  buildSession,
-  buildUserMessage,
-  permissionAsked,
-  permissionReplied,
-  messagePartUpdated,
-  messageUpdated,
-  sessionError,
-  sessionIdle,
-  sessionStatus,
-  sessionUpdated,
-  type CompatEvent,
-} from "../compat-events"
-import { createRuntimeEventHub } from "../runtime-event-hub"
-import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
-import { createSessionRoutes as createRawSessionRoutes } from "./session-core"
-import { SessionRoutes as createRawSessionRoutesFacade } from "./session"
-import type { SessionAccessPolicy } from "../session-access-policy"
+import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
+import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../test-support/fake-workspace-app"
+import { loopbackMachineLoginPolicy } from "../testing"
+import { createWorkspaceHost } from "../workspace/runtime"
 
-function createSessionRoutes(options: Parameters<typeof createRawSessionRoutes>[0]) {
-  return createRawSessionRoutes({
-    resolveExecutionBinding: (_c, directory, sessionId) => ({
-      sessionId,
-      workspaceId: "workspace-test",
-      directory: directory ?? "",
-      connectionId: "native:codex",
-      upstreamSessionId: sessionId,
-    }),
-    ...options,
-  })
+const apps: FakeWorkspaceApp[] = []
+afterEach(async () => {
+  for (const app of apps.splice(0)) {
+    for (const transport of app.transports) if (transport instanceof ScriptedTransport) transport.endPending()
+    await app.dispose()
+  }
+})
+
+async function workspaceApp(options: FakeWorkspaceAppOptions = {}) {
+  const app = await createFakeWorkspaceApp(options)
+  apps.push(app)
+  return app
 }
 
-function SessionRoutes(
-  getAdapter: Parameters<typeof createRawSessionRoutesFacade>[0],
-  options: Parameters<typeof createRawSessionRoutesFacade>[1] = {},
-) {
-  return createRawSessionRoutesFacade(getAdapter, {
-    resolveExecutionBinding: ({ directory, sessionId }) => ({
-      sessionId,
-      workspaceId: "workspace-test",
-      directory,
-      connectionId: "native:codex",
-      upstreamSessionId: sessionId,
-    }),
-    ...options,
-  }).routes
+function promptText(turn: FakeTurn) {
+  const [part] = turn.turn.prompt.parts
+  return part?.type === "text" ? part.text : ""
 }
 
-function adapter(input: {
-  // The adapter interface hands these a `RuntimeDirectory` (`string |
-  // undefined`), so the doubles must accept one too.
-  onPrompt?: (prompt: PromptInput, directory: RuntimeDirectory) => void
-  sendMessage?: (id: string, prompt: PromptInput, directory: RuntimeDirectory) => AsyncIterable<AgentRuntimeStreamEvent>
-  getMessages?: (id: string, directory: RuntimeDirectory) => Promise<AgentMessage[]> | AgentMessage[]
-  getMessagePage?: (
-    id: string,
-    page: AgentMessagePageInput,
-    directory: RuntimeDirectory,
-  ) => Promise<AgentMessagePage>
-}): AgentHarnessAdapter {
-  const titles = new Map<string, string>()
-  return {
-    instructionChannel: "turn-system-prompt",
-    getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo", created: 1, updated: 2 }),
-    createSession: async () => ({ id: "s1" }),
-    updateSession: async (binding, updates) => {
-      if (updates.title !== undefined) titles.set(binding.sessionId, updates.title)
-      return buildSession({ id: binding.sessionId, directory: binding.directory, title: titles.get(binding.sessionId) ?? "Demo", created: 1, updated: 2 })
-    },
-    getSessionConfig: async () => ({
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "openai", modelID: "gpt-5.4" },
-      variant: "fast",
-      agent: "plan",
-    }),
-    updateSessionConfig: async (_binding, patch) => ({
-      harness: patch.harness ?? { id: "codex", access: "native" },
-      ...(patch.model ? { model: patch.model } : {}),
-      variant: patch.variant ?? null,
-      agent: patch.agent ?? null,
-    } satisfies SessionConfig),
-    deleteSession: async () => {},
-    readHarnessCapabilities: () => ({
-      harness: "codex",
-      abort: true,
-      reconnect: false,
-      replay: true,
-      permissions: true,
-      questions: true,
-      todos: true,
-      commands: true,
-      fork: true,
-      revert: true,
-      unrevert: true,
-      configOptions: false,
-      subagents: true,
-      effortLevels: NO_HARNESS_EFFORT,
-      instructionChannel: "turn-system-prompt",
-      goals: false,
-    }),
-    executeTurn(binding, prompt) {
-      input.onPrompt?.(prompt, binding.directory)
-      return input.sendMessage?.(binding.sessionId, prompt, binding.directory) ?? (async function* () {})()
-    },
-    getMessages: async (binding) => input.getMessages?.(binding.sessionId, binding.directory) ?? [],
-    ...(input.getMessagePage ? {
-      getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
-    } : {}),
-    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
-    revert: async () => {},
-    unrevert: async () => {},
-    forkSession: async () => ({ id: "forked" }),
+type ScriptedTurn = FakeTurn & { signal: AbortSignal }
 
-    executeCommand: async () => {},
-    listCommands: async () => [],
-    listAgents: async () => [],
-    getTodos: async () => [],
-    listPermissions: async () => [],
-    respondPermission: async () => {},
-    replyQuestion: async () => {},
-    rejectQuestion: async () => {},
-    applyConfig: async () => {},
-    probeConfigOptions: async () => ({ options: [] }),
-    dispose: () => {},
+/**
+ * A harness whose reply to each prompt is the script filed under the prompt's
+ * text; unscripted prompts finish silently. A request its script asks is
+ * withdrawn when the host cancels the turn, and by the test before the host
+ * is disposed, because a harness still waiting on an answer is a turn the
+ * runtime's disposal waits for.
+ */
+class ScriptedTransport extends FakeTransport {
+  private readonly pending: AbortController
+  constructor(scripts: Record<string, (input: ScriptedTurn) => AsyncIterable<AgentRuntimeEvent>>, options: FakeTransportOptions = {}) {
+    const pending = new AbortController()
+    super({
+      ...options,
+      turn: async function* (input) {
+        const script = scripts[promptText(input)]
+        if (script) yield* script({ ...input, signal: pending.signal })
+        yield { type: "finish", sessionId: input.session.binding.sessionId }
+      },
+    })
+    this.pending = pending
+  }
+  endPending() {
+    this.pending.abort()
+  }
+  override async cancel(session: HarnessSession, turn: Parameters<FakeTransport["cancel"]>[1], deadline: Parameters<FakeTransport["cancel"]>[2]) {
+    this.pending.abort()
+    return super.cancel(session, turn, deadline)
   }
 }
 
-describe("SessionRoutes message paging bridge", () => {
-  it("passes a page request to the workspace authority before the adapter", async () => {
-    const directory = process.cwd()
-    const message = { info: { id: "message-1", sessionID: "session-1", role: "user" }, parts: [] } as AgentMessage
-    const calls: Array<{ directory: string; sessionId: string; page: AgentMessagePageInput }> = []
-    const fixture = adapter({
-      getMessagePage: async () => {
-        throw new Error("adapter page must not run")
-      },
-    })
-    let authorityAdapter: AgentHarnessAdapter | undefined
-    const app = SessionRoutes(
-      () => fixture,
-      {
-        getMessagePage(input) {
-          authorityAdapter = input.adapter
-          calls.push({ directory: input.directory, sessionId: input.sessionId, page: input.page })
-          return { messages: [message], nextCursor: "workspace-cursor" }
-        },
-      },
-    )
+function scripted(scripts: Record<string, (input: ScriptedTurn) => AsyncIterable<AgentRuntimeEvent>>, options: FakeTransportOptions = {}) {
+  return new ScriptedTransport(scripts, options)
+}
 
-    const response = await app.request(
-      `http://localhost/session/session-1/message?directory=${encodeURIComponent(directory)}&limit=25&before=opaque%3Acursor`,
-    )
+const questionInfo = (question: string) => ({
+  question, header: question, multiple: true,
+  options: [{ label: "Continue", description: "go" }, { label: "Alpha", description: "a" }, { label: "Bravo", description: "b" }],
+})
+
+function question(requestId: string, sessionID: string, count = 1): TurnRequest {
+  return { kind: "question", requestId, question: { id: requestId, sessionID, questions: Array.from({ length: count }, (_, i) => questionInfo(`q${i}`)) } }
+}
+
+function permission(requestId: string, sessionID: string, extra: Partial<PermissionRequest> & { options?: PermissionRequest["options"] } = {}): TurnRequest {
+  return {
+    kind: "permission", requestId,
+    permission: { id: requestId, sessionID, permission: "execute", patterns: [], always: [], metadata: {},
+      ...(extra.options ? { options: extra.options.map((option) => ({ id: option.optionId, label: option.name })) } : {}) },
+    ...(extra.options ? { options: extra.options } : {}),
+  }
+}
+
+/** A turn that asks the host one request and records what came back. */
+function asking(request: (sessionId: string) => TurnRequest, answers: RequestAnswer[]) {
+  return async function* ({ session, broker, signal }: ScriptedTurn): AsyncIterable<AgentRuntimeEvent> {
+    answers.push(await broker.ask(request(session.binding.sessionId), { signal }))
+  }
+}
+
+/** The loopback policy with every authorization observed and some of them refused. */
+function observingPolicy(input: { operations?: Array<{ sessionId: string | undefined; operation: string }>; deny?: (operation: string) => boolean } = {}): SessionAccessPolicy {
+  const base = managedWorkspaceSessionAccessPolicy()
+  return {
+    ...base,
+    authorize(access: SessionAccessPolicyInput) {
+      input.operations?.push({ sessionId: access.sessionId, operation: access.operation })
+      if (input.deny?.(access.operation)) return { allowed: false, status: 403, code: "session_private", message: "blocked" }
+      return base.authorize(access)
+    },
+  }
+}
+
+const settle = () => Bun.sleep(25)
+
+describe("message pages", () => {
+  it("serves a page request from the workspace store, never from the harness history", async () => {
+    const wa = await workspaceApp({
+      transport: () => new FakeTransport({
+        history: { messages: async () => { throw new Error("harness history must not run") }, todos: async () => [] },
+      }),
+    })
+    await wa.createSession("session-1")
+    expect((await wa.json("/session/session-1/message", { messageID: "message-1", parts: [{ type: "text", text: "hi" }] })).status).toBe(200)
+
+    const response = await wa.app.request(wa.url("/session/session-1/message", { limit: "25" }))
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual([message])
-    expect(response.headers.get("x-next-cursor")).toBe("workspace-cursor")
-    expect(calls).toEqual([{
-      directory,
-      sessionId: "session-1",
-      page: { limit: 25, before: "opaque:cursor" },
-    }])
-    expect(authorityAdapter).toBe(fixture)
+    const page = await response.json() as Array<{ info: { id: string; role: string } }>
+    expect(page.map((message) => message.info.id)).toEqual(["message-1", "message-1_r"])
+    expect(response.headers.get("x-max-event-ordinal")).toBe(String(wa.store().getSessionMaxSeq("session-1")))
+    expect(response.headers.get("cache-control")).toBe("no-store")
   })
 })
 
 describe("session Goal routes", () => {
-  const directory = process.cwd()
-  const goal = {
-    sessionId: "s1",
-    objective: "Ship universal Goal support",
-    status: "active" as const,
-    createdAt: 1,
-    updatedAt: 2,
-  }
-  const capabilities = {
-    implemented: true,
-    available: true,
-    actions: ["pause", "resume", "delete"],
-    recovery: "reconcile",
-    optionalFields: [],
-  }
+  const goal: RuntimeGoalSnapshot = { sessionId: "s1", objective: "Ship universal Goal support", status: "active", createdAt: 1, updatedAt: 2 }
+  const capabilities: GoalCapabilities = { implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: [] }
 
-  function goalRuntime(
-    calls: string[],
-    overrides: Partial<AgentRuntime["goals"]> = {},
-  ): AgentRuntime {
-    return {
-      goals: {
-        capabilities: async () => {
-          calls.push("capabilities")
-          return capabilities
-        },
-        read: async () => {
-          calls.push("read")
-          return goal
-        },
-        start: async (input: { objective: string }) => {
-          calls.push(`start:${input.objective}`)
-          return { ok: true, goal }
-        },
-        pause: async () => {
-          calls.push("pause")
-          return { ok: true, goal: { ...goal, status: "paused" as const } }
-        },
-        resume: async () => {
-          calls.push("resume")
-          return { ok: true, goal }
-        },
-        stop: async () => {
-          calls.push("stop")
-          return { ok: true, goal: { ...goal, status: "paused" as const } }
-        },
-        delete: async () => {
-          calls.push("delete")
-          return { ok: true, goal: null }
-        },
+  class GoalTransport extends FakeTransport {
+    constructor(readonly calls: string[], overrides: Partial<NativeGoalOperations> = {}, private readonly declared: GoalCapabilities = capabilities) {
+      super()
+      this.goals = {
+        read: async () => { calls.push("read"); return null },
+        start: async (_session, objective) => { calls.push(`start:${objective}`); return { ok: true, goal } },
+        pause: async () => { calls.push("pause"); return { ok: true, goal: { ...goal, status: "paused" } } },
+        resume: async () => { calls.push("resume"); return { ok: true, goal } },
+        stop: async () => { calls.push("stop"); return { ok: true, goal: { ...goal, status: "paused" } } },
+        delete: async () => { calls.push("delete"); return { ok: true, goal: null } },
         ...overrides,
-      },
-    } as unknown as AgentRuntime
+      }
+    }
+    readonly goals: NativeGoalOperations
+    override async capabilities(): Promise<TransportCapabilities> {
+      return { ...await super.capabilities(), goals: this.declared }
+    }
   }
 
-  it("routes every Goal operation through the dedicated runtime resource", async () => {
+  it("routes every Goal operation through the session's harness Goal resource", async () => {
     const calls: string[] = []
-    const guarded: string[] = []
-    const runtime = goalRuntime(calls)
-    const app = SessionRoutes(() => adapter({}), {
-      beforeSessionOperation({ operation }) {
-        guarded.push(operation)
-      },
-      resolveRuntime: () => runtime,
+    const guarded: Array<{ sessionId: string | undefined; operation: string }> = []
+    const wa = await workspaceApp({
+      transport: () => new GoalTransport(calls, { read: async () => { calls.push("read"); return goal } }),
+      sessionAccessPolicy: observingPolicy({ operations: guarded }),
     })
-    const base = "http://localhost/session/s1/goal"
-    const url = (suffix = "") => `${base}${suffix}?directory=${encodeURIComponent(directory)}`
+    await wa.createSession("s1")
+    calls.length = 0
+    guarded.length = 0
+    const base = "/session/s1/goal"
 
     const responses = [
-      await app.request(url("/capabilities")),
-      await app.request(url()),
-      await app.request(url(), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objective: goal.objective }),
-      }),
-      await app.request(url("/pause"), { method: "POST" }),
-      await app.request(url("/resume"), { method: "POST" }),
-      await app.request(url("/stop"), { method: "POST" }),
-      await app.request(url(), { method: "DELETE" }),
+      await wa.app.request(wa.url(`${base}/capabilities`)),
+      await wa.app.request(wa.url(base)),
+      await wa.json(base, { objective: goal.objective }),
+      await wa.json(`${base}/pause`, {}),
+      await wa.json(`${base}/resume`, {}),
+      await wa.json(`${base}/stop`, {}),
+      await wa.app.request(wa.url(base), { method: "DELETE" }),
     ]
 
-    expect(responses.map((response) => response.status)).toEqual([200, 200, 201, 200, 200, 200, 200])
-    expect(calls).toEqual([
-      "capabilities",
-      "read",
-      `start:${goal.objective}`,
-      "pause",
-      "resume",
-      "stop",
-      "delete",
-    ])
-    expect(guarded).toEqual([
-      "goal_capabilities",
-      "goal_read",
-      "goal_start",
-      "goal_pause",
-      "goal_resume",
-      "goal_stop",
-      "goal_delete",
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 409, 200, 200, 200, 200])
+    // A start reads first: the harness already holds a Goal, so it is refused as existing.
+    expect(calls).toEqual(["read", "read", "pause", "resume", "stop", "delete"])
+    expect(guarded.map((row) => row.operation)).toEqual([
+      "goal_capabilities", "goal_read", "goal_start", "goal_pause", "goal_resume", "goal_stop", "goal_delete",
     ])
     expect(await responses[0].json()).toEqual(capabilities)
     expect(await responses[1].json()).toEqual(goal)
+    expect(await responses[2].json()).toEqual({ error: { code: "goal_already_exists", message: "Session s1 already has a Goal" } })
     expect(await responses[6].json()).toEqual({ ok: true, goal: null })
   })
 
-  it("admits Goal work before resolving its runtime", async () => {
-    let runtimeResolutions = 0
-    const app = SessionRoutes(() => adapter({}), {
-      beforeSessionOperation({ operation }) {
-        return operation === "goal_start" ? new Response("blocked", { status: 403 }) : undefined
-      },
-      resolveRuntime: () => {
-        runtimeResolutions++
-        return goalRuntime([])
-      },
+  it("starts a Goal on a session that holds none", async () => {
+    const calls: string[] = []
+    const wa = await workspaceApp({ transport: () => new GoalTransport(calls) })
+    await wa.createSession("s1")
+    calls.length = 0
+
+    const response = await wa.json("/session/s1/goal", { objective: goal.objective })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toEqual({ ok: true, goal })
+    expect(calls).toEqual(["read", `start:${goal.objective}`])
+  })
+
+  it("admits Goal work before composing a harness", async () => {
+    const wa = await workspaceApp({
+      transport: () => new GoalTransport([]),
+      sessionAccessPolicy: observingPolicy({ deny: (operation) => operation === "goal_start" }),
     })
 
-    const response = await app.request(
-      `http://localhost/session/s1/goal?directory=${encodeURIComponent(directory)}`,
-      { method: "POST", body: JSON.stringify({ objective: "Blocked" }) },
-    )
+    const response = await wa.json("/session/s1/goal", { objective: "Blocked" })
 
     expect(response.status).toBe(403)
-    expect(runtimeResolutions).toBe(0)
+    expect(wa.transports).toHaveLength(0)
   })
 
-  it("returns explicit typed failures for missing runtimes and Goal lifecycle errors", async () => {
-    const missing = SessionRoutes(() => adapter({}))
-    const missingResponse = await missing.request(
-      `http://localhost/session/s1/goal?directory=${encodeURIComponent(directory)}`,
-    )
-    expect(missingResponse.status).toBe(503)
-    expect(await missingResponse.json()).toEqual({
-      error: { code: "goal_runtime_unavailable", message: "Goal runtime is unavailable" },
+  it("returns explicit typed failures for unknown sessions and Goal lifecycle errors", async () => {
+    const wa = await workspaceApp({
+      transport: () => new GoalTransport([], { pause: async () => ({ ok: false, status: "unsupported", message: "Pause is unavailable" }) }),
     })
+    await wa.createSession("s1")
 
-    const runtime = goalRuntime([], {
-      start: async () => {
-        throw new AgentRuntimeGoalError("goal_invalid_objective", "Goal objective must contain between 1 and 4,000 characters")
-      },
-      pause: async () => ({ ok: false, status: "unsupported", message: "Pause is unavailable" }),
-    })
-    const app = SessionRoutes(() => adapter({}), { resolveRuntime: () => runtime })
-    const base = "http://localhost/session/s1/goal"
-    const url = (suffix = "") => `${base}${suffix}?directory=${encodeURIComponent(directory)}`
+    const missing = await wa.app.request(wa.url("/session/nope/goal"))
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toEqual({ error: { code: "goal_session_not_found", message: "Session nope not found" } })
 
-    const invalid = await app.request(url(), { method: "POST", body: JSON.stringify({ objective: "" }) })
+    const invalid = await wa.json("/session/s1/goal", { objective: "" })
     expect(invalid.status).toBe(400)
     expect(await invalid.json()).toEqual({
-      error: {
-        code: "goal_invalid_objective",
-        message: "Goal objective must contain between 1 and 4,000 characters",
-      },
+      error: { code: "goal_invalid_objective", message: "Goal objective must contain between 1 and 4,000 characters" },
     })
 
-    const unsupported = await app.request(url("/pause"), { method: "POST" })
+    const unsupported = await wa.json("/session/s1/goal/pause", {})
     expect(unsupported.status).toBe(409)
-    expect(await unsupported.json()).toEqual({
-      ok: false,
-      status: "unsupported",
-      message: "Pause is unavailable",
-    })
+    expect(await unsupported.json()).toEqual({ ok: false, status: "unsupported", message: "Pause is unavailable" })
   })
 
-  const openView = (app: { request: (url: string) => Response | Promise<Response> }) =>
-    app.request(`http://localhost/session/s1?view=open&directory=${encodeURIComponent(directory)}`)
+  const openView = (wa: FakeWorkspaceApp) => wa.app.request(wa.url("/session/s1", { view: "open" }))
 
   it("opens a session with its Goal's capabilities and Goal, derived once", async () => {
     const calls: string[] = []
-    const guarded: string[] = []
-    const app = SessionRoutes(() => adapter({}), {
-      beforeSessionOperation({ operation }) {
-        guarded.push(operation)
-      },
-      resolveRuntime: () => goalRuntime(calls),
+    const guarded: Array<{ sessionId: string | undefined; operation: string }> = []
+    const wa = await workspaceApp({
+      transport: () => new GoalTransport(calls, { read: async () => { calls.push("read"); return goal } }),
+      sessionAccessPolicy: observingPolicy({ operations: guarded }),
     })
+    await wa.createSession("s1")
+    calls.length = 0
+    guarded.length = 0
 
-    const response = await openView(app)
+    const response = await openView(wa)
 
     expect(response.status).toBe(200)
     expect((await response.json()).goal).toEqual({ value: { capabilities, goal } })
-    expect(calls).toEqual(["capabilities", "read"])
-    expect(guarded).toEqual(["session_meta_read"])
+    expect(calls).toEqual(["read"])
+    expect(guarded.map((row) => row.operation)).toEqual(["session_meta_read"])
   })
 
   it("opens a session without a Goal read when the harness does not implement Goals", async () => {
     const calls: string[] = []
-    const unimplemented = {
-      implemented: false,
-      available: false,
-      unavailableReason: "Harness has no Goal support",
-      actions: [],
-      recovery: "blocked" as const,
-      optionalFields: [],
-    }
-    const app = SessionRoutes(() => adapter({}), {
-      resolveRuntime: () => goalRuntime(calls, {
-        capabilities: async () => {
-          calls.push("capabilities")
-          return unimplemented
-        },
-      }),
-    })
+    const unavailable: GoalCapabilities = { implemented: false, available: false, unavailableReason: "Harness has no Goal support", actions: [], recovery: "blocked", optionalFields: [] }
+    const wa = await workspaceApp({ transport: () => new GoalTransport(calls, {}, unavailable) })
+    await wa.createSession("s1")
+    calls.length = 0
 
-    const response = await openView(app)
+    const response = await openView(wa)
 
     expect(response.status).toBe(200)
-    expect((await response.json()).goal).toEqual({ value: { capabilities: unimplemented, goal: null } })
-    expect(calls).toEqual(["capabilities"])
+    expect((await response.json()).goal).toEqual({ value: { capabilities: unavailable, goal: null } })
+    expect(calls).toEqual([])
   })
 
   it("opens a session whose Goal cannot be read, with the Goal's refusal in its place", async () => {
-    const missing = await openView(SessionRoutes(() => adapter({})))
-    expect(missing.status).toBe(200)
-    const opened = await missing.json()
-    expect(opened).not.toHaveProperty("session")
-    expect(opened.goal).toEqual({ error: { status: 503, code: "goal_runtime_unavailable", message: "Goal runtime is unavailable" } })
-
-    let runtimeResolutions = 0
-    const blocked = SessionRoutes(() => adapter({}), {
-      beforeSessionOperation({ operation }) {
-        return operation === "session_meta_read" ? new Response("blocked", { status: 403 }) : undefined
-      },
-      resolveRuntime: () => {
-        runtimeResolutions++
-        return goalRuntime([])
-      },
+    const blocked = await workspaceApp({
+      transport: () => new GoalTransport([]),
+      sessionAccessPolicy: observingPolicy({ deny: (operation) => operation === "session_meta_read" }),
     })
     expect((await openView(blocked)).status).toBe(403)
-    expect(runtimeResolutions).toBe(0)
+    expect(blocked.transports).toHaveLength(0)
 
-    const failing = SessionRoutes(() => adapter({}), {
-      resolveRuntime: () => goalRuntime([], {
-        capabilities: async () => {
-          throw new AgentRuntimeGoalError("goal_session_not_found", "Session not found")
-        },
-      }),
-    })
+    const failing = await workspaceApp({ transport: () => new GoalTransport([], { read: async () => { throw new Error("goal store unreadable") } }) })
+    await failing.createSession("s1")
     const failed = await openView(failing)
     expect(failed.status).toBe(200)
-    expect((await failed.json()).goal).toEqual({ error: { status: 404, code: "goal_session_not_found", message: "Session not found" } })
+    const opened = await failed.json()
+    expect(opened).not.toHaveProperty("session")
+    expect(opened.goal).toEqual({ error: { status: 500, message: "Internal Server Error" } })
   })
 })
 
 describe("session prompt route", () => {
   it("serves experimental session summaries", async () => {
-    const directory = process.cwd()
-    const sessions: AgentSession[] = [
-        buildSession({
-          id: "s2",
-          directory,
-          title: "Second",
-          created: 20,
-          updated: 30,
-        }),
-        {
-          id: "s-child",
-          title: "Child",
-          directory,
-          parentID: "s2",
-          time: { created: 25, updated: 35 },
-        },
-        {
-          id: "s1",
-          directory,
-          title: "First",
-          time: { created: 10, updated: 15 },
-          status: null,
-          lastTurn: { status: "completed", completedAt: 40 },
-        },
-      ]
-    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
+    const wa = await workspaceApp()
+    await wa.createSession("s1", { title: "First" })
+    expect((await wa.json("/session/s1/message", { parts: [{ type: "text", text: "hi" }] })).status).toBe(200)
+    const store = wa.store()
+    store.bindSession({ sessionId: "s2", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s2", agentSessionId: "s2", title: "Second", createdAt: 20, updatedAt: 30 })
+    store.bindSession({ sessionId: "s-child", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s-child", agentSessionId: "s-child", title: "Child", parentSessionId: "s2", createdAt: 25, updatedAt: 35 })
 
-    const res = await app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(directory)}&roots=true&limit=5`)
+    const res = await wa.app.request(wa.url("/experimental/session", { roots: "true", limit: "5" }))
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([
-      {
-        id: "s2",
-        title: "Second",
-        projectID: directory,
-        time: { created: 20, updated: 30 },
-        directory,
-      },
-      {
-        id: "s1",
-        title: "First",
-        time: { created: 10, updated: 15 },
-        directory,
-        status: null,
-        lastTurn: { status: "completed", completedAt: 40 },
-      },
-    ])
+    const rows = await res.json() as Array<Record<string, unknown>>
+    expect(rows.map((row) => row.id)).toEqual(["s1", "s2"])
+    expect(rows[0]).toEqual({
+      id: "s1", title: "First", directory: wa.directory, status: "idle",
+      time: { created: expect.any(Number), updated: expect.any(Number) },
+      lastTurn: { status: "completed", completedAt: expect.any(Number), assistantMessageId: expect.any(String) },
+    })
+    expect(rows[1]).toEqual({ id: "s2", title: "Second", time: { created: 20, updated: 30 }, directory: wa.directory })
+
+    const all = await wa.app.request(wa.url("/experimental/session"))
+    const child = (await all.json() as Array<Record<string, unknown>>).find((row) => row.id === "s-child")
+    expect(child).toEqual({ id: "s-child", title: "Child", time: { created: 25, updated: 35 }, directory: wa.directory, parentID: "s2" })
   })
 
   it("excludes archived sessions by default and includes them with ?archived=true", async () => {
-    const directory = process.cwd()
-    const sessions = [
-        buildSession({ id: "active-1", directory, title: "Active", created: 10, updated: 10 }),
-        {
-          id: "archived-1",
-          directory,
-          title: "Archived",
-          time: { created: 8, updated: 8, archived: 200 },
-        },
-      ]
-    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
+    const wa = await workspaceApp()
+    await wa.createSession("active-1", { title: "Active" })
+    await wa.createSession("archived-1", { title: "Archived" })
+    expect((await wa.json("/session/archived-1", { time: { archived: 200 } }, { method: "PATCH" })).status).toBe(200)
 
-    // Default: archived sessions excluded
-    const res1 = await app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(directory)}`)
+    const res1 = await wa.app.request(wa.url("/experimental/session"))
     expect(res1.status).toBe(200)
     const list1 = await res1.json() as Array<{ id: string }>
     expect(list1.map((s) => s.id)).toEqual(["active-1"])
 
-    // With ?archived=true: all sessions included
-    const res2 = await app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(directory)}&archived=true`)
+    const res2 = await wa.app.request(wa.url("/experimental/session", { archived: "true" }))
     expect(res2.status).toBe(200)
     const list2 = await res2.json() as Array<{ id: string; time: { archived?: number } }>
-    expect(list2.map((s) => s.id)).toEqual(["active-1", "archived-1"])
+    expect(list2.map((s) => s.id).sort()).toEqual(["active-1", "archived-1"])
     expect(list2.find((s) => s.id === "archived-1")!.time.archived).toBe(200)
   })
 
   it("preserves a canonical archived timestamp of zero", async () => {
-    const directory = process.cwd()
-    const sessions = [{
-        id: "s-epoch",
-        directory,
-        title: "Epoch Archive",
-        time: { created: 10, updated: 20, archived: 0 },
-      }]
-    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
+    const wa = await workspaceApp()
+    await wa.createSession("s-epoch", { title: "Epoch Archive" })
+    expect((await wa.json("/session/s-epoch", { time: { archived: 0 } }, { method: "PATCH" })).status).toBe(200)
 
-    const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`)
+    const res = await wa.app.request(wa.url("/session"))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([{
+    expect(await res.json()).toEqual([expect.objectContaining({
       id: "s-epoch",
       title: "Epoch Archive",
-      directory,
-      time: {
-        created: 10,
-        updated: 20,
-        archived: 0,
-      },
-    }])
+      directory: wa.directory,
+      time: { created: expect.any(Number), updated: expect.any(Number), archived: 0 },
+    })])
   })
 
   it("preserves project identity fields in canonical session rows", async () => {
-    const directory = process.cwd()
-    const sessions = [{
-        id: "s-project",
-        directory,
-        title: "Project Session",
-        time: { created: 10, updated: 10 },
-        projectID: "proj_1",
-        parentID: "parent_1",
-        rootID: "root_1",
-        tags: ["review"],
-        attachments: [{ kind: "page", targetID: "p1" }],
-      }]
-    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
+    const wa = await workspaceApp()
+    await wa.createSession("parent_1")
+    wa.store().bindSession({
+      sessionId: "s-project", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s-project",
+      agentSessionId: "s-project", title: "Project Session", parentSessionId: "parent_1", createdAt: 10, updatedAt: 10,
+    })
 
-    const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`)
+    const res = await wa.app.request(wa.url("/session"))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([{
-      id: "s-project",
-      title: "Project Session",
-      directory,
-      projectID: "proj_1",
-      parentID: "parent_1",
-      rootID: "root_1",
-      tags: ["review"],
-      attachments: [{ kind: "page", targetID: "p1" }],
-      time: {
-        created: 10,
-        updated: 10,
-      },
-    }])
+    const row = (await res.json() as Array<Record<string, unknown>>).find((session) => session.id === "s-project")
+    expect(row).toEqual(expect.objectContaining({
+      id: "s-project", title: "Project Session", directory: wa.directory, workspaceId: wa.workspaceId, parentID: "parent_1",
+      time: { created: 10, updated: 10 },
+    }))
   })
 
   it("uses the request directory when normalizing created sessions without a directory", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      createSession: async () => ({ id: "session-created" }),
-    }))
+    const wa = await workspaceApp()
 
-    const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Created" }),
-    })
+    const res = await wa.json("/session", { title: "Created" }, { params: { connectionId: "fake" } })
 
     expect(res.status).toBe(201)
-    expect(await res.json()).toMatchObject({
-      id: "session-created",
-      directory,
-    })
+    expect(await res.json()).toMatchObject({ id: expect.stringMatching(/^ses_/), directory: wa.directory })
   })
 
   it("registers a managed session before admitting its first prompt", async () => {
-    const directory = process.cwd()
     const registered = new Set<string>()
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
@@ -608,624 +387,281 @@ describe("session prompt route", () => {
         return { allowed: true }
       },
       acquireTurn: async (input) => ({
-        allowed: true,
-        turnId: input.turnId,
-        leaseId: "lease_1",
-        fencingToken: 1,
-        acquiredAt: Date.now(),
-        expiresAt: Date.now() + 60_000,
+        allowed: true, turnId: input.turnId, leaseId: "lease_1", fencingToken: 1, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000,
       }),
       renewTurn: async (input) => ({
-        allowed: true,
-        turnId: input.turnId,
-        leaseId: input.leaseId,
-        fencingToken: input.fencingToken,
-        acquiredAt: Date.now(),
-        expiresAt: Date.now() + 60_000,
+        allowed: true, turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000,
       }),
       releaseTurn: async () => ({ released: true }),
     }
-    const routes = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({
-          async *sendMessage(id) {
-            yield sessionIdle(id)
-          },
-        }),
-        createSession: async () => ({ id: "ses_managed_create" }),
-      }),
-      resolveDirectory: async () => directory,
+    const wa = await workspaceApp({
+      auth: { machineOwnerUserId: "local", accounts: { user_1: { openai: { baseUrl: "https://fixture.example", placeholder: "user-1-key", authMode: "api-key" } } } },
       sessionAccessPolicy: policy,
-      publishGlobal() {},
-    })
-    const app = new Hono()
-    app.use("*", async (c, next) => {
-      c.set("relayHostAuth" as never, {
-        workspace_id: "ws_1",
-        org_id: "org_1",
-        role: "editor",
-        actor_id: "actor_1",
-        actor_kind: "human",
-      } as never)
-      await next()
-    })
-    app.route("/", routes)
-
-    expect((await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: "Bearer signed-rht",
-        "x-claxedo-session-registration-operation": "op_managed_create",
+      before: (app: Hono) => {
+        app.use("*", async (c, next) => {
+          c.set("relayHostAuth" as never, { workspace_id: "ws_1", org_id: "org_1", role: "editor", actor_id: "actor_1", user_id: "user_1", actor_kind: "human" } as never)
+          await next()
+        })
       },
-      body: JSON.stringify({ id: "ses_managed_create", title: "Managed" }),
+    })
+
+    expect((await wa.json("/session", { id: "ses_managed_create", title: "Managed" }, {
+      params: { connectionId: "fake" },
+      headers: { authorization: "Bearer signed-rht", "x-claxedo-session-registration-operation": "op_managed_create" },
     })).status).toBe(201)
     expect(registered).toEqual(new Set(["ses_managed_create"]))
 
-    expect((await app.request(`http://localhost/session/ses_managed_create/prompt_async?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", authorization: "Bearer signed-rht" },
-      body: JSON.stringify({ messageID: "msg_managed_1", parts: [{ type: "text", text: "hello" }] }),
+    expect((await wa.json("/session/ses_managed_create/prompt_async", { messageID: "msg_managed_1", parts: [{ type: "text", text: "hello" }] }, {
+      headers: { authorization: "Bearer signed-rht" },
     })).status).toBe(204)
+    await settle()
+    expect(wa.transport().turns.map((turn) => turn.turn.userMessageId)).toEqual(["msg_managed_1"])
   })
 
-  it("applies a selected runtime model before creating a session", async () => {
-    const directory = process.cwd()
-    const calls: string[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      adapterCapabilities: ["runtime-config"] as const,
-      setModel(model: string) {
-        calls.push(`setModel:${model}`)
-      },
-      setAuth() {},
-      async createSession() {
-        calls.push("createSession")
-        return { id: "session-created" }
-      },
-    }))
+  it("starts the harness with the model selected at create", async () => {
+    const wa = await workspaceApp()
 
-    const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: "Created",
-        model: { providerID: "connection:example", modelID: "gpt-5.5" },
-      }),
-    })
+    const res = await wa.json("/session", { title: "Created", model: { providerID: "connection:example", modelID: "gpt-5.5" } }, { params: { connectionId: "fake" } })
 
     expect(res.status).toBe(201)
-    expect(calls).toEqual(["setModel:gpt-5.5", "createSession"])
+    expect(wa.transport().starts.map((start) => start.config.model)).toEqual([{ providerID: "connection:example", modelID: "gpt-5.5" }])
   })
 
-  it("passes session context into resolveDirectory for detail routes", async () => {
-    const directory = process.cwd()
-    const calls: Array<{ sessionId?: string }> = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () => adapter({}),
-      resolveDirectory: async (_c, input) => {
-        calls.push({ sessionId: input?.sessionId })
-        return directory
-      },
-      publishGlobal() {},
-    })
+  it("resolves a detail route's directory from the session when the request names none", async () => {
+    const wa = await workspaceApp()
+    await wa.createSession("s1", { title: "Demo" })
 
-    const res = await app.request("http://localhost/session/s1")
+    const res = await wa.app.request("http://localhost/session/s1")
+
     expect(res.status).toBe(200)
-    expect(calls).toEqual([{ sessionId: "s1" }])
+    expect(await res.json()).toMatchObject({ id: "s1", title: "Demo", directory: wa.directory })
   })
 
   it("returns structured session not-found errors", async () => {
-    const directory = process.cwd()
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        getSession: async () => null,
-        updateSession: async () => null,
-      }),
-      resolveDirectory: async () => directory,
-      publishGlobal() {},
-    })
+    const wa = await workspaceApp()
 
     for (const request of [
-      new Request("http://localhost/session/missing"),
-      new Request("http://localhost/session/missing", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Missing" }),
-      }),
+      new Request(wa.url("/session/missing")),
+      new Request(wa.url("/session/missing"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "Missing" }) }),
     ]) {
-      const res = await app.request(request)
+      const res = await wa.app.request(request)
       expect(res.status).toBe(404)
-      await expect(res.json()).resolves.toEqual({
-        error: {
-          code: "session_not_found",
-          message: "Session not found",
-        },
-      })
+      await expect(res.json()).resolves.toEqual({ error: { code: "session_not_found", message: "Session not found" } })
     }
   })
 
   it("reads session status from the host-owned inventory", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() => { throw new Error("inventory reads must not resolve a harness") }, {
-      listSessions: async (_c, scope) => {
-        expect(scope).toBe(directory)
-        return [{ id: "status-session", directory, status: "busy" }]
-      },
-      getStatus: async (_c, scope) => {
-        expect(scope).toBe(directory)
-        return { "status-session": { type: "busy" } }
-      },
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const wa = await workspaceApp({
+      fakeTransport: { turn: async function* ({ session }) { await gate; yield { type: "finish", sessionId: session.binding.sessionId } } },
     })
-    const response = await app.request(`http://localhost/session/status?directory=${encodeURIComponent(directory)}`)
+    await wa.createSession("status-session")
+    const pending = wa.json("/session/status-session/message", { parts: [{ type: "text", text: "hi" }] })
+    await settle()
+
+    const response = await wa.app.request(wa.url("/session/status"))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ "status-session": { type: "busy" } })
+    expect(wa.transport().starts).toHaveLength(1)
+    release()
+    await pending
+
+    expect(await (await wa.app.request(wa.url("/session/status"))).json()).toEqual({})
   })
 
   it("returns the final JSON reply and forwards prompt fields", async () => {
-    const directory = process.cwd()
-    const seen: Array<{ directory: string; payload: CompatEvent }> = []
-    let prompt: PromptInput | undefined
-    const eventHub = createRuntimeEventHub()
-    const app = SessionRoutes(() =>
-      adapter({
-        onPrompt(next, dir) {
-          prompt = next
-          expect(dir).toBe(directory)
-        },
-        async *sendMessage(id, input, dir) {
-          yield messageUpdated(buildUserMessage({
-            id: input.userMessageId!,
-            sessionID: id,
-            agent: input.agent,
-            model: input.model,
-            ...(input.tools ? { tools: input.tools } : {}),
-            ...(input.format ? { format: input.format } : {}),
-            ...(input.system ? { system: input.system } : {}),
-            ...(input.variant ? { variant: input.variant } : {}),
-          }))
-          yield messagePartUpdated({
-            id: "msg-user-part-0",
-            sessionID: id,
-            messageID: input.userMessageId!,
-            type: "text",
-            text: "hello",
-          })
-          yield messageUpdated(buildAssistantMessage({
-            id: input.assistantMessageId,
-            sessionID: id,
-            parentID: input.userMessageId ?? id,
-            agent: input.agent,
-            model: input.model,
-            directory: dir ?? "",
-          }))
-          yield messageUpdated(buildAssistantMessage({
-            id: "asm-final",
-            sessionID: id,
-            parentID: input.userMessageId ?? id,
-            agent: input.agent,
-            model: input.model,
-            directory: dir ?? "",
-          }))
-          yield sessionIdle(id)
-        },
-        async getMessages(id, dir) {
-          return [{
-            info: buildUserMessage({
-              id: "msg-user",
-              sessionID: id,
-              agent: "plan",
-              model: { providerID: "openai", modelID: "gpt-5.4" },
-              system: "sys",
-              variant: "fast",
-            }),
-            parts: [],
-          }, {
-            info: buildAssistantMessage({
-              id: "asm-final",
-              sessionID: id,
-              parentID: "msg-user",
-              agent: "plan",
-              model: { providerID: "openai", modelID: "gpt-5.4" },
-              directory: dir ?? "",
-              completed: Date.now(),
-              variant: "fast",
-            }),
-            parts: [{ id: "p1", sessionID: id, messageID: "asm-final", type: "text", text: "done" }],
-          }]
-        },
-      }), { eventHub })
-    const unsub = eventHub.subscribeGlobal((event) => seen.push(event))
-
-    try {
-      const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messageID: "msg-user",
-          agent: "plan",
-          model: { providerID: "openai", modelID: "gpt-5.4" },
-          parts: [{ type: "text", text: "hello" }],
-          tools: { bash: true },
-          format: { type: "json_schema", schema: { type: "object" } },
-          system: "sys",
-          variant: "fast",
-        }),
-      })
-
-      expect(res.status).toBe(200)
-      expect(res.headers.get("content-type")).toContain("application/json")
-      expect(prompt).toMatchObject({
-        userMessageId: "msg-user",
-        agent: "plan",
-        model: { providerID: "openai", modelID: "gpt-5.4" },
-        tools: { bash: true },
-        format: { type: "json_schema" },
-        system: "sys",
-        variant: "fast",
-      })
-      expect(await res.json()).toMatchObject({
-        info: { id: "asm-final", role: "assistant", agent: "plan", variant: "fast" },
-        parts: [{ type: "text", text: "done" }],
-      })
-      expect(seen.map((row) => row.payload.type)).toEqual([
-        "message.updated",
-        "message.part.updated",
-        "message.updated",
-        "message.updated",
-        "session.idle",
-      ])
-      expect(seen[1]?.payload).toMatchObject({
-        type: "message.part.updated",
-        properties: {
-          part: {
-            messageID: "msg-user",
-            type: "text",
-            text: "hello",
-          },
-        },
-      })
-    } finally {
-      unsub()
-    }
-  })
-
-  it("returns a synthetic error reply when the sync message stream throws", async () => {
-    const directory = process.cwd()
-    const seen: string[] = []
-    const eventHub = createRuntimeEventHub()
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter({
-        async *sendMessage() {
-          throw new Error("adapter unavailable")
-        },
-      }),
-      resolveDirectory: () => directory,
-      publishGlobal: (event) => {
-        seen.push(event.payload.type)
-        eventHub.publishGlobal(event)
-      },
+    const seen: CompatEnvelope[] = []
+    const wa = await workspaceApp({
+      onCompatEvent: (event) => seen.push(event),
+      fakeTransport: { turn: async function* ({ session }) {
+        yield { type: "text-delta", delta: "done" }
+        yield { type: "finish", sessionId: session.binding.sessionId }
+      } },
     })
+    await wa.createSession("s1", { title: "Demo" })
+    seen.length = 0
 
-    const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messageID: "msg-user",
-        parts: [{ type: "text", text: "hello" }],
-      }),
+    const res = await wa.json("/session/s1/message", {
+      messageID: "msg-user",
+      agent: "plan",
+      model: { providerID: "openai", modelID: "gpt-5.4" },
+      parts: [{ type: "text", text: "hello" }],
+      tools: { bash: true },
+      format: { type: "json_schema", schema: { type: "object" } },
+      system: "sys",
+      variant: "fast",
     })
 
     expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toContain("application/json")
+    const [turn] = wa.transport().turns
+    expect(turn?.session.directory).toBe(wa.directory)
+    expect(turn?.turn).toMatchObject({
+      userMessageId: "msg-user",
+      assistantMessageId: "msg-user_r",
+      prompt: { agent: "plan", tools: { bash: true }, format: { type: "json_schema" }, parts: [{ type: "text", text: "hello" }] },
+      model: { providerID: "openai", modelID: "gpt-5.4" },
+      system: "sys",
+      effort: "fast",
+    })
     expect(await res.json()).toMatchObject({
-      info: {
-        role: "assistant",
-        error: { data: { message: "adapter unavailable" } },
-      },
+      info: { id: "msg-user_r", role: "assistant", agent: "plan", parentID: "msg-user" },
+      parts: [{ type: "text", text: "done" }],
+    })
+    expect(seen.map((row) => row.payload.type)).toEqual([
+      "session.status",
+      "message.updated",
+      "message.part.updated",
+      "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+      "message.completed",
+      "session.idle",
+    ])
+    expect(seen[1]?.payload).toMatchObject({
+      type: "message.updated",
+      properties: { info: { id: "msg-user", role: "user", agent: "plan", model: { providerID: "openai", modelID: "gpt-5.4" }, tools: { bash: true }, system: "sys", variant: "fast" } },
+    })
+    expect(seen[2]?.payload).toMatchObject({
+      type: "message.part.updated",
+      properties: { part: { messageID: "msg-user", type: "text", text: "hello" } },
+    })
+  })
+
+  it("returns a synthetic error reply when the harness turn throws", async () => {
+    const seen: string[] = []
+    const wa = await workspaceApp({
+      onCompatEvent: (event) => seen.push(event.payload.type),
+      fakeTransport: { turn: async function* () { throw new Error("adapter unavailable") } },
+    })
+    await wa.createSession("s1")
+
+    const res = await wa.json("/session/s1/message", { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      info: { role: "assistant", error: { data: { message: "adapter unavailable" } } },
       parts: [],
     })
     expect(seen).toContain("session.error")
   })
 
-  it("returns and checkpoints a completed turn when document flushing fails", async () => {
-    const directory = process.cwd()
-    const checkpoints: unknown[][] = []
-    const error = spyOn(console, "error").mockImplementation(() => {})
-    const messages = [{
-      info: buildAssistantMessage({
-        id: "asm-final",
-        sessionID: "s1",
-        parentID: "msg-user",
-        agent: "plan",
-        model: { providerID: "openai", modelID: "gpt-5.4" },
-        directory,
-        completed: Date.now(),
-      }),
-      parts: [{ id: "p1", sessionID: "s1", messageID: "asm-final", type: "text" as const, text: "done" }],
-    }]
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter({
-        async *sendMessage(id) {
-          yield sessionIdle(id)
-        },
-        getMessages: () => messages,
-      }),
-      resolveDirectory: () => directory,
-      publishGlobal() {},
-      flushSessionDocuments: async () => { throw new Error("write-back unavailable") },
-      afterMessageCheckpoint: (_c, _directory, _sessionId, next) => { checkpoints.push(next) },
-    })
-
-    try {
-      const response = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageID: "msg-user", parts: [{ type: "text", text: "hello" }] }),
-      })
-
-      expect(response.status).toBe(200)
-      expect(await response.json()).toMatchObject({
-        info: { id: "asm-final", role: "assistant" },
-        parts: [{ type: "text", text: "done" }],
-      })
-      expect(checkpoints).toEqual([messages])
-      expect(error).toHaveBeenCalledWith("[runtime-document] end-of-turn write-back failed for s1:", expect.any(Error))
-    } finally {
-      error.mockRestore()
-    }
-  })
-
   it("defaults message model fields from session config when the request omits them", async () => {
-    const directory = process.cwd()
-    let prompt: PromptInput | undefined
-    const app = SessionRoutes(() =>
-      adapter({
-        onPrompt(next, dir) {
-          prompt = next
-          expect(dir).toBe(directory)
-        },
-        async *sendMessage(id, input, dir) {
-          yield messageUpdated(buildAssistantMessage({
-            id: input.assistantMessageId,
-            sessionID: id,
-            parentID: input.userMessageId ?? id,
-            agent: input.agent,
-            model: input.model,
-            directory: dir ?? "",
-            ...(input.variant ? { variant: input.variant } : {}),
-          }))
-          yield sessionIdle(id)
-        },
-        async getMessages(id, dir) {
-          return [{
-            info: buildAssistantMessage({
-              id: "asm-final",
-              sessionID: id,
-              parentID: "msg-user",
-              agent: "plan",
-              model: { providerID: "openai", modelID: "gpt-5.4" },
-              directory: dir ?? "",
-              completed: Date.now(),
-              variant: "fast",
-            }),
-            parts: [{ id: "p1", sessionID: id, messageID: "asm-final", type: "text", text: "done" }],
-          }]
-        },
-      }))
+    const wa = await workspaceApp()
+    await wa.createSession("s1", { model: { providerID: "openai", modelID: "gpt-5.4" }, variant: "fast", agent: "plan" })
 
-    const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messageID: "msg-user",
-        parts: [{ type: "text", text: "hello" }],
-      }),
-    })
+    const res = await wa.json("/session/s1/message", { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] })
 
     expect(res.status).toBe(200)
-    expect(prompt).toMatchObject({
+    expect(wa.transport().turns[0]?.turn).toMatchObject({
       userMessageId: "msg-user",
-      agent: "plan",
+      prompt: { agent: "plan" },
       model: { providerID: "openai", modelID: "gpt-5.4" },
-      variant: "fast",
+      effort: "fast",
     })
   })
 
   it("returns a synthetic error reply when no final assistant message exists", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() =>
-      adapter({
-        async *sendMessage(id, input, dir) {
-          yield messageUpdated(buildAssistantMessage({
-            id: input.assistantMessageId,
-            sessionID: id,
-            parentID: input.userMessageId ?? id,
-            agent: input.agent,
-            model: input.model,
-            directory: dir ?? "",
-          }))
-          yield sessionError("boom", id)
-        },
-        async getMessages() {
-          return []
-        },
-      }))
+    const wa = await workspaceApp({ fakeTransport: { turn: async function* () { yield { type: "error", error: "boom" } } } })
+    await wa.createSession("s1")
 
-    const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messageID: "msg-user",
-        parts: [{ type: "text", text: "hello" }],
-      }),
-    })
+    const res = await wa.json("/session/s1/message", { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] })
 
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
-      info: {
-        role: "assistant",
-        error: {
-          name: "UnknownError",
-          data: { message: "boom" },
-        },
-      },
+      info: { role: "assistant", error: { name: "UnknownError", data: { message: "boom" } } },
       parts: [],
     })
   })
 
   it("updates session via PATCH", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() =>
-      adapter({
-      }))
+    const wa = await workspaceApp()
+    await wa.createSession("s1", { title: "Demo" })
 
-    const res = await app.request(`http://localhost/session/s1?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Updated Title" }),
-    })
+    const res = await wa.json("/session/s1", { title: "Updated Title" }, { method: "PATCH" })
 
     expect(res.status).toBe(200)
     const body = await res.json() as { id: string; title: string }
     expect(body.id).toBe("s1")
     expect(body.title).toBe("Updated Title")
+    expect((await wa.app.request(wa.url("/session/s1"))).json()).resolves.toMatchObject({ title: "Updated Title" })
   })
 
   it("returns 404 for PATCH on non-existent session", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      updateSession: async () => null,
-    }))
+    const wa = await workspaceApp()
 
-    const res = await app.request(`http://localhost/session/missing?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Nope" }),
-    })
+    const res = await wa.json("/session/missing", { title: "Nope" }, { method: "PATCH" })
 
     expect(res.status).toBe(404)
   })
 
   it("gets session config", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() => adapter({}))
+    const wa = await workspaceApp()
+    await wa.createSession("s1", { model: { providerID: "openai", modelID: "gpt-5.4" }, variant: "fast", agent: "plan" })
 
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`)
+    const res = await wa.app.request(wa.url("/session/s1/config"))
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      harness: { id: "codex", access: "native" },
+      harness: { id: "fake", access: "connection" },
       model: { providerID: "openai", modelID: "gpt-5.4" },
       variant: "fast",
       agent: "plan",
     })
   })
 
-  it("returns harness capabilities for global and session-specific adapters", async () => {
-    const directory = process.cwd()
-    const app = createSessionRoutes({
-      resolveAdapter: async (_c, input) => ({
-        ...adapter({}),
-        readHarnessCapabilities: () => ({
-          harness: input?.sessionId ? "codex" : "claude",
-          abort: true,
-          reconnect: false,
-          replay: true,
-          permissions: true,
-          questions: !input?.sessionId,
-          todos: true,
-          commands: !input?.sessionId,
-          fork: true,
-          revert: !input?.sessionId,
-          unrevert: !input?.sessionId,
-          configOptions: !!input?.sessionId,
+  it("returns harness capabilities for a draft and for a live session", async () => {
+    class VaryingTransport extends FakeTransport {
+      override async capabilities(input?: { directory: string; sessionId?: string }): Promise<TransportCapabilities> {
+        return {
+          ...await super.capabilities(),
+          requests: { permissions: true, questions: !input?.sessionId, elicitation: false },
           subagents: true,
-          effortLevels: NO_HARNESS_EFFORT,
-          instructionChannel: "turn-system-prompt",
-          goals: false,
-        }),
-      }),
-      resolveDirectory: async (_c, input) => input?.sessionId ? `${directory}/session` : directory,
-      publishGlobal() {},
-    })
+        }
+      }
+    }
+    const wa = await workspaceApp({ transport: () => new VaryingTransport({ commands: { list: async () => [] } }) })
+    await wa.createSession("s1")
 
-    const global = await app.request(`http://localhost/session/capabilities?directory=${encodeURIComponent(directory)}`)
-    const session = await app.request(`http://localhost/session/s1/capabilities?directory=${encodeURIComponent(directory)}`)
+    const global = await wa.app.request(wa.url("/session/capabilities"))
+    const session = await wa.app.request(wa.url("/session/s1/capabilities"))
 
     expect(global.status).toBe(200)
     expect(await global.json()).toMatchObject({
-      harness: "claude",
-      commands: true,
-      questions: true,
-      configOptions: false,
-      subagents: true,
-      effortLevels: NO_HARNESS_EFFORT,
-      instructionChannel: "turn-system-prompt",
+      harness: "fake", commands: true, questions: true, configOptions: false, subagents: true,
+      effortLevels: { status: "unsupported" }, instructionChannel: "turn-system-prompt",
     })
     expect(session.status).toBe(200)
     expect(await session.json()).toMatchObject({
-      harness: "codex",
-      commands: false,
-      questions: false,
-      configOptions: true,
-      subagents: true,
-      effortLevels: NO_HARNESS_EFFORT,
-      instructionChannel: "turn-system-prompt",
+      harness: "fake", commands: true, questions: false, configOptions: false, subagents: true, prompt: true,
+      effortLevels: { status: "unsupported" }, instructionChannel: "turn-system-prompt",
     })
   })
 
-  it("exposes command routes by default and supports central-server opt-out", async () => {
-    const directory = process.cwd()
+  it("lists the harness's declared commands on the draft command route", async () => {
     const commands = [{ name: "review", description: "Review current changes" }]
-    const base = {
-      resolveDirectory: async () => directory,
-      publishGlobal() {},
-    }
-    const standalone = createSessionRoutes({
-      ...base,
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        listCommands: async () => commands,
-      }),
-    })
-    const central = createSessionRoutes({
-      ...base,
-      exposeCommandRoute: false,
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        listCommands: async () => {
-          throw new Error("central server should not resolve workspace-runtime commands")
-        },
-      }),
-    })
+    const wa = await workspaceApp({ transport: () => new FakeTransport({ commands: { list: async () => commands } }) })
 
-    const standaloneRes = await standalone.request(`http://localhost/command?directory=${encodeURIComponent(directory)}`)
-    const centralRes = await central.request(`http://localhost/command?directory=${encodeURIComponent(directory)}`)
+    const res = await wa.app.request(wa.url("/command"))
 
-    expect(standaloneRes.status).toBe(200)
-    expect(await standaloneRes.json()).toEqual(commands)
-    expect(centralRes.status).toBe(404)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(commands.map((command) => ({ ...command, origin: "transport" })))
   })
 
   it("patches session config", async () => {
-    const directory = process.cwd()
-    const app = SessionRoutes(() => adapter({}))
+    const wa = await workspaceApp()
+    await wa.createSession("s1")
 
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: { providerID: "connection:example", modelID: "sonnet" },
-        variant: "max",
-        agent: "build",
-      }),
-    })
+    const res = await wa.json("/session/s1/config", {
+      model: { providerID: "connection:example", modelID: "sonnet" },
+      variant: "max",
+      agent: "build",
+    }, { method: "PATCH" })
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      harness: { id: "codex", access: "native" },
+      harness: { id: "fake", access: "connection" },
       model: { providerID: "connection:example", modelID: "sonnet" },
       variant: "max",
       agent: "build",
@@ -1233,571 +669,252 @@ describe("session prompt route", () => {
   })
 
   it("does not accept runtime-owned handoff state from a client config patch", async () => {
-    const directory = process.cwd()
-    const calls: SessionConfigUpdate[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      updateSessionConfig: async (_id, patch) => {
-        calls.push(patch)
-        return {
-          harness: { id: "codex", access: "native" },
-          variant: null,
-          agent: null,
-        }
-      },
-    }))
+    const wa = await workspaceApp()
+    await wa.createSession("s1")
 
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        handoff: {
-          from: { id: "claude", access: "native" },
-          pending: true,
-          transcript: "client-authored transcript",
-        },
-      }),
-    })
+    const res = await wa.json("/session/s1/config", {
+      handoff: { from: { id: "claude", access: "native" }, pending: true, transcript: "client-authored transcript" },
+    }, { method: "PATCH" })
 
     expect(res.status).toBe(200)
-    expect(calls).toEqual([{}])
+    const config = { harness: { id: "fake", access: "connection" }, variant: null, agent: null }
+    expect(await res.json()).toEqual(config)
+    expect(await (await wa.app.request(wa.url("/session/s1/config"))).json()).toEqual(config)
   })
 
   it("allows session config patches to set model for the same harness", async () => {
-    const directory = process.cwd()
-    const calls: SessionConfigUpdate[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      getSessionConfig: async () => ({
-        harness: { id: "codex", access: "native" },
-        model: { providerID: "codex", modelID: "default" },
-        variant: null,
-        agent: "build",
-      }),
-      updateSessionConfig: async (_id, patch) => {
-        calls.push(patch)
-        return {
-          harness: patch.harness ?? { id: "codex", access: "native" },
-          ...(patch.model ? { model: patch.model } : {}),
-          variant: patch.variant ?? null,
-          agent: patch.agent ?? null,
-        }
-      },
-      readHarnessCapabilities: () => ({
-        harness: "codex",
-        abort: true,
-        reconnect: false,
-        replay: true,
-        permissions: true,
-        questions: true,
-        todos: true,
-        commands: true,
-        fork: true,
-        revert: true,
-        unrevert: true,
-        configOptions: false,
-        subagents: true,
-        effortLevels: NO_HARNESS_EFFORT,
-        instructionChannel: "turn-system-prompt",
-        goals: false,
-      }),
-    }))
+    const wa = await workspaceApp()
+    await wa.createSession("s1", { model: { providerID: "codex", modelID: "default" }, agent: "build" })
 
-    const patch = {
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "codex", modelID: "gpt-5" },
-      variant: null,
-      agent: "build",
-    } satisfies SessionConfigUpdate
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    })
+    const patch = { harness: { id: "fake", access: "connection" }, model: { providerID: "codex", modelID: "gpt-5" }, variant: null, agent: "build" }
+    const res = await wa.json("/session/s1/config", patch, { method: "PATCH" })
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "codex", modelID: "gpt-5" },
-      variant: null,
-      agent: "build",
-    })
-    expect(calls).toEqual([patch])
+    expect(await res.json()).toEqual(patch)
   })
 
-  it("can keep session config durable through route-level hooks", async () => {
-    const directory = process.cwd()
-    const configs = new Map<string, SessionConfig>()
-    const app = SessionRoutes(() => adapter({}), {
-      getSessionConfig: async ({ adapter, directory, sessionId }) =>
-        configs.get(sessionId) ?? await adapter.getSessionConfig({
-          sessionId,
-          workspaceId: "workspace-test",
-          directory,
-          connectionId: "native:codex",
-          upstreamSessionId: sessionId,
-        }),
-      updateSessionConfig: async ({ sessionId, update }) => {
-        if (!update.harness) throw new Error("test update requires an explicit harness")
-        const next = {
-          harness: update.harness,
-          ...(update.model ? { model: update.model } : {}),
-          variant: update.variant ?? null,
-          agent: update.agent ?? null,
-        } satisfies SessionConfig
-        configs.set(sessionId, next)
-        return next
-      },
-    })
-
-    const patch = {
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "openai", modelID: "gpt-5.4" },
-      variant: null,
-      agent: "build",
-    } satisfies SessionConfig
-    const update = await app.request(`http://localhost/session/s-codex/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    })
-    const read = await app.request(`http://localhost/session/s-codex/config?directory=${encodeURIComponent(directory)}`)
-
+  it("keeps session config durable across a reopened workspace", async () => {
+    const wa = await workspaceApp()
+    await wa.createSession("s-codex")
+    const patch = { harness: { id: "fake", access: "connection" }, model: { providerID: "openai", modelID: "gpt-5.4" }, variant: null, agent: "build" }
+    const update = await wa.json("/session/s-codex/config", patch, { method: "PATCH" })
     expect(update.status).toBe(200)
-    expect(read.status).toBe(200)
     expect(await update.json()).toEqual(patch)
+    await wa.dispose({ keepRoot: true })
+    apps.splice(apps.indexOf(wa), 1)
+
+    const reopened = await workspaceApp({ root: wa.root })
+    const read = await reopened.app.request(reopened.url("/session/s-codex/config"))
+
+    expect(read.status).toBe(200)
     expect(await read.json()).toEqual(patch)
   })
 
-  it("rejects session config harness switches before mutating adapter state", async () => {
-    const directory = process.cwd()
-    const calls: string[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      updateSessionConfig: async () => {
-        calls.push("updateSessionConfig")
-        return { harness: { id: "claude", access: "connection" } }
-      },
-    }))
+  it("refuses a session config switch to a harness this runtime cannot run, leaving the session untouched", async () => {
+    const wa = await workspaceApp()
+    await wa.createSession("s1")
 
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        harness: { id: "example", access: "connection" },
-        model: { providerID: "connection:example", modelID: "sonnet" },
-      }),
-    })
+    const res = await wa.json("/session/s1/config", {
+      harness: { id: "example", access: "connection" },
+      model: { providerID: "connection:example", modelID: "sonnet" },
+    }, { method: "PATCH" })
 
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({
-      ok: false,
-      error: {
-        code: "unsupported_operation",
-        operation: "harness_switch",
-        capability: "session_harness",
-        harness: "codex",
-        transport: "codex",
-        reason: "harness_switch_not_supported",
-        message: "codex sessions cannot switch to example through session config patch",
-      },
+      error: { code: "workspace_harness_not_configured", message: 'Connection "example" is not configured on this runtime' },
     })
-    expect(calls).toEqual([])
+    expect(await (await wa.app.request(wa.url("/session/s1/config"))).json()).toEqual({ harness: { id: "fake", access: "connection" }, variant: null, agent: null })
+    expect(wa.transport().closed).toEqual([])
   })
 
-  it("delegates session config harness switches to the cross-harness owner", async () => {
-    const directory = process.cwd()
-    const calls: SessionConfigUpdate[] = []
-    const target = {
-      harness: { id: "openclaw", access: "connection" },
-      model: { providerID: "connection:openclaw", modelID: "default" },
-      variant: null,
-      agent: null,
-    } satisfies SessionConfig
-    const app = SessionRoutes(() => adapter({}), {
-      switchSessionHarness: async ({ update }) => {
-        calls.push(update)
-        return target
-      },
-    })
+  it("hands a session over to another configured harness through the runtime's handoff", async () => {
+    const other = new FakeTransport({ upstreamSessionId: () => "upstream-other" })
+    const wa = await workspaceApp({ connections: [{ connectionId: "other", transport: () => other }] })
+    await wa.createSession("s1")
+    expect((await wa.json("/session/s1/message", { parts: [{ type: "text", text: "hi" }] })).status).toBe(200)
 
-    const patch = {
-      harness: { id: "openclaw", access: "connection" },
-      model: { providerID: "connection:openclaw", modelID: "default" },
-    } satisfies SessionConfigUpdate
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    })
+    const patch = { harness: { id: "other", access: "connection" }, model: { providerID: "connection:other", modelID: "default" } }
+    const res = await wa.json("/session/s1/config", patch, { method: "PATCH" })
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(target)
-    expect(calls).toEqual([patch])
+    expect(await res.json()).toMatchObject({
+      ...patch,
+      handoff: { from: { id: "fake", access: "connection" }, pending: true, transcript: expect.stringContaining("User:\nhi") },
+    })
+    expect(other.starts.map((start) => start.sessionId)).toEqual(["s1"])
+    // The left harness is kept until a turn succeeds on the new one.
+    expect(wa.transport().closed).toEqual([])
+    expect((await wa.json("/session/s1/message", { parts: [{ type: "text", text: "again" }] })).status).toBe(200)
+    expect(other.turns).toHaveLength(1)
+    expect(wa.transport().closed.map((session) => session.binding.sessionId)).toEqual(["s1"])
   })
 
   it("returns 204 for prompt_async", async () => {
-    const directory = process.cwd()
-    let seen = false
-    const app = SessionRoutes(() =>
-      adapter({
-        async *sendMessage(id) {
-          seen = true
-          yield sessionIdle(id)
-        },
-      }))
+    const wa = await workspaceApp()
+    await wa.createSession("s1")
 
-    const res = await app.request(`http://localhost/session/s1/prompt_async?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        parts: [{ type: "text", text: "hello" }],
-      }),
-    })
+    const res = await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "hello" }] })
 
     expect(res.status).toBe(204)
-    await Bun.sleep(0)
-    expect(seen).toBe(true)
+    await settle()
+    expect(wa.transport().turns).toHaveLength(1)
   })
 
   it("deduplicates exact prompt_async retries while replaying an unsubmitted retry", async () => {
-    const directory = process.cwd()
-    let executions = 0
-    const make = (messages: AgentMessage[] = [], beforeMessages = async () => {}) => SessionRoutes(() =>
-      adapter({
-        getMessages: async () => {
-          await beforeMessages()
-          return messages
-        },
-        async *sendMessage(id) {
-          executions++
-          yield sessionIdle(id)
-        },
-      }))
-    const request = (app: ReturnType<typeof make>, retry = false) => app.request(
-      `http://localhost/session/s1/prompt_async?directory=${encodeURIComponent(directory)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(retry ? { "x-claxedo-idempotency-retry": "1" } : {}),
-        },
-        body: JSON.stringify({ messageID: "msg-generic", parts: [{ type: "text", text: "hello" }] }),
-      },
-    )
+    const wa = await workspaceApp()
+    const turnsFor = (sessionId: string) => wa.transport().turns.filter((turn) => turn.session.binding.sessionId === sessionId)
+    const request = (sessionId: string, retry = false) => wa.json(`/session/${sessionId}/prompt_async`,
+      { messageID: `msg-${sessionId}`, parts: [{ type: "text", text: "hello" }] },
+      { headers: retry ? { "x-claxedo-idempotency-retry": "1" } : {} })
 
-    const live = make()
-    expect((await request(live)).status).toBe(204)
-    expect((await request(live, true)).status).toBe(204)
-    await Bun.sleep(0)
-    expect(executions).toBe(1)
+    await wa.createSession("live")
+    expect((await request("live")).status).toBe(204)
+    expect((await request("live", true)).status).toBe(204)
+    await settle()
+    expect(turnsFor("live")).toHaveLength(1)
 
-    const restored = make([{ info: { id: "msg-generic", sessionID: "generic", role: "user" }, parts: [] }])
-    expect((await request(restored, true)).status).toBe(204)
-    await Bun.sleep(0)
-    expect(executions).toBe(1)
+    // The message is already in the transcript, so the retry has nothing left to submit.
+    expect((await request("live", true)).status).toBe(204)
+    await settle()
+    expect(turnsFor("live")).toHaveLength(1)
 
-    let release!: () => void
-    const concurrent = make([], () => new Promise<void>((resolve) => { release = resolve }))
-    const first = request(concurrent, true)
+    await wa.createSession("concurrent")
+    const first = request("concurrent", true)
     await Bun.sleep(0)
-    const second = request(concurrent, true)
-    release()
-    await Promise.all([first, second])
-    await Bun.sleep(0)
-    expect(executions).toBe(2)
+    const second = request("concurrent", true)
+    expect((await Promise.all([first, second])).map((response) => response.status)).toEqual([204, 204])
+    await settle()
+    expect(turnsFor("concurrent")).toHaveLength(1)
 
-    const prepared = make()
-    expect((await request(prepared, true)).status).toBe(204)
-    await Bun.sleep(0)
-    expect(executions).toBe(3)
+    await wa.createSession("prepared")
+    expect((await request("prepared", true)).status).toBe(204)
+    await settle()
+    expect(turnsFor("prepared")).toHaveLength(1)
   })
 
   it("returns typed unsupported operation failures from harness capabilities", async () => {
-    const directory = process.cwd()
-    const calls: string[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      readHarnessCapabilities: () => ({
-        harness: "claude",
-        abort: false,
-        reconnect: false,
-        replay: true,
-        permissions: false,
-        questions: false,
-        todos: true,
-        commands: false,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: true,
-        subagents: true,
-        effortLevels: NO_HARNESS_EFFORT,
-        instructionChannel: "turn-system-prompt",
-        goals: false,
-      }),
-      revert: async () => {
-        calls.push("revert")
-      },
-      unrevert: async () => {
-        calls.push("unrevert")
-      },
-      forkSession: async () => {
-        calls.push("fork")
-        return { id: "forked" }
-      },
-      executeCommand: async () => {
-        calls.push("command")
-      },
-      respondPermission: async () => {
-        calls.push("permission")
-      },
-      replyQuestion: async () => {
-        calls.push("question.reply")
-      },
-      rejectQuestion: async () => {
-        calls.push("question.reject")
-      },
-    }))
-
-    for (const item of [
-      { method: "POST", path: "/session/s1/revert", operation: "revert" },
-      { method: "POST", path: "/session/s1/unrevert", operation: "unrevert" },
-      { method: "POST", path: "/session/s1/fork", operation: "fork", body: { messageId: "m1" } },
-      { method: "POST", path: "/session/s1/command", operation: "command", body: { command: "review" } },
-      { method: "POST", path: "/session/s1/permissions/p1", operation: "permission_response", body: { response: "once" } },
-      { method: "POST", path: "/question/q1/reply", operation: "question_response", body: { answers: [["yes"]] } },
-      { method: "POST", path: "/question/q1/reject", operation: "question_response" },
-    ]) {
-      const url = new URL(`http://localhost${item.path}`)
-      url.searchParams.set("directory", directory)
-      url.searchParams.set("sessionId", "s1")
-      const res = await app.request(url.toString(), {
-        method: item.method,
-        headers: { "Content-Type": "application/json" },
-        ...(item.body ? { body: JSON.stringify(item.body) } : {}),
-      })
-
-      expect(res.status, item.path).toBe(409)
-      await expect(res.json()).resolves.toEqual({
-        ok: false,
-        error: {
-          code: "unsupported_operation",
-          operation: item.operation,
-          capability: item.operation === "command"
-            ? "commands"
-            : item.operation === "permission_response"
-            ? "permissions"
-            : item.operation === "question_response"
-            ? "questions"
-            : item.operation,
-          harness: "claude",
-          transport: "claude",
-          reason: "capability_disabled",
-          message: `claude does not support ${item.operation}`,
-        },
-      })
-    }
-    expect(calls).toEqual([])
-  })
-
-  it("keeps supported session operations on the existing success path", async () => {
-    const directory = process.cwd()
-    const calls: string[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      revert: async () => {
-        calls.push("revert")
-      },
-    }))
-
-    const res = await app.request(`http://localhost/session/s1/revert?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
+    const answers: RequestAnswer[] = []
+    const wa = await workspaceApp({
+      transport: () => scripted({
+        question: asking((sessionId) => question("q1", sessionId), answers),
+        permission: asking((sessionId) => permission("p1", sessionId), answers),
+      }, { capabilities: { requests: { permissions: false, questions: false, elicitation: false } } }),
     })
+    await wa.createSession("s1")
+    expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+    await settle()
 
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ ok: true })
-    expect(calls).toEqual(["revert"])
+    const refusal = (operation: string, capability: string) => ({
+      ok: false,
+      error: { code: "unsupported_operation", operation, capability, harness: "fake", transport: "fake", reason: "capability_disabled", message: `fake does not support ${operation}` },
+    })
+    const fork = await wa.json("/session/s1/fork", { messageId: "m1" })
+    expect(fork.status).toBe(409)
+    await expect(fork.json()).resolves.toEqual(refusal("fork", "fork"))
+    for (const path of ["/question/q1/reply", "/question/q1/reject"]) {
+      const res = await wa.json(path, { answers: [["Continue"]] }, { params: { sessionId: "s1" } })
+      expect(res.status, path).toBe(409)
+      await expect(res.json()).resolves.toEqual(refusal("question_response", "questions"))
+    }
+    expect(answers).toEqual([])
+
+    await wa.createSession("s2")
+    expect((await wa.json("/session/s2/prompt_async", { parts: [{ type: "text", text: "permission" }] })).status).toBe(204)
+    await settle()
+    const permissionRes = await wa.json("/session/s2/permissions/p1", { response: "once" })
+    expect(permissionRes.status).toBe(409)
+    await expect(permissionRes.json()).resolves.toEqual(refusal("permission_response", "permissions"))
+    expect(answers).toEqual([])
+
+    const command = await wa.json("/session/s1/command", { command: "review" })
+    expect(command.status).toBe(501)
+    await expect(command.json()).resolves.toEqual({
+      ok: false,
+      error: { code: "unsupported_operation", operation: "command", reason: "not_implemented", message: "command is not implemented" },
+    })
   })
 
-  it("does not sync created sessions to the control plane from workspace runtime", async () => {
-    const directory = process.cwd()
-    const seen: string[] = []
+  async function withControlPlaneEnv<T>(handler: Parameters<typeof fetchDouble>[0], run: () => Promise<T>) {
     const prevUrl = process.env.CLAXEDO_CONTROL_PLANE_URL
     const prevWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
     const original = globalThis.fetch
     process.env.CLAXEDO_CONTROL_PLANE_URL = "http://control.test"
     process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_runtime"
-    globalThis.fetch = fetchDouble((async (input) => {
-      seen.push(typeof input === "string" ? input : input instanceof Request ? input.url : String(input))
-      return new Response(JSON.stringify({ ok: true }), { status: 200 })
-    }))
-
+    globalThis.fetch = fetchDouble(handler)
     try {
-      const app = SessionRoutes(() => ({
-        ...adapter({}),
-        createSession: async () => ({ id: "session-created" }),
-      }))
-
-      const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Created" }),
-      })
-
-      expect(res.status).toBe(201)
-      await Bun.sleep(25)
-      expect(seen).toEqual([])
+      return await run()
     } finally {
       globalThis.fetch = original
       process.env.CLAXEDO_CONTROL_PLANE_URL = prevUrl
       process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = prevWorkspaceId
     }
+  }
+
+  it("does not sync created sessions to the control plane from workspace runtime", async () => {
+    const seen: string[] = []
+    await withControlPlaneEnv(async (input) => {
+      seen.push(typeof input === "string" ? input : input instanceof Request ? input.url : String(input))
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }, async () => {
+      const wa = await workspaceApp()
+      const res = await wa.json("/session", { title: "Created" }, { params: { connectionId: "fake" } })
+      expect(res.status).toBe(201)
+      await settle()
+      expect(seen).toEqual([])
+    })
   })
 
   it("does not sync session messages to the control plane on passive reads", async () => {
-    const directory = process.cwd()
-    const seen: Array<{ url: string; body: string | undefined }> = []
-    const prevUrl = process.env.CLAXEDO_CONTROL_PLANE_URL
-    const prevWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
-    const original = globalThis.fetch
-    process.env.CLAXEDO_CONTROL_PLANE_URL = "http://control.test"
-    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_runtime"
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      seen.push({
-        url: typeof input === "string" ? input : input instanceof Request ? input.url : String(input),
-        body: typeof init?.body === "string" ? init.body : undefined,
-      })
+    const seen: string[] = []
+    await withControlPlaneEnv(async (input) => {
+      seen.push(typeof input === "string" ? input : input instanceof Request ? input.url : String(input))
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
-    }))
-
-    try {
-      const app = SessionRoutes(() =>
-        adapter({
-          getMessages: () => [{
-            info: { id: "msg-1", sessionID: "s1", role: "user" },
-            parts: [{ id: "part-1", sessionID: "s1", messageID: "msg-1", type: "text", text: "hello" }],
-          }],
-        }),
-      )
-
-      const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`)
-
+    }, async () => {
+      const wa = await workspaceApp()
+      await wa.createSession("s1")
+      expect((await wa.json("/session/s1/message", { messageID: "msg-1", parts: [{ type: "text", text: "hello" }] })).status).toBe(200)
+      seen.length = 0
+      const res = await wa.app.request(wa.url("/session/s1/message"))
       expect(res.status).toBe(200)
-      await Bun.sleep(25)
+      expect((await res.json() as unknown[]).length).toBeGreaterThan(0)
+      await settle()
       expect(seen).toHaveLength(0)
-    } finally {
-      globalThis.fetch = original
-      process.env.CLAXEDO_CONTROL_PLANE_URL = prevUrl
-      process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = prevWorkspaceId
-    }
+    })
   })
 
   it("does not sync full session messages to the control plane after prompt completion", async () => {
-    const directory = process.cwd()
     const seen: string[] = []
-    const prevUrl = process.env.CLAXEDO_CONTROL_PLANE_URL
-    const prevWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
-    const original = globalThis.fetch
-    process.env.CLAXEDO_CONTROL_PLANE_URL = "http://control.test"
-    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_runtime"
-    globalThis.fetch = fetchDouble((async (input) => {
+    await withControlPlaneEnv(async (input) => {
       seen.push(typeof input === "string" ? input : input instanceof Request ? input.url : String(input))
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
-    }))
-
-    try {
-      const app = SessionRoutes(() =>
-        adapter({
-          getMessages: () => [{
-            info: { id: "msg-1", sessionID: "s1", role: "user" },
-            parts: [{ id: "part-1", sessionID: "s1", messageID: "msg-1", type: "text", text: "hello" }],
-          }],
-        }),
-      )
-
-      const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
-      })
-
+    }, async () => {
+      const wa = await workspaceApp()
+      await wa.createSession("s1")
+      const res = await wa.json("/session/s1/message", { parts: [{ type: "text", text: "hello" }] })
       expect(res.status).toBe(200)
-      await Bun.sleep(25)
+      await settle()
       expect(seen).toEqual([])
-    } finally {
-      globalThis.fetch = original
-      process.env.CLAXEDO_CONTROL_PLANE_URL = prevUrl
-      process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = prevWorkspaceId
-    }
-  })
-
-  it("bridges terminal runtime lifecycle events to workspaceRuntimeBus once", async () => {
-    const directory = process.cwd()
-    const lifecycle: Extract<WorkspaceRuntimeEvent, { type: "agent.lifecycle" }>[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
-      if (event.type === "agent.lifecycle" && event.sessionId === "s1") lifecycle.push(event)
     })
-
-    try {
-      const app = SessionRoutes(() =>
-        adapter({
-          async *sendMessage(id) {
-            yield sessionStatus(id, { type: "busy" })
-            yield sessionIdle(id)
-          },
-        }),
-      )
-
-      const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parts: [],
-          agent: "build",
-          model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
-          variant: "default",
-        }),
-      })
-
-      expect(res.status).toBe(200)
-      expect(lifecycle.map((event) => event.eventType)).toEqual(["Busy", "Idle"])
-      expect(lifecycle.map((event) => event.tabId)).toEqual(["s1", "s1"])
-      expect(lifecycle.map((event) => event.workspaceId)).toEqual([expect.any(String), expect.any(String)])
-    } finally {
-      unsubscribe()
-    }
   })
 
   it("publishes session.updated on the hub only — the workspace stream carries it once", async () => {
-    const directory = process.cwd()
-    const update = sessionUpdated(buildSession({
-      id: "s1",
-      directory,
-      title: "Prompt-derived title",
-      created: 10,
-      updated: 20,
-    }))
     const bus: string[] = []
+    const hubEvents: CompatEvent[] = []
+    const wa = await workspaceApp({
+      onCompatEvent: (event) => hubEvents.push(event.payload),
+      fakeTransport: { turn: async function* ({ session }) {
+        yield { type: "session-title", title: "Prompt-derived title" }
+        yield { type: "finish", sessionId: session.binding.sessionId }
+      } },
+    })
+    await wa.createSession("s1")
     const unsubscribe = workspaceRuntimeBus.subscribe((event) => { bus.push(event.type) })
-    const hub = createRuntimeEventHub()
-    const hubEvents: unknown[] = []
-    hub.subscribeGlobal((event) => { hubEvents.push(event.payload) })
-
     try {
-      const app = SessionRoutes(() => adapter({
-        async *sendMessage() {
-          yield update
-        },
-      }), { eventHub: hub })
-      const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parts: [] }),
-      })
+      const res = await wa.json("/session/s1/message", { parts: [] })
 
       expect(res.status).toBe(200)
-      expect(hubEvents.filter((event) => (event as { type?: string }).type === "session.updated")).toHaveLength(1)
+      const titled = hubEvents.filter((event) => event.type === "session.updated" && event.properties.info.title === "Prompt-derived title")
+      expect(titled).toHaveLength(1)
       expect(bus.filter((type) => type.startsWith("session."))).toEqual([])
     } finally {
       unsubscribe()
@@ -1805,520 +922,458 @@ describe("session prompt route", () => {
   })
 
   it("does not contact the control plane before returning local responses", async () => {
-    const directory = process.cwd()
     let calls = 0
-    const prevUrl = process.env.CLAXEDO_CONTROL_PLANE_URL
-    const prevWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
-    const original = globalThis.fetch
-    process.env.CLAXEDO_CONTROL_PLANE_URL = "http://control.test"
-    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_runtime"
-    globalThis.fetch = fetchDouble((async () => {
+    await withControlPlaneEnv(async () => {
       calls++
       await new Promise(() => {})
       return new Response("unreachable")
-    }))
-
-    try {
-      const app = SessionRoutes(() => ({
-        ...adapter({}),
-        createSession: async () => ({ id: "session-created" }),
-      }))
-
+    }, async () => {
+      const wa = await workspaceApp()
       const result = await Promise.race([
-        app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "Created" }),
-        }),
-        Bun.sleep(25).then(() => "timed out" as const),
+        wa.json("/session", { title: "Created" }, { params: { connectionId: "fake" } }),
+        Bun.sleep(1_000).then(() => "timed out" as const),
       ])
-
       expect(result).not.toBe("timed out")
       expect((result as Response).status).toBe(201)
-      await Bun.sleep(25)
+      await settle()
       expect(calls).toBe(0)
-    } finally {
-      globalThis.fetch = original
-      process.env.CLAXEDO_CONTROL_PLANE_URL = prevUrl
-      process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = prevWorkspaceId
-    }
+    })
   })
 
   it("publishes initial user parts for prompt_async", async () => {
-    const directory = process.cwd()
     const seen: CompatEvent[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () =>
-        adapter({
-          async *sendMessage(id, input, dir) {
-            yield messageUpdated(buildUserMessage({
-              id: input.userMessageId ?? "msg-user",
-              sessionID: id,
-              agent: input.agent,
-              model: input.model,
-            }))
-            yield messagePartUpdated({
-              id: "msg-user-part-0",
-              sessionID: id,
-              messageID: input.userMessageId ?? "msg-user",
-              type: "text",
-              text: "hello",
-            })
-            yield messageUpdated(buildAssistantMessage({
-              id: input.assistantMessageId,
-              sessionID: id,
-              parentID: input.userMessageId ?? id,
-              agent: input.agent,
-              model: input.model,
-              directory: dir ?? "",
-            }))
-            yield sessionIdle(id)
-          },
-        }),
-      resolveDirectory: async () => directory,
-      publishGlobal(event) {
-        seen.push(event.payload)
-      },
-    })
+    const wa = await workspaceApp({ onCompatEvent: (event) => seen.push(event.payload) })
+    await wa.createSession("s1", { title: "Demo" })
+    seen.length = 0
 
-    const res = await app.request(`http://localhost/session/s1/prompt_async?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messageID: "msg-user",
-        parts: [{ type: "text", text: "hello" }],
-      }),
-    })
+    const res = await wa.json("/session/s1/prompt_async", { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] })
 
     expect(res.status).toBe(204)
-    await Bun.sleep(0)
-    expect(seen.map((row) => row.type)).toEqual([
+    await settle()
+    expect(seen.map((row) => row.type).filter((type) => type !== "harness.health")).toEqual([
+      "session.status",
       "message.updated",
       "message.part.updated",
       "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+      "message.completed",
       "session.idle",
     ])
-    expect(seen[1]).toMatchObject({
+    expect(seen[2]).toMatchObject({
       type: "message.part.updated",
-      properties: {
-        part: {
-          messageID: "msg-user",
-          type: "text",
-          text: "hello",
-        },
-      },
+      properties: { part: { messageID: "msg-user", type: "text", text: "hello" } },
     })
   })
 
   it("publishes question reply with the pending question session id", async () => {
-    const directory = process.cwd()
+    const answers: RequestAnswer[] = []
     const seen: CompatEvent[] = []
-    const received: string[][][] = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
-        replyQuestion: async (_binding, _questionId, answers) => {
-          received.push(answers)
-        },
-      }),
-      resolveDirectory: async () => directory,
-      publishGlobal(event) {
-        seen.push(event.payload)
-      },
+    const wa = await workspaceApp({
+      onCompatEvent: (event) => seen.push(event.payload),
+      transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId, 2), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
     })
+    await wa.createSession("s1")
+    expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+    await settle()
+    expect(await (await wa.app.request(wa.url("/question"))).json()).toMatchObject([{ id: "q1", sessionID: "s1" }])
+    seen.length = 0
 
-    const res = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers: [["Continue"], ["Alpha", "Bravo"]] }),
-    })
+    const res = await wa.json("/question/q1/reply", { answers: [["Continue"], ["Alpha", "Bravo"]] })
 
     expect(res.status).toBe(200)
-    expect(received).toEqual([[["Continue"], ["Alpha", "Bravo"]]])
-    expect(seen).toEqual([{
-      id: "question.replied:q1",
+    await settle()
+    expect(answers).toEqual([{ kind: "answers", answers: [["Continue"], ["Alpha", "Bravo"]] }])
+    expect(seen.filter((event) => event.type.startsWith("question."))).toEqual([{
+      id: "question.replied:s1:q1",
       type: "question.replied",
-      properties: {
-        sessionID: "s1",
-        requestID: "q1",
-        answers: [["Continue"], ["Alpha", "Bravo"]],
-      },
+      properties: { sessionID: "s1", requestID: "q1", answers: [["Continue"], ["Alpha", "Bravo"]] },
     }])
   })
 
-  it("rejects scalar and compatibility question replies before mutating the adapter", async () => {
-    const directory = process.cwd()
-    let replies = 0
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
-        replyQuestion: async () => {
-          replies += 1
-        },
-      }),
-      resolveDirectory: async () => directory,
-      publishGlobal() {},
+  it("rejects scalar and compatibility question replies before the harness sees an answer", async () => {
+    const answers: RequestAnswer[] = []
+    const wa = await workspaceApp({
+      transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
     })
+    await wa.createSession("s1")
+    expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+    await settle()
 
     for (const body of [{ answer: "Continue" }, { answers: ["Continue"] }, {}]) {
-      const response = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
+      const response = await wa.json("/question/q1/reply", body)
       expect(response.status).toBe(400)
     }
-    expect(replies).toBe(0)
+    await settle()
+    expect(answers).toEqual([])
+    expect(await (await wa.app.request(wa.url("/question"))).json()).toMatchObject([{ id: "q1" }])
   })
 
   it("publishes question reject with the pending question session id", async () => {
-    const directory = process.cwd()
+    const answers: RequestAnswer[] = []
     const seen: CompatEvent[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
-      }),
-      resolveDirectory: async () => directory,
-      publishGlobal(event) {
-        seen.push(event.payload)
-      },
+    const wa = await workspaceApp({
+      onCompatEvent: (event) => seen.push(event.payload),
+      transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
     })
+    await wa.createSession("s1")
+    expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+    await settle()
+    seen.length = 0
 
-    const res = await app.request(`http://localhost/question/q1/reject?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    })
+    const res = await wa.json("/question/q1/reject", {})
 
     expect(res.status).toBe(200)
-    expect(seen).toEqual([{
-      id: "question.rejected:q1",
+    await settle()
+    expect(answers).toEqual([{ kind: "rejected" }])
+    expect(seen.filter((event) => event.type.startsWith("question."))).toEqual([{
+      id: "question.rejected:s1:q1",
       type: "question.rejected",
-      properties: {
-        sessionID: "s1",
-        requestID: "q1",
-      },
+      properties: { sessionID: "s1", requestID: "q1" },
     }])
   })
 
   // `?sessionId=` is optional on the question routes, so gating admission on it
-  // let any caller reach replyQuestion/rejectQuestion by simply leaving it off.
-  it("admits question replies and rejections on the resolved session when sessionId is omitted", async () => {
+  // let any caller reach the answer by simply leaving it off.
+  it("admits question replies and rejections on the pending question's session when sessionId is omitted", async () => {
     for (const path of ["/question/q1/reply", "/question/q1/reject"]) {
-      const directory = process.cwd()
-      const admissions: { sessionId: string; operation: string }[] = []
-      const calls: string[] = []
-      const app = createSessionRoutes({
-        resolveAdapter: async () => ({
-          ...adapter({}),
-          listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
-          replyQuestion: async () => {
-            calls.push("reply")
-          },
-          rejectQuestion: async () => {
-            calls.push("reject")
-          },
-        }),
-        resolveDirectory: async () => directory,
-        listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
-        beforeSessionOperation: (_c, input) => {
-          admissions.push(input)
-          return new Response(JSON.stringify({ ok: false, error: { code: "session_not_admitted" } }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          })
-        },
-        publishGlobal() {},
+      const answers: RequestAnswer[] = []
+      const admissions: Array<{ sessionId: string | undefined; operation: string }> = []
+      const wa = await workspaceApp({
+        transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
+        sessionAccessPolicy: observingPolicy({ operations: admissions, deny: (operation) => operation === "question_response" }),
       })
+      await wa.createSession("s1")
+      expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+      await settle()
+      admissions.length = 0
 
-      const res = await app.request(`http://localhost${path}?directory=${encodeURIComponent(directory)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: [["Continue"]] }),
-      })
+      const res = await wa.json(path, { answers: [["Continue"]] })
 
       expect(res.status, path).toBe(403)
-      await expect(res.json()).resolves.toEqual({ ok: false, error: { code: "session_not_admitted" } })
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "session_private" } })
       expect(admissions, path).toEqual([{ sessionId: "s1", operation: "question_response" }])
-      expect(calls, path).toEqual([])
+      await settle()
+      expect(answers, path).toEqual([])
     }
   })
 
-  // When neither the query param nor the host listing names the session, only
-  // the adapter can. Admission still has to happen before the reply lands.
-  it("admits question replies on a session only the adapter listing knows", async () => {
-    const directory = process.cwd()
-    const admissions: { sessionId: string; operation: string }[] = []
-    const calls: string[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        listQuestions: async () => [{ id: "q1", sessionID: "s-from-adapter", questions: [] }],
-        replyQuestion: async () => {
-          calls.push("reply")
-        },
-      }),
-      resolveDirectory: async () => directory,
-      beforeSessionOperation: (_c, input) => {
-        admissions.push(input)
-        return new Response(JSON.stringify({ ok: false }), { status: 403, headers: { "Content-Type": "application/json" } })
-      },
-      publishGlobal() {},
-    })
-
-    const res = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers: [["Continue"]] }),
-    })
-
-    expect(res.status).toBe(403)
-    expect(admissions).toEqual([{ sessionId: "s-from-adapter", operation: "question_response" }])
-    expect(calls).toEqual([])
-  })
-
   it("admits question replies on the authoritative session when the supplied session matches", async () => {
-    const directory = process.cwd()
-    const admissions: { sessionId: string; operation: string }[] = []
-    let resolvedAdapters = 0
-    const app = createSessionRoutes({
-      resolveAdapter: async () => {
-        resolvedAdapters += 1
-        return adapter({})
-      },
-      resolveDirectory: async () => directory,
-      listQuestions: async () => [{ id: "q1", sessionID: "s9", questions: [] }],
-      beforeSessionOperation: (_c, input) => {
-        admissions.push(input)
-      },
-      publishGlobal() {},
+    const answers: RequestAnswer[] = []
+    const admissions: Array<{ sessionId: string | undefined; operation: string }> = []
+    const wa = await workspaceApp({
+      transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
+      sessionAccessPolicy: observingPolicy({ operations: admissions }),
     })
+    await wa.createSession("s9")
+    expect((await wa.json("/session/s9/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+    await settle()
+    admissions.length = 0
 
-    const res = await app.request(
-      `http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}&sessionId=s9`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: [["Continue"]] }),
-      },
-    )
+    const res = await wa.json("/question/q1/reply", { answers: [["Continue"]] }, { params: { sessionId: "s9" } })
 
     expect(res.status).toBe(200)
     expect(admissions).toEqual([{ sessionId: "s9", operation: "question_response" }])
-    expect(resolvedAdapters).toBe(1)
+    await settle()
+    expect(answers).toEqual([{ kind: "answers", answers: [["Continue"]] }])
   })
 
   it("rejects cross-session question replies and rejections before authorization or mutation", async () => {
     for (const path of ["/question/q1/reply", "/question/q1/reject"]) {
-      const directory = process.cwd()
-      const admissions: string[] = []
-      const calls: string[] = []
-      const app = createSessionRoutes({
-        resolveAdapter: async () => ({
-          ...adapter({}),
-          replyQuestion: async () => {
-            calls.push("reply")
-          },
-          rejectQuestion: async () => {
-            calls.push("reject")
-          },
-        }),
-        resolveDirectory: async () => directory,
-        listQuestions: async () => [{ id: "q1", sessionID: "session_owner", questions: [] }],
-        beforeSessionOperation: (_c, input) => {
-          admissions.push(input.sessionId)
-        },
-        publishGlobal() {},
+      const answers: RequestAnswer[] = []
+      const admissions: Array<{ sessionId: string | undefined; operation: string }> = []
+      const wa = await workspaceApp({
+        transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
+        sessionAccessPolicy: observingPolicy({ operations: admissions }),
       })
+      await wa.createSession("session_owner")
+      expect((await wa.json("/session/session_owner/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+      await settle()
+      admissions.length = 0
 
-      const response = await app.request(
-        `http://localhost${path}?directory=${encodeURIComponent(directory)}&sessionId=session_attacker`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ answers: [["Continue"]] }),
-        },
-      )
+      const response = await wa.json(path, { answers: [["Continue"]] }, { params: { sessionId: "session_attacker" } })
 
       expect(response.status, path).toBe(409)
       await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_session_mismatch" } })
       expect(admissions, path).toEqual([])
-      expect(calls, path).toEqual([])
+      await settle()
+      expect(answers, path).toEqual([])
     }
   })
 
   it("rejects a permission response when the permission belongs to another session", async () => {
-    const directory = process.cwd()
-    const admissions: string[] = []
-    const calls: string[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        respondPermission: async () => {
-          calls.push("permission")
-        },
-      }),
-      resolveDirectory: async () => directory,
-      listPermissions: async () => [{
-        id: "permission_1",
-        sessionID: "session_owner",
-        permission: "tool",
-        patterns: [],
-        always: [],
-        metadata: {},
-      }],
-      beforeSessionOperation: (_c, input) => {
-        admissions.push(input.sessionId)
-      },
-      publishGlobal() {},
+    const answers: RequestAnswer[] = []
+    const admissions: Array<{ sessionId: string | undefined; operation: string }> = []
+    const wa = await workspaceApp({
+      transport: () => scripted({ permission: asking((sessionId) => permission("permission_1", sessionId), answers) }, { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
+      sessionAccessPolicy: observingPolicy({ operations: admissions }),
     })
+    await wa.createSession("session_owner")
+    expect((await wa.json("/session/session_owner/prompt_async", { parts: [{ type: "text", text: "permission" }] })).status).toBe(204)
+    await settle()
+    admissions.length = 0
 
-    const response = await app.request(
-      `http://localhost/session/session_attacker/permissions/permission_1?directory=${encodeURIComponent(directory)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response: "once" }),
-      },
-    )
+    const response = await wa.json("/session/session_attacker/permissions/permission_1", { response: "once" })
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_session_mismatch" } })
     expect(admissions).toEqual([])
-    expect(calls).toEqual([])
+    await settle()
+    expect(answers).toEqual([])
   })
 
-  // Resolving an adapter can construct one on the host, so a caller the guard
-  // turns away must not reach that when the session is already known.
-  it("does not resolve an adapter for a rejected question reply", async () => {
-    const directory = process.cwd()
-    let resolvedAdapters = 0
-    const app = createSessionRoutes({
-      resolveAdapter: async () => {
-        resolvedAdapters += 1
-        return adapter({})
-      },
-      resolveDirectory: async () => directory,
-      listQuestions: async () => [{ id: "q1", sessionID: "s9", questions: [] }],
-      beforeSessionOperation: () =>
-        new Response(JSON.stringify({ ok: false }), { status: 403, headers: { "Content-Type": "application/json" } }),
-      publishGlobal() {},
+  // A refused reply must leave the question where it was: still pending, the
+  // harness still waiting.
+  it("keeps a rejected question reply away from the harness", async () => {
+    const answers: RequestAnswer[] = []
+    const wa = await workspaceApp({
+      transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
+      sessionAccessPolicy: observingPolicy({ deny: (operation) => operation === "question_response" }),
     })
+    await wa.createSession("s9")
+    expect((await wa.json("/session/s9/prompt_async", { parts: [{ type: "text", text: "question" }] })).status).toBe(204)
+    await settle()
 
-    const explicit = await app.request(
-      `http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}&sessionId=s9`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: [["x"]] }) },
-    )
+    const explicit = await wa.json("/question/q1/reply", { answers: [["x"]] }, { params: { sessionId: "s9" } })
+
     expect(explicit.status).toBe(403)
-    expect(resolvedAdapters).toBe(0)
+    await settle()
+    expect(answers).toEqual([])
+    expect(await (await wa.app.request(wa.url("/question"))).json()).toMatchObject([{ id: "q1", sessionID: "s9" }])
   })
 })
 
 it("publishes a successful session deletion once, on the hub the workspace stream serves, naming a subsession's parent", async () => {
-  const directory = process.cwd()
-  const hub = createRuntimeEventHub()
+  const wa = await workspaceApp()
+  await wa.createSession("parent-1")
+  wa.store().bindSession({
+    sessionId: "s1", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s1",
+    agentSessionId: "s1", title: "child", parentSessionId: "parent-1",
+  })
+  wa.store().recordSessionOwner("s1", { kind: "machine-owner" })
+  wa.store().updateSessionConfig("s1", { harness: { id: "fake", access: "connection" } })
   const events: unknown[] = []
-  hub.subscribeGlobal((event) => { if ((event.payload as { type?: string }).type === "session.deleted") events.push(event) })
+  wa.eventHub.subscribeGlobal((event) => { if ((event.payload as { type?: string }).type === "session.deleted") events.push(event) })
   const bus: string[] = []
   const unsubscribe = workspaceRuntimeBus.subscribe((event) => { bus.push(event.type) })
   try {
-    const app = SessionRoutes(() => adapter({}), {
-      eventHub: hub,
-      getSession: async () => ({ ...buildSession({ id: "s1", directory, title: "child", created: 1, updated: 2 }), parentID: "parent-1" }),
-    })
-    const response = await app.request(`http://localhost/session/s1?directory=${encodeURIComponent(directory)}`, { method: "DELETE" })
+    const response = await wa.app.request(wa.url("/session/s1"), { method: "DELETE" })
     expect(response.status).toBe(200)
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ directory, payload: { type: "session.deleted", properties: { info: { id: "s1", directory, parentID: "parent-1" } } } })
+    expect(events[0]).toMatchObject({ directory: wa.directory, payload: { type: "session.deleted", properties: { info: { id: "s1", directory: wa.directory, parentID: "parent-1" } } } })
     expect(bus.filter((type) => type.startsWith("session."))).toEqual([])
+    expect(wa.transport().closed.map((session) => session.binding.sessionId)).toEqual(["s1"])
   } finally { unsubscribe() }
 })
 
-it("returns the canonical permission reply events in the HTTP acknowledgement", async () => {
-  const directory = process.cwd()
+it("publishes the canonical permission reply event when a permission is answered", async () => {
+  const answers: RequestAnswer[] = []
+  const published: CompatEvent[] = []
+  const wa = await workspaceApp({
+    onCompatEvent: (event) => published.push(event.payload),
+    transport: () => scripted({ permission: asking((sessionId) => permission("permission_1", sessionId), answers) }, { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
+  })
+  await wa.createSession("session_owner")
+  expect((await wa.json("/session/session_owner/prompt_async", { parts: [{ type: "text", text: "permission" }] })).status).toBe(204)
+  await settle()
+  published.length = 0
+
+  const response = await wa.json("/session/session_owner/permissions/permission_1", { response: "once" })
+
+  expect(response.status).toBe(200)
   const reply: CompatEvent = {
-    id: "event_permission_reply",
+    id: "permission.replied:session_owner:permission_1",
     type: "permission.replied",
     properties: { sessionID: "session_owner", requestID: "permission_1", reply: "once" },
   }
-  const published: CompatEvent[] = []
-  const app = createSessionRoutes({
-    resolveAdapter: async () => ({ ...adapter({}), respondPermission: async () => ({ events: [reply] }) }),
-    resolveDirectory: async () => directory,
-    listPermissions: async () => [{ id: "permission_1", sessionID: "session_owner", permission: "execute", patterns: [], always: [], metadata: {} }],
-    publishGlobal(event) { published.push(event.payload) },
-  })
-  const response = await app.request(`http://localhost/session/session_owner/permissions/permission_1?directory=${encodeURIComponent(directory)}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ response: "once" }),
-  })
-  expect(response.status).toBe(200)
-  expect(await response.json()).toEqual({ ok: true, events: [reply] })
-  expect(published).toEqual([reply])
+  expect(await response.json()).toMatchObject({ ok: true })
+  await settle()
+  expect(published.filter((event) => event.type === "permission.replied")).toEqual([reply])
+  expect(answers).toEqual([{ kind: "permission", decision: "allow_once" }])
 })
 
-it("requires an offered provider option and forwards its opaque ID to the adapter", async () => {
-  const calls: unknown[] = []
-  const app = createSessionRoutes({
-    resolveAdapter: () => ({ ...adapter({}), respondPermission: async (_binding, _id, decision, optionId) => { calls.push({ decision, optionId }) } }),
-    resolveDirectory: () => "/work",
-    listPermissions: async () => [{ id: "permission-provider", sessionID: "session_owner", permission: "mcp", patterns: [], always: [], metadata: {}, options: [{ id: "provider/session-policy", label: "Use for this session" }] }],
-    publishGlobal() {},
+it("requires an offered provider option and forwards its opaque ID to the harness", async () => {
+  const answers: RequestAnswer[] = []
+  const options = [{ optionId: "provider/session-policy", kind: "allow_once" as const, name: "Use for this session" }]
+  const wa = await workspaceApp({
+    transport: () => scripted({ permission: asking((sessionId) => permission("permission-provider", sessionId, { options }), answers) }, { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
   })
-  const request = (body: unknown) => app.request("http://localhost/session/session_owner/permissions/permission-provider?directory=%2Fwork", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  })
+  await wa.createSession("session_owner")
+  expect((await wa.json("/session/session_owner/prompt_async", { parts: [{ type: "text", text: "permission" }] })).status).toBe(204)
+  await settle()
+  expect(await (await wa.app.request(wa.url("/permission"))).json()).toMatchObject([{ id: "permission-provider", options: [{ id: "provider/session-policy", label: "Use for this session" }] }])
+
+  const request = (body: unknown) => wa.json("/session/session_owner/permissions/permission-provider", body)
   for (const body of [{ response: "once" }, { optionId: "not-offered" }, { optionId: "provider/session-policy", response: "always" }]) {
     expect((await request(body)).status).toBe(400)
   }
-  expect(calls).toEqual([])
+  await settle()
+  expect(answers).toEqual([])
   const response = await request({ optionId: "provider/session-policy" })
   expect(response.status).toBe(200)
-  expect(await response.json()).toEqual({ ok: true, events: [expect.objectContaining({ type: "permission.replied", properties: { sessionID: "session_owner", requestID: "permission-provider", optionId: "provider/session-policy" } })] })
-  expect(calls).toEqual([{ decision: "allow_once", optionId: "provider/session-policy" }])
+  expect(await response.json()).toMatchObject({ ok: true })
+  await settle()
+  expect(answers).toEqual([{ kind: "permission", decision: "allow_once", optionId: "provider/session-policy" }])
 })
 
+it("settles each offered provider option with the kind the harness offered it as", async () => {
+  const answers: RequestAnswer[] = []
+  const published: CompatEvent[] = []
+  const options = [
+    { optionId: "provider/once", kind: "allow_once" as const, name: "Allow once" },
+    { optionId: "provider/always", kind: "allow_always" as const, name: "Always allow" },
+    { optionId: "provider/reject", kind: "reject_once" as const, name: "Reject" },
+    { optionId: "provider/never", kind: "reject_always" as const, name: "Reject always" },
+  ]
+  const ask = (requestId: string) => asking((sessionId) => permission(requestId, sessionId, { options }), answers)
+  const wa = await workspaceApp({
+    onCompatEvent: (event) => published.push(event.payload),
+    transport: () => scripted({ always: ask("permission-always"), reject: ask("permission-reject"), never: ask("permission-never") },
+      { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
+  })
+  await wa.createSession("session_owner")
 
-it("serves and answers a persisted provider option through public permission routes after reopening the workspace store", async () => {
-  const root = mkdtempSync(join(tmpdir(), "permission-route-store-"))
-  const optionId = '{"persist":"session"}'
-  let store = new RuntimeStore(root)
-  try {
-    store.bindSession({ sessionId: "permission-session", directory: "/work", agentSessionId: "native-session", createdAt: 1 })
-    const permission = { id: "persisted-permission", sessionID: "permission-session", permission: "mcp", patterns: [], always: [], metadata: {}, options: [{ id: optionId, label: "Accept for session" }] }
-    store.appendEvent({ sessionId: permission.sessionID, payload: permissionAsked(permission) })
-    store.close()
-    store = new RuntimeStore(root)
-    const selected: string[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: () => ({ ...adapter({}), respondPermission: async (_binding, id, _decision, choice) => {
-        if (choice === undefined) throw new Error("Expected provider option")
-        selected.push(choice)
-        const event = permissionReplied(permission.sessionID, id, { optionId: choice })
-        store.appendEvent({ sessionId: permission.sessionID, payload: event })
-        return { events: [event] }
-      } }),
-      resolveDirectory: () => "/work",
-      listPermissions: async () => store.listPermissions("/work"),
-      publishGlobal() {},
-    })
-    const listed = await app.request("http://localhost/permission?directory=%2Fwork")
-    expect(await listed.json()).toEqual([permission])
-    const respond = (body: unknown) => app.request("http://localhost/session/permission-session/permissions/persisted-permission?directory=%2Fwork", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    })
-    expect((await respond({ response: "always" })).status).toBe(400)
-    expect(store.listPermissions("/work")).toEqual([permission])
-    const response = await respond({ optionId })
+  for (const choice of ["always", "reject", "never"]) {
+    expect((await wa.json("/session/session_owner/prompt_async", { parts: [{ type: "text", text: choice }] })).status).toBe(204)
+    await settle()
+    const response = await wa.json(`/session/session_owner/permissions/permission-${choice}`, { optionId: `provider/${choice}` })
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true, events: [expect.objectContaining({ properties: { sessionID: permission.sessionID, requestID: permission.id, optionId } })] })
-    expect(selected).toEqual([optionId])
-    store.close()
-    store = new RuntimeStore(root)
-    expect(store.listPermissions("/work")).toEqual([])
-  } finally {
-    store.close()
-    rmSync(root, { recursive: true, force: true })
+    await settle()
   }
+
+  expect(answers).toEqual([
+    { kind: "permission", decision: "allow_always", optionId: "provider/always" },
+    { kind: "permission", decision: "deny", optionId: "provider/reject" },
+    { kind: "permission", decision: "reject_always", optionId: "provider/never" },
+  ])
+  expect(published.filter((event) => event.type === "permission.replied")).toMatchObject([
+    { properties: { requestID: "permission-always", reply: "always" } },
+    { properties: { requestID: "permission-reject", reply: "reject" } },
+    { properties: { requestID: "permission-never", reply: "reject" } },
+  ])
+})
+
+it("answers and declines an elicitation-only harness's requests through the question routes", async () => {
+  const answers: RequestAnswer[] = []
+  const published: CompatEvent[] = []
+  const elicitation = (requestId: string): TurnRequest => ({
+    kind: "elicitation", requestId, mode: "form", message: "Name the branch",
+    schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+  })
+  const wa = await workspaceApp({
+    onCompatEvent: (event) => published.push(event.payload),
+    transport: () => scripted({ form: asking(() => elicitation("elicit-form"), answers), decline: asking(() => elicitation("elicit-decline"), answers) },
+      { capabilities: { requests: { permissions: false, questions: false, elicitation: true } } }),
+  })
+  await wa.createSession("s1")
+
+  expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "form" }] })).status).toBe(204)
+  await settle()
+  expect(await (await wa.app.request(wa.url("/question"))).json()).toMatchObject([{ id: "elicit-form", sessionID: "s1" }])
+  expect((await wa.json("/question/elicit-form/reply", { answers: [[JSON.stringify({ name: "main" })]] })).status).toBe(200)
+  await settle()
+
+  expect((await wa.json("/session/s1/prompt_async", { parts: [{ type: "text", text: "decline" }] })).status).toBe(204)
+  await settle()
+  expect((await wa.json("/question/elicit-decline/reject", {})).status).toBe(200)
+  await settle()
+
+  expect(answers).toEqual([{ kind: "form", values: { name: "main" } }, { kind: "rejected" }])
+  expect(published.filter((event) => event.type === "question.replied" || event.type === "question.rejected")).toEqual([
+    { id: "question.replied:s1:elicit-form", type: "question.replied", properties: { sessionID: "s1", requestID: "elicit-form", answers: [[JSON.stringify({ name: "main" })]] } },
+    { id: "question.rejected:s1:elicit-decline", type: "question.rejected", properties: { sessionID: "s1", requestID: "elicit-decline" } },
+  ])
+  expect(await (await wa.app.request(wa.url("/session/s1/capabilities"))).json()).toMatchObject({ questions: true })
+})
+
+it("retires a permission a previous owner asked and never settled, so the reopened workspace neither lists nor answers it", async () => {
+  const optionId = '{"persist":"session"}'
+  const capabilities = { requests: { permissions: true, questions: false, elicitation: false } }
+  const wa = await workspaceApp({ fakeTransport: { capabilities } })
+  await wa.createSession("permission-session")
+  const request = permission("persisted-permission", "permission-session", { options: [{ optionId, kind: "allow_once", name: "Accept for session" }] })
+  if (request.kind !== "permission") throw new Error("expected a permission request")
+  const pending = { sessionId: "permission-session", request, askedAt: 1, upstreamSessionId: "upstream-permission-session" }
+  const ports = createStoreBrokerPorts(wa.store(), { ownerGeneration: "previous-owner", patternEvaluator: async () => {}, publishers: wa.eventHub, reportOwnerFailure: (_sessionId, error) => { throw error },
+    retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error } })
+  await ports.publish({ id: "permission.asked:permission-session:persisted-permission", type: "permission.asked", properties: request.permission }, pending)
+  expect(wa.store().listPermissions(wa.directory).map((row) => row.id)).toEqual(["persisted-permission"])
+  await wa.dispose({ keepRoot: true })
+  apps.splice(apps.indexOf(wa), 1)
+
+  const reopened = await workspaceApp({ root: wa.root, fakeTransport: { capabilities } })
+  expect(await (await reopened.app.request(reopened.url("/permission"))).json()).toEqual([])
+  const response = await reopened.json("/session/permission-session/permissions/persisted-permission", { optionId })
+  expect(response.status).toBe(404)
+  expect(reopened.store().listPermissions(reopened.directory)).toEqual([])
+})
+
+describe("session create ownership", () => {
+  it("a host that reads the session index must name its own workspace", () => {
+    expect(() => createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), sessionIdWorkspace: () => undefined }))
+      .toThrow("sessionIdWorkspace requires a target workspace")
+  })
+
+  it("refuses an id another workspace holds before any harness launches", async () => {
+    const app = await workspaceApp({ sessionIdWorkspace: (sessionId) => sessionId === "ses_foreign" ? "ws_other" : "ws_fake" })
+    const refused = await app.json("/session", { id: "ses_foreign" }, { params: { connectionId: "fake" } })
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_create_conflict" } })
+    expect(app.transports.flatMap((transport) => transport instanceof FakeTransport ? transport.starts : [])).toEqual([])
+    await app.createSession("ses_own")
+    expect(app.transport().starts.map((start) => start.sessionId)).toEqual(["ses_own"])
+  })
+})
+
+describe("archiving a running session", () => {
+  it("does not start a prompt queued behind the cancelled turn", async () => {
+    const transport = scripted({
+      hold: async function* ({ signal }) {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+      },
+    })
+    const wa = await workspaceApp({ transport: () => transport })
+    await wa.createSession("ses_archive_queue")
+    expect((await wa.json("/session/ses_archive_queue/prompt_async", { parts: [{ type: "text", text: "hold" }] })).status).toBe(204)
+    for (let attempt = 0; attempt < 200 && transport.turns.length === 0; attempt++) await settle()
+    const queued = await wa.json("/session/ses_archive_queue/prompt_async", { messageID: "msg_after_archive", parts: [{ type: "text", text: "queued" }], delivery: "queue" })
+    expect(await queued.json()).toEqual({ delivery: "queue" })
+    expect((await wa.json("/session/ses_archive_queue", { time: { archived: 77 } }, { method: "PATCH" })).status).toBe(200)
+    for (let attempt = 0; attempt < 20; attempt++) await settle()
+    expect(transport.turns.map(promptText)).toEqual(["hold"])
+    expect(wa.store().getSession("ses_archive_queue")).toMatchObject({ status: "idle", time: { archived: 77 } })
+  })
+})
+
+describe("archiving between a queued prompt's claim and its admission", () => {
+  it("leaves the claimed prompt unstarted and queued", async () => {
+    let gate: Promise<void> | undefined
+    let reached!: () => void
+    const reachedGate = new Promise<void>((resolve) => { reached = resolve })
+    let open!: () => void
+    class GatedTransport extends ScriptedTransport {
+      override async capabilities() {
+        if (gate) { reached(); await gate }
+        return super.capabilities()
+      }
+    }
+    let finish!: () => void
+    const transport = new GatedTransport({
+      first: async function* () { await new Promise<void>((resolve) => { finish = resolve }) },
+    })
+    const wa = await workspaceApp({ transport: () => transport })
+    await wa.createSession("ses_archive_gap")
+    expect((await wa.json("/session/ses_archive_gap/prompt_async", { parts: [{ type: "text", text: "first" }] })).status).toBe(204)
+    for (let attempt = 0; attempt < 200 && transport.turns.length === 0; attempt++) await settle()
+    expect(await (await wa.json("/session/ses_archive_gap/prompt_async", { messageID: "msg_gap", parts: [{ type: "text", text: "queued" }], delivery: "queue" })).json())
+      .toEqual({ delivery: "queue" })
+    gate = new Promise<void>((resolve) => { open = resolve })
+    finish()
+    await reachedGate
+    expect((await wa.json("/session/ses_archive_gap", { time: { archived: 88 } }, { method: "PATCH" })).status).toBe(200)
+    open()
+    for (let attempt = 0; attempt < 20; attempt++) await settle()
+    expect(transport.turns.map(promptText)).toEqual(["first"])
+    expect(wa.store().listQueuedPrompts().map((row) => row.messageId)).toEqual(["msg_gap"])
+  })
 })

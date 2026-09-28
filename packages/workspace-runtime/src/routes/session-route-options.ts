@@ -1,25 +1,29 @@
 import type { Context } from "hono"
-import { HTTPException } from "hono/http-exception"
 import type {
+  AgentContentPart,
   AgentMessage,
-  AgentPermission,
-  AgentQuestion,
-  AgentRuntime,
-  AgentRuntimeRecovery,
   AgentSession,
-  RuntimeDirectory,
+  AgentSessionStartBinding,
+  AgentSessionStarts,
   SessionConfig,
-  SessionConfigRequestUpdate,
-  SessionModelGroup,
-} from "@claxedo/agent-sdk-runtime"
-import type { AgentContentPart, AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
-import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+  SessionHarness,
+} from "@claxedo/agent-runtime-contract"
+import type { ConnectionSecretAuthority, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { TurnActor, TurnOrigin } from "@claxedo/harness/contract"
+import { CredentialSelectionError } from "@claxedo/harness/registry"
+import type { AgentRuntime, AgentRuntimeRecovery, HarnessTarget } from "../host/runtime"
 import type { CompatEnvelope } from "../compat-events"
 import type { ActiveTurnScope, SessionPromptBody } from "../session/service"
 import type { SessionDeliveryOwner } from "../session/delivery-owner"
 import type { TurnOutline } from "../session/turn-outline"
-import { sessionRequestProvenance, type SessionAccessPolicy } from "../session-access-policy"
+import {
+  sessionAccessContext,
+  sessionRequestProvenance,
+  type SessionAccessContextReader,
+  type SessionAccessPolicy,
+  type SessionTurnOrigin,
+} from "../session-access-policy"
 import type { ChildSessionHost } from "./session-children"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 
@@ -53,69 +57,20 @@ export type SessionRouteContext = Context
 
 type Ctx = SessionRouteContext
 
-export async function readRuntimeSession(
-  opts: SessionRouteOptions,
-  c: Ctx,
-  directory: RuntimeDirectory,
-  sessionId: string,
-  adapter?: AgentHarnessAdapter,
-) {
-  if (opts.getSession) return await opts.getSession(c, directory, sessionId) ?? undefined
-  const resolvedAdapter = adapter ?? await opts.resolveAdapter(c, { sessionId, directory })
-  const session = await resolvedAdapter.getSession(await requireExecutionBinding(opts, c, directory, sessionId, resolvedAdapter))
-  return session ?? undefined
-}
-
-export async function requireExecutionBinding(
-  opts: SessionRouteOptions,
-  c: Ctx,
-  directory: RuntimeDirectory,
-  sessionId: string,
-  adapter: AgentHarnessAdapter,
-) {
-  const binding = await opts.resolveExecutionBinding?.(c, directory, sessionId, adapter)
-  if (!binding) throw new HTTPException(409, { message: `Session ${sessionId} has no complete execution binding` })
-  return binding
-}
-
-export type CreatedSessionInput = {
-  parentID?: string
-  permissionCeiling?: SessionConfig["permissionCeiling"]
-  instructions?: string
-  group?: SessionModelGroup
-}
-
 export type SessionRouteOptions = {
   sessionStarts?: AgentSessionStarts
-  resolveSessionStartBinding?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, operationId: string) => AgentSessionStartBinding
-  resolveAdapter: (
-    c: Ctx,
-    input?: {
-      sessionId?: string
-      directory?: string
-    },
-  ) => Promise<AgentHarnessAdapter> | AgentHarnessAdapter
-  resolveRuntime?: (
-    c: Ctx,
-    input?: {
-      sessionId?: string
-      directory?: string
-    },
-  ) => Promise<AgentRuntime | undefined> | AgentRuntime | undefined
+  /** The one runtime host of this workspace, built on first use. */
+  runtime: (c: Ctx) => Promise<AgentRuntime>
+  /** The harness a draft read runs on when the request names none. */
+  defaultHarness: () => SessionHarness
   /**
    * The runtime that already owns this session, or nothing. Recovery resolves
-   * no harness and awaits nothing: `resolveRuntime` builds an adapter when the
-   * session has none, which starts the very compute a caller is trying to
-   * contain, and it refuses outright once the workspace is closing — which is
-   * when recovery most has to answer.
+   * no harness and awaits nothing: `runtime` builds the host when there is
+   * none, which starts the very compute a caller is trying to contain, and it
+   * refuses outright once the workspace is closing — which is when recovery
+   * most has to answer.
    */
   resolveRecoveryOwner?: (c: Ctx, input: { sessionId: string }) => AgentRuntimeRecovery | undefined
-  resolveExecutionBinding?: (
-    c: Ctx,
-    directory: RuntimeDirectory,
-    sessionId: string,
-    adapter: AgentHarnessAdapter,
-  ) => Promise<AgentExecutionBinding | undefined> | AgentExecutionBinding | undefined
   // Upper bound on how long POST /prompt_async waits for the turn's admission
   // decision before falling back to its fire-and-forget 204 ack. Guards against a
   // wedged turns.start (adapter spawn that never settles admission and never
@@ -129,45 +84,25 @@ export type SessionRouteOptions = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: CreatedSessionInput & { start?: AgentSessionStartBinding }) => Promise<{ id: string }>
-  forkSession?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string, messageId: string, id?: string) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   /** Where a prompt admitted behind a running turn is persisted while it waits. */
   queuedPrompts?: SessionDeliveryOwner
-  listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
-  /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
-  listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
   getStatus?: (c: Ctx, directory: RuntimeDirectory) => SessionStatusSnapshot | Promise<SessionStatusSnapshot>
   afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
+  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   afterGetSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
-  getSessionConfig?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<SessionConfig>
-  requestedSessionHarness?: (c: Ctx) => SessionConfig["harness"] | undefined
+  getSessionConfig?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<SessionConfig>
+  requestedSessionHarness: (c: Ctx) => SessionConfig["harness"] | undefined
   getTodos?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<unknown[] | undefined> | unknown[] | undefined
-  getTurnOutline?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<TurnOutline | undefined> | TurnOutline | undefined
-  updateSessionConfig?: (
-    c: Ctx,
-    directory: RuntimeDirectory,
-    sessionId: string,
-    update: SessionConfigRequestUpdate,
-    adapter: AgentHarnessAdapter,
-  ) => Promise<SessionConfig>
-  switchSessionHarness?: (
-    c: Ctx,
-    directory: RuntimeDirectory,
-    sessionId: string,
-    update: SessionConfigRequestUpdate,
-    adapter: AgentHarnessAdapter,
-  ) => Promise<SessionConfig>
   getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
   getMessagePage?: (
     c: Ctx,
     directory: RuntimeDirectory,
     sessionId: string,
     page: AgentMessagePageInput,
-    adapter: AgentHarnessAdapter,
   ) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
   getPart?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messageId: string, partId: string) => Promise<AgentContentPart | undefined> | AgentContentPart | undefined
   /**
@@ -182,6 +117,7 @@ export type SessionRouteOptions = {
     turnId: string,
   ) => Promise<AgentTurnCoveragePage | undefined> | AgentTurnCoveragePage | undefined
   getMessageSnapshot?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<MessageSnapshot | undefined> | MessageSnapshot | undefined
+  getTurnOutline?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<TurnOutline | undefined> | TurnOutline | undefined
   afterUpdateSession?: (
     c: Ctx,
     directory: RuntimeDirectory,
@@ -206,7 +142,6 @@ export type SessionRouteOptions = {
   sessionAccessPolicy?: SessionAccessPolicy
   createActiveTurnScope?: (input: {
     c: Ctx
-    adapter: AgentHarnessAdapter
     directory: RuntimeDirectory
     sessionId: string
   }) => ActiveTurnScope | undefined
@@ -214,6 +149,58 @@ export type SessionRouteOptions = {
     c: Ctx,
     input: { sessionId: string; directory: RuntimeDirectory; body: SessionPromptBody },
   ) => Promise<SessionPromptBody> | SessionPromptBody
+}
+
+type Opts = SessionRouteOptions
+
+export async function readSession(
+  opts: Opts,
+  c: Ctx,
+  directory: RuntimeDirectory,
+  sessionId: string,
+) {
+  if (opts.getSession) return await opts.getSession(c, directory, sessionId) ?? undefined
+  return await (await opts.runtime(c)).sessions.get(sessionId, directory) ?? undefined
+}
+
+/**
+ * Whose accounts a session created by this request spends: the verified
+ * person, whoever relays it on their behalf, or this runtime's owner for a
+ * loopback caller and for a platform service that names nobody. A human the
+ * token does not name is refused.
+ */
+export function sessionOwner(c: SessionAccessContextReader): TurnActor {
+  const actor = sessionAccessContext(c).actor
+  if (!actor) return { kind: "machine-owner" }
+  if (actor.userId) return { kind: "person", userId: actor.userId }
+  if (actor.actorKind === "agent") return { kind: "machine-owner" }
+  throw new CredentialSelectionError("account_unavailable", "Verified account owner is unavailable")
+}
+
+/** Who sent a turn, for its record only: a turn spends its session's stored owner's accounts, never the sender's. */
+function turnSender(actor: { actorId: string; userId?: string } | undefined): TurnActor {
+  return actor ? { kind: "person", userId: actor.userId ?? actor.actorId } : { kind: "machine-owner" }
+}
+
+export function turnOriginOf(origin: SessionTurnOrigin | undefined, c: Ctx): TurnOrigin {
+  if (origin?.provenance === "relay-replayed") return { actor: turnSender(origin.actor), via: "relay", reissued: false }
+  return { actor: turnSender(sessionAccessContext(c).actor), via: "loopback", reissued: false }
+}
+
+export async function sessionConfigOf(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<SessionConfig> {
+  if (opts.getSessionConfig) return await opts.getSessionConfig(c, directory, sessionId)
+  return await (await opts.runtime(c)).reads.sessionConfig(sessionId, directory, requestSecretAuthority(c).secretAuthority)
+}
+
+/** A read on one session, carrying the proof its connection is attached under when this process does not hold it yet. */
+export function sessionTarget(c: Ctx, sessionId: string, directory: RuntimeDirectory): HarnessTarget {
+  return { sessionId, ...(directory ? { directory } : {}), ...requestSecretAuthority(c) }
+}
+
+/** The relay proof this request was admitted under, which a connection's secrets are leased with while the request runs. */
+export function requestSecretAuthority(c: Ctx): { secretAuthority?: ConnectionSecretAuthority } {
+  const credential = sessionAccessContext(c).credential
+  return credential ? { secretAuthority: { kind: "request", credential } } : {}
 }
 
 export async function after(input: void | Promise<void> | undefined) {
@@ -232,7 +219,7 @@ export async function after(input: void | Promise<void> | undefined) {
  * control-plane round trip, while the same runtime answers a relay-replayed
  * member only through the authority that knows who created what.
  */
-export function managedSessionLifecycle(opts: SessionRouteOptions, c: Ctx) {
+export function managedSessionLifecycle(opts: Opts, c: Ctx) {
   return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
     && sessionRequestProvenance(c) === "relay-replayed"
 }

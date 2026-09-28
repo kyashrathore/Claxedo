@@ -32,6 +32,7 @@ import type {
   CredentialWrite,
   SetActiveCredentialsResult,
 } from "../credentials/types"
+import type { AccountSelections, AccountSource, AccountSources } from "../credentials/account-holder"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
 import type { HarnessId } from "@claxedo/agent-runtime-contract"
 import type { MachineLogin } from "../credentials/machine-login"
@@ -87,13 +88,13 @@ export type ControlPlaneCredentials = {
    * account to choose between, and reports the operation as unsupported rather
    * than pretending the choice was made.
    */
-  setActiveCredentials?: (ids: readonly string[], org?: string) => Promise<SetActiveCredentialsResult>
+  setActiveCredentials?: (ids: readonly string[], org: string | undefined, actor: string) => Promise<SetActiveCredentialsResult>
   /**
    * Leave these providers with no marked account, so each one's harness runs on
    * the login its own CLI holds. Optional for the same reason as the mark: a
    * store with one record per provider has no choice to withdraw.
    */
-  clearActiveCredentials?: (providerIds: readonly string[], org?: string) => Promise<{ cleared: string[] }>
+  clearActiveCredentials?: (providerIds: readonly string[], org: string | undefined, actor: string) => Promise<{ cleared: string[] }>
   /**
    * What each harness on THIS machine says about the login it would run on.
    * Absent wherever the host is not the machine the harnesses live on.
@@ -102,9 +103,10 @@ export type ControlPlaneCredentials = {
     harnesses?: readonly HarnessId[],
     options?: { fresh?: boolean },
   ) => Promise<MachineLogin[]>
+  /** A person's account for a provider when `owner` names them, else the org's own row; the marked account first. */
   getCredentialByProvider: (
     providerId: string,
-    kind?: CredentialKind,
+    read: { owner: string | null; kind?: CredentialKind },
     org?: string,
   ) => Promise<CredentialMetadata | undefined>
   getCredential?: (id: string, org?: string) => Promise<CredentialMetadata | undefined>
@@ -138,10 +140,11 @@ export type ControlPlaneCredentials = {
     windows: readonly CredentialUsageWindow[],
     at: number,
   ) => Promise<void>
-  discoverLocalCredentials?: (org?: string) => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
+  discoverLocalCredentials?: (org: string | undefined, owner: string) => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
   saveDiscoveredCredentials?: (
     input: { discovery_id: string; items: CredentialDiscoverySelection[] },
-    org?: string,
+    org: string | undefined,
+    owner: string,
   ) => Promise<{
     saved: Array<{ credential_id: string; provider_id: string; kind: CredentialKind }>
   }>
@@ -160,7 +163,10 @@ export type ControlPlaneCredentials = {
   ) => Promise<boolean>
   /** Rename a credential, leaving the auth material it stores untouched. */
   updateCredentialLabel?: (id: string, label: string, org?: string) => Promise<boolean>
-  syncLocalCredentials: (providerIds?: string[], org?: string) => Promise<CredentialSyncResult>
+  syncLocalCredentials: (providerIds: string[] | undefined, org: string | undefined, owner: string) => Promise<CredentialSyncResult>
+  accountSelections: (org?: string) => Promise<AccountSelections>
+  /** Record, for each provider, whether `person`'s sessions spend their own account or the team's; answers their choices after the write. */
+  setAccountSources: (providerIds: readonly string[], source: AccountSource, org: string | undefined, person: string) => Promise<AccountSources>
 }
 
 /**

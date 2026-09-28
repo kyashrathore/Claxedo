@@ -11,6 +11,20 @@ The package owns the generic pieces:
 - `SandboxDriver`
 - provider drivers for Cloudflare, Daytona, Docker, fetch bridge, Modal, and Vercel
 
+`drivers/local-brokering` is a macOS test driver. The e2e self-hosted stack
+injects its instance programmatically; it has no product driver ID or product
+configuration path. It runs the workspace runtime in a private directory under
+`sandbox-exec`, permitting outbound TCP to its HTTP proxy and the specified
+control-plane and relay loopback ports. The profile lets only `/bin/ps` execute
+outside the sandbox because macOS refuses its setuid binary inside
+`sandbox-exec`; the runtime stays under the network policy. The proxy accepts
+HTTPS CONNECT only for a registered secret host with an explicit loopback test
+upstream, terminates it with a private test CA, and applies the egress broker's
+placeholder substitution before forwarding. The runtime trusts the CA
+certificate, while its sandbox profile denies access to the CA and leaf private
+keys. Other CONNECT destinations are refused. It is not a production sandbox
+provider.
+
 It deliberately does not own Claxedo product auth, billing, app storage schema, routes, or relay tokens. Applications provide those through adapters and call `createSandboxManager`.
 
 ## Install
@@ -115,6 +129,15 @@ never logged, and never captured in a driver snapshot.
 > named placeholder as the complete credential header, or with a Bearer prefix
 > for Authorization API-key clients. Modal remains `none`: its encrypted store
 > exposes credentials as readable environment variables inside the sandbox.
+
+**Never readable is not never spendable.** The placeholder sits in every
+process's environment, and the edge attaches the real value to any request to
+an allowlisted host that carries it, with no condition on which session or
+person sent it. Anything that runs in the sandbox can therefore spend what it
+was delivered. Claxedo delivers a workspace's sandbox only its owner's chosen
+provider accounts, never another person's, and treats the sandbox as shared
+trust among everyone admitted to that workspace: their sessions and shells can
+spend the owner's delivered accounts (owner ruling, 2026-09-28).
 
 ## Egress containment
 

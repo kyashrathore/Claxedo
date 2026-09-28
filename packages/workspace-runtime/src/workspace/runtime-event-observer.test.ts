@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../runtime-event-hub"
+import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../projection/runtime-event-hub"
+import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 
 /**
@@ -11,7 +12,7 @@ import { createWorkspaceHost } from "./runtime"
 test("a host observer is handed every runtime event the hub publishes, and stops when the host is disposed", async () => {
   const eventHub = createRuntimeEventHub()
   const seen: RuntimeEventEnvelope[] = []
-  const host = createWorkspaceHost({ eventHub, onRuntimeEvent: (event) => seen.push(event) })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), eventHub, onRuntimeEvent: (event) => seen.push(event) })
 
   eventHub.publishRuntime({
     directory: "/tmp/workspace",

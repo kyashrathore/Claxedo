@@ -66,6 +66,7 @@ type RuntimeAccessTokenSignerBaseInput = {
   hostId: string
   principalKind: "user" | "service"
   actorId: string
+  userId?: string
   actorKind: "human" | "agent"
   actorPublicId?: string
   actorName?: string
@@ -228,6 +229,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
     const token = await new SignJWT({
       principal_kind: input.principalKind,
       actor_id: input.actorId,
+      ...(input.userId ? { user_id: input.userId } : {}),
       actor_kind: input.actorKind,
       ...(input.actorPublicId && input.actorName
         ? {

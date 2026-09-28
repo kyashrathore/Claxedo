@@ -89,8 +89,8 @@ export function providerAuthOrg(org?: string | null): string {
 
 export type ProviderAuthService = {
   methods: () => ProviderAuthMethods
-  authorize: (input: { providerId: string; method?: number; inputs?: Record<string, string>; org?: string }) => Promise<ProviderAuthorization | null>
-  callback: (input: { providerId: string; method?: number; code?: string; org?: string; signal?: AbortSignal }) => Promise<boolean>
+  authorize: (input: { providerId: string; method?: number; inputs?: Record<string, string>; org?: string; owner: string }) => Promise<ProviderAuthorization | null>
+  callback: (input: { providerId: string; method?: number; code?: string; org?: string; owner: string; signal?: AbortSignal }) => Promise<boolean>
 }
 
 type ProviderAuthOptions = {
@@ -155,7 +155,7 @@ export function createProviderAuthService(
    * separator cannot forge another tenant's key.
    */
   const pending = new Map<string, CodexPending>()
-  const pendingKey = (org: string, providerId: string) => JSON.stringify([org, providerId])
+  const pendingKey = (org: string, providerId: string, owner: string) => JSON.stringify([org, providerId, owner])
   const request = options.fetch ?? globalThis.fetch
   const clock = options.now ?? Date.now
   const wait = options.sleep ?? sleep
@@ -164,7 +164,7 @@ export function createProviderAuthService(
 
   const methods = () => providerAuthMethods()
 
-  const authorize = async (input: { providerId: string; method?: number; org?: string }) => {
+  const authorize = async (input: { providerId: string; method?: number; org?: string; owner: string }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)
     if (method.type !== "oauth") {
       throw new ProviderAuthError("provider_auth_method_not_oauth", "Selected provider method is not OAuth")
@@ -191,7 +191,7 @@ export function createProviderAuthService(
     }
 
     const org = providerAuthOrg(input.org)
-    pending.set(pendingKey(org, input.providerId), {
+    pending.set(pendingKey(org, input.providerId, input.owner), {
       providerId: input.providerId,
       org,
       deviceAuthId: body.device_auth_id,
@@ -207,7 +207,7 @@ export function createProviderAuthService(
     }
   }
 
-  const callback = async (input: { providerId: string; method?: number; code?: string; org?: string; signal?: AbortSignal }) => {
+  const callback = async (input: { providerId: string; method?: number; code?: string; org?: string; owner: string; signal?: AbortSignal }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)
     if (method.type !== "oauth") {
       throw new ProviderAuthError("provider_auth_method_not_oauth", "Selected provider method is not OAuth")
@@ -217,7 +217,7 @@ export function createProviderAuthService(
     }
 
     const org = providerAuthOrg(input.org)
-    const key = pendingKey(org, input.providerId)
+    const key = pendingKey(org, input.providerId, input.owner)
     const item = pending.get(key)
     // An authorization started by ANOTHER tenant is not visible here at all —
     // this reads as "never started", which is what it is for this caller.
@@ -247,11 +247,10 @@ export function createProviderAuthService(
     // address off the login's own claims each of a reader's ChatGPT logins is
     // listed under the same words and none of them can be told apart.
     const email = emailFromClaims({ ...(tokens.id_token ? { id_token: tokens.id_token } : {}), access_token: tokens.access_token })
-    // Org-scoped writes: without the scope both statements ran against the
-    // single-tenant partition, so a signed multi-org box wrote every tenant's
-    // OAuth login into the same rows.
-    await credentials.deleteCredentialsByProvider(input.providerId, undefined, org)
+    // Scoped to the caller's org and person: a signed multi-org box holds every
+    // tenant's and every person's OAuth logins in one table.
     await credentials.putCredential({
+      owner: input.owner,
       provider_id: input.providerId,
       kind: "oauth_token",
       source: "managed",

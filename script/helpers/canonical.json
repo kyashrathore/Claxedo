@@ -1,6 +1,13 @@
 {
   "canonical": [
     {
+      "module": "@claxedo/helpers/skill-frontmatter",
+      "owner": "packages/claxedo-helpers/src/skill-frontmatter.ts",
+      "names": [
+        "decodeSkillFrontmatter"
+      ]
+    },
+    {
       "module": "@claxedo/helpers/guards",
       "owner": "packages/claxedo-helpers/src/guards.ts",
       "names": [

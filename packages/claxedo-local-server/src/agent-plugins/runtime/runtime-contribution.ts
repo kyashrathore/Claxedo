@@ -15,11 +15,12 @@ import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/
 import { isAgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/workspace-runtime/http"
+import { acpAgentPluginAdapter } from "./adapters/acp"
 import { claudeAgentPluginAdapter } from "./adapters/claude"
 import { codexAgentPluginAdapter } from "./adapters/codex"
 import { cursorAgentPluginAdapter } from "./adapters/cursor"
 import { openCodeAgentPluginAdapter } from "./adapters/opencode"
-import type { RuntimeMcpServerProjection } from "./adapters/types"
+import { runtimeMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import { clearActiveGeneration } from "./generation"
 import {
   AgentPluginMaterializationError,
@@ -163,38 +164,6 @@ function executionKey(execution: AgentPluginMaterializationExecution) {
   return execution.mode === "selected" ? `selected:${execution.selectionHash}` : "default"
 }
 
-/**
- * Resolve gateway placeholders into harness-facing MCP projections.
- *
- * `env` is wherever the brokered secret VALUES live for this runtime: the
- * sandbox's process environment on a VM, or the desktop daemon's in-memory
- * map of the credentials the signed pull carried. Either way the name in the
- * apply request is the key and the value is the complete Authorization header.
- * Daytona substitutes that entire value for its opaque reference.
- */
-export function runtimeMcpServers(
-  rows: AgentPluginRuntimeApplyRequest["mcpServers"],
-  env: Record<string, string | undefined>,
-): RuntimeMcpServerProjection[] {
-  return rows.map((row): RuntimeMcpServerProjection => {
-    const identity = {
-      pluginInstanceId: row.pluginInstanceId,
-      artifactDigest: row.artifactDigest,
-      harnessId: row.harnessId,
-      serverName: row.serverName,
-    }
-    if (row.state === "unavailable") return { ...identity, state: "unavailable", reason: row.reason! }
-    const target = row.url!
-    const placeholder = env[row.brokeredSecretName!]?.trim()
-    return {
-      ...identity,
-      state: "gateway",
-      url: target,
-      ...(placeholder ? { headers: { Authorization: placeholder } } : {}),
-    }
-  })
-}
-
 /** A read-only store over the trees an apply request delivered, digest-verified before use. */
 export async function runtimeArtifactStore(rows: AgentPluginRuntimeApplyRequest["artifacts"]): Promise<AgentPluginArtifactStore> {
   const values = new Map<string, RetainedAgentPluginArtifact>()
@@ -214,8 +183,6 @@ export async function runtimeArtifactStore(rows: AgentPluginRuntimeApplyRequest[
 /** Enabled VM image contribution. Disabled images do not import this file. */
 export function agentPluginWorkspaceRuntimeContribution(input: {
   runtimeRoot?: string
-  codexHome?: string
-  userHomeDirectory?: string
   env?: NodeJS.ProcessEnv
 } = {}): WorkspaceRuntimeRouteContribution {
   return {
@@ -244,14 +211,14 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
           ? { mode: "selected", selectionHash: body.execution.selectionHash }
           : { mode: "default" }
         const acknowledged = execution.mode === "selected" ? { selectionHash: execution.selectionHash } : {}
-        apply = apply.then(async () => {
+        const run = async (): Promise<AgentPluginRuntimeApplyResponse> => {
           const active = await readMaterializedAgentPluginGeneration(runtimeRoot)
           if (active?.revision === body.revision) {
             // An activation revision does not change when a root asks for a
             // different capability set, so it alone cannot say whether the
             // active generation is the projection this request describes.
             if (executionKey(active.execution) === executionKey(execution)) {
-              const harnessLaunch = await agentPluginHarnessLaunch(active)
+              const harnessLaunch = agentPluginHarnessLaunch(active)
               await context.applyHarnessLaunch(harnessLaunch)
               return { ok: true, generationId: active.generationId, revision: active.revision, ...acknowledged, harnessLaunch }
             }
@@ -277,18 +244,19 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             adapters: [
               openCodeAgentPluginAdapter(),
               claudeAgentPluginAdapter(),
-              codexAgentPluginAdapter({ codexHome: input.codexHome }),
-              cursorAgentPluginAdapter({ userHomeDirectory: input.userHomeDirectory }),
+              codexAgentPluginAdapter(),
+              cursorAgentPluginAdapter(),
+              acpAgentPluginAdapter(),
             ],
           })
-          const harnessLaunch = await agentPluginHarnessLaunch(generation)
+          const harnessLaunch = agentPluginHarnessLaunch(generation)
           await context.applyHarnessLaunch(harnessLaunch)
           return { ok: true, generationId: generation.generationId, revision: generation.revision, ...acknowledged, harnessLaunch }
-        })
+        }
+        apply = apply.then(run, run)
         try {
           return c.json(await apply)
         } catch (cause) {
-          apply = Promise.resolve(undefined)
           const conflict = cause instanceof AgentPluginMaterializationError && cause.code === "stale-revision"
           return c.json({
             error: {

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { RecoveryOperation, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { MemoryRuntimeStore } from "./memory"
-import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
-import type { AgentRuntimeTurnFinishInput } from "../harnesses/shared/runtime-store"
+import { AgentRuntimeStaleTurnError } from "../runtime-store"
+import type { AgentRuntimeTurnFinishInput } from "../runtime-store"
 
 function store() {
   const rows = new MemoryRuntimeStore()

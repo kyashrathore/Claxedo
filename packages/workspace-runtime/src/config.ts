@@ -1,6 +1,7 @@
 export {
   ConfigRoutes,
   RuntimeConfigApplyError,
+  isSessionConfigRefusal,
   normalizeRuntimeSnapshot,
 }
   from "./routes/config"
@@ -9,7 +10,6 @@ export type {
   ProviderProjection,
   ProviderProjectionSource,
   ConfigRouteOptions,
-  RuntimeCommandItem,
   RuntimeConnectionDescriptor,
   RuntimeHarnessSelection,
   RuntimeNativeHarnessId,
@@ -31,10 +31,6 @@ export type {
 }
   from "./management-auth"
 export {
-  loadManagedMcpState,
-  harnessAgent,
-  mcpControl,
-  resolveEffectiveMcp,
   resolveUserMcp,
   type ResolvedMcpServer,
-} from "./mcp-resolver"
+} from "./mcp/resolver"

@@ -13,6 +13,7 @@ function snapshot() {
   return {
     version: 4 as const,
     mcp: {},
+    commands: [],
     connections: [{
       connectionId: "acp-primary",
       providerKey: "acp",
@@ -25,7 +26,7 @@ function snapshot() {
       secretRefs: { token: "credentials/agent-token" },
     }],
     defaultHarness: { kind: "connection" as const, connectionId: "acp-primary" },
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
   }
 }
 
@@ -60,7 +61,7 @@ describe("runtime config v4", () => {
     }
     const body = {
       ...snapshot(),
-      harnessLaunch: { claude: { pluginRoots: ["/runtime/plugins/review"] } },
+      harnessLaunch: { claude: { generation: "generation-1", execution: { mode: "default" }, mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "pi_review", root: "/runtime/plugins/review", dataRoot: "/runtime/data/pi_review", skillNames: ["review"] }] } },
     }
     const accepted = await app.request("http://localhost/api/wr/config", { method: "POST", headers, body: JSON.stringify(body) })
     expect(accepted.status).toBe(200)
@@ -75,14 +76,20 @@ describe("runtime config v4", () => {
     expect(normalizeRuntimeSnapshot({ ...snapshot(), harnessLaunch: {} })).not.toHaveProperty("harnessLaunch")
   })
 
+  test("rejects a snapshot that does not state its saved commands", () => {
+    const { commands: _, ...withoutCommands } = snapshot()
+    expect(normalizeRuntimeSnapshot(withoutCommands)).toBeUndefined()
+    expect(normalizeRuntimeSnapshot(snapshot())?.commands).toEqual([])
+  })
+
   test("rejects unknown runtime snapshot fields instead of silently ignoring them", () => {
     expect(normalizeRuntimeSnapshot({ ...snapshot(), unexpected: { value: true } })).toBeUndefined()
     expect(normalizeRuntimeSnapshot({ ...snapshot(), runner: { type: "opencode" } })).toBeUndefined()
   })
 
   test("rejects every earlier snapshot version, v3 included", () => {
-    expect(normalizeRuntimeSnapshot({ version: 1, mcp: {}, auth: {}, runner: { type: "opencode" } })).toBeUndefined()
-    expect(normalizeRuntimeSnapshot({ version: 2, mcp: {}, auth: {}, runners: [] })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ version: 1, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } }, runner: { type: "opencode" } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ version: 2, mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } }, runners: [] })).toBeUndefined()
     expect(normalizeRuntimeSnapshot({ ...snapshot(), version: 3 })).toBeUndefined()
   })
 
@@ -93,13 +100,13 @@ describe("runtime config v4", () => {
       authMode: "api-key",
       expiresAt: 1_800_000_000_000,
     }
-    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: projection } }))
-      .toMatchObject({ auth: { anthropic: projection } })
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { anthropic: projection } } } }))
+      .toMatchObject({ auth: { machineOwnerUserId: "local", accounts: { local: { anthropic: projection } } } })
     // The v3 channel: a bare string where a projection belongs is the plaintext
     // push this version exists to remove, so it must not merely be dropped.
-    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: "sk-ant-api03-real" } })).toBeUndefined()
-    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: { ...projection, authMode: "basic" } } })).toBeUndefined()
-    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: { ...projection, secret: "leak" } } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { anthropic: "sk-ant-api03-real" } } } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { anthropic: { ...projection, authMode: "basic" } } } } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { anthropic: { ...projection, secret: "leak" } } } } })).toBeUndefined()
     expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: undefined })).toBeUndefined()
   })
 
@@ -114,7 +121,7 @@ describe("runtime config v4", () => {
     // answer than half of this one.
     expect(normalizeRuntimeSnapshot({
       ...snapshot(),
-      auth: { anthropic: projection, openai: { ...projection, authMode: "basic" } },
+      auth: { machineOwnerUserId: "local", accounts: { local: { anthropic: projection, openai: { ...projection, authMode: "basic" } } } },
     })).toBeUndefined()
   })
 
@@ -126,23 +133,23 @@ describe("runtime config v4", () => {
       apiPath: "/v1",
     }
     expect(normalizeRuntimeSnapshot(
-      { ...snapshot(), auth: { "claude-sdk": projection } },
+      { ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } } },
       { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" },
     )).toMatchObject({
-      auth: {
+      auth: { machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": {
           baseUrl: "https://api.anthropic.com",
           placeholder: "dtn_secret_abc",
           authMode: "api-key",
           apiPath: "/v1",
         },
-      },
+      } } },
     })
     // The sandbox provider never filled the variable: the account the operator
     // chose is unusable here, which is not the same as choosing none.
-    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { "claude-sdk": projection } }, {}))
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } } }, {}))
       .toMatchObject({
-        auth: { "claude-sdk": { unavailable: true, reason: "placeholder_env_missing: CLAXEDO_PROVIDER_CLAUDE_SDK" } },
+        auth: { machineOwnerUserId: "local", accounts: { local: { "claude-sdk": { unavailable: true, reason: "placeholder_env_missing: CLAXEDO_PROVIDER_CLAUDE_SDK" } } } },
       })
   })
 
@@ -166,4 +173,16 @@ describe("runtime config v4", () => {
       defaultHarness: { kind: "connection", connectionId: "missing" },
     })).toBeUndefined()
   })
+})
+
+test("runtime snapshots accept definitions and credential references but reject credential material", () => {
+  const definition = { id: "acme", name: "Acme", npm: "@ai-sdk/openai-compatible" as const, baseURL: "https://acme.invalid/v1",
+    headers: { "X-Title": "one" }, models: { one: { name: "One" } }, credentialProviderId: "acme", credentialSource: "account" as const }
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [definition] })?.providerDefinitions).toEqual([definition])
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [{ ...definition, apiKey: "secret" }] })).toBeUndefined()
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [{ ...definition, headers: { Authorization: "secret" } }] })).toBeUndefined()
+  for (const header of ["X-Auth-Token", "X-Goog-Api-Key", "X-Unspecified-Header"]) {
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [{ ...definition, headers: { [header]: "secret" } }] })).toBeUndefined()
+  }
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [] })?.providerDefinitions).toEqual([])
 })

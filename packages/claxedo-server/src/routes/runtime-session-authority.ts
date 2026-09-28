@@ -48,6 +48,7 @@ import {
   type DeferredTurnGrantClaims,
 } from "../session/deferred-turn-grant"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { RuntimeConnectionSecretRoutes, type RuntimeConnectionSecretOptions } from "./runtime-connection-secrets"
 
 const bodyLimitBytes = 16 * 1024
 const streamLeaseIssuer = "claxedo-control-plane"
@@ -260,6 +261,7 @@ async function proofDenial(
 }
 
 export type RuntimeSessionAuthorityOptions = {
+  connectionSecrets?: RuntimeConnectionSecretOptions
   authority: RuntimeSessionAuthorityPort
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
@@ -760,7 +762,13 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     return context.json(released)
   }
 
-  return new Hono().post("/session-authorize", limitedBody, async (context) => {
+  const app = new Hono()
+  if (options.connectionSecrets) app.route("/connection-secrets", RuntimeConnectionSecretRoutes({
+    ...options.connectionSecrets, authority: options.authority, verifyRelayProof: options.verifyRelayProof ?? relayProofVerifier(env),
+    verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
+    turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
+  }))
+  return app.post("/session-authorize", limitedBody, async (context) => {
     const body = await readJsonRecord(context.req.raw)
     if (body?.action === USAGE_REPORT_ACTION) return reportUsage(context, body)
     if (isHostAuthorityAction(body?.action)) return authorizeHost(context, body.action, body)

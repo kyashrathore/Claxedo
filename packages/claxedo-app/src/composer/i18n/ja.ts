@@ -34,6 +34,7 @@ export default {
   "prompt.popover.emptyCommands": "一致するコマンドがありません",
   "prompt.slash.badge.skill": "スキル",
   "prompt.slash.badge.custom": "カスタム",
+  "prompt.slash.badge.saved": "保存済み",
   "prompt.context.removeFile": "コンテキストからファイルを削除",
   "prompt.placeholder.shell": "シェルコマンドを入力... {{example}}",
   "prompt.placeholder.normal": "何でも聞いてください... \"{{example}}\"",

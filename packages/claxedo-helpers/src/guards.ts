@@ -73,6 +73,10 @@ export function asFiniteNumber(value: unknown): number | undefined {
   return isFiniteNumber(value) ? value : undefined
 }
 
+export function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined
+}
+
 export function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean"
 }
@@ -115,4 +119,8 @@ export function asArray(value: unknown): unknown[] {
 
 export function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString)
+}
+
+export function asArrayOrUndefined(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined
 }

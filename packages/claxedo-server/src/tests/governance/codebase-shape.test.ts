@@ -156,8 +156,8 @@ describe("architecture boundaries", () => {
     const packageRoot = path.resolve(import.meta.dirname, "../../../..")
     // The one place the public embedded SDK may be imported: the SDK owner
     // behind the native `opencode` harness. Every other backend product reaches
-    // OpenCode only through `@claxedo/workspace-runtime/opencode`'s typed ports.
-    const sdkOwner = path.join(packageRoot, "workspace-runtime/src/opencode") + path.sep
+    // OpenCode only through `@claxedo/harness/opencode-sdk`'s typed ports.
+    const sdkOwner = path.join(packageRoot, "harness/src/transports/opencode-sdk") + path.sep
     const sourceRoots = [
       "agent-sdk-runtime/src",
       "workspace-runtime/src",

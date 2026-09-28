@@ -1,19 +1,18 @@
 import { HTTPException } from "hono/http-exception"
-import type { AgentSession, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import type { AgentPermissionMode, AgentPermissionModeState, AgentSession, AutoLevel } from "@claxedo/agent-runtime-contract"
 import {
   narrowerPermissionLevel,
   permissionCeilingAdmits,
   permissionModeLevel,
   widestPermissionModeUnder,
-  type AgentPermissionMode,
-  type AgentPermissionModeState,
-  type AutoLevel,
+  type RuntimeDirectory,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentRuntime, HarnessTarget } from "../host/runtime"
 import { errorBody } from "./error-body"
 import {
-  readRuntimeSession,
-  requireExecutionBinding,
+  readSession,
+  sessionConfigOf,
+  sessionTarget,
   type SessionRouteContext as Ctx,
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
@@ -42,32 +41,27 @@ export async function effectivePermissionCeiling(
   declared: AutoLevel | undefined,
 ): Promise<AutoLevel | undefined> {
   if (!parent) return declared
-  const adapter = await opts.resolveAdapter(c, { sessionId: parent.id, directory })
-  const state = adapter.listPermissionModes
-    ? await adapter.listPermissionModes(await requireExecutionBinding(opts, c, directory, parent.id, adapter))
-    : undefined
+  const state = await (await opts.runtime(c)).reads.permissionModes(sessionTarget(c, parent.id, directory))
   const parentLevel = inheritedPermissionLevel(state)
   if (!parentLevel) return declared
   return declared ? narrowerPermissionLevel(parentLevel, declared) : parentLevel
 }
 
 /** Resolve the persisted ceiling and the current parent restriction for mutations. */
-export async function sessionPermissionCeiling(opts: Opts, c: Ctx, directory: RuntimeDirectory, session: AgentSession, adapter: AgentHarnessAdapter) {
-  const config = opts.getSessionConfig
-    ? await opts.getSessionConfig(c, directory, session.id, adapter)
-    : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))
-  const parent = session.parentID ? await readRuntimeSession(opts, c, directory, session.parentID) : undefined
+export async function sessionPermissionCeiling(opts: Opts, c: Ctx, directory: RuntimeDirectory, session: AgentSession) {
+  const config = await sessionConfigOf(opts, c, directory, session.id)
+  const parent = session.parentID ? await readSession(opts, c, directory, session.parentID) : undefined
   if (session.parentID && !parent) throw new HTTPException(403, { message: "Parent session not found" })
   return effectivePermissionCeiling(opts, c, directory, parent ?? undefined, config.permissionCeiling)
 }
 
-export async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter, modeId: string | undefined) {
+export async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, modeId: string | undefined) {
   if (!modeId) return undefined
-  const session = await readRuntimeSession(opts, c, directory, sessionId, adapter)
+  const session = await readSession(opts, c, directory, sessionId)
   if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
-  const ceiling = await sessionPermissionCeiling(opts, c, directory, session, adapter)
+  const ceiling = await sessionPermissionCeiling(opts, c, directory, session)
   if (!ceiling) return undefined
-  return (await permissionModeUnderCeiling(c, adapter, directory, ceiling, modeId)).refusal
+  return (await permissionModeUnderCeiling(c, await opts.runtime(c), sessionTarget(c, sessionId, directory), ceiling, modeId)).refusal
 }
 
 /**
@@ -77,17 +71,18 @@ export async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: Ru
  */
 export async function permissionModeUnderCeiling(
   c: Ctx,
-  adapter: AgentHarnessAdapter,
-  directory: RuntimeDirectory,
+  runtime: AgentRuntime,
+  target: HarnessTarget,
   ceiling: AutoLevel | undefined,
   requested: string | undefined,
 ): Promise<{ mode?: AgentPermissionMode; refusal?: Response }> {
   if (!requested && !ceiling) return {}
-  if (!adapter.listDraftPermissionModes || !adapter.setPermissionMode) {
+  const state = await runtime.reads.permissionModes(target)
+  if (!state || state.unsupported) {
     if (ceiling) return { refusal: c.json(errorBody("permission_ceiling_unsupported", `This harness cannot enforce the ${ceiling} permission ceiling`), 403) }
     return { refusal: c.json(errorBody("permission_mode_unsupported", "This harness cannot be told about permission modes"), 400) }
   }
-  const modes = (await adapter.listDraftPermissionModes(directory)).modes
+  const modes = state.modes
   if (requested) {
     const mode = modes.find((candidate) => candidate.id === requested)
     if (!mode) return { refusal: c.json(errorBody("unknown_permission_mode", `Unknown permission mode "${requested}"`), 400) }

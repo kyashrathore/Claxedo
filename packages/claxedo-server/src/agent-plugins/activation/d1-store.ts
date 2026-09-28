@@ -12,6 +12,8 @@ import {
 } from "@claxedo/server-core/agent-plugins/activation/store"
 import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import {
+  SUPPORTED_AGENT_PLUGIN_HARNESSES,
+  agentPluginHarnessRecord,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -1059,16 +1061,16 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   ): Promise<SignedAgentPluginRuntimeSnapshot> {
     const [revision, known] = await Promise.all([this.currentRevision(scope.orgId), this.knownPlugins(scope)])
     const plugins = await Promise.all(known.map(async (entry) => {
-      const [opencode, claude, codex, cursor] = await Promise.all([
-        this.snapshot(scope, entry.pluginInstanceId, "opencode", projectId),
-        this.snapshot(scope, entry.pluginInstanceId, "claude", projectId),
-        this.snapshot(scope, entry.pluginInstanceId, "codex", projectId),
-        this.snapshot(scope, entry.pluginInstanceId, "cursor", projectId),
-      ])
+      const rows = new Map(await Promise.all(SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) =>
+        [harnessId, await this.snapshot(scope, entry.pluginInstanceId, harnessId, projectId)] as const)))
       return {
         pluginInstanceId: entry.pluginInstanceId,
         pins: entry.pins,
-        harnesses: { opencode, claude, codex, cursor },
+        harnesses: agentPluginHarnessRecord((harnessId) => {
+          const row = rows.get(harnessId)
+          if (!row) throw new Error(`Agent Plugins activation for ${harnessId} was not read`)
+          return row
+        }),
       }
     }))
     return { revision, identity, plugins }

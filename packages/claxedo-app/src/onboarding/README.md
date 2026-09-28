@@ -7,15 +7,25 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 - **Route entry**: `onboardingRoute`, the shell `RouteEntry` for `/welcome`, listed in the shell's `routes` registry. `FirstProjectCanvas` is its view: the blueprint field, glow and vignette behind the wizard column.
 - **Needed?**: `onboardingNeeded(projects)` is true when the project list is ready and empty. The shell's home route sends the reader to `onboardingPath` when it is.
 - **Product**: the wizard waits for `server.capabilities()`. A server that declares `thisMachine` is a desktop (local execution); any other is a hosted plane. Ledes, step 2, step 3's rows and the finish button follow that.
+- **Execution facts** (`model.ts`): `localExecution` (a desktop) and `cloudAvailable` (the reader is signed in to a control plane, `useAuth()`). `executionChoices` lists step 3's rows from them; `executionBlock` says why the chosen row cannot finish: `signIn` (cloud without a signed control plane), `folder` (cloud from a local folder, which no sandbox can clone) or `machine` (a hosted plane cannot send a repository to a connected machine yet).
 
 ## State
 
-`createOnboardingWizard` (`wizard.ts`) holds the current step, the visited steps, the draft (`{source, name?}`), each step's readiness, the step 3 choice and the finish state. Nothing is written before Finish except a sandbox provider key saved in step 3.
+`createOnboardingWizard` (`wizard.ts`) holds the current step, the visited steps, the draft (`{source, name?}`), step 2's readiness, the step 3 choice and the finish machine. Step 3's readiness is derived from the execution facts, the choice and the draft. Nothing is written before Finish.
 
 - Step 1 is `ProjectCreateForm` from `@/projects` with `submitLabel` Continue; its submit stores the draft and moves to step 2.
 - Step 2 is `AgentHarnessAccounts` from `@/accounts` for each harness, the same cards Settings → Models shows, and reports whether one login can run a turn. Machine logins are read only when this step first opens, because that read starts the harness CLIs.
-- Step 3 offers Just this machine (desktop, preselected), A cloud sandbox (a desktop saves a provider key through `server.sandboxProviders`) and Another machine (the two CLI commands).
-- Finish on a desktop creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. On a hosted plane it creates the project and its first cloud workspace, then opens that workspace's draft. A failure is shown in the footer's reason line.
+- Step 3 offers Just this machine (desktop, preselected), A cloud sandbox (only with `cloudAvailable`; the control plane provides the sandbox, so there is nothing to configure) and Another machine (the two CLI commands).
+- Finish (`place.ts`) on a desktop that keeps this machine or a connected machine creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. A desktop that picked the cloud creates a cloud workspace from the repository on the account's control plane (`server.cloud.create({ source })`), which derives the project. A hosted plane creates the project, then its first cloud workspace (`server.cloud.create({ projectId })`). Either cloud path opens the workspace's draft.
+
+## Finish machine
+
+`FinishState` (`model.ts`, run by `createFinish` in `finish.ts`): `ready` → `working(created?)` → `finished(created)`, or `failed(error, created?)` and back to `working` on the next click. `created` is what Finish has made so far: a `project`, a hosted `cloudProject` still waiting for its workspace, or a `workspace`.
+
+- A retry continues from `created`: it never creates what already exists, and with a project or workspace in hand it only opens it.
+- A failure after the project or workspace exists reads "Created successfully, but could not open it: …" and the button reads Open created project / Open created workspace.
+- Once anything is created, Back is disabled and step 3's panel is inert; after `finished` the button stays disabled.
+- A move (Back, Next) clears a failure only while nothing is created.
 
 ## Rules the view keeps
 

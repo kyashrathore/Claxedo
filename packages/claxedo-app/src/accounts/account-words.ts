@@ -10,6 +10,8 @@ import {
   partialMachineLogin,
   strandedBinding,
   storedCheck,
+  TEAM_ACCOUNT_KEY,
+  teamAccountOf,
   type AccountReach,
   type AccountsSnapshot,
   type Harness,
@@ -17,6 +19,12 @@ import {
   type LiveCheck,
 } from "./model"
 import type { AccountVerdict, MachineLogin } from "@/server"
+
+export type CloudConsent = {
+  readonly allowed: boolean
+  readonly partial: boolean
+  readonly deliverable: boolean
+}
 
 export type AccountWords = {
   readonly key: string
@@ -29,7 +37,9 @@ export type AccountWords = {
   readonly refused: boolean
   readonly identity?: string
   readonly reach?: AccountReach
+  readonly cloudConsent?: CloudConsent
   readonly machine: boolean
+  readonly team: boolean
   readonly disabled: boolean
 }
 
@@ -57,6 +67,11 @@ function verdictWords(t: Words["t"], live: LiveCheck | undefined) {
   return [t(VERDICT_KEY[live.verdict]), ...(live.reason === undefined ? [] : [live.reason])]
 }
 
+function cloudConsentOf(row: HarnessAccount): CloudConsent | undefined {
+  if (row.delivery === undefined) return undefined
+  return { allowed: row.scope === "shared", partial: row.partialCloudConsent, deliverable: row.delivery.cloud && row.scope !== undefined }
+}
+
 export function storedAccountWords(words: Words, row: HarnessAccount, live: LiveCheck | undefined): AccountWords {
   const { t } = words
   const check = storedCheck(row, live)
@@ -64,6 +79,7 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
   const label = accountLabel(row)
   const readable = identity && identity.readable && identity.text !== label ? identity.text : undefined
   const details = [...(readable === undefined ? [] : [readable]), ...verdictWords(t, check), ...windowWords(words, check?.usage)]
+  const cloudConsent = cloudConsentOf(row)
   const refused = check?.verdict !== undefined && isRefusal(check.verdict)
   const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(t, check).join(" · ") : undefined
   const reach = accountReach(row.delivery)
@@ -77,7 +93,44 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
     refused,
     ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
     ...(reach === undefined ? {} : { reach }),
+    ...(cloudConsent === undefined ? {} : { cloudConsent }),
     machine: false,
+    team: false,
+    disabled: false,
+  }
+}
+
+export function teamAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean): AccountWords {
+  const { t } = words
+  const row = teamAccountOf(harness, snapshot)
+  if (row === undefined) {
+    const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.label })
+    return {
+      key: TEAM_ACCOUNT_KEY,
+      ids: [],
+      label: t("settings.providers.accountSource.team"),
+      detail: chosen ? unavailable : t("settings.providers.accountSource.missing"),
+      ...(chosen ? { alert: unavailable } : {}),
+      refused: false,
+      machine: false,
+      team: true,
+      disabled: true,
+    }
+  }
+  const check = storedCheck(row, undefined)
+  const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(t, check).join(" · ") : undefined
+  const reach = accountReach(row.delivery)
+  return {
+    key: TEAM_ACCOUNT_KEY,
+    ids: [],
+    label: accountLabel(row),
+    detail: [t("settings.providers.accountSource.team"), ...verdictWords(t, check), ...windowWords(words, check?.usage)].join(" · "),
+    ...(alert === undefined ? {} : { alert }),
+    ...(check === undefined ? {} : { checkedAt: check.at }),
+    refused: check?.verdict !== undefined && isRefusal(check.verdict),
+    ...(reach === undefined ? {} : { reach }),
+    machine: false,
+    team: true,
     disabled: false,
   }
 }
@@ -96,7 +149,7 @@ function machineDetail(words: Words, login: MachineLogin, harness: Harness) {
 export function machineLoginWords(words: Words, login: MachineLogin, harness: Harness, snapshot: AccountsSnapshot): AccountWords {
   const { t } = words
   const detail = machineDetail(words, login, harness)
-  const stranded = login.state !== "absent" && strandedBinding(login, harness, snapshot.effective)
+  const stranded = login.state !== "absent" && strandedBinding(login, harness, snapshot)
   const note = [
     ...(partialMachineLogin(login) ? (MACHINE_REACH[login.harness] ?? []).map((key) => t(key)) : []),
     ...(stranded ? [t("settings.providers.agents.machineStrands", { name: harness.label })] : []),
@@ -113,6 +166,7 @@ export function machineLoginWords(words: Words, login: MachineLogin, harness: Ha
     refused: false,
     ...(reach === undefined ? {} : { reach }),
     machine: true,
+    team: false,
     disabled: login.state === "absent" || stranded,
   }
 }

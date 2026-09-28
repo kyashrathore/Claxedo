@@ -11,6 +11,10 @@ import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
+import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
+import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
+import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
+import { hostedWorkspaceSandboxInput } from "./hosted-workspace-sandbox-input"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import {
   composeProviderNeutralHostedControlPlane,
@@ -41,6 +45,7 @@ import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platf
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
+import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
 
 type BetterAuthD1AuthorityEnv = {
   CLAXEDO_ADAPTER_PROFILE: "better-auth-d1"
@@ -100,6 +105,8 @@ export type BetterAuthD1UserDeployedCompositionInput = {
 
 export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
+  /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox driver. */
+  runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
   /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
   authHandler(request: Request): Promise<Response>
@@ -213,11 +220,35 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       deploymentId,
     }),
   })
+  const settings = d1UserAgentConfigRepository(input.controlPlaneDatabase)
+  const delivery = input.sandbox && plane.orgCredentials && plane.services.sandbox.sandboxManager
+    ? createHostedRuntimeDelivery({
+        authority,
+        services: plane.services,
+        sandboxManager: plane.services.sandbox.sandboxManager,
+        driver: input.sandbox.driver,
+        sandboxInput: hostedWorkspaceSandboxInput({ database: input.controlPlaneDatabase, egress: hostedSandboxEgress(plane) }),
+        settings,
+        credentials: plane.orgCredentials,
+        signingEnv: input.env,
+        provisionedRunner: provisionedRunner(input.env),
+      })
+    : undefined
 
   return {
     plane,
+    ...(delivery ? { runtimeDelivery: delivery } : {}),
     options: {
       authentication,
+      agentConfigRepository: settings,
+      ...(delivery ? {
+        settingsChanged: delivery.settingsChanged,
+        credentialsChanged: delivery.reconcileCredentialDelivery,
+        productWorkspace: {
+          prepareRuntime: delivery.prepareRuntime,
+          provisionRuntime: delivery.provisionRuntime,
+        },
+      } : {}),
       // User-deployed has no billing tier: with a composed sandbox the owner's
       // organization is entitled to cloud workspaces; without one the answer
       // names the posture instead of a 404.

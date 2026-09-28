@@ -31,6 +31,8 @@ export type ActiveSessionTurnLease = {
   fencingToken(): number
   lossResult(): SessionTurnLeaseLossResult | undefined
   connectionCredential(): string | undefined
+  /** The lease as the authority issued it, renewed in place: what proves this turn to the control plane. */
+  proof(): string
   release(): Promise<SessionTurnReleaseDecision>
 }
 
@@ -184,6 +186,7 @@ export async function acquireSessionTurnLease(input: {
       fencingToken: () => current.fencingToken,
       lossResult: () => lossResult,
       connectionCredential: () => current.connectionCredential,
+      proof: () => current.leaseId,
       async release() {
         if (closed) return { released: false }
         closed = true

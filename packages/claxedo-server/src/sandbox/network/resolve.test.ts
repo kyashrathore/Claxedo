@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { formatDaytonaAllowList, resolveAllowListCidrs, resolveSandboxNetworkPolicy, type PolicyEntry } from "./resolve"
+import { resolveAllowListCidrs, resolveSandboxNetworkPolicy, type PolicyEntry } from "./resolve"
 
 describe("network resolve", () => {
   test("resolveAllowListCidrs always includes control-plane CIDRs", async () => {
@@ -101,16 +101,5 @@ describe("network resolve", () => {
     )
     expect(net.cidrs).toContain("1.1.1.1/32")
     expect(net.cidrs).toContain("8.8.8.8/32")
-  })
-
-  test("formatDaytonaAllowList joins with commas", () => {
-    const result = formatDaytonaAllowList(["10.0.0.0/8", "192.168.1.0/24"])
-    expect(result).toBe("10.0.0.0/8,192.168.1.0/24")
-  })
-
-  test("formatDaytonaAllowList truncates to 10 entries", () => {
-    const cidrs = Array.from({ length: 15 }, (_, i) => `10.0.${i}.0/24`)
-    const result = formatDaytonaAllowList(cidrs)
-    expect(result.split(",").length).toBe(10)
   })
 })

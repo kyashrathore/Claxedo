@@ -2,7 +2,7 @@ import type {
   SandboxCheckpointReference,
   SandboxPersistenceCapabilities,
   SandboxRestoreStatus,
-} from "./index"
+} from "./contract"
 
 export type SandboxLeaseRowStatus =
   | "pending"

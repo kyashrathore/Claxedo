@@ -1,4 +1,4 @@
-import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./index"
+import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./contract"
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
 import {
@@ -17,20 +17,59 @@ import {
 
 export { defaultSandboxDriverID, listSandboxDrivers, sandboxDriverId }
 
-export type SandboxDriverCatalogEntry = {
-  id: SandboxDriverID
+export type SandboxDriverCatalogEntry<ID extends string = SandboxDriverID> = {
+  id: ID
   label: string
   metadata: SandboxDriverMetadata
   credentialFields: ReadonlyArray<{ key: string; label: string; secret?: boolean }>
+  runtimeNetwork: { controlPlane: "docker-host" | "direct"; relay: "configured" | "local" }
+  runtimeEnv: "ensure" | "callback"
+  preparedImage: boolean
 }
 
 export { validateSandboxPersistenceCapabilities }
+
+export const localBrokeringTestDriverCatalogEntry = {
+  id: "local-brokering-test",
+  label: "Local brokering test driver",
+  credentialFields: [],
+  runtimeNetwork: { controlPlane: "direct", relay: "local" },
+  runtimeEnv: "ensure",
+  preparedImage: false,
+  metadata: {
+    driverRunsIn: ["local"],
+    hostStopBehavior: "terminates-host",
+    hostResumeBehavior: "same-host",
+    targetAccess: "loopback",
+    secretBrokering: "native",
+    egressControl: "hosts",
+    persistence: {
+      resume: "same-sandbox",
+      capture: "none",
+      clone: false,
+      captureSource: "not-applicable",
+      retention: "provider-managed",
+      restoreMount: "same-resource",
+    },
+  },
+} as const satisfies {
+  id: string
+  label: string
+  credentialFields: ReadonlyArray<{ key: string; label: string; secret?: boolean }>
+  metadata: SandboxDriverMetadata
+  runtimeNetwork: SandboxDriverCatalogEntry<string>["runtimeNetwork"]
+  runtimeEnv: SandboxDriverCatalogEntry<string>["runtimeEnv"]
+  preparedImage: boolean
+}
 
 export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogEntry> = {
   exe: {
     id: "exe",
     label: sandboxDriverLabels.exe,
     credentialFields: sandboxDriverCredentialFields.exe,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
     metadata: {
       driverRunsIn: ["worker", "node"],
       hostStopBehavior: "not-supported",
@@ -52,6 +91,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     id: "daytona",
     label: sandboxDriverLabels.daytona,
     credentialFields: sandboxDriverCredentialFields.daytona,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
     metadata: {
       driverRunsIn: ["worker", "node"],
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
@@ -73,6 +115,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     id: "modal",
     label: sandboxDriverLabels.modal,
     credentialFields: sandboxDriverCredentialFields.modal,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
@@ -94,6 +139,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     id: "vercel",
     label: sandboxDriverLabels.vercel,
     credentialFields: sandboxDriverCredentialFields.vercel,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: false,
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
@@ -115,6 +163,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     id: "cloudflare",
     label: sandboxDriverLabels.cloudflare,
     credentialFields: sandboxDriverCredentialFields.cloudflare,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: false,
     metadata: {
       driverRunsIn: ["worker"],
       hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
@@ -136,6 +187,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     id: "box",
     label: sandboxDriverLabels.box,
     credentialFields: sandboxDriverCredentialFields.box,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
@@ -156,6 +210,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     id: "docker",
     label: sandboxDriverLabels.docker,
     credentialFields: sandboxDriverCredentialFields.docker,
+    runtimeNetwork: { controlPlane: "docker-host", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
     metadata: {
       driverRunsIn: ["local"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",

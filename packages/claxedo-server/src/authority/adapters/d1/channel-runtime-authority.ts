@@ -252,6 +252,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       orgId: access.org_id,
       role: rankRole(access.role_rank),
       identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION,
+      userId: who.userId,
     }
   }
 

@@ -9,8 +9,8 @@ import type {
   LaunchScope,
   PrepareLaunchInput,
   RetirementResult,
-} from "@claxedo/agent-sdk-runtime/launch"
-import { isCreationIdentity, retirementSettled } from "@claxedo/agent-sdk-runtime/launch"
+} from "@claxedo/process-ownership/launch"
+import { isCreationIdentity, retirementSettled } from "@claxedo/process-ownership/launch"
 import { isRecord } from "@claxedo/helpers/guards"
 import { Log } from "../log"
 

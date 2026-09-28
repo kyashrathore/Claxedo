@@ -1,3 +1,4 @@
+import { parseNotApplied, parsePluginSelection, parseProjectedMcpServers } from "@claxedo/harness/contract"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
@@ -19,11 +20,12 @@ import {
   readActiveGeneration,
 } from "./generation"
 import { pluginDataDirectory, pluginInstanceStorageKey } from "./plugin-data"
+import { readAcpAgentPluginConfig } from "./adapters/acp"
+import type { AcpRuntimeMcpServer, RuntimeMcpServerProjection } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import type {
   AgentPluginHarnessProjectionAdapter,
   GenerationPluginRoot,
   HarnessPluginProjection,
-  RuntimeMcpServerProjection,
 } from "./adapters/types"
 import { isRecord } from "../../platform/json"
 
@@ -55,6 +57,7 @@ export type MaterializedAgentPluginGeneration = {
   generationId: string
   revision: number
   root: string
+  identity: AgentPluginRuntimeIdentity
   execution: AgentPluginMaterializationExecution
   projections: Partial<Record<AgentPluginHarnessId, HarnessPluginProjection>>
   cleanupWarning?: string
@@ -108,22 +111,19 @@ export async function readMaterializedAgentPluginGeneration(
         throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection root is invalid`)
       }
       const entry = item
-      // A harness-owned root (see `external` on the projection type) was
-      // recorded absolute; every other root must sit inside this generation.
-      const external = entry.external === true
-      const materializedRoot = typeof entry.root !== "string"
-        ? undefined
-        : external
-          ? (path.isAbsolute(entry.root) ? entry.root : undefined)
-          : contained(root, entry.root)
+      const materializedRoot = typeof entry.root === "string" ? contained(root, entry.root) : undefined
       if (typeof entry.pluginInstanceId !== "string" || !materializedRoot) {
         throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection root escapes its generation`)
       }
+      if (!Array.isArray(entry.skillNames) || !entry.skillNames.every((name) =>
+        typeof name === "string" && !/[/\\]/.test(name) && contained(path.join(materializedRoot, "skills"), name) !== undefined)) {
+        throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection has invalid skill names`)
+      }
       return {
         pluginInstanceId: entry.pluginInstanceId,
+        skillNames: entry.skillNames,
         root: materializedRoot,
         dataRoot: pluginDataDirectory(runtimeRoot, entry.pluginInstanceId),
-        ...(external ? { external: true as const } : {}),
       }
     })
     const configFile = row.configFile === undefined
@@ -134,34 +134,42 @@ export async function readMaterializedAgentPluginGeneration(
     if (row.configFile !== undefined && !configFile) {
       throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} config escapes its generation`)
     }
-    projections[harnessId] = {
-      harnessId,
-      pluginRoots,
-      diagnostics: [],
-      ...(configFile ? { configFile } : {}),
+    try {
+      projections[harnessId] = {
+        harnessId,
+        pluginRoots,
+        mcpServers: parseProjectedMcpServers(row.mcpServers),
+        notApplied: parseNotApplied(row.notApplied),
+        ...(configFile ? { configFile } : {}),
+      }
+    } catch (cause) {
+      throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection is invalid`, { cause })
     }
   }
   return {
     generationId: active.generationId,
     revision: active.revision,
     root,
+    identity: readIdentity(manifest.identity),
     execution: readExecution(manifest.execution),
     projections,
   }
 }
 
-/**
- * A generation written before this field existed is the workspace's default
- * activation: only a selected execution ever recorded one, so an absent value
- * cannot be a selection whose identity was lost.
- */
-function readExecution(value: unknown): AgentPluginMaterializationExecution {
-  if (value === undefined) return { mode: "default" }
-  if (isRecord(value) && value.mode === "default") return { mode: "default" }
-  if (isRecord(value) && value.mode === "selected" && typeof value.selectionHash === "string" && value.selectionHash) {
-    return { mode: "selected", selectionHash: value.selectionHash }
+function readIdentity(value: unknown): AgentPluginRuntimeIdentity {
+  if (isRecord(value) && value.mode === "unsigned" && typeof value.machineId === "string" && value.machineId) {
+    return { mode: "unsigned", machineId: value.machineId }
   }
-  throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation has an invalid execution")
+  if (isRecord(value) && value.mode === "signed" && typeof value.userId === "string" && value.userId
+    && typeof value.projectId === "string" && value.projectId) {
+    return { mode: "signed", userId: value.userId, projectId: value.projectId }
+  }
+  throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation has an invalid identity")
+}
+
+function readExecution(value: unknown): AgentPluginMaterializationExecution {
+  try { return parsePluginSelection(value) }
+  catch (cause) { throw new AgentPluginMaterializationError("artifact-unavailable", "Agent Plugins generation has an invalid execution", { cause }) }
 }
 
 export class AgentPluginMaterializationError extends Error {
@@ -175,8 +183,9 @@ export class AgentPluginMaterializationError extends Error {
       | "adapter-unavailable"
       | "artifact-unavailable",
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message)
+    super(message, options)
     this.name = "AgentPluginMaterializationError"
   }
 }
@@ -196,15 +205,14 @@ export async function materializeAgentPluginGeneration(input: {
   runtimeRoot: string
   identity: AgentPluginRuntimeIdentity
   revision: number
-  /** Defaults to the workspace's ordinary activation. */
-  execution?: AgentPluginMaterializationExecution
+  execution: AgentPluginMaterializationExecution
   selections: readonly AgentPluginMaterializationSelection[]
   artifacts: AgentPluginArtifactStore
   adapters: readonly AgentPluginHarnessProjectionAdapter[]
   mcpServers?: readonly RuntimeMcpServerProjection[]
 }): Promise<MaterializedAgentPluginGeneration> {
   assertIdentity(input.identity)
-  const execution: AgentPluginMaterializationExecution = input.execution ?? { mode: "default" }
+  const execution = readExecution(input.execution)
   const active = await readActiveGeneration(input.runtimeRoot)
   if (active && input.revision <= active.revision) {
     throw new AgentPluginMaterializationError(
@@ -296,7 +304,8 @@ export async function materializeAgentPluginGeneration(input: {
         && candidate.artifactDigest === server.artifactDigest
         && candidate.harnessIds.includes(server.harnessId))
       const declared = plugin?.plugin.mcp.status === "valid"
-        ? plugin.plugin.mcp.servers.find((candidate) => candidate.name === server.serverName && candidate.type !== "stdio")
+        ? plugin.plugin.mcp.servers.find((candidate) => candidate.name === server.serverName
+            && (server.state === "unavailable" || candidate.type !== "stdio"))
         : undefined
       if (!plugin || !declared) {
         throw new AgentPluginMaterializationError(
@@ -309,7 +318,7 @@ export async function materializeAgentPluginGeneration(input: {
     const projections: Partial<Record<AgentPluginHarnessId, HarnessPluginProjection>> = {}
     const selectedHarnesses = new Set(materialized.flatMap((plugin) => plugin.harnessIds))
     const projectedHarnesses = [...adapterByHarness]
-      .filter(([harnessId, adapter]) => selectedHarnesses.has(harnessId) || adapter.projectEmpty)
+      .filter(([harnessId]) => execution.mode === "selected" || selectedHarnesses.has(harnessId))
       .map(([harnessId]) => harnessId)
       .toSorted()
     for (const harnessId of projectedHarnesses) {
@@ -318,7 +327,6 @@ export async function materializeAgentPluginGeneration(input: {
         generationRoot: finalRoot,
         plugins,
         mcpServers: (input.mcpServers ?? []).filter((server) => server.harnessId === harnessId),
-        ...(execution.mode === "selected" ? { selected: true } : {}),
       })
     }
 
@@ -339,11 +347,12 @@ export async function materializeAgentPluginGeneration(input: {
         harnessId,
         {
           ...(projection.configFile ? { configFile: path.relative(finalRoot, projection.configFile) } : {}),
+          mcpServers: projection.mcpServers,
+          notApplied: projection.notApplied,
           pluginRoots: projection.pluginRoots.map((plugin) => ({
             pluginInstanceId: plugin.pluginInstanceId,
-            ...(plugin.external
-              ? { root: plugin.root, external: true }
-              : { root: path.relative(finalRoot, plugin.root) }),
+            skillNames: plugin.skillNames,
+            root: path.relative(finalRoot, plugin.root),
           })),
         },
       ])),
@@ -361,6 +370,7 @@ export async function materializeAgentPluginGeneration(input: {
       generationId,
       revision: input.revision,
       root: finalRoot,
+      identity: input.identity,
       execution,
       projections,
       ...(cleanupWarning ? { cleanupWarning } : {}),
@@ -371,25 +381,33 @@ export async function materializeAgentPluginGeneration(input: {
   }
 }
 
-/** Translate one materialized generation into the opaque launch contract consumed by harness drivers. */
-export async function agentPluginHarnessLaunch(
-  generation: Pick<MaterializedAgentPluginGeneration, "projections"> | undefined,
+/**
+ * The launch rows the workspace runtime turns into each harness's
+ * `StartInput.projection`. The ACP projection is not a launch row: custom
+ * connections take it as the snapshot's MCP map (`agentPluginAcpMcp`).
+ */
+export function agentPluginHarnessLaunch(
+  generation: Pick<MaterializedAgentPluginGeneration, "generationId" | "execution" | "projections"> | undefined,
 ) {
   const result: Record<string, Record<string, unknown>> = {}
-  for (const [harnessId, projection] of Object.entries(generation?.projections ?? {})) {
-    if (!projection) continue
-    if (projection.configFile) {
-      const config = JSON.parse(await fs.readFile(projection.configFile, "utf8")) as unknown
-      if (!config || typeof config !== "object" || Array.isArray(config)) {
-        throw new AgentPluginMaterializationError(
-          "artifact-unavailable",
-          `Materialized ${harnessId} plugin configuration is invalid`,
-        )
-      }
-      result[harnessId] = { config }
-      continue
+  if (!generation) return result
+  for (const [harnessId, projection] of Object.entries(generation.projections)) {
+    if (!projection || harnessId === "acp") continue
+    result[harnessId] = {
+      generation: generation.generationId,
+      execution: generation.execution,
+      mcpServers: projection.mcpServers,
+      notApplied: projection.notApplied,
+      pluginRoots: projection.pluginRoots.map(({ pluginInstanceId, root, dataRoot, skillNames }) => ({ pluginInstanceId, root, dataRoot, skillNames })),
     }
-    result[harnessId] = { pluginRoots: projection.pluginRoots.map((plugin) => plugin.root) }
   }
   return result
+}
+
+/** The MCP servers every ACP connection receives from this generation; empty when no plugin is active for ACP. */
+export async function agentPluginAcpMcp(
+  generation: Pick<MaterializedAgentPluginGeneration, "projections"> | undefined,
+): Promise<Record<string, AcpRuntimeMcpServer>> {
+  const configFile = generation?.projections.acp?.configFile
+  return configFile ? readAcpAgentPluginConfig(configFile) : {}
 }

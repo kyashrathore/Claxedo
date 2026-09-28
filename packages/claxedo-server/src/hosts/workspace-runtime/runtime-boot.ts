@@ -2,15 +2,12 @@ import { randomUUID } from "node:crypto"
 import path from "node:path"
 import {
   createRuntimeCredentialIssuer,
-  createWorkspaceOpenCodeRuntime,
   isLoopbackHostname,
   remoteWorkspaceSessionAccessPolicyFromEnv,
   WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL,
   workspaceRuntimeListenHostname,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
-import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
@@ -22,6 +19,7 @@ import {
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
+import { sandboxConnectionSecrets } from "./connection-secrets"
 import { configureRuntimeGitAuth } from "./git-auth"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
@@ -136,11 +134,6 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
   await configureRuntimeGitAuth(env)
-  // A sandbox selecting the native OpenCode harness owns its public
-  // embedded-SDK runtime for the workspace and closes it during drain.
-  const opencodeRuntime = harness?.kind === "native" && harness.harnessId === "opencode"
-    ? createWorkspaceOpenCodeRuntime(targetDirectory)
-    : undefined
   // The owner the control plane launched this root for, presented on the
   // runtime's own session calls. Its unverified `user_id` names the actor in
   // the MCP audit trail; nothing here trusts it for more than that.
@@ -176,6 +169,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       })
     : undefined
   const options: WorkspaceRuntimeServerOptions = {
+    ...(authorityUrl
+      ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), directory: targetDirectory, authorityUrl }) }
+      : {}),
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
     ...relayOptions,
@@ -203,8 +199,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           },
         }
       : {}),
-    ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
-    connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()],
+    // A sandbox is nobody's desktop: the owner's logins never reach it, and
+    // every session runs on brokered credentials.
+    placement: { placement: "cloud", machineOwnerUserId: ownerGrant?.userId ?? "", canUseOwnLogin: false },
+    env,
     corsOrigin: claxedoCorsOrigin,
     // The host entry's route contributions (the Agent Plugins VM image mounts
     // its apply route this way). Accepting them without forwarding them left

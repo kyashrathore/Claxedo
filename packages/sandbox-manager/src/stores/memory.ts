@@ -1,4 +1,4 @@
-import { applySandboxLeasePatch, applySandboxProvisionedTarget } from ".."
+import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "../contract"
 import type {
   SandboxLeaseAcquireInput,
   SandboxLeaseAcquireResult,
@@ -8,7 +8,7 @@ import type {
   SandboxLease,
   SandboxProvisionedTarget,
   SandboxRegion,
-} from ".."
+} from "../contract"
 
 export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseStore {
   const leases = new Map(seed.map((lease) => [lease.workspaceId, { ...lease }]))

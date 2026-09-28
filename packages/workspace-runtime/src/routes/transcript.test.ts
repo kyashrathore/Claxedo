@@ -3,6 +3,7 @@ import { Hono } from "hono"
 import { TranscriptRoutes } from "./transcript"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 test("transcript endpoint returns typed resolution without exposing bindings", async () => {
   const app = new Hono()
@@ -28,6 +29,7 @@ test("transcript endpoint returns typed resolution without exposing bindings", a
 
 test("workspace runtime mounts a host-supplied transcript resolver", async () => {
   const runtime = createWorkspaceRuntimeApp({
+    placement: loopbackMachineLoginPolicy(),
     exposure: loopbackWorkspaceRuntimeExposure(),
     transcripts: {
       workspaceId: "workspace-a",

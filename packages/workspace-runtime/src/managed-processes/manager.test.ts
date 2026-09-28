@@ -119,7 +119,7 @@ describe("process config file", () => {
 // interaction with the real ~/.claxedo/state directory.
 
 import * as PortLease from "./port-lease"
-import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 
 /** These tests assert scheduling and ports, not recovery: the records die with the test. */
 const ownership = volatileLaunchOwnership()

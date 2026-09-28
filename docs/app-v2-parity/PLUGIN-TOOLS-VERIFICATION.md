@@ -29,7 +29,7 @@ At tool-list and tool-call time, the daemon resolves the credential's workspace/
 | Claude Code | Existing native MCP launch configuration | Flow 40 create, red/green check, add, confirmation, outside-path refusal |
 | Codex | Existing thread MCP configuration | Guide invoked through the installed app-server's `functions.exec` custom-tool protocol |
 | OpenCode | `workspace-runtime/src/opencode/first-party-mcp.ts` | Native SDK test plus web/phone flow; concurrent owner/member catalog and credential isolation test |
-| Pi | `agent-sdk-runtime/src/harnesses/pi/first-party-mcp.ts` | Native executable test plus web/phone flow, including Node/tsx extension execution |
+| Pi | `harness/src/transports/pi-rpc/mcp.ts` | Native executable test (`harness/src/conformance/pi-mcp.test.ts`) plus web/phone flow, including Node/tsx extension execution |
 
 `app_plugin_guide` supplies the guide across all four harnesses; there is no harness-specific authoring skill installation.
 

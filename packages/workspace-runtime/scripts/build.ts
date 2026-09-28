@@ -23,7 +23,7 @@ import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "opencode"] as const
+const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "projection"] as const
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
@@ -33,7 +33,11 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/agent-runtime-contract/*",
   "@claxedo/agent-sdk-runtime",
   "@claxedo/agent-sdk-runtime/*",
+  "@claxedo/process-ownership",
+  "@claxedo/process-ownership/*",
   "@claxedo/agent-event-runtime",
+  "@claxedo/harness",
+  "@claxedo/harness/*",
   "@claxedo/agent-event-runtime/*",
 ]
 
@@ -102,12 +106,12 @@ function bundleJS() {
       esbuild,
       [
         `src/${entry}.ts`,
-        ...(entry === "client"
+        ...(entry === "client" || entry === "projection"
           ? ["--bundle", "--platform=browser", "--format=esm", "--target=es2022"]
           : nodeShared),
         `--outfile=${path.join(DIST, `${entry}.mjs`)}`,
         ...libraryExternals,
-        ...(entry === "client"
+        ...(entry === "client" || entry === "projection"
           ? []
           : ["--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);"]),
       ],

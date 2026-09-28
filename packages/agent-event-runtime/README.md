@@ -5,7 +5,8 @@ replayable event model.
 
 `@claxedo/agent-event-runtime` owns harness event normalization and projection.
 It turns harness-native event frames from external agent harnesses into
-canonical `AgentRuntimeEvent` values, then lets host packages project those
+canonical `AgentRuntimeEvent` values owned by `@claxedo/agent-runtime-contract`,
+then lets host packages project those
 events into UI, compatibility, replay, or diagnostic formats.
 
 The package is intentionally browser-safe. Hosts still own process management,
@@ -20,28 +21,18 @@ npm install @claxedo/agent-event-runtime
 ## Quickstart
 
 ```ts
-import { createAgentEventRuntime, type RawHarnessEvent } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { agentRuntimeEvent, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
-const runtime = createAgentEventRuntime({
-  harness: "claude-sdk",
-  threadId: "thread_123",
-  adapter: claudeSdkAdapter(),
-})
-
-const raw: RawHarnessEvent = {
-  source: "claude-sdk",
-  payload: { type: "result", subtype: "success" },
-}
-
-for (const event of runtime.ingest(raw).events) console.log(event.type)
+const projection = createClientPresentationProjection({ sessionId: "ses_1", directory: "/work", assistantMessageId: "msg_1" })
+const event: AgentRuntimeEvent = agentRuntimeEvent.textDelta({ delta: "hello" })
+for (const frame of projection.ingest(event)) console.log(frame.payload.type)
 ```
 
-`runtime.ingest()` translates one raw harness frame into zero or more
-canonical `AgentRuntimeEvent` values. Swap in `codexAppServerAdapter()` or
-`cursorSdkAdapter()` from the matching `harnesses/*` subpath to translate a
-different harness's event stream the same way; the ACP harness adapter is
-`createAcpEventTranslator()` from `harnesses/acp`.
+The harness translators and the translation runner live inside
+`@claxedo/harness`, each transport's in its own `translate/` folder, and are
+not exported. The event contracts live in `@claxedo/agent-runtime-contract`.
+This package keeps the snapshot helpers and the projections.
 
 ## Agent-First Public Docs
 
@@ -58,13 +49,9 @@ The package ships public docs under `docs/`. Use
 
 Entry point status:
 
-- Stable: `@claxedo/agent-event-runtime`,
-  `@claxedo/agent-event-runtime/contracts`
-- Integration: `@claxedo/agent-event-runtime/harnesses/acp`,
-  `@claxedo/agent-event-runtime/harnesses/claude`,
-  `@claxedo/agent-event-runtime/harnesses/codex`,
-  `@claxedo/agent-event-runtime/harnesses/cursor`,
-  `@claxedo/agent-event-runtime/projections/debug-trace`
+- Stable: `@claxedo/agent-event-runtime`
+- Shared event contracts: `@claxedo/agent-runtime-contract`
+- Integration: `@claxedo/agent-event-runtime/projections/debug-trace`
 - Compatibility:
   `@claxedo/agent-event-runtime/client-presentation`
 

@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { placementId, projectId, sessionId } from "../ids"
+import type { ServerEvent } from "../events"
+import { placementId, projectId, requestId, sessionId } from "../ids"
 import { frameOf, serverEventFromFrame } from "./frames"
 import type { Address } from "./session-row"
 
@@ -33,4 +34,16 @@ test("frames: a harness.health frame becomes the session's harnessHealthChanged"
 test("frames: a harness.health frame without a known health status is dropped", () => {
   const frame = frameOf({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
   expect(frame && serverEventFromFrame(frame, address)).toBeUndefined()
+})
+
+test("frames: an expired permission or question closes the request exactly as its reply does", () => {
+  const settled = (type: string) => {
+    const frame = frameOf({ directory: "/work", payload: { type, properties: { sessionID: "s1", requestID: "req-1" } } })
+    return frame && serverEventFromFrame(frame, address)
+  }
+  const closed: ServerEvent = { type: "requestClosed", ref, requestId: requestId("req-1") }
+  expect(settled("permission.replied")).toEqual(closed)
+  expect(settled("permission.expired")).toEqual(closed)
+  expect(settled("question.rejected")).toEqual(closed)
+  expect(settled("question.expired")).toEqual(closed)
 })

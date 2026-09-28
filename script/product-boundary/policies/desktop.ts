@@ -158,7 +158,7 @@ export const desktopMainComposition: Policy = {
   //
   // +1 module, +2 packages (2026-09-21): `main/daemon-recovery.ts`. It is the
   // external owner of a daemon that stopped answering HTTP, so it needs the two
-  // things only those packages hold: `@claxedo/agent-sdk-runtime/launch` for
+  // things only those packages hold: `@claxedo/process-ownership/launch` for
   // creation identity and identity-checked retirement, and
   // `@claxedo/agent-runtime-contract` for the recovery result it reports.
   // Reviewed owner: Electron main, which is the only process that launched the
@@ -369,9 +369,9 @@ export const desktopRenderer: Policy = {
   // The outgoing slot unmounts after the swap paints
   // (`workbench/view/deferred-unmount.ts`).
   // The kit (`@opencode-ai/ui`) is one of the packages; its source is not
-  // walked. `@claxedo/agent-event-runtime/contracts` is one too: it owns the
-  // event streams' heartbeat and the stall timeout the app's stream reader
-  // drops a silent stream after. The shell's `shell/daemon-status.ts` and
+  // walked. `@claxedo/agent-runtime-contract` is one too: among the data the
+  // app reads from it, it owns the event streams' heartbeat and the stall
+  // timeout the app's stream reader drops a silent stream after. The shell's `shell/daemon-status.ts` and
   // `shell/view/daemon-lost-banner.tsx` are the desktop's one alert that its
   // local service stopped. `server/model-choice.ts` is the one comparison of two
   // model choices, read by the composer's model selection and by the session
@@ -386,8 +386,14 @@ export const desktopRenderer: Policy = {
   // failure dot reads. The Review column's file row (`review/view/change-row.tsx`),
   // its muted diff counts (`review/view/change-counts.tsx`), which the review
   // toolbar's totals also draw, and its folder label (`review/folder-label.ts`),
-  // which its unit test reaches directly, are modules of their own.
-  ceilings: { modules: 1227, packages: 37 },
+  // which its unit test reaches directly, are modules of their own. Settings'
+  // own-or-team account choice reads and writes through
+  // `server/account-sources.ts` and draws `accounts/view/hosted-account-source.tsx`;
+  // the slash picker reads a harness's runtime and saved commands through
+  // `server/harness-commands.ts`, parsed by `server/wire/harness-commands.ts`;
+  // and onboarding's choice of where the first project lives, the draft it
+  // holds and the creation Finish opens are `onboarding/{place,model,finish}.ts`.
+  ceilings: { modules: 1229, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

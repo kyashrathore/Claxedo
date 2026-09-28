@@ -22,4 +22,6 @@ export async function fanOutConfig(): Promise<void> {
     if (result.status === "fulfilled") return
     log.warn("config fan-out target failed", { target: targets[index]?.name })
   })
+  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "config fan-out failed")
 }

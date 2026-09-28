@@ -55,6 +55,13 @@
       "import": "./dist/host.mjs",
       "default": "./dist/host.mjs"
     },
+    "./projection": {
+      "development": "./src/projection.ts",
+      "bun": "./src/projection.ts",
+      "types": "./dist/projection.d.ts",
+      "import": "./dist/projection.mjs",
+      "default": "./dist/projection.mjs"
+    },
     "./exposure": {
       "development": "./src/exposure.ts",
       "bun": "./src/exposure.ts",
@@ -96,13 +103,6 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.mjs",
       "default": "./dist/testing.mjs"
-    },
-    "./opencode": {
-      "development": "./src/opencode.ts",
-      "bun": "./src/opencode.ts",
-      "types": "./dist/opencode.d.ts",
-      "import": "./dist/opencode.mjs",
-      "default": "./dist/opencode.mjs"
     }
   },
   "files": [
@@ -127,10 +127,9 @@
     "verify:publish": "tsx scripts/verify-publish.ts",
     "prepublishOnly": "npm run build && npm run verify:publish",
     "postinstall": "node scripts/install-opencode-node.mjs",
-    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test --path-ignore-patterns='**/store.test*' --path-ignore-patterns='**/first-party-mcp/native-tools.test.ts' --path-ignore-patterns='**/opencode/first-party-mcp.test.ts' --path-ignore-patterns='**/real-spawn.test*' --path-ignore-patterns='**/workspace-relay-e2e*' --path-ignore-patterns='**/workspace-relay-host-tunnel*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../scripts/test-deadline.mjs bun test src/workspace-relay-e2e.test.ts src/workspace-relay-host-tunnel.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-relay.xml && bun run test:first-party-mcp && node ../../scripts/test-deadline.mjs node --import ./src/text-imports.mjs --import tsx --import ./src/test-support/isolated-home.ts --test src/store.test.ts src/pty/real-spawn.test.ts src/pi-native.node-test.ts src/ownership/launch-gate.node-test.ts",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test --path-ignore-patterns='**/store.test*' --path-ignore-patterns='**/real-spawn.test*' --path-ignore-patterns='**/workspace-relay-e2e*' --path-ignore-patterns='**/workspace-relay-host-tunnel*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../scripts/test-deadline.mjs bun test src/workspace-relay-e2e.test.ts src/workspace-relay-host-tunnel.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-relay.xml && node ../../scripts/test-deadline.mjs node --import ./src/text-imports.mjs --import tsx --import ./src/test-support/isolated-home.ts --test src/store.test.ts src/pty/real-spawn.test.ts src/pi-native.node-test.ts src/ownership/launch-gate.node-test.ts",
     "test:performance": "bun test ./perf/runtime-store.perf.ts",
-    "test:opencode-node": "node ../../scripts/test-deadline.mjs node scripts/node-sdk-smoke.mjs && node ../../scripts/test-deadline.mjs node scripts/node-host-smoke.mjs",
-    "test:first-party-mcp": "node ../../scripts/test-deadline.mjs bun test src/first-party-mcp/native-tools.test.ts src/opencode/first-party-mcp.test.ts --timeout 60000"
+    "test:opencode-node": "node ../../scripts/test-deadline.mjs node scripts/node-sdk-smoke.mjs && node ../../scripts/test-deadline.mjs node scripts/node-host-smoke.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.3.0",
@@ -139,12 +138,14 @@
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/process-ownership": "workspace:*",
     "@claxedo/workspace-relay": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
     "@hono/node-server": "1.19.11",
-    "@lydell/node-pty": "1.2.0-beta.14",
     "@hono/node-ws": "1.3.1",
+    "@lydell/node-pty": "1.2.0-beta.14",
     "@xterm/addon-serialize": "0.15.0-beta.289",
     "@xterm/addon-unicode11": "0.10.0-beta.289",
     "@xterm/headless": "6.1.0-beta.289",
@@ -153,13 +154,10 @@
     "hono": "4.12.34",
     "jose": "6.0.11",
     "jsonc-parser": "3.3.1",
+    "koffi": "3.1.6",
     "ws": "8.21.0",
     "zod": "4.4.3",
-    "zod-to-json-schema": "3.25.2",
-    "@opencode-ai/sdk": "0.0.0-beta-18684",
-    "@opencode-ai/schema": "0.0.0-beta-18684",
-    "@opencode-ai/plugin": "0.0.0-beta-18684",
-    "koffi": "3.1.6"
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

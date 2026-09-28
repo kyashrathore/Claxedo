@@ -6,7 +6,7 @@ import type { QueuedPromptRecord, QueuedPromptAttempt } from "../store"
 
 export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release" | { replace: NonNullable<QueuedPromptRecord["parts"]> }
 
-type SteeringResult = NonNullable<Awaited<ReturnType<import("@claxedo/agent-sdk-runtime").AgentRuntime["turns"]["start"]>>["steering"]>
+type SteeringResult = NonNullable<Awaited<ReturnType<import("../host/runtime").AgentRuntime["turns"]["start"]>>["steering"]>
 export type QueuedControlResult = { ok: true } | { ok: false; status: "pending" | "rejected" | "unknown" | "conflict" | "provider_owned"; message: string; operationId?: string }
 export type QueuedPromptRequester = Pick<QueuedPromptRecord, "actor" | "author" | "authority" | "provenance" | "grant">
 export type SessionDeliveryStore = {
@@ -19,6 +19,7 @@ export type SessionDeliveryStore = {
   setQueuedPromptHeld(sessionId: string, seq: number, held: boolean): boolean
   completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean
   sessionDirectory(sessionId: string): string | undefined
+  sessionArchived(sessionId: string): boolean
 }
 type Submission = { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester
 export type SessionDeliveryOwner = {
@@ -132,7 +133,7 @@ export function createSessionDeliveryOwner(input: {
         const handoff = await input.whenIdle(sessionId, directory)
         if (handoff.unavailable) return
         try {
-          if (disposed) return
+          if (disposed || store().sessionArchived(sessionId)) return
           // A control or another owner may have changed the queue while idle
           // admission was pending. Only the freshly read durable row may run.
           const current = next(sessionId)

@@ -41,7 +41,10 @@ never drags a Node builtin onto a worker or renderer import graph.
 
 ## Dependencies
 
-Zero runtime dependencies today, and a third-party one is admitted only when it
-is tree-shakable and its absence would mean re-deriving real complexity here. A
-shared helper that pulls in a package pushes that dependency onto every
-consumer, and the packages here are consumed by published ones.
+A third-party dependency is admitted only when it is tree-shakable and its
+absence would mean re-deriving real complexity here. The runtime-neutral
+`@claxedo/helpers/skill-frontmatter` entrypoint uses `yaml` to decode skill
+metadata and preserve the body for the plugin catalog and harness profiles.
+It is built separately from the root barrel so consumers of unrelated helpers
+do not load the YAML parser. Callers retain their own metadata validation and
+schema construction.

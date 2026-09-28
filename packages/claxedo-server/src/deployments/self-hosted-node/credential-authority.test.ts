@@ -20,7 +20,7 @@ describe("the self-hosted box's credential authority", () => {
     // credential never traverses it. Installing the authority only alongside
     // the broker left an egress-broker composition answering shared scope with
     // nothing, which a harness reads as permission to use its image's login.
-    const credential = await putCredential({
+    const credential = await putCredential({ owner: "local",
       provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
@@ -29,31 +29,31 @@ describe("the self-hosted box's credential authority", () => {
       consent: { at: 1, surface: "api_key" },
       secret: "sk-ant-api03-marked",
     })
-    expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
+    expect(setActiveCredentials([credential.id], undefined, "local")).toMatchObject({ ok: true })
 
     const withoutBroker = selfHostedCredentialAuthority()
-    await expect(withoutBroker({ scope: "shared", workspaceId: "ws_1", secretBrokering: "native" }))
-      .resolves.toEqual({
+    await expect(withoutBroker({ scope: "shared", workspaceId: "ws_1", secretBrokering: "native", sandboxOwner: "local" }))
+      .resolves.toEqual({ machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": {
           baseUrl: "https://api.anthropic.com",
-          placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
           authMode: "api-key",
           apiPath: "/v1",
         },
-      })
+      } } })
   })
 
   test("local scope is this machine's own business and reaches no cloud delivery", async () => {
-    await expect(selfHostedCredentialAuthority()({ scope: "local", workspaceId: "ws_1" })).resolves.toEqual({})
+    await expect(selfHostedCredentialAuthority()({ scope: "local", workspaceId: "ws_1" })).resolves.toEqual({ machineOwnerUserId: "local", accounts: {} })
   })
 
   test("a broker beside it answers instead of the native delivery", async () => {
-    const projectAuth = vi.fn(async () => ({
+    const projectAuth = vi.fn(async () => ({ machineOwnerUserId: "local", accounts: { local: {
       "claude-sdk": { unavailable: true as const, reason: "secret_brokering_unsupported" },
-    }))
+    } } }))
     const withBroker = selfHostedCredentialAuthority({ projectAuth })
     await expect(withBroker({ scope: "shared", workspaceId: "ws_1" }))
-      .resolves.toEqual({ "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" } })
+      .resolves.toEqual({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" } } } })
     expect(projectAuth).toHaveBeenCalledWith({ scope: "shared", workspaceId: "ws_1" })
   })
 })

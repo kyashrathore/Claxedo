@@ -24,30 +24,29 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import type { OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
+import { DESKTOP_PLACEMENT } from "./connection-secret-scope"
+import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/exposure"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import {
-  createAcpConnectionProvider,
   projectionRenewalDue,
   projectionRenewalDueAt,
   type AgentTurnOutcome,
   type CompatEnvelope,
-  type ConnectionProvider,
   type ConnectionSecretResolver,
 } from "@claxedo/agent-sdk-runtime"
-import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
-import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
+import { ConnectionUnavailableError, createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
+import { localConnectionSecretScope } from "./connection-secret-scope"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
-import { renewSdkCredentialsIfDue } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 
@@ -77,6 +76,8 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   generation: string
   observed: MountedEmbeddedWorkspaceRuntime
   applying?: Promise<void>
+  /** A configure asked for after the running apply read its snapshot, which that apply therefore cannot answer. */
+  applyRequested?: boolean
   reconcilingSessionMetadata?: Promise<void>
   diagnosticsOwner?: ProcessOwnerHandle
   /** When this runtime's earliest placeholder must be replaced; absent when it holds none. */
@@ -265,16 +266,15 @@ export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionI
   return config
 }
 
-/** The process-owned public embedded-SDK runtime every embedded host shares (the native `opencode` harness). */
-let configuredOpenCodeRuntime: OpenCodeRuntime | undefined
-let configuredConnectionProviders: readonly ConnectionProvider<unknown, unknown>[] = [
-  createAcpConnectionProvider(),
-  createOpenCodeServerConnectionProvider(),
-]
-let configuredConnectionSecretResolver: ConnectionSecretResolver = createLocalConnectionSecretResolver({
-  async resolveReference({ reference }) {
+let configuredConnectionProviders: readonly CustomHarnessProvider<unknown>[] = []
+let configuredConnectionSecretResolver: ConnectionSecretResolver = (request) => {
+  const scope = localConnectionSecretScope(request.owner)
+  if (Object.keys(request.descriptor.secretRefs ?? {}).length === 0 && !scope.machineLoginAllowed) {
+    throw new ConnectionUnavailableError(request.descriptor.connectionId, "missing_secret")
+  }
+  return createLocalConnectionSecretResolver({ resolveReference: async ({ reference }) => {
     const credential = credentialById(reference, { onOutage: "empty" })
-    if (!credential) return { leaseGeneration: "missing" }
+    if (!credential || !scope.admits(credential)) return { leaseGeneration: "missing" }
     const value = await resolveSecretById(reference)
     return {
       ...(value ? { value } : {}),
@@ -284,8 +284,8 @@ let configuredConnectionSecretResolver: ConnectionSecretResolver = createLocalCo
         : { expiresAt: credential.expires_at }),
       ...(credential.status === "revoked" ? { revoked: true } : {}),
     }
-  },
-})
+  } })(request)
+}
 /**
  * Host-supplied route groups for every embedded runtime this process creates.
  *
@@ -301,6 +301,7 @@ let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
 let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
+let configuredSessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"] | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
 let configuredFirstPartyMcpLaunch: EmbeddedFirstPartyMcpLaunch | undefined
 
@@ -361,8 +362,8 @@ export function embeddedWorkspaceRuntimeLoopbackSessionAuthority() {
 }
 
 export function configureEmbeddedWorkspaceRuntime(input: {
-  opencodeRuntime?: OpenCodeRuntime
-  connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
+  /** Connection providers beside the built-in ones; a call that names none keeps the built-ins only. */
+  connectionProviders?: readonly CustomHarnessProvider<unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
@@ -373,13 +374,13 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaEvent?: (event: CompatEnvelope) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
+  sessionIdWorkspace?: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Absent, no embedded runtime injects the first-party MCP entry into its sessions. */
   firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
 }) {
-  configuredOpenCodeRuntime = input.opencodeRuntime
+  configuredConnectionProviders = input.connectionProviders ?? []
   configuredFirstPartyMcpLaunch = input.firstPartyMcpLaunch
-  configuredConnectionProviders = input.connectionProviders ?? configuredConnectionProviders
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
@@ -388,6 +389,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
+  configuredSessionIdWorkspace = input.sessionIdWorkspace
   configuredOnTurnOutcome = input.onTurnOutcome
 }
 
@@ -417,7 +419,7 @@ function options(
 } {
   return {
     ...(harness ? { harness } : {}),
-    ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
+    placement: DESKTOP_PLACEMENT,
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
     onActivityChange: activityChanged,
@@ -425,6 +427,7 @@ function options(
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
+    ...(configuredSessionIdWorkspace ? { sessionIdWorkspace: configuredSessionIdWorkspace } : {}),
     ...(configuredFirstPartyMcpLaunch
       ? {
           firstPartyMcpLaunch: {
@@ -479,15 +482,30 @@ async function apply(runtime: EmbeddedRuntime) {
     workspaceId: runtime.workspace.id,
   })
   await runtime.host.apply(snapshot)
-  runtime.renewAt = projectionRenewalDueAt(snapshot.auth, appliedAt)
+  const renewAt = Math.min(...Object.values(snapshot.auth.accounts).map((providers) => projectionRenewalDueAt(providers, appliedAt) ?? Infinity))
+  runtime.renewAt = Number.isFinite(renewAt) ? renewAt : undefined
   runtime.renewFailures = 0
 }
 
+/**
+ * Resolves only after an apply whose snapshot was read after this call: a
+ * mutation that lands while another apply is running is not in that apply's
+ * snapshot, so answering it with that apply would acknowledge configuration
+ * the runtime never received.
+ */
 function configure(runtime: EmbeddedRuntime) {
-  runtime.applying ??= apply(runtime).finally(() => {
+  runtime.applyRequested = true
+  runtime.applying ??= drainApplies(runtime).finally(() => {
     runtime.applying = undefined
   })
   return runtime.applying
+}
+
+async function drainApplies(runtime: EmbeddedRuntime) {
+  while (runtime.applyRequested) {
+    runtime.applyRequested = false
+    await apply(runtime)
+  }
 }
 
 function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
@@ -637,7 +655,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
       exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
       parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
     }, harness),
-    beforeAdapterAcquire: async () => {
+    beforeHarnessAcquire: async () => {
       // Fan-out and mutation admission refresh accepted snapshots. Read-side
       // acquisition only supplies the missing initial snapshot (or retries a
       // failed apply), and shares configure's in-flight promise.
@@ -747,8 +765,19 @@ export async function attachEmbeddedWorkspacePty(input: {
   }
 }
 
+/**
+ * Every runtime is re-configured even when one fails; the failures are then
+ * reported together. A harness refusing a session is that runtime's recorded
+ * outcome, not a failure of the change that asked for the re-configure.
+ */
 export async function syncEmbeddedWorkspaceRuntimes() {
-  await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
+  const results = await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
+  const failed = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+  for (const refusal of failed.filter(isSessionConfigRefusal)) {
+    log.warn("a harness refused a session's configuration", { error: String(refusal) })
+  }
+  const broken = failed.filter((error) => !isSessionConfigRefusal(error))
+  if (broken.length > 0) throw new AggregateError(broken, `${broken.length} embedded runtime(s) failed to re-configure`)
 }
 
 /** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */
@@ -769,11 +798,6 @@ const RENEWAL_RETRY_CEILING_MS = 5 * 60_000
  * fails authentication carries nothing naming the renewal that did not happen.
  */
 export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; all?: boolean }) {
-  // The engine is one process serving every workspace, so its placeholder has
-  // no runtime in `hosts` to expire with.
-  await renewSdkCredentialsIfDue(input).catch((error: unknown) => {
-    log.warn("renewing the OpenCode engine's credentials failed", { error: String(error) })
-  })
   for (const runtime of hosts.values()) {
     if (!projectionRenewalDue(input, runtime.renewAt)) continue
     try {
