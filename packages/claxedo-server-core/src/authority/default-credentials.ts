@@ -1,3 +1,4 @@
+import { CredentialDeliveryError } from "../credentials/delivery"
 /**
  * The default credential port: the local registry, behind the shared contract.
  *
@@ -46,30 +47,12 @@ async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string
 }
 
 /**
- * Push registry state into the embedded OpenCode engine's own auth store after
- * a mutation. The engine resolves auth from a store Claxedo does not otherwise
- * write, so without this a key stored in the app never reaches an embedded
- * turn. Scheduling is write-only-when-running: a cold embedded engine is never
- * booted for an auth write — the bridge records the mutation and its boot hook
- * reconciles when the engine actually starts. Lazy-imported like the rest of
- * the fs-touching modules here: Worker hosts have no embedded engine and must
- * keep it off their import graph.
- *
- * `providers` is what the mutation touched; the bridge leaves the engine alone
- * when none of them is one it binds. `undefined` reconciles everything.
- */
-async function syncOpenCodeCredentials(org: string | undefined, providers: readonly string[] | undefined) {
-  const bridge = await import("@claxedo/server-core/opencode/sdk-credential-bridge")
-  await bridge.syncCredentialsToSdk(org, providers)
-}
-
-/**
  * Reconcile delivered credentials in the sandboxes the workspace supervisor
  * keeps running. A cloud sandbox's brokered accounts live at its provider's
  * edge, which only this reconcile withdraws: without it a revoked account
- * stays spendable there until the next ensure happens to run. Like the engine
- * sync it is write-only-when-running — a stopped sandbox needs nothing because
- * its next ensure resolves the current set — and a host with no supervisor
+ * stays spendable there until the next ensure happens to run. It is
+ * write-only-when-running — a stopped sandbox needs nothing because its next
+ * ensure resolves the current set — and a host with no supervisor
  * has nothing delivered to reconcile. Lazy like the rest: the hosted Worker
  * composes its own adapter and must not grow a node-side graph here.
  */
@@ -78,7 +61,22 @@ async function syncDeliveredCredentials() {
   await workspaceSupervisor().reconcileCredentialDelivery()
 }
 
-export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
+/**
+ * Carries a stored credential change to every running workspace: the
+ * supervisor's sandboxes and, where the composition has them, its local
+ * runtimes. Both are attempted whichever fails, so one unreachable sandbox
+ * never leaves a local runtime spending a revoked account.
+ */
+export async function deliverCredentialChange(refreshLocalRuntimes?: () => Promise<void>) {
+  const results = await Promise.allSettled([syncDeliveredCredentials(), refreshLocalRuntimes?.()])
+  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+  if (!failures.length) return
+  if (failures.length === 1 && failures[0] instanceof CredentialDeliveryError) throw failures[0]
+  throw new CredentialDeliveryError(failures.length === 1 ? failures[0] : new AggregateError(failures, "credential delivery failed"))
+}
+
+export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?: () => Promise<void> } = {}): ControlPlaneCredentials {
+  const deliver = () => deliverCredentialChange(options.refreshLocalRuntimes)
   return {
     listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
     effectiveCredentials: async (scope, org) => {
@@ -87,11 +85,8 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
     },
     setActiveCredentials: async (ids, org) => {
       const result = (await credentialRegistry()).setActiveCredentials(ids, org)
-      // The engine resolves auth from a store Claxedo does not otherwise write:
-      // without this the next embedded turn runs on the account just replaced.
       if (result.ok) {
-        await syncDeliveredCredentials()
-        await syncOpenCodeCredentials(org, result.credentials.map((credential) => credential.provider_id))
+        await deliver()
       }
       return result
     },
@@ -102,43 +97,37 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
     resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),
     putCredential: async (input, org) => {
       const stored = await (await credentialRegistry()).putCredential(input, org)
-      await syncDeliveredCredentials()
-      await syncOpenCodeCredentials(org, [stored.provider_id])
+      await deliver()
       return stored
     },
     deleteCredential: async (id, org) => {
       const registry = await credentialRegistry()
-      const provider = registry.credentialById(id, { onOutage: "empty" }, org)?.provider_id
       const deleted = await registry.deleteCredential(id, org)
       if (deleted) {
-        await syncDeliveredCredentials()
-        await syncOpenCodeCredentials(org, provider === undefined ? undefined : [provider])
+        await deliver()
       }
       return deleted
     },
     deleteCredentialsByProvider: async (providerId, kind, org) => {
       const count = await (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind, org)
       if (count > 0) {
-        await syncDeliveredCredentials()
-        await syncOpenCodeCredentials(org, [providerId])
+        await deliver()
       }
       return count
     },
     updateCredentialStatus: async (id, status, error, org) => {
       const registry = await credentialRegistry()
-      const provider = registry.credentialById(id, { onOutage: "empty" }, org)?.provider_id
       registry.updateCredentialStatus(id, status, error, org)
       // Status is the revocation write: a row flipped away from `available`
       // leaves the delivered set, and one restored rejoins it.
-      await syncDeliveredCredentials()
-      await syncOpenCodeCredentials(org, provider === undefined ? undefined : [provider])
+      await deliver()
     },
     updateCredentialHealth: async (id, health, validatedAt, org) => {
       const registry = await credentialRegistry()
       registry.updateCredentialHealth(id, health, validatedAt, org)
       // A verdict that ends an account hands its mark to an heir inside the
       // write, which is a delivered-set change like any other.
-      await syncDeliveredCredentials()
+      await deliver()
     },
     updateCredentialUsage: async (id, windows, at, org) => {
       const registry = await credentialRegistry()
@@ -153,7 +142,7 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       const updated = (await credentialRegistry()).updateCredentialScope(id, scope, consentAt, org)
       // Narrowing a shared account to local removes it from every sandbox's
       // delivered set; widening delivers it. Either direction reconciles.
-      if (updated) await syncDeliveredCredentials()
+      if (updated) await deliver()
       return updated
     },
     updateCredentialSecret: async (id, secret, expiresAt, org) => {
@@ -161,24 +150,19 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       const stored = await registry.updateCredentialSecret(id, secret, expiresAt, org)
       if (stored) {
         await mirrorRenewedLocalTokens(id, secret, org)
-        // A renewed token is new auth material: the engine holds the old one.
-        const provider = registry.credentialById(id, { onOutage: "empty" }, org)?.provider_id
-        await syncDeliveredCredentials()
-        await syncOpenCodeCredentials(org, provider === undefined ? undefined : [provider])
+        await deliver()
       }
       return stored
     },
     updateCredentialLabel: async (id, label, org) => (await credentialRegistry()).updateCredentialLabel(id, label, org),
     saveDiscoveredCredentials: async (input, org) => {
       const saved = await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org)
-      await syncDeliveredCredentials()
-      await syncOpenCodeCredentials(org, input.items.map((item) => item.provider_id))
+      await deliver()
       return saved
     },
     syncLocalCredentials: async (providerIds, org) => {
       const result = await (await import("@claxedo/server-core/credentials/operations/sync")).syncLocalCredentials(providerIds, org)
-      await syncDeliveredCredentials()
-      await syncOpenCodeCredentials(org, providerIds)
+      await deliver()
       return result
     },
   }

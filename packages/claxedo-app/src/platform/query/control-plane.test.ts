@@ -164,6 +164,26 @@ describe("control-plane query helpers", () => {
     expect(Array.from((await query.queryFn()).all.keys())).toEqual(["openai"])
   })
 
+  test("onboarding's OpenCode catalog read names no workspace, and a stored account counts as connected", async () => {
+    const urls: string[] = []
+    const query = providerListQuery({
+      baseUrl: "http://example.test",
+      harnessType: "opencode",
+      request: async (url) => {
+        urls.push(url instanceof Request ? url.url : url instanceof URL ? url.href : url)
+        return Response.json({
+          all: [{ id: "openai", name: "OpenAI", source: "api", env: [], models: {} }, { id: "anthropic", name: "Anthropic", source: "config", env: [], models: {} }],
+          connected: ["openai"],
+          default: {},
+        })
+      },
+    })
+    const catalog = await query.queryFn()
+    expect(urls).toEqual(["http://example.test/api/claxedo/agent-config/providers?nativeHarness=opencode"])
+    expect(catalog.connected).toEqual(["openai"])
+    expect(Array.from(catalog.all.keys())).toEqual(["openai", "anthropic"])
+  })
+
   test("a late compact provider index preserves model details already loaded into the cache", () => {
     const detailed = normalizeProviderList({
       all: [{
@@ -392,4 +412,15 @@ describe("deploymentPostureFailure", () => {
       }).catch(deploymentPostureFailure),
     ).resolves.toBe("It could not be reached.")
   })
+})
+
+test("OpenCode list and detail reads carry the directory that keys their cache", async () => {
+  const urls: string[] = []
+  const request = async (url: URL | RequestInfo) => {
+    urls.push(typeof url === "string" ? url : url instanceof URL ? url.href : url.url)
+    return Response.json({ all: [], connected: [], default: {} })
+  }
+  await providerListQuery({ baseUrl: "http://example.test", directory: "workspace:ws", harnessType: "opencode", request: request as typeof fetch }).queryFn()
+  await providerDetailsQuery({ baseUrl: "http://example.test", directory: "workspace:ws", harnessType: "opencode", providerId: "acme", request }).queryFn()
+  expect(urls.every((url) => new URL(url).searchParams.get("directory") === "workspace:ws")).toBe(true)
 })

@@ -35,7 +35,6 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
-import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
@@ -158,9 +157,6 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services ?? createLocalControlPlaneServices()
-  // The process-owned public embedded-SDK runtime behind the provider and
-  // credential routes; every embedded workspace host composes its own engine.
-  openCodeSdkRuntime()
 
   type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
   let settleTurnOutcome: TurnOutcomeHandler = () => undefined
@@ -438,7 +434,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       } finally {
         await listenerClosed
         disposeAgentConfig()
-        await drainOpenCodeSdkRuntime()
         ClaxedoDB.close()
         process.off("exit", release)
         release()

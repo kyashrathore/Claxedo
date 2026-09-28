@@ -4,6 +4,7 @@ import type { TransportConfigUpdate } from "./transport"
 
 export function mergeStartInput(start: StartInput, update: TransportConfigUpdate): StartInput {
   return { ...start,
+    ...(update.providerDefinitions ? { providerDefinitions: update.providerDefinitions } : {}),
     ...(update.credentials ? { credentials: update.credentials } : {}),
     ...(update.projection ? { projection: update.projection } : {}) }
 }

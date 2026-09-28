@@ -5,7 +5,6 @@ import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { WorkspaceScope, type OpenCodeRuntime } from "@claxedo/workspace-runtime/testing"
 import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
   materializeClaxedoPublicCorpus,
@@ -83,16 +82,8 @@ describe("public OpenCode corpus materialization", () => {
       const target = result.readinessTargets.get("control")!
       expect(target.expectedPartIds).toEqual(["prt_assistant"])
 
-      // Use the production host composition to choose its own SDK path. Passing
-      // the fixture's path to another SDK instance would validate the same bug.
-      const runtimeModule = "../../../claxedo-server-core/src/opencode/sdk-runtime.ts"
-      const { openCodeSdkRuntime, drainOpenCodeSdkRuntime } = (await import(runtimeModule)) as {
-        openCodeSdkRuntime: () => OpenCodeRuntime
-        drainOpenCodeSdkRuntime: () => Promise<void>
-      }
       const dataDirectory = path.join(root, "state", "data")
       await withClaxedoDataDirectory(dataDirectory, async () => {
-        const sdk = openCodeSdkRuntime()
         const metadata = new Database(path.join(dataDirectory, "claxedo.db"), { readonly: true })
         const { workspace_id: workspaceId } = metadata
           .query("SELECT workspace_id FROM claxedo_session_meta WHERE session_id = ?")
@@ -101,13 +92,12 @@ describe("public OpenCode corpus materialization", () => {
         const runtime = createWorkspaceRuntimeApp({
           target: { workspaceId, directory: target.workspaceDirectory },
           storeRoot: path.join(dataDirectory, "agent-core", workspaceId),
-          opencodeRuntime: sdk,
           exposure: loopbackWorkspaceRuntimeExposure(),
         })
         try {
-          const scope = WorkspaceScope.authorize({ workspaceID: workspaceId, directory: target.workspaceDirectory })
-          expect((await sdk.sessions.get(scope, target.sessionId)).title).toBe(target.title)
-          expect((await sdk.sessions.messages(scope, target.sessionId)).messages).toHaveLength(2)
+          const sessionResponse = await runtime.app.request(`http://localhost/session/${target.sessionId}`)
+          expect(sessionResponse.status).toBe(200)
+          expect(await sessionResponse.json()).toMatchObject({ id: target.sessionId, title: target.title })
           for (const query of ["view=latest-turn", "snapshot=1"]) {
             const response = await runtime.app.request(
               `http://localhost/session/${target.sessionId}/message?${query}`,
@@ -138,11 +128,10 @@ describe("public OpenCode corpus materialization", () => {
           }
         } finally {
           await runtime.dispose()
-          await drainOpenCodeSdkRuntime()
         }
       })
 
-      const database = new Database(path.join(root, "state", "data", "opencode-runtime", "opencode.db"), {
+      const database = new Database(path.join(root, "state", "data", "benchmark-engine", "opencode.db"), {
         readonly: true,
       })
       const session = database

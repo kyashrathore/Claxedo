@@ -76,12 +76,30 @@ describe("disconnectProvider", () => {
       source: "api",
       deleteCredential: async (id) => { calls.push(`credential:${id}`) },
       removeAuth: async (id) => { calls.push(`auth:${id}`) },
+      removeCustomProvider: async (id) => { calls.push(`custom:${id}`) },
       markDisconnected: (id) => { calls.push(`mark:${id}`) },
       refresh: async () => { calls.push("refresh") },
       onSuccess: (name) => { calls.push(`success:${name}`) },
       onError: () => expect.unreachable(),
     })
     expect(calls).toEqual(["credential:openai", "auth:openai", "mark:openai", "success:OpenAI", "refresh", "mark:openai"])
+  })
+
+  test("disconnecting a declared provider removes its declaration and key, not a harness auth entry", async () => {
+    const calls: string[] = []
+    await disconnectProvider({
+      providerId: "acme",
+      name: "Acme",
+      source: "custom",
+      deleteCredential: async (id) => { calls.push(`credential:${id}`) },
+      removeAuth: async () => expect.unreachable(),
+      removeCustomProvider: async (id) => { calls.push(`custom:${id}`) },
+      markDisconnected: (id) => { calls.push(`mark:${id}`) },
+      refresh: async () => { calls.push("refresh") },
+      onSuccess: (name) => { calls.push(`success:${name}`) },
+      onError: () => expect.unreachable(),
+    })
+    expect(calls).toEqual(["credential:acme", "custom:acme", "mark:acme", "success:Acme", "refresh", "mark:acme"])
   })
 
   test("a missing credential never blocks the auth removal", async () => {
@@ -94,6 +112,7 @@ describe("disconnectProvider", () => {
         throw new Error("no stored credential")
       },
       removeAuth: async () => { auth += 1 },
+      removeCustomProvider: async () => expect.unreachable(),
       markDisconnected: () => undefined,
       refresh: async () => undefined,
       onSuccess: () => undefined,
@@ -113,6 +132,7 @@ describe("disconnectProvider", () => {
       removeAuth: async () => {
         throw new Error("Unexpected token")
       },
+      removeCustomProvider: async () => expect.unreachable(),
       markDisconnected: () => undefined,
       refresh: async () => undefined,
       onSuccess: success,
@@ -126,7 +146,7 @@ describe("disconnectProvider", () => {
     const errors: string[] = []
     await disconnectProvider({
       providerId: "external", name: "External", source: "config",
-      deleteCredential: unreachable, removeAuth: unreachable,
+      deleteCredential: unreachable, removeAuth: unreachable, removeCustomProvider: unreachable,
       markDisconnected: () => expect.unreachable(), refresh: unreachable,
       onSuccess: () => expect.unreachable(), onError: (error) => errors.push(error),
     })

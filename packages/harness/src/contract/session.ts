@@ -6,6 +6,7 @@ import type {
   SessionConfig,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { CustomProviderDefinition } from "./provider-definitions"
 import type { PluginProjection, ResolvedCredentials } from "./projection"
 
 export type Locality = "local" | "remote"
@@ -37,6 +38,7 @@ export type StartInput = {
   instructions?: string
   projection: PluginProjection
   credentials: ResolvedCredentials
+  providerDefinitions?: readonly CustomProviderDefinition[]
   owner: TurnActor
 }
 

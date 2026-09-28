@@ -55,7 +55,6 @@ async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnSt
   const model = turn.model
   if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
   assertProviderAvailable(state.start, model.providerID, login)
-  await runtime.providersBound()
   await runtime.events.ready()
   if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
   const usage = createTurnUsage(state.upstream, await readSessionTotal(async () =>

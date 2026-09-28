@@ -220,3 +220,26 @@ test("a bound provider ignores the apiKey and baseURL the workspace's opencode.j
     cleanup()
   }
 }, 60_000)
+
+test("a vendor provider the engine only catalogs is enabled by its binding and runs a turn there", async () => {
+  const broker = recordingEndpoint()
+  const brokerUrl = await broker.listen()
+  const { root, cleanup } = fixture()
+  const directory = path.join(root, "work")
+  fs.mkdirSync(directory, { recursive: true })
+  const runtime = createOpenCodeRuntime({ databasePath: path.join(root, "opencode.db") })
+  const scope = WorkspaceScope.authorize({ workspaceID: "w", directory })
+  try {
+    await runtime.bindProviders({ overlays: { openai: { baseURL: brokerUrl, apiKey: "vendor-placeholder" } }, unbound: "disabled" })
+    expect((await runtime.catalog.models(scope)).some((model) => model.providerID === "openai" && model.id === "gpt-4.1")).toBe(true)
+    const session = await runtime.sessions.create(scope, { title: "vendor" })
+    await runtime.sessions.switchModel(scope, session.id, { providerID: "openai", modelID: "gpt-4.1" })
+    await runtime.sessions.prompt(scope, session.id, { text: "say hello" })
+    for (let wait = 0; wait < 300 && broker.requests.length === 0; wait++) await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(broker.requests[0]).toMatchObject({ authorization: "Bearer vendor-placeholder", model: "gpt-4.1" })
+  } finally {
+    await runtime.close()
+    await broker.close()
+    cleanup()
+  }
+}, 60_000)

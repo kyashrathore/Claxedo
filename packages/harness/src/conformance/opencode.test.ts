@@ -13,6 +13,7 @@ import { WorkspaceScope } from "../transports/opencode-sdk/scope"
 import { terminal } from "../transports/opencode-sdk/translate/event"
 import type { RoutedEvent, TurnInput } from "../contract"
 import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { createTestServices } from "./test-support/services"
 
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
 type OpenCodeBackend = ConformanceBackend & { root: string; server: ScriptedServer; rotated: ScriptedServer[] }
@@ -530,10 +531,107 @@ test("config options name the session's model, a requested model, and a draft's 
   try {
     const config = context.transport.config!
     const options = (target: Parameters<typeof config.options>[0]) => config.options(target, "probe")
-    expect((await options({ session: context.session })).resolvedModel).toEqual({ id: "proof/proof", name: "Proof" })
+    expect((await options({ session: context.session, model: context.start.model })).resolvedModel).toEqual({ id: "proof/proof", name: "Proof" })
     expect((await options({ session: context.session, model: { providerID: "proof", modelID: "proof-mini" } })).resolvedModel)
       .toEqual({ id: "proof/proof-mini", name: "Proof Mini" })
     const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
     expect((await options({ draft })).resolvedModel).toEqual({ id: "proof/proof", name: "Proof" })
+  } finally { await context.close() }
+}, 60_000)
+
+test("the owner catalog applies carried custom definitions in a cloud transport and refuses a different owner", async () => {
+  const context = await setupConformance({ name: "opencode-custom", backend,
+    makeTransport: (services, current) => new OpenCodeSdkTransport(services, {
+      login: { placement: "cloud", machineOwnerUserId: "", canUseOwnLogin: false },
+      databasePath: path.join((current as OpenCodeBackend).root, "opencode.db"),
+    }) })
+  try {
+    const transport = context.transport as OpenCodeSdkTransport
+    const definition = { id: "carried", name: "Carried", npm: "@ai-sdk/openai-compatible" as const,
+      baseURL: "https://unused.invalid/v1", headers: { "X-Title": "owner" }, models: { carried: { name: "Carried" } }, credentialProviderId: "account", credentialSource: "account" as const }
+    const credentials = { ...context.start.credentials, providers: { ...context.start.credentials.providers,
+      account: { baseUrl: (context.backend as OpenCodeBackend).server.v1Url, placeholder: "cloud-placeholder", authMode: "api-key" as const } } }
+    await transport.configure(context.session, { credentials, providerDefinitions: [definition] })
+    const draft = { ...context.start, credentials, providerDefinitions: [definition], locality: "remote" as const }
+    const entries = await transport.providerCatalog.providers(draft)
+    expect(entries.find((entry) => entry.id === "carried")).toMatchObject({ name: "Carried", connected: true, models: [expect.objectContaining({ id: "carried" })] })
+    expect(entries.find((entry) => entry.id === "openai")).toMatchObject({ connected: false, models: [] })
+    await expect(transport.providerCatalog.providers({ ...draft, owner: { kind: "person", userId: "foreign" } })).rejects.toBeInstanceOf(OpenCodeOwnerMismatchError)
+    const events: RoutedEvent[] = []
+    for await (const event of transport.send(context.session, { ...context.turn("Reply with exactly this one token: CARRIEDTURN"),
+      model: { providerID: "carried", modelID: "carried" } }, context.turnBroker())) events.push(event)
+    expect(events.some((event) => event.event.type === "text-delta" && event.event.delta.includes("CARRIEDTURN"))).toBe(true)
+    expect((context.backend as OpenCodeBackend).server.requests.some((request) => request.authorization === "Bearer cloud-placeholder")).toBe(true)
+    await transport.configure(context.session, { providerDefinitions: [] })
+    expect((await transport.providerCatalog.providers({ ...draft, providerDefinitions: [] })).some((entry) => entry.id === "carried")).toBe(false)
+  } finally { await context.close() }
+}, 30_000)
+
+test("a catalog read by another person never takes the engine from the owner who starts its sessions", async () => {
+  let prebuilt: OpenCodeSdkTransport | undefined
+  const context = await setupConformance({ name: "opencode-catalog-owner", backend: async () => {
+    const state = await backend()
+    prebuilt = transport(createTestServices(), state)
+    const entries = await prebuilt.providerCatalog.providers({ workspaceId: "w1", directory: state.directory, locality: "local",
+      owner: { kind: "person", userId: "viewer" }, config: { harness: state.harness, model: state.model }, model: state.model,
+      projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: state.credentials })
+    expect(entries.some((entry) => entry.id === "proof" && entry.connected)).toBe(true)
+    return state
+  }, makeTransport: () => prebuilt! })
+  try {
+    const events = await collect(context, context.turn("Reply with exactly this one token: OWNERTURN"))
+    expect(events.some((event) => event.event.type === "text-delta" && event.event.delta.includes("OWNERTURN"))).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("OpenCode dispose retries an engine whose first close failed, and reports success only once it closed", async () => {
+  const context = await setupConformance({ name: "opencode-dispose-retry", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const runtime = (context.transport as unknown as { runtime: OpenCodeRuntime }).runtime
+  const client = await runtime.host.client()
+  const close = client.close.bind(client)
+  let attempts = 0
+  Object.defineProperty(client, "close", { configurable: true, value: async () => {
+    attempts += 1
+    if (attempts === 1) throw new Error("close refused")
+    await close()
+  } })
+  try {
+    await expect(context.transport.dispose()).rejects.toThrow("close refused")
+    expect(runtime.host.status().lifecycle).not.toBe("closed")
+    await context.transport.dispose()
+    expect(attempts).toBe(2)
+    expect(runtime.host.status().lifecycle).toBe("closed")
+    await context.transport.dispose()
+    expect(attempts).toBe(2)
+  } finally { await context.close() }
+}, 60_000)
+
+for (const machineOwnerUserId of ["owner", "machine"]) test(`a machine-env provider key is ${machineOwnerUserId === "owner" ? "spent by the machine owner's session" : "refused for anyone else"}`, async () => {
+  const context = await setupConformance({ name: `opencode-machine-env-${machineOwnerUserId}`, backend,
+    makeTransport: (services, current) => new OpenCodeSdkTransport(services, {
+      login: { placement: "loopback", machineOwnerUserId, canUseOwnLogin: true },
+      databasePath: path.join((current as OpenCodeBackend).root, "opencode.db"),
+    }) })
+  try {
+    const server = (context.backend as OpenCodeBackend).server
+    const credentials = { ...context.start.credentials, providers: { ...context.start.credentials.providers,
+      envco: { baseUrl: server.v1Url, placeholder: "machine-env-placeholder", authMode: "api-key" as const } } }
+    await context.transport.configure(context.session, { credentials, providerDefinitions: [{ id: "envco", name: "Env Co",
+      npm: "@ai-sdk/openai-compatible", baseURL: "https://unused.invalid/v1", headers: {}, models: { envco: { name: "Env Co" } },
+      credentialProviderId: "envco", credentialSource: "machine-env" }] })
+    const events: RoutedEvent[] = []
+    const failure = await (async () => {
+      for await (const event of context.transport.send(context.session, { ...context.turn("Reply with exactly this one token: MACHINEENV"),
+        model: { providerID: "envco", modelID: "envco" } }, context.turnBroker())) events.push(event)
+    })().then(() => undefined, (error: unknown) => error)
+    if (machineOwnerUserId === "owner") {
+      expect(failure).toBeUndefined()
+      expect(events.some((event) => event.event.type === "text-delta" && event.event.delta.includes("MACHINEENV"))).toBe(true)
+      expect(server.requests.some((request) => request.authorization === "Bearer machine-env-placeholder")).toBe(true)
+    } else {
+      expect(failure).toMatchObject({ code: "credential_unavailable" })
+      expect(server.requests.some((request) => request.authorization === "Bearer machine-env-placeholder")).toBe(false)
+    }
   } finally { await context.close() }
 }, 60_000)

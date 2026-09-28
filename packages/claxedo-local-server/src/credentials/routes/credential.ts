@@ -17,7 +17,7 @@ import {
   type CredentialCheckOutcome,
 } from "@claxedo/server-core/credentials/operations/check"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { SdkCredentialSyncError } from "@claxedo/server-core/opencode/sdk-credential-bridge"
+import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
@@ -281,17 +281,17 @@ export function CredentialRoutes(
     await next()
     return undefined
   })
-  // Every mutation here ends by carrying the registry into the running engine.
+  // Every mutation here ends by carrying the registry into running workspaces.
   // A store write that went through and an engine that did not take it is one
   // named answer, whichever route it was: as a bare 500 it reads as the write
   // having failed, and the caller retries a change the store already holds.
   app.use(async (c, next) => {
     await next()
-    if (c.error instanceof SdkCredentialSyncError) {
+    if (c.error instanceof CredentialDeliveryError) {
       const detail = credentialFailureDetail(c.error.cause)
-      log.error("Credential change stored; the running engine did not take it", { path: c.req.path, ...detail })
+      log.error("Credential change stored; running workspaces did not take it", { path: c.req.path, ...detail })
       c.res = c.json(
-        errorBody("engine_credential_sync_failed", `Stored, but the running engine could not be updated: ${detail.message}`, { detail }),
+        errorBody("credential_delivery_failed", `Stored, but running workspaces could not be updated: ${detail.message}`, { detail }),
         500,
       )
     }
@@ -357,7 +357,7 @@ export function CredentialRoutes(
         }, org(c.req.raw))
         return c.json({ credential: redact(cred) })
       } catch (error) {
-        if (error instanceof SdkCredentialSyncError) throw error
+        if (error instanceof CredentialDeliveryError) throw error
         return c.json(errorBody("credential_store_failed", "Failed to store credential"), 500)
       }
     })
@@ -391,7 +391,7 @@ export function CredentialRoutes(
       try {
         return c.json(await credentials.saveDiscoveredCredentials(body.data, org(c.req.raw)))
       } catch (error) {
-        if (error instanceof SdkCredentialSyncError) throw error
+        if (error instanceof CredentialDeliveryError) throw error
         if (error instanceof CredentialDiscoveryError) {
           const status = error.code === "discovery_expired" ? 410 : error.code === "discovery_not_found" ? 404 : 400
           return c.json(errorBody(error.code, "The credential discovery can no longer be saved"), status)
@@ -409,7 +409,7 @@ export function CredentialRoutes(
         const result = await credentials.syncLocalCredentials(body.data.provider_ids, org(c.req.raw))
         return c.json(result)
       } catch (error) {
-        if (error instanceof SdkCredentialSyncError) throw error
+        if (error instanceof CredentialDeliveryError) throw error
         return c.json(errorBody("credential_sync_failed", "Failed to sync local credentials"), 500)
       }
     })

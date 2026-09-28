@@ -83,6 +83,7 @@ describe("private-session route inventory", () => {
   test("direct host routes cannot grow around the classified session router", () => {
     expect(uniqueDeclaredRoutes(source("./workspace/runtime.ts"))).toEqual([
       "GET /api/wr/harness-config-options",
+      "GET /api/wr/harness-providers",
       "GET /mcp",
       "GET /vcs",
     ])

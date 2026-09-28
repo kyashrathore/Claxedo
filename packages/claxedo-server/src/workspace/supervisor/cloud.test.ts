@@ -2158,7 +2158,7 @@ describe("workspace-supervisor", () => {
       })
 
       credentials.active[0].unavailable = "revoked"
-      await expect(supervisor.reconcileCredentialDelivery()).resolves.toBeUndefined()
+      await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
       mockDaytonaLaunch.mockImplementation(realLaunch)
 
       // The healthy sandbox withdrew on the same sweep. The failed one is
@@ -2168,6 +2168,25 @@ describe("workspace-supervisor", () => {
       // applied.
       expect(runtimes.get("ws-reconcile-down")!.installed_secrets).toBe(installedBefore)
       expect(runtimes.get("ws-reconcile-up")!.installed_secrets).not.toBe(installedBefore)
+    })
+
+    test("a sandbox still holding a superseded set after both passes fails the reconcile instead of acknowledging it", async () => {
+      credentials.active.push(activeAccount("cred-1"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-churn")
+      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      let revision = 1
+      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+        const launched = await realLaunch(input)
+        credentials.active[0] = activeAccount("cred-1", "claude-sdk", ++revision)
+        return launched
+      })
+      credentials.active[0] = activeAccount("cred-1", "claude-sdk", ++revision)
+      try {
+        await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
+      } finally {
+        mockDaytonaLaunch.mockImplementation(realLaunch)
+      }
     })
   })
 
@@ -2646,6 +2665,50 @@ describe("workspace-supervisor", () => {
 
     test("no-op for unknown workspace", () => {
       supervisor.markSupervisorSandboxUse("nonexistent")
+    })
+  })
+
+  describe("broadcastRuntimeConfig", () => {
+    test("a settings save does not wait for a start in progress, and the started runtime ends on the saved snapshot once", async () => {
+      let revision = 1
+      mockGetRuntimeConfigSnapshot.mockImplementation(async () => ({
+        version: 2, mcp: {}, auth: {}, runners: [{ type: "opencode" }], commands: [], revision,
+      }))
+      const realFetch = (globalThis.fetch as any).getMockImplementation()
+      let releasePush!: () => void
+      let pushHeld!: () => void
+      const held = new Promise<void>((resolve) => { pushHeld = resolve })
+      const gate = new Promise<void>((resolve) => { releasePush = resolve })
+      let gated = false
+      ;(globalThis.fetch as any).mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+        const target = url instanceof Request ? url.url : url instanceof URL ? url.href : url
+        if (!gated && target.includes("/api/wr/config")) {
+          gated = true
+          pushHeld()
+          await gate
+        }
+        return realFetch(url, init)
+      })
+      try {
+        const starting = supervisor.ensureSupervisorSandbox("ws-save-during-start")
+        await held
+        revision = 2
+        const saved = await Promise.race([
+          supervisor.broadcastRuntimeConfig().then(() => "returned"),
+          new Promise((resolve) => setTimeout(() => resolve("waited for the start"), 1_000)),
+        ])
+        expect(saved).toBe("returned")
+        releasePush()
+        await starting
+        await vi.waitFor(() => expect(configPush.at(-1)?.body).toMatchObject({ revision: 2 }))
+        const pushed = configPush.filter((push) => push.url.includes("daytona-sdk.example.com")).map((push) => (push.body as { revision: number }).revision)
+        expect(pushed).toEqual([1, 2])
+      } finally {
+        releasePush()
+        ;(globalThis.fetch as any).mockImplementation(realFetch)
+        mockGetRuntimeConfigSnapshot.mockReset()
+        mockGetRuntimeConfigSnapshot.mockImplementation(async () => ({ version: 2, mcp: {}, auth: {}, runners: [{ type: "opencode" }], commands: [] }))
+      }
     })
   })
 

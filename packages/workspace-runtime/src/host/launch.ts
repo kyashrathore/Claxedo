@@ -8,6 +8,7 @@ import type { HarnessBinding } from "@claxedo/harness/contract"
  * session spends, and the workspace the launch belongs to.
  */
 export type LaunchComposer = {
+  providerDefinitions?(): StartInput["providerDefinitions"]
   workspaceId: string
   projection(harness: SessionHarness): PluginProjection
   credentials(): ResolvedCredentials
@@ -35,6 +36,7 @@ export function startInput(launch: LaunchComposer, session: SessionLaunch): Star
     ...(session.instructions !== undefined ? { instructions: session.instructions } : {}),
     projection: launch.projection(session.config.harness),
     credentials: launch.credentials(),
+    providerDefinitions: launch.providerDefinitions?.(),
     owner: session.owner,
   }
 }
@@ -59,6 +61,7 @@ export function draftLaunch(launch: LaunchComposer, input: {
     config: { harness: input.harness },
     projection: launch.projection(input.harness),
     credentials: launch.credentials(),
+    providerDefinitions: launch.providerDefinitions?.(),
     owner: input.owner,
   }
 }

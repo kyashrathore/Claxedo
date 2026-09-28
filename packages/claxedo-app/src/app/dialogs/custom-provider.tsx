@@ -39,6 +39,7 @@ export function DialogCustomProvider(props: Props) {
     name: "",
     baseURL: "",
     apiKey: "",
+    keyHeader: "Authorization",
     models: [modelRow()],
     headers: [headerRow()],
     err: {},
@@ -82,7 +83,7 @@ export function DialogCustomProvider(props: Props) {
     )
   }
 
-  const setField = (key: "providerID" | "name" | "baseURL" | "apiKey", value: string) => {
+  const setField = (key: "providerID" | "name" | "baseURL" | "apiKey" | "keyHeader", value: string) => {
     setForm(key, value)
     if (key === "apiKey") return
     setForm("err", key, undefined)
@@ -225,6 +226,15 @@ export function DialogCustomProvider(props: Props) {
               description={language.t("provider.custom.field.apiKey.description")}
               value={form.apiKey}
               onChange={(v) => setField("apiKey", v)}
+            />
+            <TextField
+              label={language.t("provider.custom.field.keyHeader.label")}
+              placeholder={language.t("provider.custom.field.keyHeader.placeholder")}
+              description={language.t("provider.custom.field.keyHeader.description")}
+              value={form.keyHeader}
+              onChange={(v) => setField("keyHeader", v)}
+              validationState={form.err.keyHeader ? "invalid" : undefined}
+              error={form.err.keyHeader}
             />
           </div>
 

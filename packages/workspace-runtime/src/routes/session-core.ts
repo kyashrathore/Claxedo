@@ -5,10 +5,9 @@ import { HTTPException } from "hono/http-exception"
 import { toolImageResponse } from "./tool-image"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, RuntimeDirectory, HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
-import type { AgentSessionStartBinding, AgentSessionStarts, PromptModel, SessionHarness } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionStartBinding, AgentSessionStarts, SessionHarness } from "@claxedo/agent-runtime-contract"
 import {
   connectionIdForHarness,
-  harnessKey,
   parseRecoveryRequest,
   RecoveryContractError,
   sameSessionHarness,
@@ -37,6 +36,7 @@ import {
   type HarnessTarget,
   type RecoveryCaller,
 } from "../host/runtime"
+import { PreviewModelInvalidError } from "../host/config-ops"
 import {
   messageUpdated,
   sessionError,
@@ -66,6 +66,7 @@ import { narrowerPermissionLevel, permissionCeilingAdmits, permissionModeLevel, 
 import { arr, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
+import { providerCatalogRefusal } from "./workspace-role"
 import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { routeParam } from "@claxedo/helpers/route-param"
 import {
@@ -141,7 +142,7 @@ async function readSession(
 }
 
 /** Whose accounts a session created by this request spends: the verified actor, or the machine's own user. */
-function sessionOwner(c: Ctx): TurnActor {
+export function sessionOwner(c: Ctx): TurnActor {
   const actor = sessionAccessContext(c).actor
   return actor ? { kind: "person", userId: actor.actorId } : { kind: "machine-owner" }
 }
@@ -1909,7 +1910,13 @@ export function createSessionRoutes(opts: Opts) {
     .get("/session/capabilities", async (c) => {
       try {
         const directory = await opts.resolveDirectory(c)
-        return noStoreJson(c, await (await opts.runtime(c)).reads.capabilities(draftTarget(opts, c, directory)))
+        const runtime = await opts.runtime(c)
+        const target = draftTarget(opts, c, directory)
+        if (await runtime.reads.servesProviderCatalog(target)) {
+          const refused = providerCatalogRefusal(c)
+          if (refused) return refused
+        }
+        return noStoreJson(c, await runtime.reads.capabilities(target))
       } catch (error) {
         const refusal = harnessUnavailableResponse(c, error)
         if (refusal) return refusal
@@ -1987,13 +1994,13 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const runtime = await opts.runtime(c)
-      const requested = c.req.query("model") || undefined
-      let model: PromptModel | undefined
-      if (requested) {
-        const config = await sessionConfigOf(opts, c, directory, sessionId)
-        model = { providerID: config.model?.providerID ?? harnessKey(config.harness) ?? config.harness.id, modelID: requested }
+      let preview: Awaited<ReturnType<typeof runtime.reads.configOptions>>
+      try {
+        preview = await runtime.reads.configOptions({ sessionId, ...(directory ? { directory } : {}) }, c.req.query("model") || undefined)
+      } catch (cause) {
+        if (cause instanceof PreviewModelInvalidError) return noStoreJson(c, errorBody("preview_model_invalid", cause.message), 400)
+        throw cause
       }
-      const preview = await runtime.reads.configOptions({ sessionId, ...(directory ? { directory } : {}) }, model)
       if (!preview) return noStoreJson(c, { error: "Session harness does not expose config options" }, 404)
       return noStoreJson(c, preview)
     })

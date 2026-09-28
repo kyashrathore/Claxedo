@@ -9,8 +9,9 @@ import type {
   SessionConfig,
   SessionHarness,
 } from "@claxedo/agent-runtime-contract"
+import { harnessKey } from "@claxedo/agent-runtime-contract"
 import type { HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
-import type { ConfigOptionsPreview, ConfigTarget, TurnActor } from "@claxedo/harness/contract"
+import type { ConfigOptionsPreview, ConfigTarget, HarnessSession, TurnActor } from "@claxedo/harness/contract"
 import type { SessionAttachments } from "./attachments"
 import { harnessCapabilitiesFor } from "./capabilities"
 import type { AgentRuntimeHealth, AgentRuntimeStore } from "./contracts"
@@ -23,6 +24,19 @@ export type HarnessTarget =
   | { harness: SessionHarness; directory: string; owner?: TurnActor }
 
 type ResolvedTarget = { handle: HarnessHandle; target: ConfigTarget; sessionId?: string; directory: string }
+
+export class PreviewModelInvalidError extends Error {
+  constructor(requested: string) {
+    super(`${requested} is not a provider/model identifier`)
+    this.name = "PreviewModelInvalidError"
+  }
+}
+
+function providerQualifiedModel(requested: string): PromptModel {
+  const slash = requested.indexOf("/")
+  if (slash < 1 || slash === requested.length - 1) throw new PreviewModelInvalidError(requested)
+  return { providerID: requested.slice(0, slash), modelID: requested.slice(slash + 1) }
+}
 
 export function createHarnessReads(input: {
   store: AgentRuntimeStore
@@ -43,21 +57,54 @@ export function createHarnessReads(input: {
     return { handle, target: { draft }, directory: target.directory }
   }
 
+  const sessionConfigOf = async (handle: HarnessHandle, session: HarnessSession): Promise<SessionConfig> => {
+    const sessionId = session.binding.sessionId
+    const declared = await handle.transport.capabilities({ directory: session.directory, sessionId })
+    if (declared.configOwner === "harness" && handle.transport.config) return await handle.transport.config.read(session)
+    const config = store.getSessionConfig(sessionId)
+    if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
+    return config
+  }
+
+  const previewModel = async (resolved: ResolvedTarget, requested: string): Promise<PromptModel> => {
+    if (resolved.handle.transport.providerCatalog) return providerQualifiedModel(requested)
+    if ("draft" in resolved.target) {
+      const harness = resolved.target.draft.config.harness
+      return { providerID: harnessKey(harness) ?? harness.id, modelID: requested }
+    }
+    const config = await sessionConfigOf(resolved.handle, resolved.target.session)
+    return { providerID: config.model?.providerID ?? harnessKey(config.harness) ?? config.harness.id, modelID: requested }
+  }
+
   const declaredFor = (resolved: ResolvedTarget) =>
     resolved.handle.transport.capabilities({ directory: resolved.directory, ...(resolved.sessionId ? { sessionId: resolved.sessionId } : {}) })
 
   return {
+    async providerCatalog(target: Extract<HarnessTarget, { harness: SessionHarness }>) {
+      const resolved = await resolve(target)
+      const catalog = resolved.handle.transport.providerCatalog
+      if (!catalog || !("draft" in resolved.target)) throw new Error("Harness does not expose a provider catalog")
+      return await catalog.providers(resolved.target.draft)
+    },
     async capabilities(target: HarnessTarget): Promise<HarnessCapabilities> {
       const resolved = await resolve(target)
       const declared = await declaredFor(resolved)
       const child = !!resolved.sessionId && !!store.getSession(resolved.sessionId)?.parentID
       return harnessCapabilitiesFor(resolved.handle, resolved.handle.transport, declared, { child })
     },
-    async configOptions(target: HarnessTarget, model?: PromptModel): Promise<ConfigOptionsPreview | undefined> {
+    async servesProviderCatalog(target: HarnessTarget): Promise<boolean> {
+      return !!(await resolve(target)).handle.transport.providerCatalog
+    },
+    async configOptions(target: HarnessTarget, requested?: string): Promise<ConfigOptionsPreview | undefined> {
       const resolved = await resolve(target)
       const config = resolved.handle.transport.config
       if (!config) return undefined
-      if ("session" in resolved.target) return await config.options({ session: resolved.target.session, ...(model ? { model } : {}) }, "probe")
+      const model = requested === undefined ? undefined : await previewModel(resolved, requested)
+      if ("session" in resolved.target) {
+        const current = model ?? ((await declaredFor(resolved)).configOwner === "runtime"
+          ? store.getSessionConfig(resolved.target.session.binding.sessionId)?.model : undefined)
+        return await config.options({ session: resolved.target.session, ...(current ? { model: current } : {}) }, "probe")
+      }
       return await config.options({ draft: { ...resolved.target.draft, ...(model ? { model } : {}) } }, "probe")
     },
     async permissionModes(target: HarnessTarget): Promise<AgentPermissionModeState | undefined> {
@@ -91,11 +138,7 @@ export function createHarnessReads(input: {
     },
     async sessionConfig(sessionId: string, directory?: string): Promise<SessionConfig> {
       const attached = await attachments.for(sessionId, directory)
-      const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId })
-      if (declared.configOwner === "harness" && attached.handle.transport.config) return await attached.handle.transport.config.read(attached.session)
-      const config = store.getSessionConfig(sessionId)
-      if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
-      return config
+      return await sessionConfigOf(attached.handle, attached.session)
     },
     health(directory: string): AgentRuntimeHealth[] {
       return transports.composed().flatMap((handle) => {

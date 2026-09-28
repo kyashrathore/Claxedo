@@ -114,6 +114,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/agent-config/providers/*",
       "/api/claxedo/agent-config/providers/auth",
       "/api/claxedo/agent-config/providers/custom",
+      "/api/claxedo/agent-config/providers/custom/:providerId",
       "/api/claxedo/bootstrap",
       "/api/claxedo/credentials",
       "/api/claxedo/credentials/*",

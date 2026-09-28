@@ -18,11 +18,13 @@ import type {
 import type { SessionBroker, TurnBroker } from "./broker"
 import type { CapabilityContext, TransportCapabilities } from "./capabilities"
 import type { PluginProjection, ResolvedCredentials } from "./projection"
+import type { CustomProviderDefinition, ProviderCatalogEntry } from "./provider-definitions"
 import type { AttachInput, Deadline, HarnessSession, RoutedEvent, StartInput, TurnInput, TurnRef } from "./session"
 
 export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-sdk"
 
 export type TransportConfigUpdate = {
+  providerDefinitions?: readonly CustomProviderDefinition[]
   credentials?: ResolvedCredentials
   projection?: PluginProjection
 }
@@ -125,6 +127,7 @@ export interface HarnessTransport {
   dispose(): Promise<void>
   readonly steer?: SteerOperations
   readonly goals?: NativeGoalOperations
+  readonly providerCatalog?: { providers(draft: DraftLaunch): Promise<readonly ProviderCatalogEntry[]> }
   readonly config?: ConfigOperations
   readonly history?: HistoryOperations
   readonly naming?: NamingOperations

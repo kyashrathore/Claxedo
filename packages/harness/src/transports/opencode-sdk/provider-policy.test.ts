@@ -48,3 +48,23 @@ test("provider policy updates the real SDK catalog, is workspace-scoped, and sur
     fs.rmSync(root, { recursive: true, force: true })
   }
 }, 20_000)
+
+test("a provider the workspace policy disabled stays disabled when a binding names it, across a rebind", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-provider-policy-binding-"))
+  const directory = path.join(root, "work")
+  fs.mkdirSync(directory)
+  const scope = WorkspaceScope.authorize({ workspaceID: "w", directory })
+  const runtime = createOpenCodeRuntime({ databasePath: path.join(root, "opencode.db") })
+  const openai = async () => (await runtime.catalog.models(scope)).some((model) => model.providerID === "openai")
+  try {
+    await runtime.bindProviders({ overlays: { openai: { baseURL: "http://127.0.0.1:1/v1", apiKey: "first" } }, unbound: "disabled" })
+    expect(await openai()).toBe(true)
+    await (await runtime.providerConfig(scope)).write({ disabled_providers: ["openai"] })
+    expect(await openai()).toBe(false)
+    await runtime.bindProviders({ overlays: { openai: { baseURL: "http://127.0.0.1:1/v1", apiKey: "second" } }, unbound: "disabled" })
+    expect(await openai()).toBe(false)
+  } finally {
+    await runtime.close()
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}, 30_000)

@@ -4,6 +4,7 @@ import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as CustomProvider from "@/app/dialogs/custom-provider"
+import type * as CustomProviderLogic from "@/app/dialogs/custom-provider-logic"
 import type * as AIConnectApi from "@/features/onboarding/ai-connect-api"
 import type * as AIConnectState from "@/features/onboarding/ai-connect-state"
 import type * as TerminalAgents from "@/features/terminal/core/terminal-agents"
@@ -28,6 +29,7 @@ export type SettingsAppPorts = {
   DialogConnectProvider: typeof ConnectProvider.DialogConnectProvider
   DialogSelectProvider: typeof SelectProvider.DialogSelectProvider
   DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
+  removeCustomProviderConfig: typeof CustomProviderLogic.removeCustomProviderConfig
   verifyAIConnection: typeof AIConnectApi.verifyAIConnection
   /** What each harness on the server's machine says about the login it would run on. */
   loadMachineLogins: typeof AIConnectApi.loadMachineLogins
@@ -86,6 +88,7 @@ export const useShellQueryOptions = bind((ports) => ports.useShellQueryOptions)
 export const DialogConnectProvider = bind((ports) => ports.DialogConnectProvider)
 export const DialogSelectProvider = bind((ports) => ports.DialogSelectProvider)
 export const DialogCustomProvider = bind((ports) => ports.DialogCustomProvider)
+export const removeCustomProviderConfig = bind((ports) => ports.removeCustomProviderConfig)
 export const verifyAIConnection = bind((ports) => ports.verifyAIConnection)
 export const loadMachineLogins = bind((ports) => ports.loadMachineLogins)
 export const useMachineLogin = bind((ports) => ports.useMachineLogin)

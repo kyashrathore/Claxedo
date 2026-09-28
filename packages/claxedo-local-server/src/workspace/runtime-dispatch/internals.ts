@@ -16,7 +16,7 @@ import { resolveIngressProvenance } from "./ingress-provenance"
 
 const log = Log.create({ service: "runtime-dispatch" })
 
-const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
+const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/harness-providers", "/api/wr/capabilities"]
 
 export type Hit = {
   workspaceId: string

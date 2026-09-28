@@ -1,3 +1,4 @@
+import { readProviderDefinitions, type CustomProviderDefinition } from "@claxedo/harness/contract"
 import type { PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -50,6 +51,7 @@ export type RuntimeCommandItem = {
 export type { ProviderProjection, ProviderProjectionSource }
 
 export type RuntimeSnapshot = {
+  providerDefinitions?: readonly CustomProviderDefinition[]
   version: 4
   mcp: Record<string, unknown>
   connections: RuntimeConnectionDescriptor[]
@@ -159,6 +161,7 @@ const RUNTIME_SNAPSHOT_KEYS = new Set([
   "defaultHarness",
   "auth",
   "harnessLaunch",
+  "providerDefinitions",
   "workspaceHarnessEnabled",
   "commands",
 ])
@@ -196,6 +199,8 @@ export function normalizeRuntimeSnapshot(
   const defaultHarness = input.defaultHarness === undefined ? undefined : normalizeSelection(input.defaultHarness)
   if (input.defaultHarness !== undefined && !defaultHarness) return undefined
   if (defaultHarness?.kind === "connection" && !connections.some((row) => row.connectionId === defaultHarness.connectionId)) return undefined
+  const providerDefinitions = readProviderDefinitions(input.providerDefinitions)
+  if (!providerDefinitions) return undefined
   const harnessLaunch = normalizeHarnessLaunch(input.harnessLaunch)
   if (!harnessLaunch) return undefined
   if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return undefined
@@ -215,6 +220,7 @@ export function normalizeRuntimeSnapshot(
     connections,
     ...(defaultHarness ? { defaultHarness } : {}),
     auth,
+    ...(input.providerDefinitions !== undefined ? { providerDefinitions } : {}),
     ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
     ...(commands ? { commands } : {}),

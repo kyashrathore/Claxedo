@@ -21,6 +21,8 @@ import {
 } from "./connections"
 import type { ProviderProjectionSource, RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import type { AcpRuntimeMcpServer } from "../agent-plugins/runtime/mcp-projection"
+import type { CustomProviderDefinition } from "@claxedo/harness/contract"
+import { listCustomProviders } from "../credentials/custom-provider"
 
 export type {
   ConnectionReadiness,
@@ -70,6 +72,7 @@ function commandDir() {
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface RuntimeConfigSnapshot {
+  providerDefinitions?: readonly CustomProviderDefinition[]
   version: 4
   /** The MCP servers active plugins deliver to every custom ACP connection. */
   mcp: Record<string, AcpRuntimeMcpServer>
@@ -230,6 +233,11 @@ export async function getRuntimeConfigSnapshot(
       throw invalidSchema("selected connection is not installed and enabled")
     }
   }
+  const providerDefinitions = listCustomProviders(options.orgId).map((provider) => ({
+    id: provider.providerID, name: provider.name, npm: "@ai-sdk/openai-compatible" as const,
+    baseURL: provider.baseURL, headers: provider.headers, models: provider.models, credentialProviderId: provider.providerID,
+    credentialSource: provider.env.length ? "machine-env" as const : "account" as const,
+  }))
   const scope = options.secretScope ?? "local"
   const auth = await agentConfigOptions.projectAuth?.({
     scope,
@@ -244,6 +252,7 @@ export async function getRuntimeConfigSnapshot(
     connections: Object.values(config.connections),
     ...(selected ? { defaultHarness: selected } : {}),
     auth,
+    providerDefinitions,
     ...(plugins && Object.keys(plugins.harnessLaunch).length ? { harnessLaunch: plugins.harnessLaunch } : {}),
   }
 }

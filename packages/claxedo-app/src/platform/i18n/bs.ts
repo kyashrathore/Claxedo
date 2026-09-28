@@ -169,7 +169,10 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API ključ",
   "provider.custom.field.apiKey.placeholder": "API ključ",
   "provider.custom.field.apiKey.description":
-    "Opcionalno. Ostavi prazno ako upravljaš autentifikacijom putem zaglavlja.",
+    "Opcionalno. Ostavite prazno za endpoint kojem ne treba ključ ili upišite {env:VAR} da se pročita iz okruženja ove mašine.",
+  "provider.custom.field.keyHeader.label": "Zaglavlje ključa",
+  "provider.custom.field.keyHeader.placeholder": "Authorization",
+  "provider.custom.field.keyHeader.description": "Zaglavlje u kojem se ključ šalje. Authorization ga šalje kao Bearer token.",
   "provider.custom.models.label": "Modeli",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",
@@ -192,6 +195,8 @@ export const dict = {
   "provider.custom.error.baseURL.format": "Mora početi sa http:// ili https://",
   "provider.custom.error.required": "Obavezno",
   "provider.custom.error.duplicate": "Duplikat",
+  "provider.custom.error.keyHeader.invalid": "Ovo zaglavlje ne može nositi ključ",
+  "provider.custom.error.header.metadata": "Dozvoljena zaglavlja: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} odspojen",
   "provider.disconnect.toast.disconnected.description": "{{provider}} modeli više nisu dostupni.",

@@ -2,6 +2,7 @@ import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { credentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
+import { listCustomProviders, type CustomProviderConfig } from "@claxedo/server-core/credentials/custom-provider"
 import type { CredentialKind, CredentialSource } from "@claxedo/server-core/credentials/types"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
@@ -115,6 +116,15 @@ function vercelSandboxDriverCredentialItem(
   }
 }
 
+/** The key a custom provider declared an environment variable for, when this server's environment holds one. */
+export function customProviderEnvCredential(provider: Pick<CustomProviderConfig, "providerID" | "env">): LocalCredentialItem | undefined {
+  for (const name of provider.env) {
+    const secret = trimToUndefined(process.env[name])
+    if (secret) return { provider_id: provider.providerID, kind: "api_key", source: "env", label: `Synced from ${name}`, origin: `Environment variable ${name}`, secret }
+  }
+  return undefined
+}
+
 /**
  * The user's agent config, or nothing when it cannot be read.
  *
@@ -134,7 +144,7 @@ async function userConfigOrNone() {
 /**
  * Every credential this machine has handed Claxedo on purpose: keys in the
  * user's agent config, sandbox driver settings, and provider secrets in the
- * environment.
+ * environment, including the variable a custom provider declared for its key.
  *
  * Not the CLI logins. A harness's own login is asked about, never copied
  * (`credentials/machine-login.ts`), so nothing here opens the Keychain,
@@ -209,6 +219,8 @@ export async function collectLocalCredentials() {
       secret,
     })
   }
+
+  for (const provider of listCustomProviders()) put(map, customProviderEnvCredential(provider))
 
   put(
     map,

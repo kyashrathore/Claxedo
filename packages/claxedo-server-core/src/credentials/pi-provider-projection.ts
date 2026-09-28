@@ -5,6 +5,7 @@ import {
   type PiLaunchProvider,
 } from "@claxedo/agent-runtime-contract"
 import type { CredentialKind, CredentialMetadata } from "./types"
+import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 
 export { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider }
 
@@ -38,15 +39,7 @@ export function piCredentialConnected(providerID: string, credential: Credential
     && isPiLaunchProvider(providerID) && acceptedKinds[providerID].includes(credential.kind)
 }
 
-const providerNames: Record<PiLaunchProvider, string> = {
-  "openai-codex": "OpenAI Codex",
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-  google: "Google",
-  groq: "Groq",
-  xai: "xAI",
-}
+const providerNames: Record<PiLaunchProvider, string> = { "openai-codex": "OpenAI Codex", ...VENDOR_PROVIDER_NAMES }
 
 /** Registry connection metadata. Models come from the selected machine runtime. */
 export function projectPiProviderCatalog(connected: ReadonlySet<string>) {

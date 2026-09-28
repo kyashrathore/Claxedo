@@ -23,6 +23,9 @@ export const ClaxedoCustomProviderTable = sqliteTable(
     env_json: text().notNull().default("[]"),
     /** Non-secret request headers, name → value. */
     headers_json: text().notNull().default("{}"),
+    /** The header the broker injects the stored credential into, and the scheme it prefixes, if any. */
+    credential_header: text().notNull().default("Authorization"),
+    credential_scheme: text().default("Bearer"),
     /** Model id → display name. */
     models_json: text().notNull().default("{}"),
     created_at: integer().notNull(),

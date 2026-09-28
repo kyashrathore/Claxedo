@@ -174,7 +174,10 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API anahtarı",
   "provider.custom.field.apiKey.placeholder": "API anahtarı",
   "provider.custom.field.apiKey.description":
-    "İsteğe bağlı. Kimlik doğrulamayı başlıklar ile yönetiyorsanız boş bırakın.",
+    "İsteğe bağlı. Anahtar gerektirmeyen bir uç nokta için boş bırakın veya bu makinenin ortamından okumak için {env:VAR} yazın.",
+  "provider.custom.field.keyHeader.label": "Anahtar başlığı",
+  "provider.custom.field.keyHeader.placeholder": "Authorization",
+  "provider.custom.field.keyHeader.description": "Anahtarın gönderildiği başlık. Authorization onu Bearer belirteci olarak gönderir.",
   "provider.custom.models.label": "Modeller",
   "provider.custom.models.id.label": "Kimlik",
   "provider.custom.models.id.placeholder": "model-kimlik",
@@ -197,6 +200,8 @@ export const dict = {
   "provider.custom.error.baseURL.format": "http:// veya https:// ile başlamalı",
   "provider.custom.error.required": "Gerekli",
   "provider.custom.error.duplicate": "Tekrar",
+  "provider.custom.error.keyHeader.invalid": "Bu başlık anahtarı taşıyamaz",
+  "provider.custom.error.header.metadata": "İzin verilen başlıklar: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} bağlantısı kesildi",
   "provider.disconnect.toast.disconnected.description": "{{provider}} modelleri artık kullanılabilir değil.",
