@@ -69,14 +69,14 @@ describe("a completed reply's markdown blocks", () => {
       expect(getCachedMarkdown(blockEntry(entryBase(text, undefined)!, index, block.mode))?.raw).toBe(block.raw)
   })
 
-  test("only a block with math or a code block inside it is parsed again, and it is replaced once", async () => {
+  test("only a block with math is parsed again, and it is replaced once; a code block inside prose is final at first paint", async () => {
     const reply = await open(enhanced)
 
-    expect(reply.parsed).toEqual(["The sum $$x^2$$ closes.\n\n", "1. step\n\n       indented code\n\n"])
+    expect(reply.parsed).toEqual(["The sum $$x^2$$ closes.\n\n"])
     const changed = reply.enhanced.flatMap((block, index) =>
       morphTarget(block)?.hash === morphTarget(reply.painted[index])?.hash ? [] : [index],
     )
-    expect(changed).toEqual([1, 2])
+    expect(changed).toEqual([1])
     expect(reply.enhanced.map((block) => block?.key)).toEqual(reply.painted.map((block) => block.key))
   })
 })

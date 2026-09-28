@@ -22,5 +22,5 @@ test("the asynchronous parse changes marked's synchronous output exactly when ma
     }),
   )
   expect(seen.map((row) => ({ markdown: row.markdown, changed: row.changed }))).toEqual(seen.map((row) => ({ markdown: row.markdown, changed: row.enhances })))
-  expect(seen.filter((row) => row.enhances).map((row) => row.markdown)).toEqual([markdowns[2], markdowns[4], markdowns[5], markdowns[6]])
+  expect(seen.filter((row) => row.enhances).map((row) => row.markdown)).toEqual([markdowns[2], markdowns[4]])
 })

@@ -45,6 +45,37 @@ test(`12 a cold open reads its first page, its open view and its queue, then rea
   await expect(app.locator(`[data-session-id="${session.id}"][data-testid="session-page-root"]`)).not.toContainText("Still output 8.")
 })
 
+test(`12 a first visit's code inside lists and quotes paints in its final frame: through ${IDLE_MS} ms of idle only its colors arrive`, async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("nested-code", "Nested code")
+  const session = await api.createSession(workspace.directory, { title: "Nested", harness: SCRIPTED_ACP_HARNESS })
+  const reply = [
+    "Set it up:",
+    "1. Install:\n\n   ```bash\n   bun install\n   bun run build\n   ```\n\n2. Then run it.",
+    "> From the docs:\n>\n> ```ts\n> export const answer: number = 42\n> ```",
+    "- An indented block in a list:\n\n      const indented = true",
+    "```go\nfunc main() {}\n```",
+    "Nested code is ready.",
+  ].join("\n\n")
+  await stack.acp.write("nested-code", { steps: [{ kind: "text", text: reply }] })
+  await api.prompt(workspace.directory, session.id, `Show the setup. ${acpScriptToken("nested-code")}`)
+  const before = await seedTurns(stack, api, workspace.directory, "Before", 1)
+  await recordStillness(app, { sessionId: session.id, marker: "Nested code is ready." })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, before.id)}`)
+  await expect(app.getByText("Before reply line 6.").first()).toBeVisible()
+  await expectNothingAnimating(app)
+  const from = await now(app)
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Nested", exact: true }).click()
+  await expect(app.getByText("Nested code is ready.")).toBeVisible()
+  const recorded = await stillnessAfter(app, IDLE_MS)
+  await writeFile(test.info().outputPath("stillness.json"), JSON.stringify(recorded))
+  const still = sinceFirstReady(recorded, from)
+  expect(still.watchedMs).toBeGreaterThanOrEqual(IDLE_MS - 100)
+  expect(still.mutations.filter((mutation) => mutation !== "childList code"), "transcript changes after the first paint other than code colors").toEqual([])
+  expect(still.scrollHeightDelta, "scrollHeight change after the first paint").toBe(0)
+  expect(still.scrollTopDelta, "scrollTop change after the first paint").toBe(0)
+  await expect(app.locator('[data-component="markdown-code"] code span[style*="color"]').first()).toBeVisible()
+})
+
 test("12 only a turn with two foldable groups shows a fold row, on a cold open, a warm return and a live settle", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("fold-rows", "Fold rows")
   const session = await api.createSession(workspace.directory, { title: "Groups", harness: SCRIPTED_ACP_HARNESS })
