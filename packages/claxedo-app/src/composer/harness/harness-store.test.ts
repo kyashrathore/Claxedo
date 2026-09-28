@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { nativeHarness } from "@/lib/harness-selection"
+import { placementId } from "@/server"
 import { createHarnessStore } from "./harness-store"
 
 function memoryStorage() {
@@ -8,7 +9,7 @@ function memoryStorage() {
   return { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) }
 }
 
-const workspace = { serverUrl: "http://127.0.0.1:4096", workspaceKey: "/work/app" }
+const workspace = { serverUrl: "http://127.0.0.1:4096", placementId: placementId("placement-app") }
 const claude = nativeHarness("claude")
 const codex = nativeHarness("codex")
 const opus = { providerId: "claude", modelId: "opus" }

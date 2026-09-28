@@ -18,9 +18,9 @@ import {
   Virtualizer,
 } from "@pierre/diffs"
 import { type PreloadFileDiffResult, type PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
-import { createMediaQuery } from "@solid-primitives/media"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
+import { usePhone } from "@/lib/viewport"
 import { createDefaultOptions, styleVariables } from "./diff"
 import { markCommentedDiffLines, markCommentedFileLines } from "./diff/commented-lines"
 import {
@@ -939,7 +939,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   const [local, others] = splitProps(props, diffKeys)
 
-  const mobile = createMediaQuery("(max-width: 640px)")
+  const phone = usePhone()
 
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, findDiffLineNumber, diffMouseSide)
 
@@ -1056,7 +1056,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     }
 
     const perf = large() ? { ...base, ...largeOptions } : base
-    if (!mobile()) return perf
+    if (!phone()) return perf
     return { ...perf, disableLineNumbers: true }
   })
 

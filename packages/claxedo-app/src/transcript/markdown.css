@@ -445,7 +445,7 @@
   }
 }
 
-body:not([data-new-layout]) .ui-markdown {
+.ui-markdown {
   color: var(--transcript-prose-color, var(--text-strong));
 
   h1,

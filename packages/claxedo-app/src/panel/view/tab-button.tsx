@@ -23,7 +23,7 @@ function TabCloseButton(props: { label: string; visible: boolean; onClose: () =>
       class="h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
       classList={{
         "opacity-100 pointer-events-auto": props.visible,
-        "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !props.visible,
+        "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100": !props.visible,
       }}
       onClick={(event) => {
         event.preventDefault()

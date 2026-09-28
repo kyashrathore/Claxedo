@@ -33,4 +33,3 @@ export const TERMINAL_OPTIONS = {
 
 export const SETTLE_MS = 80
 export const MIN_CONTAINER_PX = 10
-export const NARROW_VIEWPORT_PX = 768

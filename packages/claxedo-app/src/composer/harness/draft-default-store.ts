@@ -7,7 +7,6 @@ import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./p
 import type { HarnessStorePatch, HarnessStoreState } from "./store-state"
 
 export type DraftDefaultContext = { readonly scopes: HarnessScopes; readonly memory: ReturnType<typeof createDraftDefaultPreferences> }
-type WorkspaceIdentity = Omit<DraftDefaultScope, "fallbackWorkspaceKey">
 
 function owner(scopes: HarnessScopes, scope: string) {
   const state = scopes.read(scope)
@@ -15,7 +14,7 @@ function owner(scopes: HarnessScopes, scope: string) {
     authority: state.draftDefaultAuthority ?? (scope.startsWith("session:") ? "server" : "unresolved"),
     revision: state.draftDefaultRevision ?? 0,
     scope,
-    workspaceKey: state.draftDefaultWorkspaceKey ?? "",
+    placementId: state.draftDefaultPlacementId,
   }
 }
 
@@ -32,8 +31,8 @@ export function beginDraftDefault({ scopes, memory }: DraftDefaultContext, scope
   scopes.seed(scope)
   const current = scopes.read(scope)
   if (current.draftDefaultAuthority === "server") return undefined
-  if (current.draftDefaultWorkspaceKey === identity.workspaceKey) {
-    return { application: owner(scopes, scope), saved: current.draftDefault }
+  if (current.draftDefaultPlacementId === identity.placementId) {
+    return { application: { scope, placementId: identity.placementId, revision: current.draftDefaultRevision ?? 0 }, saved: current.draftDefault }
   }
   const revision = (current.draftDefaultRevision ?? 0) + 1
   const saved = memory.read(identity)
@@ -41,8 +40,7 @@ export function beginDraftDefault({ scopes, memory }: DraftDefaultContext, scope
   scopes.setStore(scope, {
     draftDefaultAuthority: "unresolved",
     draftDefaultRevision: revision,
-    draftDefaultServerUrl: identity.serverUrl,
-    draftDefaultWorkspaceKey: identity.workspaceKey,
+    draftDefaultPlacementId: identity.placementId,
     draftDefault: saved,
     draftDefaultState: undefined,
     harness: type,
@@ -52,7 +50,7 @@ export function beginDraftDefault({ scopes, memory }: DraftDefaultContext, scope
     optionsLoading: !!saved && !!type && harnessHasConfigOptions(type),
     configError: saved ? "Loading model options..." : undefined,
   })
-  return { application: { scope, workspaceKey: identity.workspaceKey, revision }, saved }
+  return { application: { scope, placementId: identity.placementId, revision }, saved }
 }
 
 export function applyDraftDefault(scopes: HarnessScopes, application: DraftDefaultApplication, input: Omit<ResolveDraftDefaultInput, "saved">) {
@@ -93,9 +91,9 @@ export function draftDefaultApplication(scopes: HarnessScopes, scope: string, ty
   if (
     (current.draftDefaultAuthority ?? "unresolved") !== "unresolved" ||
     !sameHarnessSelection(current.draftDefault?.harness, type) ||
-    !current.draftDefaultWorkspaceKey
+    !current.draftDefaultPlacementId
   ) return undefined
-  return { scope, workspaceKey: current.draftDefaultWorkspaceKey, revision: current.draftDefaultRevision ?? 0 }
+  return { scope, placementId: current.draftDefaultPlacementId, revision: current.draftDefaultRevision ?? 0 }
 }
 
 export function protectDraftModel(scopes: HarnessScopes, scope: string) {
@@ -104,15 +102,14 @@ export function protectDraftModel(scopes: HarnessScopes, scope: string) {
   return (authority === "defaulted" || authority === "explicit") && !!current.draftDefault?.model
 }
 
-function draftHarnessChoicePatch({ scopes, memory }: DraftDefaultContext, scope: string, identity: WorkspaceIdentity, type: HarnessType) {
+function draftHarnessChoicePatch({ scopes, memory }: DraftDefaultContext, scope: string, identity: DraftDefaultScope, type: HarnessType) {
   const choice = memory.readHarness(identity, type)
   return {
     choice,
     patch: {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (scopes.read(scope).draftDefaultRevision ?? 0) + 1,
-      draftDefaultServerUrl: identity.serverUrl,
-      draftDefaultWorkspaceKey: identity.workspaceKey,
+      draftDefaultPlacementId: identity.placementId,
       draftDefault: { harness: type, ...choice },
       draftDefaultState: choice?.model || !harnessHasConfigOptions(type) ? "ready" : undefined,
       configError: undefined,
@@ -120,7 +117,7 @@ function draftHarnessChoicePatch({ scopes, memory }: DraftDefaultContext, scope:
   }
 }
 
-export function rememberDraftHarness(context: DraftDefaultContext, scope: string, identity: WorkspaceIdentity, type: HarnessType, save: boolean) {
+export function rememberDraftHarness(context: DraftDefaultContext, scope: string, identity: DraftDefaultScope, type: HarnessType, save: boolean) {
   context.scopes.seed(scope)
   const { choice, patch } = draftHarnessChoicePatch(context, scope, identity, type)
   const persisted = save && context.memory.save(identity, { harness: type, ...choice })
@@ -128,7 +125,7 @@ export function rememberDraftHarness(context: DraftDefaultContext, scope: string
   return persisted
 }
 
-export function beginDraftHarnessChoice(context: DraftDefaultContext, scope: string, identity: WorkspaceIdentity, type: HarnessType) {
+export function beginDraftHarnessChoice(context: DraftDefaultContext, scope: string, identity: DraftDefaultScope, type: HarnessType) {
   context.scopes.seed(scope)
   const { choice, patch } = draftHarnessChoicePatch(context, scope, identity, type)
   context.scopes.setStore(scope, { ...patch, selectedModel: choice?.model?.modelId ?? "", selectedModelProvider: choice?.model?.providerId })
@@ -137,7 +134,7 @@ export function beginDraftHarnessChoice(context: DraftDefaultContext, scope: str
 export function rememberDraftModel(
   { scopes, memory }: DraftDefaultContext,
   scope: string,
-  identity: WorkspaceIdentity,
+  identity: DraftDefaultScope,
   model: ModelChoice,
   labels: DraftDefaultLabels | undefined,
   save: boolean,
@@ -150,8 +147,7 @@ export function rememberDraftModel(
   scopes.setStore(scope, {
     draftDefaultAuthority: "explicit",
     draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
-    draftDefaultServerUrl: identity.serverUrl,
-    draftDefaultWorkspaceKey: identity.workspaceKey,
+    draftDefaultPlacementId: identity.placementId,
     draftDefault,
     draftDefaultState: "ready",
     configError: undefined,

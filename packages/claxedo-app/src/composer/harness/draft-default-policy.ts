@@ -1,4 +1,4 @@
-import { sameModelKey, type ModelChoice } from "@/server"
+import { sameModelKey, type ModelChoice, type PlacementId } from "@/server"
 import type { HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import { isCatalogHarnessId } from "@/lib/harness-selection"
@@ -27,12 +27,13 @@ export type ResolveDraftDefaultInput = {
 export type DraftDefaultAuthority = "unresolved" | "defaulted" | "explicit" | "server"
 
 export type DraftDefaultApplication = {
-  readonly workspaceKey: string
+  readonly placementId: PlacementId
   readonly scope: string
   readonly revision: number
 }
 
-export type DraftDefaultOwner = DraftDefaultApplication & {
+export type DraftDefaultOwner = Omit<DraftDefaultApplication, "placementId"> & {
+  readonly placementId: PlacementId | undefined
   readonly authority: DraftDefaultAuthority
 }
 
@@ -81,7 +82,7 @@ export function shouldApplyDraftDefault(
   current: DraftDefaultOwner,
 ) {
   return current.authority === "unresolved" &&
-    current.workspaceKey === captured.workspaceKey &&
+    current.placementId === captured.placementId &&
     current.scope === captured.scope &&
     current.revision === captured.revision
 }

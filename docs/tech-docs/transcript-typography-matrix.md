@@ -9,9 +9,8 @@ values, a theme names a pairing (and may override knobs) in its `transcript`
 block, and the rail's dev panel picks a pairing. Nothing in the transcript is
 pinned: a cell that names a knob moves with the theme.
 
-The app runs the legacy branch (`body:not([data-new-layout])`), so where
-`markdown.css` and `message-part.css` fork on that attribute the legacy rule is
-the one listed. Values are the fallbacks; the `Cursor` and `Codex` columns are
+Where `markdown.css` and `message-part.css` restate a property in their trailing
+override rules, the override is the one listed. Values are the fallbacks; the `Cursor` and `Codex` columns are
 what those pairings set. **Default is Cursor's measurements**, so a theme that
 names no pairing (every theme but Codex) reads as Cursor; the Codex theme
 reads as Codex.

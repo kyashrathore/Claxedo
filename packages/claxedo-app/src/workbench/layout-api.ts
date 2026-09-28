@@ -12,6 +12,7 @@ export type WorkbenchApi = {
   }
   assignContent: (paneId: string, contentId: string | null) => void
   split: {
+    accepts: (targetPaneId: string, contentId: string) => boolean
     split: (targetPaneId: string, edge: Edge, contentId: string) => void
     close: (paneId: string, opts?: { destroyContent: boolean }) => void
     move: (contentId: string, fromPaneId: string, toPaneId: MovePaneTarget) => void
@@ -19,6 +20,7 @@ export type WorkbenchApi = {
     resize: (path: SplitPath, ratio: number) => void
   }
   navigation: { show: (contentId: string) => void }
+  splittable: (contentId: string) => boolean
   selectors: {
     aliveContents: () => readonly string[]
     recentContents: () => readonly string[]
@@ -33,8 +35,9 @@ export type WorkbenchApi = {
 }
 
 type Apply = (mutation: (layout: WorkbenchState) => WorkbenchState) => void
+type Splittable = (contentId: string) => boolean
 
-function selectorApi(layout: Accessor<WorkbenchState>, handing: Accessor<Handing | undefined>): WorkbenchApi["selectors"] {
+function selectorApi(layout: Accessor<WorkbenchState>, handing: Accessor<Handing | undefined>, splittable: Splittable): WorkbenchApi["selectors"] {
   const focusedContent = createMemo(() => selectors.focusedContent(layout()))
   const shownContent = createMemo(() => selectors.shownContent(layout(), handing()))
   return {
@@ -45,12 +48,17 @@ function selectorApi(layout: Accessor<WorkbenchState>, handing: Accessor<Handing
     paneRect: (id) => selectors.paneRect(layout(), id),
     focusedContent,
     shownContent,
-    mruHiddenContent: () => selectors.mruHiddenContent(layout()),
+    mruHiddenContent: () => selectors.mruHiddenContent(layout(), splittable),
     snapshotFor: (id) => selectors.snapshotFor(layout(), id),
   }
 }
 
-export function createLayoutApi(layout: Accessor<WorkbenchState>, apply: Apply, handing: Accessor<Handing | undefined>): WorkbenchApi {
+function splitsBeside(state: WorkbenchState, splittable: Splittable, targetPaneId: string, contentId: string): boolean {
+  const target = state.panes.find((pane) => pane.id === targetPaneId)?.contentId
+  return splittable(contentId) && (!target || splittable(target))
+}
+
+export function createLayoutApi(layout: Accessor<WorkbenchState>, apply: Apply, handing: Accessor<Handing | undefined>, splittable: Splittable): WorkbenchApi {
   const show = (s: WorkbenchState, id: string, focus: boolean) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id))
   return {
     contents: {
@@ -60,13 +68,16 @@ export function createLayoutApi(layout: Accessor<WorkbenchState>, apply: Apply, 
     },
     assignContent: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     split: {
-      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.splitPane(s, targetPaneId, edge, contentId)),
+      accepts: (targetPaneId, contentId) => splitsBeside(layout(), splittable, targetPaneId, contentId),
+      split: (targetPaneId, edge, contentId) =>
+        apply((s) => (splitsBeside(s, splittable, targetPaneId, contentId) ? reducers.split.splitPane(s, targetPaneId, edge, contentId) : s)),
       close: (paneId, opts) => apply((s) => reducers.split.closePane(s, paneId, opts ?? { destroyContent: false })),
       move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.moveContent(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((s) => reducers.split.focusPane(s, paneId)),
       resize: (path, ratio) => apply((s) => reducers.split.resizeSplit(s, path, ratio)),
     },
     navigation: { show: (contentId) => apply((s) => reducers.navigation.show(s, contentId)) },
-    selectors: selectorApi(layout, handing),
+    splittable,
+    selectors: selectorApi(layout, handing, splittable),
   }
 }

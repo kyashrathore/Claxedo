@@ -210,51 +210,49 @@
   }
 }
 
-body:not([data-new-layout]) {
-  [data-component="tool-trigger"] {
+[data-component="tool-trigger"] {
+  color: var(--transcript-tool-color, var(--text-weak));
+
+  [data-slot="basic-tool-tool-spinner"] {
+    color: inherit;
+  }
+
+  [data-slot="basic-tool-tool-title"],
+  [data-slot="basic-tool-tool-title"].agent-title,
+  [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
+  .ui-basic-tool-tool-arg {
     color: var(--transcript-tool-color, var(--text-weak));
+    transition: color 0.15s ease;
+  }
 
-    [data-slot="basic-tool-tool-spinner"] {
-      color: inherit;
-    }
+  [data-slot="basic-tool-tool-subtitle"].clickable:hover {
+    color: var(--transcript-tool-hover-color, var(--text-strong));
+  }
+}
 
+@media (hover: hover) {
+  [data-slot="collapsible-trigger"]:hover [data-component="tool-trigger"] {
     [data-slot="basic-tool-tool-title"],
     [data-slot="basic-tool-tool-title"].agent-title,
     [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
     .ui-basic-tool-tool-arg {
-      color: var(--transcript-tool-color, var(--text-weak));
-      transition: color 0.15s ease;
-    }
-
-    [data-slot="basic-tool-tool-subtitle"].clickable:hover {
       color: var(--transcript-tool-hover-color, var(--text-strong));
     }
   }
+}
 
-  @media (hover: hover) {
-    [data-slot="collapsible-trigger"]:hover [data-component="tool-trigger"] {
-      [data-slot="basic-tool-tool-title"],
-      [data-slot="basic-tool-tool-title"].agent-title,
-      [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
-      .ui-basic-tool-tool-arg {
-        color: var(--transcript-tool-hover-color, var(--text-strong));
-      }
-    }
+[data-slot="collapsible-trigger"]:focus-visible [data-component="tool-trigger"] {
+  [data-slot="basic-tool-tool-title"],
+  [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
+  .ui-basic-tool-tool-arg {
+    color: var(--transcript-tool-hover-color, var(--text-strong));
   }
+}
 
-  [data-slot="collapsible-trigger"]:focus-visible [data-component="tool-trigger"] {
-    [data-slot="basic-tool-tool-title"],
-    [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
-    .ui-basic-tool-tool-arg {
-      color: var(--transcript-tool-hover-color, var(--text-strong));
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    [data-component="tool-trigger"] [data-slot="basic-tool-tool-title"],
-    [data-component="tool-trigger"] [data-slot="basic-tool-tool-subtitle"],
-    [data-component="tool-trigger"] .ui-basic-tool-tool-arg {
-      transition: none;
-    }
+@media (prefers-reduced-motion: reduce) {
+  [data-component="tool-trigger"] [data-slot="basic-tool-tool-title"],
+  [data-component="tool-trigger"] [data-slot="basic-tool-tool-subtitle"].subagent-link,
+  [data-component="tool-trigger"] .ui-basic-tool-tool-arg {
+    transition: none;
   }
 }

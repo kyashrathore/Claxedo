@@ -60,13 +60,17 @@
   }
 }
 
-body:not([data-new-layout]) .ui-card[data-kind="tool-error-card"] {
+.ui-card[data-kind="tool-error-card"] {
   [data-slot="basic-tool-tool-title"] {
     color: var(--text-strong);
   }
 
   [data-slot="basic-tool-tool-subtitle"] {
     color: var(--text-base);
+
+    &.subagent-link:is(:active, :visited):not(:hover) {
+      color: var(--text-base);
+    }
   }
 
   .ui-collapsible-arrow {

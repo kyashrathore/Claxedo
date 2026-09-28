@@ -57,6 +57,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   const dropTarget = createWorkbenchDropTarget({
     drag: wb.drag,
     root: () => rootEl,
+    accepts: wb.split.accepts,
     commitDrop: (paneId, edge, contentId) => {
       if (wb.layout().contentIds.includes(contentId)) wb.split.split(paneId, edge, contentId)
     },

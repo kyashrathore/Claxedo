@@ -118,8 +118,7 @@ export function wireSwitcher(wiring: HarnessWiring, fetchConfigOptions: FetchCon
 
 function draftDefaultIdentity(api: HarnessConfigApi, input?: HarnessScopeInput) {
   if (!input?.placementId || (input.sessionId && input.sessionId !== "new")) return undefined
-  const workspaceKey = api.workspaceKey(input.placementId)
-  return workspaceKey ? { serverUrl: api.serverUrl, workspaceKey } : undefined
+  return { serverUrl: api.serverUrl, placementId: input.placementId }
 }
 
 function rememberDraftHarnessInWorkspace({ api, store }: HarnessWiring, scope: string, type: HarnessType, input?: HarnessScopeInput) {

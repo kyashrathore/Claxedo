@@ -161,6 +161,37 @@ test("12 Tasks and Marketplace share one page tab that shows the last one opened
   await expect(app).toHaveURL(/\/tasks$/)
 })
 
+test("12 the page tab never splits: its pane has no drag handle, a row dropped on it opens instead, and mod+\\ skips it", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  const second = await api.createSession(workspace.directory, { title: "Second", harness: SCRIPTED_ACP_HARNESS })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const handles = () => app.getByTestId(/^pane-handle-/)
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await rail.getByRole("button", { name: "Second", exact: true }).click()
+  await expect(handles()).toHaveCount(1)
+  await app.getByTestId("sidebar-tasks-entry").click()
+  await expect(app).toHaveURL(/\/tasks$/)
+  await expect(handles()).toHaveCount(0)
+
+  await app.keyboard.press("ControlOrMeta+Backslash")
+  await expect(app).toHaveURL(/\/tasks$/)
+  await dragRowToRightEdge(app, "First")
+  await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
+  await expect(divider(app)).toHaveCount(0)
+
+  await app.getByTestId("sidebar-tasks-entry").click()
+  await expect(app).toHaveURL(/\/tasks$/)
+  await rail.getByRole("button", { name: "Second", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`/${second.id}$`))
+  await app.keyboard.press("ControlOrMeta+Backslash")
+  await expect(divider(app)).toBeVisible()
+  await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
+  await expect(app.getByRole("textbox", { name: UI.composer }).filter({ visible: true })).toHaveCount(2)
+  expect((await api.session(workspace.directory, second.id)).title).toBe("Second")
+})
+
 test("12 a boot reads neither Tasks nor pi's provider catalog, an open reads each thing once, and a revisit reads nothing", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("reads", "Reads")
   await api.createSession(workspace.directory, { title: "Alpha", harness: SCRIPTED_ACP_HARNESS })
