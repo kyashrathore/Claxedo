@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { ApiError, ClaxedoApi, type PermissionRow } from "../harness/api"
+import { ClaxedoApi, type PermissionRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
-import { refusePermissionReplySave } from "../harness/refuse-permission-save"
+import { refusePermissionReplySave, refusedAsUnsaved } from "../harness/refuse-permission-save"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
@@ -45,11 +45,7 @@ export async function run() {
       const release = await refusePermissionReplySave(stack.dataDir, session.id)
       try {
         await assert.rejects(() => api.replyPermission(directory, session.id, request.id, "once"),
-          (error: unknown) => {
-            if (!(error instanceof ApiError)) return false
-            console.log(`H3b ${harness.id} save refusal: HTTP ${error.status}`)
-            return error.status === 500
-          })
+          (error: unknown) => refusedAsUnsaved(error, `H3b ${harness.id}`))
         assert.ok((await api.permissions(directory)).some((row) => row.id === request.id), `${harness.id} lost pending request`)
         assert.deepEqual(await api.messages(directory, session.id), beforeMessages, `${harness.id} advanced the stored turn`)
         assert.equal(stream.frames.some((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id), false)

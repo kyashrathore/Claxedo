@@ -9,11 +9,35 @@ import { startEgressGuard } from "./egress-guard"
 import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
 import { claxedoAgentPluginsWorkspaceRuntimeEntry } from "../../../claxedo-server/src/hosts/workspace-runtime/startup"
+import { nativeProviderAuth, nativeProviderDeliveriesFromRepository, nativeProviderSecrets } from "../../../claxedo-server-core/src/credentials/native-delivery-plan"
+import {
+  mintSupervisorBackplaneToken, supervisorBackplaneTokenAudience, supervisorBackplaneTokenIssuer,
+} from "../../../claxedo-server-core/src/platform/auth/runtime-access-token"
+import { createWorkspaceRuntimeClient } from "../../../workspace-runtime/src/client"
+import type { RuntimeSnapshot } from "../../../workspace-runtime/src/routes/config"
+import { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } from "./hosted-keys"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
 import { releasePort, reservePort } from "./ports"
 import { captureOutput, stopProcess } from "./process"
 
-export async function startCloudProductHost(nativeHarness?: string) {
+const WORKSPACE_ID = "ws_h19_product"
+
+async function ownerAccountDelivery(owner: string) {
+  const now = Date.now()
+  return await nativeProviderDeliveriesFromRepository({
+    owner,
+    machineOwnerUserId: owner,
+    selections: {},
+    selected: [{ credential: {
+      id: `cred_${owner}_openai`, owner, provider_id: "openai", kind: "api_key", source: "managed", status: "available",
+      created_at: now, updated_at: now, activated_at: now, revision: 1, incarnation: `cred_${owner}_openai`,
+    } }],
+    readSecret: async () => `${owner}-openai-key`,
+    secretBrokering: "native",
+  })
+}
+
+export async function startCloudProductHost(nativeHarness?: string, options: { accountOwner?: string } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "h19-product-host-"))
   const directory = path.join(root, "workspace")
   const storeRoot = path.join(root, "store")
@@ -22,9 +46,14 @@ export async function startCloudProductHost(nativeHarness?: string) {
   const port = await reservePort()
   const guardPort = await reservePort()
   const guard = await startEgressGuard(guardPort)
+  const deliveries = options.accountOwner ? await ownerAccountDelivery(options.accountOwner) : []
   const env: NodeJS.ProcessEnv = {
     ...await isolatedEnv(root, guard.url),
-    ...workspaceRuntimeBootEnv({ workspaceId: "ws_h19_product", directory, port, nativeHarness }),
+    ...workspaceRuntimeBootEnv({ workspaceId: WORKSPACE_ID, directory, port, nativeHarness }),
+    ...Object.fromEntries(nativeProviderSecrets(deliveries).map((secret) => [secret.name, `claxedo-broker:${secret.name}`])),
+    WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: HOSTED_SIGNING_PUBLIC_KEY,
+    WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: supervisorBackplaneTokenIssuer,
+    WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: supervisorBackplaneTokenAudience,
     WORKSPACE_RUNTIME_STORE_DIR: storeRoot,
     CLAXEDO_DATA_DIR: path.join(root, "data"),
   }
@@ -48,5 +77,14 @@ export async function startCloudProductHost(nativeHarness?: string) {
     await close()
     throw error
   }
-  return { url, directory, storeRoot, guard, log: owned.log, close }
+  const provisionOwnerAccount = async (config: Pick<RuntimeSnapshot, "defaultHarness">) => {
+    if (!options.accountOwner) throw new Error("startCloudProductHost was given no account owner")
+    const token = await mintSupervisorBackplaneToken({ workspaceId: WORKSPACE_ID, hostId: WORKSPACE_ID, subject: "workspace-supervisor" },
+      { CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: HOSTED_SIGNING_PRIVATE_KEY, CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: HOSTED_SIGNING_PUBLIC_KEY })
+    await createWorkspaceRuntimeClient({ baseUrl: url }).applyConfig({
+      version: 4, commands: [], mcp: {}, connections: [], ...config,
+      auth: nativeProviderAuth(deliveries, { owner: options.accountOwner, machineOwnerUserId: options.accountOwner, selections: {} }),
+    }, { token: token.supervisorBackplaneToken })
+  }
+  return { url, directory, storeRoot, guard, log: owned.log, close, provisionOwnerAccount }
 }
