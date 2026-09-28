@@ -49,13 +49,14 @@ A subscriber stops by returning `true` from `painted`, or by calling the functio
 
 ## Install and verify
 
-This package is not a workspace member; the root install does not install it. Its framework dependency is the benchmark checkout that runs it, linked:
+This package is not a workspace member; the root install does not install it. Its framework dependency is the published benchmark at a pinned commit (`package.json`), so it installs on any machine:
 
 ```sh
-cd /path/to/agent-app-benchmark && bun link
 cd packages/claxedo-app/perf-harness && bun install
 bun run verify
 ```
+
+Run it from a benchmark checkout at the same commit, so the driver's SDK and the framework that re-checks its frame logs agree.
 
 `verify` typechecks `src/` and `test/` and runs `test/`. From the app package, `bun run test:perf-harness` runs the same.
 
