@@ -1,437 +1,639 @@
 ---
 import HarnessMark from "./HarnessMark.astro"
+import CodexIcon from "./CodexIcon.astro"
+import CodexIconSprite from "./CodexIconSprite.astro"
 
-type Tool = { icon: "read" | "run" | "mcp" | "edit"; label: string; detail: readonly string[] }
-type Place = { kind: "computer" | "machine" | "sandbox"; label: string }
-type ChatSession = {
-  id: string
-  title: string
-  age: string
-  harness: "codex" | "claude" | "cursor"
-  place: Place
-  spot?: "speed" | "place"
-  user: string
-  opening: string
-  tools: readonly Tool[]
-  reply: string
-}
+export interface ReplicaSession { id: string; title: string; user: string; responses: readonly string[]; tools: readonly string[]; context: string; branch: string; place?: string; surface?: "chat" | "terminal"; harness?: "codex" | "claude" | "cursor" | "pi" | "opencode"; project?: "formlink" }
+const demoSessions = [
+  { id: "usage-meter", title: "Fix usage meter", harness: "codex", place: "This computer", user: "The usage meter undercounts Codex turns: 41k tokens in the meter, 118k on the dashboard. Find where it goes wrong, don't just scale it.", responses: ["Tracing one usage event from the Codex adapter to the meter, with yesterday's session replayed from its event log.", "Found it. Codex reports usage as a running total for the session, and the meter added every event as a delta. It has to keep the latest total, not the sum.", "Yesterday's session now reads 118,204 tokens against the dashboard's 118k. I added a fixture so this exact shape stays covered."], tools: ["Worked for 48s", "Replayed yesterday's session", "Running the meter tests", "Read 9 files"], context: "packages/claxedo-app", branch: "fix/usage-meter" },
+  { id: "standup", title: "Add a Standup page", harness: "claude", place: "This computer", user: "Add a Standup page to the app that lists what every session in this project did today.", responses: ["I'll build it as an app plugin with the Claxedo tools, so it lives in your sidebar.", "The page reads today's sessions through the app's own server and groups them by project.", "Standup is registered. Approve it once and it shows up in the sidebar; every save I make after that goes live."], tools: ["Worked for 1m 04s", "claxedo · app_plugin_create", "claxedo · app_plugin_add", "claxedo · app_plugin_check"], context: "plugins/standup", branch: "main" },
+  { id: "relay-tokens", title: "Rotate relay tokens", harness: "codex", place: "Daytona sandbox", user: "Rotate the relay tokens to EdDSA. Keep the old verifier for exactly one release.", responses: ["Reading the token contract and both verifier paths first.", "New tokens are EdDSA, and the old verifier stays for one release so links already sent keep working.", "Both verifiers pass the contract suite in the sandbox."], tools: ["Worked for 1m 12s", "Edited 4 files", "Running the contract suite", "Read the token contract"], context: "packages/workspace-relay", branch: "chore/eddsa-tokens" },
+  { id: "release-notes", title: "Draft release notes", harness: "cursor", place: "studio-mac", user: "Draft the release notes for this week from the merged pull requests. Group them by what a user notices.", responses: ["Reading every pull request merged since the last tag.", "Fourteen pull requests landed: four new features, seven fixes and three changes.", "The notes are in RELEASE_NOTES.md, grouped into New, Fixed and Changed, with each item linked to its pull request."], tools: ["Worked for 2m 10s", "Listed 14 merged pull requests", "Writing RELEASE_NOTES.md", "Read the last tag"], context: "packages/claxedo-desktop", branch: "release/notes" },
+  { id: "formlink-overview", title: "What is this project?", harness: "opencode", project: "formlink", place: "This computer", user: "What is this project, and what would you fix first?", responses: ["Reading the README, the route table and the last twenty commits before answering.", "Formlink is a form builder: a Hono API, a Solid editor, and a shared schema package. Validation lives in three places and they disagree.", "I would make the shared schema the only validator, so the API and the editor reject the same input."], tools: ["Worked for 58s", "Read README", "Reading git log", "Read 24 files"], context: "apps/formlink", branch: "main" },
+] as const
 
-const harnessNames = { codex: "Codex", claude: "Claude Code", cursor: "Cursor" } as const
+const terminalSessions = [
+  { id: "terminal-codex", title: "Codex", surface: "terminal", harness: "codex", user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" },
+  { id: "terminal-claude", title: "Claude", surface: "terminal", harness: "claude", user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" },
+] as const
+const canvasSessions: readonly ReplicaSession[] = [...demoSessions, ...terminalSessions]
+const claxedoSessions = canvasSessions.filter((session) => !session.project && session.surface !== "terminal")
+const terminalRows = canvasSessions.filter((session) => session.surface === "terminal")
+const formlinkSessions = canvasSessions.filter((session) => session.project === "formlink")
 
-const sessions: readonly ChatSession[] = [
-  {
-    id: "usage-meter",
-    title: "Fix usage meter",
-    age: "now",
-    harness: "codex",
-    place: { kind: "computer", label: "This computer" },
-    spot: "speed",
-    user: "The usage meter undercounts Codex turns: 41k tokens in the meter, 118k on the dashboard. Find where it goes wrong, don't just scale it.",
-    opening: "Tracing one usage event from the Codex adapter to the meter, with yesterday's session replayed from its event log.",
-    tools: [
-      { icon: "read", label: "Read 9 files", detail: ["src/usage/meter.ts", "src/usage/fold.ts", "src/harness/codex/usage-event.ts", "src/usage/meter.test.ts", "+ 5 more"] },
-      { icon: "run", label: "Ran the meter tests", detail: ["$ bun test src/usage", "42 pass, 0 fail"] },
-    ],
-    reply: "Codex reports usage as a running total for the session, and the meter added every event as a delta. It now keeps the latest total: yesterday's session reads 118,204 tokens against the dashboard's 118k.",
-  },
-  {
-    id: "standup",
-    title: "Add a Standup page",
-    age: "8m",
-    harness: "claude",
-    place: { kind: "computer", label: "This computer" },
-    user: "Add a Standup page to the app that lists what every session in this project did today.",
-    opening: "I'll build it as an app plugin with the Claxedo tools, so it lives in your sidebar.",
-    tools: [
-      { icon: "mcp", label: "claxedo · app_plugin_create", detail: ["Created standup/package.json", "Created standup/src/app.tsx"] },
-      { icon: "mcp", label: "claxedo · app_plugin_check", detail: ["Typecheck and build passed, 0 diagnostics"] },
-      { icon: "mcp", label: "claxedo · app_plugin_add", detail: ["Registered Standup", "Waiting for your approval in the app"] },
-    ],
-    reply: "Standup is registered. Approve it once and it shows up in the sidebar; every save I make after that goes live.",
-  },
-  {
-    id: "relay-tokens",
-    title: "Rotate relay tokens",
-    age: "1h",
-    harness: "codex",
-    place: { kind: "sandbox", label: "Daytona sandbox" },
-    spot: "place",
-    user: "Rotate the relay tokens to EdDSA. Keep the old verifier for exactly one release.",
-    opening: "Reading the token contract and both verifier paths first.",
-    tools: [
-      { icon: "read", label: "Read the token contract", detail: ["packages/workspace-relay/src/token.ts", "packages/workspace-relay/src/verify.ts"] },
-      { icon: "edit", label: "Edited 4 files", detail: ["src/token.ts", "src/verify.ts", "src/verify-legacy.ts", "src/token.test.ts"] },
-      { icon: "run", label: "Ran the contract suite", detail: ["$ bun test packages/workspace-relay", "118 pass, 0 fail"] },
-    ],
-    reply: "New tokens are EdDSA, and old ones still verify until the next release. Both verifiers pass the contract suite in the sandbox.",
-  },
-  {
-    id: "release-notes",
-    title: "Draft release notes",
-    age: "3h",
-    harness: "cursor",
-    place: { kind: "machine", label: "studio-mac" },
-    user: "Draft the release notes for this week from the merged pull requests. Group them by what a user notices.",
-    opening: "Reading every pull request merged since the last tag.",
-    tools: [
-      { icon: "run", label: "Listed 14 merged pull requests", detail: ["$ gh pr list --state merged --base dev", "14 pull requests since the last tag"] },
-      { icon: "edit", label: "Wrote RELEASE_NOTES.md", detail: ["New: 4", "Fixed: 7", "Changed: 3"] },
-    ],
-    reply: "The notes are in RELEASE_NOTES.md, grouped into New, Fixed and Changed, with each item linked to its pull request.",
-  },
-]
-
-
-const plugins = [
-  { mark: "C7", name: "context7", about: "Version-pinned library docs, pulled into the prompt." },
-  { mark: "Co", name: "composio", about: "Connect and operate external apps through one MCP server." },
-  { mark: "Fd", name: "frontend-design", about: "Skills for distinctive, production-grade interfaces." },
-  { mark: "Ph", name: "posthog", about: "Query product analytics and errors from any session." },
-]
-
-const people = [
-  { initial: "A", name: "Asha Rao", role: "Owner" },
-  { initial: "M", name: "Maya Chen", role: "Admin" },
-  { initial: "D", name: "Diego Lima", role: "Member" },
-  { initial: "K", name: "Kenji Mori", role: "Member" },
+interface BoardCard { number: number; title: string; preset: string; harness: NonNullable<ReplicaSession["harness"]>; mark?: string; live?: boolean }
+const boardColumns: readonly { key: string; label: string; cards: readonly BoardCard[] }[] = [
+  { key: "backlog", label: "Backlog", cards: [
+    { number: 18, title: "Rotate relay verifier behind a flag", preset: "Reviewer", harness: "codex", mark: "relay-verifier" },
+    { number: 17, title: "Usage meter parity with provider dashboard", preset: "Fixer", harness: "claude" },
+  ] },
+  { key: "todo", label: "To do", cards: [
+    { number: 16, title: "Connections API contract tests", preset: "Tester", harness: "codex" },
+  ] },
+  { key: "doing", label: "In progress", cards: [
+    { number: 15, title: "Ship connections API", preset: "Builder", harness: "claude", live: true },
+    { number: 14, title: "Migrate relay tokens to EdDSA", preset: "Builder", harness: "codex", live: true },
+  ] },
+  { key: "needs_you", label: "Needs you", cards: [
+    { number: 13, title: "Approve permission bump for box-1", preset: "Builder", harness: "claude" },
+  ] },
+  { key: "done", label: "Done", cards: [
+    { number: 12, title: "Sync setup to every agent", preset: "Builder", harness: "claude" },
+  ] },
 ]
 ---
 
-<section class="demo" data-demo data-surface="chat" data-rail="closed" aria-label="Interactive preview of the Claxedo app">
-  <div class="titlebar">
-    <div class="titlebar-rail">
-      <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.6"></rect><path d="M5.7 2.75v10.5"></path></svg>
-    </div>
-    <div class="titlebar-main">
-      <button type="button" class="icon-button phone-only" data-demo-rail-toggle aria-label="Show sidebar" aria-expanded="false">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.6"></rect><path d="M5.7 2.75v10.5"></path></svg>
-      </button>
-      <span class="titlebar-actions">
-        <span class="icon-button" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg></span>
-        <button type="button" class="icon-button" data-demo-open="terminal" data-spot-target="terminal" aria-label="Open the terminal">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.7"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg>
+<section class="hero canvas-only" aria-label="Interactive preview of the Claxedo app">
+  <div class="app-window" data-app-replica data-demo data-sidebar="open" data-surface="chat" data-panel="closed" data-panel-width="split" data-panel-view-active="changes" data-environment="expanded" data-account="closed" data-composer-menu="closed" data-active-session={canvasSessions[0].id} data-demo-sessions={JSON.stringify(canvasSessions)}>
+    <CodexIconSprite />
+    <header class="shell-header">
+      <div class="rail-titlebar">
+        <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+        <button type="button" class="icon-button rail-hide" data-sidebar-toggle aria-label="Hide Sidebar" aria-pressed="true">
+          <CodexIcon name="layout-left-partial" />
         </button>
-        <span class="icon-button" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.6"></rect><path d="M10.3 2.75v10.5"></path></svg></span>
-      </span>
-    </div>
-  </div>
-
-  <div class="body">
-    <nav class="rail" aria-label="Demo sidebar">
-      <div class="rail-global">
-        <span class="row"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 4.5 1.5 1.5L7 3.5M3 9.5 4.5 11 7 8.5M9 5h4M9 10h4"></path></svg>Tasks</span>
-        <button type="button" class="row" data-demo-row="marketplace" data-spot-target="tools" data-spot-opens="tools"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6V4.8A3 3 0 0 1 8 2a3 3 0 0 1 3 2.8V6m-7 0h8l-.5 7h-7z"></path></svg>Marketplace</button>
-        <button type="button" class="row" data-demo-open="standup" data-spot-target="prompt" data-spot-opens="prompt"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h4v4H3zM9 3.5h4v4H9zM3 9.5h4v4H3zM11 9.5v4M9 11.5h4"></path></svg>Standup</button>
       </div>
-      <div class="rail-projects">
-        <small>Projects</small>
-        <span class="row project"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg>claxedo</span>
-        {sessions.map((session, index) => (
-          <button type="button" class:list={["row", "session", { active: index === 0 }]} data-demo-row={session.id} data-spot-opens={session.spot} aria-current={index === 0 ? "page" : undefined}>
-            <span>{session.title}</span><small>{session.age}</small>
-          </button>
-        ))}
-        <button type="button" class="row session terminal-row" data-demo-row="terminal" data-spot-target="terminal" data-spot-opens="terminal">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.7"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg><span>claude</span>
-        </button>
-        <span class="row project"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg>formlink</span>
-      </div>
-      <button type="button" class="row account" data-demo-row="team" data-spot-target="team" data-spot-opens="team"><i aria-hidden="true">A</i><span>Acme</span><small>6 people</small></button>
-    </nav>
-
-    <div class="main">
-      {sessions.map((session, index) => (
-        <article class="chat" data-demo-view={session.id} data-surface="chat" hidden={index !== 0} aria-label={session.title}>
-          <div class="transcript">
-            <header class="session-head">
-              <h3>{session.title}</h3>
-              <span class="place" data-spot-target="place">
-                {session.place.kind === "sandbox"
-                  ? <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 12.5h7.3a2.7 2.7 0 0 0 .4-5.4A4 4 0 0 0 4.4 6.4a3.1 3.1 0 0 0 .1 6.1z"></path></svg>
-                  : <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11v7.2h-11zm3 9h5M8 11v2"></path></svg>}
-                {session.place.label}
-              </span>
-            </header>
-            <p class="user">{session.user}</p>
-            <p class="assistant">{session.opening}</p>
-            {session.tools.map((tool) => (
-              <div class="tool">
-                <button type="button" class="tool-row" aria-expanded="false">
-                  {tool.icon === "read" && <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3"></path></svg>}
-                  {tool.icon === "run" && <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg>}
-                  {tool.icon === "mcp" && <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5v3M10 2.5v3M4.5 5.5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11.5v2"></path></svg>}
-                  {tool.icon === "edit" && <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10.5 3 2.5 2.5-7 7H3.5V10z"></path></svg>}
-                  <span>{tool.label}</span>
-                  <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4"></path></svg>
-                </button>
-                <div class="tool-detail"><div><pre>{tool.detail.join("\n")}</pre></div></div>
+      <div class="header-columns">
+        <div class="workbench-l1">
+          <div class="closed-chrome">
+            <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+            <button type="button" class="icon-button" data-sidebar-toggle aria-label="Show Sidebar" aria-pressed="false">
+              <CodexIcon name="layout-left-partial" />
+            </button>
+            <span class="drag-gap"></span>
+          </div>
+          <nav class="compact-tabs" role="tablist" aria-label="Workbench panes">
+            {claxedoSessions.slice(0, 2).map((session, index) => (
+              <div class="compact-tab" data-selected={index === 0 ? "true" : "false"}>
+                <button type="button" class="tab-prefix" tabindex="-1" aria-label={`Claxedo / ${session.title}`} data-session-tab-id={session.id}>{session.harness ? <span class="tab-harness-mark"><HarnessMark name={session.harness} /></span> : <span class="tab-project-mark">C</span>}<i></i></button>
+                <button type="button" class="tab-title" role="tab" aria-selected={index === 0 ? "true" : "false"} data-session-tab-id={session.id}>{session.title}</button>
+                <button type="button" class="tab-close" aria-label={`Close ${session.title}`}><CodexIcon name="close-small" /></button>
               </div>
             ))}
-            <p class="assistant">{session.reply}</p>
+          </nav>
+          <div class="header-drag"></div>
+          <div class="scope-actions">
+            <button type="button" class="icon-button" data-surface-button="new" aria-label="New Session"><CodexIcon name="plus-small" /></button>
+            <button type="button" class="icon-button" data-surface-button="terminal" data-spot-target="terminal" aria-label="New Terminal"><CodexIcon name="terminal" /></button>
+            <button type="button" class="icon-button" aria-label="More actions"><CodexIcon name="chevron-down" /></button>
           </div>
-          <div class="composer">
-            <span class="composer-input">Ask anything, / for commands, @ for context…</span>
-            <span class="composer-controls">
-              <span class="round" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg></span>
-              <span class="permission"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 3.5 4v3.5c0 3 1.8 5 4.5 6.5 2.7-1.5 4.5-3.5 4.5-6.5V4z"></path></svg>Permissions</span>
-              <span class="harness"><HarnessMark name={session.harness} />{harnessNames[session.harness]}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3 3.5-3"></path></svg></span>
-              <span class="send" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 12V4m-4 4 4-4 4 4"></path></svg></span>
-            </span>
+          <button type="button" class="icon-button workspace-toggle" data-workspace-toggle aria-label="Open workspace panel" aria-pressed="false">
+            <CodexIcon name="layout-right-partial" />
+          </button>
+        </div>
+        <div class="workspace-l1">
+          <div class="workspace-tabs">
+            <button type="button" class="workspace-tab active" data-panel-button="changes"><CodexIcon name="review" /><span>Review</span><i><CodexIcon name="close-small" /></i></button>
+            <button type="button" class="workspace-tab" data-panel-button="files"><CodexIcon name="file" /><span>Files</span></button>
+            <button type="button" class="icon-button" aria-label="New workspace tab"><CodexIcon name="plus-small" /></button>
           </div>
-        </article>
-      ))}
-      <article class="page" data-demo-view="marketplace" data-surface="page" hidden aria-label="Marketplace">
-        <header class="page-head"><h3>Marketplace</h3><span class="page-note">Installed for Claude Code, Codex, Cursor and OpenCode</span></header>
-        <div class="cards">
-          {plugins.map((plugin) => (
-            <div class="card"><i aria-hidden="true">{plugin.mark}</i><div><b>{plugin.name}</b><p>{plugin.about}</p></div><span class="installed">Installed</span></div>
-          ))}
+          <span></span>
+          <button type="button" class="icon-button panel-width-toggle" data-panel-maximize aria-label="Maximize workspace panel" aria-pressed="false"><CodexIcon name="expand" class="panel-expand-icon" /><CodexIcon name="collapse" class="panel-restore-icon" /></button>
+          <button type="button" class="icon-button" data-panel-close aria-label="Close workspace panel"><CodexIcon name="layout-right-full" /></button>
         </div>
-        <p class="page-foot">Plugins reach every environment you sign into.</p>
-      </article>
-      <article class="page" data-demo-view="team" data-surface="page" hidden aria-label="Organization">
-        <header class="page-head"><h3>Acme</h3><span class="page-note">Self-hosted on your Cloudflare account</span></header>
-        <div class="people">
-          {people.map((person) => (
-            <div class="person"><i aria-hidden="true">{person.initial}</i><b>{person.name}</b><span>{person.role}</span></div>
-          ))}
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="project-rail" aria-label="Projects and sessions">
+        <div class="rail-global">
+          <button type="button"><CodexIcon name="folder-add" /><span>New Project</span></button>
+          <button type="button" data-surface-button="marketplace" data-spot-target="tools"><CodexIcon name="marketplace" /><span>Marketplace</span></button>
+          <button type="button" data-surface-button="tasks"><CodexIcon name="checklist" /><span>Tasks</span></button>
+          <button type="button" data-demo-open="standup" data-spot-target="prompt"><CodexIcon name="document-text" /><span>Standup</span></button>
         </div>
-      </article>
-      <article class="terminal" data-demo-view="terminal" data-surface="terminal" hidden aria-label="Terminal: claude">
-        <pre><span class="dim">~/claxedo $</span> claude
-<b>✻ Claude Code</b>
-<span class="dim">  cwd: ~/claxedo</span>
+        <div class="rail-divider"></div>
+        <div class="rail-scroll">
+          <span class="rail-label">Projects</span>
+          <button type="button" class="project-row"><CodexIcon name="folder" /><b>agent-app-benchmark</b></button>
+          <button type="button" class="project-row"><CodexIcon name="folder" /><b>Claxedo</b></button>
+          <div class="session-list">
+            {claxedoSessions.map((session, index) => <button type="button" class:list={["session-row", { active: index === 0 }]} data-session-id={session.id}><span>{session.title}</span><small>{index === 0 ? "now" : `${index + 7}h`}</small></button>)}
+            {terminalRows.map((session) => <button type="button" class="session-row terminal-row" data-session-id={session.id}><CodexIcon name="terminal" /><span>{session.title.toLowerCase()}</span></button>)}
+            <button type="button" class="load-row">Load more</button>
+          </div>
+          <button type="button" class="project-row second-project"><CodexIcon name="folder" /><b>formlink</b></button>
+          <div class="session-list">{formlinkSessions.length > 0 ? formlinkSessions.map((session) => <button type="button" class="session-row" data-session-id={session.id}><span>{session.title}</span><small>1d</small></button>) : <button type="button" class="session-row"><span>Project overview</span><small>9h</small></button>}</div>
+        </div>
+        <div class="workspace-account-wrap">
+          <div class="workspace-account-menu" aria-label="Workspace menu">
+            <div class="account-identity"><span><CodexIcon name="monitor" /></span><b>Acme · self-hosted on Cloudflare</b></div>
+            <i></i>
+            <button type="button"><CodexIcon name="warning" /><span>Diagnostics</span></button>
+            <button type="button"><CodexIcon name="gauge" /><span>Usage</span></button>
+            <button type="button"><CodexIcon name="settings-gear" /><span>Settings</span></button>
+            <button type="button"><CodexIcon name="help" /><span>Help</span></button>
+          </div>
+          <button type="button" class="workspace-account" data-account-toggle data-spot-target="team" aria-expanded="false"><span class="account-device"><CodexIcon name="monitor" /></span><span>Acme</span><CodexIcon name="chevron-down" class="account-chevron" /></button>
+        </div>
+      </aside>
 
-<span class="prompt">&gt;</span> run the relay contract tests and tell me what failed
+      <div class="stage-columns">
+        <main class="workbench">
+          <section class="session-surface chat-surface" aria-label="Claxedo graphical session">
+            <div class="session-content">
+              <div class="timeline-scroll">
+                <div class="timeline-column">
+                  <div class="session-name-row"><h2 data-session-title>{canvasSessions[0].title}</h2><button type="button" aria-label="Session options"><CodexIcon name="three-dots" /></button></div>
+                  <article class="message user-message"><div data-transcript-user>{canvasSessions[0].user}</div></article>
+                  <article class="message assistant-message"><p data-transcript-response="0">{canvasSessions[0].responses[0]}</p></article>
+                  <button type="button" class="turn-fold" data-tool-card="0" aria-expanded="false"><CodexIcon name="chevron-right" /><b data-transcript-tool="0">{canvasSessions[0].tools[0]}</b><i></i></button>
+                  <button type="button" class="tool-summary" data-tool-card="1" aria-expanded="false"><CodexIcon name="terminal" /><b data-transcript-tool="1">{canvasSessions[0].tools[1]}</b><span><CodexIcon name="chevron-down" /></span></button>
+                  <article class="message assistant-message"><p data-transcript-response="1">{canvasSessions[0].responses[1]}</p></article>
+                  <button type="button" class="tool-summary" data-tool-card="2" aria-expanded="false"><CodexIcon name="document-text" /><b data-transcript-tool="3">{canvasSessions[0].tools[3] ?? "Read config defaults"}</b><span><CodexIcon name="chevron-down" /></span></button>
+                  <article class="message assistant-message"><p data-transcript-response="2">{canvasSessions[0].responses[2]}</p></article>
+                  <button type="button" class="tool-summary running" data-tool-card="3" aria-expanded="false"><i></i><b data-transcript-tool="2">{canvasSessions[0].tools[2]}</b><span><CodexIcon name="chevron-down" /></span></button>
+                </div>
+              </div>
 
-<span class="ok">⏺</span> Bash(bun test packages/workspace-relay)
-<span class="dim">  ⎿  118 pass, 0 fail</span>
+              <aside class="environment-card" aria-label="Session environment">
+                <div class="environment-expanded">
+                  <header><b data-session-place data-spot-target="place">{canvasSessions[0].place ?? "Environment"}</b><button type="button" data-environment-toggle aria-label="Collapse Environment"><CodexIcon name="chevron-double-right" /></button></header>
+                  <div class="env-facts">
+                    <div><CodexIcon name="folder" /><span data-session-context>{canvasSessions[0].context}</span></div>
+                    <div><CodexIcon name="branch" /><span data-session-branch>{canvasSessions[0].branch}</span></div>
+                  </div>
+                  <section><small>Workspace</small><button type="button" data-panel-button="changes"><CodexIcon name="changes" /><span>Changes</span><em><b>+34</b> −8</em></button><button type="button" data-panel-button="files"><CodexIcon name="folder" /><span>Files</span></button><button type="button" data-panel-button="processes"><CodexIcon name="terminal" /><span>Processes</span><i></i><em>2</em></button></section>
+                  <section><small>Repository</small><button type="button"><CodexIcon name="github" /><span>claxedo/claxedo</span><em><CodexIcon name="open-external" /></em></button></section>
+                </div>
+                <div class="environment-collapsed"><button type="button" data-panel-button="changes" aria-label="Open changes"><CodexIcon name="changes" /></button><button type="button" data-panel-button="files" aria-label="Open files"><CodexIcon name="folder" /></button><button type="button" data-panel-button="processes" aria-label="Open processes"><CodexIcon name="terminal" /></button><i></i><button type="button" data-environment-toggle aria-label="Expand Environment"><CodexIcon name="chevron-double-left" /></button></div>
+              </aside>
 
-<span class="ok">⏺</span> All 118 relay contract tests pass. Nothing failed.
+              <div class="composer-zone">
+                <button type="button" class="scroll-latest" data-scroll-latest aria-label="Scroll to latest message"><CodexIcon name="scroll-to-latest" /></button>
+                <form class="composer" data-composer-form>
+                  <textarea class="composer-input" data-composer-input aria-label="Session prompt" rows="2" placeholder="Ask anything, / for commands, @ for context..."></textarea>
+                  <div class="composer-context-chip" data-composer-context-chip hidden><span>＠</span><b data-composer-context-label>Files</b><button type="button" data-context-remove aria-label="Remove context"><CodexIcon name="close-small" /></button></div>
+                  <div class="composer-controls">
+                    <div class="composer-left">
+                      <div class="composer-popover add-popover" data-composer-popover="context" hidden><small>Add</small><button type="button" data-context-option="Images and files"><b>Images and files</b><em>⌘U</em></button><button type="button" data-context-option="Commands"><b>Commands</b><em>/</em></button><button type="button" data-context-option="Context"><b>Context</b><em>@</em></button><button type="button" data-context-option="Shell command"><b>Shell command</b><em>!</em></button></div>
+                      <div class="composer-popover permission-popover" data-composer-popover="permission" hidden><small>Codex</small><button type="button" data-permission="Read only"><CodexIcon name="shield" /><span><b>Read only</b><i>Never asks; the sandbox permits reads only, so writes fail</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-permission="Workspace write" class="selected"><CodexIcon name="shield" /><span><b>Workspace write</b><i>Runs commands inside the workspace without asking; escalates outside it</i></span><em><CodexIcon name="check" /></em></button><button type="button" data-permission="Untrusted"><CodexIcon name="shield" /><span><b>Untrusted</b><i>Only trusted commands run without asking; anything else escalates</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-permission="Full access"><CodexIcon name="shield" /><span><b>Full access</b><i>Never asks; full filesystem and network access</i></span><em hidden><CodexIcon name="check" /></em></button></div>
+                      <button type="button" class="round-control" data-composer-menu-trigger="context" aria-label="Add context" aria-expanded="false"><CodexIcon name="plus" /></button><button type="button" class="permission-control" data-composer-menu-trigger="permission" aria-label="Select permission mode" aria-expanded="false"><CodexIcon name="shield" /><b data-permission-label>Workspace write</b></button>
+                    </div>
+                    <div class="composer-right">
+                      <div class="composer-popover harness-popover" data-composer-popover="harness" data-picker-open="model" hidden>
+                        <button type="button" class="picker-section" data-harness-section="harness"><CodexIcon name="chevron-right" /><b>Harness</b><span data-current-harness>Codex</span></button>
+                        <div class="picker-options harness-options" data-harness-panel="harness" hidden><small>Native SDK</small><button type="button" data-hero-harness="Claude" data-hero-model="Opus 5"><span class="harness-logo"><HarnessMark name="claude" /></span><b>Claude</b><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-harness="Codex" data-hero-model="GPT-5.6-Luna" class="selected"><span class="harness-logo"><HarnessMark name="codex" /></span><b>Codex</b><em><CodexIcon name="check" /></em></button><button type="button" data-hero-harness="Cursor" data-hero-model="Composer 1"><span class="harness-logo"><HarnessMark name="cursor" /></span><b>Cursor</b><em hidden><CodexIcon name="check" /></em></button><small>Direct</small><button type="button" data-hero-harness="Pi" data-hero-model="Pi"><span class="harness-logo"><HarnessMark name="pi" /></span><b>Pi</b><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-harness="OpenCode" data-hero-model="GPT-5.4"><span class="harness-logo"><HarnessMark name="opencode" /></span><b>OpenCode</b><em hidden><CodexIcon name="check" /></em></button></div>
+                        <button type="button" class="picker-section active" data-harness-section="model"><CodexIcon name="chevron-down" /><b>Model</b><span data-hero-model-label>GPT-5.6-Luna</span></button>
+                        <div class="picker-options model-options" data-harness-panel="model"><label><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search models" placeholder="Search models" /></label><div class="model-provider"><span>Codex App Server</span><b>Configured</b></div><button type="button" data-hero-model-choice="GPT-5.5"><span><b>GPT-5.5</b><i>Frontier model for complex coding, research, and real-world work.</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Luna" class="selected"><span><b>GPT-5.6-Luna</b><i>Fast and affordable agentic coding model.</i></span><em><CodexIcon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Sol"><span><b>GPT-5.6-Sol</b><i>Latest frontier agentic coding model.</i></span><em hidden><CodexIcon name="check" /></em></button><button type="button" data-hero-model-choice="GPT-5.6-Terra"><span><b>GPT-5.6-Terra</b><i>Balanced agentic coding model for everyday work.</i></span><em hidden><CodexIcon name="check" /></em></button></div>
+                        <button type="button" class="picker-section" data-harness-section="effort"><CodexIcon name="chevron-right" /><b>Effort</b><span data-hero-effort-label>Low</span></button>
+                        <div class="picker-options effort-options" data-harness-panel="effort" hidden>{['Low','Medium','High','Xhigh','Max','Ultra'].map((effort) => <button type="button" data-hero-effort={effort} class:list={{ selected: effort === 'Low' }}><b>{effort}</b><em hidden={effort !== 'Low'}><CodexIcon name="check" /></em></button>)}</div>
+                      </div>
+                      <button type="button" class="harness-control" data-composer-menu-trigger="harness" aria-label="Select harness and model" aria-expanded="false"><span class="harness-logo" data-hero-harness-mark><HarnessMark name="codex" /></span><span data-hero-model-trigger>GPT-5.6-Luna</span><small data-hero-effort-trigger>Low</small><CodexIcon name="chevron-down" /></button><button type="submit" class="send" aria-label="Send"><CodexIcon name="send" /></button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
 
-<span class="prompt">&gt;</span> <span class="cursor"></span></pre>
-      </article>
+          <section class="session-surface terminal-surface" aria-label="Claxedo terminal session">
+            <div class="terminal-content" data-terminal-session="terminal-codex" hidden><p><b>›_ OpenAI Codex</b> <span class="term-muted">(v0.150.1)</span></p><p></p><p>model:       <strong>gpt-5.6-sol high · fast</strong></p><p>directory:   <strong>~/test/opencode</strong></p><p>permissions: <strong>YOLO mode</strong></p><p></p><p><span class="term-muted">MCP startup incomplete (failed: figma)</span></p><p></p><p>› <span class="term-muted">Ask Codex to do anything</span> <i class="term-cursor"></i></p></div>
+            <div class="terminal-content" data-terminal-session="terminal-claude" hidden><p><b>✦ Claude Code</b> <span class="term-muted">v2.1.247</span></p><p>Opus 5 (1M context) · high effort</p><p>~/test/opencode</p><p></p><p><span class="term-muted">△ 1 MCP server needs authentication · run /mcp</span></p><p></p><p>❯ <span class="term-muted">Try “edit server.ts to…”</span> <i class="term-cursor"></i></p></div>
+            <div class="terminal-content" data-terminal-session="default"><p><span class="term-path">~/claxedo</span> <span class="term-branch">dev*</span> codex --resume release-performance</p><p><span class="term-green">✓</span> Codex resumed release-performance</p><p>Tracing session switch and draft ownership…</p><p class="term-muted">$ bun test session-selection composer-isolation</p><p><span class="term-green">✓</span> 18 tests passed</p><p><span class="term-path">~/claxedo</span> <span class="term-branch">dev*</span> <i class="term-cursor"></i></p></div>
+          </section>
+          <section class="session-surface marketplace-surface" aria-label="Claxedo marketplace">
+            <header class="market-head">
+              <label class="file-search market-search"><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search plugins" placeholder="Search plugins, skills, MCP servers…" /></label>
+              <div class="market-sources" role="tablist" aria-label="Marketplace sources">
+                <button type="button" role="tab" aria-selected="true">All</button>
+                <button type="button" role="tab" aria-selected="false">Claxedo<span>2</span></button>
+                <button type="button" role="tab" aria-selected="false">Personal<span>139</span></button>
+                <button type="button" class="market-add-source">+ Add source</button>
+              </div>
+            </header>
+            <div class="market-scroll">
+              <div class="market-group">
+                <h3>Claxedo <span>2</span></h3>
+                <div class="market-cards">
+                  <article class="market-card" data-marketplace-plugin="composio"><i>Co</i><div><b>composio</b><p>Connect and operate 1000+ external apps through Composio Connect with managed OAuth and intelligent tool routing.</p></div><button type="button">Add</button></article>
+                  <article class="market-card" data-marketplace-plugin="context7"><i>C7</i><div><b>context7</b><p>Up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.</p></div><button type="button">Enable</button></article>
+                </div>
+              </div>
+              <div class="market-group">
+                <h3>Personal <span>139</span><em>installed for other harnesses</em></h3>
+                <div class="market-rows">
+                  {[
+                    ["RU", "rust-analyzer-lsp", "claude", "claude-plugins-official"],
+                    ["CO", "compound-engineering", "claude", "compound-engineering-plugin"],
+                    ["FR", "frontend-design", "claude", "claude-plugins-official"],
+                    ["Ph", "posthog", "claude", "claude-plugins-official"],
+                    ["RA", "ralph-loop", "codex", "claude-plugins-official"],
+                    ["BR", "browser", "codex", "openai-bundled"],
+                    ["GH", "github", "codex", "openai-curated"],
+                    ["CO", "comment-quality", "claude", "skill"],
+                    ["TR", "trace-flow", "claude", "skill"],
+                    ["BR", "browser-use", "agents", "skill"],
+                  ].map(([mark, name, harness, source]) => <button type="button" class="market-row"><i>{mark}</i><b>{name}</b><small>{harness}</small><small>{source}</small></button>)}
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="session-surface tasks-surface" aria-label="Claxedo tasks board">
+            <header class="tasks-head">
+              <b>Tasks</b>
+              <div class="tasks-views" role="tablist" aria-label="Tasks views"><button type="button" role="tab" aria-selected="true">Board</button><button type="button" role="tab" aria-selected="false">List</button><button type="button" role="tab" aria-selected="false">Presets</button></div>
+              <button type="button" class="tasks-new">+ New task</button>
+            </header>
+            <div class="board">
+              {boardColumns.map((column) => (
+                <div class="board-col" data-board-column={column.key}>
+                  <h3><span>{column.label}</span><small>{column.cards.length}</small></h3>
+                  {column.cards.map((card) => (
+                    <article class="task-card" data-task-card={card.mark}>
+                      <small>#{card.number}</small>
+                      <b>{card.title}</b>
+                      <div class="task-meta"><span class="task-harness"><HarnessMark name={card.harness} /></span><span>{card.preset}</span>{card.live ? <i class="task-live" aria-label="Session running"></i> : null}</div>
+                    </article>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        </main>
+
+        <aside class="workspace-panel" aria-label="Workspace panel">
+          <div class="workspace-l2"><div class="review-toolbar"><button type="button" class="commit-scope"><span>Uncommitted</span><span>136</span><CodexIcon name="chevron-down" /></button><b>+335</b><i>−10,008</i><span></span><button type="button" aria-label="Sort changes"><CodexIcon name="expand-all" /></button><button type="button" data-panel-button="changes" aria-label="Open review"><CodexIcon name="split" /></button><button type="button" data-panel-button="files" aria-label="Open files"><CodexIcon name="file" /></button><button type="button" aria-label="Open changed file"><CodexIcon name="open-external" /></button><button type="button" data-panel-button="processes" aria-label="Open processes"><CodexIcon name="terminal" /></button></div></div>
+          <div class="panel-view review-view" data-panel-view="changes">
+            <div class="change-list">
+              <div class="file-change removed"><span>YML</span><b>.github/workflows/docs-links.yml</b><small>Removed</small></div>
+              <div class="file-change"><span>MD</span><b>CONTRIBUTING.md</b><small>+1 −1</small></div>
+              <div class="file-change"><span>MD</span><b>README.md</b><small>+4 −4</small></div>
+              <div class="file-change"><span>◉</span><b>bun.lock</b><small>+14 −1,652</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/e2e/playwright/marketing-screenshots.spec.ts</b><small>+4 −4</small></div>
+              <div class="file-change"><span>TSX</span><b>packages/claxedo-app/src/app/workbench/rail/onboarding-empty-state.tsx</b><small>+1 −1</small></div>
+              <div class="file-change"><span>TSX</span><b>packages/claxedo-app/src/app/workbench/workbench/workbench.tsx</b><small>+4 −5</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/src/features/terminal/core/backend/xterm.ts</b><small>−10</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/src/features/terminal/core/config.test.ts</b><small>+2 −5</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/src/features/terminal/core/config.ts</b><small>+2 −2</small></div>
+              <div class="file-change"><span>CSS</span><b>packages/claxedo-app/src/features/terminal/core/terminal.css</b><small>+8 −32</small></div>
+              <div class="file-change removed"><span>MD</span><b>packages/claxedo-docs/LICENSE</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MD</span><b>packages/claxedo-docs/README.md</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/channels.mdx</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/connections.mdx</b><small>−121</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/mcp.mdx</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/overview.mdx</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/concepts/credentials.mdx</b><small>Removed</small></div>
+            </div>
+            <aside class="repo-tree">
+              <label class="file-search"><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search files" placeholder="Search files..." /></label>
+              {['.agents','.artifacts','.claude','.claxedo','.codex','.context','.crabbox','.cursor','.github','.husky','.opencode','.turborepo','.vercel','.vscode','.workspace-runtime','.worktrees','.wrangler','docs','packages'].map((name) => <button type="button" class:list={["repo-row", { changed: name === '.github', active: name === 'docs' }]} data-repo-folder={name} aria-expanded="false"><CodexIcon name="chevron-right" class="repo-chevron" /><CodexIcon name="folder" class="repo-folder" /><b>{name}</b><i></i></button>)}
+              <div class="repo-children" data-repo-children hidden><span>README.md</span><span>index.ts</span></div>
+              <button type="button" class="show-more">Show 24 more</button>
+            </aside>
+          </div>
+          <div class="panel-view" data-panel-view="files" hidden><label class="file-search"><CodexIcon name="magnifying-glass" /><input type="search" aria-label="Search files" placeholder="Search files" /></label><div class="tree-row"><span><CodexIcon name="chevron-down" /></span><CodexIcon name="folder" /><b>packages</b></div><div class="tree-row indent"><span><CodexIcon name="chevron-down" /></span><CodexIcon name="folder" /><b>claxedo-app</b></div><div class="tree-row indent-2"><span></span><small>TS</small><b>session-selection.ts</b></div><div class="tree-row indent-2"><span></span><small>TSX</small><b>composer.tsx</b></div></div>
+          <div class="panel-view" data-panel-view="processes" hidden><div class="process-head">Running processes <span>2</span></div><div class="process-row"><i></i><div><b>bun run dev</b><small>localhost:4321</small></div><button type="button">•••</button></div><div class="process-row"><i></i><div><b>Claxedo daemon</b><small>pid 2593</small></div><button type="button">•••</button></div></div>
+        </aside>
+      </div>
     </div>
   </div>
 </section>
 
 <script>
-  for (const demo of document.querySelectorAll<HTMLElement>("[data-demo]")) {
-    const railToggle = demo.querySelector<HTMLButtonElement>("[data-demo-rail-toggle]")
-    const setRail = (open: boolean) => {
-      demo.dataset.rail = open ? "open" : "closed"
-      railToggle?.setAttribute("aria-expanded", String(open))
-      railToggle?.setAttribute("aria-label", open ? "Hide sidebar" : "Show sidebar")
-    }
-    const open = (id: string) => {
-      const view = demo.querySelector<HTMLElement>(`[data-demo-view="${id}"]`)
-      if (!view) return
-      demo.querySelectorAll<HTMLElement>("[data-demo-view]").forEach((item) => { item.hidden = item !== view })
-      demo.querySelectorAll<HTMLElement>("[data-demo-row]").forEach((row) => {
-        const on = row.dataset.demoRow === id
-        row.classList.toggle("active", on)
-        if (on) row.setAttribute("aria-current", "page")
-        else row.removeAttribute("aria-current")
+  for (const root of document.querySelectorAll<HTMLElement>("[data-app-replica]")) {
+    type DemoSession = { id: string; title: string; user: string; responses: string[]; tools: string[]; context: string; branch: string; place?: string; surface?: "chat" | "terminal" }
+    const sessions = new Map((JSON.parse(root.dataset.demoSessions!) as DemoSession[]).map((session) => [session.id, session]))
+    const drafts = new Map<string, string>()
+    const composerInput = root.querySelector<HTMLTextAreaElement>("[data-composer-input]")
+
+    const setSurface = (surface: string) => { root.dataset.surface = surface === "new" ? "chat" : surface }
+
+    const setSidebar = (open: boolean) => {
+      root.dataset.sidebar = open ? "open" : "closed"
+      root.querySelectorAll<HTMLButtonElement>("[data-sidebar-toggle]").forEach((toggle) => {
+        const isRailToggle = toggle.closest(".rail-titlebar") !== null
+        toggle.setAttribute("aria-pressed", String(isRailToggle && open))
+        toggle.setAttribute("aria-label", isRailToggle ? "Hide Sidebar" : "Show Sidebar")
       })
-      demo.dataset.surface = view.dataset.surface ?? "chat"
-      setRail(false)
     }
-    demo.querySelectorAll<HTMLElement>("[data-demo-row]").forEach((row) => row.addEventListener("click", () => open(row.dataset.demoRow ?? "")))
-    demo.querySelectorAll<HTMLElement>("[data-demo-open]").forEach((button) => button.addEventListener("click", () => open(button.dataset.demoOpen ?? "")))
-    demo.querySelectorAll<HTMLButtonElement>(".tool-row").forEach((row) => row.addEventListener("click", () => {
-      row.setAttribute("aria-expanded", String(row.getAttribute("aria-expanded") !== "true"))
+    root.querySelectorAll<HTMLButtonElement>("[data-sidebar-toggle]").forEach((button) => button.addEventListener("click", () => setSidebar(root.dataset.sidebar !== "open")))
+
+    const selectSession = (id: string) => {
+      const session = sessions.get(id)
+      if (!session) return
+      setSurface(session.surface ?? "chat")
+      if (session.surface === "terminal") {
+        const views = Array.from(root.querySelectorAll<HTMLElement>("[data-terminal-session]"))
+        const activeView = views.find((view) => view.dataset.terminalSession === id) ?? views.find((view) => view.dataset.terminalSession === "default")
+        views.forEach((view) => view.hidden = view !== activeView)
+      }
+      root.dataset.activeSession = id
+      root.querySelectorAll<HTMLElement>("[data-session-id]").forEach((item) => item.classList.toggle("active", item.dataset.sessionId === id))
+      root.querySelectorAll<HTMLElement>(".compact-tab").forEach((tab) => {
+        const selected = tab.querySelector<HTMLElement>("[data-session-tab-id]")?.dataset.sessionTabId === id
+        tab.dataset.selected = selected ? "true" : "false"
+        tab.querySelector<HTMLButtonElement>("[role=tab]")?.setAttribute("aria-selected", String(selected))
+      })
+      root.querySelector<HTMLElement>("[data-session-title]")!.textContent = session.title
+      root.querySelector<HTMLElement>(".timeline-column")?.classList.toggle("empty-session", session.user.length === 0)
+      root.querySelector<HTMLElement>("[data-transcript-user]")!.textContent = session.user
+      root.querySelector<HTMLElement>("[data-session-context]")!.textContent = session.context
+      root.querySelector<HTMLElement>("[data-session-branch]")!.textContent = session.branch
+      root.querySelector<HTMLElement>("[data-session-place]")!.textContent = session.place ?? "Environment"
+      session.responses.forEach((copy, index) => { const row = root.querySelector<HTMLElement>(`[data-transcript-response="${index}"]`); if (row) row.textContent = copy })
+      session.tools.forEach((copy, index) => { const row = root.querySelector<HTMLElement>(`[data-transcript-tool="${index}"]`); if (row) row.textContent = copy })
+      if (composerInput) composerInput.value = drafts.get(id) ?? ""
+      if (window.innerWidth < 768) setSidebar(false)
+    }
+    const bindSessionRow = (button: HTMLButtonElement) => button.addEventListener("click", () => selectSession(button.dataset.sessionId ?? ""))
+    root.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach(bindSessionRow)
+    root.querySelector<HTMLElement>(".compact-tabs")?.addEventListener("click", (event) => {
+      const target = event.target as Element
+      const close = target.closest<HTMLButtonElement>(".tab-close")
+      if (close) {
+        const tab = close.closest<HTMLElement>(".compact-tab")
+        if (!tab) return
+        tab.hidden = true
+        if (tab.dataset.selected === "true") {
+          const next = root.querySelector<HTMLElement>(".compact-tab:not([hidden]) [data-session-tab-id]")?.dataset.sessionTabId
+          if (next) selectSession(next)
+        }
+        return
+      }
+      const tabButton = target.closest<HTMLButtonElement>("[data-session-tab-id]")
+      if (tabButton) selectSession(tabButton.dataset.sessionTabId ?? "")
+    })
+    composerInput?.addEventListener("input", () => drafts.set(root.dataset.activeSession!, composerInput.value))
+    root.querySelector<HTMLFormElement>("[data-composer-form]")?.addEventListener("submit", (event) => event.preventDefault())
+    root.querySelector<HTMLButtonElement>("[data-scroll-latest]")?.addEventListener("click", () => root.querySelector<HTMLElement>(".timeline-scroll")?.scrollTo({ top: root.querySelector<HTMLElement>(".timeline-scroll")?.scrollHeight ?? 0, behavior: "smooth" }))
+    let createdSessionCount = 0
+    let createdTerminalCount = 0
+    const addSessionEntry = (session: DemoSession) => {
+      const row = root.querySelector<HTMLButtonElement>(".session-list [data-session-id]")!.cloneNode(true) as HTMLButtonElement
+      row.classList.remove("active")
+      row.dataset.sessionId = session.id
+      row.querySelector("span")!.textContent = session.title
+      row.querySelector("small")!.textContent = "now"
+      root.querySelector(".session-list .load-row")?.before(row)
+      bindSessionRow(row)
+
+      const tab = root.querySelector<HTMLElement>(".compact-tab")!.cloneNode(true) as HTMLElement
+      tab.hidden = false
+      tab.dataset.selected = "false"
+      const tabTargets = tab.querySelectorAll<HTMLElement>("[data-session-tab-id]")
+      tabTargets.forEach((target) => target.dataset.sessionTabId = session.id)
+      const prefix = tab.querySelector<HTMLButtonElement>(".tab-prefix")!
+      prefix.setAttribute("aria-label", `Claxedo / ${session.title}`)
+      const title = tab.querySelector<HTMLButtonElement>(".tab-title")!
+      title.textContent = session.title
+      title.setAttribute("aria-selected", "false")
+      tab.querySelector<HTMLButtonElement>(".tab-close")!.setAttribute("aria-label", `Close ${session.title}`)
+      root.querySelector(".compact-tabs")?.append(tab)
+    }
+    const createSession = (surface: "chat" | "terminal") => {
+      const isTerminal = surface === "terminal"
+      const sequence = isTerminal ? ++createdTerminalCount : ++createdSessionCount
+      const title = isTerminal ? `Terminal ${sequence}` : sequence === 1 ? "New Session" : `New Session ${sequence}`
+      const session: DemoSession = { id: `created-${surface}-${sequence}`, title, surface, user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" }
+      sessions.set(session.id, session)
+      addSessionEntry(session)
+      selectSession(session.id)
+    }
+    root.querySelectorAll<HTMLButtonElement>("[data-surface-button]").forEach((button) => button.addEventListener("click", () => {
+      const surface = button.dataset.surfaceButton ?? "chat"
+      if (surface === "new") createSession("chat")
+      else if (surface === "terminal") createSession("terminal")
+      else setSurface(surface)
     }))
-    railToggle?.addEventListener("click", () => setRail(demo.dataset.rail !== "open"))
-    const touched = (event: Event) => { if (event.isTrusted) demo.dispatchEvent(new CustomEvent("demo:touched")) }
-    demo.addEventListener("pointerdown", touched)
-    demo.addEventListener("keydown", touched)
-    demo.addEventListener("demo:spot", (event) => {
-      const { spot, open: reveal } = (event as CustomEvent<{ spot?: string; open?: boolean }>).detail
-      if (spot) demo.dataset.spot = spot
-      else delete demo.dataset.spot
-      if (!spot || !reveal) return
-      const opener = demo.querySelector<HTMLElement>(`[data-spot-opens="${spot}"]`)
-      const id = opener?.dataset.demoRow ?? opener?.dataset.demoOpen
-      if (id) open(id)
+
+    const setPanelWidth = (full: boolean) => {
+      root.dataset.panelWidth = full ? "full" : "split"
+      root.querySelectorAll<HTMLButtonElement>("[data-panel-maximize]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(full))
+        button.setAttribute("aria-label", full ? "Restore workspace panel width" : "Maximize workspace panel")
+      })
+    }
+    const closePanel = () => { root.dataset.panel = "closed"; setPanelWidth(false); const toggle = root.querySelector<HTMLButtonElement>("[data-workspace-toggle]"); toggle?.setAttribute("aria-pressed", "false"); toggle?.setAttribute("aria-label", "Open workspace panel") }
+    const setPanel = (panel: string) => {
+      root.dataset.panel = "open"; root.dataset.panelViewActive = panel
+      root.querySelectorAll<HTMLButtonElement>("[data-panel-button]").forEach((button) => button.classList.toggle("active", button.dataset.panelButton === panel))
+      root.querySelectorAll<HTMLElement>("[data-panel-view]").forEach((view) => view.hidden = view.dataset.panelView !== panel)
+      const toggle = root.querySelector<HTMLButtonElement>("[data-workspace-toggle]"); toggle?.setAttribute("aria-pressed", "true"); toggle?.setAttribute("aria-label", "Close workspace panel")
+    }
+    root.querySelectorAll<HTMLButtonElement>("[data-panel-button]").forEach((button) => button.addEventListener("click", () => setPanel(button.dataset.panelButton ?? "changes")))
+    root.querySelectorAll<HTMLButtonElement>("[data-repo-folder]").forEach((button) => button.addEventListener("click", () => {
+      const open = button.getAttribute("aria-expanded") === "true"
+      root.querySelectorAll<HTMLButtonElement>("[data-repo-folder]").forEach((folder) => folder.setAttribute("aria-expanded", "false"))
+      button.setAttribute("aria-expanded", String(!open))
+      const children = root.querySelector<HTMLElement>("[data-repo-children]")
+      if (children) {
+        children.hidden = open
+        if (!open) button.insertAdjacentElement("afterend", children)
+      }
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-panel-close]").forEach((button) => button.addEventListener("click", closePanel))
+    root.querySelectorAll<HTMLButtonElement>("[data-panel-maximize]").forEach((button) => button.addEventListener("click", () => setPanelWidth(root.dataset.panelWidth !== "full")))
+    root.querySelector<HTMLButtonElement>("[data-workspace-toggle]")?.addEventListener("click", () => root.dataset.panel === "closed" ? setPanel(root.dataset.panelViewActive ?? "changes") : closePanel())
+    type ResponsiveBand = "mobile" | "compact" | "wide"
+    const responsiveBand = (): ResponsiveBand => window.innerWidth < 768 ? "mobile" : window.innerWidth <= 920 ? "compact" : "wide"
+    let currentBand: ResponsiveBand | undefined
+    const applyResponsiveDefaults = () => {
+      const nextBand = responsiveBand()
+      if (nextBand === currentBand) return
+      currentBand = nextBand
+      setSidebar(false)
+      if (nextBand === "wide") {
+        setSidebar(true)
+        root.dataset.environment = "expanded"
+        closePanel()
+      } else {
+        root.dataset.environment = "collapsed"
+        closePanel()
+      }
+    }
+    applyResponsiveDefaults()
+    window.addEventListener("resize", applyResponsiveDefaults, { passive: true })
+    root.querySelectorAll<HTMLButtonElement>("[data-environment-toggle]").forEach((button) => button.addEventListener("click", () => root.dataset.environment = root.dataset.environment === "expanded" ? "collapsed" : "expanded"))
+    root.querySelectorAll<HTMLButtonElement>("[data-tool-card]").forEach((button) => button.addEventListener("click", () => button.setAttribute("aria-expanded", String(button.getAttribute("aria-expanded") !== "true"))))
+
+    const setComposerMenu = (menu: string) => { root.dataset.composerMenu = menu; root.querySelectorAll<HTMLElement>("[data-composer-popover]").forEach((popover) => popover.hidden = popover.dataset.composerPopover !== menu); root.querySelectorAll<HTMLButtonElement>("[data-composer-menu-trigger]").forEach((button) => button.setAttribute("aria-expanded", String(button.dataset.composerMenuTrigger === menu))) }
+    root.querySelectorAll<HTMLButtonElement>("[data-composer-menu-trigger]").forEach((button) => button.addEventListener("click", () => { const menu = button.dataset.composerMenuTrigger ?? "closed"; setComposerMenu(root.dataset.composerMenu === menu ? "closed" : menu) }))
+    root.querySelectorAll<HTMLButtonElement>("[data-context-option]").forEach((button) => button.addEventListener("click", () => { const chip = root.querySelector<HTMLElement>("[data-composer-context-chip]"); const label = root.querySelector<HTMLElement>("[data-composer-context-label]"); if (chip) chip.hidden = false; if (label) label.textContent = button.dataset.contextOption ?? "Files"; setComposerMenu("closed") }))
+    root.querySelector<HTMLButtonElement>("[data-context-remove]")?.addEventListener("click", () => { const chip = root.querySelector<HTMLElement>("[data-composer-context-chip]"); if (chip) chip.hidden = true })
+    root.querySelectorAll<HTMLButtonElement>("[data-permission]").forEach((button) => button.addEventListener("click", () => { root.querySelectorAll<HTMLButtonElement>("[data-permission]").forEach((item) => { const selected = item === button; item.classList.toggle("selected", selected); const mark = item.querySelector("em"); if (mark) mark.hidden = !selected }); root.querySelector<HTMLElement>("[data-permission-label]")!.textContent = button.dataset.permission ?? "Workspace Write"; setComposerMenu("closed") }))
+    root.querySelectorAll<HTMLButtonElement>("[data-harness-section]").forEach((button) => button.addEventListener("click", () => {
+      const section = button.dataset.harnessSection ?? "model"
+      const popover = button.closest<HTMLElement>("[data-picker-open]")
+      if (!popover) return
+      popover.dataset.pickerOpen = section
+      popover.querySelectorAll<HTMLButtonElement>("[data-harness-section]").forEach((row) => row.classList.toggle("active", row.dataset.harnessSection === section))
+      popover.querySelectorAll<HTMLElement>("[data-harness-panel]").forEach((panel) => panel.hidden = panel.dataset.harnessPanel !== section)
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-hero-harness]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll<HTMLButtonElement>("[data-hero-harness]").forEach((item) => { item.classList.toggle("selected", item === button); const check = item.querySelector("em"); if (check) check.hidden = item !== button })
+      const harness = button.dataset.heroHarness ?? "Codex"
+      const model = button.dataset.heroModel ?? "GPT-5.6-Luna"
+      root.querySelector<HTMLElement>("[data-current-harness]")!.textContent = harness
+      root.querySelector<HTMLElement>("[data-hero-model-label]")!.textContent = model
+      root.querySelector<HTMLElement>("[data-hero-model-trigger]")!.textContent = model
+      const source = button.querySelector<HTMLElement>(".harness-logo")
+      const triggerMark = root.querySelector<HTMLElement>("[data-hero-harness-mark]")
+      if (source && triggerMark) triggerMark.innerHTML = source.innerHTML
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-hero-model-choice]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll<HTMLButtonElement>("[data-hero-model-choice]").forEach((item) => { item.classList.toggle("selected", item === button); const check = item.querySelector("em"); if (check) check.hidden = item !== button })
+      const model = button.dataset.heroModelChoice ?? "GPT-5.6-Luna"
+      root.querySelector<HTMLElement>("[data-hero-model-label]")!.textContent = model
+      root.querySelector<HTMLElement>("[data-hero-model-trigger]")!.textContent = model
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-hero-effort]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll<HTMLButtonElement>("[data-hero-effort]").forEach((item) => { item.classList.toggle("selected", item === button); const check = item.querySelector("em"); if (check) check.hidden = item !== button })
+      const effort = button.dataset.heroEffort ?? "Low"
+      root.querySelector<HTMLElement>("[data-hero-effort-label]")!.textContent = effort
+      root.querySelector<HTMLElement>("[data-hero-effort-trigger]")!.textContent = effort
+    }))
+    root.querySelector<HTMLButtonElement>("[data-account-toggle]")?.addEventListener("click", (event) => { const open = root.dataset.account === "open"; root.dataset.account = open ? "closed" : "open"; (event.currentTarget as HTMLButtonElement).setAttribute("aria-expanded", String(!open)) })
+    root.querySelectorAll<HTMLButtonElement>("[data-demo-open]").forEach((button) => button.addEventListener("click", () => selectSession(button.dataset.demoOpen ?? "")))
+    const touched = (event: Event) => { if (event.isTrusted) root.dispatchEvent(new CustomEvent("demo:touched")) }
+    root.addEventListener("pointerdown", touched)
+    root.addEventListener("keydown", touched)
+    const storyStates: Record<string, () => void> = {
+      speed: () => selectSession("usage-meter"),
+      prompt: () => selectSession("standup"),
+      team: () => { root.dataset.account = "open"; root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "true") },
+      place: () => { selectSession("relay-tokens"); if (window.innerWidth > 920) root.dataset.environment = "expanded" },
+      tools: () => setSurface("marketplace"),
+      terminal: () => selectSession("terminal-claude"),
+    }
+    root.addEventListener("demo:spot", (event) => {
+      const { spot, open } = (event as CustomEvent<{ spot?: string; open?: boolean }>).detail
+      if (spot) root.dataset.spot = spot
+      else delete root.dataset.spot
+      if (!spot || !open) return
+      root.dataset.account = "closed"
+      root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "false")
+      setComposerMenu("closed")
+      closePanel()
+      storyStates[spot]?.()
     })
   }
 </script>
 
 <style>
-  .demo {
-    --demo-bg: #0d0d0d;
-    --demo-rail: #181818;
-    --demo-border: #303030;
-    --demo-row-hover: #282828;
-    --demo-row-selected: #303030;
-    --demo-bubble: #2b2b2b;
-    --demo-composer: #212121;
-    --demo-composer-border: #303030;
-    --demo-strong: #f2f2f2;
-    --demo-text: #dcdcdc;
-    --demo-weak: #a3a3a3;
-    --demo-weaker: #747474;
-    --demo-icon: #bdbdbd;
-    --demo-icon-weak: #8a8a8a;
-    --demo-accent: #369ce8;
-    --demo-success: #35bd70;
-    --demo-inset: #1c1c1c;
-    --demo-send: #f2f2f2;
-    --demo-send-ink: #0d0d0d;
-    --demo-edge: rgba(255, 255, 255, 0.12);
-    --demo-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.8);
-    --demo-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    height: 38rem;
-    border-radius: 12px;
-    background: var(--demo-bg);
-    box-shadow: 0 0 0 1px var(--demo-edge), var(--demo-shadow);
-    color: var(--demo-text);
-    font: 14px/1.625 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-    overflow: hidden;
+  .hero {
+    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --fg: 255 255 255; --shadow-k: 1;
+    --background-base: #0d0d0d; --background-stronger: #0d0d0d; --rail-bg: var(--background-base); --panel-bg: #0d0d0d;
+    --surface-base: rgb(255 255 255 / .03); --surface-base-hover: #282828; --surface-raised: #303030; --surface-overlay: #212121;
+    --popover-bg: #212121; --composer-bg: #212121; --bubble-bg: #2b2b2b;
+    --brand: #369ce8; --blue: #58a6e7; --info: #58a6e7; --success: #35bd70; --danger: #ef5350; --term-path: #69c8cf;
+    --text-strong: #f2f2f2; --text-base: #dcdcdc; --text-weak: #a3a3a3; --text-weaker: #747474;
+    --border: #303030; --border-weak: #282828; --edge: rgb(255 255 255 / .12);
+    --send-bg: #f2f2f2; --send-ink: #0d0d0d;
+    position: relative; color: var(--text-strong); overflow: clip;
   }
-
   @media (prefers-color-scheme: light) {
-    .demo {
-      --demo-bg: #ffffff;
-      --demo-rail: #f9f9f9;
-      --demo-border: #ededed;
-      --demo-row-hover: rgba(0, 0, 0, 0.04);
-      --demo-row-selected: rgba(26, 28, 31, 0.05);
-      --demo-bubble: #ededed;
-      --demo-composer: #ffffff;
-      --demo-composer-border: #d8d8d8;
-      --demo-strong: #1a1c1f;
-      --demo-text: #4f4f4f;
-      --demo-weak: #696a6c;
-      --demo-weaker: #8c8d8f;
-      --demo-icon: #6f6f6f;
-      --demo-icon-weak: #999999;
-      --demo-accent: #2f92df;
-      --demo-success: #168447;
-      --demo-inset: #f7f7f7;
-      --demo-send: #1a1c1f;
-      --demo-send-ink: #ffffff;
-      --demo-edge: rgba(0, 0, 0, 0.1);
-      --demo-shadow: 0 40px 80px -48px rgba(0, 0, 0, 0.25);
+    .hero {
+      --fg: 0 0 0; --shadow-k: .3;
+      --background-base: #ffffff; --background-stronger: #ffffff; --rail-bg: #f9f9f9; --panel-bg: #ffffff;
+      --surface-base: rgb(0 0 0 / .02); --surface-base-hover: rgb(0 0 0 / .04); --surface-raised: rgb(26 28 31 / .06); --surface-overlay: #ffffff;
+      --popover-bg: #ffffff; --composer-bg: #ffffff; --bubble-bg: #ededed;
+      --brand: #2f92df; --blue: #147cc1; --info: #247cc0; --success: #168447; --danger: #d43d37; --term-path: #147c83;
+      --text-strong: #1a1c1f; --text-base: #4f4f4f; --text-weak: #696a6c; --text-weaker: #8c8d8f;
+      --border: #ededed; --border-weak: #f2f2f2; --edge: rgb(0 0 0 / .1);
+      --send-bg: #1a1c1f; --send-ink: #ffffff;
     }
   }
+  .hero.canvas-only{padding:0;background:transparent;overflow:visible}.hero.canvas-only .app-window{width:100%;height:38rem;min-height:0;aspect-ratio:auto}
 
-  svg { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
-  p, h3, pre { margin: 0; }
-  button { font: inherit; color: inherit; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; }
-  button:focus-visible { outline: 2px solid var(--demo-accent); outline-offset: -2px; }
+  .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid rgb(var(--fg) / .2);border-radius:12px;background:var(--background-base);box-shadow:0 48px 100px -36px rgb(0 0 0 / calc(.92 * var(--shadow-k))),0 0 0 1px rgb(var(--fg) / .02);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
+  button,input,textarea{font:inherit}.app-window :global(svg){width:16px;height:16px}.shell-header{height:36px;display:flex;border-bottom:1px solid var(--border-weak);background:var(--background-base)}
+  .rail-titlebar{width:260px;flex:0 0 260px;display:flex;align-items:center;border-right:1px solid var(--border);background:var(--rail-bg);overflow:hidden;transition:width .12s cubic-bezier(.2,0,0,1),flex-basis .12s cubic-bezier(.2,0,0,1)}.app-window[data-sidebar=closed] .rail-titlebar{width:0;flex-basis:0;border-right:0}.traffic-lights{width:78px;flex:0 0 78px;display:flex;align-items:center;gap:8px;padding-left:14px}.traffic-lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.traffic-lights i:nth-child(2){background:#febc2e}.traffic-lights i:nth-child(3){background:#28c840}
+  .icon-button{width:24px;height:24px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak);cursor:pointer}.icon-button:hover,.icon-button[aria-pressed=true]{background:var(--surface-base-hover);color:var(--text-base)}.icon-button :global(svg){width:15px;height:15px}.rail-hide{margin-left:4px}.header-columns{min-width:0;flex:1;display:flex}.workbench-l1{min-width:0;flex:1;display:flex;align-items:center;gap:4px;padding:0 4px;overflow:hidden}.closed-chrome{display:none;align-items:center;margin-left:-4px}.app-window[data-sidebar=closed] .closed-chrome{display:flex}.closed-chrome .traffic-lights{width:78px}.drag-gap{width:16px}.header-drag{min-width:32px;flex:1}.scope-actions{display:flex;align-items:center;gap:4px}.workspace-toggle{flex:0 0 24px}.app-window[data-panel=open] .workspace-toggle{display:none}.workspace-l1{width:0;display:flex;align-items:center;gap:4px;overflow:hidden;border-left:0;background:var(--background-base);transition:width .15s cubic-bezier(.2,0,0,1)}.workspace-l1>span{flex:1}.app-window[data-panel=open] .workspace-l1{width:62%;border-left:1px solid var(--border)}.workspace-tabs{height:100%;min-width:0;display:flex;align-items:center;gap:2px;padding:0 4px}.workspace-tab{height:28px;min-width:0;max-width:180px;display:flex;align-items:center;gap:7px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--text-weak)}.workspace-tab.active{background:var(--surface-base-hover);color:var(--text-base)}.workspace-tab :global(svg){width:14px;flex:0 0 14px}.workspace-tab span{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.workspace-tab i{font-style:normal;color:var(--text-weak)}
+  .compact-tabs{height:100%;min-width:0;display:none;align-items:center;gap:2px;padding:0 4px;overflow:hidden}.app-window[data-sidebar=closed] .compact-tabs{display:flex}.compact-tab{position:relative;width:clamp(118px,16vw,220px);min-width:118px;max-width:220px;height:28px;flex:0 1 220px;display:flex;align-items:stretch;padding:0 28px 0 6px;border:1px solid transparent;border-radius:6px;color:var(--text-weak)}.compact-tab:hover{background:rgb(var(--fg) / .02);color:var(--text-base)}.compact-tab[data-selected=true]{background:var(--surface-base-hover);color:var(--text-base)}.compact-tab button{border:0;background:transparent;color:inherit;padding:0}.tab-prefix{position:relative;width:20px;flex:0 0 20px;display:flex;align-items:center;cursor:pointer}.tab-project-mark,.tab-harness-mark{width:16px;height:16px;display:grid;place-items:center;color:var(--text-base)}.tab-project-mark{border:1px solid var(--text-weaker);border-radius:4px;font:600 9px var(--font-mono)}.tab-harness-mark :global(svg){width:14px;height:14px;fill:currentColor}.tab-prefix i{position:absolute;right:1px;bottom:4px;width:5px;height:5px;border:1px solid var(--background-base);border-radius:50%;background:var(--brand)}.tab-title{min-width:0;flex:1;display:block;margin-left:4px;overflow:hidden;text-align:left;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1;cursor:pointer}.tab-close{position:absolute;right:4px;top:50%;width:18px;height:18px;display:grid;place-items:center;border-radius:4px!important;opacity:0;transform:translateY(-50%)}.tab-close :global(svg){width:13px}.compact-tab:hover .tab-close,.compact-tab[data-selected=true] .tab-close{opacity:.65}.tab-close:hover{background:var(--surface-base-hover);opacity:1!important}
 
-  .titlebar { display: flex; height: 36px; flex: 0 0 36px; border-bottom: 1px solid var(--demo-border); color: var(--demo-icon); }
-  .titlebar-rail { display: flex; align-items: center; gap: 14px; width: 260px; flex: 0 0 260px; padding-left: 14px; border-right: 1px solid var(--demo-border); background: var(--demo-rail); }
-  .lights { display: flex; gap: 8px; }
-  .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
-  .lights i:nth-child(2) { background: #febc2e; }
-  .lights i:nth-child(3) { background: #28c840; }
-  .titlebar-main { display: flex; align-items: center; flex: 1; min-width: 0; padding: 0 8px; }
-  .titlebar-actions { display: flex; gap: 2px; margin-left: auto; }
-  .icon-button { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; }
-  button.icon-button:hover { background: var(--demo-row-hover); color: var(--demo-strong); }
-  .phone-only { display: none; }
+  .app-body{position:relative;height:calc(100% - 36px);display:flex;min-height:0}.project-rail{width:260px;flex:0 0 260px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);background:var(--rail-bg);color:var(--text-base);overflow:hidden;transition:width .12s cubic-bezier(.2,0,0,1),flex-basis .12s cubic-bezier(.2,0,0,1),opacity .08s}.app-window[data-sidebar=closed] .project-rail{width:0;flex-basis:0;border-right:0;opacity:0}.rail-global{display:grid;gap:2px;padding:8px}.rail-global button,.project-row,.session-row,.load-row{border:0;background:transparent;color:var(--text-base);cursor:pointer}.rail-global button{height:28px;display:flex;align-items:center;gap:10px;padding:0 8px;border-radius:6px;text-align:left}.rail-global button:hover,.project-row:hover,.session-row:hover{background:var(--surface-base-hover)}.rail-global :global(svg),.project-row :global(svg){width:16px;flex:0 0 16px;color:var(--text-weak)}.rail-divider{height:1px;background:var(--border)}.rail-scroll{min-height:0;flex:1;padding:10px 6px;overflow:hidden}.rail-label{display:block;padding:0 8px 6px;color:var(--text-weak);font-size:12px}.project-row{width:100%;height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px;text-align:left}.project-row b{min-width:0;overflow:hidden;color:var(--text-strong);font-size:13px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.session-list{display:grid}.session-row{width:100%;height:28px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 8px 0 28px;border-radius:6px;text-align:left}.session-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-row small{color:var(--text-weaker);font-size:11px}.session-row.active{background:var(--surface-raised);color:var(--text-strong)}.load-row{height:28px;padding-left:35px;color:var(--text-weaker);text-align:left}.second-project{margin-top:5px}.workspace-account-wrap{position:relative;padding:8px}.workspace-account{width:100%;height:36px;display:flex;align-items:center;gap:8px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:var(--surface-raised);color:var(--text-strong);text-align:left;cursor:pointer}.workspace-account>span:nth-child(2){min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}.account-device{width:28px;height:28px;flex:0 0 28px;display:grid;place-items:center;border-radius:50%;background:rgb(var(--fg) / .045);color:var(--text-base)}.account-device :global(svg){width:15px}:global(.account-chevron){width:14px!important;opacity:0}.workspace-account:hover :global(.account-chevron),.workspace-account[aria-expanded=true] :global(.account-chevron){opacity:1}.workspace-account-menu{position:absolute;left:8px;right:8px;bottom:50px;z-index:30;display:grid;padding:5px;border:1px solid var(--border);border-radius:8px;background:var(--surface-overlay);box-shadow:0 18px 45px rgb(0 0 0 / calc(.55 * var(--shadow-k)));opacity:0;pointer-events:none;transform:translateY(4px);transition:.1s}.app-window[data-account=open] .workspace-account-menu{opacity:1;pointer-events:auto;transform:none}.account-identity{height:28px;display:flex;align-items:center;gap:8px;padding:0 8px}.account-identity>span{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:rgb(var(--fg) / .045)}.account-identity :global(svg){width:13px}.account-identity b{font-size:13px;font-weight:500}.workspace-account-menu>i{height:1px;margin:4px -1px;background:var(--border)}.workspace-account-menu>button{height:30px;display:flex;align-items:center;gap:9px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.workspace-account-menu>button:hover{background:var(--surface-base-hover)}.workspace-account-menu>button :global(svg){width:15px;color:var(--text-weak)}
 
-  .body { position: relative; display: flex; flex: 1; min-height: 0; }
-  .rail { display: flex; flex-direction: column; width: 260px; flex: 0 0 260px; border-right: 1px solid var(--demo-border); background: var(--demo-rail); overflow: hidden; }
-  .rail-global { display: grid; gap: 1px; padding: 8px 6px; border-bottom: 1px solid var(--demo-border); }
-  .rail-projects { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; flex: 1; gap: 1px; padding: 12px 6px; }
-  .rail-projects > small { padding: 0 10px 6px; color: var(--demo-weaker); font-size: 11px; font-weight: 500; text-transform: uppercase; }
-  .row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding-inline: 10px; border-radius: 6px; color: var(--demo-strong); font-size: 13px; line-height: 1.3; white-space: nowrap; }
-  .row > svg { color: var(--demo-icon-weak); }
-  button.row:hover { background: var(--demo-row-hover); }
-  .project { font-weight: 500; }
-  .session { justify-content: space-between; padding-left: 34px; color: var(--demo-weak); }
-  .session > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .session small { color: var(--demo-weaker); font-size: 11px; }
-  .row.active { background: var(--demo-row-selected); color: var(--demo-strong); }
-  .terminal-row { justify-content: flex-start; font-family: var(--demo-mono); font-size: 12px; }
-  .account { width: auto; margin: 8px 6px; min-height: 36px; }
-  .account i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--demo-accent); color: #fff; font: 600 10px/1 system-ui, sans-serif; font-style: normal; }
-  .account small { margin-left: auto; color: var(--demo-weaker); font-size: 11px; }
+  .stage-columns{position:relative;min-width:0;flex:1;display:flex}.workbench{min-width:0;flex:1;display:flex;flex-direction:column;background:var(--background-base);overflow:hidden}.session-surface{position:relative;min-height:0;flex:1}.chat-surface{display:flex}.terminal-surface{display:none;background:var(--background-base)}.app-window[data-surface=terminal] .chat-surface,.app-window[data-surface=marketplace] .chat-surface,.app-window[data-surface=tasks] .chat-surface{display:none}.app-window[data-surface=terminal] .terminal-surface{display:block}.session-content{position:relative;min-width:0;flex:1;background:var(--background-stronger);overflow:hidden}.timeline-scroll{position:absolute;inset:0;overflow:auto;scrollbar-color:rgb(var(--fg) / .16) transparent;scrollbar-width:thin}.timeline-column{width:min(100%,768px);min-height:100%;margin:auto;padding:16px 20px 142px;transition:padding-right .14s}.app-window[data-environment=expanded] .timeline-column{padding-right:260px}.app-window[data-environment=collapsed] .timeline-column{padding-right:52px}.session-name-row{height:46px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.session-name-row h2{min-width:0;margin:0;overflow:hidden;color:var(--text-strong);font-size:14px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.session-name-row button{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak)}.session-name-row button:hover{background:var(--surface-base-hover)}.message{width:100%;color:var(--text-base);font-size:14px;line-height:1.625}.user-message{display:flex;justify-content:flex-end;margin-bottom:24px}.user-message>div{width:fit-content;max-width:min(82%,64ch);padding:8px 12px;border-radius:10px;background:var(--bubble-bg);white-space:pre-line}.assistant-message{margin-top:24px}.assistant-message p{margin:0}.turn-fold{width:100%;height:32px;display:flex;align-items:center;gap:6px;margin-top:12px;padding:0;border:0;background:transparent;color:var(--text-weak);text-align:left;cursor:pointer}.turn-fold :global(svg){width:14px}.turn-fold b{font-size:13px;font-weight:500}.turn-fold i{height:1px;flex:1;background:var(--border)}.turn-fold[aria-expanded=true] :global(svg){transform:rotate(90deg)}.tool-summary{width:fit-content;min-height:28px;display:flex;align-items:center;gap:7px;margin:8px 0 0 -6px;padding:0 7px;border:0;border-radius:5px;background:transparent;color:var(--text-weak);cursor:pointer}.tool-summary:hover,.tool-summary[aria-expanded=true]{background:var(--surface-base-hover)}.tool-summary :global(svg){width:15px;color:var(--text-weaker)}.tool-summary b{font-size:13px;font-weight:400}.tool-summary span{font-size:11px}.tool-summary[aria-expanded=true] span{transform:rotate(180deg)}.tool-summary.running i{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb, var(--success) 12%, transparent)}
+  .environment-card{position:absolute;top:12px;right:12px;z-index:8;color:var(--text-base)}.environment-expanded{width:240px;padding:10px;border:1px solid rgb(var(--fg) / .04);border-radius:10px;background:var(--popover-bg);box-shadow:0 8px 26px rgb(0 0 0 / calc(.35 * var(--shadow-k))),0 0 0 .5px rgb(var(--fg) / .08);backdrop-filter:blur(16px)}.environment-expanded header{height:26px;display:flex;align-items:center;gap:8px;padding:0 6px;margin-bottom:6px}.environment-expanded header b{flex:1;color:var(--text-strong);font-size:13px;font-weight:500}.environment-expanded header button,.environment-collapsed button{width:22px;height:22px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak)}.environment-expanded header button:hover,.environment-collapsed button:hover{background:var(--surface-base-hover);color:var(--text-base)}.environment-expanded header :global(svg){width:14px}.env-facts{display:grid;gap:2px;padding:0 6px 8px}.env-facts div{min-width:0;height:24px;display:flex;align-items:center;gap:9px}.env-facts :global(svg){width:15px;flex:0 0 15px;color:var(--text-weaker)}.env-facts span{min-width:0;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.environment-expanded section{padding-top:7px;border-top:1px solid var(--border)}.environment-expanded section+section{margin-top:7px}.environment-expanded section>small{display:block;padding:0 6px 4px;color:var(--text-weaker);font-size:11px}.environment-expanded section>button{width:100%;height:28px;display:flex;align-items:center;gap:9px;padding:0 6px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.environment-expanded section>button:hover,.environment-expanded section>button.active{background:var(--surface-base-hover)}.environment-expanded section>button :global(svg){width:15px;flex:0 0 15px;color:var(--text-weak)}.environment-expanded section>button span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.environment-expanded section>button em{color:var(--text-weaker);font-size:10px;font-style:normal}.environment-expanded section>button em b{color:var(--success);font-weight:400}.environment-expanded section>button>i{width:6px;height:6px;border-radius:50%;background:var(--success)}.environment-collapsed{width:28px;display:none;flex-direction:column;align-items:center;gap:2px;padding:4px;border:1px solid rgb(var(--fg) / .04);border-radius:9px;background:var(--popover-bg);box-shadow:0 8px 26px rgb(0 0 0 / calc(.35 * var(--shadow-k))),0 0 0 .5px rgb(var(--fg) / .08)}.environment-collapsed button{width:20px;height:20px}.environment-collapsed :global(svg){width:14px}.environment-collapsed>i{width:20px;height:1px;margin:3px 0;background:var(--border)}.app-window[data-environment=collapsed] .environment-expanded{display:none}.app-window[data-environment=collapsed] .environment-collapsed{display:flex}.app-window[data-panel=open] .environment-card{display:none}.app-window[data-panel=open] .timeline-column{padding-right:20px}
+  .scroll-latest{position:absolute;left:50%;bottom:116px;z-index:9;width:28px;height:28px;display:grid;place-items:center;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface-overlay);color:var(--text-base);transform:translateX(-50%)}.scroll-latest :global(svg){width:14px}.composer-zone{position:absolute;left:0;right:0;bottom:0;z-index:10;padding:24px max(16px,calc((100% - 768px)/2)) 12px;background:linear-gradient(transparent,var(--background-stronger) 42%);transition:padding-right .14s}.app-window[data-environment=expanded] .composer-zone{padding-right:max(260px,calc((100% - 768px)/2 + 260px))}.app-window[data-environment=collapsed] .composer-zone{padding-right:max(52px,calc((100% - 768px)/2 + 52px))}.app-window[data-panel=open] .composer-zone{padding-right:max(16px,calc((100% - 768px)/2))}.composer{min-height:96px;display:flex;flex-direction:column;border:0;border-radius:20px;background:var(--composer-bg);box-shadow:0 8px 30px rgb(0 0 0 / calc(.28 * var(--shadow-k))),0 0 0 .5px rgb(var(--fg) / .14);backdrop-filter:blur(16px)}.composer-input{width:100%;min-height:52px;flex:1;resize:none;padding:16px 16px 8px;border:0;outline:0;background:transparent;color:var(--text-base);font-size:13px;line-height:20px;caret-color:var(--text-strong)}.composer-input::placeholder{color:var(--text-weak)}.composer-context-chip{width:fit-content;display:flex;align-items:center;gap:5px;margin:0 12px 4px;padding:3px 6px;border-radius:5px;background:var(--surface-base-hover);color:var(--text-base);font-size:11px}.composer-context-chip[hidden]{display:none}.composer-context-chip b{font-weight:500}.composer-context-chip button{border:0;background:transparent;color:var(--text-weak)}.composer-controls{height:44px;display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 8px}.composer-left,.composer-right{display:flex;align-items:center;gap:4px}.composer-controls button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--text-base)}.composer-controls button:hover,.composer-controls button[aria-expanded=true]{background:var(--surface-base-hover)}.round-control{width:28px;display:grid;place-items:center;padding:0}.round-control :global(svg){width:15px}.permission-control,.harness-control{display:flex;align-items:center;gap:6px;padding:0 10px}.permission-control>:global(svg):first-child{width:15px}.permission-control>:global(svg):last-child,.harness-control>:global(svg){width:12px}.permission-control b,.harness-control b{font-size:12px;font-weight:500}.harness-control{max-width:280px}.harness-control>i{width:1px;height:13px;background:var(--border)}.harness-control>span:not(.codex-mark){max-width:110px;overflow:hidden;color:var(--text-base);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.harness-control small{color:var(--text-weak);font-size:11px}.codex-mark,.claude-mark,.opencode-mark{width:18px;height:18px;display:grid;place-items:center;border:1px solid var(--text-weaker);border-radius:5px;color:var(--text-base);font:600 9px var(--font-mono)}.claude-mark{border:0;color:var(--brand);font-size:15px}.opencode-mark{border-radius:50%;font-size:7px}.send{width:28px;display:grid;place-items:center;padding:0!important;border-radius:50%!important;background:var(--send-bg)!important;color:var(--send-ink)!important}.send :global(svg){width:15px}.composer-popover{position:absolute;bottom:118px;z-index:20;width:248px;display:grid;gap:2px;padding:5px;border:1px solid var(--border);border-radius:9px;background:var(--surface-overlay);box-shadow:0 18px 48px rgb(0 0 0 / calc(.58 * var(--shadow-k)))}.composer-popover[hidden]{display:none}.composer-popover>small{padding:5px 8px 3px;color:var(--text-weaker);font-size:11px}.composer-popover>button{height:31px;display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.composer-popover>button:hover,.composer-popover>button.selected{background:var(--surface-base-hover)}.composer-popover>button :global(svg){width:15px;color:var(--text-weak)}.composer-popover>button b{overflow:hidden;font-size:12px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.composer-popover>button em{color:var(--text-weak);font-size:11px;font-style:normal}.composer-popover>i{height:1px;margin:4px -1px;background:var(--border)}.add-popover{left:max(16px,calc((100% - 768px)/2));width:220px}.permission-popover{left:max(52px,calc((100% - 696px)/2))}.harness-popover{right:max(48px,calc((100% - 680px)/2));width:304px}.harness-popover .model-row{grid-template-columns:20px minmax(0,1fr) auto}.effort-row{display:flex;gap:3px;padding:3px 7px 6px}.effort-row button{height:27px;flex:1;border:0;border-radius:5px;background:var(--surface-base);color:var(--text-weak);font-size:11px}.effort-row button.active{background:var(--surface-base-hover);color:var(--text-strong)}
+  .composer-left,.composer-right{position:relative}.harness-logo{width:16px;height:16px;flex:0 0 16px;display:grid;place-items:center;color:var(--text-strong)}.harness-logo :global(svg){width:16px!important;height:16px!important;fill:currentColor!important;stroke:none!important}.composer-popover{bottom:34px;border-radius:10px;background:var(--popover-bg);box-shadow:0 18px 48px rgb(0 0 0 / calc(.58 * var(--shadow-k))),0 0 0 .5px rgb(var(--fg) / .08)}.add-popover{left:0;width:min(360px,calc(100cqw - 28px));padding:8px}.add-popover>small{padding:3px 8px 7px;font-size:12px}.add-popover>button{height:36px;grid-template-columns:minmax(0,1fr) auto;padding:0 8px}.add-popover>button b{font-size:14px;font-weight:400}.add-popover>button em{font-size:12px}.permission-popover{left:34px;width:min(360px,calc(100cqw - 28px));padding:10px}.permission-popover>small{padding:0 4px 7px;font-size:12px}.permission-popover>button{height:auto;min-height:52px;grid-template-columns:22px minmax(0,1fr) 18px;align-items:start;padding:7px 6px}.permission-popover>button :global(svg){width:18px;height:18px;margin-top:1px}.permission-popover>button span{min-width:0;display:grid;gap:2px}.permission-popover>button span b{font-size:14px;font-weight:400}.permission-popover>button span i{color:var(--text-weak);font-size:12px;font-style:normal;line-height:1.3}.permission-popover>button.selected span b,.permission-popover>button.selected em{color:var(--blue)}.permission-popover>button em{padding-top:2px;font-size:13px}.harness-popover{right:36px;bottom:34px;width:min(304px,calc(100cqw - 28px));display:block;padding:8px;overflow:hidden}.harness-popover .picker-section{width:100%;height:36px;display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--text-base);text-align:left}.harness-popover .picker-section:hover,.harness-popover .picker-section.active{background:var(--surface-base-hover)}.harness-popover .picker-section :global(svg){width:15px}.harness-popover .picker-section b{font-size:14px;font-weight:500}.harness-popover .picker-section span{max-width:140px;overflow:hidden;color:var(--text-weak);font-size:13px;text-overflow:ellipsis;white-space:nowrap}.picker-options{display:grid;padding:3px 0}.picker-options[hidden]{display:none}.picker-options>small{padding:6px 12px 3px;color:var(--text-weaker);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.picker-options>button{width:100%;height:32px;display:grid;grid-template-columns:22px minmax(0,1fr) 18px;align-items:center;gap:7px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.picker-options>button:hover,.picker-options>button.selected{background:var(--surface-base-hover)}.picker-options>button b{font-size:13px;font-weight:400}.picker-options>button em{font-size:12px;font-style:normal;text-align:center}.model-options{max-height:264px;overflow:auto;scrollbar-color:rgb(var(--fg) / .14) transparent;scrollbar-width:thin}.model-options>label{height:34px;display:flex;align-items:center;gap:8px;margin:2px 0 8px;padding:0 10px;border-radius:5px;background:var(--surface-base-hover)}.model-options>label :global(svg){width:17px;color:var(--text-base)}.model-options>label input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text-base);font-size:13px}.model-provider{display:flex;align-items:center;justify-content:space-between;padding:2px 10px 6px;color:var(--text-weak);font-size:11px}.model-provider b{padding:3px 6px;border:1px solid var(--border);border-radius:3px;color:var(--text-base);font-weight:400}.model-options>button{height:auto;min-height:50px;grid-template-columns:minmax(0,1fr) 18px;padding:7px 10px}.model-options>button span{display:grid;gap:3px}.model-options>button span b{font-size:13px}.model-options>button span i{color:var(--text-weak);font-size:11px;font-style:normal;line-height:1.35}.effort-options>button{grid-template-columns:minmax(0,1fr) 18px}.effort-options>button b{font-size:13px}.effort-options>button.selected em{color:var(--text-strong)}
 
-  .main { position: relative; flex: 1; min-width: 0; }
-  .chat, .terminal { position: absolute; inset: 0; }
-  .chat[hidden], .terminal[hidden] { display: none; }
-  .transcript { display: flex; flex-direction: column; gap: 14px; width: min(100%, 48rem); height: 100%; margin: 0 auto; padding: 16px 24px 150px; overflow: auto; scrollbar-width: none; }
-  .session-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
-  .session-head h3 { color: var(--demo-strong); font-size: 14px; font-weight: 500; }
-  .place { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--demo-inset); color: var(--demo-weak); font-size: 12px; white-space: nowrap; }
-  .place svg { width: 14px; height: 14px; flex-basis: 14px; }
-  .user { align-self: flex-end; max-width: min(82%, 60ch); padding: 8px 12px; border-radius: 10px; background: var(--demo-bubble); color: var(--demo-strong); line-height: 1.5; }
-  .assistant { color: var(--demo-text); text-wrap: pretty; }
-  .tool { margin: -6px 0; }
-  .tool-row { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-left: -6px; padding: 0 6px; border-radius: 6px; color: var(--demo-weak); }
-  .tool-row:hover { background: var(--demo-row-hover); color: var(--demo-strong); }
-  .tool-row > svg:first-child { width: 14px; height: 14px; flex-basis: 14px; color: var(--demo-icon-weak); }
-  .chevron { width: 12px; height: 12px; flex-basis: 12px; color: var(--demo-icon-weak); transition: rotate 200ms cubic-bezier(0.2, 0, 0, 1); }
-  .tool-row[aria-expanded="true"] .chevron { rotate: 90deg; }
-  .tool-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1); }
-  .tool-row[aria-expanded="true"] + .tool-detail { grid-template-rows: 1fr; }
-  .tool-detail > div { min-height: 0; overflow: hidden; }
-  .tool-detail pre { margin: 4px 0 6px 22px; padding: 8px 10px; border-radius: 8px; background: var(--demo-inset); color: var(--demo-weak); font: 12px/1.6 var(--demo-mono); white-space: pre-wrap; }
+  .workspace-panel{position:relative;width:0;flex:0 0 0;min-width:0;display:flex;flex-direction:column;border-left:0;background:var(--panel-bg);overflow:hidden;transition:width .15s cubic-bezier(.2,0,0,1),flex-basis .15s cubic-bezier(.2,0,0,1)}.app-window[data-panel=open] .workspace-panel{width:62%;flex-basis:62%;border-left:1px solid var(--border)}.workspace-l2{height:36px;flex:0 0 36px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.review-toolbar{width:100%;height:100%;display:flex;align-items:center;gap:9px;padding:0 8px}.review-toolbar>button{height:27px;padding:0 5px;border:0;border-radius:5px;background:transparent;color:var(--text-base);font-size:12px}.review-toolbar>button:hover{background:var(--surface-base-hover)}.review-toolbar>b{color:var(--success);font-size:12px;font-weight:500}.review-toolbar>i{color:var(--danger);font-size:12px;font-style:normal}.review-toolbar>span{flex:1}.panel-view{min-width:300px;min-height:0;flex:1;overflow:auto;color:var(--text-base)}.panel-view[hidden]{display:none}.review-view{display:grid;grid-template-columns:minmax(310px,2.05fr) minmax(175px,1fr);overflow:hidden}.change-list,.repo-tree{min-width:0;overflow:auto;scrollbar-color:rgb(var(--fg) / .16) transparent;scrollbar-width:thin}.repo-tree{border-left:1px solid var(--border)}.file-change{height:34px;display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid var(--border-weak)}.file-change:hover{background:var(--surface-base-hover)}.file-change span{color:var(--info);font:10px var(--font-mono)}.file-change b{min-width:0;overflow:hidden;font-size:12px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.file-change small{color:var(--text-weaker);font:10px var(--font-mono);white-space:nowrap}.file-change.removed small{color:var(--danger)}.file-search{height:30px;display:flex;align-items:center;gap:7px;margin:8px;padding:0 8px;border:1px solid var(--border);border-radius:6px}.file-search :global(svg){width:14px;color:var(--text-weak)}.file-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text-base);font-size:12px}.repo-row{height:30px;display:grid;grid-template-columns:12px minmax(0,1fr) 7px;align-items:center;gap:5px;padding:0 9px;color:var(--text-weak)}.repo-row:hover{background:var(--surface-base-hover)}.repo-row span{font-size:15px}.repo-row b{overflow:hidden;font-size:12px;font-weight:400;text-overflow:ellipsis;white-space:nowrap}.repo-row i{width:6px;height:6px;border-radius:50%}.repo-row.changed i{background:var(--brand)}.repo-row.active{color:var(--success)}.repo-row.active i{background:var(--success)}.show-more{height:34px;margin-left:32px;border:0;background:transparent;color:var(--text-weak);font-size:11px}.tree-row{height:29px;display:grid;grid-template-columns:14px 16px minmax(0,1fr);align-items:center;gap:5px;padding:0 10px}.tree-row:hover{background:var(--surface-base-hover)}.tree-row :global(svg){width:15px;color:var(--text-weak)}.tree-row b{font-size:12px;font-weight:400}.tree-row small{font:9px var(--font-mono);color:var(--info)}.tree-row.indent{padding-left:24px}.tree-row.indent-2{padding-left:42px}.process-head{height:42px;display:flex;align-items:center;gap:7px;padding:0 12px;border-bottom:1px solid var(--border);font-size:12px}.process-head span{padding:1px 5px;border-radius:8px;background:var(--surface-base-hover);font-size:10px}.process-row{height:52px;display:grid;grid-template-columns:8px minmax(0,1fr) 24px;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border-weak)}.process-row>i{width:7px;height:7px;border-radius:50%;background:var(--success)}.process-row div{display:grid;gap:2px}.process-row b{font-size:12px;font-weight:500}.process-row small{color:var(--text-weaker);font-size:10px}.process-row button{border:0;background:transparent;color:var(--text-weak)}
+  .terminal-tabs{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid var(--border);font-size:12px}.terminal-tabs button{border:0;background:transparent;color:var(--text-weak)}.terminal-content{padding:14px;color:var(--text-base);font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.terminal-content p{margin:0}.term-path{color:var(--term-path)}.term-branch{color:var(--blue)}.term-green{color:var(--success)}.term-muted{color:var(--text-weak)}.term-cursor{display:inline-block;width:7px;height:13px;background:var(--text-base);vertical-align:-2px;animation:blink 1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
+  .mobile-panel-close{display:none!important}
+  @media(prefers-reduced-motion:no-preference){.app-window{animation:appIn .75s .1s cubic-bezier(.2,.75,.2,1) both}@keyframes appIn{from{opacity:0;transform:translateY(18px) scale(.99)}}}
+  .review-toolbar .commit-scope{display:flex;align-items:center;gap:6px;white-space:nowrap}.review-toolbar .commit-scope :global(svg){width:13px;height:13px}.review-toolbar>button:not(.commit-scope){width:26px;display:grid;place-items:center;padding:0}.review-toolbar>button>:global(svg){width:16px;height:16px}.repo-row{width:100%;grid-template-columns:12px 16px minmax(0,1fr) 7px;border:0;background:transparent;text-align:left}.repo-row :global(.repo-chevron){width:12px;height:12px;transition:transform .12s}.repo-row[aria-expanded=true] :global(.repo-chevron){transform:rotate(90deg)}.repo-row .repo-folder{width:15px;height:15px}.repo-children{display:grid;padding:2px 0 5px 42px;color:var(--text-weaker);font-size:11px}.repo-children[hidden]{display:none}.repo-children span{height:24px;display:flex;align-items:center}.workspace-tab[data-panel-button].active{background:var(--surface-base-hover);color:var(--text-base)}
+  @container(max-width:1050px){.rail-titlebar,.project-rail{width:230px;flex-basis:230px}.timeline-column{padding-left:16px}.app-window[data-environment=expanded] .timeline-column{padding-right:248px}.app-window[data-panel=open] .timeline-column{padding-right:16px}.environment-expanded{width:228px}.app-window[data-panel=open] .workspace-panel{width:52%;flex-basis:52%}.app-window[data-panel=open] .workspace-l1{width:52%}.review-view{grid-template-columns:minmax(240px,1.6fr) minmax(150px,1fr)}.harness-control>b,.harness-control>i{display:none}}
+  @media(max-width:58rem){.app-window{min-height:39rem;aspect-ratio:auto}}
+  @media(max-width:47.99rem){.hero{padding-inline:.7rem}.hero.canvas-only{padding-inline:0}.app-window,.hero.canvas-only .app-window{height:36rem;min-height:0;aspect-ratio:auto;border-radius:9px}.rail-titlebar{position:absolute;z-index:12;width:230px}.project-rail{position:absolute;inset:0 auto 0 0;z-index:12;width:min(230px,82vw);box-shadow:16px 0 34px rgb(0 0 0 / calc(.45 * var(--shadow-k)))}.app-window[data-sidebar=closed] .project-rail{width:0}.app-window[data-sidebar=open] .workbench-l1{padding-left:34px}.environment-card{display:none}.timeline-column,.app-window[data-environment=expanded] .timeline-column,.app-window[data-environment=collapsed] .timeline-column{padding:12px 12px 132px}.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{padding:22px 8px 8px}.permission-control b,.harness-control b,.harness-control i,.harness-control>span:not([data-hero-harness-mark]),.harness-control small{display:none}.workspace-panel{display:none;position:absolute;inset:0;width:100%;z-index:20;flex-basis:100%}.app-window[data-panel=open] .workspace-panel{display:flex;width:100%;flex-basis:100%}.workspace-l1{display:none}}
+  @media(max-width:47.99rem){.app-window button{scroll-margin-top:72px}.mobile-panel-close{display:grid!important}.review-view{grid-template-columns:1fr}.repo-tree{display:none}.add-popover,.permission-popover{left:-4px;width:calc(100cqw - 28px)}.harness-popover{right:0;width:min(304px,calc(100cqw - 28px))}.permission-popover>button{min-height:48px}.permission-popover>button span i{font-size:11px}.model-options{max-height:220px}}
+  .panel-width-toggle{position:relative}
+  .panel-width-toggle :global(.panel-restore-icon){display:none}
+  .tasks-surface{display:none;flex-direction:column;background:var(--background-stronger);overflow:hidden}
+  .app-window[data-surface=tasks] .tasks-surface{display:flex}
+  .tasks-head{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border-weak)}
+  .tasks-head>b{font-size:13px;color:var(--text-strong)}
+  .tasks-views{display:flex;gap:2px;padding:2px;border-radius:7px;background:var(--surface-base)}
+  .tasks-views [role=tab]{height:22px;padding:0 9px;border:0;border-radius:5px;background:transparent;color:var(--text-weak);font-size:12px;cursor:pointer}
+  .tasks-views [role=tab][aria-selected=true]{background:var(--surface-base-hover);color:var(--text-base)}
+  .tasks-new{margin-left:auto;height:26px;padding:0 10px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text-base);font-size:12px;white-space:nowrap;cursor:pointer}
+  .board{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(136px,1fr));gap:10px;padding:14px 20px 20px;overflow:auto;scrollbar-color:rgb(var(--fg) / .16) transparent;scrollbar-width:thin}
+  .board-col{display:flex;flex-direction:column;gap:8px;min-width:0}
+  .board-col h3{display:flex;align-items:center;gap:8px;margin:0 0 2px;font:600 11.5px var(--font-sans);color:var(--text-weak)}
+  .board-col h3 small{font-size:11px;color:var(--text-weaker)}
+  .task-card{display:grid;gap:5px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-base)}
+  .task-card small{font:500 10.5px var(--font-mono);color:var(--text-weaker)}
+  .task-card b{font-size:12px;font-weight:500;line-height:1.35;color:var(--text-base)}
+  .task-meta{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11px;color:var(--text-weak)}
+  .task-harness{display:inline-grid;place-items:center;width:14px;height:14px}
+  .task-harness :global(svg){width:12px;height:12px}
+  .task-live{width:6px;height:6px;margin-left:auto;border-radius:50%;background:var(--success)}
+  .marketplace-surface{display:none;flex-direction:column;background:var(--background-stronger);overflow:hidden}
+  .app-window[data-surface=marketplace] .marketplace-surface{display:flex}
+  .market-head{display:flex;flex-direction:column;gap:10px;padding:14px 20px 10px;border-bottom:1px solid var(--border-weak)}
+  .market-search{max-width:420px}
+  .market-sources{display:flex;align-items:center;gap:4px}
+  .market-sources [role=tab]{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--text-weak);font-size:12.5px;cursor:pointer}
+  .market-sources [role=tab][aria-selected=true]{background:var(--surface-base-hover);color:var(--text-base)}
+  .market-sources [role=tab] span{font-size:11px;color:var(--text-weaker)}
+  .market-add-source{margin-left:auto;height:26px;padding:0 10px;white-space:nowrap;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text-weak);font-size:12px;cursor:pointer}
+  .market-scroll{flex:1;min-height:0;overflow:auto;padding:14px 20px 24px;scrollbar-color:rgb(var(--fg) / .16) transparent;scrollbar-width:thin}
+  .market-group+.market-group{margin-top:22px}
+  .market-group h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font:600 12px var(--font-sans);color:var(--text-base)}
+  .market-group h3 span{font-weight:500;color:var(--text-weaker)}
+  .market-group h3 em{margin-left:auto;font:500 11px var(--font-sans);font-style:normal;color:var(--text-weaker)}
+  .market-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+  .market-card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-base)}
+  .market-card i,.market-row i{width:32px;height:32px;display:grid;place-items:center;border-radius:8px;background:var(--surface-base-hover);color:var(--text-base);font:600 11px var(--font-mono);font-style:normal}
+  .market-card b{display:block;font-size:13px;color:var(--text-strong)}
+  .market-card p{display:-webkit-box;margin:4px 0 0;font-size:12px;line-height:1.45;color:var(--text-weak);-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .market-card button{height:26px;padding:0 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface-base-hover);color:var(--text-base);font-size:12px;cursor:pointer}
+  .market-rows{display:grid;gap:2px}
+  .market-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto auto;gap:10px;align-items:center;height:36px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--text-base);font-size:12.5px;text-align:left;cursor:pointer}
+  .market-row:hover{background:var(--surface-base-hover)}
+  .market-row i{width:26px;height:26px;border-radius:6px;font-size:9.5px}
+  .market-row b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .market-row small{font-size:11px;color:var(--text-weaker)}
+  .app-window[data-panel-width=full] .panel-width-toggle :global(.panel-expand-icon){display:none}
+  .app-window[data-panel-width=full] .panel-width-toggle :global(.panel-restore-icon){display:block}
+  .app-window[data-panel=open][data-panel-width=full] .workspace-panel{width:100%;flex-basis:100%}
+  .app-window[data-panel=open][data-panel-width=full] .workspace-l1{width:100%}
+  .app-window[data-panel=open][data-panel-width=full] .workbench-l1{width:0;flex:0 0 0;padding:0}
+  .composer-zone{--composer-left:max(16px,calc((100% - 768px)/2));--composer-right:var(--composer-left);padding-left:var(--composer-left);padding-right:var(--composer-right)}
+  .app-window[data-environment=expanded] .composer-zone{--composer-right:max(260px,calc((100% - 768px)/2 + 260px))}
+  .app-window[data-environment=collapsed] .composer-zone{--composer-right:max(52px,calc((100% - 768px)/2 + 52px))}
+  .app-window[data-panel=open] .composer-zone{--composer-right:var(--composer-left)}
+  .composer-zone .scroll-latest{left:calc(50% + (var(--composer-left) - var(--composer-right))/2);top:0;bottom:auto;transform:translate(-50%,-50%)}
+  .session-content{container-name:session-pane;container-type:inline-size}
+  .timeline-column.empty-session>.message,.timeline-column.empty-session>.turn-fold,.timeline-column.empty-session>.tool-summary{display:none}
+  @container session-pane (max-width:560px){
+    .permission-control b,.harness-control>span:not(.harness-logo),.harness-control small,.harness-control>:global(svg){display:none}
+    .permission-control,.harness-control{width:28px;justify-content:center;gap:0;padding:0}
+  }
+  @media(max-width:47.99rem){.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{--composer-left:8px;--composer-right:8px;padding-left:var(--composer-left);padding-right:var(--composer-right)}.workspace-l1{display:flex}.app-window[data-panel=open] .workbench-l1{display:none}.app-window[data-panel=open] .workspace-l1{width:100%;border-left:0}.app-window[data-panel=open][data-panel-width=full] .workspace-l1{width:100%}}
 
-  .composer { position: absolute; left: 50%; bottom: 14px; z-index: 1; display: flex; flex-direction: column; gap: 10px; width: min(100% - 32px, 46rem); padding: 14px 12px 10px 16px; border-radius: 20px; background: var(--demo-composer); box-shadow: 0 0 0 1px var(--demo-composer-border), 0 8px 24px -12px rgba(0, 0, 0, 0.3); transform: translateX(-50%); }
-  .chat::after { content: ""; position: absolute; inset: auto 0 0; height: 9rem; background: linear-gradient(transparent, var(--demo-bg) 55%); pointer-events: none; }
-  .composer-input { color: var(--demo-weaker); }
-  .composer-controls { display: flex; align-items: center; gap: 12px; color: var(--demo-weak); font-size: 13px; }
-  .round, .send { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; }
-  .round { margin-left: -6px; }
-  .permission, .harness { display: flex; align-items: center; gap: 6px; }
-  .harness { margin-left: auto; color: var(--demo-strong); }
-  .harness > svg:last-child { width: 14px; height: 14px; flex-basis: 14px; color: var(--demo-weak); }
-  .send { background: var(--demo-send); color: var(--demo-send-ink); }
-
-  .page { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px 28px; overflow: hidden; }
-  .page[hidden] { display: none; }
-  .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .page-head h3 { color: var(--demo-strong); font-size: 18px; font-weight: 600; line-height: 1.2; }
-  .page-note, .page-foot { color: var(--demo-weak); font-size: 12px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-  .card { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px; border-radius: 10px; box-shadow: 0 0 0 1px var(--demo-border); }
-  .card i, .person i { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--demo-inset); color: var(--demo-strong); font: 600 11px/1 system-ui, sans-serif; font-style: normal; }
-  .card b { color: var(--demo-strong); font-size: 13px; font-weight: 500; }
-  .card p { margin-top: 2px; color: var(--demo-weak); font-size: 12px; line-height: 1.45; }
-  .installed { padding: 2px 8px; border-radius: 999px; background: var(--demo-inset); color: var(--demo-success); font-size: 11px; }
-  .people { display: grid; gap: 2px; max-width: 32rem; }
-  .person { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 0 8px; border-radius: 6px; }
-  .person i { width: 28px; height: 28px; border-radius: 50%; }
-  .person b { color: var(--demo-strong); font-size: 13px; font-weight: 500; }
-  .person span { color: var(--demo-weak); font-size: 12px; }
-
-  .terminal { padding: 16px 20px; background: var(--demo-bg); }
-  .terminal pre { color: var(--demo-strong); font: 13px/1.6 var(--demo-mono); white-space: pre-wrap; }
-  .terminal .dim { color: var(--demo-weaker); }
-  .terminal .ok { color: var(--demo-success); }
-  .terminal .prompt { color: var(--demo-accent); }
-  .terminal b { font-weight: 600; }
-  .cursor { display: inline-block; width: 8px; height: 1.1em; vertical-align: text-bottom; background: var(--demo-strong); }
-
+  :global(.account-chevron) { scale: 1 -1; }
+  .app-window em > :global(svg), .app-window i > :global(svg), .tool-summary span > :global(svg), .tree-row > span > :global(svg) { width: 13px; height: 13px; }
+  .app-window em[hidden] { display: none; }
+  .terminal-row { font-family: var(--font-mono); font-size: 12px; }
+  .terminal-row { display: flex !important; justify-content: flex-start !important; gap: 8px; }
   [data-spot-target] { transition: box-shadow 150ms ease-out; }
-  .demo[data-spot="prompt"] [data-spot-target="prompt"],
-  .demo[data-spot="team"] [data-spot-target="team"],
-  .demo[data-spot="place"] [data-spot-target="place"],
-  .demo[data-spot="tools"] [data-spot-target="tools"],
-  .demo[data-spot="terminal"] [data-spot-target="terminal"] { box-shadow: 0 0 0 2px var(--demo-spot, var(--demo-accent)); }
-
-  @media (max-width: 47.99rem) {
-    .demo { height: 34rem; }
-    .titlebar-rail { display: none; }
-    .phone-only { display: grid; }
-    .rail { position: absolute; inset: 0 auto 0 0; z-index: 3; width: min(260px, 80%); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3); translate: -105% 0; transition: translate 250ms cubic-bezier(0.2, 0, 0, 1); }
-    .demo[data-rail="open"] .rail { translate: 0 0; }
-    .transcript { padding: 12px 16px 150px; }
-    .user { max-width: 90%; }
-    .permission { display: none; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .chevron, .tool-detail, .rail, [data-spot-target] { transition: none; }
-  }
+  .app-window[data-spot="prompt"] [data-spot-target="prompt"],
+  .app-window[data-spot="team"] [data-spot-target="team"],
+  .app-window[data-spot="place"] [data-spot-target="place"],
+  .app-window[data-spot="tools"] [data-spot-target="tools"],
+  .app-window[data-spot="terminal"] [data-spot-target="terminal"] { box-shadow: 0 0 0 2px var(--brand); border-radius: 6px; }
 </style>

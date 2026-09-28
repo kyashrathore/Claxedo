@@ -1,0 +1,12 @@
+---
+import { codexIconId, demoIconTransform, type DemoIconName } from "../content/codex-icons"
+
+interface Props {
+  name: DemoIconName
+  class?: string
+}
+
+const { name, class: className } = Astro.props
+---
+
+<svg class:list={["codex-icon", className]} data-icon={name} viewBox="0 0 20 20" fill="none" aria-hidden="true"><use href={`#${codexIconId(name)}`} transform={demoIconTransform(name)} /></svg>

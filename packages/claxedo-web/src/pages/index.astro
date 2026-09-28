@@ -3,6 +3,7 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
+import CodexIcon from "../components/CodexIcon.astro"
 import { requireClaim } from "../content/claims"
 import { home, site, type HomeLine } from "../content/site"
 
@@ -60,7 +61,7 @@ const words = (text: string) => text.trim().split(/\s+/)
       <div class="rail-row">
         <a class="proof slot" data-link-slot hidden>
           <span data-link-label></span>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 10.5 10.5 5.5M6.5 5.5h4v4"></path></svg>
+          <CodexIcon name="open-external" />
         </a>
         <div class="controls" data-stage-controls hidden>
           <div class="steps" role="group" aria-label="Choose a line">
@@ -75,7 +76,7 @@ const words = (text: string) => text.trim().split(/\s+/)
         </div>
       </div>
     </section>
-    <div class="preview">
+    <div class="preview" data-zoom>
       <ClaxedoAppReplica />
     </div>
   </main>
@@ -202,6 +203,35 @@ const words = (text: string) => text.trim().split(/\s+/)
   }
 </script>
 
+<script>
+  const preview = document.querySelector<HTMLElement>("[data-zoom]")
+  const wide = window.matchMedia("(min-width: 48rem)")
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)")
+  const scrollLinked = CSS.supports("animation-timeline: scroll()")
+  if (preview) {
+    let frame = 0
+    const zoomTo = () => {
+      const { offsetWidth: width, offsetHeight: height } = preview
+      const byArea = Math.sqrt((0.75 * innerWidth * innerHeight) / (width * height))
+      return Math.max(1, Math.min(byArea, (innerWidth - 32) / width, (innerHeight * 0.92) / height))
+    }
+    const measure = () => {
+      const to = wide.matches ? zoomTo() : 1
+      preview.style.setProperty("--zoom-to", to.toFixed(3))
+      preview.style.setProperty("--zoom-extra", `${Math.round((to - 1) * preview.offsetHeight)}px`)
+      follow()
+    }
+    const follow = () => {
+      if (scrollLinked || still.matches || !wide.matches) return preview.style.removeProperty("scale")
+      const progress = Math.min(1, Math.max(0, scrollY / (innerHeight * 0.4)))
+      preview.style.scale = String(1 + (Number(preview.style.getPropertyValue("--zoom-to")) - 1) * progress)
+    }
+    measure()
+    addEventListener("resize", measure, { passive: true })
+    if (!scrollLinked) addEventListener("scroll", () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(follow) }, { passive: true })
+  }
+</script>
+
 <style>
   .home { --home-width: min(100% - 2 * var(--gutter), 75rem); }
   .intro { width: var(--home-width); margin: 0 auto; padding-block: clamp(1.75rem, 5vh, 3rem) clamp(1.5rem, 3.5vh, 2.25rem); }
@@ -254,7 +284,7 @@ const words = (text: string) => text.trim().split(/\s+/)
   .intro[data-playing="true"] .proof-cell { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .proof { display: inline-flex; align-items: center; gap: .3rem; min-height: 2rem; color: var(--ink-soft); font-size: .875rem; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: .2em; }
   .proof:hover { color: var(--ink); text-decoration-color: currentColor; }
-  .proof svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .proof :global(svg) { width: 1rem; height: 1rem; }
   .rail-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2rem; margin-top: .5rem; }
   .slot { min-width: 14rem; }
   .slot[hidden] { display: none; }
@@ -276,7 +306,16 @@ const words = (text: string) => text.trim().split(/\s+/)
   .pause[aria-pressed="true"] .icon-play { opacity: 1; scale: 1; filter: none; }
   .pause[aria-pressed="true"] .icon-pause { opacity: 0; scale: .25; filter: blur(4px); }
 
-  .preview { width: var(--home-width); margin: 0 auto clamp(4rem, 8vw, 6rem); }
+  .preview { --zoom-to: 1; --zoom-extra: 0px; width: var(--home-width); margin: 0 auto calc(clamp(4rem, 8vw, 6rem) + var(--zoom-extra)); transform-origin: 50% 0; }
+  @keyframes demo-zoom { from { scale: 1; } to { scale: var(--zoom-to); } }
+  @supports (animation-timeline: scroll()) {
+    @media (min-width: 48rem) and (prefers-reduced-motion: no-preference) {
+      .preview { animation: demo-zoom linear both; animation-timeline: scroll(root); animation-range: 0 40vh; }
+    }
+  }
+  @media (min-width: 48rem) and (prefers-reduced-motion: reduce) {
+    .preview { scale: var(--zoom-to); }
+  }
 
   @media (max-width: 38rem) {
     .home { --home-width: calc(100% - 2rem); }
