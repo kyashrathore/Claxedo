@@ -9,7 +9,7 @@ import type {
 } from "../../contract/broker"
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "../ports"
 import { grantToSave } from "../grants"
-import { decisionAnswer, offeredOptionAnswer } from "../options"
+import { replyAnswer } from "../options"
 import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type RequestAuthority } from "./authority"
 import { OrphanRetirement } from "./orphan-retirement"
 import { preflight } from "./preflight"
@@ -178,7 +178,7 @@ export class RequestTable implements RequestBroker {
     }
     if (entry.cancelRequested) return this.retryTermination(entry)
     if (entry.phase !== "asked") return requestRefusal("duplicate")
-    const answer = this.selectAnswer(entry, reply)
+    const answer = replyAnswer(entry.pending.request, reply)
     if (!answer) return requestRefusal("unoffered")
     return this.validateAndCommit(entry, answer)
   }
@@ -201,14 +201,6 @@ export class RequestTable implements RequestBroker {
     settle()
     if (entry.cancelRequested) return this.retryTermination(entry)
     return this.commitAnswer(entry, answer)
-  }
-
-  private selectAnswer(entry: Entry, reply: RequestReply): RequestAnswer | undefined {
-    if (reply.kind !== "permission") return reply
-    const request = entry.pending.request
-    const options = request.kind === "permission" ? request.options : undefined
-    if ("optionId" in reply) return offeredOptionAnswer(reply.optionId, options)
-    return request.kind === "permission" ? decisionAnswer(reply.decision, options) : reply
   }
 
   private async commitAnswer(entry: Entry, answer: RequestAnswer): Promise<AnswerResult> {
