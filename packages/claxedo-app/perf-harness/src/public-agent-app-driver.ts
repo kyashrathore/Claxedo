@@ -520,10 +520,11 @@ async function makeDefaultDependencies(applicationId: ApplicationId): Promise<Dr
     hello: {
       protocolVersion: 1,
       application: { id: application.id, name: application.name, version: desktopVersion, buildDigestSha256 },
-      driver: { name: "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
+      driver: { name: "claxedo-reference", version: "2", sourceCommit, digestSha256: driverDigestSha256 },
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
       guiFramework: "electron",
+      clockRule: "settle-31-frames/v1",
     },
     prepare: async (params) => {
       const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", application.id)

@@ -73,7 +73,8 @@ export type ReadyGates = {
 };
 
 export type PaintSettleFrame = {
-  paintedAtMs: number;
+  /** `performance.now()` right after this frame's sample was taken. */
+  observedAtMs: number;
   gates: ReadyGates;
   ready: boolean;
   signature?: Record<string, unknown>;
@@ -119,7 +120,7 @@ export function paintSettle(
       run = { startIndex: index, signature };
     }
     if (index - run.startIndex >= confirmationFrames) {
-      return { settledAtMs: frames[run.startIndex]!.paintedAtMs, runStartIndex: run.startIndex };
+      return { settledAtMs: frames[run.startIndex]!.observedAtMs, runStartIndex: run.startIndex };
     }
   }
   return undefined;
@@ -175,9 +176,9 @@ export function settleFrameLog(startAt: number, frames: readonly PaintSettleFram
     startAt,
     offsetMs,
     frames: frames
-      .filter((frame) => frame.paintedAtMs > startAt)
+      .filter((frame) => frame.observedAtMs > startAt)
       .map((frame) => ({
-        at: frame.paintedAtMs,
+        at: frame.observedAtMs,
         gates: frame.gates,
         signature: frame.ready && frame.signature ? JSON.stringify(frame.signature) : null,
         mutated: frame.mutated,
@@ -309,7 +310,7 @@ function readPaintStabilityFrame(value: unknown): PaintStabilityFrame {
   const record = readRecord(value);
   const gates = readRecord(record.gates);
   return {
-    ...readNumberFields(record, ["paintedAtMs", "observerSampleMs"]),
+    ...readNumberFields(record, ["observedAtMs", "observerSampleMs"]),
     gates: {
       displayedDestination: readBoolean(gates.displayedDestination),
       latestTurnPainted: readBoolean(gates.latestTurnPainted),
@@ -678,7 +679,7 @@ export async function measureSessionActivation(
                 : undefined,
               frameCount: frames.length,
               lastFrames: frames.slice(-4).map((frame) => ({
-                paintedAtMs: frame.paintedAtMs,
+                observedAtMs: frame.observedAtMs,
                 ready: frame.ready,
                 mutated: frame.mutated,
               })),
@@ -895,17 +896,19 @@ export async function measureSessionActivation(
             sample: () => {
               const sampledAtMs = performance.now();
               const { gates, ready: current } = sample();
+              const observedAtMs = performance.now();
               return {
                 gates,
                 current,
-                observerSampleMs: performance.now() - sampledAtMs,
+                observedAtMs,
+                observerSampleMs: observedAtMs - sampledAtMs,
                 mutated: takeTimelineMutations() > 0,
               };
             },
-            painted: ({ gates, current, observerSampleMs, mutated }, paintedAtMs) => {
+            painted: ({ gates, current, observedAtMs, observerSampleMs, mutated }) => {
               const index = frames.length;
               frames.push({
-                paintedAtMs,
+                observedAtMs,
                 gates,
                 ready: !!current,
                 mutated,
@@ -917,7 +920,7 @@ export async function measureSessionActivation(
               } else if (!run || mutated || current.signature !== run.signature) {
                 run = {
                   startIndex: index,
-                  startedAtMs: paintedAtMs,
+                  startedAtMs: observedAtMs,
                   signature: current.signature,
                   paintedMessage: current.paintedMessage,
                 };

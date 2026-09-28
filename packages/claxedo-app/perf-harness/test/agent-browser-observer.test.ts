@@ -24,7 +24,7 @@ const ALL_GATES = {
 
 function frame(index: number, signature: string | undefined, mutated = false): PaintSettleFrame {
   return {
-    paintedAtMs: 100 + index * FRAME_MS,
+    observedAtMs: 100 + index * FRAME_MS,
     gates: signature === undefined ? { ...ALL_GATES, latestTurnPainted: false } : ALL_GATES,
     ready: signature !== undefined,
     signature: signature === undefined ? undefined : { rows: signature },
@@ -50,7 +50,7 @@ describe("paint settle", () => {
 
   test("reports the first frame of the final run, not the confirming frame", () => {
     const settled = paintSettle(frames("..aaaa"), confirm)
-    expect(settled).toEqual({ settledAtMs: frame(2, "a").paintedAtMs, runStartIndex: 2 })
+    expect(settled).toEqual({ settledAtMs: frame(2, "a").observedAtMs, runStartIndex: 2 })
   })
 
   test("does not settle while the run is shorter than the confirmation window", () => {
@@ -61,18 +61,18 @@ describe("paint settle", () => {
 
   test("a tail-only first view followed by a prepend settles at the prepended view", () => {
     const settled = paintSettle(frames(".aabbbb"), confirm)
-    expect(settled).toEqual({ settledAtMs: frame(3, "b").paintedAtMs, runStartIndex: 3 })
+    expect(settled).toEqual({ settledAtMs: frame(3, "b").observedAtMs, runStartIndex: 3 })
   })
 
   test("a placeholder flash back to the same content restarts the run", () => {
     const settled = paintSettle(frames("aaa.aaaa"), confirm)
-    expect(settled).toEqual({ settledAtMs: frame(4, "a").paintedAtMs, runStartIndex: 4 })
+    expect(settled).toEqual({ settledAtMs: frame(4, "a").observedAtMs, runStartIndex: 4 })
   })
 
   test("a mutation-only frame with an unchanged signature restarts the run", () => {
     const sequence = frames("aaa!aaaa")
     expect(sequence[3]).toMatchObject({ ready: true, mutated: true, signature: { rows: "a" } })
-    expect(paintSettle(sequence, confirm)).toEqual({ settledAtMs: frame(3, "a").paintedAtMs, runStartIndex: 3 })
+    expect(paintSettle(sequence, confirm)).toEqual({ settledAtMs: frame(3, "a").observedAtMs, runStartIndex: 3 })
     expect(paintSettle(frames("aaa!aa"), confirm)).toBeUndefined()
   })
 
@@ -91,12 +91,12 @@ describe("paint settle", () => {
 
 describe("frame log", () => {
   test("carries every frame after the start with its gates, signature and mutation", () => {
-    const log = settleFrameLog(frame(1, undefined).paintedAtMs, frames(".!.a"), 7)
-    expect(log.startAt).toBe(frame(1, undefined).paintedAtMs)
+    const log = settleFrameLog(frame(1, undefined).observedAtMs, frames(".!.a"), 7)
+    expect(log.startAt).toBe(frame(1, undefined).observedAtMs)
     expect(log.offsetMs).toBe(7)
     expect(log.frames).toEqual([
-      { at: frame(2, undefined).paintedAtMs, gates: { ...ALL_GATES, latestTurnPainted: false }, signature: null, mutated: false },
-      { at: frame(3, "a").paintedAtMs, gates: ALL_GATES, signature: JSON.stringify({ rows: "a" }), mutated: false },
+      { at: frame(2, undefined).observedAtMs, gates: { ...ALL_GATES, latestTurnPainted: false }, signature: null, mutated: false },
+      { at: frame(3, "a").observedAtMs, gates: ALL_GATES, signature: JSON.stringify({ rows: "a" }), mutated: false },
     ])
   })
 })
