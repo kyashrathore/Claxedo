@@ -75,15 +75,20 @@ export const home = {
       claims: ["harness-coverage", "acp-client", "agent-cli-access"],
     },
   ] satisfies readonly HomeLine[],
+  closing: {
+    title: "Download Claxedo",
+    note: "Open source (MIT). Works locally without an account.",
+    claims: ["mit-platform", "desktop-local-mode"],
+  },
   benchmark: {
     line: "speed",
     claims: ["core-metrics"],
     metrics: [
-      { lead: "2.3×", label: "faster start", detail: ["vs T3 2.9×", "vs OpenCode 2.3×", "0.98 s"] },
-      { lead: "2.6×", label: "faster session open", detail: ["vs T3 3.1×", "vs OpenCode 2.6×", "45 ms"] },
-      { lead: "2.1×", label: "faster return", detail: ["vs T3 2.5×", "vs OpenCode 2.1×", "27 ms"] },
-      { lead: "1.8×", label: "less memory", detail: ["vs T3 1.8×", "vs OpenCode 2.1×", "750 MiB"] },
-      { lead: "0%", label: "idle CPU", detail: ["T3 1.6%", "OpenCode 20.4%"] },
+      { lead: "2.3×", label: "faster start", vs: "vs T3 2.9× · vs OpenCode 2.3×", value: "0.98 s" },
+      { lead: "2.6×", label: "faster session open", vs: "vs T3 3.1× · vs OpenCode 2.6×", value: "45 ms" },
+      { lead: "2.1×", label: "faster return", vs: "vs T3 2.5× · vs OpenCode 2.1×", value: "27 ms" },
+      { lead: "1.8×", label: "less memory", vs: "vs T3 1.8× · vs OpenCode 2.1×", value: "750 MiB" },
+      { lead: "0%", label: "idle CPU", vs: "T3 1.6% · OpenCode 20.4%" },
     ],
   },
 } as const

@@ -1,4 +1,20 @@
 @font-face {
+  font-family: "Funnel Sans";
+  src: url("/fonts/funnel/funnel-sans-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Funnel Display";
+  src: url("/fonts/funnel/funnel-display-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Claxedo Mono";
   src: url("/fonts/claxedo-mono.woff2") format("woff2");
   font-style: normal;
@@ -65,11 +81,11 @@
 }
 
 :root {
-  --font-sans: "Schibsted Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-sans: "Funnel Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Funnel Display", system-ui, sans-serif;
   --font-mono: "Claxedo Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --display-weight: 600;
-  --display-tracking: -.028em;
+  --display-tracking: -.02em;
   --display-features: normal;
   --radius-sm: 8px;
   --radius: 10px;

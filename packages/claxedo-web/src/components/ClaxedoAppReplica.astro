@@ -601,6 +601,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
     --text-strong: #f2f2f2; --text-base: #dcdcdc; --text-weak: #a3a3a3; --text-weaker: #747474;
     --border: #303030; --border-weak: #282828; --edge: rgb(255 255 255 / .12);
     --send-bg: #f2f2f2; --send-ink: #0d0d0d;
+    --window-line: #26282b; --window-shadow: rgb(0 0 0 / .35);
     position: relative; color: var(--text-strong); overflow: clip;
   }
   @media (prefers-color-scheme: light) {
@@ -613,11 +614,12 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       --text-strong: #1a1c1f; --text-base: #4f4f4f; --text-weak: #696a6c; --text-weaker: #8c8d8f;
       --border: #ededed; --border-weak: #f2f2f2; --edge: rgb(0 0 0 / .1);
       --send-bg: #1a1c1f; --send-ink: #ffffff;
+      --window-line: #e3e4e7; --window-shadow: rgb(0 0 0 / .18);
     }
   }
   .hero.canvas-only{padding:0;background:transparent;overflow:visible}.hero.canvas-only{height:100%}.hero.canvas-only .app-window{width:100%;height:100%;min-height:0;aspect-ratio:auto}
 
-  .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid rgb(var(--fg) / .2);border-radius:12px;background:var(--background-base);box-shadow:0 48px 100px -36px rgb(0 0 0 / calc(.92 * var(--shadow-k))),0 0 0 1px rgb(var(--fg) / .02);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
+  .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid var(--window-line);border-radius:14px;background:var(--background-base);box-shadow:0 40px 120px -40px var(--window-shadow);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
   button,input,textarea{font:inherit}.app-window :global(svg){width:16px;height:16px}.shell-header{height:36px;display:flex;border-bottom:1px solid var(--border-weak);background:var(--background-base)}
   .rail-titlebar{width:260px;flex:0 0 260px;display:flex;align-items:center;border-right:1px solid var(--border);background:var(--rail-bg);overflow:hidden;transition:width .12s cubic-bezier(.2,0,0,1),flex-basis .12s cubic-bezier(.2,0,0,1)}.app-window[data-sidebar=closed] .rail-titlebar{width:0;flex-basis:0;border-right:0}.traffic-lights{width:78px;flex:0 0 78px;display:flex;align-items:center;gap:8px;padding-left:14px}.traffic-lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.traffic-lights i:nth-child(2){background:#febc2e}.traffic-lights i:nth-child(3){background:#28c840}
   .icon-button{width:24px;height:24px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak);cursor:pointer}.icon-button:hover,.icon-button[aria-pressed=true]{background:var(--surface-base-hover);color:var(--text-base)}.icon-button :global(svg){width:15px;height:15px}.rail-hide{margin-left:4px}.header-columns{min-width:0;flex:1;display:flex}.workbench-l1{min-width:0;flex:1;display:flex;align-items:center;gap:4px;padding:0 4px;overflow:hidden}.closed-chrome{display:none;align-items:center;margin-left:-4px}.app-window[data-sidebar=closed] .closed-chrome{display:flex}.closed-chrome .traffic-lights{width:78px}.drag-gap{width:16px}.header-drag{min-width:32px;flex:1}.scope-actions{display:flex;align-items:center;gap:4px}.workspace-toggle{flex:0 0 24px}.app-window[data-panel=open] .workspace-toggle{display:none}.workspace-l1{width:0;display:flex;align-items:center;gap:4px;overflow:hidden;border-left:0;background:var(--background-base);transition:width .15s cubic-bezier(.2,0,0,1)}.workspace-l1>span{flex:1}.app-window[data-panel=open] .workspace-l1{width:62%;border-left:1px solid var(--border)}.workspace-tabs{height:100%;min-width:0;display:flex;align-items:center;gap:2px;padding:0 4px}.workspace-tab{height:28px;min-width:0;max-width:180px;display:flex;align-items:center;gap:7px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--text-weak)}.workspace-tab.active{background:var(--surface-base-hover);color:var(--text-base)}.workspace-tab :global(svg){width:14px;flex:0 0 14px}.workspace-tab span{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.workspace-tab i{font-style:normal;color:var(--text-weak)}

@@ -3,31 +3,21 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
-import Icon from "../components/Icon.astro"
+import DownloadMenu from "../components/DownloadMenu.astro"
 import { requireClaim } from "../content/claims"
 import { home, site, type HomeLine } from "../content/site"
 
-for (const id of [...home.benchmark.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
+for (const id of [...home.benchmark.claims, ...home.closing.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
 
-/** Loud words reveal first, then the muted ones, so `--i` counts loud words before muted words. */
 const parts = (line: HomeLine) => {
   const at = line.text.indexOf(line.loud)
-  const pieces = [
+  return [
     { text: line.text.slice(0, at), loud: false },
     { text: line.loud, loud: true },
     { text: line.text.slice(at + line.loud.length), loud: false },
   ].filter((part) => part.text.trim().length > 0)
-  const loudCount = line.loud.trim().split(/\s+/).length
-  let loud = 0
-  let muted = loudCount
-  return {
-    count: line.text.trim().split(/\s+/).length,
-    pieces: pieces.map((part) => ({
-      loud: part.loud,
-      words: part.text.trim().split(/\s+/).map((word) => ({ word, order: part.loud ? loud++ : muted++ })),
-    })),
-  }
 }
+const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.proof
 ---
 
 <Layout title={`Claxedo — ${site.headline}`} description={site.description}>
@@ -36,81 +26,68 @@ const parts = (line: HomeLine) => {
     <h1 class="sr-only">Claxedo</h1>
     <section class="story" aria-label="What Claxedo does" data-story style={`--steps:${home.lines.length}`}>
       <div class="pin">
-        <div class="head">
-          <ol class="stage" data-stage>
-            {home.lines.map((line, index) => {
-              const { count, pieces } = parts(line)
-              return (
-                <li class:list={["stage-line", { "is-in": index === 0 }]} data-stage-line={line.id} style={`--n:${count}`}>
-                  <p class="sentence">
-                    <span class="sr-only">{line.text}</span>
-                    <span class="voice" aria-hidden="true">
-                      {pieces.map((part) => (
-                        <span class:list={["part", part.loud ? "loud" : "muted"]}>
-                          {part.words.map(({ word, order }) => <><span class="word" style={`--i:${order}`}>{word}</span>{" "}</>)}
-                        </span>
-                      ))}
-                    </span>
-                  </p>
-                  {line.proof && <a class="proof sr-proof" href={line.proof.href} data-proof>{line.proof.label}</a>}
-                </li>
-              )
-            })}
-          </ol>
-          <div class="rail-row">
-            <a class:list={["proof", "slot", { "is-empty": !home.lines[0].proof }]} href={home.lines[0].proof?.href} data-link-slot>
-              <span data-link-label>{home.lines[0].proof?.label}</span>
-              <Icon name="open-external" />
-            </a>
-            <div class="steps" role="group" aria-label="Jump to a line" data-steps hidden>
-              {home.lines.map((line, index) => (
-                <button type="button" class="step" data-step={index} aria-label={line.text} aria-current={index === 0 ? "step" : undefined}><i></i></button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div class="demo-area">
+        <ol class="stage" data-stage>
+          {home.lines.map((line, index) => (
+            <li class:list={["stage-line", { "is-in": index === 0 }]} data-stage-line={line.id}>
+              <p class="sentence">
+                {parts(line).map((part) => <span class:list={[part.loud ? "loud" : "muted"]}>{part.text}</span>)}
+              </p>
+              <span class="proof-slot">
+                {line.proof && line.id !== home.benchmark.line && <a class="quiet-link" href={line.proof.href} data-proof>{line.proof.label}</a>}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div class="demo-area" data-settle>
           <div class="demo-frame" data-zoom>
             <ClaxedoAppReplica />
-            <dl class="metrics" data-metrics>
-              {home.benchmark.metrics.map((metric) => (
-                <div class="metric">
-                  <dt><b>{metric.lead}</b> <span>{metric.label}</span></dt>
-                  <dd>{metric.detail.join(" · ")}</dd>
-                </div>
-              ))}
-            </dl>
+            <div class="scrim" data-metrics>
+              <dl class="metrics">
+                {home.benchmark.metrics.map((metric) => (
+                  <div class="metric">
+                    <dt><b>{metric.lead}</b><span>{metric.label}</span></dt>
+                    <dd><span>{metric.vs}</span>{"value" in metric && <span>{metric.value}</span>}</dd>
+                  </div>
+                ))}
+              </dl>
+              {speedProof && <a class="quiet-link" href={speedProof.href}>See the benchmark</a>}
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="stills" aria-label="What Claxedo does, one line at a time">
-      {home.lines.map((line) => {
-        const { pieces } = parts(line)
-        return (
-          <article class="still">
-            <p class="sentence">
-              {pieces.map((part) => <span class:list={["part", part.loud ? "loud" : "muted"]}>{part.words.map(({ word }) => word).join(" ")} </span>)}
-            </p>
-            <span class="still-proof">{line.proof && <a class="proof" href={line.proof.href}>{line.proof.label} <Icon name="open-external" /></a>}</span>
-            {home.benchmark.line === line.id && (
-              <dl class="metrics still-metrics">
-                {home.benchmark.metrics.map((metric) => (
-                  <div class="metric">
-                    <dt><b>{metric.lead}</b> <span>{metric.label}</span></dt>
-                    <dd>{metric.detail.join(" · ")}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-            <picture class="still-image">
-              <source media="(prefers-color-scheme: dark)" srcset={`/home/demo-${line.id}-dark.jpg`} />
-              <img src={`/home/demo-${line.id}-light.jpg`} alt={`The Claxedo app for “${line.text}”`} width="1330" height="675" loading="lazy" decoding="async" />
-            </picture>
-          </article>
-        )
-      })}
+    <section class="stills" aria-label="What Claxedo does">
+      {home.lines.map((line) => (
+        <article class="still">
+          <p class="sentence">
+            {parts(line).map((part) => <span class:list={[part.loud ? "loud" : "muted"]}>{part.text}</span>)}
+          </p>
+          <span class="proof-slot">{line.proof && <a class="quiet-link" href={line.proof.href}>{line.id === home.benchmark.line ? "See the benchmark" : line.proof.label}</a>}</span>
+          {home.benchmark.line === line.id && (
+            <dl class="metrics still-metrics">
+              {home.benchmark.metrics.map((metric) => (
+                <div class="metric">
+                  <dt><b>{metric.lead}</b><span>{metric.label}</span></dt>
+                  <dd><span>{metric.vs}</span>{"value" in metric && <span>{metric.value}</span>}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <picture class="still-image">
+            <source media="(prefers-color-scheme: dark)" srcset={`/home/demo-${line.id}-dark.jpg`} />
+            <img src={`/home/demo-${line.id}-light.jpg`} alt={`The Claxedo app for “${line.text}”`} width="1330" height="675" loading="lazy" decoding="async" />
+          </picture>
+        </article>
+      ))}
+    </section>
+
+    <section class="closing" aria-labelledby="closing-title">
+      <div class="closing-row">
+        <h2 id="closing-title">{home.closing.title}</h2>
+        <DownloadMenu placement="closing" />
+      </div>
+      <p>{home.closing.note}</p>
     </section>
   </main>
   <Footer />
@@ -122,186 +99,179 @@ const parts = (line: HomeLine) => {
   const still = window.matchMedia("(prefers-reduced-motion: reduce)")
   if (story && demo && !still.matches) {
     const lines = Array.from(story.querySelectorAll<HTMLElement>("[data-stage-line]"))
-    const steps = Array.from(story.querySelectorAll<HTMLButtonElement>("[data-step]"))
-    const slot = story.querySelector<HTMLAnchorElement>("[data-link-slot]")!
-    const slotLabel = slot.querySelector<HTMLElement>("[data-link-label]")!
     const frame = story.querySelector<HTMLElement>("[data-zoom]")!
+    const settle = story.querySelector<HTMLElement>("[data-settle]")!
     const metrics = story.querySelector<HTMLElement>("[data-metrics]")!
-    const wide = window.matchMedia("(min-width: 48rem)")
     const scrollLinked = CSS.supports("animation-timeline: scroll()")
     const clamp = (value: number) => Math.min(1, Math.max(0, value))
-    const segment = () => innerHeight * 0.9
-    let current = -1
-    let frameRequest = 0
-
-    story.querySelector<HTMLElement>("[data-steps]")!.hidden = false
-    story.querySelectorAll<HTMLAnchorElement>("[data-proof]").forEach((link) => { link.tabIndex = -1 })
-    story.dataset.playing = "true"
-
-    const measure = () => {
-      const from = wide.matches ? Math.min(1, 1200 / frame.offsetWidth, 608 / frame.offsetHeight) : 1
-      frame.style.setProperty("--zoom-from", from.toFixed(3))
-      update()
+    const ease = (t: number) => {
+      let low = 0
+      let high = 1
+      for (let i = 0; i < 12; i++) {
+        const mid = (low + high) / 2
+        const x = 3 * 0.2 * mid * (1 - mid) ** 2 + mid ** 3
+        if (x < t) low = mid
+        else high = mid
+      }
+      const u = (low + high) / 2
+      return 3 * u ** 2 * (1 - u) + u ** 3
     }
+    const segment = () => innerHeight * (innerWidth < 768 ? 0.85 : 0.9)
+    let current = -1
+    let request = 0
 
     const enter = (step: number) => {
-      const line = lines[step]
-      lines.forEach((item) => item.classList.toggle("is-in", item === line))
-      steps.forEach((button, i) => {
-        if (i === step) button.setAttribute("aria-current", "step")
-        else button.removeAttribute("aria-current")
+      lines.forEach((line, i) => {
+        line.classList.toggle("is-in", i === step)
+        line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === step ? 0 : -1 })
       })
-      const proof = line.querySelector<HTMLAnchorElement>("[data-proof]")
-      slot.classList.toggle("is-empty", !proof)
-      if (proof) {
-        slot.href = proof.href
-        slotLabel.textContent = proof.textContent
-      } else {
-        slot.removeAttribute("href")
-        slotLabel.textContent = ""
-      }
-      demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: line.dataset.stageLine, open: true } }))
+      demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: lines[step].dataset.stageLine, open: true } }))
       current = step
     }
 
     const update = () => {
       const position = scrollY / segment()
       const step = Math.min(lines.length - 1, Math.max(0, Math.floor(position)))
-      const local = clamp(position - step)
       if (step !== current) enter(step)
-      const line = lines[step]
-      line.style.setProperty("--p", step === 0 ? "1" : clamp(local / 0.35).toFixed(3))
-      line.style.setProperty("--out", step === lines.length - 1 ? "1" : clamp((1 - local) / 0.12).toFixed(3))
-      steps.forEach((button, i) => button.style.setProperty("--fill", i < step ? "1" : i === step ? local.toFixed(3) : "0"))
-      metrics.classList.toggle("is-gone", position > 0.5)
-      if (line.dataset.stageLine === "prompt") {
-        demo.dispatchEvent(new CustomEvent("demo:progress", { detail: { spot: "prompt", progress: local } }))
+      metrics.classList.toggle("is-gone", position > 0.4)
+      if (lines[step].dataset.stageLine === "prompt") {
+        demo.dispatchEvent(new CustomEvent("demo:progress", { detail: { spot: "prompt", progress: clamp(position - step) } }))
       }
-      if (!scrollLinked) {
-        const grow = clamp(position)
-        const from = Number(frame.style.getPropertyValue("--zoom-from") || 1)
-        frame.style.scale = String(from + (1 - from) * grow)
-        metrics.style.opacity = String(clamp(1 - position / 0.5))
-      }
+      if (scrollLinked) return
+      const from = Number(getComputedStyle(frame).getPropertyValue("--zoom-from")) || 1
+      frame.style.scale = String(from + (1 - from) * ease(clamp(position)))
+      metrics.style.opacity = String(1 - ease(clamp(position / 0.6)))
+      settle.style.scale = String(1 - 0.06 * ease(clamp((position - lines.length) / 0.5)))
     }
 
-    steps.forEach((button, i) => button.addEventListener("click", () => scrollTo({ top: (i + 0.5) * segment(), behavior: "smooth" })))
-    story.querySelector("[data-steps]")!.addEventListener("keydown", (event) => {
-      const key = (event as KeyboardEvent).key
-      if (key !== "ArrowRight" && key !== "ArrowLeft") return
-      event.preventDefault()
-      const focused = steps.indexOf(document.activeElement as HTMLButtonElement)
-      const next = Math.min(steps.length - 1, Math.max(0, (focused < 0 ? current : focused) + (key === "ArrowRight" ? 1 : -1)))
-      steps[next].focus()
-      steps[next].click()
-    })
+    lines.forEach((line, i) => line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === 0 ? 0 : -1 }))
+    story.dataset.playing = "true"
     addEventListener("scroll", () => {
-      cancelAnimationFrame(frameRequest)
-      frameRequest = requestAnimationFrame(update)
+      cancelAnimationFrame(request)
+      request = requestAnimationFrame(update)
     }, { passive: true })
-    addEventListener("resize", measure, { passive: true })
-    measure()
+    addEventListener("resize", update, { passive: true })
+    update()
   }
 </script>
 
 <style>
-  .home {
-    --home-width: min(100% - 2 * var(--gutter), 75rem);
-    --stage-muted: #9a9a9a;
-    --segment: 90vh;
+  :global(html:root) {
+    --bg: #141517;
+    --ink: #f2f2f3;
+    --ink-soft: #8e9198;
+    --ink-faint: #8e9198;
+    --line: #26282b;
+    --line-strong: #26282b;
+    --quiet: #7d8087;
+    --quiet-text: #8e9198;
   }
   @media (prefers-color-scheme: light) {
-    .home { --stage-muted: #6b6b6b; }
+    :global(html:root) {
+      --bg: #f6f6f7;
+      --ink: #121316;
+      --ink-soft: #6e7178;
+      --ink-faint: #6e7178;
+      --line: #e3e4e7;
+      --line-strong: #e3e4e7;
+      --quiet: #8b8e95;
+      --quiet-text: #6e7178;
+    }
   }
   :global(.nav) { position: relative; }
 
-  .story { position: relative; height: calc(100vh + var(--steps) * var(--segment)); }
-  .pin { position: sticky; top: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; overflow: clip; }
-  .head { width: var(--home-width); margin: 0 auto; padding-top: clamp(1rem, 3vh, 2rem); }
-
-  .stage {
-    --stage-size: min(5.6vw, 7.6vh, 5.25rem);
-    position: relative;
-    height: calc(var(--stage-size) * 2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
+  .home {
+    --column: min(100% - 4rem, 75rem);
+    --segment: 90vh;
+    --stage-size: clamp(2.5rem, 5vw, 4.5rem);
+    --line-box: calc(var(--stage-size) * 1.05 * 2);
+    --head: calc(clamp(1rem, 3vh, 2rem) + var(--line-box) + 2.75rem);
   }
-  .stage-line { position: absolute; inset: 0; display: flex; align-items: flex-end; opacity: 0; pointer-events: none; }
-  .stage-line.is-in { opacity: var(--out, 1); pointer-events: auto; }
-  .sentence { margin: 0; font: 800 var(--stage-size)/1 var(--font-display); letter-spacing: -.048em; text-wrap: balance; }
-  .voice { display: block; }
+
+  .story { position: relative; height: calc(100vh + (var(--steps) + .5) * var(--segment)); }
+  .pin { position: sticky; top: 0; display: grid; grid-template-rows: var(--head) minmax(0, 1fr); height: 100vh; overflow: clip; }
+
+  .stage { position: relative; width: var(--column); margin: 0 auto; padding: 0; list-style: none; }
+  .stage-line {
+    position: absolute;
+    inset: clamp(1rem, 3vh, 2rem) 0 0;
+    display: grid;
+    grid-template-rows: var(--line-box) 2.75rem;
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+    transition: opacity 380ms cubic-bezier(0.2, 0, 0, 1), transform 380ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .stage-line.is-in { opacity: 1; transform: none; pointer-events: auto; }
+  .sentence { align-self: end; max-width: 30ch; margin: 0; font: 600 var(--stage-size)/1.05 var(--font-display); letter-spacing: -.02em; text-wrap: balance; }
   .loud { color: var(--ink); }
-  .muted { color: var(--stage-muted); }
-  .word {
-    --shown: clamp(0, var(--p, 1) * (var(--n) + 1) - var(--i), 1);
-    display: inline-block;
-    opacity: var(--shown);
-    transform: translateY(calc((1 - var(--shown)) * .3em));
-  }
-  .sr-proof { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .muted { color: var(--quiet); font-weight: 400; }
+  .proof-slot { display: flex; align-items: center; }
 
-  .proof { display: inline-flex; align-items: center; gap: .3rem; min-height: 2rem; color: var(--ink-soft); font-size: .875rem; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: .2em; }
-  .proof:hover { color: var(--ink); text-decoration-color: currentColor; }
-  .proof :global(svg) { width: 1rem; height: 1rem; }
-  .rail-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.25rem; margin-top: .5rem; }
-  .slot { min-width: 12rem; }
-  .slot.is-empty { visibility: hidden; }
+  .quiet-link { color: var(--quiet-text); font: 400 .875rem/1.4 var(--font-sans); text-decoration: none; }
+  .quiet-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: .2em; }
 
-  .steps { display: flex; gap: .375rem; }
-  .steps[hidden] { display: none; }
-  .step { position: relative; display: block; width: 2.5rem; height: 1.5rem; padding: 0; border: 0; background: none; cursor: pointer; }
-  .step::before, .step i { content: ""; position: absolute; inset: calc(50% - 1.5px) 0 auto; height: 3px; border-radius: 3px; }
-  .step::before { background: var(--line-strong); }
-  .step i { background: var(--ink); transform: scaleX(var(--fill, 0)); transform-origin: left; }
-  .step:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
-
-  .demo-area { display: grid; justify-items: center; align-content: start; min-height: 0; padding-top: clamp(.5rem, 1.5vh, 1rem); }
+  .demo-area { display: grid; justify-items: center; align-content: start; min-height: 0; transform-origin: 50% 40%; }
   .demo-frame {
-    --zoom-from: 1;
+    --zoom-from: .88;
     position: relative;
-    width: min(100vw - 6rem, 88rem, 75vh * 1.97);
-    height: 75vh;
+    width: min(var(--column), (100vh - var(--head) - 2rem) * 1.9);
+    height: min(75vh, 100vh - var(--head) - 2rem);
     transform-origin: 50% 0;
     scale: var(--zoom-from);
   }
   @keyframes demo-grow { from { scale: var(--zoom-from); } to { scale: 1; } }
-  @keyframes metrics-out { to { opacity: 0; transform: translate(-50%, -12px); } }
+  @keyframes metrics-out { to { opacity: 0; } }
+  @keyframes demo-settle { to { scale: .94; } }
   @supports (animation-timeline: scroll()) {
-    .demo-frame { animation: demo-grow linear both; animation-timeline: scroll(root); animation-range: 0 var(--segment); }
-    .metrics { animation: metrics-out linear both; animation-timeline: scroll(root); animation-range: 0 calc(var(--segment) * .5); }
+    .demo-frame { animation: demo-grow cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 var(--segment); }
+    .scrim { animation: metrics-out cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 calc(var(--segment) * .6); }
+    .demo-area { animation: demo-settle cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: calc(var(--steps) * var(--segment)) calc((var(--steps) + .5) * var(--segment)); }
   }
 
-  .metrics { position: absolute; top: 4.25rem; left: 50%; z-index: 30; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .625rem; width: min(100% - 3rem, 60rem); margin: 0; transform: translateX(-50%); }
-  .metrics.is-gone { pointer-events: none; }
-  .metric { display: grid; align-content: start; gap: .3rem; padding: .875rem 1rem .9rem; border-radius: 12px; background: color-mix(in srgb, var(--surface-raised) 92%, transparent); box-shadow: var(--shadow-panel); backdrop-filter: blur(12px); }
-  .metric dt { display: grid; gap: .15rem; }
-  .metric b { color: var(--ink); font: 800 clamp(1.75rem, 2.4vw, 2.375rem)/1 var(--font-display); letter-spacing: -.045em; }
-  .metric dt span { color: var(--ink); font-size: .875rem; font-weight: 600; letter-spacing: -.01em; }
-  .metric dd { margin: 0; color: var(--ink-faint); font-size: .6875rem; line-height: 1.35; }
+  .scrim {
+    position: absolute;
+    inset: 37px 1px 1px;
+    z-index: 30;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 2rem;
+    border-radius: 0 0 13px 13px;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    backdrop-filter: blur(8px);
+  }
+  .scrim.is-gone { pointer-events: none; }
+  .metrics { display: grid; grid-template-columns: repeat(5, max-content); gap: 2.25rem; margin: 0; }
+  .metric { display: grid; align-content: start; gap: .5rem; }
+  .metric dt { display: grid; gap: .35rem; }
+  .metric b { color: var(--ink); font: 600 2.75rem/1 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .metric dt span { color: var(--ink); font: 500 .9375rem/1.3 var(--font-sans); }
+  .metric dd { display: grid; margin: 0; color: var(--quiet-text); font: 400 .8125rem/1.45 var(--font-sans); }
 
   .stills { display: none; }
 
+  .closing { width: var(--column); margin: 0 auto; padding: clamp(4rem, 10vh, 7rem) 0 clamp(4rem, 9vw, 6.5rem); }
+  .closing-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; }
+  .closing h2 { margin: 0; font: 600 clamp(2rem, 3.6vw, 3.25rem)/1.05 var(--font-display); letter-spacing: -.02em; }
+  .closing p { margin: .75rem 0 0; color: var(--quiet-text); font: 400 .9375rem/1.5 var(--font-sans); }
+
   @media (max-width: 47.99rem) {
-    .home { --home-width: calc(100% - 2rem); --segment: 85vh; }
-    .stage { --stage-size: min(9.5vw, 5.2vh); height: calc(var(--stage-size) * 3); }
-    .rail-row { flex-direction: row-reverse; justify-content: space-between; }
-    .step { width: 1.6rem; }
-    .demo-frame { width: calc(100vw - 2rem); height: 70vh; }
-    .metrics { top: 3rem; grid-template-columns: repeat(2, minmax(0, 1fr)); width: calc(100% - 1.5rem); gap: .5rem; }
-    .metric { padding: .6rem .7rem; }
-    .metric b { font-size: 1.5rem; }
+    .home { --column: calc(100% - 2rem); --segment: 85vh; --stage-size: min(2.5rem, 10vw); --line-box: calc(var(--stage-size) * 1.05 * 3); }
+    .demo-frame { --zoom-from: 1; width: var(--column); }
+    .scrim { place-content: center stretch; padding: 1rem; gap: 1.25rem; }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; }
+    .metric b { font-size: 2rem; }
     .metric dd { display: none; }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .story { display: none; }
-    .stills { display: grid; gap: clamp(3rem, 6vw, 5rem); width: var(--home-width); margin: 0 auto; padding: clamp(1.5rem, 4vh, 3rem) 0 clamp(4rem, 8vw, 6rem); }
-    .still { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem 2rem; align-items: end; }
-    .still .sentence { --stage-size: clamp(1.75rem, 3.4vw, 3rem); font-size: var(--stage-size); }
-    .still-proof { justify-self: end; }
-    .still-metrics { position: static; grid-column: 1 / -1; width: 100%; transform: none; }
+    .stills { display: grid; gap: clamp(3.5rem, 8vw, 6rem); width: var(--column); margin: 0 auto; padding: clamp(2rem, 5vh, 3.5rem) 0 0; }
+    .still { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.25rem 2rem; align-items: end; }
+    .still .sentence { max-width: none; }
+    .still-metrics { grid-column: 1 / -1; grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .still-image { grid-column: 1 / -1; }
-    .still-image img { display: block; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 0 0 1px var(--line-strong); }
+    .still-image img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); }
   }
 </style>
