@@ -56,3 +56,25 @@ test("a session the engine stamps keeps the engine's times", async () => {
 
   expect(await port.get(scope, "ses_1")).toMatchObject({ id: "ses_1", createdAt: 1, updatedAt: 2 })
 })
+
+test("a session the engine answers without its id is refused, never given an empty one", async () => {
+  const port = portOver(sessionsAnswering({ location, time: { created: 1, updated: 2 } }))
+
+  await expect(port.get(scope, "ses_1")).rejects.toThrow("OpenCode returned a session with no id")
+  await expect(port.create(scope)).rejects.toThrow("OpenCode returned a session with no id")
+  await expect(port.list(scope)).rejects.toThrow("OpenCode returned a session with no id")
+})
+
+test("a message or prompt admission the engine answers without its id is refused, never given an empty one", async () => {
+  const session = { id: "ses_1", location, time: { created: 1, updated: 2 } }
+  const port = portOver({
+    sessions: {
+      get: async () => session,
+      prompt: async () => ({ sessionID: "ses_1", timeCreated: 3, payload: { text: "hi" } }),
+    },
+    message: { list: async () => ({ data: [{ type: "user", text: "hi", time: { created: 3 } }], cursor: {} }) },
+  })
+
+  await expect(port.messages(scope, "ses_1")).rejects.toThrow("OpenCode returned a message with no id")
+  await expect(port.prompt(scope, "ses_1", { text: "hi" })).rejects.toThrow("OpenCode returned a prompt admission with no id")
+})

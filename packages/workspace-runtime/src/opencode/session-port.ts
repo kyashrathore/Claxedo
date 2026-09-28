@@ -188,6 +188,12 @@ function engineTime(value: unknown, record: string, field: string) {
   return at
 }
 
+function engineId(value: unknown, record: string) {
+  const id = str(value)
+  if (!id) throw new Error(`OpenCode returned ${record} with no id`)
+  return id
+}
+
 /**
  * Project an SDK session record, refusing anything outside the caller's scope.
  *
@@ -203,7 +209,7 @@ function project(scope: WorkspaceScope, input: unknown): SessionSummary {
   const parentID = str(row.parentID)
   const tokens = tokenUsage(row.tokens)
   return {
-    id: str(row.id) ?? "",
+    id: engineId(row.id, "a session"),
     ...(title === undefined ? {} : { title }),
     ...(parentID === undefined ? {} : { parentID }),
     directory: scope.directory,
@@ -227,7 +233,7 @@ function projectMessage(input: unknown): SessionMessage {
   const metadata = rec(row.metadata)
   const completedAt = num(time?.completed)
   return {
-    id: str(row.id) ?? "",
+    id: engineId(row.id, "a message"),
     type: str(row.type) ?? "",
     createdAt: engineTime(time?.created, "a message", "time.created"),
     ...(text === undefined ? {} : { text }),
@@ -367,7 +373,7 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
       const row = rec(admitted) ?? {}
       const delivery = str(row.delivery)
       return {
-        id: str(row.id) ?? "",
+        id: engineId(row.id, "a prompt admission"),
         sessionID: str(row.sessionID) ?? sessionID,
         createdAt: engineTime(row.timeCreated, "a prompt admission", "timeCreated"),
         text: str(rec(row.payload)?.text) ?? request.text,
