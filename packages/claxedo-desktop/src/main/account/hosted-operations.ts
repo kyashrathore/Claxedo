@@ -213,25 +213,6 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/sessions",
     query: ["workspaceId"],
   },
-  // Paginated rail rows (`session-list`), distinct from flat `session.list`.
-  "session.navigationList": {
-    method: "GET",
-    path: "/api/control/session-list",
-    query: ["scope", "limit"],
-    optionalQuery: [
-      "projectId",
-      "workspaceId",
-      "directory",
-      "groupBy",
-      "archived",
-      "status",
-      "environment",
-      "git",
-      "search",
-      "sort",
-      "cursor",
-    ],
-  },
   // The signed desktop's project-scoped keyset page. `scope` is fixed in the
   // path; the caller names the project, the page size, the order and the key
   // it continues after.

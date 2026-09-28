@@ -48,7 +48,6 @@ export type HostedOperationName =
   | "workspace.assignHost"
   | "workspace.unassignHost"
   | "session.list"
-  | "session.navigationList"
   | "session.page"
   | "session.projection.register"
   | "session.projection.checkpoint"

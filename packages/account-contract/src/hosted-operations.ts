@@ -262,10 +262,8 @@ export const HOSTED_OPERATIONS = {
   "workspace.unassignHost": { safe: false, decode: object },
   // Control-plane session rows for a workspace (`{ sessions: [...] }`).
   "session.list": { safe: true, decode: withArrays("sessions") },
-  // Paginated rail navigation list (`GET /api/control/session-list`).
-  "session.navigationList": { safe: true, decode: object },
-  // One keyset page of a project's sessions (`{ items, nextCursor? }`), for
-  // the signed desktop's two-source list. `session.navigationList` stays v1's.
+  // One keyset page of a project's sessions (`{ items, nextAfter? }`), for
+  // the signed desktop's two-source list.
   "session.page": { safe: true, decode: withArrays("items") },
   "session.projection.register": { safe: false, decode: object },
   "session.projection.checkpoint": { safe: false, decode: object },

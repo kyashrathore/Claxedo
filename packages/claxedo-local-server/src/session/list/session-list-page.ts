@@ -1,12 +1,10 @@
 import { HTTPException } from "hono/http-exception"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { listSessionMetas, listSessionNavigationMetas } from "@claxedo/server-core/session/meta/index"
+import { listSessionNavigationMetas } from "@claxedo/server-core/session/meta/index"
 import {
   buildSessionListResponse,
-  sessionListIsKeysetPageable,
   sessionListKeysetPage,
-  sessionListStoreFilter,
   sessionListStorePageFilter,
   type SessionListQuery,
   type SessionListResponse,
@@ -37,9 +35,6 @@ export async function signedSessionListPage(
   input: Pick<SessionListPageInput, "query" | "workspace">,
 ): Promise<SessionListResponse> {
   const { query } = input
-  if (!sessionListIsKeysetPageable(query)) {
-    throw new HTTPException(400, { message: "The signed session list is flat and unfiltered by environment or git" })
-  }
   const scope = query.scope === "project" && query.projectId
     ? { projectId: query.projectId }
     : input.workspace
@@ -67,9 +62,6 @@ export async function localSessionListPage(input: SessionListPageInput): Promise
     ? await input.projectWorkspaces()
     : input.workspace ? [input.workspace] : []
   await Promise.all(covered.map((workspace) => input.refreshSessionProjection?.(workspace)))
-  if (!sessionListIsKeysetPageable(query)) {
-    return buildSessionListResponse({ query, sessions: await listSessionMetas(sessionListStoreFilter(query)) })
-  }
   const metas = await listSessionNavigationMetas(sessionListStorePageFilter(query))
   return buildSessionListResponse({
     query,
