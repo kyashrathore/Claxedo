@@ -7,6 +7,7 @@ export type SessionConfigurationInput = {
   attached: () => readonly AttachedSession[]
   projection: (attached: AttachedSession) => PluginProjection
   credentials: () => ResolvedCredentials
+  providerDefinitions: () => TransportConfigUpdate["providerDefinitions"]
   /** A push a turn held back that the harness refused or failed once the turn ended. */
   onHeldFailure: (error: unknown) => void
 }
@@ -46,12 +47,13 @@ export function createSessionConfiguration(input: SessionConfigurationInput) {
   })
 
   return {
-    async apply(change: { credentials: boolean; projection: boolean }): Promise<void> {
+    async apply(change: { credentials: boolean; projection: boolean; providerDefinitions: boolean }): Promise<void> {
       const credentials = change.credentials ? input.credentials() : undefined
       const refusals = (await Promise.all(input.attached().map(async (attached) => {
-        if (change.credentials || change.projection) pending.set(attached, {
+        if (change.credentials || change.projection || change.providerDefinitions) pending.set(attached, {
           ...pending.get(attached),
           ...(credentials ? { credentials } : {}),
+          ...(change.providerDefinitions ? { providerDefinitions: input.providerDefinitions() } : {}),
           ...(change.projection ? { projection: input.projection(attached) } : {}),
         })
         const reason = await push(attached)

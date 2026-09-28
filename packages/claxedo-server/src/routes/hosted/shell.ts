@@ -51,6 +51,7 @@ import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/g
 import type { ControlPlaneServices } from "../../authority/services"
 import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
@@ -307,7 +308,7 @@ const HARNESS_WORKSPACE_ID = /^(ws_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][
 function harnessWorkspaceId(directory: string) {
   const trimmed = directory.trim()
   if (!trimmed) return undefined
-  const candidate = trimmed.match(/^workspace:(.+)$/)?.[1] ?? trimmed
+  const candidate = workspaceIdFromWorkspaceRef(trimmed) ?? trimmed
   return HARNESS_WORKSPACE_ID.test(candidate) ? candidate : undefined
 }
 

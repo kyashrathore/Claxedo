@@ -9,6 +9,7 @@ import { runtimeWorkspaceDir } from "./state"
 import { supervisorDriverIdentity } from "./driver-id"
 import type { WorkspaceRuntimeState } from "./store"
 import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { createKeyedSerializer } from "@claxedo/helpers"
 
 export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   const scope = state.remote || state.ws.kind === "cloud" ? "shared" : "local"
@@ -26,16 +27,49 @@ export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   })
 }
 
-export async function pushRuntimeConfig(state: WorkspaceRuntimeState, cfg?: RuntimeConfigSnapshot) {
+const pushes = createKeyedSerializer()
+let configRevision = 0
+const appliedRevisions = new Map<string, number>()
+
+/** A settings or plugin change: every runtime that has not applied a snapshot read after this is stale. */
+export function recordRuntimeConfigChange() {
+  configRevision += 1
+}
+
+async function pushTurn(state: WorkspaceRuntimeState, onlyIfStale: boolean) {
+  if (onlyIfStale && (appliedRevisions.get(state.ws.id) ?? -1) >= configRevision) return
   if (!state.url) throw new Error("workspace runtime missing url")
-  const url = `${state.url}/api/wr/config`
+  // Read before the snapshot, so a change landing mid-read leaves this push
+  // marked stale rather than a newer snapshot marked applied.
+  const revision = configRevision
+  await postRuntimeConfig(`${state.url}/api/wr/config`, state, await runtimeConfigSnapshot(state))
+  appliedRevisions.set(state.ws.id, revision)
+}
+
+/**
+ * Pushes run one at a time per workspace and each reads its snapshot inside
+ * its turn: two concurrent pushes that read first and posted after could land
+ * in either order, leaving the runtime on the older configuration. Keyed by
+ * workspace id, not runtime state, because a restart replaces the state while
+ * the previous push is still in flight.
+ */
+export function pushRuntimeConfig(state: WorkspaceRuntimeState) {
+  return pushes.run(state.ws.id, () => pushTurn(state, false))
+}
+
+/** For a runtime whose start just finished: push only if a change landed after its start's own push read the snapshot. */
+export function pushRuntimeConfigIfStale(state: WorkspaceRuntimeState) {
+  return pushes.run(state.ws.id, () => pushTurn(state, true))
+}
+
+async function postRuntimeConfig(url: string, state: WorkspaceRuntimeState, cfg: RuntimeConfigSnapshot) {
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...await supervisorBackplaneHeaders(state),
     },
-    body: JSON.stringify(cfg ?? await runtimeConfigSnapshot(state)),
+    body: JSON.stringify(cfg),
     signal: AbortSignal.timeout(5_000),
   }).catch((err) => {
     const message = err instanceof Error ? err.message : String(err)

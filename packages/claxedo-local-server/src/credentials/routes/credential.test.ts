@@ -10,7 +10,7 @@ import { localControlPlaneCredentials } from "../machine-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { SdkCredentialSyncError } from "@claxedo/server-core/opencode/sdk-credential-bridge"
+import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 
@@ -249,7 +249,7 @@ describe("credential routes", () => {
   test("a discovered login the store took and the engine did not is answered by name", async () => {
     const registry = Object.assign(credentials(), {
       saveDiscoveredCredentials: vi.fn(async () => {
-        throw new SdkCredentialSyncError(new Error("OpenCode answered 500 to the integration list"))
+        throw new CredentialDeliveryError(new Error("OpenCode answered 500 to the integration list"))
       }),
     })
     const response = await CredentialRoutes(registry).request("http://localhost/save-discovered", {
@@ -258,7 +258,7 @@ describe("credential routes", () => {
     })
 
     expect(response.status).toBe(500)
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "engine_credential_sync_failed" } })
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_delivery_failed" } })
   })
 
   test("changes credential scope with explicit consent timing", async () => {
@@ -891,14 +891,14 @@ describe("credential routes", () => {
 
   test("a key the store took and the engine did not is answered by name, never as a failed store", async () => {
     const registry = credentials()
-    const engine = new SdkCredentialSyncError(new Error("OpenCode answered 500 to the integration list"))
+    const engine = new CredentialDeliveryError(new Error("OpenCode answered 500 to the integration list"))
     ;(registry.putCredential as ReturnType<typeof vi.fn>).mockRejectedValueOnce(engine)
     ;(registry.syncLocalCredentials as ReturnType<typeof vi.fn>).mockRejectedValueOnce(engine)
     const app = CredentialRoutes(registry)
     const expected = {
       error: {
-        code: "engine_credential_sync_failed",
-        message: "Stored, but the running engine could not be updated: OpenCode answered 500 to the integration list",
+        code: "credential_delivery_failed",
+        message: "Stored, but running workspaces could not be updated: OpenCode answered 500 to the integration list",
         details: { detail: { name: "Error", message: "OpenCode answered 500 to the integration list" } },
       },
     }
@@ -1268,7 +1268,7 @@ describe("choosing which account a provider runs on", () => {
       ...localControlPlaneCredentials(),
       setActiveCredentials: async (ids, org) => {
         registry.setActiveCredentials(ids, org)
-        throw new SdkCredentialSyncError(new Error("OpenCode returned an invalid integration list"))
+        throw new CredentialDeliveryError(new Error("OpenCode returned an invalid integration list"))
       },
     }, {})
 
@@ -1281,8 +1281,8 @@ describe("choosing which account a provider runs on", () => {
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({
       error: {
-        code: "engine_credential_sync_failed",
-        message: "Stored, but the running engine could not be updated: OpenCode returned an invalid integration list",
+        code: "credential_delivery_failed",
+        message: "Stored, but running workspaces could not be updated: OpenCode returned an invalid integration list",
         details: { detail: { name: "Error", message: "OpenCode returned an invalid integration list" } },
       },
     })

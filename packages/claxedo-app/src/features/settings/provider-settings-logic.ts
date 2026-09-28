@@ -44,6 +44,8 @@ export type DisconnectProviderDeps = {
   source?: ProviderSource
   deleteCredential: (providerId: string) => Promise<void>
   removeAuth: (providerId: string) => Promise<void>
+  /** Drops an operator-declared provider's declaration, which is what disconnecting one means. */
+  removeCustomProvider: (providerId: string) => Promise<void>
   markDisconnected: (providerId: string) => void
   refresh: () => Promise<void>
   onSuccess: (name: string) => void
@@ -54,7 +56,8 @@ export async function disconnectProvider(deps: DisconnectProviderDeps) {
   try {
     if (!canDisconnectProvider(deps.source)) throw new Error("This provider is managed by the connected harness")
     await deps.deleteCredential(deps.providerId).catch(() => undefined)
-    await deps.removeAuth(deps.providerId)
+    if (deps.source === "custom") await deps.removeCustomProvider(deps.providerId)
+    else await deps.removeAuth(deps.providerId)
     deps.markDisconnected(deps.providerId)
     deps.onSuccess(deps.name)
     await deps.refresh()

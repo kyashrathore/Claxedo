@@ -4,9 +4,8 @@ import os from "node:os"
 import path from "node:path"
 
 const engineSync = vi.hoisted(() => ({ calls: [] as unknown[][], fail: undefined as Error | undefined }))
-vi.mock("@claxedo/server-core/opencode/sdk-credential-bridge", async (original) => ({
-  ...await original<typeof import("@claxedo/server-core/opencode/sdk-credential-bridge")>(),
-  syncCredentialsToSdk: async (...args: unknown[]) => {
+vi.mock("../fanout", () => ({
+  fanOutConfig: async (...args: unknown[]) => {
     engineSync.calls.push(args)
     if (engineSync.fail) throw engineSync.fail
     return { bound: [], removed: [] }
@@ -18,7 +17,7 @@ const previous = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 const [
   { agentConfigProviderRoutes },
-  { putCredential },
+  { putCredential, listCredentials },
   { listCustomProviders },
   { createTestBackend, setBackendOverride },
   { ClaxedoDB },
@@ -33,14 +32,15 @@ const [
 ])
 
 /** The bearers the issuer signed; every other token is refused the way the real verifier refuses one. */
-const SIGNED_TOKENS = new Set(["org_a", "org_b", "org_custom", "org_secret"])
+const SIGNED_TOKENS = new Set(["org_a", "org_b", "org_custom", "org_secret", "org_env"])
 
 const ACME = {
   providerID: "acme",
   name: "Acme",
   baseURL: "https://api.acme.test/v1",
-  env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"],
-  headers: { "X-Acme-Tenant": "prod" },
+  env: [],
+  headers: { "X-Title": "prod" },
+  credentialHeader: { name: "Authorization", scheme: "Bearer" },
   models: { "acme-1": { name: "Acme One" } },
 }
 
@@ -191,18 +191,17 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     engineSync.calls.length = 0
     const response = await putCustom("org_custom", ACME)
     expect(response.status).toBe(200)
-    expect(engineSync.calls).toEqual([["org_custom", ["acme"]]])
+    expect(engineSync.calls).toEqual([[]])
   })
 
   test("a provider the store took and the engine did not is answered by name, not as a failed save", async () => {
-    const { SdkCredentialSyncError } = await import("@claxedo/server-core/opencode/sdk-credential-bridge")
-    engineSync.fail = new SdkCredentialSyncError(new Error("engine down"))
+    engineSync.fail = new Error("workspace down")
     try {
       const response = await putCustom("org_custom", { ...ACME, name: "Acme Renamed" })
       expect(response.status).toBe(500)
       expect((await response.json()).error).toEqual({
-        code: "engine_credential_sync_failed",
-        message: "Stored, but the running engine could not be updated: engine down",
+        code: "runtime_config_delivery_failed",
+        message: "Stored, but running workspaces could not be updated",
       })
       expect(listCustomProviders("org_custom")[0]?.name).toBe("Acme Renamed")
     } finally {
@@ -214,6 +213,30 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     const response = await putCustom("org_secret", { ...ACME, secret: "sk-live" })
     expect(response.status).toBe(400)
     expect((await response.json()).error.code).toBe("custom_provider_invalid")
+    expect(listCustomProviders("org_secret")).toEqual([])
+  })
+
+  test("stores a signed tenant's env-sourced provider without reading this server's environment", async () => {
+    const name = "CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"
+    const previous = process.env[name]
+    process.env[name] = "operator-secret"
+    try {
+      const response = await putCustom("org_env", { ...ACME, env: [name] })
+      expect(response.status).toBe(200)
+      expect(listCustomProviders("org_env")).toEqual([{ ...ACME, env: [name] }])
+      expect(listCredentials("org_env")).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    }
+  })
+
+  test("refuses metadata headers outside the allow-list, so no credential reaches the snapshot", async () => {
+    for (const headers of [{ "X-Auth-Token": "secret" }, { "X-Goog-Api-Key": "secret" }, { Authorization: "Bearer secret" }]) {
+      const response = await putCustom("org_secret", { ...ACME, headers })
+      expect(response.status).toBe(400)
+      expect((await response.json()).error.code).toBe("custom_provider_invalid")
+    }
     expect(listCustomProviders("org_secret")).toEqual([])
   })
 

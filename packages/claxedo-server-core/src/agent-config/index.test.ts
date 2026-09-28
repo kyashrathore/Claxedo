@@ -314,7 +314,7 @@ describe("agent config", () => {
   test("the snapshot retains its canonical version", async () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
     const config = await mod.getRuntimeConfigSnapshot()
-    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
+    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {}, providerDefinitions: [] })
   })
 
   // ── Commands ────────────────────────────────────────────────────────

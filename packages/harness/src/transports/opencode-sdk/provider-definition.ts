@@ -3,6 +3,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 export type ProviderDefinition = Readonly<{
   id: string
   name: string
+  npm: "@ai-sdk/openai-compatible"
   baseURL: string
   headers: Readonly<Record<string, string>>
   models: Readonly<Record<string, Readonly<{ name: string }>>>
@@ -11,8 +12,6 @@ export type ProviderDefinition = Readonly<{
 
   enabled: boolean
 }>
-
-const OPENAI_COMPATIBLE_PACKAGE = "aisdk:@ai-sdk/openai-compatible"
 
 async function setupProviderDefinition(
   context: Plugin.Context,
@@ -31,7 +30,7 @@ async function setupProviderDefinition(
           draft.provider.update(definition.id, (provider) => {
             provider.activation = definition.enabled ? "enabled" : "disabled"
             provider.name = definition.name
-            provider.package = OPENAI_COMPATIBLE_PACKAGE
+            provider.package = `aisdk:${definition.npm}`
             provider.settings = { ...provider.settings, baseURL: definition.baseURL }
             provider.headers = { ...provider.headers, ...definition.headers }
           })

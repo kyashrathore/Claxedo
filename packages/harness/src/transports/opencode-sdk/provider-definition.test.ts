@@ -69,7 +69,7 @@ async function endpoint() {
 
 function acme(baseURL: string, overrides: Partial<ProviderDefinition> = {}): ProviderDefinition {
   return {
-    id: "acme",
+    id: "acme", npm: "@ai-sdk/openai-compatible",
     name: "Acme",
     baseURL,
     headers: { "X-Acme-Tenant": "prod" },

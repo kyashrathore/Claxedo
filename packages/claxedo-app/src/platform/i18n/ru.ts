@@ -167,7 +167,10 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API ключ",
   "provider.custom.field.apiKey.placeholder": "API ключ",
   "provider.custom.field.apiKey.description":
-    "Необязательно. Оставьте пустым, если управляете авторизацией через заголовки.",
+    "Необязательно. Оставьте пустым для эндпоинта без ключа или укажите {env:VAR}, чтобы читать его из окружения этой машины.",
+  "provider.custom.field.keyHeader.label": "Заголовок ключа",
+  "provider.custom.field.keyHeader.placeholder": "Authorization",
+  "provider.custom.field.keyHeader.description": "Заголовок, в котором отправляется ключ. Authorization отправляет его как Bearer-токен.",
   "provider.custom.models.label": "Модели",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",
@@ -190,6 +193,8 @@ export const dict = {
   "provider.custom.error.baseURL.format": "Должен начинаться с http:// или https://",
   "provider.custom.error.required": "Обязательно",
   "provider.custom.error.duplicate": "Дубликат",
+  "provider.custom.error.keyHeader.invalid": "Этот заголовок не может передавать ключ",
+  "provider.custom.error.header.metadata": "Разрешённые заголовки: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} отключён",
   "provider.disconnect.toast.disconnected.description": "Модели {{provider}} больше недоступны.",

@@ -36,7 +36,7 @@ describe("actual OpenCode session materialization", () => {
       expect(control?.expectedPartIds.every((id) => control.eventualFullPartIds.includes(id))).toBe(true)
       expect(control?.expectedPartIds.every((id) => id.startsWith("prt_actual_"))).toBe(true)
 
-      const destination = new Database(path.join(root, "state", "data", "opencode-runtime", "opencode.db"), {
+      const destination = new Database(path.join(root, "state", "data", "benchmark-engine", "opencode.db"), {
         readonly: true,
       })
       const identities = destination.query("SELECT id, title, directory FROM session_v2 ORDER BY id").all() as Array<{

@@ -28,6 +28,7 @@ const acme = {
   baseURL: "https://api.acme.test/v1/",
   env: [],
   headers: {},
+  credentialHeader: { name: "Authorization", scheme: "Bearer" as const },
   models: { "acme-1": { name: "Acme One" } },
 }
 
@@ -44,6 +45,12 @@ describe("a custom provider's destination", () => {
       value: "sk-acme",
     })
     expect(hasProviderDestination("acme", "org_dest")).toBe(true)
+  })
+
+  test("injects the key at the header the operator declared for it", () => {
+    putCustomProvider({ ...acme, providerID: "gemini-proxy", credentialHeader: { name: "X-Goog-Api-Key" } }, "org_dest")
+    expect(providerDestination({ providerId: "gemini-proxy", kind: "api_key", secret: "sk-g", org: "org_dest" })?.injection)
+      .toEqual({ header: "X-Goog-Api-Key" })
   })
 
   test("does not exist for another org or for a caller naming none", () => {

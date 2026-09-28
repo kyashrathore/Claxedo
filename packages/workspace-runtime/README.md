@@ -169,7 +169,8 @@ projection compose those concerns outside the OSS runtime boundary.
 | `GET  /api/wr/capabilities` | [`server.ts`](src/server.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
-| `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth |
+| `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth; a draft preview of a harness that serves a provider catalog is the workspace owner's only |
+| `GET  /api/wr/harness-providers` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth; workspace owner only |
 | `GET  /api/wr/events` | [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth; a principal the workspace admits reads unscoped and the session authority decides per session what reaches it (the workspace's owner is not special); a refused principal reads one session under `?sessionID=` |
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/diff/*`, `* /api/wr/git/*` | [`routes/diff.ts`](src/routes/diff.ts), [`routes/git-source.ts`](src/routes/git-source.ts) | exposure-dependent runtime auth |

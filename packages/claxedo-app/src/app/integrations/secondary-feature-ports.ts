@@ -74,6 +74,8 @@ configureSettingsAppPorts({
   DialogConnectProvider,
   DialogSelectProvider,
   DialogCustomProvider,
+  removeCustomProviderConfig: async (input) =>
+    (await import("@/app/dialogs/custom-provider-logic")).removeCustomProviderConfig(input),
   verifyAIConnection: AIConnectApi.verifyAIConnection,
   loadMachineLogins: AIConnectApi.loadMachineLogins,
   useMachineLogin: AIConnectApi.useMachineLogin,

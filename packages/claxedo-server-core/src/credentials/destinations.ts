@@ -8,9 +8,9 @@ export type { ProviderDestination } from "./built-in-destinations"
 
 /**
  * An operator-declared provider's row: its own base URL, reached with the key
- * as a bearer token, the way an OpenAI-compatible endpoint takes it. It wins
- * over a vendor row of the same id because the catalog serves the custom
- * provider in that row's place, and the engine sends that id's requests to it.
+ * at the header the operator declared for it. It wins over a vendor row of the
+ * same id because the catalog serves the custom provider in that row's place,
+ * and the engine sends that id's requests to it.
  */
 function customProviderRow(providerId: string, org: CredentialOrgScope | undefined): ProviderRow | undefined {
   if (org === undefined) return undefined
@@ -26,7 +26,7 @@ function customProviderRow(providerId: string, org: CredentialOrgScope | undefin
     methods: ["POST", "GET"],
     pathPrefixes: [`${apiPath}/`],
     apiPath,
-    injection: { header: "Authorization", scheme: "Bearer" },
+    injection: { header: config.credentialHeader.name, ...(config.credentialHeader.scheme ? { scheme: config.credentialHeader.scheme } : {}) },
   })
 }
 

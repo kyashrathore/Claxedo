@@ -13,7 +13,7 @@ import { ensureWorkspace, resolveWorkspace } from "@claxedo/server-core/workspac
 
 describe("embedded workspace runtime configuration boundary", () => {
   test("read dispatch defers adapter configuration to the acquisition owner", () => {
-    for (const pathname of ["/api/wr/harness-config-options", "/permission/modes", "/agent", "/session/capabilities", "/session/s1/capabilities", "/session/s1/config-options", "/session/s1/config", "/session/s1/permission-mode"]) {
+    for (const pathname of ["/api/wr/harness-config-options", "/api/wr/harness-providers", "/permission/modes", "/agent", "/session/capabilities", "/session/s1/capabilities", "/session/s1/config-options", "/session/s1/config", "/session/s1/permission-mode"]) {
       expect(embeddedConfigModeForPath(pathname, "GET")).toBe("skip")
     }
   })

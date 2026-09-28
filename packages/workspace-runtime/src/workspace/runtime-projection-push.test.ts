@@ -50,12 +50,19 @@ afterEach(async () => {
   await fs.rm(directory, { recursive: true, force: true })
 })
 
-function runtimeApp() {
+function runtimeApp(options: { failDefinitionsOnce?: boolean } = {}) {
   const starts: StartInput[] = []
   const configures: TransportConfigUpdate[] = []
   const transport = new FakeTransport({
     onStart: (start) => { starts.push(start) },
-    configure: (update) => { configures.push(update); return { state: "applied" } },
+    configure: (update) => {
+      configures.push(update)
+      if (update.providerDefinitions && options.failDefinitionsOnce) {
+        options.failDefinitionsOnce = false
+        throw new Error("definition apply failed")
+      }
+      return { state: "applied" }
+    },
   })
   const target = { workspaceId: "ws_1", directory }
   const runtime = createWorkspaceRuntimeApp({
@@ -79,6 +86,24 @@ test("a session starts on the projection under its registry id", async () => {
     await f.runtime.host.apply(snapshot(selected))
     expect((await f.createSession("s1")).status).toBe(201)
     expect(f.starts[0]?.credentials.providers).toEqual({ "cursor-sdk": expect.objectContaining({ baseUrl: "http://127.0.0.1:2595/bindings/cursor1" }) })
+  } finally {
+    await f.runtime.host.dispose()
+  }
+})
+
+test("retrying an identical snapshot redelivers definitions after a failed transport apply", async () => {
+  const f = runtimeApp({ failDefinitionsOnce: true })
+  try {
+    await f.runtime.host.apply(snapshot(selected))
+    expect((await f.createSession("retry-definitions")).status).toBe(201)
+    const providerDefinitions = [{ id: "acme", name: "Acme", npm: "@ai-sdk/openai-compatible" as const,
+      baseURL: "https://acme.example/v1", headers: {}, models: { one: { name: "One" } }, credentialProviderId: "acme", credentialSource: "account" as const }]
+    const next = snapshot({ ...selected, providerDefinitions })
+    await expect(f.runtime.host.apply(next)).rejects.toThrow("definition apply failed")
+    await f.runtime.host.apply(next)
+    expect(f.configures.filter((update) => update.providerDefinitions)).toEqual([
+      { providerDefinitions }, { providerDefinitions },
+    ])
   } finally {
     await f.runtime.host.dispose()
   }

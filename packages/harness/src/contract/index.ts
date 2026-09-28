@@ -19,3 +19,4 @@ export { ownerMayUseMachineLogin, selectedProviderProjection, providerPlaceholde
 export { goalSnapshotFromRecord, nativeGoalPrompt, NATIVE_GOAL_COMMAND } from "./goals.js"
 export { draftProbeKey, DraftProbeCache } from "./probe-cache.js"
 export { BROKER_GRANTS_KEY, namespacedGrantKey, connectionGrantKeys } from "./grants.js"
+export { readProviderDefinitions, type CustomProviderDefinition, type ProviderCatalogEntry, type ProviderModel } from "./provider-definitions"

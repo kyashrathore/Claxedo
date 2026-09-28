@@ -19,6 +19,7 @@ import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
 import { pluginProjectionFor, snapshotCredentials } from "../host/projection"
+import { PreviewModelInvalidError } from "../host/config-ops"
 import { createAgentRuntime, type AgentRuntime, type AgentRuntimeHealth, type LaunchComposer } from "../host/runtime"
 import { Log } from "../log"
 import type { ProcessObserver } from "../managed-processes/process-observer"
@@ -26,7 +27,9 @@ import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "..
 import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
 import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
-import { isSessionRecoveryPath } from "../routes/session-core"
+import { isSessionRecoveryPath, sessionOwner } from "../routes/session-core"
+import { errorBody } from "../routes/error-body"
+import { providerCatalogRefusal } from "../routes/workspace-role"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { runGit } from "../git"
@@ -199,6 +202,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   let configApply: RuntimeConfigApplyStatus = { state: "idle", revision: 0 }
   let appliedSignature: string | undefined
   let currentMcp: Record<string, unknown> = {}
+  let currentProviderDefinitions: NonNullable<AppliedRuntimeSnapshot["providerDefinitions"]> = []
   let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = {}
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
@@ -279,6 +283,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     projection: (harness) => pluginProjectionFor(harness, {
       generation: `runtime-config:${configApplyRevision}`, mcp: currentMcp, harnessLaunch: currentHarnessLaunch,
     }),
+    providerDefinitions: () => currentProviderDefinitions,
     credentials: () => snapshotCredentials(currentAuthRaw, `runtime-config:${configApplyRevision}`),
   }
 
@@ -339,6 +344,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       attached: () => engine?.runtime.attachments.entries() ?? [],
       projection: (attached) => launch.projection(attached.handle.runner),
       credentials: () => launch.credentials(),
+      providerDefinitions: () => currentProviderDefinitions,
       onHeldFailure: (error) => { void failConfigApply(error) },
     })
     const runtime = createAgentRuntime({
@@ -414,6 +420,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     let acceptedAt: string | undefined
     const nextHarnessLaunch = next.harnessLaunch ?? {}
     const projectionChanged = !sameRuntimeMcp(currentMcp, next.mcp) || JSON.stringify(currentHarnessLaunch) !== JSON.stringify(nextHarnessLaunch)
+    const providerDefinitionsChanged = JSON.stringify(currentProviderDefinitions) !== JSON.stringify(next.providerDefinitions ?? [])
     const credentialsChanged = !sameAuth(currentAuthRaw, next.auth)
     try {
       revision = configApplyRevision + 1
@@ -429,8 +436,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       }
       currentMcp = next.mcp
       currentAuthRaw = next.auth
+      currentProviderDefinitions = next.providerDefinitions ?? []
       currentHarnessLaunch = nextHarnessLaunch
-      if (engine) await engine.configuration.apply({ credentials: credentialsChanged, projection: projectionChanged })
+      if (engine) await engine.configuration.apply({ credentials: credentialsChanged, projection: projectionChanged, providerDefinitions: providerDefinitionsChanged })
       state = "ready"
       err = ""
       appliedSignature = signature
@@ -539,6 +547,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         detachFrames()
         events.close()
       }
+      app.get("/api/wr/harness-providers", async (c) => {
+        const refused = providerCatalogRefusal(c)
+        if (refused) return refused
+        const harness = requestedSessionHarness(c.req)
+        if (!harness) return c.json(errorBody("harness_required", "Name the harness whose provider catalog to read"), 400)
+        const directory = assertTarget(c.req.query("directory") || workspaceDir())
+        const runtime = await runtimeForSession()
+        const target = { harness, directory, owner: sessionOwner(c) }
+        if (!await runtime.reads.servesProviderCatalog(target)) return c.json(errorBody("provider_catalog_unsupported", `${harness.id} serves no provider catalog`), 400)
+        return c.json(await runtime.reads.providerCatalog(target))
+      })
       app.get("/api/wr/harness-config-options", async (c) => {
         let targetRunner: RuntimeRunner
         try {
@@ -550,15 +569,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         const directory = assertTarget(c.req.query("directory") || workspaceDir())
         try {
           const runtime = await runtimeForSession()
-          const requested = c.req.query("model") || undefined
-          const preview = await runtime.reads.configOptions({ harness: targetRunner, directory },
-            requested ? { providerID: harnessKey(targetRunner), modelID: requested } : undefined)
+          const target = { harness: targetRunner, directory, owner: sessionOwner(c) }
+          if (await runtime.reads.servesProviderCatalog(target)) {
+            const refused = providerCatalogRefusal(c)
+            if (refused) return refused
+          }
+          const preview = await runtime.reads.configOptions(target, c.req.query("model") || undefined)
           if (!preview) {
             return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id,
               message: `${targetRunner.id} does not expose harness config options` } }, 404)
           }
           return c.json(preview)
         } catch (cause) {
+          if (cause instanceof PreviewModelInvalidError) return c.json(errorBody("preview_model_invalid", cause.message), 400)
           return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id, message: errorMessage(cause) } }, 502)
         }
       })
@@ -613,6 +636,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         connections: [...appliedConnections.values()],
         ...(runner ? { defaultHarness: selectionForRunner(runner) } : {}),
         auth: currentAuthRaw,
+        providerDefinitions: currentProviderDefinitions,
         workspaceHarnessEnabled: enabled,
         harnessLaunch,
       })

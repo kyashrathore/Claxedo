@@ -202,17 +202,7 @@ const diagnosticsSource = createProcessMetricsSource({
 const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
 const scanSessionMemory = createSessionMemoryScanner({
   workerPath: join(import.meta.dirname, "session-memory-worker.js"),
-  paths: {
-    databases: [
-      ...(["prod", "beta", "dev"] as const).map((channel) => ({
-        path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-runtime", "opencode.db"),
-        profile: channel,
-      })),
-      ...(process.env.CLAXEDO_DATA_DIR
-        ? [{ path: join(process.env.CLAXEDO_DATA_DIR, "opencode-runtime", "opencode.db"), profile: "configured" }]
-        : []),
-    ].filter((database, index, all) => all.findIndex((candidate) => candidate.path === database.path) === index),
-  },
+  paths: { databases: [] },
 })
 const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
@@ -681,9 +671,6 @@ async function initialize() {
     packaged: IS_PACKAGED,
     wsl: getWslConfig().enabled,
     deepLinks: pendingDeepLinks,
-    // Same derivation the session-memory scanner uses: the local daemon's
-    // runtime db is the on-disk position the app's session deep links name.
-    sessionStore: join(desktopServerDataDir(), "opencode-runtime", "opencode.db"),
     ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 

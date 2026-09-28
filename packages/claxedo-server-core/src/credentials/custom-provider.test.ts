@@ -26,8 +26,9 @@ const ACME = {
   providerID: "acme",
   name: "Acme",
   baseURL: "https://api.acme.test/v1",
-  env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"],
-  headers: { "X-Acme-Tenant": "prod" },
+  env: [],
+  headers: { "X-Title": "Acme prod" },
+  credentialHeader: { name: "Authorization", scheme: "Bearer" as const },
   models: { "acme-1": { name: "Acme One" } },
 }
 
@@ -48,9 +49,21 @@ describe("readCustomProvider", () => {
     expect(customProviderEnvName("acme-pro")).toBe("CLAXEDO_CUSTOM_PROVIDER_ACME_PRO_API_KEY")
   })
 
+  test("admits the provider's own variable", () => {
+    expect(readCustomProvider({ ...ACME, env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"] }).env).toEqual(["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"])
+  })
+
   test("defaults the optional collections rather than demanding them", () => {
     expect(readCustomProvider({ providerID: "a", name: "A", baseURL: "https://a.test", models: { m: { name: "M" } } }))
-      .toEqual({ providerID: "a", name: "A", baseURL: "https://a.test", env: [], headers: {}, models: { m: { name: "M" } } })
+      .toEqual({ providerID: "a", name: "A", baseURL: "https://a.test", env: [], headers: {},
+        credentialHeader: { name: "Authorization", scheme: "Bearer" }, models: { m: { name: "M" } } })
+  })
+
+  test("names the header the stored credential travels in instead of carrying it as a metadata header", () => {
+    expect(readCustomProvider({ ...ACME, credentialHeader: { name: "X-Goog-Api-Key" } }).credentialHeader).toEqual({ name: "X-Goog-Api-Key" })
+    expect(readCustomProvider({ ...ACME, credentialHeader: { name: "X-Auth-Token" } }).credentialHeader).toEqual({ name: "X-Auth-Token" })
+    expect(readCustomProvider({ ...ACME, headers: { "OpenAI-Project": "p", "HTTP-Referer": "https://acme.test" } }).headers)
+      .toEqual({ "OpenAI-Project": "p", "HTTP-Referer": "https://acme.test" })
   })
 
   test("admits a loopback HTTP base URL only where the deployment allows it", () => {
@@ -66,6 +79,13 @@ describe("readCustomProvider", () => {
     ["a secret smuggled beside the config", { ...ACME, secret: "sk-live" }],
     ["a secret disguised as a provider field", { ...ACME, apiKey: "sk-live" }],
     ["an Authorization header", { ...ACME, headers: { Authorization: "Bearer sk-live" } }],
+    ["a token header", { ...ACME, headers: { "X-Auth-Token": "secret" } }],
+    ["a Google API key header", { ...ACME, headers: { "X-Goog-Api-Key": "secret" } }],
+    ["an unregistered metadata header", { ...ACME, headers: { "X-Unspecified-Header": "secret" } }],
+    ["a credential header carrying a value", { ...ACME, credentialHeader: { name: "X-Auth-Token", value: "secret" } }],
+    ["a credential header the broker cannot inject", { ...ACME, credentialHeader: { name: "Cookie" } }],
+    ["a metadata header named as the credential header", { ...ACME, credentialHeader: { name: "X-Title" } }],
+    ["a credential scheme other than Bearer", { ...ACME, credentialHeader: { name: "Authorization", scheme: "Basic" } }],
     ["an engine field the operator may not set", { ...ACME, npm: "@evil/provider" }],
     ["an unsupported model field", { ...ACME, models: { "acme-1": { name: "One", cost: 0 } } }],
     ["an uppercase provider id", { ...ACME, providerID: "Acme" }],
@@ -77,7 +97,7 @@ describe("readCustomProvider", () => {
     ["an env name holding an internal secret", { ...ACME, env: ["CLAXEDO_CREDENTIALS_TOKEN"] }],
     ["an env name holding another vendor's credential", { ...ACME, env: ["ANTHROPIC_API_KEY"] }],
     ["an env name that looks provider-shaped but is not this provider's", { ...ACME, env: ["ACME_API_KEY"] }],
-    ["another provider's variable beside its own", { ...ACME, env: [...ACME.env, "CLAXEDO_CUSTOM_PROVIDER_OTHER_API_KEY"] }],
+    ["another provider's variable beside its own", { ...ACME, env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY", "CLAXEDO_CUSTOM_PROVIDER_OTHER_API_KEY"] }],
     ["no models at all", { ...ACME, models: {} }],
     ["a non-object body", "acme"],
   ])("rejects %s", (_label, body) => {
@@ -94,6 +114,11 @@ describe("the custom-provider store", () => {
     expect(listCustomProviders("org_a")).toEqual([ACME])
     expect(listCustomProviders("org_b")).toEqual([{ ...ACME, name: "Acme B", baseURL: "https://b.acme.test/v1" }])
     expect(listCustomProviders()).toEqual([])
+  })
+
+  test("persists the declared credential header", () => {
+    putCustomProvider(readCustomProvider({ ...ACME, credentialHeader: { name: "X-Goog-Api-Key" } }), "org_header")
+    expect(listCustomProviders("org_header")).toEqual([{ ...ACME, credentialHeader: { name: "X-Goog-Api-Key" } }])
   })
 
   test("a second write to the same id replaces the row instead of adding one", () => {
@@ -142,6 +167,7 @@ describe("the custom-provider store", () => {
         baseURL: "https://api.legacy.test/v1",
         env: ["CLAXEDO_CUSTOM_PROVIDER_LEGACY_API_KEY"],
         headers: {},
+        credentialHeader: { name: "Authorization", scheme: "Bearer" },
         models: { "legacy-1": { name: "Legacy One" } },
       },
     ])

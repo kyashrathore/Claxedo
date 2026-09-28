@@ -46,6 +46,7 @@ describe("applied runtime config", () => {
     expect(projectAuth.mock.calls).toEqual([[{ scope: "local", orgId: "org-a", workspaceId: "ws_1" }]])
     expect(applied).toEqual({
       version: 4,
+      providerDefinitions: [],
       mcp: {},
       connections: [],
       auth: {

@@ -7,7 +7,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
-import { DialogCustomProvider, useProviders } from "@/features/settings/app-ports"
+import { DialogCustomProvider, removeCustomProviderConfig, useProviders } from "@/features/settings/app-ports"
 import { useSettingsScope } from "@/features/settings/scope/settings-scope"
 import {
   canDisconnectProvider,
@@ -127,6 +127,9 @@ export const HarnessProvidersSection: Component<{
           directory: scope.scopeRef(),
           request: authFetch,
         })
+      },
+      removeCustomProvider: async (id) => {
+        await removeCustomProviderConfig({ providerId: id })
       },
       markDisconnected,
       refresh: async () => {

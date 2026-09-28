@@ -251,6 +251,9 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
     try {
       const proxyPort = await listen(proxy)
       const proxyUrl = `http://127.0.0.1:${proxyPort}`
+      // The runtime serves its first-party MCP and hooks on its own port, and
+      // processes inside the sandbox reach it there, never through egress.
+      const unproxied = [...directOrigins.map((url) => url.host), `127.0.0.1:${runtimePort}`, `localhost:${runtimePort}`].join(",")
       const env: Record<string, string> = {
         ...options.inheritedEnv,
         ...workspaceRuntimeBootEnv({
@@ -270,15 +273,15 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
         http_proxy: proxyUrl,
         https_proxy: proxyUrl,
         all_proxy: proxyUrl,
-        NO_PROXY: directOrigins.map((url) => url.host).join(","),
-        no_proxy: directOrigins.map((url) => url.host).join(","),
+        NO_PROXY: unproxied,
+        no_proxy: unproxied,
         NODE_USE_ENV_PROXY: "1",
         NODE_EXTRA_CA_CERTS: trustedCertificates,
       }
       for (const secret of host.secrets) {
         if (Object.values(env).some((value) => value.includes(secret.value))) throw new Error("brokered secret entered sandbox environment")
       }
-      const networkPolicy = `(version 1) (allow default) (deny network-outbound) (deny file-read* (subpath ${JSON.stringify(authority.privateDirectory)})) (allow process-exec (literal "/bin/ps") (with no-sandbox)) ${[`localhost:${proxyPort}`, ...directDestinations].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
+      const networkPolicy = `(version 1) (allow default) (deny network-outbound) (deny file-read* (subpath ${JSON.stringify(authority.privateDirectory)})) (allow process-exec (literal "/bin/ps") (with no-sandbox)) ${[`localhost:${proxyPort}`, `localhost:${runtimePort}`, ...directDestinations].map((destination) => `(allow network-outbound (remote tcp ${JSON.stringify(destination)}))`).join(" ")}`
       const logFile = path.join(directory, "runtime.log")
       const log = openSync(logFile, "w", 0o600)
       let child: ChildProcess

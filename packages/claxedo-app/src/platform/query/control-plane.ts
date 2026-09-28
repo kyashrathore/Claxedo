@@ -270,6 +270,7 @@ export function providerListQuery(input: {
     queryFn: async () => {
       const url = new URL("/api/claxedo/agent-config/providers", input.baseUrl ?? getClaxedoServerUrl())
       url.searchParams.set("nativeHarness", input.harnessType)
+      if (input.harnessType === "opencode" && input.directory) url.searchParams.set("directory", input.directory)
       const response = await (input.request ?? authFetch)(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} models`)
       return normalizeProviderList(providerCatalogBody(await response.json(), input.harnessType))
@@ -365,6 +366,7 @@ export function providerDetailsQuery(input: {
       const url = new URL("/api/claxedo/agent-config/providers", input.baseUrl)
       url.searchParams.set("provider", input.providerId)
       url.searchParams.set("nativeHarness", input.harnessType)
+      if (input.harnessType === "opencode" && input.directory) url.searchParams.set("directory", input.directory)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.providerId} models`)
       return normalizeProviderList(providerCatalogBody(await response.json(), input.harnessType))

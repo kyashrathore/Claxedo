@@ -15,11 +15,12 @@ test("retry pushes only to attachments that have not acknowledged the configurat
       attached: () => host.runtime.attachments.entries(),
       credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "new" }),
       projection: () => ({ generation: "new", mcpServers: [], pluginRoots: [], notApplied: [] }),
+      providerDefinitions: () => [],
       onHeldFailure: (error) => { throw error },
     })
-    await expect(configuration.apply({ credentials: true, projection: true })).rejects.toThrow("refused")
+    await expect(configuration.apply({ credentials: true, projection: true, providerDefinitions: false })).rejects.toThrow("refused")
     refused = false
-    await configuration.apply({ credentials: false, projection: false })
+    await configuration.apply({ credentials: false, projection: false, providerDefinitions: false })
     expect(accepted.configures).toHaveLength(1)
     expect(retried.configures).toHaveLength(2)
     expect(retried.configures[1]).toEqual(retried.configures[0])

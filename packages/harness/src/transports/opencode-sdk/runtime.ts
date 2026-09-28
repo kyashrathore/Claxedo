@@ -1,3 +1,4 @@
+import { singleFlightUntil } from "@claxedo/helpers"
 import { createCatalogPort, type OpenCodeCatalogPort } from "./catalog-port.js"
 import { createConfigurationPort, type OpenCodeConfigurationPort } from "./configuration-port.js"
 import { createEventPump, type EventPump, type ProjectedEvent } from "./event-pump.js"
@@ -24,7 +25,6 @@ export type OpenCodeRuntime = Readonly<{
 
   providerUnavailableReason(providerID: string): string | undefined
 
-  providersBound(): Promise<void>
 
   launch(scope: WorkspaceScope): Promise<LaunchPolicyStore>
   interactions: OpenCodeInteractionPort
@@ -39,10 +39,7 @@ export type OpenCodeRuntime = Readonly<{
   close(): Promise<void>
 }>
 
-export type OpenCodeRuntimeOptions = OpenCodeHostOptions & Readonly<{
-
-  providersBound?: () => Promise<void>
-}>
+export type OpenCodeRuntimeOptions = OpenCodeHostOptions
 
 function eventSurface(host: OpenCodeHost) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
@@ -76,18 +73,14 @@ function eventSurface(host: OpenCodeHost) {
 }
 
 function closeRuntime(host: OpenCodeHost, pump: EventPump): () => Promise<void> {
-  let closing: Promise<void> | undefined
-  return () => {
-    closing ??= (async () => {
-      const drained = pump.stop()
-      try {
-        await host.close()
-      } finally {
-        await drained
-      }
-    })()
-    return closing
-  }
+  return singleFlightUntil(async () => {
+    const drained = pump.stop()
+    try {
+      await host.close()
+    } finally {
+      await drained
+    }
+  }, () => true)
 }
 
 export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCodeRuntime {
@@ -95,9 +88,8 @@ export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCode
   const definitions = createProviderDefinitionPolicy()
   const bindings = createProviderBindingPolicy()
   const launch = createLaunchPolicy()
-  const { providersBound, ...hostOptions } = options
   const host = createOpenCodeHost({
-    ...hostOptions,
+    ...options,
     plugins: [...(options.plugins ?? []), policy.plugin, definitions.plugin, bindings.plugin, launch.plugin],
   })
   const { pump, events } = eventSurface(host)
@@ -111,7 +103,6 @@ export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCode
     defineProviders: (next) => definitions.apply(next),
     bindProviders: (binding) => bindings.apply(binding),
     providerUnavailableReason: (providerID) => bindings.unavailableReason(providerID),
-    providersBound: providersBound ?? (() => Promise.resolve()),
     launch: (scope) => launch.store(host, scope),
     interactions: createInteractionPort(host),
     tools: createToolPort(host),

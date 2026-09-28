@@ -30,7 +30,6 @@ import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/
 import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
-import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { loadUserConfig, configureAgentConfig, type AgentConfigOptions } from "@claxedo/server-core/agent-config/index"
 import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { projectNativeProviderAuth } from "@claxedo/server-core/credentials/native-delivery"
@@ -79,7 +78,8 @@ import {
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
-import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg } from "@claxedo/local-server/self-hosted-execution"
+import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg, syncEmbeddedWorkspaceRuntimes } from "@claxedo/local-server/self-hosted-execution"
+import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRemoteRoutes } from "../../workspace/routes/project-remote"
@@ -1706,7 +1706,10 @@ export function createDefaultLocalControlPlaneServices() {
       // so they are offered only where that person is the only principal. With
       // the embedded issuer on, several signed accounts share one box and one
       // of them would otherwise be shown — and handed — the operator's login.
-      ...(embeddedAuth ? {} : { credentials: localControlPlaneCredentials() }),
+      // Either way this server hosts embedded runtimes a credential change must reach.
+      credentials: embeddedAuth
+        ? defaultControlPlaneCredentials({ refreshLocalRuntimes: syncEmbeddedWorkspaceRuntimes })
+        : localControlPlaneCredentials(),
       // Embedded Better Auth issuer (CLAXEDO_EMBEDDED_AUTH=1) => signed mode
       // backed by the in-process better-auth instance; otherwise local-only.
       ...(embeddedAuth
@@ -1774,7 +1777,6 @@ function localRelayFromEnv(
 
 export async function shutdownControlPlaneRuntime() {
   await shutdownEmbeddedWorkspaceRuntimes()
-  await drainOpenCodeSdkRuntime()
   await shutdownWorkspaceSupervisor()
   await shutdownPostHog()
 }
@@ -1843,9 +1845,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
   // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
-  // The process-owned public embedded-SDK runtime behind the provider and
-  // credential routes; every embedded workspace host composes its own engine.
-  openCodeSdkRuntime()
   // One reader for both halves: the runtime decides whether a session gets the
   // endpoint at all, and the mount decides which tools it serves, from the
   // same machine-wide activation rows this node's Marketplace writes.

@@ -1,7 +1,7 @@
 import type * as OpenCodeSdk from "@opencode-ai/sdk"
 import { isAbsolute } from "node:path"
 import { canTransition, isTerminal, type OpenCodeEventHealth, type OpenCodeLifecycle, type OpenCodeStatus } from "./lifecycle.js"
-import { errorMessage } from "@claxedo/helpers"
+import { errorMessage, singleFlightUntil } from "@claxedo/helpers"
 
 export type OpenCodeClient = Awaited<ReturnType<typeof OpenCodeSdk.OpenCode.create>>
 
@@ -40,7 +40,7 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
   private reason: string | undefined
   private booting: Promise<OpenCodeClient> | undefined
   private current: OpenCodeClient | undefined
-  private closing: Promise<void> | undefined
+  private closing = false
 
   constructor(private readonly options: OpenCodeHostOptions) {
     if (!isAbsolute(options.databasePath)) {
@@ -98,9 +98,11 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
     this.events = next
   }
 
+  private readonly drainOnce = singleFlightUntil(() => this.drain(), () => true)
+
   close(): Promise<void> {
-    this.closing ??= this.drain()
-    return this.closing
+    this.closing = true
+    return this.drainOnce()
   }
 
   private async drain(): Promise<void> {
@@ -113,13 +115,10 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
       }
     }
     if (this.lifecycle === "ready") this.moveTo("draining")
-    try {
-      await this.current?.close()
-    } finally {
-      this.current = undefined
-      this.booting = undefined
-      this.lifecycle = "closed"
-    }
+    await this.current?.close()
+    this.current = undefined
+    this.booting = undefined
+    this.lifecycle = "closed"
   }
 }
 

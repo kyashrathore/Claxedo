@@ -167,3 +167,15 @@ describe("runtime config v4", () => {
     })).toBeUndefined()
   })
 })
+
+test("runtime snapshots accept definitions and credential references but reject credential material", () => {
+  const definition = { id: "acme", name: "Acme", npm: "@ai-sdk/openai-compatible" as const, baseURL: "https://acme.invalid/v1",
+    headers: { "X-Title": "one" }, models: { one: { name: "One" } }, credentialProviderId: "acme", credentialSource: "account" as const }
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [definition] })?.providerDefinitions).toEqual([definition])
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [{ ...definition, apiKey: "secret" }] })).toBeUndefined()
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [{ ...definition, headers: { Authorization: "secret" } }] })).toBeUndefined()
+  for (const header of ["X-Auth-Token", "X-Goog-Api-Key", "X-Unspecified-Header"]) {
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [{ ...definition, headers: { [header]: "secret" } }] })).toBeUndefined()
+  }
+  expect(normalizeRuntimeSnapshot({ ...snapshot(), providerDefinitions: [] })?.providerDefinitions).toEqual([])
+})

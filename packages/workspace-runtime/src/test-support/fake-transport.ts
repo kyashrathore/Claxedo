@@ -85,6 +85,7 @@ export type FakeTransportOptions = {
   steer?: (session: HarnessSession, turn: TurnRef, input: TurnInput) => Promise<SteerResult>
   fork?: ForkOperations["fork"]
   config?: ConfigOperations
+  providerCatalog?: HarnessTransport["providerCatalog"]
   history?: HistoryOperations
   commands?: CommandOperations
   agents?: AgentListOperations
@@ -118,6 +119,7 @@ export class FakeTransport implements HarnessTransport {
   activeStarts = 0
   activeTurns = 0
   config: ConfigOperations | undefined
+  providerCatalog: HarnessTransport["providerCatalog"]
   history: HistoryOperations | undefined
   commands: CommandOperations | undefined
   agents: AgentListOperations | undefined
@@ -132,6 +134,7 @@ export class FakeTransport implements HarnessTransport {
     this.options = options
     this.kind = options.kind ?? "acp"
     this.config = options.config
+    this.providerCatalog = options.providerCatalog
     this.history = options.history
     this.commands = options.commands
     this.agents = options.agents

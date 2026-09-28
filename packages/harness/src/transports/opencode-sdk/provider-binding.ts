@@ -20,7 +20,7 @@ type HeldTransform = { register: () => Promise<Registration>; holds: () => Promi
 function holds(provider: Pick<CatalogProvider, "settings" | "activation">, overlay: ProviderBindingOverlay): boolean {
   return isProviderUnavailable(overlay)
     ? provider.activation === "disabled"
-    : provider.settings?.baseURL === overlay.baseURL && provider.settings?.apiKey === overlay.apiKey
+    : provider.activation !== "auto" && provider.settings?.baseURL === overlay.baseURL && provider.settings?.apiKey === overlay.apiKey
 }
 
 class BindingPolicy {
@@ -39,6 +39,7 @@ class BindingPolicy {
           provider.activation = "disabled"
           return
         }
+        if (provider.activation !== "disabled") provider.activation = "enabled"
         provider.settings = { ...provider.settings, baseURL: overlay.baseURL, apiKey: overlay.apiKey }
       })
     }

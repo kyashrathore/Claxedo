@@ -1,3 +1,4 @@
+import type { ProviderCatalogEntry, ProviderModel } from "../../contract"
 import { engineRead } from "./engine-read.js"
 import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
 import type { WorkspaceScope } from "./scope.js"
@@ -18,20 +19,13 @@ export type CommandEntry = Readonly<{
   model?: Readonly<{ providerID: string; id: string }>
 }>
 
-export type ModelEntry = Readonly<{
-  providerID: string
-  id: string
-  name?: string
-
-  variants?: readonly string[]
-
-  cost: readonly Readonly<{ input: number; output: number }>[]
-}>
+export type ModelEntry = ProviderModel
 
 export type OpenCodeCatalogPort = Readonly<{
   agents(scope: WorkspaceScope): Promise<readonly AgentEntry[]>
   commands(scope: WorkspaceScope): Promise<readonly CommandEntry[]>
   models(scope: WorkspaceScope): Promise<readonly ModelEntry[]>
+  providers(scope: WorkspaceScope): Promise<readonly ProviderCatalogEntry[]>
 }>
 
 function modelRef(value: unknown): Readonly<{ providerID: string; id: string }> | undefined {
@@ -100,10 +94,40 @@ async function models(host: OpenCodeHost, scope: WorkspaceScope): Promise<readon
       })
 }
 
+function envNames(integration: Record<string, unknown>): string[] {
+  return (arr(integration.methods) ?? []).flatMap((method) => {
+    const row = rec(method)
+    return row?.type === "env" ? (arr(row.names) ?? []).flatMap((name) => str(name) ?? []) : []
+  })
+}
+
+async function providers(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly ProviderCatalogEntry[]> {
+  const client = await openCodeLocationClient(host, scope.directory)
+  const location = { location: { directory: scope.directory } }
+  const [integrations, active, listed] = await Promise.all([
+    engineRead("integration.list", scope, () => client.integration.list(location)),
+    engineRead("provider.list", scope, () => client.provider.list(location)),
+    models(host, scope),
+  ])
+  const entries = new Map<string, { id: string; name: string; env: string[]; active: boolean }>()
+  for (const row of rows(integrations)) entries.set(String(row.id), { id: String(row.id), name: String(row.name), env: envNames(row), active: false })
+  for (const row of rows(active)) {
+    if (row.activation === "disabled") continue
+    const id = String(row.id)
+    entries.set(id, { id, name: String(row.name), env: entries.get(id)?.env ?? [], active: true })
+  }
+  for (const model of listed) if (!entries.has(model.providerID)) entries.set(model.providerID, { id: model.providerID, name: model.providerID, env: [], active: false })
+  return [...entries.values()].map(({ active: isActive, ...entry }) => {
+    const owned = listed.filter((model) => model.providerID === entry.id)
+    return { ...entry, connected: isActive && owned.length > 0, models: owned }
+  })
+}
+
 export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
   return {
     agents: (scope) => agents(host, scope),
     commands: (scope) => commands(host, scope),
     models: (scope) => models(host, scope),
+    providers: (scope) => providers(host, scope),
   }
 }

@@ -1,3 +1,4 @@
+import { isCustomProviderCredentialHeader, isCustomProviderMetadataHeader } from "@claxedo/agent-runtime-contract"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
@@ -33,12 +34,14 @@ export type FormState = {
   name: string
   baseURL: string
   apiKey: string
+  keyHeader: string
   models: ModelRow[]
   headers: HeaderRow[]
   err: {
     providerID?: string
     name?: string
     baseURL?: string
+    keyHeader?: string
   }
 }
 
@@ -49,6 +52,7 @@ export type CustomProviderConfig = {
   baseURL: string
   env: string[]
   headers: Record<string, string>
+  credentialHeader: { name: string; scheme?: "Bearer" }
   models: Record<string, { name: string }>
 }
 
@@ -69,6 +73,7 @@ export function validateCustomProvider(input: ValidateArgs) {
   const name = input.form.name.trim()
   const baseURL = input.form.baseURL.trim()
   const apiKey = input.form.apiKey.trim()
+  const keyHeader = input.form.keyHeader.trim()
 
   const env = apiKey.match(/^\{env:([^}]+)\}$/)?.[1]?.trim()
   const key = apiKey && !env ? apiKey : undefined
@@ -117,6 +122,8 @@ export function validateCustomProvider(input: ValidateArgs) {
     if (!key && !value) return {}
     const keyError = !key
       ? input.t("provider.custom.error.required")
+      : !isCustomProviderMetadataHeader(key)
+        ? input.t("provider.custom.error.header.metadata")
       : seenHeaders.has(key.toLowerCase())
         ? input.t("provider.custom.error.duplicate")
         : (() => {
@@ -134,13 +141,20 @@ export function validateCustomProvider(input: ValidateArgs) {
       .map((h) => [h.key, h.value]),
   )
 
+  const keyHeaderError = !keyHeader
+    ? input.t("provider.custom.error.required")
+    : !isCustomProviderCredentialHeader(keyHeader)
+      ? input.t("provider.custom.error.keyHeader.invalid")
+      : undefined
+
   const err = {
     providerID: idError ?? existsError,
     name: nameError,
     baseURL: urlError,
+    keyHeader: keyHeaderError,
   }
 
-  const ok = !idError && !existsError && !nameError && !urlError && modelsValid && headersValid
+  const ok = !idError && !existsError && !nameError && !urlError && !keyHeaderError && modelsValid && headersValid
   if (!ok) return { err, models, headers }
 
   return {
@@ -155,6 +169,7 @@ export function validateCustomProvider(input: ValidateArgs) {
         baseURL,
         env: env ? [env] : [],
         headers: headerConfig,
+        credentialHeader: keyHeader.toLowerCase() === "authorization" ? { name: keyHeader, scheme: "Bearer" } : { name: keyHeader },
         models: modelConfig,
       },
     } satisfies CustomProviderDraft,
@@ -181,6 +196,18 @@ export async function saveCustomProviderConfig(input: {
     body: JSON.stringify(input.config),
   })
   if (!response.ok) throw new Error((await response.text()) || `Failed to save ${input.config.providerID}`)
+}
+
+/** Remove a declared provider; its stored key is a credential and is removed through the credential routes. */
+export async function removeCustomProviderConfig(input: {
+  providerId: string
+  baseUrl?: string
+  request?: (url: URL, init?: RequestInit) => Promise<Response>
+}): Promise<void> {
+  const url = new URL(`/api/claxedo/agent-config/providers/custom/${encodeURIComponent(input.providerId)}`, input.baseUrl ?? getClaxedoServerUrl())
+  url.searchParams.set("nativeHarness", "opencode")
+  const response = await (input.request ?? authFetch)(url, { method: "DELETE", headers: { Accept: "application/json" } })
+  if (!response.ok) throw new Error((await response.text()) || `Failed to remove ${input.providerId}`)
 }
 
 let row = 0
