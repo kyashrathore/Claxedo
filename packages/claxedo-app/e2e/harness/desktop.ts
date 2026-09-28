@@ -6,6 +6,7 @@ import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { ClaxedoApi } from "./api"
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
+import { serveRenderer, type DesktopRenderer, type RendererServer } from "./desktop-renderer"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import type { TlsTrust } from "./tls-front"
 import { isolatedEnv } from "./isolated-env"
@@ -40,10 +41,18 @@ type DesktopWorld = {
   egress: EgressGuard
   scripted: ScriptedModelServer
   acpScriptDir: string
+  rendererUrl: string | undefined
   close(): Promise<void>
 }
 
-async function startWorld(label: string): Promise<DesktopWorld> {
+async function startRendererServer(renderer: DesktopRenderer, ports: number[]): Promise<RendererServer | undefined> {
+  if (renderer === "file") return undefined
+  const port = await reservePort()
+  ports.push(port)
+  return serveRenderer(port)
+}
+
+async function startWorld(label: string, renderer: DesktopRenderer): Promise<DesktopWorld> {
   const dataDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-desktop-${safeLabel(label)}-`)))
   const ports = [await reservePort(), await reservePort(), await reservePort()]
   const release = async () => {
@@ -52,6 +61,7 @@ async function startWorld(label: string): Promise<DesktopWorld> {
   }
   const egress = await startEgressGuard(ports[0])
   let scripted: ScriptedModelServer
+  let rendererServer: RendererServer | undefined
   try {
     scripted = await startScriptedModelServer({ port: ports[1] })
   } catch (error) {
@@ -59,14 +69,23 @@ async function startWorld(label: string): Promise<DesktopWorld> {
     await release()
     throw error
   }
+  try {
+    rendererServer = await startRendererServer(renderer, ports)
+  } catch (error) {
+    await scripted.close()
+    await egress.close()
+    await release()
+    throw error
+  }
   const acpScriptDir = path.join(dataDir, "acp-scripts")
   await fs.mkdir(acpScriptDir, { recursive: true })
   const close = async () => {
+    await rendererServer?.close()
     await scripted.close()
     await egress.close()
     await release()
   }
-  return { dataDir, serverPort: ports[2], egress, scripted, acpScriptDir, close }
+  return { dataDir, serverPort: ports[2], egress, scripted, acpScriptDir, rendererUrl: rendererServer?.url, close }
 }
 
 export type DesktopAccount = { coreOrigin: string; trust: TlsTrust }
@@ -81,6 +100,7 @@ async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefin
     CLAXEDO_DATA_DIR: path.join(world.dataDir, "server-data"),
     CLAXEDO_SERVER_PORT: String(world.serverPort),
     ZDOTDIR: zdotdir,
+    ELECTRON_RENDERER_URL: world.rendererUrl,
     ...(account ? { CLAXEDO_CORE_ORIGIN: account.coreOrigin, NODE_EXTRA_CA_CERTS: account.trust.caPath } : {}),
   }
   return Object.fromEntries(Object.entries(entries).filter((entry): entry is [string, string] => entry[1] !== undefined))
@@ -165,8 +185,8 @@ function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
   }
 }
 
-export async function launchDesktop(input: { label: string; red: boolean; account?: DesktopAccount }): Promise<Desktop> {
-  const world = await startWorld(input.label)
+export async function launchDesktop(input: { label: string; red: boolean; renderer: DesktopRenderer; account?: DesktopAccount }): Promise<Desktop> {
+  const world = await startWorld(input.label, input.renderer)
   let app: ElectronApplication
   try {
     app = await launchElectron(world, input.account)

@@ -49,8 +49,8 @@ async function database() {
     database
       .prepare(`insert into host_workspace_assignments (
         workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
-        second_device_open_at, assigned_at, updated_at, revision
-      ) values (?, ?, ?, ?, ?, null, ?, ?, 3)`)
+        assigned_at, updated_at, revision
+      ) values (?, ?, ?, ?, ?, ?, ?, 3)`)
       .bind("workspace-1", "host-1", "org-1", "user-1", "actor-1", 1, 1),
     database
       .prepare(`insert into host_assignment_readiness (workspace_id, enrollment_id, generation, revision, ready_at)

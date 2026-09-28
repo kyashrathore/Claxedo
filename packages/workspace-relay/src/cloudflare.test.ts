@@ -1800,7 +1800,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
 
-    const pending = harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/file/raw?path=large.bin", {
+    const pending = harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/file/content?path=large.bin", {
       headers: {
         authorization: `Bearer ${await harness.runtimeAccessToken()}`,
       },

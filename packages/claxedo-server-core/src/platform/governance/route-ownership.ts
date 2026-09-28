@@ -5,8 +5,7 @@ export const RouteDomain = {
   // agent profile, secrets registry). Tests in `workspace/runtime-dispatch/route-ownership-contract.test.ts` classify
   // `/api/claxedo/agent-config`, `/api/claxedo/credentials`,
   // `/api/wr/config`, `/api/wr/harness-config-options`,
-  // `/mcp`, `/agent`,
-  // `/command` under this domain.
+  // `/agent` and `/command` under this domain.
   AgentConfigRegistry: "agent-config-registry",
   AgentSessionRuntime: "agent-session-runtime",
   Channels: "channels",
@@ -144,12 +143,6 @@ const ROUTE_RULES = [
   ),
   exact(["/vcs"], RouteDomain.SandboxRuntime, runtime),
   prefix(["/session", "/session-start", "/connection", "/permission", "/question"], RouteDomain.AgentSessionRuntime, runtime),
-  prefix(
-    ["/mcp"],
-    RouteDomain.AgentConfigRegistry,
-    runtime,
-    "Local compatibility path; canonical MCP ownership is Agent Config Registry and signed/cloud callers use Claxedo-owned routes or Relay.",
-  ),
   exact(
     ["/agent"],
     RouteDomain.AgentConfigRegistry,

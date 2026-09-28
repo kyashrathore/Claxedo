@@ -165,14 +165,12 @@ const READ_ROUTES = [
   "/api/wr/file",
   "/api/wr/file?path=.",
   "/api/wr/file/content?path=secret.txt",
-  "/api/wr/file/raw?path=secret.txt",
   "/api/wr/file/status",
   "/api/wr/file/all",
   "/api/wr/find/file?query=secret",
   // The Claxedo client-presentation aliases of the same handlers.
   "/file",
   "/file/content?path=secret.txt",
-  "/file/raw?path=secret.txt",
   "/file/status",
   "/file/all",
   "/find/file?query=secret",
@@ -632,9 +630,7 @@ describe("a private worktree nested under the workspace root", () => {
     for (const route of [
       `/api/wr/file/content?path=${encodeURIComponent(`${worktreeRelative}/secret.txt`)}`,
       "/api/wr/file/content?path=shortcut/secret.txt",
-      "/api/wr/file/raw?path=shortcut/secret.txt",
       "/api/wr/file/content?path=loose/loose-secret.txt",
-      "/api/wr/file/raw?path=loose/loose-secret.txt",
       "/api/wr/diff/vcs/file?file=loose/loose-secret.txt",
     ]) {
       const response = await server.request(route)

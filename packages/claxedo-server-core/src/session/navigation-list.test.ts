@@ -3,7 +3,7 @@ import { buildSessionListResponse, encodeSessionListAfter, parseSessionListQuery
 
 describe("session list owner mapping", () => {
   test("maps owner_* fields onto navigation rows for rail favicons", () => {
-    const query = parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&groupBy=none&limit=20"))
+    const query = parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&limit=20"))
     const response = buildSessionListResponse({
       query,
       sessions: [{
@@ -39,7 +39,7 @@ describe("human_turn_desc", () => {
   })
   const query = (limit: number, extra = "") =>
     parseSessionListQuery(new URL(
-      `http://test.local/session-list?scope=workspace&workspaceId=ws_1&groupBy=none&sort=human_turn_desc&limit=${limit}${extra}`,
+      `http://test.local/session-list?scope=workspace&workspaceId=ws_1&sort=human_turn_desc&limit=${limit}${extra}`,
     ))
 
   test("orders by the reader's last turn, then creation, with the never-prompted last", () => {

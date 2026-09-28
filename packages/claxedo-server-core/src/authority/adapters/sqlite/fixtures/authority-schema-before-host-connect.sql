@@ -54,7 +54,6 @@ CREATE TABLE host_workspace_assignments (
   workspace_id TEXT PRIMARY KEY,
   host_id TEXT NOT NULL,
   owner_token_identifier TEXT NOT NULL,
-  second_device_open_at INTEGER,
   assigned_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -301,7 +300,6 @@ CREATE TABLE workspaces (
   backing TEXT NOT NULL,
   access TEXT NOT NULL,
   display_name TEXT,
-  second_device_open_at INTEGER,
   home_region TEXT,
   repo_url TEXT,
   repo_name TEXT,

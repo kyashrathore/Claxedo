@@ -23,11 +23,9 @@ import {
 import {
   agentClient,
   commandClient,
-  mcpClient,
   vcsClient,
   type WorkspaceAgentClient,
   type WorkspaceCommandClient,
-  type WorkspaceMcpClient,
   type WorkspaceVcsClient,
 } from "./workspace"
 
@@ -66,7 +64,6 @@ export type WorkspaceRuntimeClient = {
   find: WorkspaceFindClient
   files: WorkspaceFilesClient
   vcs: WorkspaceVcsClient
-  mcp: WorkspaceMcpClient
   command: WorkspaceCommandClient
   agent: WorkspaceAgentClient
   diff: {
@@ -135,7 +132,6 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
     find,
     files: filesClient(file, find),
     vcs: vcsClient(caller),
-    mcp: mcpClient(caller),
     command: commandClient(caller),
     agent: agentClient(caller),
     diff: {

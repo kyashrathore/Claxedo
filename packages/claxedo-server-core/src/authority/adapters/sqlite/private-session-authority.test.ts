@@ -182,8 +182,8 @@ describe("SQLite private-session authority", () => {
       assignHost: async () => {
         seed().prepare(`
           INSERT INTO host_workspace_assignments (
-            workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
-          ) VALUES (?, ?, ?, NULL, 1, 1, 1)
+            workspace_id, host_id, owner_token_identifier, revision, assigned_at, updated_at
+          ) VALUES (?, ?, ?, 1, 1, 1)
         `).run("workspace_main", "host_owners_desktop", owner.user.tokenIdentifier)
       },
       owner: {

@@ -113,36 +113,3 @@ function readContentLength(request: Request): number | undefined {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
 }
-
-/**
- * A web `ReadableStream` over a Node stream, for handing file bytes to
- * `Response`.
- *
- * `Readable.toWeb` is the obvious adapter and cannot be used here: it returns
- * `node:stream/web`'s `ReadableStream`, which does not unify with the DOM
- * declaration `Response` requires when both libs are loaded, so every call site
- * needed an assertion between two incompatible `getReader` overloads.
- * `ReadableStream.from` would express it — and is `undefined` under Bun, which
- * is what runs this package's tests, so it would be a crash rather than a type.
- *
- * Declaring the parameter as `AsyncIterable<Uint8Array>` is what removes the
- * assertion: a Node `Readable` satisfies it, and inside this function every
- * chunk is typed. Backpressure is preserved because `pull` is only called when
- * the consumer asks for the next chunk.
- */
-export function webStreamFrom(source: AsyncIterable<Uint8Array>): ReadableStream<Uint8Array> {
-  const chunks = source[Symbol.asyncIterator]()
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const next = await chunks.next()
-      if (next.done) {
-        controller.close()
-        return
-      }
-      controller.enqueue(next.value)
-    },
-    async cancel(reason) {
-      await chunks.return?.(reason)
-    },
-  })
-}

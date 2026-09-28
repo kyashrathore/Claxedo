@@ -25,6 +25,15 @@
  * document must be one `renderer-url-trust.ts` trusts. Missing frame or
  * webContents information fails all three.
  *
+ * WHAT IT MAY READ. A development renderer is an http document on its own
+ * port, so every daemon response is a cross-origin read, and Chromium checks
+ * `Access-Control-Allow-Origin` against the document's real origin whatever
+ * `Origin` header went out, so rewriting that header cannot help. The daemon
+ * answers its credential routes to no other origin, the development renderer's
+ * included, so main names the document's origin on the daemon's responses to
+ * this same trusted top frame and to no one else. A packaged `file://`
+ * document's daemon reads already succeed, and it gets nothing.
+ *
  * WHAT LEAVES. The listener covers every http(s)/ws(s) request of the session,
  * not only the daemon's, because its first act is to strip any capability
  * header already present — covering a page that set one itself and, the case a
@@ -43,19 +52,25 @@ import { CLAXEDO_DAEMON_CAPABILITY_HEADER } from "./daemon-request"
  */
 const OPAQUE_ORIGINS = new Set(["file://", "null"])
 
+export const HTTP_REQUEST_URLS = ["http://*/*", "https://*/*"]
+
 /** Every scheme a stamped capability could travel on, so none escapes the strip. */
-export const DEFAULT_SESSION_REQUEST_URLS = ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"]
+export const DEFAULT_SESSION_REQUEST_URLS = [...HTTP_REQUEST_URLS, "ws://*/*", "wss://*/*"]
 
 /** A WebSocket upgrade reaches `webRequest` under its own scheme, on the daemon's listener. */
 const SOCKET_SCHEME: Record<string, string> = { "ws:": "http:", "wss:": "https:" }
 
-/** What a live Electron `onBeforeSendHeaders` listener is handed, as this policy reads it. */
-export type BeforeSendHeadersDetails = {
+type RendererRequestDetails = {
   url: string
-  requestHeaders: Record<string, string>
   webContentsId?: number
   frame?: { url: string; parent: unknown } | null
 }
+
+/** What a live Electron `onBeforeSendHeaders` listener is handed, as this policy reads it. */
+export type BeforeSendHeadersDetails = RendererRequestDetails & { requestHeaders: Record<string, string> }
+
+/** What a live Electron `onHeadersReceived` listener is handed, as this policy reads it. */
+export type DaemonResponseDetails = RendererRequestDetails & { responseHeaders?: Record<string, string[]> }
 
 export type RendererDaemonPolicy = {
   daemonOrigin: string
@@ -64,13 +79,13 @@ export type RendererDaemonPolicy = {
   isTrustedDocumentUrl: (url: string) => boolean
 }
 
-function isTrustedRenderer(details: BeforeSendHeadersDetails, policy: RendererDaemonPolicy): boolean {
+function trustedRendererDocument(details: RendererRequestDetails, policy: RendererDaemonPolicy): string | undefined {
   const frame = details.frame
   // `parent == null` rather than `=== null`: "no parent" is the claim, and the
   // electron test pins which of the two the runtime actually reports.
-  if (!frame || frame.parent != null) return false
-  if (details.webContentsId === undefined || !policy.isBridgeCarryingWebContents(details.webContentsId)) return false
-  return policy.isTrustedDocumentUrl(frame.url)
+  if (!frame || frame.parent != null) return undefined
+  if (details.webContentsId === undefined || !policy.isBridgeCarryingWebContents(details.webContentsId)) return undefined
+  return policy.isTrustedDocumentUrl(frame.url) ? frame.url : undefined
 }
 
 function isDaemonDestination(url: string, daemonOrigin: string): boolean {
@@ -93,7 +108,7 @@ export function daemonRequestHeaders(
     if (name.toLowerCase() !== CLAXEDO_DAEMON_CAPABILITY_HEADER) headers[name] = value
   }
   if (!isDaemonDestination(details.url, policy.daemonOrigin)) return headers
-  if (!isTrustedRenderer(details, policy)) return headers
+  if (!trustedRendererDocument(details, policy)) return headers
 
   const daemonOrigin = new URL(policy.daemonOrigin).origin
   for (const name of Object.keys(headers)) {
@@ -101,6 +116,19 @@ export function daemonRequestHeaders(
   }
   if (policy.capability) headers[CLAXEDO_DAEMON_CAPABILITY_HEADER] = policy.capability
   return headers
+}
+
+export function daemonResponseHeaders(
+  details: DaemonResponseDetails,
+  policy: RendererDaemonPolicy,
+): Record<string, string[]> | undefined {
+  if (!isDaemonDestination(details.url, policy.daemonOrigin)) return undefined
+  const document = trustedRendererDocument(details, policy)
+  if (!document) return undefined
+  const documentOrigin = new URL(document).origin
+  if (OPAQUE_ORIGINS.has(documentOrigin)) return undefined
+  const kept = Object.entries(details.responseHeaders ?? {}).filter(([name]) => name.toLowerCase() !== "access-control-allow-origin")
+  return { ...Object.fromEntries(kept), "Access-Control-Allow-Origin": [documentOrigin] }
 }
 
 /**
@@ -122,4 +150,26 @@ export function grantMainRendererDaemonAccess(input: {
   input.onBeforeSendHeaders({ urls: DEFAULT_SESSION_REQUEST_URLS }, (details, callback) => {
     callback({ requestHeaders: daemonRequestHeaders(details, input.policy) })
   })
+}
+
+type HeadersReceivedListener<Details> = (
+  details: Details,
+  callback: (response: { responseHeaders?: Record<string, string[]> }) => void,
+) => void
+
+/**
+ * `onHeadersReceived` also holds one listener per session, and the renderer
+ * document's Content-Security-Policy is stamped there before any daemon is
+ * known, so the daemon's responses join that listener rather than replace it.
+ */
+export function daemonResponseListener<Details extends DaemonResponseDetails>(input: {
+  policy: () => RendererDaemonPolicy | undefined
+  otherwise: HeadersReceivedListener<Details>
+}): HeadersReceivedListener<Details> {
+  return (details, callback) => {
+    const policy = input.policy()
+    const headers = policy && daemonResponseHeaders(details, policy)
+    if (headers) callback({ responseHeaders: headers })
+    else input.otherwise(details, callback)
+  }
 }

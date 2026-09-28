@@ -1,30 +1,25 @@
 /**
- * Hosted shell-boot routes — the minimal GLOBAL boot surface the Claxedo app
- * shell needs from a hosted central (Cloudflare Worker) deployment.
+ * Hosted shell-boot routes: the global surface the app shell reads from a
+ * hosted central (Cloudflare Worker) deployment, which has no local
+ * filesystem, no embedded runtime and no machine behind it.
  *
- * The app shell boots against a set of "global" routes that the local Node
- * server answers from local state (`server.ts` + `routes/client-presentation.ts`
- * + `routes/bootstrap.ts`). A hosted central has no local filesystem, no
- * embedded runtime, and no central runner, so these routes answer with the
- * minimal synthetic payloads the app actually reads:
- *
- *   GET /api/cp/events          — auth-gated hosted live-sync SSE stream,
- *                                 resumable by `Last-Event-ID` when a
- *                                 LiveSyncRoom is bound (see deployments/hosted-workerd/live-sync-room.cf.ts)
- *   GET /api/claxedo/services   — { authenticated, services } first-party catalog
- *   GET /global/health          — { healthy, version }
- *   GET /project                — signed → the authority workspace projects, else []
- *   GET /project/current        — synthetic project derived from ?directory
- *   GET /path                   — synthetic path derived from ?directory
- *   GET /provider               — empty-but-valid provider catalog
- *   GET /provider/auth          — {}
- *
- * Provider catalogs for signed workspaces come from the workspace RUNTIME via
- * the relay (`/workspaces/:id/provider`), not from here — the central catalog
- * is intentionally empty so the UI degrades gracefully instead of toasting.
+ *   GET    /api/claxedo/auth/descriptor         public auth adapter descriptor
+ *   GET    /api/cp/events                       auth-gated live-sync SSE stream,
+ *                                               resumable by `Last-Event-ID` when a
+ *                                               LiveSyncRoom is bound
+ *   GET    /global/health                       { healthy, version }
+ *   GET    /api/claxedo/bootstrap               public posture, plus the project
+ *                                               catalog for a signed caller
+ *   GET    /path                                synthetic path derived from ?directory
+ *   GET    /api/claxedo/agent-config/providers  Pi provider catalog
+ *   GET    /api/claxedo/agent-config/providers/auth
+ *   PUT    /auth/:providerID?harness=pi         store an org Pi credential
+ *   DELETE /auth/:providerID?harness=pi         remove an org Pi credential
+ *   GET    /api/claxedo/agent-config/connections  always unsupported on a central
+ *   GET    /api/claxedo/agent-config/harness    a machine-placed workspace's harness
+ *                                               health, read over the relay
  */
 
-import { guardedWaitUntil } from "@claxedo/server-core/platform/http/background-work"
 import { Hono } from "hono"
 import type { Context } from "hono"
 import {
@@ -42,11 +37,6 @@ import { requestHasAuthenticationCredential } from "@claxedo/server-core/platfor
 import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import { authorityRowReachable } from "@claxedo/server-core/workspace/placement-reachability"
-import {
-  EMPTY_SERVICE_CATALOG,
-  projectServiceCatalogForBrowser,
-  type FirstPartyServiceCatalog,
-} from "@claxedo/service-contract"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -96,10 +86,6 @@ export type HostedShellRouteOptions = {
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
-  /** Idempotent owner setup scheduled only from signed bootstrap on Worker waitUntil. */
-  activateOwner?: (auth: SignedControlPlaneAuth) => Promise<void>
-  /** Authenticated, data-only first-party installation catalog. */
-  serviceCatalog?: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
    * identity,
@@ -468,37 +454,14 @@ function hasCredential(c: Context, options: HostedShellRouteOptions) {
     : !!bearerToken(c.req.header("authorization") ?? null)
 }
 
-async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
+async function signedProjects(c: Context, options: HostedShellRouteOptions) {
   if (!hasCredential(c, options)) return []
   const auth = await signedAuth(c, options)
   if (!auth) return []
-  if (activateOwner && options.activateOwner) {
-    guardedWaitUntil(c)?.(options.activateOwner(auth))
-  }
   if (!options.listWorkspaces) return []
   const listed = await options.listWorkspaces(auth)
   const workspaces = Array.isArray(listed) ? listed : []
   return signedShellProjects(workspaces, await readyCloudWorkspaces(options.sandboxManager, workspaces))
-}
-
-/**
- * The browser-visible first-party service catalog.
- *
- * `authenticated: false` is authoritative: the app deactivates already-loaded
- * services on it, so an unsigned request must answer the pair rather than an
- * error. This is also the app's first signed read of the session, so it is
- * where the owner's runtime activation is scheduled.
- */
-async function signedServiceCatalogState(c: Context, options: HostedShellRouteOptions) {
-  if (!hasCredential(c, options)) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
-  const auth = await signedAuth(c, options)
-  if (!auth) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
-  if (options.activateOwner) guardedWaitUntil(c)?.(options.activateOwner(auth))
-  const services = options.serviceCatalog ? await options.serviceCatalog(auth) : EMPTY_SERVICE_CATALOG
-  return {
-    authenticated: true,
-    services: projectServiceCatalogForBrowser(services),
-  }
 }
 
 function authErrorResponse(c: Context, err: unknown) {
@@ -629,17 +592,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Every subscriber passes the same control-plane auth gate as the other
     // claxedo routes. There is no loopback bypass on a hosted central.
     .get("/api/cp/events", events)
-    // The first-party service catalog for this principal. The app reads it on
-    // its own rather than as one field of a boot aggregate: every other field
-    // that aggregate carried is per-workspace, per-harness, or a stub, and the
-    // workspace catalog is the app's own query over `/api/workspace`.
-    .get("/api/claxedo/services", async (c) => {
-      try {
-        return c.json(await signedServiceCatalogState(c, options))
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
     .get("/global/health", (c) =>
       c.json({
         healthy: true,

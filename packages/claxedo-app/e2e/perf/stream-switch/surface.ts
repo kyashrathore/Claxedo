@@ -82,7 +82,7 @@ export async function desktopSurface(): Promise<Surface> {
   await prepareHarness()
   const build = await ensureDesktopBuilt()
   console.log(`[switch] desktop ${build.built ? `built in ${build.ms} ms` : "already built"}`)
-  const desktop = await launchDesktop({ label: "stream-switch", red: false })
+  const desktop = await launchDesktop({ label: "stream-switch", red: false, renderer: "file" })
   return {
     api: desktop.api,
     workspace: await withValues(await desktop.makeWorkspace("switch", "Switch")),

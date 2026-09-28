@@ -75,7 +75,7 @@ function mountedRoutes(app: { routes: Array<{ method: string; path: string }> })
 
 const SESSION_COMPAT_ROOTS = ["/session", "/session-start", "/question", "/permission", "/command", "/agent", "/experimental/session"]
 const FILE_ADAPTER_ROOTS = ["/file", "/find/file"]
-const HOST_STATUS_PATHS = ["/mcp", "/vcs"]
+const HOST_STATUS_PATHS = ["/vcs"]
 // Registered before the relay-auth middleware so an orchestrator can probe a
 // runtime it holds no token for; the posture is deliberately unauthenticated.
 const PRE_AUTH_PATHS = ["/global/health"]

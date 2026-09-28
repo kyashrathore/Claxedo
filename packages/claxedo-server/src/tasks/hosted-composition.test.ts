@@ -243,7 +243,6 @@ async function hostedApp(
       get: () => ({ fetch: async () => new Response(null, { status: 503 }) }),
     },
     sharedRateLimitStore: { periodSeconds: 60, check: async () => ({ allowed: true }) },
-    serviceCatalog: async () => [],
     cloudWorkspaceAdmission: async () => ({
       status: 403 as const,
       body: { error: { code: "cloud_workspace_capability_unavailable", message: "Capability unavailable" } },

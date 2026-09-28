@@ -380,19 +380,6 @@ describe("session metadata routes", () => {
     expect(cursor).toBeUndefined()
   })
 
-  test("keeps children out of the grouped rail read, which pages from the unbounded store", async () => {
-    const directory = `/tmp/local-navigation-grouped-${randomUUID()}`
-    await putSessionMeta("grouped_parent", { directory, title: "Grouped root", ...runtimeTimes() })
-    await putSessionMeta("grouped_child", { directory, title: "Grouped child", parentID: "grouped_parent", ...runtimeTimes() })
-
-    const res = await SessionMetaRoutes().request(
-      `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&groupBy=workspace&limit=10`,
-    )
-    expect(res.status).toBe(200)
-    const body = await res.json() as { groups: Array<{ items: Array<{ sessionId: string }> }> }
-    expect(body.groups.flatMap((group) => group.items.map((item) => item.sessionId))).toEqual(["grouped_parent"])
-  })
-
   test("signed cloud mode rejects missing bearer tokens", async () => {
     const { app } = buildApp()
     const res = await app.request("http://localhost/api/claxedo/session/sess_1/meta")
@@ -443,20 +430,6 @@ describe("session metadata routes", () => {
 
     expect(res.status).toBe(200)
     expect(listSessionPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ workspaceId: "ws_signed_page" }))
-  })
-
-  test("a signed list refuses a view the authority's page cannot answer", async () => {
-    const svc = services()
-    const listSessionPage = vi.fn(async () => [])
-    Object.assign(svc.authority!, { listSessionPage })
-
-    const res = await buildApp(svc).app.request(
-      "http://localhost/api/claxedo/session-list?scope=project&projectId=proj_x&groupBy=workspace&limit=5",
-      { headers: { Authorization: "Bearer user_1" } },
-    )
-
-    expect(res.status).toBe(400)
-    expect(listSessionPage).not.toHaveBeenCalled()
   })
 
   test("signed cloud mode honors an explicitly composed auth config", async () => {

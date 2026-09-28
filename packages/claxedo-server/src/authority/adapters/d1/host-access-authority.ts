@@ -63,7 +63,6 @@ export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "listHostInvitations",
   "revokeHostInvitation",
   "redeemHostInvitation",
-  "markSecondDeviceOpen",
   "authorizeWorkspaceHostAssignment",
   "assignWorkspaceHost",
   "unassignWorkspaceHost",
@@ -352,21 +351,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }
   }
 
-  async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const now = this.now()
-    await this.requireWorkspaceAccess(who, workspaceId, "read")
-    const result = await this.database.prepare(`
-      ${workspaceAccessCte(1)}
-      update host_workspace_assignments
-      set second_device_open_at = coalesce(second_device_open_at, ?), updated_at = ?
-      where workspace_id = ? and owner_actor_id = ?
-        and exists (select 1 from authorized_workspace)
-    `).bind(who.actorId, workspaceId, now, now, workspaceId, who.actorId).run()
-    return { recorded: changes(result) > 0, second_device_open_at: now }
-  }
-
   /**
    * The OWNER's declaration that host H serves workspace X. Pure data: no
    * challenge and no TTL — liveness is the enrollment lease, consent is the
@@ -495,9 +479,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         insert into host_workspace_assignments (
           workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
-          second_device_open_at, assigned_at, updated_at, revision
+          assigned_at, updated_at, revision
         )
-        select workspace_id, ?, org_id, ?, ?, null, ?, ?, host_assignment_revision
+        select workspace_id, ?, org_id, ?, ?, ?, ?, host_assignment_revision
         from workspaces where workspace_id = ?
         on conflict (workspace_id) do update set
           host_id = excluded.host_id,
@@ -532,7 +516,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     await this.requireWorkspaceAccess(who, workspaceId, "read")
     const row = await this.database.prepare(`
-      select assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
+      select assignment.workspace_id, assignment.host_id,
         enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
         enrollment.session_authority
       from host_workspace_assignments assignment
@@ -543,7 +527,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     `).bind(workspaceId, this.now()).first<{
       workspace_id: string
       host_id: string
-      second_device_open_at: number | null
       display_name: string | null
       expires_at: number
       last_seen_at: number
@@ -556,7 +539,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       host_id: row.host_id,
       workspace_id: row.workspace_id,
       ...(row.display_name ? { display_name: row.display_name } : {}),
-      ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
       expires_at: row.expires_at,
       last_seen_at: row.last_seen_at,
       ...(sessionAuthority ? { session_authority: sessionAuthority } : {}),

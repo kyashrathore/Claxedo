@@ -193,7 +193,6 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 | `session.list` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions` | unary | safe | Flat inventory for a workspace. |
-| `session.navigationList` | `features/session/data/query/session-list.ts` | `GET /api/control/session-list` | unary | safe | Paginated rail rows; declared query keys only (`scope`, `limit`, plus optional filters). |
 | `session.create` | `platform/runtime/cloud/workspace-runtime-store.ts` | `POST /api/control/sessions` | unary | unsafe | A retried create is a duplicate session. Prompt admission is never repeated on transport loss. |
 | `session.messages` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/messages` | unary | safe | |
 | `session.gateway` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/gateway` | unary | safe | |

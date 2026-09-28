@@ -345,7 +345,6 @@ export type WorkspaceAuthority = {
       host_id: string
       workspace_id: string
       display_name?: string
-      second_device_open_at?: number
       expires_at: number
       last_seen_at: number
       /**
@@ -438,10 +437,6 @@ export type WorkspaceAuthority = {
   ) => Promise<Pick<HostEnrollmentListRow, "enrollment_id" | "host_id" | "enrolled_via"> | undefined>
   /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
   machineAuth?: MachineAuthAdapter
-  markSecondDeviceOpen: (
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string },
-  ) => Promise<{ recorded: boolean; second_device_open_at: number }>
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
   /**
    * Retires a project and every placement filed under it, for its owner.

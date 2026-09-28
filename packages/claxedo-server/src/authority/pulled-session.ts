@@ -1,6 +1,7 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { txt } from "@claxedo/server-core/session/meta/shape"
 import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
 import type { SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 
@@ -111,4 +112,73 @@ export function sessionIsIdle(input: unknown, sessionId: string) {
   if (!statuses) return false
   if (!(sessionId in statuses)) return true
   return asRecord(statuses[sessionId])?.type === "idle"
+}
+
+type PullProjection = Pick<SessionProjectionStore, "read_session_max_event_ordinal" | "read_session_messages" | "sync_session_messages">
+
+export type PullSkip =
+  | { ok: true; skipped: true; reason: "older_expected_ordinal" | "older_snapshot_ordinal"; currentOrdinal: number; snapshotOrdinal?: number }
+  | { ok: true; skipped: true; reason: "shorter_snapshot"; currentMessages: number; snapshotMessages: number }
+
+/**
+ * The projection's event ordinal, or the skip for a caller that asked for an
+ * older one: a pull the projection has already passed never reaches the runtime.
+ */
+export function pullStartOrdinal(store: PullProjection, sessionId: string, expectedEventOrdinal: number | undefined): number | PullSkip {
+  const currentOrdinal = store.read_session_max_event_ordinal(sessionId)
+  if (expectedEventOrdinal !== undefined && expectedEventOrdinal < currentOrdinal) {
+    return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }
+  }
+  return currentOrdinal
+}
+
+/**
+ * Writes a runtime's message snapshot into the projection unless the
+ * projection already holds it or a newer one, and answers the skip when it
+ * does. A snapshot at the projection's own ordinal that adds no message only
+ * refreshes the session's metadata.
+ */
+export async function projectPulledMessages(input: {
+  store: PullProjection
+  ws: SessionProjectionWorkspace
+  sessionId: string
+  payload: ReturnType<typeof messagesPayload>
+  currentOrdinal: number
+  refreshMetadata: () => Promise<void>
+}): Promise<PullSkip | undefined> {
+  const { store, ws, sessionId, payload, currentOrdinal } = input
+  const currentMessages = store.read_session_messages(sessionId)
+  const snapshotOrdinal = payload.maxEventOrdinal
+  if (snapshotOrdinal !== undefined && snapshotOrdinal < currentOrdinal) {
+    return { ok: true, skipped: true, reason: "older_snapshot_ordinal", currentOrdinal, snapshotOrdinal }
+  }
+  if (
+    snapshotOrdinal !== undefined &&
+    snapshotOrdinal === currentOrdinal &&
+    currentMessages.length > 0 &&
+    payload.messages.length <= currentMessages.length
+  ) {
+    await input.refreshMetadata()
+    return { ok: true, skipped: true, reason: "older_snapshot_ordinal", currentOrdinal, snapshotOrdinal }
+  }
+  if (snapshotOrdinal === undefined && payload.messages.length < currentMessages.length) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "shorter_snapshot",
+      currentMessages: currentMessages.length,
+      snapshotMessages: payload.messages.length,
+    }
+  }
+  const applied = snapshotOrdinal === undefined
+    ? await store.sync_session_messages(ws, sessionId, payload.messages)
+    : await store.sync_session_messages(ws, sessionId, payload.messages, { maxEventOrdinal: snapshotOrdinal })
+  if (applied !== false) return undefined
+  return {
+    ok: true,
+    skipped: true,
+    reason: "older_snapshot_ordinal",
+    currentOrdinal: store.read_session_max_event_ordinal(sessionId),
+    ...(snapshotOrdinal === undefined ? {} : { snapshotOrdinal }),
+  }
 }

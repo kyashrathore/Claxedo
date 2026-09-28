@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { assertTarget, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { errorBody, webStreamFrom } from "./http"
+import { errorBody } from "./http"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,
@@ -15,9 +15,7 @@ import {
   resolveWorkspaceFile,
   searchWorkspaceFiles,
   warmWorkspaceSearchIndex,
-  workspaceFileContentType,
   workspaceFileStatus,
-  workspaceRawFile,
 } from "../workspace-files/file"
 
 type FileRouteContext = {
@@ -107,31 +105,6 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
       const full = await routeFile(base, c.req.query("path"))
       if (!full) return c.json(invalidPath(), 400)
       return c.json(await readWorkspaceFileContent(full))
-    })
-    .get("/file/raw", async (c) => {
-      const base = await readable(c)
-      if (typeof base !== "string") return base
-      const full = await routeFile(base, c.req.query("path"))
-      if (!full) return c.json(invalidPath(), 400)
-
-      try {
-        const raw = await workspaceRawFile(full)
-        if (!raw) return c.json(errorBody("file_not_found", "File not found"), 404)
-        return new Response(webStreamFrom(raw.stream), {
-          headers: {
-            "content-length": String(raw.size),
-            "content-type": workspaceFileContentType(full),
-            // The workspace serves its own pages from this origin, and an SVG is a
-            // document that can carry script. `nosniff` holds the browser to the type
-            // above, and the sandbox denies whatever a document among these bytes
-            // would otherwise run as this origin.
-            "x-content-type-options": "nosniff",
-            "content-security-policy": "default-src 'none'; sandbox",
-          },
-        })
-      } catch {
-        return c.json(errorBody("file_not_found", "File not found"), 404)
-      }
     })
     .get("/file/status", async (c) => {
       const base = await readable(c)

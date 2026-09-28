@@ -301,9 +301,9 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
       const healthBody = await health.json() as Record<string, unknown>
       expect(healthBody).toMatchObject({ service: "workspace-runtime", workspaceId: ws!.id })
 
-      const raw = await relayFetch("/file/raw?path=hello.txt")
-      expect(raw.status).toBe(200)
-      await expect(raw.text()).resolves.toBe("hello through relay\n")
+      const content = await relayFetch("/file/content?path=hello.txt")
+      expect(content.status).toBe(200)
+      await expect(content.json()).resolves.toEqual({ type: "text", content: "hello through relay" })
 
       const pty = await fetch(`${relay.url}/workspaces/${ws!.id}/api/wr/pty`, {
         method: "POST",
