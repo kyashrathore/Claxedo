@@ -1,5 +1,6 @@
 import type { ExecutionAvailability } from "./availability"
 import type { AgentAgentPartInput, AgentFilePartInput, AgentTextPartInput } from "./content"
+import type { FirstTurnErrorClass } from "./turn-error-classes"
 
 export type AgentWorkspaceIdentity = {
   workspaceId: string
@@ -130,7 +131,7 @@ export type AgentPresentationSession = AgentSession & {
 
 export type AgentTurnOutcome = (
   | { status: "completed"; completedAt: number; reason?: string }
-  | { status: "failed"; completedAt: number; error: string }
+  | { status: "failed"; completedAt: number; error: string; errorClass?: FirstTurnErrorClass }
   | { status: "cancelled"; completedAt: number; reason?: string }
 ) & { assistantMessageId?: string }
 

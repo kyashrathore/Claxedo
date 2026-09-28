@@ -1840,6 +1840,46 @@ describe("claudeSdkAdapter rate limits", () => {
     }
   })
 
+  test("a rate_limit refusal is a temporary rate limit unless the last window report rejected a plan window", () => {
+    const agent = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter(),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    })
+    const window = (status: string) => agent.ingest({
+      source: "claude.sdk",
+      method: "claude/rate_limit_event",
+      payload: { type: "rate_limit_event", uuid: `rate-${status}`, session_id: "sdk-session-1", rate_limit_info: { status, rateLimitType: "five_hour" } },
+    })
+    const refusal = () => agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "assistant", error: "rate_limit",
+        message: { content: [{ type: "text", text: "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later." }] },
+      },
+    }).events.find((event) => event.type === "error")
+
+    expect(refusal()).toMatchObject({ type: "error", errorClass: "rate_limit" })
+    window("rejected")
+    expect(refusal()).toMatchObject({ type: "error", errorClass: "usage_limit" })
+    window("allowed")
+    expect(refusal()).toMatchObject({ type: "error", errorClass: "rate_limit" })
+  })
+
+  test("an assistant failure that is no limit carries no class of its own", () => {
+    const [, error] = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter(),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    }).ingest({ source: "claude.sdk.message", payload: { type: "assistant", error: "invalid_request", message: { content: [] } } }).events
+    expect(error).toMatchObject({ type: "error" })
+    expect(error).not.toHaveProperty("errorClass")
+  })
+
   test("only a rejection is a limit", () => {
     expect(emitted({ status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 })).toEqual([{
       type: "rate-limit",

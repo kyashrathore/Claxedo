@@ -22,7 +22,6 @@ export { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 export { PreviousMessagesRow } from "./message-timeline-turn-rows"
 export { TimelineErrorPresentation, FirstTurnRecoveryCard, TurnAdmissionStatus } from "./first-turn-recovery-card"
 export {
-  sessionRecovery,
   sessionRecoveryClass,
   sessionRecoveryDescription,
   type SessionErrorClass,

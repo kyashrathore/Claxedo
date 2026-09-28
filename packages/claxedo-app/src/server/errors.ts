@@ -97,7 +97,7 @@ export async function responseErrorCode(response: Response): Promise<string | un
   return readErrorBody(await response.clone().text()).code
 }
 
-const TURN_ERROR_CLASSES: Readonly<Record<string, ErrorClass>> = { credential: "auth", usage_limit: "rate_limit", session: "not_found" }
+const TURN_ERROR_CLASSES: Readonly<Record<string, ErrorClass>> = { credential: "auth", rate_limit: "rate_limit", usage_limit: "rate_limit", session: "not_found" }
 
 function turnErrorClass(data: { firstTurnErrorClass?: unknown }, status: number | undefined): ErrorClass {
   const reported = typeof data.firstTurnErrorClass === "string" ? TURN_ERROR_CLASSES[data.firstTurnErrorClass] : undefined

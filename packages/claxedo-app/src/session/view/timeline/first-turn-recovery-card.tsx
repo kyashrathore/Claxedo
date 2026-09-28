@@ -3,7 +3,8 @@ import { copyText } from "@/lib/clipboard"
 import { ClaxedoIcon as Icon, Button, Card, Tooltip } from "@/ui"
 import { ClaxedoIconButton as IconButton } from "@/ui"
 import type { DispatchContext } from "./provider-error-detail"
-import { sessionRecovery, sessionRecoveryDescription, type SessionErrorClass } from "./turn-recovery"
+import type { TimelineTranslate } from "./model"
+import { turnRecoveryKeys, sessionRecoveryDescription, sessionRecoveryTitle, type SessionErrorClass } from "./turn-recovery"
 
 function RawDetail(props: { detail: string }) {
   const [open, setOpen] = createSignal(false)
@@ -100,6 +101,7 @@ export function TimelineErrorPresentation(props: {
   summary?: string
   error?: unknown
   onAction: (value: SessionErrorClass) => unknown
+  t: TimelineTranslate
 } & DispatchContext) {
   return (
     <Show
@@ -118,6 +120,7 @@ export function TimelineErrorPresentation(props: {
               providerID={props.providerID}
               modelID={props.modelID}
               onAction={props.onAction}
+              t={props.t}
             />
           )}
         </Show>
@@ -134,17 +137,19 @@ export function FirstTurnRecoveryCard(props: {
   summary?: string
   error?: unknown
   onAction: (kind: SessionErrorClass) => unknown
+  t: TimelineTranslate
 } & DispatchContext) {
-  const recovery = () => sessionRecovery(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
+  const context = () => ({ providerID: props.providerID, modelID: props.modelID })
+  const text = () => turnRecoveryKeys(props.kind)
+  const title = () => sessionRecoveryTitle(props.kind, props.error, context()) ?? props.t(text().title)
   const description = () =>
-    props.summary ??
-    sessionRecoveryDescription(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
+    props.summary ?? sessionRecoveryDescription(props.kind, props.error, context()) ?? props.t(text().description)
   if (props.kind === "usage_limit") {
     return (
       <InlineErrorStatus
         testId="usage-limit-status-message"
         recoveryClass={props.kind}
-        title={recovery().title}
+        title={title()}
         description={description()}
       />
     )
@@ -173,23 +178,27 @@ export function FirstTurnRecoveryCard(props: {
     <InlineErrorStatus
       testId="first-turn-recovery-card"
       recoveryClass={props.kind}
-      title={recovery().title}
+      title={title()}
       description={description()}
     >
       <Show when={detail()}>{(value) => <RawDetail detail={value()} />}</Show>
       <Show when={actionError()}>{(value) => (
         <div class="mt-2 text-12-regular text-icon-critical-base" role="alert">{value()}</div>
       )}</Show>
-      <Button
-        class="mt-2"
-        size="small"
-        variant="neutral"
-        disabled={pending()}
-        aria-busy={pending()}
-        onClick={() => void act()}
-      >
-        {recovery().label}
-      </Button>
+      <Show when={text().action}>
+        {(action) => (
+          <Button
+            class="mt-2"
+            size="small"
+            variant="neutral"
+            disabled={pending()}
+            aria-busy={pending()}
+            onClick={() => void act()}
+          >
+            {props.t(action())}
+          </Button>
+        )}
+      </Show>
     </InlineErrorStatus>
   )
 }

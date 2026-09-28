@@ -1270,6 +1270,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 providerID={errorRow().providerID}
                 modelID={errorRow().modelID}
                 onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageId)}
+                t={host.t}
               />
             </div>
           </TimelineRowFrame>

@@ -10,7 +10,15 @@ describe("first-turn error taxonomy", () => {
     ["You've reached your Codex rate limit. It will reset in about 5 hours.", "usage_limit"],
     ["You've reached your Codex usage limit.", "usage_limit"],
     ["rate_limit_reached", "usage_limit"],
-    ["Claude assistant message failed: rate_limit", "usage_limit"],
+    ["Claude assistant message failed: rate_limit", "rate_limit"],
+    [
+      "Claude assistant message failed: rate_limit\nAPI Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later.",
+      "rate_limit",
+    ],
+    ['429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed the rate limit for your organization"}}', "rate_limit"],
+    ["Too Many Requests", "rate_limit"],
+    ["You've hit your limit · resets 3pm (Asia/Calcutta)", "usage_limit"],
+    ["429 You exceeded your current quota, please check your plan and billing details.", "usage_limit"],
     ["workspace_owner_usage_limit_reached", "usage_limit"],
     ["ACP harness process failed to start", "harness"],
     ["unsupported adapter capability", "harness"],
@@ -74,6 +82,13 @@ describe("first-turn error taxonomy", () => {
   test("classifies unrecognized failures as unknown", () => {
     expect(classifyFirstTurnError("connection closed unexpectedly")).toBe("unknown")
     expect(classifyFirstTurnError("Stream error")).toBe("unknown")
+  })
+
+  test("the harness's own class outranks the message it came with", () => {
+    expect(firstTurnErrorData("Claude assistant message failed: rate_limit", "usage_limit")).toEqual({
+      message: "Claude assistant message failed: rate_limit",
+      firstTurnErrorClass: "usage_limit",
+    })
   })
 
   test("attaches the typed class without replacing the original message", () => {
