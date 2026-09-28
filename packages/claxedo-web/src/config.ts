@@ -7,6 +7,7 @@ export const appUrl =
 
 export const contact = "https://discord.gg/GC6QagQ8QE"
 export const github = "https://github.com/kyashrathore/Claxedo"
+export const benchmark = "https://github.com/kyashrathore/agent-app-benchmark"
 export const version = "0.0.65"
 
 export const featured = [

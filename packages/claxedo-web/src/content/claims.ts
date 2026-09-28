@@ -186,6 +186,15 @@ export const claims = [
     verifiedAt: "2026-09-28",
   },
   {
+    id: "core-metrics",
+    publicWording:
+      "Measured on 28 September 2026 on the current build (ceab229c5b), Claxedo beats T3 Code 0.0.42 and OpenCode 1.18.32 on five core metrics: app start (0.98 s; 2.9× and 2.3× faster), session open (45 ms; 3.1× and 2.6×), session return (27 ms; 2.5× and 2.1×), memory after the switching walk (750 MiB; 1.8× and 2.1× less) and idle CPU (0.0% against 1.6% and 20.4%).",
+    owner: "Claxedo performance",
+    evidence: ["docs/reports/2026-09-27-perf-goal-final.md"],
+    status: "verified",
+    verifiedAt: "2026-09-28",
+  },
+  {
     id: "open-benchmark",
     publicWording:
       "In the open Agent App Benchmark run of 28 September 2026, Claxedo started 2.6× faster than T3 Code and 3× faster than OpenCode from an existing profile, opened sessions for the first time up to 3.3× faster, used 30–48% less memory idle after launch and 0.2% CPU while idle. T3 Code was faster returning to a 1 MiB session, and OpenCode tied on first visits to an 8 MiB session.",

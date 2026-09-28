@@ -2,18 +2,16 @@ import { github } from "../config"
 import { marketingActions, routes } from "./routes"
 
 /**
- * `id` picks the line's voice on the home stage and the state the app demo moves to while it plays.
- * `cycles` lists true alternatives a word flips through before it settles.
+ * `id` picks the state the home page's app demo moves to while the line plays.
+ * `loud` is the part of `text` set at full strength; the rest is muted.
  */
 export type HomeLine = {
   id: "speed" | "prompt" | "team" | "place" | "tools" | "terminal"
   text: string
+  loud: string
   proof?: { label: string; href: string }
-  cycles?: Readonly<Record<string, readonly string[]>>
   claims: readonly string[]
 }
-
-export const benchmarkUrl = "https://github.com/kyashrathore/agent-app-benchmark"
 
 export const site = {
   name: "Claxedo",
@@ -34,45 +32,59 @@ export const site = {
   hostedDescriptor: "Claxedo Cloud",
 } as const
 
-/** Every line names the claims behind it; the home page refuses to build if one is not publishable. */
+/** Every line and the benchmark strip name the claims behind them; the home page refuses to build if one is not publishable. */
 export const home = {
-  headline: { text: site.headline, claims: ["harness-coverage"] },
   lines: [
     {
       id: "speed",
-      text: "Starts 2.5× faster than T3 Code and OpenCode",
-      proof: { label: "See the benchmark", href: benchmarkUrl },
-      claims: ["open-benchmark"],
+      text: "Beats T3 Code and OpenCode on every core metric",
+      loud: "Beats T3 Code and OpenCode",
+      claims: ["core-metrics"],
     },
     {
       id: "prompt",
       text: "Build your own features with a prompt",
+      loud: "Build your own features",
       claims: ["app-plugins-by-prompt"],
     },
     {
       id: "team",
       text: "Self-host for your team on Cloudflare",
-      proof: { label: "Read the deployment guide", href: `${github}/blob/dev/public-docs/user-deployed-cloudflare.md` },
+      loud: "Self-host",
+      proof: { label: "Deployment guide", href: `${github}/blob/dev/public-docs/user-deployed-cloudflare.md` },
       claims: ["user-deployed-cloudflare"],
     },
     {
       id: "place",
       text: "Any machine. Any sandbox.",
-      proof: { label: "Read the sandbox adapter contract", href: `${github}/blob/dev/packages/sandbox-manager/docs/architecture.md` },
-      cycles: { "machine.": ["laptop", "server", "desktop"], "sandbox.": ["Daytona", "Modal", "Vercel", "Docker"] },
+      loud: "Any machine.",
+      proof: { label: "Sandbox adapter contract", href: `${github}/blob/dev/packages/sandbox-manager/docs/architecture.md` },
       claims: ["sandbox-providers", "connected-placement"],
     },
     {
       id: "tools",
       text: "Your tools follow you everywhere",
+      loud: "follow you everywhere",
       claims: ["agent-plugins", "agent-plugins-follow-you"],
     },
     {
       id: "terminal",
       text: "Chat or terminal. Your call.",
+      loud: "Chat or terminal.",
       claims: ["harness-coverage", "acp-client", "agent-cli-access"],
     },
   ] satisfies readonly HomeLine[],
+  benchmark: {
+    line: "speed",
+    claims: ["core-metrics"],
+    metrics: [
+      { name: "App start", value: "0.98 s", compare: ["2.9× vs T3", "2.3× vs OpenCode"] },
+      { name: "Session open", value: "45 ms", compare: ["3.1× vs T3", "2.6× vs OpenCode"] },
+      { name: "Session return", value: "27 ms", compare: ["2.5× vs T3", "2.1× vs OpenCode"] },
+      { name: "Memory", value: "750 MiB", compare: ["1.8× less than T3", "2.1× less than OpenCode"] },
+      { name: "Idle CPU", value: "0.0%", compare: ["T3 1.6%", "OpenCode 20.4%"] },
+    ],
+  },
 } as const
 
 export const commercialNavigation = [
