@@ -28,9 +28,10 @@ import { AcpConnectionHealth } from "./health"
 import { acpMcpServers } from "./projection"
 import { acpCancelDeadline, acpQuiet, trackedAcpCancel } from "./cancellation"
 import { acpEffortCatalog, acpModelSelection } from "./options"
-import { acpApplyTurnConfig } from "./sync"
+import { acpPrepareTurnConfig } from "./sync"
 import { acpSessionTitle } from "./title"
-import { attachAcpEntry, restartAcpEntry, startAcpEntry, type AcpHost } from "./startup"
+import { attachAcpEntry, startAcpEntry, type AcpHost } from "./startup"
+import { AcpSessionLifecycle } from "./lifecycle"
 
 export type AcpMcpFilter = (input: {
   servers: readonly ProjectedMcpServer[]
@@ -78,9 +79,8 @@ export class AcpTransport implements HarnessTransport {
   private readonly entries = new Map<string, AcpEntry>()
   private readonly starting = new Set<AcpEntry>()
   private readonly startingAborts = new Set<AbortController>()
-  private readonly restarts = new Map<string, Promise<void>>()
-  private readonly restartFailures = new Map<string, unknown>()
   private readonly peers = new AcpPeerOwnership()
+  private readonly lifecycle: AcpSessionLifecycle
   private readonly probes: AcpDraftProbes
   private readonly host: AcpHost
   private disposed = false
@@ -113,8 +113,9 @@ export class AcpTransport implements HarnessTransport {
     this.health = new AcpConnectionHealth(services.clock)
     this.probes = new AcpDraftProbes(services, connection, filterMcp, this.peers)
     this.host = { services, health: this.health, connection, filterMcp, missingContext, entries: this.entries, starting: this.starting,
-      startingAborts: this.startingAborts, peers: this.peers, idle: (entry) => { if (entry.pendingRestart) this.deferRestart(entry) },
+      startingAborts: this.startingAborts, peers: this.peers, idle: (entry) => { if (entry.pendingRestart) this.lifecycle.defer(entry) },
       disposed: () => this.disposed, mcp: (entry) => this.mcp(entry) }
+    this.lifecycle = new AcpSessionLifecycle(this.host)
   }
 
   async capabilities(context: { sessionId?: string; directory: string }): Promise<TransportCapabilities> {
@@ -137,8 +138,7 @@ export class AcpTransport implements HarnessTransport {
   }
 
   private entry(session: HarnessSession): AcpEntry {
-    const failed = this.restartFailures.get(session.binding.sessionId)
-    if (failed !== undefined) throw new AcpTransportError("session", `ACP session restart failed: ${errorMessage(failed)}`, failed)
+    this.lifecycle.assertAvailable(session.binding.sessionId)
     return attachedSessionEntry(this.entries, session, () => new AcpTransportError("session", "ACP session is not attached"))
   }
 
@@ -151,33 +151,30 @@ export class AcpTransport implements HarnessTransport {
       ...(this.connection.sharedFilesystem ? { sharedDirectory: entry.session.directory } : {}) }
   }
 
-  private async settled(sessionId: string): Promise<void> {
-    await this.restarts.get(sessionId)
-  }
-
   async restore(session: HarnessSession): Promise<HarnessSession> {
     const sessionId = session.binding.sessionId
-    await this.settled(sessionId)
+    await this.lifecycle.settled(sessionId)
     const entry = this.entries.get(sessionId)
     if (entry?.phase === "ready" && entry.peer.agent.signal.aborted) {
-      this.deferRestart(entry)
-      await this.settled(sessionId)
+      await this.lifecycle.restart(entry)
+      await this.lifecycle.settled(sessionId)
     }
     const restored = this.entries.get(sessionId)
     return this.entry(restored?.session ?? session).session
   }
 
-  start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
-    this.restartFailures.delete(input.sessionId)
+  async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
+    await this.lifecycle.prepare(input.sessionId)
     return startAcpEntry(this.host, input, broker)
   }
 
-  attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
-    this.restartFailures.delete(input.sessionId)
+  async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
+    await this.lifecycle.prepare(input.sessionId)
     return attachAcpEntry(this.host, input, broker)
   }
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
+    await this.lifecycle.settled(session.binding.sessionId)
     const entry = this.entry(session)
     if (entry.phase !== "ready" || entry.providerTurn) throw new AcpTransportError("session", entry.phase === "uncertain" ? "ACP session outcome is uncertain" : "ACP session already has an active turn")
     entry.phase = "busy"
@@ -187,13 +184,14 @@ export class AcpTransport implements HarnessTransport {
     entry.turnBroker = broker
     const queue = new AsyncPushQueue<RoutedEvent>()
     entry.queue = queue
-    entry.quiet = acpQuiet(entry, queue, this.services.clock, this.connection.promptTimeoutMs ?? 300_000)
     entry.receive = acpReceiver(entry.start.config.harness.id, session, queue)
     const aborted = () => { void trackedAcpCancel(entry, acpCancelDeadline()) }
     broker.signal.addEventListener("abort", aborted, { once: true })
     if (broker.signal.aborted) aborted()
     const submission = { submitted: false }
     try {
+      await acpPrepareTurnConfig(entry, turn, this.services.clock, this.connection.startupTimeoutMs ?? 10_000)
+      entry.quiet = acpQuiet(entry, queue, this.services.clock, this.connection.promptTimeoutMs ?? 300_000)
       yield* this.prompted(entry, session, turn, queue, submission)
     } catch (error) {
       throw acpTurnFailure(error, { submitted: submission.submitted, connectionAlive: !entry.peer.agent.signal.aborted, uncertain: sessionUncertain(entry) })
@@ -207,13 +205,12 @@ export class AcpTransport implements HarnessTransport {
       await (entry.cancelSent ?? Promise.resolve(undefined))
       entry.cancelSent = undefined
       if (entry.phase === "busy") entry.phase = "ready"
-      if (entry.pendingRestart && entry.phase === "ready") this.deferRestart(entry)
+      if (entry.pendingRestart && entry.phase === "ready") this.lifecycle.defer(entry)
     }
   }
 
   private async *prompted(entry: AcpEntry, session: HarnessSession, turn: TurnInput, queue: AsyncPushQueue<RoutedEvent>,
     submission: { submitted: boolean }): AsyncIterable<RoutedEvent> {
-    await acpApplyTurnConfig(entry, turn)
     const content = await acpPrompt(turn, this.delivery(entry))
     if (entry.cancelled) {
       for (const event of translateStopReason("cancelled", session.binding.sessionId)) yield { event }
@@ -245,7 +242,7 @@ export class AcpTransport implements HarnessTransport {
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
-    await this.settled(session.binding.sessionId)
+    await this.lifecycle.settled(session.binding.sessionId)
     const entry = this.entry(session)
     if (entry.phase === "uncertain") {
       return { state: "refused", reason: "ACP session outcome is uncertain" }
@@ -255,46 +252,20 @@ export class AcpTransport implements HarnessTransport {
     if (!changed) return { state: "applied" }
     entry.start = next
     if (entry.phase === "busy" || entry.providerTurn) { entry.pendingRestart = true; return { state: "deferred", until: "after-active-turns" } }
-    await restartAcpEntry(this.host, entry)
+    await this.lifecycle.restart(entry)
     return { state: "applied" }
   }
 
-  private deferRestart(entry: AcpEntry): void {
-    const id = entry.session.binding.sessionId
-    if (this.restarts.has(id)) return
-    const restarting = restartAcpEntry(this.host, entry).then(() => { this.restarts.delete(id) }, (error: unknown) => {
-      this.restarts.delete(id)
-      this.restartFailures.set(id, error)
-      entry.broker.reportFailure(error)
-    })
-    this.restarts.set(id, restarting)
-  }
-
-  async close(session: HarnessSession): Promise<void> {
-    await this.settled(session.binding.sessionId)
-    this.restartFailures.delete(session.binding.sessionId)
-    const entry = this.entry(session)
-    this.entries.delete(session.binding.sessionId)
-    this.health.forget(session.binding.sessionId)
-    entry.providerTurn?.queue.fail(new AcpTransportError("connection", "ACP session closed"))
-    entry.startupAbort.abort()
-    await this.peers.retire(entry.peer)
+  close(session: HarnessSession): Promise<void> {
+    return this.lifecycle.close(session)
   }
 
   async dispose(): Promise<void> {
     this.disposed = true
     for (const controller of this.startingAborts) controller.abort()
-    const entries = [...this.entries.values(), ...this.starting]
-    for (const entry of entries) {
-      entry.providerTurn?.queue.fail(new AcpTransportError("connection", "ACP transport disposed"))
-      entry.startupAbort.abort()
-    }
-    this.entries.clear()
-    this.health.clear()
-    this.starting.clear()
-    this.restartFailures.clear()
     this.probes.dispose()
-    await Promise.all(this.restarts.values())
+    this.starting.clear()
+    try { await this.lifecycle.dispose() } finally { this.health.clear() }
     await this.peers.retireAll()
   }
 }

@@ -21,7 +21,8 @@ async function fixture() {
   const host = createHostFixture({ transports: { "acp-test": transport } })
   const session = await host.runtime.sessions.create(sessionCreate({ harness: { id: "acp-test", access: "connection" } }))
   host.store.updateSessionConfig(session.id, { agent: "build", model: { providerID: "acp-test", modelID: "default" } })
-  return { ...peer, ...host, transport, id: session.id }
+  return { ...peer, ...host, transport, id: session.id,
+    dispose: async () => { await Promise.all([transport.dispose(), host.dispose()]) } }
 }
 
 test("ACP death then missing upstream restores before preparing the next prompt", async () => {
