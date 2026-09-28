@@ -17,7 +17,7 @@ export const dictionary = {
 } satisfies Translations<"rail.newSession" | "rail.search">
 ```
 
-Keys are prefixed with the domain name so two domains never define the same key; a duplicate English key is logged and the first definition stays.
+Keys are prefixed with the domain name so two domains never define the same key. The `one-registration` check fails a key that two dictionaries passed to `useTranslator` or `add` both define; a plugin dictionary is registered at run time, so a duplicate there is logged and the first definition stays.
 
 A component asks for a typed translator for its domain:
 

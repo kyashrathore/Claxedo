@@ -86,6 +86,4 @@ export default {
   "command.message.next": "下一条消息",
   "command.message.next.description": "跳转到下一条用户消息",
   "sessionScreen.requests.loadFailed": "无法加载待处理的权限请求或问题。请重试以继续。",
-  "command.session.new": "新建会话",
-  "command.category.session": "会话",
 } satisfies Partial<Record<SessionScreenTextKey, string>>
