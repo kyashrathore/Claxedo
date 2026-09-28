@@ -20,7 +20,7 @@ describe("public site contract", () => {
   test("carries six evidenced one-liners and the core-metrics strip", () => {
     expect(site.description).toContain("Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent")
     expect(home.lines).toHaveLength(6)
-    expect(home.benchmark.metrics.map((metric) => metric.name)).toEqual(["App start", "Session open", "Session return", "Memory", "Idle CPU"])
+    expect(home.benchmark.metrics.map((metric) => metric.label)).toEqual(["faster start", "faster session open", "faster return", "less memory", "idle CPU"])
     const publishable = new Set<string>(publishableClaims.map((item) => item.id))
     for (const id of home.benchmark.claims) expect(publishable.has(id)).toBe(true)
     for (const line of home.lines) {

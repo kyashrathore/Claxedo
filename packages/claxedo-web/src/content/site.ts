@@ -1,4 +1,4 @@
-import { github } from "../config"
+import { benchmark, github } from "../config"
 import { marketingActions, routes } from "./routes"
 
 /**
@@ -39,6 +39,7 @@ export const home = {
       id: "speed",
       text: "Beats T3 Code and OpenCode on every core metric",
       loud: "Beats T3 Code and OpenCode",
+      proof: { label: "Benchmark", href: `${benchmark}#latest-results` },
       claims: ["core-metrics"],
     },
     {
@@ -78,11 +79,11 @@ export const home = {
     line: "speed",
     claims: ["core-metrics"],
     metrics: [
-      { name: "App start", value: "0.98 s", compare: ["2.9× vs T3", "2.3× vs OpenCode"] },
-      { name: "Session open", value: "45 ms", compare: ["3.1× vs T3", "2.6× vs OpenCode"] },
-      { name: "Session return", value: "27 ms", compare: ["2.5× vs T3", "2.1× vs OpenCode"] },
-      { name: "Memory", value: "750 MiB", compare: ["1.8× less than T3", "2.1× less than OpenCode"] },
-      { name: "Idle CPU", value: "0.0%", compare: ["T3 1.6%", "OpenCode 20.4%"] },
+      { lead: "2.3×", label: "faster start", detail: ["vs T3 2.9×", "vs OpenCode 2.3×", "0.98 s"] },
+      { lead: "2.6×", label: "faster session open", detail: ["vs T3 3.1×", "vs OpenCode 2.6×", "45 ms"] },
+      { lead: "2.1×", label: "faster return", detail: ["vs T3 2.5×", "vs OpenCode 2.1×", "27 ms"] },
+      { lead: "1.8×", label: "less memory", detail: ["vs T3 1.8×", "vs OpenCode 2.1×", "750 MiB"] },
+      { lead: "0%", label: "idle CPU", detail: ["T3 1.6%", "OpenCode 20.4%"] },
     ],
   },
 } as const

@@ -190,7 +190,10 @@ export const claims = [
     publicWording:
       "Measured on 28 September 2026 on the current build (ceab229c5b), Claxedo beats T3 Code 0.0.42 and OpenCode 1.18.32 on five core metrics: app start (0.98 s; 2.9× and 2.3× faster), session open (45 ms; 3.1× and 2.6×), session return (27 ms; 2.5× and 2.1×), memory after the switching walk (750 MiB; 1.8× and 2.1× less) and idle CPU (0.0% against 1.6% and 20.4%).",
     owner: "Claxedo performance",
-    evidence: ["docs/reports/2026-09-27-perf-goal-final.md"],
+    evidence: [
+      "docs/reports/2026-09-27-perf-goal-final.md",
+      "https://github.com/kyashrathore/agent-app-benchmark/blob/964887d536e26802f0a88bb8ebf8c5778a4c9a8c/README.md#latest-results",
+    ],
     status: "verified",
     verifiedAt: "2026-09-28",
   },
