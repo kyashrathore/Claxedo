@@ -5,7 +5,7 @@ import type { DraftLaunch } from "./transport"
 const draft = (placeholder: string, leaseGeneration = "lease-1"): DraftLaunch => ({
   workspaceId: "w1", directory: "/work", locality: "local", owner: { kind: "person", userId: "member" },
   config: { harness: { id: "codex", access: "native" } }, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-  credentials: { providers: { "codex-app-server": { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration },
+  credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { openai: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration },
 })
 
 test("a draft probe key names the launch identity and never a placeholder or secret", () => {

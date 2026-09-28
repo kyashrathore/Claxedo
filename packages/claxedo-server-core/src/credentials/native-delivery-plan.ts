@@ -1,4 +1,6 @@
-import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { createHash } from "node:crypto"
+import { accountHolderOf, holderAccountSources, selectedAccounts, spendsAccount, TEAM_ACCOUNT_UNAVAILABLE, type AccountSelections } from "./account-holder"
+import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
@@ -35,6 +37,8 @@ export type NativeProviderSecret = {
 }
 
 export type NativeProviderDelivery = {
+  /** The person whose account this is; null for the org's team account. */
+  userId: string | null
   providerId: string
   /**
    * The stored account this resolved to. Two accounts for one provider commonly
@@ -64,20 +68,23 @@ export type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 const ENV_PREFIX = "CLAXEDO_PROVIDER_"
 
 /**
- * The environment variable a provider's placeholder arrives in.
+ * The environment variable an account's placeholder arrives in, named for the
+ * stored account (its row id is random) rather than for any person, so code in
+ * the sandbox cannot name another account's placeholder from who owns it.
  *
- * Stable across sandboxes and revisions: Daytona's mounted variables only reach
- * processes spawned after a change in the mounted NAMES, so a name derived from
- * anything but the provider would restart the sandbox on every rotation.
+ * Stable across rotations: Daytona's mounted variables only reach processes
+ * spawned after a change in the mounted NAMES, and a rotation keeps the row.
  */
-function providerPlaceholderEnv(providerId: string): string {
-  return `${ENV_PREFIX}${providerId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`
+export function accountPlaceholderEnv(credential: Pick<CredentialMetadata, "id" | "provider_id">): string {
+  const binding = createHash("sha256").update(credential.id).digest("hex").slice(0, 24).toUpperCase()
+  return `${ENV_PREFIX}${credential.provider_id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_${binding}`
 }
 
 function undeliverable(credential: CredentialMetadata, reason: string): NativeProviderDelivery {
   return {
     providerId: credential.provider_id,
     credentialId: credential.id,
+    userId: credential.owner ?? null,
     projection: { unavailable: true, reason },
   }
 }
@@ -90,10 +97,11 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
   // without the companion is refused by the vendor, not by us.
   if (destination.injection.headers) return undeliverable(credential, "native_delivery_needs_companion_header")
   if (destination.exchange) return undeliverable(credential, "native_delivery_needs_token_exchange")
-  const name = providerPlaceholderEnv(providerId)
+  const name = accountPlaceholderEnv(credential)
   return {
     providerId,
     credentialId: credential.id,
+    userId: credential.owner ?? null,
     revision: credential.revision,
     secret: {
       name,
@@ -115,7 +123,16 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
 
 export type NativeCredentialSelection = { credential: CredentialMetadata; unavailable?: string }
 
+/**
+ * What one person's sandbox is delivered: the account they chose for each
+ * provider, their own or the team's. Nobody else's account reaches it, because
+ * anything delivered can be spent by any code it runs.
+ */
 export async function nativeProviderDeliveriesFromRepository(input: {
+  /** The sandbox's owner. */
+  owner: string
+  machineOwnerUserId: string
+  selections: AccountSelections
   selected: readonly NativeCredentialSelection[]
   readSecret(credential: CredentialMetadata): Promise<string | null | undefined>
   secretBrokering?: SandboxSecretBrokering
@@ -124,7 +141,10 @@ export async function nativeProviderDeliveriesFromRepository(input: {
 }): Promise<NativeProviderDelivery[]> {
   const deliveries: NativeProviderDelivery[] = []
   const claimed = new Map<string, string>()
-  for (const row of byMostRecentMark(input.selected)) {
+  const holder = accountHolderOf(input.owner, input.machineOwnerUserId)
+  const sources = holderAccountSources(input.selections, holder, input.machineOwnerUserId)
+  const entitled = input.selected.filter(({ credential }) => spendsAccount(credential, holder, sources, input.machineOwnerUserId))
+  for (const row of byMostRecentMark(entitled)) {
     const providerId = row.credential.provider_id
     if (row.unavailable) {
       deliveries.push(undeliverable(row.credential, row.unavailable))
@@ -181,12 +201,25 @@ export function unreadableDeliveries(deliveries: readonly NativeProviderDelivery
   return deliveries.flatMap((row) => row.unreadable ? [row.credentialId] : [])
 }
 
+/**
+ * The snapshot a sandbox runs on. Its machine owner is the sandbox's owner, so a
+ * session with no person of its own spends their accounts, as it would on their
+ * machine; it is never given a machine login there.
+ */
 export function nativeProviderAuth(
   deliveries: readonly NativeProviderDelivery[],
-): Record<string, ProviderProjectionSource> {
-  const rows: Record<string, ProviderProjectionSource> = {}
-  for (const row of deliveries) rows[row.providerId] = row.projection
-  return rows
+  input: { owner: string; machineOwnerUserId: string; selections: AccountSelections },
+): CredentialSnapshot {
+  const holder = accountHolderOf(input.owner, input.machineOwnerUserId)
+  return {
+    machineOwnerUserId: holder,
+    accounts: selectedAccounts({
+      machineOwnerUserId: input.machineOwnerUserId,
+      rows: deliveries.map((row) => ({ owner: row.userId, providerId: row.providerId, projection: row.projection })),
+      selections: { [holder]: holderAccountSources(input.selections, holder, input.machineOwnerUserId) },
+      missingTeam: () => ({ unavailable: true, reason: TEAM_ACCOUNT_UNAVAILABLE }),
+    }),
+  }
 }
 
 export function nativeProviderSecrets(

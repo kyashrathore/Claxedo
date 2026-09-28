@@ -10,7 +10,7 @@ const draft: DraftLaunch = {
   workspaceId: "preview", directory: "/tmp", locality: "local", owner: { kind: "machine-owner" },
   model: { providerID: "proof", modelID: "current" },
   config: { harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "old" } },
-  credentials: { providers: {}, secrets: {}, leaseGeneration: "one" },
+  credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" },
   projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] },
 }
 

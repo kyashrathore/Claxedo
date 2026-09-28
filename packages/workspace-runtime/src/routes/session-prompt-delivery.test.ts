@@ -12,7 +12,7 @@ import { sessionIdle } from "../compat-events"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { FakeTransport } from "../test-support/fake-transport"
-import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate } from "../test-support/host-fixture"
+import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []
@@ -89,7 +89,7 @@ function routes(runtime: AgentRuntime, queuedPrompts = durableQueue().host, publ
   })
 }
 
-const RELAYED_ACTOR = { actorId: "actor_1", actorKind: "human" as const }
+const RELAYED_ACTOR = { userId: "user_1", actorId: "actor_1", actorKind: "human" as const }
 const RELAYED_AUTHORITY = { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const }
 
 /**
@@ -123,6 +123,7 @@ function grantingRoutes(runtime: AgentRuntime, queuedPrompts: SessionDeliveryOwn
         org_id: RELAYED_AUTHORITY.orgId,
         role: RELAYED_AUTHORITY.role,
         actor_id: RELAYED_ACTOR.actorId,
+        user_id: RELAYED_ACTOR.userId,
         actor_kind: RELAYED_ACTOR.actorKind,
       } as never)
       await next()
@@ -196,7 +197,7 @@ test("acceptance after the original turn finishes remains visible without invent
     async *turn({ session }) { await completion; yield { type: "finish", sessionId: session.binding.sessionId } },
     steer: async () => { dispatched(); await acknowledgement; return { ok: true } },
   })
-  const host = createHostFixture({ transports: { codex: transport } })
+  const host = createHostFixture({ transports: { codex: transport }, launch: testLaunch("ws", ["user_1"]) })
   const { runtime, eventHub } = host
   await runtime.sessions.create(sessionCreate({ id: "session_1", workspaceId: "workspace", directory: "/workspace", harness: { id: "codex", access: "native" } }))
   const userIds: string[] = []

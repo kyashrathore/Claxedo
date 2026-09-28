@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
 import { lstatIfExists } from "@claxedo/helpers/fs"
-import type { PluginProjection, TurnActor } from "../../contract"
+import type { PluginProjection } from "../../contract"
 import { mirrorConfigTree, pruneMirrorDirectory, replaceAtomically, type ConfigMirrorOptions } from "../config-mirror"
 
 export const CLAXEDO_MARKETPLACE = "claxedo-agent-plugins"
@@ -13,8 +13,8 @@ const CODEX_WRITTEN: readonly string[] = [path.join("skills", ".system"), path.j
 
 const mirror: ConfigMirrorOptions = { secretFile: SECRET_FILE, externalSkills: true, keep: (relative) => CODEX_WRITTEN.includes(relative) }
 
-export function codexHomeKey(owner: TurnActor, selected: ProviderBinding | undefined, projection: PluginProjection): string {
-  const ownerKey = owner.kind === "machine-owner" ? "machine-owner" : `person:${owner.userId}`
+export function codexHomeKey(accountOwner: string, selected: ProviderBinding | undefined, projection: PluginProjection): string {
+  const ownerKey = `person:${accountOwner}`
   const credentialKey = selected ? `broker:${selected.baseUrl}:${selected.authMode}` : "own-login"
   const plugins = [...new Set(projection.pluginRoots.map((root) => root.pluginInstanceId))].sort()
   return `codex-${createHash("sha256").update(JSON.stringify([ownerKey, credentialKey, plugins, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)}`

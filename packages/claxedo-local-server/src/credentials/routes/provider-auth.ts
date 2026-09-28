@@ -7,7 +7,7 @@ import {
   type ProviderAuthService,
 } from "../provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
-import { requestOrg } from "./credential"
+import { requestActor, requestOrg } from "./credential"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
@@ -98,6 +98,7 @@ export function ProviderAuthRoutes(services: ControlPlaneServicesContract, optio
           method: body.data.method,
           inputs: body.data.inputs,
           org: org(c.req.raw),
+          owner: await requestActor(c.req.raw, options),
         }))
       } catch (error) {
         return c.json(authError(error), 400)
@@ -112,6 +113,7 @@ export function ProviderAuthRoutes(services: ControlPlaneServicesContract, optio
           method: body.data.method,
           code: body.data.code,
           org: org(c.req.raw),
+          owner: await requestActor(c.req.raw, options),
           // The callback long-polls upstream for device approval; a
           // disconnected client must take the poll down with it.
           signal: c.req.raw.signal,

@@ -21,7 +21,7 @@ ClaxedoDB.Drizzle()
 
 async function sharedCredential(org: string, providerId: string) {
   await putCredential(
-    {
+    { owner: null,
       provider_id: providerId,
       kind: "oauth_token",
       source: "managed",

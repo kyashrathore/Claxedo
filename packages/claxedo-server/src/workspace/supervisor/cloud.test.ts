@@ -18,6 +18,7 @@ import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/l
 import { DEFAULT_WORKSPACE_HOST_DECISION_CONFIG } from "@claxedo/sandbox-manager/lease-policy"
 import { controlBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { workspaceRuntimeTargetEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { accountPlaceholderEnv } from "@claxedo/server-core/credentials/native-delivery-plan"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -294,12 +295,12 @@ const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
   destroy: vi.fn(async () => {}),
 }))
 
-const mockLoadUserConfig = vi.fn(() => Promise.resolve({ mcp: {}, auth: {} }))
+const mockLoadUserConfig = vi.fn(() => Promise.resolve({ mcp: {}, auth: { machineOwnerUserId: "local", accounts: { local: {} } } }))
 const mockGetRuntimeConfigSnapshot = vi.fn(
   async (): Promise<any> => ({
     version: 2,
     mcp: {},
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
     runners: [{ type: "opencode" }],
     commands: [],
   }),
@@ -386,6 +387,10 @@ vi.mock("@claxedo/server-core/credentials/registry", () => ({
     return credentials.secrets.get(id)
   }),
   SINGLE_TENANT_ORG: "__local__",
+}))
+
+vi.mock("@claxedo/server-core/credentials/account-source", () => ({
+  accountSelections: vi.fn(() => ({})),
 }))
 
 vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
@@ -790,7 +795,7 @@ describe("workspace-supervisor", () => {
       async (): Promise<any> => ({
         version: 2,
         mcp: {},
-        auth: {},
+        auth: { machineOwnerUserId: "local", accounts: { local: {} } },
         runners: [{ type: "opencode" }],
         commands: [],
       }),
@@ -801,7 +806,7 @@ describe("workspace-supervisor", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = runtimePrivateKeyPem
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = runtimePublicKeyPem
 
-    supervisor.configureWorkspaceSupervisor({
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://localhost:3000",
       relay_url: "https://relay.example.test",
     })
@@ -1103,6 +1108,7 @@ describe("workspace-supervisor", () => {
     test("the operator's active account reaches the driver as a brokered secret no caller stated", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1129,7 +1135,7 @@ describe("workspace-supervisor", () => {
       expect(launch.secrets).toEqual([
         { name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic clone-token", hosts: ["github.com"], header: "Authorization" },
         {
-          name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }),
           value: "sk-ant-api03-fixture",
           hosts: ["api.anthropic.com"],
           header: "x-api-key",
@@ -1144,6 +1150,7 @@ describe("workspace-supervisor", () => {
     test("an account the vendor rejected is withdrawn from the driver on the next ensure", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1170,6 +1177,7 @@ describe("workspace-supervisor", () => {
     test("an unchanged account set answers from the warm runtime without a driver call", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1195,6 +1203,7 @@ describe("workspace-supervisor", () => {
     test("a rotated account set goes back through the driver", async () => {
       const row = {
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1215,7 +1224,7 @@ describe("workspace-supervisor", () => {
 
       expect(result.status).toBe("ready")
       expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
-        expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK", value: "sk-ant-api03-rotated" }),
+        expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }), value: "sk-ant-api03-rotated" }),
       ])
     })
 
@@ -1224,6 +1233,7 @@ describe("workspace-supervisor", () => {
       store.set("ws-provider-docker", { ...workspace("ws-provider-docker"), driver: "docker" })
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1248,6 +1258,7 @@ describe("workspace-supervisor", () => {
     test("a caller and a provider account claiming one secret name is refused by name", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1261,7 +1272,7 @@ describe("workspace-supervisor", () => {
       const result = await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-provider-collide", {
         homeRegion: "us-east",
         secrets: [{
-          name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }),
           value: "caller-token",
           hosts: ["api.anthropic.com"],
           header: "x-api-key",
@@ -1269,12 +1280,13 @@ describe("workspace-supervisor", () => {
       })
 
       expect(result).toMatchObject({ status: "unavailable" })
-      expect(result.status === "unavailable" && result.error).toContain("CLAXEDO_PROVIDER_CLAUDE_SDK")
+      expect(result.status === "unavailable" && result.error).toContain(accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }))
     })
 
     test("a restored checkpoint carries the operator's accounts into the replacement sandbox", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1311,13 +1323,14 @@ describe("workspace-supervisor", () => {
       // `startRuntime`; one that mounted only the empty slot answers every turn
       // with a placeholder its provider never filled.
       expect(mockDaytonaLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
-        expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK" }),
+        expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }) }),
       ])
     })
 
     test("removing the last account withdraws it from a warm sandbox", async () => {
       const row = {
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1344,6 +1357,7 @@ describe("workspace-supervisor", () => {
     test("an account whose secret cannot be read holds what the sandbox installed", async () => {
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1370,6 +1384,7 @@ describe("workspace-supervisor", () => {
       credentials.active.push(
         {
           credential: {
+            owner: "local",
             id: "cred-1",
             provider_id: "claude-sdk",
             kind: "api_key",
@@ -1380,6 +1395,7 @@ describe("workspace-supervisor", () => {
         },
         {
           credential: {
+            owner: "local",
             id: "cred-2",
             provider_id: "openrouter",
             kind: "api_key",
@@ -1398,7 +1414,7 @@ describe("workspace-supervisor", () => {
 
       expect(result.status).toBe("ready")
       expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
-        expect.objectContaining({ name: "CLAXEDO_PROVIDER_OPENROUTER" }),
+        expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-2", provider_id: "openrouter" }) }),
       ])
     })
 
@@ -1535,6 +1551,7 @@ describe("workspace-supervisor", () => {
       ;(policy.listPolicies as any).mockReturnValueOnce([{ target: "api.example.test", kind: "host" }])
       credentials.active.push({
         credential: {
+          owner: "local",
           id: "cred-1",
           provider_id: "claude-sdk",
           kind: "api_key",
@@ -1900,6 +1917,7 @@ describe("workspace-supervisor", () => {
         // What the sandbox's provider can carry decides what the projection may
         // promise; a "none" driver's projection has to refuse the turn.
         secretBrokering: "native",
+        sandboxOwner: "local",
       })
       const env = latestSandboxBootEnv("daytona")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()
@@ -1969,7 +1987,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("local managed cloud runtime can start direct unsigned without relay auth", async () => {
-      supervisor.configureWorkspaceSupervisor({
+      supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
         server_url: "http://localhost:3000",
       })
 
@@ -1982,7 +2000,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("non-local managed cloud runtime fails closed when relay auth verification cannot be provisioned", async () => {
-      supervisor.configureWorkspaceSupervisor({
+      supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
         server_url: "https://control.example.test",
       })
 
@@ -2046,6 +2064,7 @@ describe("workspace-supervisor", () => {
   describe("reconcileCredentialDelivery", () => {
     const activeAccount = (id: string, providerId = "claude-sdk", revision = 1) => ({
       credential: {
+        owner: "local",
         id,
         provider_id: providerId,
         kind: "api_key",
@@ -2839,7 +2858,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
       if (id === "daytona") return { api_key: "dtn-default" }
       return undefined
     })
-    supervisor.configureWorkspaceSupervisor({
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://localhost:3000",
       relay_url: "https://relay.example.test",
     })

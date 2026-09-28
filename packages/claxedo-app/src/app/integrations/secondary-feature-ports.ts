@@ -9,6 +9,7 @@ import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
 import { configureReviewAppPorts } from "@/features/review/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
 import * as GlobalSDK from "@/app/providers/global-sdk/provider"
+import * as ServerProduct from "@/app/connection/server-product"
 import * as Command from "@/app/providers/command"
 import * as FileContext from "@/app/providers/file"
 import * as Providers from "@/app/providers/use-providers"
@@ -95,6 +96,7 @@ configureSettingsAppPorts({
   Link: LinkModule.Link,
   useSandboxOnboardingFunnel: useOnboardingFunnel,
   useSDK: SDK.useSDK,
+  useServerProduct: ServerProduct.useServerProduct,
   useEnabledAcpHarnesses: () => {
     const catalog = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
     onMount(() => void catalog.refresh())

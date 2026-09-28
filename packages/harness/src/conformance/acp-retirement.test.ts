@@ -33,7 +33,7 @@ async function retirementFixture(retirePeer: RetirePolicy) {
   const context = await setupConformance({ name: "ACP retirement",
     backend: async () => ({ directory, harness: { id: "acp", access: "connection" },
       model: { providerID: "acp", modelID: "default" }, owner: { kind: "machine-owner" },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "one" }, unrunnableTurn: (turn) => turn,
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" }, unrunnableTurn: (turn) => turn,
       close: () => rm(directory, { recursive: true, force: true }),
       configureServices(services) {
         services.spawn = async (command) => {

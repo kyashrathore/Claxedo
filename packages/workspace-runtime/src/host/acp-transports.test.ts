@@ -261,7 +261,7 @@ test("ACP peer that disconnects while startup adopts its session is rejected and
   } as unknown as SessionBroker
   const input: StartInput = { sessionId: "adopting", workspaceId: "workspace", directory: "/repo", locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id: "acp-test", access: "connection" } },
-    projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { providers: {}, secrets: {}, leaseGeneration: "one" } }
+    projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" } }
   const started = transport.start(input, broker).then(() => "adopted", () => "rejected")
   try {
     await rebound.promise
@@ -282,7 +282,7 @@ test("ACP connection observations are dropped when their sessions close", async 
         rebind: async (upstreamSessionId: string) => ({ sessionId, workspaceId: "workspace", directory: "/repo", connectionId: "acp-test", upstreamSessionId }) } as unknown as SessionBroker
       const session = await f.transport.start({ sessionId, workspaceId: "workspace", directory: "/repo", locality: "local", owner: { kind: "machine-owner" },
         config: { harness: { id: "acp-test", access: "connection" } }, projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] },
-        credentials: { providers: {}, secrets: {}, leaseGeneration: "one" } }, broker)
+        credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" } }, broker)
       await f.transport.close(session)
     }
     const connection = f.transport.health!.connection("/repo")

@@ -20,7 +20,7 @@ export type OpenCodeCatalogProvider = {
   id: string
   name: string
   env: string[]
-  /** `custom` for an operator-declared provider, `api` for one the org stored an account for, `config` otherwise. */
+  /** `custom` for an operator-declared provider, `api` for one the caller or the team holds an account for, `config` otherwise. */
   source: "custom" | "api" | "config"
   models: Record<string, OpenCodeCatalogModel>
   /** Present on operator-declared providers: `baseURL` and non-secret headers. */
@@ -48,7 +48,7 @@ function providerModels(provider: CustomProviderConfig): ProviderModel[] {
 /**
  * With no workspace engine to ask — none is named yet, as in onboarding, or
  * its cloud sandbox is not running — the credential registry answers: the
- * vendors it brokers to, connected where the org holds an available account,
+ * vendors it brokers to, connected where the caller or the team holds an available account,
  * and the org's declared providers, connected unless every account stored
  * for them is refused. No models are listed for a vendor, because only an
  * engine knows which it can run.
@@ -75,9 +75,10 @@ function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, cre
 export function opencodeProviderCatalog(options: {
   engine: readonly ProviderCatalogEntry[] | undefined
   org: CredentialOrgScope
+  actor: string
 }): OpenCodeCatalog {
   const declared = new Map(listCustomProviders(options.org).map((provider) => [provider.providerID, provider]))
-  const credentials = listCredentials(options.org)
+  const credentials = listCredentials(options.org).filter((credential) => credential.owner === options.actor || credential.owner === null)
   const entries = new Map((options.engine ?? accountEntries(declared, credentials)).map((entry) => [entry.id, entry]))
   const stored = new Set(credentials
     .filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))

@@ -7,7 +7,7 @@ import type { ClaudeQueryLauncher } from "./query-options"
 const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local",
   owner: { kind: "machine-owner" }, config: { harness: { id: "claude", access: "native" } },
   projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-  credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
+  credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } }
 
 function session(): HarnessSession {
   return { directory: "/work", locality: "local", binding: { sessionId: "s1", workspaceId: "w1", directory: "/work",

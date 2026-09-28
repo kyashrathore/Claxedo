@@ -14,7 +14,7 @@ test("Pi machine login follows the session owner on desktop or loopback only", (
 
 test("the first configured provider yields its placeholder binding", () => {
   const binding = { baseUrl: "https://provider.example", apiPath: "/v1", placeholder: "placeholder", authMode: "api-key" as const }
-  const credentials = { providers: { second: binding }, secrets: {}, leaseGeneration: "g1" }
+  const credentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { second: binding }, secrets: {}, leaseGeneration: "g1" }
   const selected = selectedProviderProjection(credentials, ["first", "second"])
   expect(selected).toBe(binding)
   expect(providerPlaceholder(selected!)).toEqual({ baseURL: "https://provider.example/v1", apiKey: "placeholder" })

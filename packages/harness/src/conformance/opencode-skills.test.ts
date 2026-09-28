@@ -39,11 +39,10 @@ test("catalog-approved skills admit an OpenCode session across generation reload
     context = await setupConformance({ name: "opencode-approved-skills", backend: async () => ({
       execution: "in-process", directory, unrunnableTurn: (turn) => ({ ...turn, model: undefined }), harness: { id: "opencode", access: "native" },
       model: { providerID: "proof", modelID: "proof" }, owner: { kind: "person", userId: "owner" },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "one" },
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" },
       projection: { generation: generation.generationId, pluginRoots: reloaded!.projections.opencode!.pluginRoots,
         mcpServers: [], notApplied: [] }, close: async () => {},
-    }), makeTransport: (services) => new OpenCodeSdkTransport(services, { databasePath: path.join(root, "opencode.db"),
-      login: { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true } }) })
+    }), makeTransport: (services) => new OpenCodeSdkTransport(services, { databasePath: path.join(root, "opencode.db") }) })
     expect(context.session.binding.upstreamSessionId).toBeTruthy()
     const runtime = (context.transport as unknown as { runtime: OpenCodeRuntime }).runtime
     const client = await runtime.host.client()

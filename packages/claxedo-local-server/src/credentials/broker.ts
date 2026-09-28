@@ -4,7 +4,7 @@
  * the loopback broker its handler.
  *
  * A binding names a provider under a workspace, never an account: its id is a
- * hash of (org, workspace, provider), so its URL survives every account switch
+ * hash of (person, org, workspace, provider), so its URL survives every account switch
  * and every rotation, and `resolve` reads whichever row carries the mark at
  * request time. The Cursor SDK freezes the URL at first import, so a URL that
  * moved with the account would send every later turn to a binding the
@@ -28,7 +28,9 @@ import {
   type BindingAuthority,
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
-import type { ProviderProjectionSource } from "@claxedo/workspace-runtime/config"
+import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { selectedAccounts, TEAM_ACCOUNT_UNAVAILABLE, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
+import { accountSelections } from "@claxedo/server-core/credentials/account-source"
 import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-sdk-runtime"
 import {
   markCredentialUsed,
@@ -137,6 +139,8 @@ export type ProjectAuthInput = {
   workspaceId?: string
   /** How the sandbox this projection is for can carry a credential, if at all. */
   secretBrokering?: SandboxSecretBrokering
+  /** The person a shared-scope sandbox serves. */
+  sandboxOwner?: string
 }
 
 export type LocalCredentialBroker = {
@@ -144,9 +148,9 @@ export type LocalCredentialBroker = {
   handler: (request: Request) => Promise<Response>
   /** What the handler asks on every request; the registry answers it. */
   authority: BindingAuthority
-  projectAuth: (input: ProjectAuthInput) => Promise<Record<string, ProviderProjectionSource>>
+  projectAuth: (input: ProjectAuthInput) => Promise<CredentialSnapshot>
   /** The identity this server minted for a workspace, once it has projected one. */
-  runtimeIdentity: (workspaceId: string, orgId?: string) => Promise<RuntimeIdentity>
+  runtimeIdentity: (workspaceId: string, orgId: string, userId: string) => Promise<RuntimeIdentity>
 }
 
 /**
@@ -167,6 +171,9 @@ type MintedLease = {
 
 /** What a binding names, so a request resolves from its id alone. */
 type MintedBinding = {
+  /** The broker identity the binding is minted under: the row's owner, or the org for its team account. */
+  userId: string
+  rowOwner: string | null
   providerId: string
   workspaceId: string
   orgId: string
@@ -176,8 +183,15 @@ type MintedBinding = {
   lease?: MintedLease
 }
 
+/** Whether anyone chose the team account for a provider: a team row nobody chose is neither minted nor honoured. */
+function teamChosen(selections: AccountSelections, providerId: string) {
+  return Object.values(selections).some((sources) => sources[providerId] === "team")
+}
+
 export function createLocalCredentialBroker(input: {
   dataDir: string
+  /** Who owns this machine as a person, read per projection because an enrollment can land at any time. */
+  machineOwnerUserId: () => string
   /** This server's own loopback origin; the broker is a route on it, never a second listener. */
   brokerOrigin: string
   /** The org a caller that names none is answered in. */
@@ -211,33 +225,27 @@ export function createLocalCredentialBroker(input: {
     return opening
   }
 
-  function leaseKey(orgId: string, workspaceId: string) {
-    return `${orgId}\n${workspaceId}`
+  function leaseKey(orgId: string, workspaceId: string, userId: string) {
+    return JSON.stringify([orgId, workspaceId, userId])
   }
 
-  /**
-   * `userId` is the single identity an unsigned local install has: the one
-   * operator whose machine login this server already runs as. The org comes
-   * from the caller rather than from this module, so a composition that
-   * resolves a real tenant does not mint bindings in another one's name.
-   */
-  function identityIn(state: BrokerState, workspaceId: string, orgId: string): RuntimeIdentity {
+  function identityIn(state: BrokerState, workspaceId: string, orgId: string, userId: string): RuntimeIdentity {
     return {
-      userId: "operator",
+      userId,
       orgId,
       workspaceId,
       leaseId: `local:${workspaceId}`,
-      leaseGeneration: leaseGenerations.get(leaseKey(orgId, workspaceId)) ?? state.bootGeneration,
+      leaseGeneration: leaseGenerations.get(leaseKey(orgId, workspaceId, userId)) ?? state.bootGeneration,
       runtimeId: `embedded:${workspaceId}`,
     }
   }
 
-  async function runtimeIdentity(workspaceId: string, orgId = defaultOrg): Promise<RuntimeIdentity> {
-    return identityIn(await brokerState(), workspaceId, orgId)
+  async function runtimeIdentity(workspaceId: string, orgId: string, userId: string): Promise<RuntimeIdentity> {
+    return identityIn(await brokerState(), workspaceId, orgId, userId)
   }
 
-  function bindingId(orgId: string, workspaceId: string, providerId: string) {
-    return createHash("sha256").update(["operator", orgId, workspaceId, providerId].join(" ")).digest("hex").slice(0, 32)
+  function bindingId(orgId: string, workspaceId: string, providerId: string, userId: string) {
+    return createHash("sha256").update(JSON.stringify([userId, orgId, workspaceId, providerId])).digest("hex").slice(0, 32)
   }
 
   /**
@@ -250,7 +258,7 @@ export function createLocalCredentialBroker(input: {
     if (entry.credentialId === credential.id) return false
     entry.credentialId = credential.id
     usedAt.delete(id)
-    leaseGenerations.set(leaseKey(entry.orgId, entry.workspaceId), state.issueGeneration())
+    leaseGenerations.set(leaseKey(entry.orgId, entry.workspaceId, entry.userId), state.issueGeneration())
     return true
   }
 
@@ -317,20 +325,21 @@ export function createLocalCredentialBroker(input: {
       const entry = minted.get(id)
       if (!entry) return undefined
       const row = selectedCredentials(entry.scope, entry.orgId)
-        .find((candidate) => candidate.credential.provider_id === entry.providerId)
+        .find((candidate) => candidate.credential.provider_id === entry.providerId && (candidate.credential.owner ?? null) === entry.rowOwner)
       if (!row || row.unavailable) return undefined
+      if (entry.rowOwner === null && !teamChosen(accountSelections(entry.orgId), entry.providerId)) return undefined
       const destination = await destinationFor(row.credential, entry.orgId)
       if (!destination) return undefined
       const state = await brokerState()
       bindCurrentAccount(state, id, entry, row.credential)
       return {
-        binding: binding(id, identityIn(state, entry.workspaceId, entry.orgId), row.credential, destination),
+        binding: binding(id, identityIn(state, entry.workspaceId, entry.orgId, entry.userId), row.credential, destination),
         value: destination.value,
       }
     },
     async currentRuntime(identity) {
-      return projected.has(leaseKey(identity.orgId, identity.workspaceId))
-        && sameRuntime(await runtimeIdentity(identity.workspaceId, identity.orgId), identity)
+      return projected.has(leaseKey(identity.orgId, identity.workspaceId, identity.userId))
+        && sameRuntime(await runtimeIdentity(identity.workspaceId, identity.orgId, identity.userId), identity)
     },
     async markUsed(id) {
       const entry = minted.get(id)
@@ -406,8 +415,9 @@ export function createLocalCredentialBroker(input: {
     handler,
     authority,
     runtimeIdentity,
-    async projectAuth({ scope = "local", orgId, workspaceId, secretBrokering }) {
-      if (!workspaceId) return {}
+    async projectAuth({ scope = "local", orgId, workspaceId, secretBrokering, sandboxOwner }) {
+      const machineOwnerUserId = input.machineOwnerUserId()
+      if (!workspaceId) return { machineOwnerUserId, accounts: {} }
       const org = orgId ?? defaultOrg
       // A shared-scope runtime is a sandbox this process cannot serve: its
       // requests never traverse this machine's loopback, so the credential
@@ -418,21 +428,35 @@ export function createLocalCredentialBroker(input: {
         return await projectNativeProviderAuth({
           scope,
           orgId: org,
+          ...(sandboxOwner ? { sandboxOwner } : {}),
+          machineOwnerUserId,
           ...(secretBrokering ? { secretBrokering } : {}),
         })
       }
+      const selections = accountSelections(org)
       const selection = selectedCredentials(scope, org)
-      const rows: Record<string, ProviderProjectionSource> = {}
+        .filter(({ credential }) => credential.owner || teamChosen(selections, credential.provider_id))
+      const resolved: { owner: string | null; providerId: string; projection: ProviderProjectionSource }[] = []
+      const project = (credential: CredentialMetadata, projection: ProviderProjectionSource) =>
+        resolved.push({ owner: credential.owner ?? null, providerId: credential.provider_id, projection })
+      const snapshot = (): CredentialSnapshot => ({
+        machineOwnerUserId,
+        accounts: selectedAccounts({
+          machineOwnerUserId,
+          rows: resolved,
+          selections,
+          missingTeam: () => ({ unavailable: true, reason: TEAM_ACCOUNT_UNAVAILABLE }),
+        }),
+      })
       let state: BrokerState
       try {
         state = await brokerState()
       } catch (error) {
         for (const { credential } of selection) {
-          rows[credential.provider_id] = { unavailable: true, reason: `broker_unavailable: ${String(error)}` }
+          project(credential, { unavailable: true, reason: `broker_unavailable: ${String(error)}` })
         }
-        return rows
+        return snapshot()
       }
-      projected.add(leaseKey(org, workspaceId))
       const bindable: {
         id: string
         entry: MintedBinding
@@ -443,28 +467,30 @@ export function createLocalCredentialBroker(input: {
         // A marked account that cannot be bound is reported, never dropped: the
         // harness has to refuse the turn rather than run on the machine's login.
         if (unavailable) {
-          rows[credential.provider_id] = { unavailable: true, reason: unavailable }
+          project(credential, { unavailable: true, reason: unavailable })
           continue
         }
         const destination = await destinationFor(credential, org)
         if (!destination) {
-          rows[credential.provider_id] = { unavailable: true, reason: "unreadable_secret" }
+          project(credential, { unavailable: true, reason: "unreadable_secret" })
           continue
         }
-        const id = bindingId(org, workspaceId, credential.provider_id)
+        const identityUser = credential.owner ?? `team:${org}`
+        const id = bindingId(org, workspaceId, credential.provider_id, identityUser)
         let entry = minted.get(id)
         if (entry) bindCurrentAccount(state, id, entry, credential)
         else {
-          entry = { providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id }
+          entry = { userId: identityUser, rowOwner: credential.owner ?? null, providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id }
           minted.set(id, entry)
         }
         bindable.push({ id, entry, credential, destination })
       }
       // Read after every switch above has moved the lease on, so one projection
       // mints every placeholder under the same generation.
-      const identity = identityIn(state, workspaceId, org)
       const at = now()
       for (const { id, entry, credential, destination } of bindable) {
+        const identity = identityIn(state, workspaceId, org, entry.userId)
+        projected.add(leaseKey(org, workspaceId, entry.userId))
         // The destination is read live on every projection: a rotation that
         // moves the account's vendor host has to reach the harness even while
         // the placeholder it holds stays valid.
@@ -491,9 +517,9 @@ export function createLocalCredentialBroker(input: {
           }
           entry.lease = lease
         }
-        rows[credential.provider_id] = { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt }
+        project(credential, { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt })
       }
-      return rows
+      return snapshot()
     },
   }
 }

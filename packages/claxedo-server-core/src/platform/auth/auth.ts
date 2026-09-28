@@ -1,3 +1,5 @@
+import { LOCAL_USER_ID } from "./local-identity"
+
 export type EnabledConfig = {
   enabled: true
   /** Static composition identity. */
@@ -36,7 +38,7 @@ export function localControlPlaneAuth(): SignedControlPlaneAuth {
     mode: "signed",
     token: "",
     user: {
-      subject: "local",
+      subject: LOCAL_USER_ID,
       tokenIdentifier: "local:default",
       issuer: "claxedo-local",
     },
@@ -280,6 +282,9 @@ export async function controlPlaneAuthContext(
   if (options.authentication) {
     try {
       const principal = await options.authentication.authenticate(request)
+      if (principal.userId === LOCAL_USER_ID) {
+        throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token names a reserved subject")
+      }
       const token = bearerToken(request.headers.get("authorization"))
       return {
         mode: "signed",
@@ -322,6 +327,11 @@ export async function controlPlaneAuthContext(
       throw new ControlPlaneAuthError(503, "auth_verifier_unavailable", "Authentication verifier is unavailable")
     }
     const verified = await options.verifier(token, config)
+    // The unsigned loopback operator's id names the machine owner's rows; a
+    // signed person carrying it would be taken for that operator.
+    if (verified.mode === "signed" && verified.user.subject === LOCAL_USER_ID) {
+      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token names a reserved subject")
+    }
     return {
       ...verified,
       token,

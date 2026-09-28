@@ -60,7 +60,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
     }),
     opencode: () => {
       mkdirSync(input.opencodeRoot, { recursive: true })
-      return { login: placement, databasePath: path.join(input.opencodeRoot, "opencode.db"), persistEvents: true }
+      return { databasePath: path.join(input.opencodeRoot, "opencode.db"), persistEvents: true }
     },
   }
 }

@@ -20,6 +20,7 @@ export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-au
 export type EmbeddedRelayHostAuth = {
   principal_kind: "user" | "service"
   actor_id: string
+  user_id?: string
   actor_kind: "human" | "agent"
   actor_public_id: string
   actor_name: string
@@ -48,6 +49,7 @@ export function embeddedRelayHostAuthFromActor(
   return {
     principal_kind: actor.actorKind === "human" ? "user" : "service",
     actor_id: actor.actorId,
+    ...(actor.userId ? { user_id: actor.userId } : {}),
     actor_kind: actor.actorKind,
     actor_public_id: actorPublicId,
     actor_name: actorName,
@@ -75,6 +77,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
     const role = roleClaim(row)
     if (
       !principal_kind
+      || (row.user_id !== undefined && !stringClaim(row, "user_id"))
       || !actor_id
       || !actor_kind
       || (principal_kind === "user" && actor_kind !== "human")
@@ -88,6 +91,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
     return {
       principal_kind,
       actor_id,
+      ...(stringClaim(row, "user_id") ? { user_id: stringClaim(row, "user_id") } : {}),
       actor_kind,
       actor_public_id,
       actor_name,

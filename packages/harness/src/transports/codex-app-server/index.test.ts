@@ -17,7 +17,7 @@ const input: StartInput = {
     { kind: "stdio", name: "configured", command: "server", args: ["--port", "47501"], env: { TOKEN: "sentinel" }, origin: "configured" },
     { kind: "http", name: "plugin", url: "http://127.0.0.1:47502", headers: { Authorization: "Bearer sentinel" }, origin: "plugin" },
   ] },
-  credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+  credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" },
 }
 
 test("Codex receives every projected MCP server and local first-party server", () => {
@@ -52,6 +52,20 @@ test("disposing during pending initialize retires the process before start rejec
 
 const turnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
   prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "Reply" }] }, todos: [] } as TurnInput
+
+test("Codex refuses an unbound member before spawning or touching the owner's home", async () => {
+  const peer = await scriptedTransport()
+  const home = path.join(peer.startInput.directory, "owner")
+  await fs.mkdir(home)
+  await fs.writeFile(path.join(home, "auth.json"), "owner-sentinel")
+  try {
+    await expect(peer.transport.start({ ...peer.startInput, credentials: { ...peer.startInput.credentials, machineLoginAllowed: false, accountOwner: "fixture-owner" }, owner: { kind: "person", userId: "member" } }, peer.liveBroker()))
+      .rejects.toMatchObject({ code: "account_unavailable", retryable: false })
+    expect(peer.spawned()).toBe(0)
+    await expect(fs.stat(path.join(peer.startInput.directory, "homes"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await fs.readFile(path.join(home, "auth.json"), "utf8")).toBe("owner-sentinel")
+  } finally { await peer.close() }
+})
 
 test("Codex refuses the external-auth token refresh request as an unsupported method and answers tool calls outside a turn", async () => {
   const peer = await scriptedTransport()
@@ -179,7 +193,7 @@ test("Codex draft probes are keyed on non-secret identity, shared across rotatio
   const peer = await scriptedTransport({ clock: { now: () => now, setTimeout, clearTimeout } })
   const draft = (placeholder: string): DraftLaunch => ({ workspaceId: "w1", directory: peer.startInput.directory, locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id: "codex", access: "native" } }, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] },
-    credentials: { providers: { "codex-app-server": { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration: "lease-1" } })
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { openai: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" } }, secrets: { token: placeholder }, leaseGeneration: "lease-1" } })
   try {
     expect((await peer.transport.config.options({ draft: draft("secret-one") }, "probe")).options.length).toBeGreaterThan(0)
     expect(peer.spawned()).toBe(1)

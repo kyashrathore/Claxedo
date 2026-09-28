@@ -29,6 +29,7 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import { relayHostAuthFromEnv } from "@claxedo/workspace-runtime/relay"
+import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 import {
   hostProviderConfigProjectAuth,
@@ -37,19 +38,29 @@ import {
 } from "@claxedo/server-core/credentials/host-provider-config"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { adoptHostEnrolledOwner, hostEnrolledOwner } from "./serving"
 
 const log = Log.create({ service: "host-runtime" })
 
-let pushedProviders: HostProviderConfig["providers"] = {}
+/**
+ * A connected host is the enrolling person's own machine: loopback callers are
+ * its owner, and so is the enrolled owner arriving through the relay, because
+ * the credential snapshot names them its machine owner. Other members are
+ * brokered.
+ */
+export const CONNECTED_HOST_PLACEMENT: WorkspaceRuntimeServerOptions["placement"] = { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true }
+
+let pushedProviders: HostProviderConfig["credentials"] | undefined
 
 /**
  * Make the owner's pushed rows this process's only credential authority. A
  * connect host has no credential registry of its own, so there is no base
- * answer to write the rows over; a provider the owner has not pushed resolves
- * to nothing and the harness runs on whatever login the box holds.
+ * answer to write the rows over and no account choice to honour; a provider
+ * the owner has not pushed resolves to nothing and the harness runs on
+ * whatever login the box holds.
  */
 export function installHostProviderConfigAuthority() {
-  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, () => pushedProviders) })
+  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, () => pushedProviders, hostEnrolledOwner, () => ({})) })
 }
 
 /**
@@ -60,9 +71,19 @@ export function installHostProviderConfigAuthority() {
  * the previous rows in place.
  */
 export function setHostProviderConfig(plaintext: string | null): { providerIds: string[] } {
-  const providers = plaintext === null ? {} : parseHostProviderConfig(plaintext).providers
+  const providers = plaintext === null ? undefined : parseHostProviderConfig(plaintext).credentials
   pushedProviders = providers
-  return { providerIds: Object.keys(providers).sort() }
+  return { providerIds: providers ? [...new Set(Object.values(providers.accounts).flatMap((rows) => Object.keys(rows)))].sort() : [] }
+}
+
+/** Adopt the enrolled owner a heartbeat ack names, re-applying every live runtime under them. */
+export async function adoptConnectedHostOwner(owner: string, listener: Pick<HostRuntimeListener, "applyRuntimeConfig">): Promise<void> {
+  await adoptHostEnrolledOwner(owner, {
+    forget: (next) => {
+      if (pushedProviders && pushedProviders.machineOwnerUserId !== next) pushedProviders = undefined
+    },
+    reapply: () => listener.applyRuntimeConfig(),
+  })
 }
 
 /** The snapshot this process resolves for one workspace, applied in process: the host composes its own runtimes and needs no config route. */
@@ -103,9 +124,7 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({ url: options.sessionAuthorityUrl }),
     storeRoot: options.storeRoot,
-    // A connected host is the enrolling person's own machine: loopback callers
-    // are its owner, and relayed members are brokered.
-    placement: { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true },
+    placement: CONNECTED_HOST_PLACEMENT,
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
@@ -190,8 +209,8 @@ export type HostRuntimeListener = {
   owners: () => HostRuntimeOwner[]
   /**
    * Re-resolve and apply the configuration on every live runtime, after the
-   * rows it resolves against changed. One workspace's failure is logged and
-   * the rest still move.
+   * rows it resolves against changed. One workspace's failure does not stop
+   * the rest; the failures are then reported together.
    */
   applyRuntimeConfig: () => Promise<void>
   /** Retire every runtime and stop listening; a failed owner is reported, not lost. */
@@ -416,13 +435,13 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
       })),
     ].sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
     applyRuntimeConfig: async () => {
-      await Promise.all([...entries.values()].map(async (entry) => {
-        try {
-          await applyRuntimeConfig(entry.runtime, entry)
-        } catch (error) {
-          log.warn("host runtime config apply failed", { workspaceId: entry.workspaceId, error })
-        }
-      }))
+      const results = await Promise.allSettled([...entries.values()].map((entry) => applyRuntimeConfig(entry.runtime, entry)))
+      const failed = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+      for (const refusal of failed.filter(isSessionConfigRefusal)) {
+        log.warn("a harness refused a session's configuration", { error: String(refusal) })
+      }
+      const broken = failed.filter((error) => !isSessionConfigRefusal(error))
+      if (broken.length > 0) throw new AggregateError(broken, `${broken.length} host runtime(s) failed to apply their configuration`)
     },
     close: async () => {
       // Settled, not raced: one owner's failed retirement must not discard the

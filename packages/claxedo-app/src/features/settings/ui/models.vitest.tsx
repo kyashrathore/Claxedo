@@ -89,6 +89,7 @@ vi.mock("@/features/settings/app-ports", async () => {
     localHarnessChecks: () => localHarnessChecks,
     loadMachineLogins: async () => [],
     verifyAIConnection: async () => ({ result: "ok" as const }),
+    useServerProduct: () => ({ localExecution: () => true, known: () => true }),
   }
 })
 
@@ -96,7 +97,12 @@ vi.mock("@/features/settings/app-ports", async () => {
 // `models-accounts.vitest.tsx` drives the real scan against the credential routes.
 vi.mock("@/features/settings/provider-detect", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/settings/provider-detect")>()),
-  runProviderDetect: async () => ({ stored: [], effective: new Map(), machineLogins: [] }),
+  runProviderDetect: async () => ({
+    stored: [],
+    effective: new Map(),
+    machineLogins: [],
+    accountSources: { sources: new Map(), team: [] },
+  }),
 }))
 
 vi.mock("@/app/providers/sdk/sdk", () => ({

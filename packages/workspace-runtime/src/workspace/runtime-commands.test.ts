@@ -9,7 +9,7 @@ afterEach(async () => {
 
 function snapshot(commands: RuntimeSnapshot["commands"]): RuntimeSnapshot {
   return {
-    version: 4, auth: {}, mcp: {}, commands,
+    version: 4, auth: { machineOwnerUserId: "local", accounts: {} }, mcp: {}, commands,
     connections: [{ connectionId: "fake", providerKey: "fake", configRevision: 1, enabled: true, config: {} }],
     defaultHarness: { kind: "connection", connectionId: "fake" },
   }

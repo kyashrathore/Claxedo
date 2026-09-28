@@ -5,8 +5,8 @@ import { parse, stringify } from "smol-toml"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { HARNESS_TABLE, type ProviderProjection } from "@claxedo/agent-runtime-contract"
-import type { PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
-import { selectedProviderProjection } from "../../contract"
+import { selectedProviderProjection, type PluginProjection, type ResolvedCredentials } from "../../contract"
+import { CredentialSelectionError } from "../../registry/credentials"
 import { CLAXEDO_MARKETPLACE, codexHomeKey, copyTreeAtomically, mirrorOwnerCodexHome } from "./home"
 
 const START = "# BEGIN CLAXEDO CODEX PROFILE"
@@ -16,7 +16,6 @@ export type CodexProfile = { home: string; brokered: boolean }
 
 export type CodexProfileInput = {
   homeRoot: string
-  owner: TurnActor
   credentials: ResolvedCredentials
   projection: PluginProjection
   ownerHome?: string
@@ -108,12 +107,15 @@ function personalConfig(content: string, projection: PluginProjection): string {
 
 function selectedCodexAccount(credentials: ResolvedCredentials) {
   const selected = codexCredential(credentials)
-  if (selected && "unavailable" in selected) throw new Error(`Codex account unavailable: ${selected.reason}`)
+  if (selected && "unavailable" in selected) throw new CredentialSelectionError("account_unavailable", `Codex account unavailable: ${selected.reason}`)
+  if (!selected && !credentials.machineLoginAllowed) {
+    throw new CredentialSelectionError("account_unavailable", "Codex requires a selected account for this session owner")
+  }
   return selected
 }
 
 export function codexProfileHome(input: Omit<CodexProfileInput, "ownerHome">): string {
-  return path.join(input.homeRoot, codexHomeKey(input.owner, selectedCodexAccount(input.credentials), input.projection))
+  return path.join(input.homeRoot, codexHomeKey(input.credentials.accountOwner, selectedCodexAccount(input.credentials), input.projection))
 }
 
 export async function prepareCodexProfile(input: CodexProfileInput): Promise<CodexProfile> {

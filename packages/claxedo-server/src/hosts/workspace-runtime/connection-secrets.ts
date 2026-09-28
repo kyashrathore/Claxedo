@@ -21,7 +21,7 @@ export function sandboxConnectionSecrets(input: { workspaceId: string; directory
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { ...authorizationHeader(authority), "content-type": "application/json" },
-        body: JSON.stringify({ connectionId, providerKey, configRevision, ownerActorId: owner.userId,
+        body: JSON.stringify({ connectionId, providerKey, configRevision, ownerUserId: owner.userId,
           ...(authority.kind === "turn" ? { turnLease: authority.lease } : {}) }),
         signal: AbortSignal.timeout(10_000),
       })

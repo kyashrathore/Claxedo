@@ -6,7 +6,7 @@ import { claudeBinding, claudeEnvironment } from "./credentials"
 export type ClaudeSdkOptions = { executable: string; configRoot: string; userConfigRoot: string; env: NodeJS.ProcessEnv }
 
 export async function claudeLaunchContext(input: StartInput | DraftLaunch, options: ClaudeSdkOptions, sessionId: string) {
-  const binding = claudeBinding(input.credentials, input.owner)
+  const binding = claudeBinding(input.credentials)
   const home = binding ? await composeClaudeConfigHome(path.join(options.configRoot, sessionId), options.userConfigRoot) : undefined
   return { cwd: input.directory, pathToClaudeCodeExecutable: options.executable,
     env: { ...claudeEnvironment(options.env, binding, home), CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",

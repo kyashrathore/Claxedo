@@ -19,6 +19,11 @@ async function credentialRegistry() {
 }
 
 /** Lazy for the same reason as the registry: a Worker host must not load SQLite. */
+async function accountSourceStore() {
+  return await import("../credentials/account-source")
+}
+
+/** Lazy for the same reason as the registry: a Worker host must not load SQLite. */
 async function machineLoginUsage() {
   return await import("../credentials/machine-login-usage")
 }
@@ -83,15 +88,21 @@ export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?:
       const registry = await credentialRegistry()
       return registry.usableCredentials(registry.activeCredentialsForScope(scope, { onOutage: "empty" }, org))
     },
-    setActiveCredentials: async (ids, org) => {
-      const result = (await credentialRegistry()).setActiveCredentials(ids, org)
+    setActiveCredentials: async (ids, org, actor) => {
+      const result = (await credentialRegistry()).setActiveCredentials(ids, org, actor)
       if (result.ok) {
         await deliver()
       }
       return result
     },
+    accountSelections: async (org) => (await accountSourceStore()).accountSelections(org),
+    setAccountSources: async (providerIds, source, org, person) => {
+      const sources = (await accountSourceStore()).setAccountSources(providerIds, source, org, person)
+      await deliver()
+      return sources
+    },
     getCredentialByProvider: async (providerId, kind, org) =>
-      (await credentialRegistry()).credentialByProvider(providerId, { onOutage: "empty", kind }, org),
+      (await credentialRegistry()).credentialByProvider(providerId, { onOutage: "empty", kind, owner: null }, org),
     getCredential: async (id, org) => (await credentialRegistry()).credentialById(id, { onOutage: "empty" }, org),
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),
     resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),
@@ -137,7 +148,7 @@ export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?:
     recordMachineLoginUsage: async (harness, account, windows, at) => {
       (await machineLoginUsage()).recordMachineLoginUsage(harness, account, windows, at)
     },
-    discoverLocalCredentials: async (org) => (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.discover(org),
+    discoverLocalCredentials: async (org, owner) => (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.discover(org, owner),
     updateCredentialScope: async (id, scope, consentAt, org) => {
       const updated = (await credentialRegistry()).updateCredentialScope(id, scope, consentAt, org)
       // Narrowing a shared account to local removes it from every sandbox's
@@ -155,13 +166,13 @@ export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?:
       return stored
     },
     updateCredentialLabel: async (id, label, org) => (await credentialRegistry()).updateCredentialLabel(id, label, org),
-    saveDiscoveredCredentials: async (input, org) => {
-      const saved = await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org)
+    saveDiscoveredCredentials: async (input, org, owner) => {
+      const saved = await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org, owner)
       await deliver()
       return saved
     },
-    syncLocalCredentials: async (providerIds, org) => {
-      const result = await (await import("@claxedo/server-core/credentials/operations/sync")).syncLocalCredentials(providerIds, org)
+    syncLocalCredentials: async (providerIds, org, owner) => {
+      const result = await (await import("@claxedo/server-core/credentials/operations/sync")).syncLocalCredentials(providerIds, org, owner)
       await deliver()
       return result
     },

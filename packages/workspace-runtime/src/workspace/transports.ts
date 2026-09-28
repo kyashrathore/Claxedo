@@ -103,9 +103,7 @@ export function createWorkspaceTransports(input: WorkspaceTransportsInput) {
     const descriptor = descriptorFor(runner)
     const signature = JSON.stringify(canonicalJson(descriptor))
     const ownerKey = JSON.stringify(access.owner)
-    const lease = descriptor.secretRefs && Object.keys(descriptor.secretRefs).length > 0
-      ? await input.resolveSecrets(descriptor, directory, access)
-      : { secrets: {}, secretLeaseGeneration: "none" }
+    const lease = await input.resolveSecrets(descriptor, directory, access)
     if (closing) throw new Error("Workspace transports are disposed")
     if (JSON.stringify(canonicalJson(descriptorFor(runner))) !== signature) throw new WorkspaceHarnessUnavailableError(runner)
     const key = JSON.stringify([signature, directory, ownerKey, lease.secretLeaseGeneration])

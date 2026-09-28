@@ -392,10 +392,11 @@ describe("session prompt route", () => {
       releaseTurn: async () => ({ released: true }),
     }
     const wa = await workspaceApp({
+      auth: { machineOwnerUserId: "local", accounts: { user_1: { openai: { baseUrl: "https://fixture.example", placeholder: "user-1-key", authMode: "api-key" } } } },
       sessionAccessPolicy: policy,
       before: (app: Hono) => {
         app.use("*", async (c, next) => {
-          c.set("relayHostAuth" as never, { workspace_id: "ws_1", org_id: "org_1", role: "editor", actor_id: "actor_1", actor_kind: "human" } as never)
+          c.set("relayHostAuth" as never, { workspace_id: "ws_1", org_id: "org_1", role: "editor", actor_id: "actor_1", user_id: "user_1", actor_kind: "human" } as never)
           await next()
         })
       },
@@ -1146,6 +1147,7 @@ it("publishes a successful session deletion once, on the hub the workspace strea
     sessionId: "s1", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s1",
     agentSessionId: "s1", title: "child", parentSessionId: "parent-1",
   })
+  wa.store().recordSessionOwner("s1", { kind: "machine-owner" })
   wa.store().updateSessionConfig("s1", { harness: { id: "fake", access: "connection" } })
   const events: unknown[] = []
   wa.eventHub.subscribeGlobal((event) => { if ((event.payload as { type?: string }).type === "session.deleted") events.push(event) })

@@ -364,7 +364,7 @@ describe("hosted (D1) rotation", () => {
       ["org-b", "openai", "b-token"],
       ["org-b", "codex-acp", "b-codex"],
     ]) {
-      await hostedOrgCredentials(orgId, { database, env: retiredEnv }).putCredential({ ...write, provider_id: providerId, secret })
+      await hostedOrgCredentials(orgId, { database, env: retiredEnv }).putCredential({ owner: null, ...write, provider_id: providerId, secret })
     }
     const retired = await envelopeKeyId(kek(1))
     const active = await envelopeKeyId(kek(2))
@@ -381,11 +381,8 @@ describe("hosted (D1) rotation", () => {
     expect(report.rewritten).toBe(3)
     expect(report.failures).toEqual([])
     expect(report.complete).toBe(true)
-    expect(report.entries.map((entry) => [entry.orgId, entry.ref])).toEqual([
-      ["org-a", "d1:openai"],
-      ["org-b", "d1:codex-acp"],
-      ["org-b", "d1:openai"],
-    ])
+    expect(report.entries.map((entry) => entry.orgId)).toEqual(["org-a", "org-b", "org-b"])
+    expect(report.entries.every((entry) => /^d1:[0-9a-f-]{36}$/.test(entry.ref))).toBe(true)
     expect((await keyIds()).map((row) => row[2])).toEqual([active, active, active])
 
     const after = await rotateHostedCredentialKeys({ database, env: rotatedEnv, dryRun: true })
@@ -406,7 +403,7 @@ describe("hosted (D1) rotation", () => {
   test("a row deleted between enumeration and sweep is absent, not a failure, and the sweep mints nothing", async () => {
     const database = controlPlane.database
     const store = hostedOrgCredentials("org-c", { database, env: retiredEnv })
-    await store.putCredential({ ...write, provider_id: "openai", secret: "c-token" })
+    const row = await store.putCredential({ ...write, owner: null, provider_id: "openai", secret: "c-token" })
     const rowsBefore = (await keyIds()).length
 
     const report = await rotateHostedCredentialKeys({
@@ -416,18 +413,18 @@ describe("hosted (D1) rotation", () => {
     })
     expect(report.entries.find((entry) => entry.orgId === "org-c")?.outcome).toBe("rewritten")
 
-    await store.deleteCredential("openai")
+    await store.deleteCredential(row.id)
     const deleting = await rotateHostedCredentialKeys({
       database: {
         prepare: (sql) => {
           const statement = database.prepare(sql)
-          return sql.startsWith("select org_id, provider_id from hosted_provider_credentials")
+          return sql.startsWith("select org_id, id from hosted_provider_credentials")
             ? {
                 bind: () => statement,
                 first: () => statement.first(),
                 run: () => statement.run(),
                 all: async () => ({
-                  results: [...(await statement.all()).results, { org_id: "org-c", provider_id: "openai" }],
+                  results: [...(await statement.all()).results, { org_id: "org-c", id: row.id }],
                 }),
               }
             : statement

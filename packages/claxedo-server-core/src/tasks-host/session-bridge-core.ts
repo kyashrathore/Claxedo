@@ -94,15 +94,19 @@ export type TasksSessionReservation =
 
 /** What differs between the hosts that run Tasks sessions. */
 export type TasksSessionHost = {
-  /** The workspace's runtime, or null when this host cannot reach one for it. */
-  target(workspaceId: string): Promise<TasksRuntimeTarget | null>
+  /**
+   * The workspace's runtime, or null when this host cannot reach one for it.
+   * `starter` is the person a Start acts for, whose accounts a session it
+   * creates spends; a read or a removal acts for nobody.
+   */
+  target(workspaceId: string, starter: TasksActor | null): Promise<TasksRuntimeTarget | null>
   /**
    * Where a task with no workspace preference runs. A task names a project;
    * naming a workspace inside it is optional, and most tasks created from the
    * UI never do, so the host resolves the project's own workspace instead of
    * the Start refusing for a choice nobody was asked to make.
    */
-  projectTarget(projectId: string): Promise<TasksTargetChoice>
+  projectTarget(projectId: string, starter: TasksActor): Promise<TasksTargetChoice>
   /**
    * The isolated workspace a cloud-placement preset runs in, allocated to this
    * root and recovered by a retry of it. A host that names none cannot offer
@@ -222,7 +226,7 @@ async function sessionStates(
     const meta = metas.get(session.sessionId)
     if (!meta) return unread("deleted")
     if (meta.archived) return unread("archived")
-    const target = await host.target(meta.workspaceID ?? session.workspaceId ?? "")
+    const target = await host.target(meta.workspaceID ?? session.workspaceId ?? "", null)
     if (!target) return unread("unavailable")
     const reachable = await target.request(`/session/${encodeURIComponent(session.sessionId)}`).catch(() => undefined)
     if (!reachable) return unread("unavailable")
@@ -351,7 +355,7 @@ async function readHandoff(
 ): Promise<{ ok: true; handoff: Handoff | null } | Refusal> {
   if (!previous) return { ok: true, handoff: null }
   const target = previous.workspaceId && previous.workspaceId !== fallback.workspace.id
-    ? await host.target(previous.workspaceId)
+    ? await host.target(previous.workspaceId, null)
     : fallback
   if (!target) return { ok: true, handoff: null }
   if (!(await authorize())) {
@@ -407,9 +411,9 @@ async function cloudTarget(
   })
 }
 
-async function startTarget(host: TasksSessionHost, task: Task): Promise<TasksTargetChoice> {
-  if (!task.workspaceId) return host.projectTarget(task.projectId)
-  const target = await host.target(task.workspaceId)
+async function startTarget(host: TasksSessionHost, task: Task, starter: TasksActor): Promise<TasksTargetChoice> {
+  if (!task.workspaceId) return host.projectTarget(task.projectId, starter)
+  const target = await host.target(task.workspaceId, starter)
   return target ? { target } : { detail: `Workspace ${task.workspaceId} is not reachable from this host` }
 }
 
@@ -450,7 +454,7 @@ async function resolveStart(
   const placement = execution.placement
   const choice = execution.placement === "cloud"
     ? await cloudTarget(host, command, execution.capabilities)
-    : await startTarget(host, command.task)
+    : await startTarget(host, command.task, command.actor)
   const blockers: StartBlocker[] = []
   if (!("target" in choice)) {
     blockers.push("blocker" in choice ? choice.blocker : { code: "source_unavailable", detail: choice.detail })
@@ -661,7 +665,7 @@ async function sendFirstMessage(
   host: TasksSessionHost,
   command: SessionHandoffCommand,
 ): Promise<TasksResult<{ sent: boolean }>> {
-  const target = await host.target(command.session.workspaceId ?? "")
+  const target = await host.target(command.session.workspaceId ?? "", command.actor)
   if (!target) {
     return {
       ok: false,
@@ -721,7 +725,7 @@ async function abandonSession(
   host: TasksSessionHost,
   command: SessionAbandonCommand,
 ): Promise<TasksResult<{ removed: boolean }>> {
-  const target = await host.target(command.sessionRef.workspaceId ?? "")
+  const target = await host.target(command.sessionRef.workspaceId ?? "", null)
   if (!target) {
     return {
       ok: false,

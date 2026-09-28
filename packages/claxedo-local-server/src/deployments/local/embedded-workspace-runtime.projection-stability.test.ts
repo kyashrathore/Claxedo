@@ -37,15 +37,15 @@ async function workspaceOnRealBroker(clock: () => number) {
   await fs.mkdir(project, { recursive: true })
   process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
   setBackendOverride(createTestBackend())
-  const credential = await putCredential({
+  const credential = await putCredential({ owner: "local",
     provider_id: "claude-sdk",
     kind: "api_key",
     source: "managed",
     account_id: "acc-stability",
     secret: "sk-ant-api03-stability",
   })
-  expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
-  const broker = createLocalCredentialBroker({
+  expect(setActiveCredentials([credential.id], undefined, "local")).toMatchObject({ ok: true })
+  const broker = createLocalCredentialBroker({ machineOwnerUserId: () => "local",
     dataDir: path.join(root, "data"),
     brokerOrigin: "http://127.0.0.1:2595",
     now: clock,

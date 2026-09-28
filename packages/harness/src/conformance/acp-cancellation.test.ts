@@ -19,7 +19,7 @@ test("ACP acknowledged cancellation with a still-open prompt reaches its deadlin
   const context = await setupConformance({
     name: "acp-cancellation-stop",
     backend: async () => ({ directory, harness: { id: "acp", access: "connection" }, model: { providerID: "acp", modelID: "default" },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "test" }, owner: { kind: "machine-owner" }, locality: "remote",
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "test" }, owner: { kind: "machine-owner" }, locality: "remote",
       unrunnableTurn: (turn) => turn,
       close: async () => { await server.close(); await rm(root, { recursive: true, force: true }) },
     }),
@@ -56,7 +56,7 @@ test("ACP never submits a prompt whose turn was stopped while its configuration 
   const context = await setupConformance({
     name: "acp-startup-stop",
     backend: async () => ({ directory, harness: { id: "acp", access: "connection" }, model: { providerID: "acp", modelID: "default" },
-      credentials: { providers: {}, secrets: {}, leaseGeneration: "test" }, owner: { kind: "machine-owner" }, locality: "remote",
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "test" }, owner: { kind: "machine-owner" }, locality: "remote",
       unrunnableTurn: (turn) => turn,
       close: async () => { await server.close(); await rm(root, { recursive: true, force: true }) },
     }),

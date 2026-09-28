@@ -94,7 +94,7 @@ beforeAll(async () => {
     response.end(Buffer.from(await answer.arrayBuffer()))
   })
   const brokerOrigin = await listen(brokerServer)
-  const broker = createLocalCredentialBroker({ dataDir, brokerOrigin })
+  const broker = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir, brokerOrigin })
   handler = broker.handler
   configureAgentConfig({ projectAuth: async (input) => {
     const hold = holdProjection
@@ -115,7 +115,7 @@ beforeAll(async () => {
     models: { "acme-1": { name: "Acme One" } },
   }
   putCustomProvider(provider)
-  await putCredential({ provider_id: "acme", kind: "api_key", source: "local_only", secret: "sk-acme-stored" })
+  await putCredential({ owner: "local", provider_id: "acme", kind: "api_key", source: "local_only", secret: "sk-acme-stored" })
   directory = mkdtempSync(path.join(dataDir, "work-"))
   execFileSync("sh", ["-c", "unset GIT_INDEX_FILE; git init -q"], { cwd: directory })
   const workspace = await ensureWorkspace({ workspaceId: "ws_custom_provider", directory, kind: "local" })
@@ -181,7 +181,7 @@ test("a custom provider with a stored key is one the engine runs, and the catalo
 
 test("with no workspace named, Settings and onboarding list the vendors and declared providers, connected by stored accounts", async () => {
   const app = agentConfigProviderRoutes({ authConfig: { enabled: false, mode: "local-only", reason: "test" } })
-  await putCredential({ provider_id: "groq", kind: "api_key", source: "local_only", secret: "sk-groq-onboarding" })
+  await putCredential({ owner: "local", provider_id: "groq", kind: "api_key", source: "local_only", secret: "sk-groq-onboarding" })
   const response = await app.request("/providers?nativeHarness=opencode")
   expect(response.status, await response.clone().text()).toBe(200)
   const catalog = await response.json() as { all: Array<{ id: string; name: string; source: string; models: Record<string, { connected: boolean }> }>; connected: string[] }
@@ -245,7 +245,7 @@ test("a key header saved through the Settings route carries the stored key there
   })
   expect(saved.status, await saved.clone().text()).toBe(200)
   expect(await saved.json()).toMatchObject({ credentialHeader: { name: "X-Goog-Api-Key" } })
-  await localControlPlaneCredentials().putCredential({ provider_id: "googco", kind: "api_key", source: "managed", secret: "sk-goog-stored" })
+  await localControlPlaneCredentials().putCredential({ owner: "local", provider_id: "googco", kind: "api_key", source: "managed", secret: "sk-goog-stored" })
   const catalog = await (await app.request(`/providers?nativeHarness=opencode&directory=${encodeURIComponent(directory)}`)).json() as
     { all: Array<{ id: string; source: string; options?: { headers?: Record<string, string> } }>; connected: string[] }
   expect(catalog.all.find((row) => row.id === "googco")).toMatchObject({ source: "custom", options: { headers: { "X-Title": "goog" } } })
@@ -257,7 +257,7 @@ test("a key header saved through the Settings route carries the stored key there
 
 test("Settings keeps disconnect and reconnect rows for accounts the engine refuses", async () => {
   const credentials = localControlPlaneCredentials()
-  const openai = await credentials.putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai-stored" })
+  const openai = await credentials.putCredential({ owner: "local", provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai-stored" })
   await credentials.updateCredentialStatus(openai.id, "revoked", "revoked by the operator")
   const envco = listCredentials().find((credential) => credential.provider_id === "envco")
   if (!envco) throw new Error("the env-backed provider's credential was not stored")

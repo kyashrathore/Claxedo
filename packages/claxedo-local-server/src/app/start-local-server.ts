@@ -54,8 +54,7 @@ import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
-import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/host-provider-config"
-import { hostProviderConfig } from "../workspace/host-provider-config"
+import { hostCredentialProjectAuth, localMachineOwnerUserId } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
@@ -206,13 +205,13 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const credentialBroker = createLocalCredentialBroker({
     dataDir: dataDir(),
     brokerOrigin: firstPartyMcpBaseUrl,
+    machineOwnerUserId: localMachineOwnerUserId,
   })
   configureAgentConfig({
     connectionConfigs: defaultConnectionConfigs(),
-    // The owner's pushed rows are written over the broker's answer: a
-    // provider the owner named resolves to the owner's account, every other
-    // one to whatever this machine holds.
-    projectAuth: hostProviderConfigProjectAuth((input) => credentialBroker.projectAuth(input), hostProviderConfig),
+    // The broker answers with this machine's rows, the operator's named for
+    // the enrolled owner; the owner's pushed rows are written over theirs.
+    projectAuth: hostCredentialProjectAuth((input) => credentialBroker.projectAuth(input)),
     ...(options.pluginRuntime ? { pluginRuntime: options.pluginRuntime } : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the

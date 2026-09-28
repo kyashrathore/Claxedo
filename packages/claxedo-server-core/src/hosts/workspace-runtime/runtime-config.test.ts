@@ -37,7 +37,7 @@ afterAll(() => {
 
 describe("applied runtime config", () => {
   test("resolves the installed authority's local-scope projection against this process's environment", async () => {
-    const projectAuth = vi.fn(async () => ({ "claude-sdk": bound, "codex-app-server": envBound }))
+    const projectAuth = vi.fn(async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": bound, "codex-app-server": envBound } } }))
     configureAgentConfig({ projectAuth })
     vi.stubEnv("CLAXEDO_PROVIDER_CODEX_APP_SERVER", "env-placeholder")
 
@@ -50,7 +50,7 @@ describe("applied runtime config", () => {
       mcp: {},
       connections: [],
       commands: [],
-      auth: {
+      auth: { machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": bound,
         "codex-app-server": {
           baseUrl: "https://api.openai.com",
@@ -58,7 +58,7 @@ describe("applied runtime config", () => {
           apiPath: "/v1",
           placeholder: "env-placeholder",
         },
-      },
+      } } },
     })
   })
 
@@ -67,7 +67,7 @@ describe("applied runtime config", () => {
     // fills. Resolving it here would mark every one of them missing from the
     // server's environment and hand the sandbox a config that refuses its own
     // credentials.
-    const projectAuth = vi.fn(async () => ({ "claude-sdk": bound }))
+    const projectAuth = vi.fn(async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": bound } } }))
     configureAgentConfig({ projectAuth })
 
     await expect(createClaxedoAppliedRuntimeConfig({ secretScope: "shared", workspaceId: "ws_1" }))
@@ -77,7 +77,7 @@ describe("applied runtime config", () => {
 
   test("refuses a projection the runtime cannot read rather than applying the rest", async () => {
     configureAgentConfig({
-      projectAuth: async () => ({ "claude-sdk": bound, "codex-app-server": { ...envBound, placeholderEnv: "" } }),
+      projectAuth: async () => ({ machineOwnerUserId: "local", accounts: { local: { "claude-sdk": bound, "codex-app-server": { ...envBound, placeholderEnv: "" } } } }),
     })
 
     await expect(createClaxedoAppliedRuntimeConfig({ workspaceId: "ws_1" }))

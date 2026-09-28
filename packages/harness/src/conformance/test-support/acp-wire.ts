@@ -57,7 +57,7 @@ export function wireFixture(handle: (peer: WirePeer, message: Wire) => boolean |
   const sessionBroker = createSessionBroker(owner, { ...binding, start: binding, origin })
   const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local", owner: origin.actor,
     config: { harness: { id: "c1", access: "connection" }, model: { providerID: "c1", modelID: "one" } },
-    model: { providerID: "c1", modelID: "one" }, credentials: { providers: {}, leaseGeneration: "g1", secrets: {} },
+    model: { providerID: "c1", modelID: "one" }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, leaseGeneration: "g1", secrets: {} },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
   const transport = new AcpTransport(services, { kind: "process", command: "wire-peer", ...options }, filterMcpServers,
     async () => { throw new Error("No missing-session handoff expected") })

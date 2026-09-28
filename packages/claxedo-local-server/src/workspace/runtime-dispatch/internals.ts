@@ -299,6 +299,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
       ? {
           principalKind: actor.actorKind === "human" ? "user" as const : "service" as const,
           actorId: actor.actorId,
+          userId: actor.userId,
           actorKind: actor.actorKind,
           ...(actor.actorPublicId && actor.actorName
             ? {

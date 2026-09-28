@@ -52,7 +52,7 @@ export async function scriptedClaude(options: { models: unknown[]; steering?: bo
   const transport = new ClaudeSdkTransport(services as unknown as HarnessServices, { executable: "claude", configRoot: path.join(root, "homes"),
     userConfigRoot: path.join(root, "owner"), env: {} })
   const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: root, locality: "local", owner: { kind: "machine-owner" },
-    config: { harness: { id: "claude", access: "native" } }, credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+    config: { harness: { id: "claude", access: "native" } }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
   const broker = { config: () => input.config, rebind: async (upstreamSessionId: string) => ({ sessionId: "s1", workspaceId: "w1", directory: root,
     connectionId: "claude-sdk", upstreamSessionId }) } as SessionBroker

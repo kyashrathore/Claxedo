@@ -224,7 +224,7 @@ beforeAll(async () => {
     commands: [],
     mcp: {},
     connections: [{ connectionId: CONNECTION, providerKey: "fake", configRevision: 1, enabled: true, config: {} }],
-    auth: {},
+    auth: { machineOwnerUserId: "local", accounts: { local: {} } },
   })
 }, 60_000)
 
@@ -241,6 +241,7 @@ async function createRoot(sessionId: string, creator: WorkspaceOwnerIdentity) {
   const token = await mintRelayHostToken({
     principalKind: "user",
     actorId: creator.actorId,
+    userId: creator.userId,
     actorKind: "human",
     orgId: creator.orgId,
     workspaceId: WORKSPACE,

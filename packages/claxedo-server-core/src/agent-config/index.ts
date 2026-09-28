@@ -7,6 +7,7 @@
  * Command .md files at:     ~/.claxedo/commands/<name>.md
  */
 
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import * as fs from "fs"
 import * as path from "path"
 import { isMissingFile } from "@claxedo/helpers/guards"
@@ -20,7 +21,7 @@ import {
   type HarnessConnectionDescriptor,
   type HarnessConnectionRef,
 } from "./connections"
-import type { ProviderProjectionSource, RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import type { AcpRuntimeMcpServer } from "../agent-plugins/runtime/mcp-projection"
 import type { CustomProviderDefinition } from "@claxedo/harness/contract"
 import { listCustomProviders } from "../credentials/custom-provider"
@@ -80,7 +81,7 @@ export interface RuntimeConfigSnapshot {
   connections: HarnessConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
   /** Broker endpoints and placeholders; the credential values stay with the authority. */
-  auth: Record<string, ProviderProjectionSource>
+  auth: CredentialSnapshot
   commands: CommandItem[]
   /** Opaque per-harness launch options contributed by the product composition. */
   harnessLaunch?: Record<string, Record<string, unknown>>
@@ -118,7 +119,9 @@ export type AgentConfigOptions = {
     workspaceId?: string
     /** How this workspace's sandbox can carry a credential, when it has one. */
     secretBrokering?: SandboxSecretBrokering
-  }) => Promise<Record<string, ProviderProjectionSource>>
+    /** The person a shared-scope sandbox serves; only their accounts and the team's reach it. */
+    sandboxOwner?: string
+  }) => Promise<CredentialSnapshot>
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -139,8 +142,8 @@ export function projectRuntimeAuth(input: {
   orgId?: string
   workspaceId?: string
   secretBrokering?: SandboxSecretBrokering
-}): Promise<Record<string, ProviderProjectionSource>> {
-  return agentConfigOptions.projectAuth?.(input) ?? Promise.resolve({})
+}): Promise<CredentialSnapshot> {
+  return agentConfigOptions.projectAuth?.(input) ?? Promise.resolve({ machineOwnerUserId: "", accounts: {} })
 }
 
 export function configureAgentConfig(options: AgentConfigOptions = {}) {
@@ -225,6 +228,7 @@ export async function getRuntimeConfigSnapshot(
     workspaceDir?: string
     workspaceId?: string
     secretBrokering?: SandboxSecretBrokering
+    sandboxOwner?: string
   } = {},
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
@@ -246,7 +250,8 @@ export async function getRuntimeConfigSnapshot(
     ...(options.orgId ? { orgId: options.orgId } : {}),
     ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
     ...(options.secretBrokering ? { secretBrokering: options.secretBrokering } : {}),
-  }) ?? {}
+    ...(options.sandboxOwner ? { sandboxOwner: options.sandboxOwner } : {}),
+  }) ?? { machineOwnerUserId: "", accounts: {} }
   const plugins = await agentConfigOptions.pluginRuntime?.()
   return {
     version: 4,

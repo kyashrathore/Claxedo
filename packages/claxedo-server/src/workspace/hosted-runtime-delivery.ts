@@ -46,26 +46,32 @@ export function createHostedRuntimeDelivery(input: {
     if (!person) throw new Error(`workspace ${workspaceId} has no active owner`)
     return person
   }
-  const deliveries = async (orgId: string) => {
-    const credentials = input.credentials(orgId)
+  const deliveries = async (person: { userId: string; orgId: string }) => {
+    const credentials = input.credentials(person.orgId)
     const selected = (await credentials.listCredentials())
       .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token")
         && !!builtInProviderRow(credential.provider_id))
       .map((credential) => ({ credential, ...(credential.status !== "available" ? { unavailable: credential.status } : {}) }))
-    return nativeProviderDeliveriesFromRepository({
+    const selections = await credentials.accountSelections()
+    const delivered = await nativeProviderDeliveriesFromRepository({
+      owner: person.userId,
+      machineOwnerUserId: person.userId,
+      selections,
       selected,
-      readSecret: (credential) => credentials.resolveCredentialSecret?.(credential.id) ?? Promise.resolve(null),
+      readSecret: (credential) => credentials.resolveCredentialSecretById?.(credential.id) ?? Promise.resolve(null),
       secretBrokering: input.driver.metadata.secretBrokering,
     })
+    return { delivered, selections }
   }
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     const person = await owner(workspaceId)
-    return { secrets: nativeProviderSecrets(await deliveries(person.orgId)) }
+    return { secrets: nativeProviderSecrets((await deliveries(person)).delivered) }
   }
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
     const person = await owner(workspaceId)
     const config = await userAgentConfigStore(input.settings, person.userId).read()
-    const auth = nativeProviderAuth(await deliveries(person.orgId))
+    const { delivered, selections } = await deliveries(person)
+    const auth = nativeProviderAuth(delivered, { owner: person.userId, machineOwnerUserId: person.userId, selections })
     await hostedRuntimeConfigApply(input.services, workspaceId, {
       version: 4 as const,
       commands: [],

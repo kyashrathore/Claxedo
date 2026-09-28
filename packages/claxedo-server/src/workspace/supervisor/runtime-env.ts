@@ -12,6 +12,10 @@ import {
 
 export type WorkspaceSupervisorOptions = {
   server_url: string
+  /** The person whose accounts a workspace's sandbox is delivered: its owner. */
+  sandboxOwner(workspaceId: string): Promise<string>
+  /** Who the unsigned operator of this deployment is, so the rows they stored are read as that person's. */
+  machineOwnerUserId: string
   relay_url?: string
   default_sandbox_driver?: SandboxDriverID
 }

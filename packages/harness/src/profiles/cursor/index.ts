@@ -4,7 +4,7 @@ import path from "node:path"
 import type { McpServerConfig, SettingSource } from "@cursor/sdk"
 import { lstatIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { MachineLoginPolicy, McpServerSpec, PluginProjection, SkillRoot, TurnActor } from "../../contract"
+import type { McpServerSpec, PluginProjection, SkillRoot } from "../../contract"
 import { mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
 
 const OWNER = "claxedo-agent-plugins"
@@ -31,11 +31,10 @@ export function projectCursorMcpServers(servers: readonly McpServerSpec[]): Reco
   return result
 }
 
-export function cursorHomeKey(owner: TurnActor, login: Pick<MachineLoginPolicy, "machineOwnerUserId">, binding: string,
+export function cursorHomeKey(accountOwner: string, binding: string,
   projection: Pick<PluginProjection, "pluginRoots" | "pluginSelection">): string {
   const selection = [...new Set(projection.pluginRoots.map((plugin) => plugin.pluginInstanceId))].sort()
-  const ownerId = owner.kind === "person" ? owner.userId : login.machineOwnerUserId
-  return createHash("sha256").update(JSON.stringify([ownerId, binding, selection, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)
+  return createHash("sha256").update(JSON.stringify([accountOwner, binding, selection, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)
 }
 
 function managedPluginName(plugin: SkillRoot): string {

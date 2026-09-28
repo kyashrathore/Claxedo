@@ -26,7 +26,7 @@ const snapshot: RuntimeSnapshot = {
   commands: [],
   mcp: {},
   connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
-  auth: {},
+  auth: { machineOwnerUserId: "local", accounts: {} },
   defaultHarness: { kind: "connection", connectionId: "fixture" },
 }
 

@@ -1,6 +1,6 @@
 import type { AgentAgent, AgentCommand } from "@claxedo/agent-runtime-contract"
 import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession,
-  HarnessTransport, DraftLaunch, ScopedSessionTools, SessionBroker, SessionToolOperations, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline, MachineLoginPolicy } from "../../contract"
+  HarnessTransport, DraftLaunch, ScopedSessionTools, SessionBroker, SessionToolOperations, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
@@ -14,7 +14,7 @@ import type { Entry } from "./entry.js"
 import { cancelOpenCodeTurn } from "./cancel.js"
 import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 
-export type OpenCodeSdkTransportOptions = OpenCodeRuntimeOptions & { login: MachineLoginPolicy }
+export type OpenCodeSdkTransportOptions = OpenCodeRuntimeOptions
 import { WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
 import { createKeyedSerializer, errorMessage, singleFlightUntil } from "@claxedo/helpers"
@@ -30,22 +30,13 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   private owner?: string
   private disposed = false
 
-  private readonly login: MachineLoginPolicy
-
   constructor(private readonly services: HarnessServices, options: OpenCodeSdkTransportOptions) {
-    const { login, ...runtime } = options
-    this.login = login
-    this.runtime = createOpenCodeRuntime(runtime)
+    this.runtime = createOpenCodeRuntime(options)
   }
 
-  private ownerKey(owner: StartInput["owner"]): string {
-    return owner.kind === "machine-owner" ? "machine-owner" : `person:${owner.userId}`
-  }
-
-  private assertOwner(owner: StartInput["owner"]): void {
+  private assertOwner(credentials: DraftLaunch["credentials"]): void {
     if (this.disposed) throw new TransportError("opencode", "engine", "OpenCode transport is disposed")
-    const key = this.ownerKey(owner)
-    if (this.owner !== undefined && this.owner !== key) throw new OpenCodeOwnerMismatchError()
+    if (this.owner !== undefined && this.owner !== credentials.accountOwner) throw new OpenCodeOwnerMismatchError()
   }
 
   private scope(input: Pick<StartInput, "workspaceId" | "directory">): WorkspaceScope {
@@ -68,9 +59,9 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private assertBindingCompatible(input: DraftLaunch & { sessionId?: string }): void {
-    const selected = engineProviderConfigurationKey(input, this.login)
+    const selected = engineProviderConfigurationKey(input)
     for (const [id, entry] of this.entries) {
-      if (id !== input.sessionId && engineProviderConfigurationKey(entry.start, this.login) !== selected) {
+      if (id !== input.sessionId && engineProviderConfigurationKey(entry.start) !== selected) {
         throw new TransportError("opencode", "configuration", "OpenCode sessions require one selected account; different selected accounts need separate engines")
       }
     }
@@ -81,7 +72,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private async openBound(input: StartInput, broker: SessionBroker, upstream?: string): Promise<HarnessSession> {
-    this.assertOwner(input.owner)
+    this.assertOwner(input.credentials)
     if (this.entries.has(input.sessionId)) throw new TransportError("opencode", "session", "OpenCode session is already attached")
     this.assertBindingCompatible(input)
     const scope = this.scope(input)
@@ -99,15 +90,15 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       const firstPartyTools_ = await this.registerFirstParty(input, scope, row.id)
       registered = firstPartyTools_ !== undefined
       const binding = await broker.rebind(row.id)
-      this.owner = this.ownerKey(input.owner)
+      this.owner = input.credentials.accountOwner
       const session: HarnessSession = { directory: scope.directory, locality: input.locality, binding }
       this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false,
         ...(firstPartyTools_ ? { firstParty: firstPartyTools_ } : {}) })
       return session
     } catch (error) {
       const failures = await rollbackOpenCodeSession({ runtime: this.runtime, scope, upstream, rowID: row?.id,
-        registered, document: priorDocument, priorDefinitions: priorStart ? engineProviderDefinitions(priorStart, this.login) : [],
-        ...(priorStart ? { priorBinding: engineProviderBinding(priorStart, this.login) } : {}) })
+        registered, document: priorDocument, priorDefinitions: priorStart ? engineProviderDefinitions(priorStart) : [],
+        ...(priorStart ? { priorBinding: engineProviderBinding(priorStart) } : {}) })
       this.providerInput = priorStart
       if (prior) this.documents.set(scope.directory, prior)
       else this.documents.delete(scope.directory)
@@ -126,14 +117,14 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private async applyProviders(input: DraftLaunch): Promise<void> {
-    if (this.providerInput && engineProviderConfigurationKey(input, this.login) === engineProviderConfigurationKey(this.providerInput, this.login)) return
-    await applyEngineProviders(this.runtime, input, this.login, this.providerInput)
+    if (this.providerInput && engineProviderConfigurationKey(input) === engineProviderConfigurationKey(this.providerInput)) return
+    await applyEngineProviders(this.runtime, input, this.providerInput)
     this.providerInput = input
   }
 
   private readAsDraft<T>(draft: DraftLaunch, read: (scope: WorkspaceScope) => Promise<T>): Promise<T> {
     return this.bindingChanges.run("engine", async () => {
-      this.assertOwner(draft.owner)
+      this.assertOwner(draft.credentials)
       this.assertBindingCompatible(draft)
       await this.applyProviders(draft)
       return await read(this.scope(draft))
@@ -158,7 +149,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
 
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker) {
     const entry = this.entry(session)
-    return runOpenCodeTurn(this.runtime, entry, turn, broker, this.login)
+    return runOpenCodeTurn(this.runtime, entry, turn, broker)
   }
 
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
@@ -180,7 +171,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
 
   private async configureBound(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
-    this.assertOwner(entry.start.owner)
+    this.assertOwner(entry.start.credentials)
     const next = mergeStartInput(entry.start, update)
     if (update.credentials || update.providerDefinitions) {
       await this.applyProviders(next)

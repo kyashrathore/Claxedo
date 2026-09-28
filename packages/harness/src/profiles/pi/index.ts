@@ -2,9 +2,9 @@ import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PromptModel } from "@claxedo/agent-runtime-contract"
-import type { MachineLoginPolicy, PluginProjection, ResolvedCredentials, TurnActor } from "../../contract"
+import type { MachineLoginPolicy, PluginProjection, ResolvedCredentials } from "../../contract"
 import type { CredentialProfile } from "../../registry/credentials"
-import { ownerMayUseMachineLogin, providerPlaceholder, selectedProviderProjection } from "../../contract"
+import { providerPlaceholder, selectedProviderProjection } from "../../contract"
 import { stringRecord } from "@claxedo/helpers"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
@@ -26,10 +26,10 @@ const providerEnvironment = [
 ] as const
 
 export function selectPiProfile(
-  owner: TurnActor, credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
+  credentials: ResolvedCredentials, directory: string, sessionId: string, options: PiProfileOptions,
   sessionProfile?: CredentialProfile,
 ): PiProfile {
-  const machineLogin = ownerMayUseMachineLogin(owner, options)
+  const machineLogin = credentials.machineLoginAllowed
   const bound = PI_LAUNCH_PROVIDERS.some((name) => selectedProviderProjection(credentials, piCredentialProviderIDs(name)) !== undefined)
   const kind = machineLogin ? sessionProfile ?? (bound ? "brokered" : "owner-login") : "brokered"
   const workspace = createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16)

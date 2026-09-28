@@ -51,6 +51,7 @@ export type RelayHostAuthContext = {
 export type EmbeddedRelayHostIdentity = {
   principal_kind: "user" | "service"
   actor_id: string
+  user_id?: string
   actor_kind: "human" | "agent"
   actor_public_id: string
   actor_name: string
@@ -108,6 +109,7 @@ function validateRelayHostVerifierClaims(
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
   const actor_id = stringClaim(payload, "actor_id")
+  const user_id = stringClaim(payload, "user_id")
   const actor_kind = actorKindClaim(payload)
   const actor_public_id = stringClaim(payload, "actor_public_id")
   const actor_name = stringClaim(payload, "actor_name")
@@ -120,6 +122,7 @@ function validateRelayHostVerifierClaims(
 
   if (
     !actor_id
+    || (payload.user_id !== undefined && !user_id)
     || (principal_kind !== "user" && principal_kind !== "service")
     || (actor_kind !== "human" && actor_kind !== "agent")
     || (principal_kind === "user" && actor_kind !== "human")
@@ -152,6 +155,7 @@ function validateRelayHostVerifierClaims(
     aud: relayHostTokenAudience,
     principal_kind,
     actor_id,
+    ...(user_id ? { user_id } : {}),
     actor_kind,
     ...(actor_public_id && actor_name
       ? { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }

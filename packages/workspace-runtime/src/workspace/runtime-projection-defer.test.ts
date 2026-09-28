@@ -34,14 +34,14 @@ function snapshot(placeholder: string, mcp: Record<string, unknown> = {}): Runti
     mcp,
     connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
     defaultHarness: { kind: "connection", connectionId: "fixture" },
-    auth: {
+    auth: { machineOwnerUserId: "local", accounts: { local: {
       pi: {
         baseUrl: "http://127.0.0.1:2595/bindings/pi1",
         placeholder,
         authMode: "bearer",
         expiresAt: EXPIRES_AT,
       },
-    },
+    } } },
   }
 }
 

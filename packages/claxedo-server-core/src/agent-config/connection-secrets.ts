@@ -106,6 +106,7 @@ export function createVmConnectionSecretResolver(input: {
 }): ConnectionSecretResolver {
   return async ({ descriptor, directory, authority, owner }) => {
     assertEnabled(descriptor)
+    if (Object.keys(descriptor.secretRefs ?? {}).length === 0) return secretLease({}, "none")
     const workspace = await input.workspaceForDirectory(directory)
     if (!workspace?.workspaceId) throw unavailable(descriptor, "invalid_resolution")
     let lease: Awaited<ReturnType<typeof input.resolveLease>>

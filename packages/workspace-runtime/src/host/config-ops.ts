@@ -22,7 +22,7 @@ import type { HarnessHandle, TransportResolver } from "./transports"
 /** A harness read that names a live session or a draft on a harness in a directory. */
 export type HarnessTarget =
   | { sessionId: string; directory?: string; secretAuthority?: ConnectionSecretAuthority }
-  | { harness: SessionHarness; directory: string; owner?: TurnActor; secretAuthority?: ConnectionSecretAuthority }
+  | { harness: SessionHarness; directory: string; owner: TurnActor; secretAuthority?: ConnectionSecretAuthority }
 
 type ResolvedTarget = { handle: HarnessHandle; target: ConfigTarget; sessionId?: string; directory: string }
 
@@ -54,10 +54,10 @@ export function createHarnessReads(input: {
       return { handle: attached.handle, target: { session: attached.session }, sessionId: target.sessionId, directory: attached.session.directory }
     }
     const handle = await transports.forHarness(target.harness, target.directory, {
-      owner: target.owner ?? { kind: "machine-owner" }, ...(target.secretAuthority ? { authority: target.secretAuthority } : {}),
+      owner: target.owner, ...(target.secretAuthority ? { authority: target.secretAuthority } : {}),
     })
     const draft = draftLaunch(launch, { harness: target.harness, directory: target.directory, locality: handle.locality,
-      owner: target.owner ?? { kind: "machine-owner" } })
+      owner: target.owner })
     return { handle, target: { draft }, directory: target.directory }
   }
 
@@ -90,6 +90,7 @@ export function createHarnessReads(input: {
       if (!catalog || !("draft" in resolved.target)) throw new Error("Harness does not expose a provider catalog")
       return await catalog.providers(resolved.target.draft)
     },
+    sessionOwner: (sessionId: string): TurnActor => attachments.owner(sessionId),
     async capabilities(target: HarnessTarget): Promise<HarnessCapabilities> {
       const resolved = await resolve(target)
       const declared = await declaredFor(resolved)

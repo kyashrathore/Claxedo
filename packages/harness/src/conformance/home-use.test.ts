@@ -47,7 +47,7 @@ for (const kind of ["codex", "cursor"] as const) {
           placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true })
       const input: StartInput = { sessionId: "session", workspaceId: "workspace", directory: root, locality: "local", owner: { kind: "machine-owner" },
         config: { harness: { id: kind, access: "native" } },
-        projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { providers: {}, secrets: {}, leaseGeneration: "one" } }
+        projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" } }
       const broker = { rebind: async (upstreamSessionId: string) => ({ sessionId: "session", workspaceId: "workspace", directory: root,
         connectionId: kind, upstreamSessionId }) } as SessionBroker
       try {

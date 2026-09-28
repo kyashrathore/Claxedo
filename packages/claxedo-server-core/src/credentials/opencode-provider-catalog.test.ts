@@ -30,7 +30,7 @@ afterAll(() => {
 const engine = (...entries: ProviderCatalogEntry[]) => entries
 
 test("a runnable provider carries the engine's models, costs and variants", async () => {
-  const catalog = opencodeProviderCatalog({ org: "org_engine", engine: engine({ id: "zen", name: "Zen", env: ["ZEN_KEY"], connected: true, models: [
+  const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_engine", engine: engine({ id: "zen", name: "Zen", env: ["ZEN_KEY"], connected: true, models: [
     { providerID: "zen", id: "two", name: "Zen Two", variants: ["high"], cost: [{ input: 1, output: 2 }] },
     { providerID: "zen", id: "one", name: "Zen One", cost: [{ input: 0, output: 0 }] },
   ] }) })
@@ -43,7 +43,7 @@ test("a runnable provider carries the engine's models, costs and variants", asyn
 })
 
 test("a discovered provider the engine cannot run stays listed disconnected", async () => {
-  const catalog = opencodeProviderCatalog({ org: "org_discovered", engine: engine(
+  const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_discovered", engine: engine(
     { id: "groq", name: "Groq", env: ["GROQ_API_KEY"], connected: false, models: [] },
   ) })
   expect(catalog.connected).toEqual([])
@@ -51,16 +51,18 @@ test("a discovered provider the engine cannot run stays listed disconnected", as
 })
 
 test("a vendor the org stored an account for is managed by that account, connected or refused", async () => {
-  await putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai" }, "org_api")
-  await putCredential({ provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-claude" }, "org_api")
-  const catalog = opencodeProviderCatalog({ org: "org_api", engine: engine(
+  await putCredential({ owner: "person_a", provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai" }, "org_api")
+  await putCredential({ owner: "person_a", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-claude" }, "org_api")
+  const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_api", engine: engine(
     { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], connected: false, models: [] },
     { id: "anthropic", name: "Anthropic", env: [], connected: true, models: [{ providerID: "anthropic", id: "sonnet", cost: [] }] },
     { id: "groq", name: "Groq", env: [], connected: false, models: [] },
   ) })
   expect(Object.fromEntries(catalog.all.map((provider) => [provider.id, provider.source]))).toEqual({ openai: "api", anthropic: "api", groq: "config" })
   expect(catalog.connected).toEqual(["anthropic"])
-  const other = opencodeProviderCatalog({ org: "org_other", engine: engine({ id: "openai", name: "OpenAI", env: [], connected: false, models: [] }) })
+  const colleague = opencodeProviderCatalog({ actor: "person_b", org: "org_api", engine: engine({ id: "openai", name: "OpenAI", env: [], connected: false, models: [] }) })
+  expect(colleague.all[0]?.source).toBe("config")
+  const other = opencodeProviderCatalog({ actor: "person_a", org: "org_other", engine: engine({ id: "openai", name: "OpenAI", env: [], connected: false, models: [] }) })
   expect(other.all[0]?.source).toBe("config")
 })
 
@@ -69,7 +71,7 @@ test("a declared provider keeps its custom row whether or not the engine runs it
     credentialHeader: { name: "Authorization", scheme: "Bearer" as const }, models: { "acme-1": { name: "Acme One" } } }
   putCustomProvider(acme, "org_custom")
   putCustomProvider({ ...acme, providerID: "offline", name: "Offline" }, "org_custom")
-  const catalog = opencodeProviderCatalog({ org: "org_custom", engine: engine(
+  const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_custom", engine: engine(
     { id: "acme", name: "acme", env: [], connected: true, models: [{ providerID: "acme", id: "acme-1", name: "Acme One", cost: [] }] },
   ) })
   expect(catalog.all).toEqual([
@@ -79,19 +81,19 @@ test("a declared provider keeps its custom row whether or not the engine runs it
       models: { "acme-1": { id: "acme-1", name: "Acme One", connected: false, free: false } } },
   ])
   expect(catalog.connected).toEqual(["acme"])
-  const other = opencodeProviderCatalog({ org: "org_elsewhere", engine: engine() })
+  const other = opencodeProviderCatalog({ actor: "person_a", org: "org_elsewhere", engine: engine() })
   expect(other.all).toEqual([])
 })
 
 test("with no engine to ask, the vendors and declared providers are listed, connected by the accounts the org holds", async () => {
-  await putCredential({ provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-claude" }, "org_accounts")
-  const refused = await putCredential({ provider_id: "keyed", kind: "api_key", source: "managed", secret: "sk-keyed" }, "org_accounts")
+  await putCredential({ owner: "person_a", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-claude" }, "org_accounts")
+  const refused = await putCredential({ owner: "person_a", provider_id: "keyed", kind: "api_key", source: "managed", secret: "sk-keyed" }, "org_accounts")
   updateCredentialStatus(refused.id, "revoked", undefined, "org_accounts")
   const declared = { providerID: "keyless", name: "Keyless", baseURL: "http://127.0.0.1:11434/v1", env: [], headers: {},
     credentialHeader: { name: "Authorization", scheme: "Bearer" as const }, models: { local: { name: "Local" } } }
   putCustomProvider(declared, "org_accounts")
   putCustomProvider({ ...declared, providerID: "keyed", name: "Keyed" }, "org_accounts")
-  const catalog = opencodeProviderCatalog({ org: "org_accounts", engine: undefined })
+  const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_accounts", engine: undefined })
   expect(catalog.all.map((provider) => [provider.id, provider.source])).toEqual([
     ["anthropic", "api"], ["openai", "config"], ["openrouter", "config"], ["google", "config"], ["groq", "config"], ["xai", "config"],
     ["keyed", "custom"], ["keyless", "custom"],

@@ -294,6 +294,7 @@ export function createHostedAgentPluginsComposition(input: {
         secrets: {
           put: async (providerId, secret) => {
             await orgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION).putCredential({
+              owner: null,
               provider_id: providerId,
               kind: "oauth_token",
               source: "managed",

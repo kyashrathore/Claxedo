@@ -85,6 +85,7 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
       const token = await options.runtimeAccessTokenSigner({
         principalKind: input.principalKind,
         actorId: input.actorId,
+        userId: input.userId,
         actorKind: input.actorKind,
         ...(input.actorPublicId && input.actorName
           ? {

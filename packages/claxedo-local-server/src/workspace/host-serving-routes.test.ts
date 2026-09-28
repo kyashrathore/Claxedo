@@ -4,9 +4,13 @@ import type { HostTunnelTokenSignerResult } from "@claxedo/server-core/platform/
 import { HostServingRoutes } from "./host-serving-routes"
 import {
   stopHostServing,
+  hostEnrolledOwner,
   hostServingEnrollmentId,
   hostServingState,
+  resetHostEnrolledOwner,
 } from "@claxedo/host-serving/serving"
+import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
+import { clearHostProviderConfig, hostProviderConfig, installHostProviderConfigRevision } from "./host-provider-config"
 import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
 
 const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })
@@ -15,7 +19,7 @@ const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntim
  * The PUT body's `credential` is the heartbeat ack's `hostTunnel` object
  * VERBATIM. The control plane builds it in
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` as the signer result
- * spread plus `hostId`, `enrollmentId`, `workspaceIds` and `relayUrl` — this
+ * spread plus `hostId`, `enrollmentId`, `ownerUserId`, `workspaceIds` and `relayUrl` — this
  * type restates that composition so a drift in `HostTunnelTokenSignerResult`
  * fails HERE at compile time. A locally invented shape would reject every
  * real ack with a 400 while every unit in the chain stayed green.
@@ -23,6 +27,7 @@ const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntim
 type AckHostTunnel = HostTunnelTokenSignerResult & {
   hostId: string
   enrollmentId: string
+  ownerUserId: string
   workspaceIds: string[]
   relayUrl?: string
 }
@@ -34,6 +39,7 @@ function ackCredential(): AckHostTunnel {
     jti: "jti-1",
     hostId: "host_machine-1",
     enrollmentId: "enr_this_machine",
+    ownerUserId: "usr_machine_owner",
     workspaceIds: ["11111111-1111-4111-8111-111111111111"],
     relayUrl: "https://relay.claxedo.test",
   }
@@ -165,5 +171,35 @@ describe("host serving routes", () => {
     const response = await put(withoutRelay)
     expect(response.status).toBe(400)
     expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
+  })
+})
+
+describe("the enrolled owner a serving credential names", () => {
+  afterEach(() => {
+    stopHostServing()
+    resetHostEnrolledOwner()
+    clearHostProviderConfig()
+  })
+
+  const pushed = (owner: string, revision: number) => installHostProviderConfigRevision({ revision, providers: serializeHostProviderConfig(
+    { openai: { baseUrl: "https://model.test", placeholder: `${owner}-key`, authMode: "api-key" } }, owner) })
+
+  test("re-enrolling the machine to another person drops the earlier owner's push, so the new owner's first revision installs", async () => {
+    expect((await put({ ...ackCredential(), ownerUserId: "usr_first" })).status).toBe(200)
+    expect(hostEnrolledOwner()).toBe("usr_first")
+    pushed("usr_first", 5)
+
+    expect((await put({ ...ackCredential(), ownerUserId: "usr_next" })).status).toBe(200)
+    expect(hostEnrolledOwner()).toBe("usr_next")
+    expect(hostProviderConfig()).toBeUndefined()
+    expect(pushed("usr_next", 1)).toMatchObject({ revision: 1, providerCount: 1 })
+  })
+
+  test("the owner's push main re-sends after a daemon restart survives the first ack naming that owner", async () => {
+    pushed("usr_first", 5)
+
+    expect((await put({ ...ackCredential(), ownerUserId: "usr_first" })).status).toBe(200)
+
+    expect(hostProviderConfig()).toMatchObject({ machineOwnerUserId: "usr_first" })
   })
 })

@@ -1,5 +1,6 @@
 import { AgentRuntimeContractError, type AgentExecutionBinding, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { createSessionBroker, type BrokerOwner, type SessionBrokerContext } from "@claxedo/harness/broker"
+import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { HarnessSession, SessionBroker, TurnActor, TurnOrigin } from "@claxedo/harness/contract"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
 import { createKeyedSerializer } from "@claxedo/helpers"
@@ -62,7 +63,9 @@ export class SessionAttachments {
   }
 
   owner(sessionId: string): TurnActor {
-    return this.input.store.sessionOwner(sessionId) ?? { kind: "machine-owner" }
+    const owner = this.input.store.sessionOwner(sessionId)
+    if (!owner) throw new CredentialSelectionError("account_unavailable", `Session ${sessionId} has no recorded owner`)
+    return owner
   }
 
   binding(sessionId: string): AgentExecutionBinding {

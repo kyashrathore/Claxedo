@@ -11,7 +11,7 @@ async function fixture() {
   await fs.mkdir(source)
   const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: root, locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id: "claude", access: "native" } }, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
-    credentials: { providers: { anthropic: { baseUrl: "http://127.0.0.1:48850", placeholder: "live-placeholder", authMode: "api-key", expiresAt: Date.now() + 60_000 } },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { anthropic: { baseUrl: "http://127.0.0.1:48850", placeholder: "live-placeholder", authMode: "api-key", expiresAt: Date.now() + 60_000 } },
       secrets: {}, leaseGeneration: "g1" } }
   const options = { executable: "claude", configRoot: path.join(root, "homes"), userConfigRoot: source, env: {} }
   const launch = async () => {
@@ -63,7 +63,7 @@ test("unbinding Claude removes the broker home environment override on the next 
   const f = await fixture()
   try {
     expect((await f.launch()).env.CLAUDE_CONFIG_DIR).toBe(path.join(f.options.configRoot, "s1"))
-    f.input.credentials = { providers: {}, secrets: {}, leaseGeneration: "g2" }
+    f.input.credentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g2" }
     const unbound = await f.launch()
     expect(unbound.env.CLAUDE_CONFIG_DIR).toBeUndefined()
     expect(unbound.env.ANTHROPIC_API_KEY).toBeUndefined()

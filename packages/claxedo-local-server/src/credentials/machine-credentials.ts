@@ -18,8 +18,8 @@ export function localControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     ...defaultControlPlaneCredentials({ refreshLocalRuntimes: syncEmbeddedWorkspaceRuntimes }),
     machineLogins: (harnesses, options) => readMachineLogins(harnesses, { fresh: options?.fresh === true }),
-    clearActiveCredentials: async (providerIds, org) => {
-      const result = clearActiveCredentials(providerIds, org)
+    clearActiveCredentials: async (providerIds, org, actor) => {
+      const result = clearActiveCredentials(providerIds, org, actor)
       if (result.cleared.length > 0) await deliverCredentialChange(syncEmbeddedWorkspaceRuntimes)
       return result
     },

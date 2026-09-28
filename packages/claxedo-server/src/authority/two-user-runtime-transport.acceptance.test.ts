@@ -286,6 +286,7 @@ describe("two-user signed runtime transport acceptance", () => {
         ...(ttlSeconds ? { ttlSeconds } : {}),
         parentJti: jti,
         actorId: identity.actor_id,
+        userId: auth.user.subject,
         actorKind: identity.actor_kind,
         actorPublicId: identity.actor_public_id,
         actorName: identity.actor_name,
@@ -339,7 +340,7 @@ describe("two-user signed runtime transport acceptance", () => {
       version: 4,
       commands: [],
       mcp: {},
-      auth: {},
+      auth: { machineOwnerUserId: "local", accounts: { local: {} } },
       connections: [{ connectionId: CONNECTION, providerKey: CONNECTION, configRevision: 1, enabled: true, config: {} }],
       defaultHarness: { kind: "connection", connectionId: CONNECTION },
     })
@@ -622,4 +623,3 @@ function runtimeRequest(app: Hono, token: string, pathname: string, init: Reques
   headers.set("x-forwarded-by", "workspace-relay")
   return app.request(`http://runtime.test${pathname}`, { ...init, headers })
 }
-

@@ -16,6 +16,7 @@ import type * as ConnectIntegration from "@/app/dialogs/connect-integration"
 import type * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-form"
 import type * as LinkModule from "@/app/controls/link"
 import type * as SDK from "@/app/providers/sdk/sdk"
+import type * as ServerProduct from "@/app/connection/server-product"
 
 export type MachineLogin = AIConnectState.MachineLogin
 export type LocalHarnessCheck = (typeof AIConnectState.localHarnessChecks)[number]
@@ -56,6 +57,8 @@ export type SettingsAppPorts = {
     emit(event: { name: "sandbox_provider_configured"; provider: string }): void
   }
   useSDK: typeof SDK.useSDK
+  /** Whether the server in view runs sessions on a machine of its own, or is the hosted plane. */
+  useServerProduct: typeof ServerProduct.useServerProduct
   /** The operator ACP connections the picker offers alongside the built-in harnesses. */
   useEnabledAcpHarnesses: () => () => Array<{ key: string; label: string }>
   /** The harness a workspace was last used with, from its draft-default record. */
@@ -116,4 +119,5 @@ export const ProviderConnectForm = bind((ports) => ports.ProviderConnectForm)
 export const Link = bind((ports) => ports.Link)
 export const useSandboxOnboardingFunnel = bind((ports) => ports.useSandboxOnboardingFunnel)
 export const useSDK = bind((ports) => ports.useSDK)
+export const useServerProduct = bind((ports) => ports.useServerProduct)
 export const useEnabledAcpHarnesses = bind((ports) => ports.useEnabledAcpHarnesses)

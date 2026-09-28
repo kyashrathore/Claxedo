@@ -17,7 +17,7 @@ import type { AgentConfigRouteOptions } from "../route-options"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
-import { requestOrg } from "../../credentials/routes/credential"
+import { requestActor, requestOrg } from "../../credentials/routes/credential"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { controlPlaneRouteAuth } from "../../platform/http/control-plane-route-auth"
 
@@ -46,11 +46,9 @@ export function agentConfigProviderRoutes(options: AgentConfigRouteOptions = {})
       try {
         const org = await requestOrg(c.req.raw, authOptions)
         if (c.req.query("nativeHarness") === "opencode") {
-          return c.json(opencodeProviderCatalog({ engine: await workspaceProviderCatalog(c, authOptions, org), org }))
+          return c.json(opencodeProviderCatalog({ engine: await workspaceProviderCatalog(c, authOptions, org), org, actor: await requestActor(c.req.raw, authOptions) }))
         }
-        // Signed callers see only their credential partition, never the host's local OAuth or environment.
-        const env = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled ? process.env : {}
-        return c.json(piProviderCatalog(env, org))
+        return c.json(piProviderCatalog(await requestActor(c.req.raw, authOptions), org))
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
         throw error
@@ -113,8 +111,9 @@ export function agentConfigProviderRoutes(options: AgentConfigRouteOptions = {})
         const provider = putCustomProvider(config, org)
         if (envCredential) {
           if (!options.services) throw new Error("An environment-sourced custom provider key needs the composed credential service")
-          await options.services.credentials.putCredential({ provider_id: envCredential.provider_id, kind: envCredential.kind,
-            source: envCredential.source, label: envCredential.label, secret: envCredential.secret }, org)
+          await options.services.credentials.putCredential({ owner: await requestActor(c.req.raw, authOptions),
+            provider_id: envCredential.provider_id, kind: envCredential.kind, source: envCredential.source, label: envCredential.label,
+            secret: envCredential.secret }, org)
         }
         return await delivered(c, provider)
       } catch (error) {

@@ -29,14 +29,14 @@ function snapshot(overrides: Partial<RuntimeSnapshot> = {}, baseUrl = "http://12
     commands: [],
     mcp: {},
     connections: [{ connectionId: "fixture", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
-    auth: {
+    auth: { machineOwnerUserId: "local", accounts: { local: {
       "cursor-sdk": {
         baseUrl,
         placeholder: "cursor-placeholder",
         authMode: "bearer",
         expiresAt: EXPIRES_AT,
       },
-    },
+    } } },
     ...overrides,
   }
 }
@@ -134,7 +134,7 @@ test("a snapshot carrying an unreadable projection leaves the binding already in
 
     const rejected = {
       ...snapshot(selected),
-      auth: { "cursor-sdk": { baseUrl: "", placeholder: "", authMode: "bearer", expiresAt: 0 } },
+      auth: { machineOwnerUserId: "local", accounts: { local: { "cursor-sdk": { baseUrl: "", placeholder: "", authMode: "bearer", expiresAt: 0 } } } },
     } as unknown as RuntimeSnapshot
     await expect(f.runtime.host.apply(rejected)).rejects.toThrow("Invalid runtime config snapshot")
 

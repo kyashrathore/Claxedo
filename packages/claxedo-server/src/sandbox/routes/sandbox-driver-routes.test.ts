@@ -165,14 +165,14 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
   test("Remove deletes the sandbox credential and spares the model provider key", async () => {
     const registry = await import("@claxedo/server-core/credentials/registry")
 
-    await registry.putCredential({
+    await registry.putCredential({ owner: null,
       provider_id: "vercel",
       kind: "api_key",
       source: "managed",
       label: "Vercel model provider",
       secret: "model-provider-key",
     })
-    await registry.putCredential({
+    await registry.putCredential({ owner: null,
       provider_id: "vercel",
       kind: "sandbox_driver",
       source: "managed",
@@ -197,7 +197,7 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
     // behaviour is id-agnostic; the sibling test covers the real `vercel`
     // collision end-to-end through the route.
     const providerId = "kind-scope-probe"
-    await registry.putCredential({
+    await registry.putCredential({ owner: null,
       provider_id: providerId,
       kind: "api_key",
       source: "managed",
@@ -207,9 +207,9 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
 
     // The model key must not stand in for a sandbox credential, or
     // `workspace.ts`'s create gate passes and the launch fails later instead.
-    expect(registry.credentialByProvider(providerId, { onOutage: "throw", kind: "sandbox_driver" })).toBeUndefined()
+    expect(registry.credentialByProvider(providerId, { onOutage: "throw", kind: "sandbox_driver", owner: null })).toBeUndefined()
     expect(await registry.resolveSecret(providerId, "sandbox_driver")).toBeNull()
     // Unscoped still sees it, so model-provider callers are unaffected.
-    expect(registry.credentialByProvider(providerId, { onOutage: "throw" })?.kind).toBe("api_key")
+    expect(registry.credentialByProvider(providerId, { onOutage: "throw", owner: null })?.kind).toBe("api_key")
   })
 })

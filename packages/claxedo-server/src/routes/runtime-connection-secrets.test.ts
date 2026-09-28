@@ -1,17 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
-import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
 import { HOSTED_CREDENTIAL_MIGRATIONS, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { RuntimeSessionAuthorityRoutes } from "./runtime-session-authority"
-
-async function userOfActor(actorId: string) {
-  if (!actorId.startsWith("actor-")) throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Not a member")
-  return { userId: actorId.replace("actor-", "user-") }
-}
 
 async function fixture(store?: ControlPlaneCredentials) {
   const keys = await generateKeyPair("EdDSA", { extractable: true })
@@ -22,7 +16,7 @@ async function fixture(store?: ControlPlaneCredentials) {
   const readSecret = vi.fn(async () => "test-secret")
   const active = vi.fn(async () => ({ active: true }))
   const options = {
-    authority: { runtimeAccessTokenActive: active, resolveRuntimeMachineAccess: userOfActor } as never,
+    authority: { runtimeAccessTokenActive: active } as never,
     env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(keys.publicKey) },
     connectionSecrets: {
       resolveWorkspaceOwner: async () => ({ userId: "user-1", actorId: "actor-1", orgId: "org-1", projectId: "project-1" }),
@@ -32,12 +26,12 @@ async function fixture(store?: ControlPlaneCredentials) {
   }
   const app = RuntimeSessionAuthorityRoutes(options)
   const request = async (workspaceId = "workspace-1", configRevision = 3, role: "owner" | "editor" | "viewer" = "owner",
-    sender = "actor-1", sessionOwner = "actor-1") => {
+    sender = "actor-1", sessionOwner = "user-1") => {
     const token = await mintRelayHostToken({ principalKind: "user", actorId: sender, actorKind: "human", orgId: "org-1",
       workspaceId, hostId: "host-1", role, backing: "cloud-vm", jti: "proof-1", parentJti: "parent-1" }, keys.privateKey, "EdDSA")
     return app.request("/connection-secrets/workspace-1", { method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision, ownerActorId: sessionOwner }) })
+      body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision, ownerUserId: sessionOwner }) })
   }
   return { request, metadata, descriptor, active, readSecret }
 }
@@ -101,36 +95,34 @@ describe("sandbox connection secret lease", () => {
     f.readSecret.mockImplementation(async () => { f.metadata.status = "revoked"; return "test-secret" })
     expect((await f.request()).status).toBe(409)
   })
-  test("an editor's turn on another member's session leases that member's credential", async () => {
+  test("a sandbox never leases a member's own credential into the owner's workspace, whoever sends the turn", async () => {
     const f = await fixture()
     f.metadata.owner = "user-carol"
-    const response = await f.request("workspace-1", 3, "editor", "actor-bob", "actor-carol")
-    expect(response.status).toBe(200)
-    expect((await response.json()).secrets).toEqual({ token: "test-secret" })
-    expect(f.readSecret).toHaveBeenCalledTimes(1)
+    expect((await f.request("workspace-1", 3, "editor", "actor-bob", "user-carol")).status).toBe(409)
+    expect(f.readSecret).not.toHaveBeenCalled()
   })
   test("a session whose owner holds no credential is unavailable and never spends the workspace owner's", async () => {
     const f = await fixture()
-    const response = await f.request("workspace-1", 3, "owner", "actor-1", "actor-dave")
+    const response = await f.request("workspace-1", 3, "owner", "actor-1", "user-dave")
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({ error: { code: "connection_unavailable" } })
     expect(f.readSecret).not.toHaveBeenCalled()
     expect((await f.request("workspace-1", 3, "owner", "actor-1", "outsider")).status).toBe(409)
   })
-  test("a member's session leases a team credential of its own org", async () => {
+  test("an editor's turn on the owner's session leases a team credential of its own org", async () => {
     const f = await fixture()
     f.metadata.owner = null
-    const response = await f.request("workspace-1", 3, "editor", "actor-bob", "actor-bob")
+    const response = await f.request("workspace-1", 3, "editor", "actor-bob")
     expect(response.status).toBe(200)
     expect((await response.json()).secrets).toEqual({ token: "test-secret" })
   })
-  test("a member's session is refused another member's personal credential and a team credential of another org", async () => {
+  test("the owner's session is refused another member's personal credential and a team credential of another org", async () => {
     const f = await fixture()
     f.metadata.owner = "user-carol"
-    expect((await f.request("workspace-1", 3, "editor", "actor-bob", "actor-bob")).status).toBe(409)
+    expect((await f.request("workspace-1", 3, "editor", "actor-bob")).status).toBe(409)
     f.metadata.owner = null
     f.metadata.org_id = "org-2"
-    expect((await f.request("workspace-1", 3, "editor", "actor-bob", "actor-bob")).status).toBe(409)
+    expect((await f.request("workspace-1", 3, "editor", "actor-bob")).status).toBe(409)
     expect(f.readSecret).not.toHaveBeenCalled()
   })
   test("refuses a revoked parent runtime token", async () => {
@@ -150,7 +142,7 @@ async function turnFixture() {
     source: "managed", status: "available", revision: 2, expires_at: null as number | null }
   const active = vi.fn(async () => ({ active: true }))
   const app = RuntimeSessionAuthorityRoutes({
-    authority: { runtimeAccessTokenActive: active, authorizeRuntimeSession: async () => {}, resolveRuntimeMachineAccess: userOfActor } as never,
+    authority: { runtimeAccessTokenActive: active, authorizeRuntimeSession: async () => {} } as never,
     turnAuthority: {
       acquireSessionTurn: async (turn: { sessionId: string; workspaceId: string; turnId: string }) => ({
         ...turn, leaseId: "authority-lease-1", fencingToken: 1, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000,
@@ -179,7 +171,7 @@ async function turnFixture() {
   }
   const lease = (proof: { turnLease?: string; bearer?: string }) => app.request("/connection-secrets/workspace-1", { method: "POST",
     headers: { "content-type": "application/json", ...(proof.bearer ? { authorization: `Bearer ${proof.bearer}` } : {}) },
-    body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision: 3, ownerActorId: "actor-1",
+    body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision: 3, ownerUserId: "user-1",
       ...(proof.turnLease ? { turnLease: proof.turnLease } : {}) }) })
   return { acquireTurn, relayProof, lease, active }
 }
@@ -222,19 +214,23 @@ describe("sandbox connection secret lease over the hosted credential store", () 
     await controlPlane.dispose()
   })
 
-  test("a credential deleted and recreated under the same provider id leases a new generation", async () => {
+  test("a credential deleted and recreated under the same provider id is a new row, and leases a new generation", async () => {
     const store = hostedOrgCredentials("org-1", { database: controlPlane.database,
       env: { [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"), [HOSTED_CREDENTIALS_FLAG]: "1" } })
-    const write = { provider_id: "credential-1", kind: "api_key" as const, source: "managed" as const }
+    const write = { owner: "user-1", provider_id: "credential-1", kind: "api_key" as const, source: "managed" as const }
     const first = await store.putCredential({ ...write, secret: "first-secret" })
     const f = await fixture(store)
+    f.descriptor.secretRefs.token = first.id
     const before = await (await f.request()).json()
     expect(before.secrets).toEqual({ token: "first-secret" })
 
     expect(await store.deleteCredential(first.id)).toBe(true)
     const second = await store.putCredential({ ...write, secret: "second-secret" })
+    expect(second.id).not.toBe(first.id)
     expect(second.revision).toBe(first.revision)
+    expect((await f.request()).status).toBe(409)
 
+    f.descriptor.secretRefs.token = second.id
     const after = await (await f.request()).json()
     expect(after.secrets).toEqual({ token: "second-secret" })
     expect(after.secretLeaseGeneration).not.toBe(before.secretLeaseGeneration)

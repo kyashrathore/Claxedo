@@ -65,7 +65,7 @@ async function activationLaunchFixture(home, mode) {
   const launch = {
     workspaceId: "fixture",
     projection: (harness) => pluginProjectionFor(harness, { generation: "snapshot:1", mcp: {}, harnessLaunch: agentPluginHarnessLaunch(restored) }),
-    credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "fixture" }),
+    credentials: () => ({ placement: "loopback", machineOwnerUserId: "fixture", canUseOwnLogin: true, accounts: {}, leaseGeneration: "fixture" }),
   }
   const owner = { kind: "person", userId: "fixture" }
   function session(id) {
@@ -78,7 +78,7 @@ async function activationLaunchFixture(home, mode) {
     assert.deepEqual(notApplied, [])
     await assert.rejects(fs.stat(path.join(generation.root, "harnesses/opencode/opencode.json")), { code: "ENOENT" })
   } else if (mode === "empty") {
-    const codex = await prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"), owner, credentials: launch.credentials(), projection: session("codex").projection })
+    const codex = await prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"), credentials: session("codex").credentials, projection: session("codex").projection })
     const cursor = await composeCursorHome({ root: path.join(home, "shared/cursor"), key: "fixture", personalCursorDir: personalCursor, projection: session("cursor").projection })
     assert.deepEqual(session("codex").projection.pluginSelection, { mode: "selected", selectionHash: "selection-a" })
     assert.deepEqual(session("codex").projection.pluginRoots, [])
@@ -87,7 +87,7 @@ async function activationLaunchFixture(home, mode) {
     assert.deepEqual([await snapshot(personalCodex), await snapshot(personalCursor)], before)
   } else {
     assert.deepEqual([await snapshot(personalCodex), await snapshot(personalCursor)], before, "activation changed the person's homes")
-    const codex = await prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"), owner, credentials: launch.credentials(), projection: session("codex").projection })
+    const codex = await prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"), credentials: session("codex").credentials, projection: session("codex").projection })
     const cursor = await composeCursorHome({ root: path.join(home, "shared/cursor"), key: "fixture", personalCursorDir: personalCursor, projection: session("cursor").projection })
     if (mode === "selected") {
       assert.deepEqual(session("codex").projection.pluginSelection, { mode: "selected", selectionHash: "selection-a" })
@@ -102,8 +102,8 @@ async function activationLaunchFixture(home, mode) {
     assert.equal(await fs.realpath(result.stdout), await fs.realpath(mcpServers.local.cwd))
     assert.ok((await fs.readdir(path.join(cursor.home, ".cursor/plugins/local"))).some((name) => name.startsWith("claxedo--")))
     const projection = session("codex").projection
-    await assert.rejects(prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"), owner,
-      credentials: launch.credentials(), projection: { ...projection,
+    await assert.rejects(prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"),
+      credentials: session("codex").credentials, projection: { ...projection,
         pluginRoots: [...projection.pluginRoots, { ...projection.pluginRoots[0], pluginInstanceId: "duplicate-name" }] },
     }), /Duplicate Codex plugin/)
     assert.deepEqual([await snapshot(personalCodex), await snapshot(personalCursor)], before, "composition changed the person's homes")

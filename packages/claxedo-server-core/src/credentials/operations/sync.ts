@@ -284,7 +284,7 @@ export async function collectLocalCredentialItems() {
  * writes `__local__` only, so it can neither observe nor clobber another
  * tenant's provider credentials.
  */
-export async function syncLocalCredentials(ids?: string[], org?: string) {
+export async function syncLocalCredentials(ids: string[] | undefined, org: string | undefined, owner: string) {
   log.warn("Deprecated sync-local credential path called; migrate to explicit discovery (automatic discovery, explicit upload)")
   const all = await collectLocalCredentials()
   const list = ids?.length ? [...new Set(ids)] : [...new Set([...all.values()].map((item) => item.provider_id))]
@@ -294,7 +294,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
   const failed: Array<{ provider_id: string; error: string }> = []
 
   for (const providerId of list) {
-    const current = credentialByProvider(providerId, { onOutage: "empty" }, org)
+    const current = credentialByProvider(providerId, { onOutage: "empty", owner }, org)
     if (current?.source === "managed") {
       existing.push(providerId)
       continue
@@ -309,7 +309,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
       continue
     }
     try {
-      await Promise.all(items.map((item) => putCredential(item, org)))
+      await Promise.all(items.map((item) => putCredential({ ...item, owner }, org)))
       synced.push(providerId)
     } catch (err) {
       failed.push({

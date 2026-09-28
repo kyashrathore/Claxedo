@@ -1,3 +1,4 @@
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { createMachineWakes } from "../../session/machine-wakes"
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
@@ -901,6 +902,7 @@ export function createSelfHostedApp(
           orgId: input.orgId,
           principalKind: input.principalKind,
           actorId: input.actorId,
+          userId: input.userId,
           actorKind: input.actorKind,
           ...(input.actorPublicId && input.actorName ? { actorPublicId: input.actorPublicId, actorName: input.actorName } : {}),
           ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
@@ -1652,7 +1654,10 @@ export type ControlPlaneStackOptions = {
 export function selfHostedCredentialAuthority(
   broker?: Pick<LocalCredentialBroker, "projectAuth">,
 ): NonNullable<NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"]> {
-  return (input) => broker ? broker.projectAuth(input) : projectNativeProviderAuth(input)
+  return (input) => {
+    if (broker) return broker.projectAuth(input)
+    return projectNativeProviderAuth({ ...input, machineOwnerUserId: LOCAL_USER_ID })
+  }
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1899,7 +1904,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // broker endpoint on this same listener and the value stays in this process.
   const credentialBroker = options.egressBroker
     ? undefined
-    : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}` })
+    : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}`, machineOwnerUserId: () => LOCAL_USER_ID })
   configureAgentConfig({
     connectionConfigs: defaultConnectionConfigs(),
     projectAuth: selfHostedCredentialAuthority(credentialBroker),
@@ -1910,6 +1915,12 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal()
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
+    machineOwnerUserId: LOCAL_USER_ID,
+    sandboxOwner: async (workspaceId) => {
+      const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
+      if (!owner) throw new Error(`workspace ${workspaceId} has no owner to deliver accounts for`)
+      return owner.userId
+    },
     ...(options.sandboxDriver ? { sandboxDriver: options.sandboxDriver } : {}),
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
     ...(isSandboxDriverID(services.sandbox.defaultDriver)

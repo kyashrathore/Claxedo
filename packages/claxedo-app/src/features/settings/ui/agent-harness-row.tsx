@@ -19,9 +19,15 @@ import { useLanguage } from "@/platform/i18n/provider"
 
 /** One entry of the harness's account list, resolved down to what a row draws. */
 export type AgentAccount = {
-  /** The stored row this entry is keyed by, or `machine` for this computer's login. */
+  /**
+   * The stored row this entry is keyed by, `machine` for this computer's login,
+   * or `team` for the organization's team account.
+   */
   key: string
-  /** Every stored row holding this account; empty while the login is only on disk. */
+  /**
+   * Every row of the person's holding this account; empty for a login only on
+   * disk and for the team account, which is not theirs to check or remove.
+   */
   ids: readonly string[]
   label: string
   /** The second line: where the login lives and what it has spent. */
@@ -62,6 +68,8 @@ export type AgentAccount = {
   selected: boolean
   /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
+  /** The organization's team account: choosing it spends that account and none of the person's own. */
+  team?: true
   /** Listed, and not a choice. */
   disabled?: boolean
 }
@@ -83,7 +91,7 @@ export const AgentHarnessRow: Component<{
   accounts: readonly AgentAccount[]
   /**
    * Marks the account the harness runs on. Choosing this computer's own login
-   * stores nothing: it withdraws the mark from every stored row of the harness.
+   * stores no login: it withdraws the mark from every stored row of the harness.
    */
   onSelect: (account: AgentAccount) => void | Promise<void>
   /** The entry whose switch is in flight. */

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 
-import { claxedoCredentialRequest, putHostedProviderKey } from "./credential-request"
+import {
+  claxedoCredentialRequest,
+  getHostedAccountSources,
+  putHostedAccountSource,
+  putHostedProviderKey,
+} from "./credential-request"
 import { requestUrl } from "@/lib/url"
 
 const originalFetch = globalThis.fetch
@@ -55,6 +60,12 @@ describe("claxedoCredentialRequest", () => {
     ])
   })
 
+  test("requests the account-sources route", async () => {
+    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "account-sources" })
+
+    expect(calls.map((call) => call.url)).toEqual(["http://127.0.0.1:3001/api/claxedo/credentials/account-sources"])
+  })
+
   test("a failure reports the cause the route sent, not its own generic sentence", async () => {
     globalThis.fetch = (async () =>
       Response.json({
@@ -107,5 +118,45 @@ describe("putHostedProviderKey", () => {
       .rejects.toThrow("This Pi provider does not accept API keys")
     await expect(refused("bad gateway", 502)).rejects.toThrow("bad gateway")
     await expect(refused("", 503)).rejects.toThrow("Request failed: 503")
+  })
+})
+
+describe("hosted account sources", () => {
+  test("reads the person's choices and the providers the organization holds a team account for", async () => {
+    const seen: string[] = []
+    const read = await getHostedAccountSources({
+      serverUrl: "https://plane.test",
+      harness: "pi",
+      request: async (target) => {
+        seen.push(String(target))
+        return Response.json({ sources: { anthropic: "team", openai: "own" }, team: ["anthropic"] })
+      },
+    })
+    expect(seen).toEqual(["https://plane.test/auth/sources?harness=pi"])
+    expect([...read.sources]).toEqual([["anthropic", "team"], ["openai", "own"]])
+    expect([...read.team]).toEqual(["anthropic"])
+  })
+
+  test("writes one provider's choice to its own source route", async () => {
+    const seen: Array<{ url: string; method?: string; body: unknown }> = []
+    await putHostedAccountSource({
+      serverUrl: "https://plane.test",
+      providerId: "amazon-bedrock",
+      harness: "pi",
+      source: "team",
+      request: async (target, init) => {
+        seen.push({ url: String(target), method: init?.method, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
+        return Response.json({})
+      },
+    })
+    expect(seen).toEqual([{ url: "https://plane.test/auth/amazon-bedrock/source?harness=pi", method: "PUT", body: { source: "team" } }])
+  })
+
+  test("a refused read or write carries the plane's own sentence", async () => {
+    const refusal = async () => Response.json({ error: { code: "invalid_source", message: "source must be own or team" } }, { status: 400 })
+    await expect(getHostedAccountSources({ serverUrl: "https://plane.test", harness: "pi", request: refusal }))
+      .rejects.toThrow("source must be own or team")
+    await expect(putHostedAccountSource({ serverUrl: "https://plane.test", providerId: "openai", harness: "pi", source: "own", request: refusal }))
+      .rejects.toThrow("source must be own or team")
   })
 })

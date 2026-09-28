@@ -3,11 +3,12 @@ import { bodyLimit } from "hono/body-limit"
 import { decodeJwt } from "jose"
 import { z } from "zod"
 import { asRecord } from "@claxedo/helpers/guards"
-import { bearerToken, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { HarnessConnectionDescriptor } from "@claxedo/server-core/agent-config/connections"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { credentialSecretInScope } from "@claxedo/server-core/credentials/secret-scope"
+import { credentialAdmitted } from "@claxedo/server-core/credentials/account-holder"
 import type { ControlPlaneCredentials } from "../authority/services"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 
@@ -21,7 +22,7 @@ const requestSchema = z.object({
   connectionId: z.string().min(1),
   providerKey: z.string().min(1),
   configRevision: z.number().int().positive(),
-  ownerActorId: z.string().min(1),
+  ownerUserId: z.string().min(1),
   turnLease: z.string().min(1).optional(),
 }).strict()
 
@@ -71,24 +72,6 @@ export function RuntimeConnectionSecretRoutes(input: RuntimeConnectionSecretOpti
     return { orgId: claims.orgId, workspaceId: claims.workspaceId, expiresAt: claims.expiresAt }
   }
 
-  /**
-   * The account holder a session's connection spends, whoever sent its turn:
-   * the session owner's actor resolved to their user the way the authority
-   * resolves every runtime actor. Never the workspace owner's.
-   */
-  async function sessionOwnerUser(
-    resolve: NonNullable<RuntimeSessionAuthorityOptions["authority"]["resolveRuntimeMachineAccess"]>,
-    actorId: string,
-    workspaceId: string,
-  ): Promise<string | undefined> {
-    try {
-      return (await resolve(actorId, workspaceId, "viewer")).userId
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError && error.status === 403) return undefined
-      throw error
-    }
-  }
-
   return new Hono().post("/:workspaceId", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
     c.header("cache-control", "no-store")
     let body: unknown
@@ -108,23 +91,18 @@ export function RuntimeConnectionSecretRoutes(input: RuntimeConnectionSecretOpti
     if (!workspaceOwner || workspaceOwner.orgId !== authority.orgId) return denied(c)
     const descriptor = (await input.readConnections(workspaceOwner.userId))[request.connectionId]
     const unavailable = () => c.json({ error: { code: "connection_unavailable" } }, 409)
-    const resolveOwner = input.authority.resolveRuntimeMachineAccess
-    if (!resolveOwner) return c.json({ error: { code: "connection_secret_store_unavailable" } }, 503)
-    const sessionOwner = await sessionOwnerUser(resolveOwner, request.ownerActorId, workspaceId)
-    if (!sessionOwner) return unavailable()
+    if (request.ownerUserId !== workspaceOwner.userId) return unavailable()
     if (!descriptor?.enabled || descriptor.configRevision !== request.configRevision || descriptor.providerKey !== request.providerKey) return unavailable()
     const signature = JSON.stringify(descriptor)
     const credentials = input.credentials(workspaceOwner.orgId)
     if (!credentials.getCredential || !credentials.resolveCredentialSecretById) {
       return c.json({ error: { code: "connection_secret_store_unavailable" } }, 503)
     }
-    // A row with no owner is the org's team account, which any member may
-    // choose to spend; a person's row is spent only by that person's sessions.
     const permitted = (meta: CredentialMetadata | undefined): meta is CredentialMetadata => !!meta
       && meta.status === "available"
       && credentialSecretInScope(meta, "shared")
       && meta.org_id === workspaceOwner.orgId
-      && (meta.owner == null || meta.owner === sessionOwner)
+      && credentialAdmitted(meta.owner, request.ownerUserId, workspaceOwner.userId)
       && (meta.expires_at == null || meta.expires_at > Date.now())
     const sameStoredSecret = (a: CredentialMetadata, b: Pick<CredentialMetadata, "incarnation" | "revision">) =>
       a.incarnation === b.incarnation && a.revision === b.revision

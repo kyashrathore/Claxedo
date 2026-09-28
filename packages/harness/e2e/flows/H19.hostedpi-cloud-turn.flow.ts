@@ -18,7 +18,9 @@ export async function run() {
     assert.equal(stored.status, 200, `hosted Pi credential: ${await stored.text()}`)
     const workspace = await hostedWorkspace(stack, owner, "H19 hosted Pi")
     const target = JSON.parse(await fs.readFile(path.join(stack.root, "local-broker-targets", `${workspace.id}.json`), "utf8")) as { secretNames: string[]; home: string }
-    assert.ok(target.secretNames.includes("CLAXEDO_PROVIDER_OPENAI"), `C-1: hosted Pi sandbox has no OpenAI broker registration: ${JSON.stringify(target.secretNames)}`)
+    const openaiNames = target.secretNames.filter((name) => name.startsWith("CLAXEDO_PROVIDER_OPENAI_"))
+    assert.equal(openaiNames.length, 1, `C-1: hosted Pi sandbox has no single OpenAI broker registration for its owner: ${JSON.stringify(target.secretNames)}`)
+    const openaiName = openaiNames[0]
     const offered = await fetch(`${stack.relayUrl}/workspaces/${workspace.id}/api/wr/harness-config-options?nativeHarness=pi`, {
       headers: { authorization: `Bearer ${workspace.runtimeAccessToken}` },
     })
@@ -28,7 +30,7 @@ export async function run() {
     const modelFiles = (await fs.readdir(target.home, { recursive: true })).filter((name) => name.endsWith("models.json"))
     const modelOverlays = await Promise.all(modelFiles.map(async (file) => {
       const models = JSON.parse(await fs.readFile(path.join(target.home, file), "utf8")) as { providers?: Record<string, { apiKey?: string }> }
-      return { file, providers: Object.keys(models.providers ?? {}), brokeredOpenAI: models.providers?.openai?.apiKey === "claxedo-broker:CLAXEDO_PROVIDER_OPENAI" }
+      return { file, providers: Object.keys(models.providers ?? {}), brokeredOpenAI: models.providers?.openai?.apiKey === `claxedo-broker:${openaiName}` }
     }))
     assert.ok(offeredModel?.connected, `C-1: hosted Pi model is unavailable after config push: ${JSON.stringify({ offeredModel, modelOverlays })}`)
     const api = hostedApi(stack, workspace)

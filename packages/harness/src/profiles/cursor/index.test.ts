@@ -24,11 +24,10 @@ test("selected execution excludes personal plugins while default execution retai
     expect(await fs.readdir(path.join(home, ".cursor/plugins/local"))).toContain("unselected")
     await composeCursorHome({ root, key: "shared", personalCursorDir: personal, projection })
     expect(await fs.readdir(path.join(home, ".cursor/plugins/local"))).not.toContain("unselected")
-    const owner = { kind: "machine-owner" as const }
-    expect(cursorHomeKey(owner, { machineOwnerUserId: "owner" }, "own", projection))
-      .not.toBe(cursorHomeKey(owner, { machineOwnerUserId: "owner" }, "own", all))
-    expect(cursorHomeKey(owner, { machineOwnerUserId: "owner" }, "own", { ...projection, pluginSelection: { mode: "selected", selectionHash: "selection-b" } }))
-      .toBe(cursorHomeKey(owner, { machineOwnerUserId: "owner" }, "own", projection))
+    expect(cursorHomeKey("owner", "own", projection))
+      .not.toBe(cursorHomeKey("owner", "own", all))
+    expect(cursorHomeKey("owner", "own", { ...projection, pluginSelection: { mode: "selected", selectionHash: "selection-b" } }))
+      .toBe(cursorHomeKey("owner", "own", projection))
     expect(await fs.readFile(path.join(personal, "plugins/local/unselected/plugin.json"), "utf8")).toBe('{"name":"unselected"}')
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })

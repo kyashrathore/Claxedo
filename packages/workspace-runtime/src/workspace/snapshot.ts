@@ -1,6 +1,6 @@
 import fs from "fs"
 import path from "path"
-import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import { acpConnectionConfig, piRpcConnectionConfig, type ConnectionConfigHooks } from "@claxedo/harness/providers"
 import { rec } from "../json-value"
@@ -73,7 +73,7 @@ export function runtimeSnapshotSignature(snapshot: AppliedRuntimeSnapshot) {
   return JSON.stringify(canonicalJson(snapshot))
 }
 
-export function sameAuth(a: Record<string, ProviderProjection>, b: Record<string, ProviderProjection>) {
+export function sameAuth(a: CredentialSnapshot<ProviderProjection>, b: CredentialSnapshot<ProviderProjection>) {
   return JSON.stringify(canonicalJson(a)) === JSON.stringify(canonicalJson(b))
 }
 
@@ -88,7 +88,7 @@ function runtimeConfigSnapshotMetadata(snapshot: AppliedRuntimeSnapshot) {
       enabled,
     })),
     mcp: { keys: Object.keys(snapshot.mcp).sort() },
-    auth: { keys: Object.keys(snapshot.auth).sort() },
+    auth: { machineOwnerUserId: snapshot.auth.machineOwnerUserId, users: Object.keys(snapshot.auth.accounts).sort() },
     ...(snapshot.harnessLaunch ? { harnessLaunch: Object.keys(snapshot.harnessLaunch).sort() } : {}),
     ...(snapshot.workspaceHarnessEnabled !== undefined ? { workspaceHarnessEnabled: snapshot.workspaceHarnessEnabled } : {}),
     ...(snapshot.commands ? { commands: snapshot.commands.map((command) => command.name).sort() } : {}),

@@ -123,6 +123,8 @@ function services(input: {
       deleteCredentialsByProvider: vi.fn(async () => 0),
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => ({}),
     },
     relay: {},
     sandbox: {},
@@ -878,6 +880,7 @@ describe("channels ingress", () => {
     expect(svc.credentials.resolveCredentialSecret).toHaveBeenCalledWith("wa-state")
     expect(startedWith).toEqual([{ authState: { loaded: true } }])
     expect(svc.credentials.putCredential).toHaveBeenCalledWith({
+      owner: null,
       provider_id: "wa-state",
       kind: "subscription_session",
       source: "managed",

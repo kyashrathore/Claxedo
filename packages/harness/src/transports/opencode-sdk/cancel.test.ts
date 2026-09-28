@@ -8,7 +8,6 @@ import { OpenCodeSdkTransport } from "./transport"
 function stalledInterrupt() {
   const transport = new OpenCodeSdkTransport({} as HarnessServices, {
     databasePath: `/tmp/opencode-cancel-${crypto.randomUUID()}.db`,
-    login: { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false },
   })
   const state = transport as unknown as { entries: Map<string, Entry>; runtime: OpenCodeRuntime }
   const session: HarnessSession = { directory: "/tmp", locality: "local", binding: {

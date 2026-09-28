@@ -18,7 +18,7 @@ async function fixture(transport: FakeTransport) {
     harnessStateRoot: join(directory, "harness"), connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => transport })] })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
-  await host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [
+  await host.apply({ version: 4, commands: [], auth: { machineOwnerUserId: "local", accounts: {} }, mcp: {}, connections: [
     { connectionId: "connection", providerKey: "fixture", configRevision: 1, enabled: true, config: {} },
   ], defaultHarness: { kind: "connection", connectionId: "connection" } })
   return { host, app, target, create: () => withWorkspaceTarget(target, () => app.request("/session", {
@@ -53,7 +53,7 @@ test("public app disposal retries the host and cleans contributions once", async
     routeContributions: [{ id: "cleanup", mount: () => ({ path: "/", routes: new Hono(), dispose: () => { cleanups++ } }) }],
   })
   try {
-    await runtime.host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [
+    await runtime.host.apply({ version: 4, commands: [], auth: { machineOwnerUserId: "local", accounts: {} }, mcp: {}, connections: [
       { connectionId: "connection", providerKey: "fixture", configRevision: 1, enabled: true, config: {} },
     ], defaultHarness: { kind: "connection", connectionId: "connection" } })
     expect((await withWorkspaceTarget(target, () => runtime.app.request("/session", {
@@ -108,7 +108,7 @@ test("a scrub whose transport would not stop detaches the engine, the next turn 
   const request = (path: string, body: unknown) => withWorkspaceTarget(target, () => app.request(path, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   }))
-  const snapshot = { version: 4 as const, commands: [], auth: {}, mcp: {}, connections: [
+  const snapshot = { version: 4 as const, commands: [], auth: { machineOwnerUserId: "local", accounts: {} }, mcp: {}, connections: [
     { connectionId: "connection", providerKey: "fixture", configRevision: 1, enabled: true, config: {} },
   ], defaultHarness: { kind: "connection" as const, connectionId: "connection" } }
   try {

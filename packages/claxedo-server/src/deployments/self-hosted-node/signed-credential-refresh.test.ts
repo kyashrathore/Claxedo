@@ -14,7 +14,7 @@ let previousEnv: Record<string, string | undefined>
 let services: Awaited<ReturnType<typeof import("./app").createDefaultLocalControlPlaneServices>>
 let composed: ReturnType<typeof import("./app").createSelfHostedApp>
 let owner: { id: string; headers: Record<string, string> }
-const projections = vi.fn(async () => ({}))
+const projections = vi.fn(async () => ({ machineOwnerUserId: "", accounts: {} }))
 
 beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-signed-credential-refresh-"))

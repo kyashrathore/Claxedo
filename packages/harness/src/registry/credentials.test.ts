@@ -1,75 +1,49 @@
 import { expect, test } from "bun:test"
-import type { ProviderBinding, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
+import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
 import { CredentialSelectionError, selectSessionCredentials, type CredentialSelectionInput } from "./credentials"
 
-const machineBinding: ProviderBinding = { baseUrl: "https://machine.example", placeholder: "machine", authMode: "api-key" }
-const ownerBinding: ProviderBinding = { baseUrl: "https://owner.example", placeholder: "owner", authMode: "api-key" }
-const memberBinding: ProviderBinding = { baseUrl: "https://member.example", placeholder: "member", authMode: "api-key" }
-const machineCredentials = {
-  anthropic: { projection: machineBinding, secrets: {} },
-  openai: { projection: machineBinding, secrets: {} },
-}
-const machineOwner = { kind: "machine-owner" as const }
-const member = { kind: "person" as const, userId: "member" }
-const selectedAccounts = {
-  owner: { anthropic: { projection: ownerBinding, secrets: {} } },
-  member: { anthropic: { projection: memberBinding, secrets: {} } },
-}
-const providerProfile = { kind: "providers" as const, providerIds: ["anthropic", "openai"], selectedAccounts, machineCredentials, leaseGeneration: "turn-1" }
-const providerInput: CredentialSelectionInput = {
-  owner: machineOwner, placement: "desktop", machineOwnerUserId: "owner", canUseOwnLogin: true,
-  profile: providerProfile,
+const binding = (person: string): ProviderBinding => ({ baseUrl: `https://${person}.example`, placeholder: person, authMode: "api-key" })
+const snapshot: CredentialSelectionInput = {
+  machineOwnerUserId: "A", placement: "desktop", canUseOwnLogin: true, leaseGeneration: "lease",
+  accounts: { A: { openai: binding("A") }, B: { openai: binding("B") } }, providerIds: ["codex-app-server", "openai"],
 }
 
-function unavailable(value: unknown): asserts value is ProviderUnavailable {
-  expect(value).toEqual({ unavailable: true, reason: "No selected account for this provider" })
-}
-
-test("owner selection wins and unselected providers use machine credentials only locally", () => {
-  const credentials = selectSessionCredentials(providerInput)
-  expect(credentials.providers.anthropic).toBe(ownerBinding)
-  expect(credentials.providers.openai).toBe(machineBinding)
-  expect(selectSessionCredentials({ ...providerInput, owner: { kind: "person", userId: "owner" } }).providers.anthropic).toBe(ownerBinding)
-  expect(selectSessionCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: {} } }).providers.anthropic).toBe(machineBinding)
-})
-
-test("a session owned by a member selects only the member's accounts", () => {
-  const owner = selectSessionCredentials({ ...providerInput, owner: { kind: "person", userId: "owner" } })
-  expect(owner.providers.anthropic).toBe(ownerBinding)
-  expect(owner.providers.openai).toBe(machineBinding)
-  const memberCredentials = selectSessionCredentials({ ...providerInput, owner: member })
-  expect(memberCredentials.providers.anthropic).toBe(memberBinding)
-  unavailable(memberCredentials.providers.openai)
-  const missing = selectSessionCredentials({ ...providerInput, owner: member, profile: { ...providerProfile, selectedAccounts: {} } })
-  unavailable(missing.providers.anthropic)
-})
-
-test("cloud owner has no machine fallback", () => {
-  const cloud = selectSessionCredentials({ ...providerInput, placement: "cloud" })
-  expect(cloud.providers.anthropic).toBe(ownerBinding)
-  unavailable(cloud.providers.openai)
-})
-
-test("selected provider secrets cannot overwrite another provider lease", () => {
-  const conflicting = {
-    owner: {
-      anthropic: { projection: ownerBinding, secrets: { TOKEN: "anthropic" } },
-      openai: { projection: ownerBinding, secrets: { TOKEN: "openai" } },
-    },
+test("each session selects its owner's account without mixing another person's providers", () => {
+  for (const userId of ["A", "B"]) {
+    expect(selectSessionCredentials(snapshot, { kind: "person", userId })).toEqual({
+      accountOwner: userId, providers: { openai: binding(userId) }, secrets: {}, leaseGeneration: "lease", machineLoginAllowed: userId === "A",
+    })
   }
-  expect(() => selectSessionCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: conflicting } })).toThrow(CredentialSelectionError)
+  expect(selectSessionCredentials(snapshot, { kind: "machine-owner" })).toMatchObject({ accountOwner: "A", providers: snapshot.accounts.A })
 })
 
-test("machine fallback injects only its available provider secrets", () => {
-  const selected = { owner: { anthropic: { projection: ownerBinding, secrets: { ANTHROPIC_API_KEY: "selected" } } } }
-  const machine = {
-    anthropic: { projection: machineBinding, secrets: { ANTHROPIC_API_KEY: "machine" } },
-    openai: { projection: machineBinding, secrets: { OPENAI_API_KEY: "machine-openai" } },
+test("only the machine owner may use a local login when no account is selected", () => {
+  const empty = { ...snapshot, accounts: {} }
+  expect(selectSessionCredentials(empty, { kind: "person", userId: "A" }).machineLoginAllowed).toBe(true)
+  expect(() => selectSessionCredentials(empty, { kind: "person", userId: "B" })).toThrow(CredentialSelectionError)
+  for (const policy of [{ placement: "cloud" as const }, { placement: "self-hosted" as const }, { canUseOwnLogin: false }]) {
+    expect(() => selectSessionCredentials({ ...empty, ...policy }, { kind: "machine-owner" })).toThrow(CredentialSelectionError)
   }
-  expect(selectSessionCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: selected, machineCredentials: machine } }).secrets)
-    .toEqual({ ANTHROPIC_API_KEY: "selected", OPENAI_API_KEY: "machine-openai" })
-  expect(selectSessionCredentials({ ...providerInput, profile: { ...providerProfile, selectedAccounts: {}, machineCredentials: {
-    anthropic: { projection: { unavailable: true, reason: "missing" }, secrets: { ANTHROPIC_API_KEY: "ambient" } },
-    openai: machine.openai,
-  } } }).secrets).toEqual({ OPENAI_API_KEY: "machine-openai" })
+})
+
+test("an unrelated binding cannot authorize a provider and explicit unavailability never uses the machine login", () => {
+  expect(() => selectSessionCredentials({ ...snapshot, providerIds: ["anthropic"] }, { kind: "person", userId: "B" }))
+    .toThrow(CredentialSelectionError)
+  expect(() => selectSessionCredentials({ ...snapshot, accounts: { A: { openai: { unavailable: true, reason: "expired" } } } },
+    { kind: "machine-owner" })).toThrow("expired")
+})
+
+test("a usable binding wins over an unusable one earlier in the harness's provider order", () => {
+  const mixed = { ...snapshot, accounts: { B: { "codex-app-server": { unavailable: true as const, reason: "revoked" }, openai: binding("B") } } }
+  expect(selectSessionCredentials(mixed, { kind: "person", userId: "B" }).providers.openai).toEqual(binding("B"))
+})
+
+test("a harness that spends no provider account is never refused for lacking one", () => {
+  const { providerIds: _providerIds, ...connection } = snapshot
+  const cloud = { ...connection, placement: "cloud" as const, canUseOwnLogin: false }
+  expect(selectSessionCredentials(cloud, { kind: "person", userId: "C" })).toEqual({
+    accountOwner: "C", providers: {}, secrets: {}, leaseGeneration: "lease", machineLoginAllowed: false,
+  })
+  const withdrawn = { ...cloud, accounts: { A: { openai: { unavailable: true as const, reason: "expired" } } } }
+  expect(selectSessionCredentials(withdrawn, { kind: "person", userId: "A" }).providers).toEqual(withdrawn.accounts.A)
 })

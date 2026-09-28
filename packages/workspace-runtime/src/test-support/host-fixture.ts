@@ -43,11 +43,11 @@ export function transportsById(transports: Record<string, HarnessTransport>): Tr
   }
 }
 
-export function testLaunch(workspaceId: string): LaunchComposer {
+export function testLaunch(workspaceId: string, users: string[] = []): LaunchComposer {
   return {
     workspaceId,
     projection: () => ({ generation: "test", mcpServers: [], pluginRoots: [], notApplied: [] }),
-    credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "test" }),
+    credentials: () => ({ accounts: Object.fromEntries(users.map((user) => [user, { openai: { baseUrl: "https://fixture.example", placeholder: `fixture-${user}`, authMode: "api-key" as const } }])), machineOwnerUserId: "test-owner", placement: "loopback", canUseOwnLogin: true, leaseGeneration: "test" }),
   }
 }
 
@@ -56,6 +56,7 @@ export function tempStoreRoot(prefix = "host-fixture-") {
 }
 
 export type HostFixtureInput = {
+  launch?: LaunchComposer
   /** A store the test owns and closes itself; the fixture opens one in a temp root otherwise. */
   store?: RuntimeStore
   transports: Record<string, HarnessTransport> | TransportResolver
@@ -98,7 +99,7 @@ export function createHostFixture(input: HostFixtureInput): HostFixture {
   })
   runtime = createAgentRuntime({
     store, eventHub, transports, ports, ownerGeneration,
-    launch: testLaunch(workspaceId),
+    launch: input.launch ?? testLaunch(workspaceId),
     identity: input.identity ?? { workspaceId },
     savedCommands: () => [],
     ...(input.subscriberBufferSize !== undefined ? { subscriberBufferSize: input.subscriberBufferSize } : {}),

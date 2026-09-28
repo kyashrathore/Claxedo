@@ -41,6 +41,8 @@ export type PluginProjection = {
 }
 
 export type ResolvedCredentials = {
+  accountOwner: string
+  machineLoginAllowed: boolean
   providers: Readonly<Record<string, ProviderProjection>>
   secrets: Readonly<Record<string, string>>
   leaseGeneration: string

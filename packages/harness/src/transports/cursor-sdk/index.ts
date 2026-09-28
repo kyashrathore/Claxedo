@@ -64,7 +64,7 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   private credential(input: StartInput | DraftLaunch): CursorCredential {
-    return cursorCredential(input, this.env, this.options)
+    return cursorCredential(input, this.env)
   }
 
   private async compose(input: StartInput | DraftLaunch, credential: CursorCredential, key: string) {
@@ -74,7 +74,7 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   private homeKey(input: StartInput | DraftLaunch, credential: CursorCredential): string {
-    return cursorHomeKey(input.owner, this.options, credential.key, input.projection)
+    return cursorHomeKey(input.credentials.accountOwner, credential.key, input.projection)
   }
 
   private async admit(input: StartInput, broker: SessionBroker, resumed?: string): Promise<HarnessSession> {

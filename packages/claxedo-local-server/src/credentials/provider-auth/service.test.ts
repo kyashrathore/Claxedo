@@ -49,6 +49,8 @@ function credentials() {
     },
     updateCredentialStatus: async () => {},
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    accountSelections: async () => ({}),
+    setAccountSources: async () => ({}),
   }
   return { writes, deletes, registry }
 }
@@ -80,22 +82,33 @@ function service(registry: ControlPlaneCredentials, seed = { userCode: "ABCD-EFG
 }
 
 describe("OAuth pending state is keyed by tenant", () => {
+  test("another person in the same org cannot consume an authorization", async () => {
+    const c = credentials()
+    const auth = service(c.registry)
+    await auth.authorize({ providerId: "codex-app-server", org: "shared-org", owner: "A" })
+    await expect(auth.callback({ providerId: "codex-app-server", org: "shared-org", owner: "B" }))
+      .rejects.toMatchObject({ code: "provider_auth_missing_pending" })
+    expect(c.writes).toEqual([])
+    await auth.callback({ providerId: "codex-app-server", org: "shared-org", owner: "A" })
+    expect(c.writes[0]).toMatchObject({ org: "shared-org", input: { owner: "A" } })
+    expect(c.deletes).toEqual([])
+  })
   test("org B cannot consume an authorization org A started", async () => {
     const c = credentials()
     const auth = service(c.registry)
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
 
     // Same provider, different tenant: as far as org B is concerned nothing
     // was ever started — it cannot take delivery of org A's login.
-    await expect(auth.callback({ providerId: "codex-app-server", org: "org-b" })).rejects.toMatchObject({
+    await expect(auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-b" })).rejects.toMatchObject({
       code: "provider_auth_missing_pending",
     })
     expect(c.writes).toEqual([])
     expect(c.deletes).toEqual([])
 
     // Org A's authorization is untouched and still completes.
-    expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
+    expect(await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).toBe(true)
     expect(c.writes).toHaveLength(1)
     expect(c.writes[0].org).toBe("org-a")
   })
@@ -130,25 +143,23 @@ describe("OAuth pending state is keyed by tenant", () => {
       }) as typeof fetch,
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
-    await auth.authorize({ providerId: "codex-app-server", org: "org-b" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-b" })
 
     // Each tenant completes ITS OWN device authorization, not the other's.
-    await auth.callback({ providerId: "codex-app-server", org: "org-a" })
-    await auth.callback({ providerId: "codex-app-server", org: "org-b" })
+    await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })
+    await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-b" })
     expect(exchanged).toEqual(["dev-1", "dev-2"])
     expect(c.writes.map((write) => write.org)).toEqual(["org-a", "org-b"])
   })
 
-  test("the callback's destructive write is scoped to the caller's org", async () => {
+  test("the callback upserts its account without deleting other accounts", async () => {
     const c = credentials()
     const auth = service(c.registry)
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
-    await auth.callback({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
+    await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })
 
-    // deleteCredentialsByProvider wipes every credential for the provider; run
-    // unscoped it would wipe every OTHER tenant's login for that provider too.
-    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: "org-a" }])
+    expect(c.deletes).toEqual([])
     expect(c.writes[0].org).toBe("org-a")
   })
 
@@ -156,13 +167,13 @@ describe("OAuth pending state is keyed by tenant", () => {
     const c = credentials()
     const auth = service(c.registry)
 
-    const authorization = await auth.authorize({ providerId: "codex-app-server" })
+    const authorization = await auth.authorize({ owner: "local", providerId: "codex-app-server" })
     expect(authorization).toMatchObject({ instructions: "Enter code: ABCD-EFGH", method: "auto" })
-    expect(await auth.callback({ providerId: "codex-app-server" })).toBe(true)
+    expect(await auth.callback({ owner: "local", providerId: "codex-app-server" })).toBe(true)
 
     // A blank org is NOT a wildcard: it collapses to the named single-tenant
     // partition, the same one the credential router resolves unsigned to.
-    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
+    expect(c.deletes).toEqual([])
     expect(c.writes[0].org).toBe(SINGLE_TENANT_ORG)
     expect(c.writes[0].input).toMatchObject({ provider_id: "codex-app-server", kind: "oauth_token" })
   })
@@ -178,9 +189,9 @@ describe("OAuth pending state is keyed by tenant", () => {
       fetch: upstream({ userCode: "ABCD-EFGH", accessToken: "access_token" }),
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
     now += 60_001
-    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toBeInstanceOf(
+    await expect(auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).rejects.toBeInstanceOf(
       ProviderAuthError,
     )
     expect(c.writes).toEqual([])
@@ -218,8 +229,8 @@ describe("device polling cannot hold a callback open forever", () => {
       }),
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
-    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
+    await expect(auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
       code: "provider_auth_callback_expired",
     })
     // Bounded: ten 1s-interval polls inside the 10s TTL, not an open loop.
@@ -228,7 +239,7 @@ describe("device polling cannot hold a callback open forever", () => {
 
     // The ended attempt removed its pending entry — a retry reads as
     // never-started instead of resuming a poll for a dead authorization.
-    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
+    await expect(auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
       code: "provider_auth_missing_pending",
     })
   })
@@ -255,13 +266,13 @@ describe("device polling cannot hold a callback open forever", () => {
       }) as typeof fetch,
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
     await expect(
-      auth.callback({ providerId: "codex-app-server", org: "org-a", signal: abort.signal }),
+      auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a", signal: abort.signal }),
     ).rejects.toMatchObject({ code: "provider_auth_callback_aborted" })
     expect(c.writes).toEqual([])
 
-    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
+    await expect(auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
       code: "provider_auth_missing_pending",
     })
   })
@@ -277,9 +288,9 @@ describe("device polling cannot hold a callback open forever", () => {
       fetch: upstream({ userCode: "ABCD-EFGH", accessToken: "access_token" }),
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
     now = 60_999
-    expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
+    expect(await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).toBe(true)
     expect(c.writes).toHaveLength(1)
   })
 })
@@ -331,7 +342,7 @@ describe("provider-auth routes resolve the tenant the same way credential routes
     expect(done.status).toBe(200)
     expect(await done.json()).toBe(true)
     expect(c.writes[0].org).toBe(SINGLE_TENANT_ORG)
-    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
+    expect(c.deletes).toEqual([])
   })
 })
 
@@ -365,8 +376,8 @@ describe("what a completed ChatGPT sign-in leaves behind", () => {
       fetch: chatgpt({ email: "person@example.com", chatgpt_account_id: "acct_9" }),
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
-    expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
+    expect(await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })).toBe(true)
 
     expect(c.writes).toHaveLength(1)
     expect(c.writes[0].input).toMatchObject({
@@ -378,7 +389,7 @@ describe("what a completed ChatGPT sign-in leaves behind", () => {
     })
     // `openai` is the vendor an engine runs models from; a Codex login is not one.
     expect(c.writes.map((write) => write.input.provider_id)).not.toContain("openai")
-    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: "org-a" }])
+    expect(c.deletes).toEqual([])
 
     const secret: unknown = JSON.parse(c.writes[0].input.secret)
     expect(secret).toMatchObject({ type: "codex_auth", auth_mode: "chatgpt", account_id: "acct_9" })
@@ -393,8 +404,8 @@ describe("what a completed ChatGPT sign-in leaves behind", () => {
       fetch: chatgpt({ chatgpt_account_id: "acct_9" }),
     })
 
-    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
-    await auth.callback({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
+    await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })
     expect(c.writes[0].input.label).toBe("ChatGPT OAuth")
   })
 })

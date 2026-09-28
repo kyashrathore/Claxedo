@@ -18,7 +18,9 @@ import { createHarnessServices } from "../harness-services"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
-import { pluginProjectionFor, snapshotCredentials } from "../host/projection"
+import { sessionCredentials } from "../host/launch"
+import { harnessUnavailableResponse } from "../routes/session-harness-refusal"
+import { pluginProjectionFor } from "../host/projection"
 import { PreviewModelInvalidError } from "../host/config-ops"
 import { createAgentRuntime, type AgentRuntime, type AgentRuntimeHealth, type LaunchComposer } from "../host/runtime"
 import { Log } from "../log"
@@ -203,7 +205,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   let appliedSignature: string | undefined
   let currentMcp: Record<string, unknown> = {}
   let currentProviderDefinitions: NonNullable<AppliedRuntimeSnapshot["providerDefinitions"]> = []
-  let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = {}
+  let currentAuthRaw: AppliedRuntimeSnapshot["auth"] = { machineOwnerUserId: options.placement.machineOwnerUserId, accounts: {} }
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let currentCommands: AppliedRuntimeSnapshot["commands"] = []
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
@@ -276,7 +278,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     if (Object.keys(descriptor.secretRefs ?? {}).length > 0) {
       throw new WorkspaceHarnessUnavailableError({ id: descriptor.connectionId, access: "connection" })
     }
-    return { secrets: {}, secretLeaseGeneration: `runtime-config:${configApplyRevision}` }
+    return { secrets: {}, secretLeaseGeneration: "none" }
   }
 
   const launch: LaunchComposer = {
@@ -285,7 +287,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       generation: `runtime-config:${configApplyRevision}`, mcp: currentMcp, harnessLaunch: currentHarnessLaunch,
     }),
     providerDefinitions: () => currentProviderDefinitions,
-    credentials: () => snapshotCredentials(currentAuthRaw, `runtime-config:${configApplyRevision}`),
+    credentials: () => ({ ...options.placement, ...currentAuthRaw, leaseGeneration: `runtime-config:${configApplyRevision}` }),
   }
 
   type Engine = {
@@ -344,9 +346,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const configuration = createSessionConfiguration({
       attached: () => engine?.runtime.attachments.entries() ?? [],
       projection: (attached) => launch.projection(attached.handle.runner),
-      credentials: () => launch.credentials(),
+      credentials: (attached) => sessionCredentials(launch, { owner: attached.owner, config: runtimeStore.getSessionConfig(attached.session.binding.sessionId)! }),
       providerDefinitions: () => currentProviderDefinitions,
       onHeldFailure: (error) => { void failConfigApply(error) },
+      retire: async (attached, reason) => {
+        const sessionId = attached.session.binding.sessionId
+        log.warn("Retiring a session whose owner has no usable account", { sessionId, reason })
+        engine?.runtime.attachments.forget(sessionId)
+        await attached.handle.transport.close(attached.session)
+      },
     })
     const runtime = createAgentRuntime({
       store: runtimeStore, eventHub, transports, ports, ownerGeneration, launch,
@@ -558,8 +566,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         const directory = assertTarget(c.req.query("directory") || workspaceDir())
         const runtime = await runtimeForSession()
         const target = { harness, directory, owner: sessionOwner(c) }
-        if (!await runtime.reads.servesProviderCatalog(target)) return c.json(errorBody("provider_catalog_unsupported", `${harness.id} serves no provider catalog`), 400)
-        return c.json(await runtime.reads.providerCatalog(target))
+        try {
+          if (!await runtime.reads.servesProviderCatalog(target)) return c.json(errorBody("provider_catalog_unsupported", `${harness.id} serves no provider catalog`), 400)
+          return c.json(await runtime.reads.providerCatalog(target))
+        } catch (cause) {
+          const refused = harnessUnavailableResponse(c, cause)
+          if (refused) return refused
+          throw cause
+        }
       })
       app.get("/api/wr/harness-config-options", async (c) => {
         let targetRunner: RuntimeRunner
@@ -584,6 +598,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           }
           return c.json(preview)
         } catch (cause) {
+          const refused = harnessUnavailableResponse(c, cause)
+          if (refused) return refused
           if (cause instanceof PreviewModelInvalidError) return c.json(errorBody("preview_model_invalid", cause.message), 400)
           return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id, message: errorMessage(cause) } }, 502)
         }

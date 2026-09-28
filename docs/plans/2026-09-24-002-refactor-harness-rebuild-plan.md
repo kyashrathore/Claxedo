@@ -213,7 +213,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | --- | --- | --- |
 | **The machine owner and their processes** | Everything on their machine | **Accepted posture** (your ruling, 2026-09-23): a harness turn runs as the owner and can read the machine's secrets. Unsigned mode is loopback-only (M-1) |
 | **A harness Claxedo starts on this machine** | What the owner's user account can do | The same trust as the owner. Claxedo layers over it and doesn't pretend to sandbox it |
-| **A harness in a cloud sandbox** | The sandbox, and placeholders for provider keys | The sandbox. The provider's network layer attaches real keys only on requests to provider hosts (H-1) |
+| **A harness in a cloud sandbox** | The sandbox, and placeholders for the sandbox owner's provider accounts | The sandbox. The provider's network layer attaches real keys only on requests to provider hosts (H-1). **Shared trust** (your ruling, 2026-09-28): everyone admitted to the workspace runs code there and can spend what it holds; see the accepted risks |
 | **A remote harness** (someone else's machine) | Only what its API receives | **Untrusted:** never Claxedo's own MCP server or bearer, never stdio servers, never brokered credentials. Plugin tokens only with endpoint-bound consent (integration plan) |
 | **A member acting through a share** | Exactly what the share allows (a `send` share can prompt) | The route's access policy decides who. The turn spends the session owner's accounts, like every turn in that session |
 | **Harness output**: model text, tool results, events, elicitation forms | Nothing | Untrusted input. Translators check shapes (ACP `validation.ts`); unknown events become diagnostics with code `unrecognized-event`; form patterns are checked in a bounded worker pool; Claxedo never runs harness output as its own instructions |
@@ -234,6 +234,8 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 4. **Credentials follow the session's owner, not the turn's sender** (owner ruling, 2026-09-25). Every turn in a session spends the owner's accounts, including a turn a member sends through a `send` share.
    - The owner's own machine logins (their Pi login, for example) serve the owner's sessions on the desktop or loopback runtime; everywhere else the owner's chosen accounts are brokered.
    - The sender decides who may send and is recorded for audit; it never selects credentials.
+   - **Each person chooses, per provider, whether their sessions spend their own account or the org's team account** (owner ruling, 2026-09-28). Only the chosen account is spent: selection, sandbox delivery and every catalog read the one rule in `credentials/account-holder.ts`, and nothing falls back from one to the other. With nothing chosen, a person spends their own account, and the machine owner may also use the machine's login. A revoked or missing chosen account refuses the session by name. There is no admin flow yet for adding a team account.
+   - Tasks and channels create sessions as the person who started them, never as the machine owner.
 5. **A person's own setup is never modified.**
    - The owner's Pi folder is never written.
    - Claude and Codex homes are composed in folders Claxedo owns, never the person's own.
@@ -256,7 +258,6 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 | **Reusing today's Pi code on the owner's folder would wipe their login** | `pi/auth.ts:119-121`, `:160` | The owner transport never writes the folder |
 | **Brokered Codex very likely starts without plugins.** An availability gap, not a leak | `codex/broker.ts:47-52` | H-4 |
 | **Three harnesses in the cloud image are installed by unpinned `curl \| bash` installers** (`cursor-agent`, Amp, `droid`). A supply-chain risk | `scripts/sandbox/Dockerfile`, `cloudflare-worker/Dockerfile` | C-13 |
-| **Accounts are picked per org everywhere, never per person,** against the per-person account ruling: the owner column is never written, activation carries no actor, and the broker's identity is a fixed `"operator"` | `registry.ts:185`, `native-delivery.ts:188` | C-12 |
 | **Hosted cloud delivers no provider credential.** An availability gap: turns very likely can't authenticate | `supervisor/sandbox.ts:108` is the only caller | C-1 |
 
 ### Risks you've accepted
@@ -264,6 +265,7 @@ The harness layer holds the most valuable things Claxedo handles: people's provi
 - **A local agent turn can read every secret on the machine:** passed-through environment, the data folder, and the credential seed beside its ciphertext. Accepted 2026-09-23, because processes on the owner's machine are trusted.
 
   **Keep one consequence in view:** a member with a `send` share on the owner's desktop drives an agent with that reach. That's decided per share, separately from this plan.
+- **A cloud sandbox is shared trust** (your ruling, 2026-09-28). A sandbox is delivered only its owner's chosen accounts, as placeholders its provider edge fills; another person's account never reaches it. Anything that runs there can spend those accounts: the owner's sessions, and also the sessions and shells of everyone admitted to the workspace, since a placeholder sits in every process's environment and the edge attaches the real key to any request that carries it. Editors' own sessions still spend only the editor's accounts, which are never delivered there, so an account harness refuses them. Claxedo documents this rather than preventing it: a per-request proof would live in the same sandbox and prove nothing.
 - **Unsigned mode is a loopback-only developer setup** (M-1). Local processes are trusted.
 - **A localhost cookie can be seen by other local ports** (P-108), accepted on localhost.
 - **Secrets that must be inside the harness's environment are visible there:** leased custom-harness secrets, and secrets for local MCP commands. The settings screen says so.

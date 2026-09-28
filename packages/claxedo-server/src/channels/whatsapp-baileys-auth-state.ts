@@ -21,6 +21,7 @@ export function createCredentialWhatsAppBaileysAuthStateStore(input: {
     async save(state) {
       if (state === undefined) return
       await input.credentials.putCredential({
+        owner: null,
         provider_id: providerId,
         kind: "subscription_session",
         source: "managed",

@@ -13,7 +13,7 @@ test("turns and native goals share session options while clear forbids tools", a
   const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local",
     owner: { kind: "machine-owner" }, config: { harness: { id: "claude", access: "native" }, permissionMode: "plan" },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [{ pluginInstanceId: "one", root: "/plugin", skillNames: [], dataRoot: "/data" }], notApplied: [] },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" } }
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } }
   const session: HarnessSession = { directory: input.directory, locality: input.locality,
     binding: { sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "claude-sdk", upstreamSessionId: "up1" } }
   const broker = { sessionId: "s1", config: () => input.config, goal: { read: () => null, publish: async () => {} } } as unknown as SessionBroker

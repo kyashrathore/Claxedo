@@ -57,7 +57,7 @@ test("close during a pending refresh releases every acquired host", async () => 
 
 test("close during credential replacement releases the late acquisition exactly once", async () => {
   const f = fixture()
-  const configuring = f.transport.configure(f.session, { credentials: { providers: {
+  const configuring = f.transport.configure(f.session, { credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {
     cursor: { baseUrl: "http://replacement", placeholder: "test", authMode: "bearer" },
   }, secrets: {}, leaseGeneration: "g2" } }).then(() => "configured", (error: Error) => error.message)
   await f.entered.promise

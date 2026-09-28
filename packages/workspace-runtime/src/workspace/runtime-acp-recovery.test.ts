@@ -15,7 +15,7 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
     const target = { workspaceId: "recovery-workspace", directory }
     const logFile = join(directory, "peer.jsonl")
     const peer = fileURLToPath(new URL("./fixtures/acp-recovery-peer.mjs", import.meta.url))
-    const config = { version: 4 as const, commands: [], auth: {}, mcp: {}, connections: [{ connectionId: "recovery", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Recovery peer", connection: { kind: "process", command: "node", args: [peer, logFile, recovery] } } }], defaultHarness: { kind: "connection" as const, connectionId: "recovery" } }
+    const config = { version: 4 as const, commands: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } }, mcp: {}, connections: [{ connectionId: "recovery", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Recovery peer", connection: { kind: "process", command: "node", args: [peer, logFile, recovery] } } }], defaultHarness: { kind: "connection" as const, connectionId: "recovery" } }
     const open = async () => {
       const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
       await host.apply(config)

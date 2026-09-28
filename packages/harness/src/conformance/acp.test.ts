@@ -81,7 +81,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
     root, directory, connection, locality: server ? "remote" : "local",
     harness: { id: "scripted-acp", access: "connection" },
     model: { providerID: "scripted-acp", modelID: "default" },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "machine-owner" as const },
     ...(server ? {
       projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [
@@ -1339,7 +1339,7 @@ async function parityBackend(env: Record<string, string> = {}, connection: { sha
   return {
     root, directory, locality: "local", harness: { id: "parity-acp", access: "connection" },
     model: { providerID: "scripted", modelID: "default" }, owner: { kind: "machine-owner" },
-    credentials: { providers: {}, secrets: {}, leaseGeneration: "conformance" },
+    credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     connection: { kind: "process", command: process.execPath, args: [script], ...connection,
       env: { ACP_SDK: import.meta.resolve("@agentclientprotocol/sdk"), PARITY_ACP_LOG: log, ...env } },
     unrunnableTurn: (turn) => turn,

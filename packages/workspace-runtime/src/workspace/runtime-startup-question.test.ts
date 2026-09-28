@@ -24,7 +24,7 @@ test("public workspace creation answers an actual ACP startup RPC before provide
   const answersSent = async () => (await readFile(logPath, "utf8")).trim().split("\n").map(line => JSON.parse(line))
     .filter((row: { method?: string; result?: unknown }) => !row.method && row.result !== undefined)
   try {
-    await host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [{ connectionId: "startup-agent", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Startup agent", connection: { kind: "process", command: "node", args: [peerPath, logPath, "patterns"] } } }], defaultHarness: { kind: "connection", connectionId: "startup-agent" } })
+    await host.apply({ version: 4, commands: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } }, mcp: {}, connections: [{ connectionId: "startup-agent", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Startup agent", connection: { kind: "process", command: "node", args: [peerPath, logPath, "patterns"] } } }], defaultHarness: { kind: "connection", connectionId: "startup-agent" } })
     const creating = request("/session?connectionId=startup-agent", "POST", { id: "local-start" })
     let questions: Array<{ id: string; sessionID: string }> = []
     for (let n = 0; n < 200 && !questions.length; n++) {
@@ -80,7 +80,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
   }
   const pids = new Set<number>()
   try {
-    await host.apply({ version: 4, commands: [], auth: {}, mcp: {}, connections: [{ connectionId: "stdio-startup", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Stdio startup", connection: { kind: "process", command: "node", args: [peerPath, logPath] } } }], defaultHarness: { kind: "connection", connectionId: "stdio-startup" } })
+    await host.apply({ version: 4, commands: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } }, mcp: {}, connections: [{ connectionId: "stdio-startup", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Stdio startup", connection: { kind: "process", command: "node", args: [peerPath, logPath] } } }], defaultHarness: { kind: "connection", connectionId: "stdio-startup" } })
     expect(host.detail().connectionState).toMatchObject({ connectionId: "stdio-startup", state: "configured", processes: [] })
     for (const [id, label] of [["first", "accepted"], ["refused", "fail"], ["last", "still-alive"]]) {
       const creating = request("/session", "POST", { id })

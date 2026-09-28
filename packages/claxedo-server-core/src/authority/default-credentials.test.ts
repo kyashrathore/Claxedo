@@ -39,28 +39,28 @@ describe("running workspaces receive credential mutations", () => {
   })
 
   test("a stored key reaches running workspaces", async () => {
-    await port.putCredential({ provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
+    await port.putCredential({ owner: "local", provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
 
     expect(synced).toHaveBeenCalledTimes(1)
   })
 
   test("an account switch reaches running workspaces once", async () => {
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "oauth_token", source: "managed", account_id: "acc_a", secret: "tok_a",
     })
-    const cursor = await port.putCredential({
+    const cursor = await port.putCredential({ owner: "local",
       provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor",
     })
     synced.mockClear()
 
-    const result = await port.setActiveCredentials!([claude.id, cursor.id])
+    const result = await port.setActiveCredentials!([claude.id, cursor.id], undefined, "local")
 
     expect(result.ok).toBe(true)
     expect(synced).toHaveBeenCalledTimes(1)
   })
 
   test("only a removal that removed a row reaches running workspaces", async () => {
-    const cursor = await port.putCredential({ provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
+    const cursor = await port.putCredential({ owner: "local", provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" })
     synced.mockClear()
 
     await port.deleteCredential(cursor.id)
@@ -71,7 +71,7 @@ describe("running workspaces receive credential mutations", () => {
   })
 
   test("a renewed token reaches running workspaces", async () => {
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "oauth_token", source: "managed", account_id: "acc_a", secret: "tok_a",
     })
     synced.mockClear()
@@ -108,7 +108,7 @@ describe("the supervisor hears the delivered set change", () => {
   })
 
   test("a revocation runs the delivery reconcile", async () => {
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
     })
     reconciled.mockClear()
@@ -119,15 +119,15 @@ describe("the supervisor hears the delivered set change", () => {
   })
 
   test("an account switch and a removal run it", async () => {
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
     })
-    const cursor = await port.putCredential({
+    const cursor = await port.putCredential({ owner: "local",
       provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor",
     })
     reconciled.mockClear()
 
-    await port.setActiveCredentials!([claude.id])
+    await port.setActiveCredentials!([claude.id], undefined, "local")
     await port.deleteCredential(cursor.id)
 
     expect(reconciled).toHaveBeenCalledTimes(2)
@@ -143,7 +143,7 @@ describe("the supervisor hears the delivered set change", () => {
     const local = defaultControlPlaneCredentials({ refreshLocalRuntimes: synced })
     reconciled.mockRejectedValueOnce(new Error("sandbox driver is down"))
 
-    await expect(local.putCredential({ provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a" }))
+    await expect(local.putCredential({ owner: "local", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a" }))
       .rejects.toMatchObject({ name: "CredentialDeliveryError", cause: expect.objectContaining({ message: "sandbox driver is down" }) })
     expect(synced).toHaveBeenCalledOnce()
   })
@@ -152,7 +152,7 @@ describe("the supervisor hears the delivered set change", () => {
     const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
     configureWorkspaceSupervisorPort(undefined)
 
-    const claude = await port.putCredential({
+    const claude = await port.putCredential({ owner: "local",
       provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
     })
 

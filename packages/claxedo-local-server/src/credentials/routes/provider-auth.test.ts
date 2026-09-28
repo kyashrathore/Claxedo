@@ -59,6 +59,8 @@ function credentials() {
       },
       updateCredentialStatus: async () => {},
       syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => ({}),
     } satisfies ControlPlaneCredentials,
   }
 }
@@ -131,7 +133,8 @@ describe("control-plane provider auth", () => {
     })
     expect(callback.status).toBe(200)
     expect(await callback.json()).toBe(true)
-    expect(c.deleted).toEqual(["codex-app-server"])
+    expect(c.deleted).toEqual([])
+    expect(c.writes[0].owner).toBe("local")
     expect(c.writes).toHaveLength(1)
     expect(c.writes[0]).toMatchObject({
       provider_id: "codex-app-server",

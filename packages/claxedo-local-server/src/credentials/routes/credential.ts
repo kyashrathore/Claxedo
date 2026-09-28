@@ -5,6 +5,7 @@
  * managed credentials. Used by the UI settings panels.
  */
 
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { Hono } from "hono"
 import { z } from "zod"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
@@ -21,6 +22,8 @@ import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delive
 import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
+import { fanoutEligible } from "@claxedo/server-core/credentials/registry"
+import { ACCOUNT_SOURCES, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -83,6 +86,11 @@ const activateBody = z.union([
 ])
 
 const machineLoginQuery = z.enum(HARNESS_IDS)
+
+const accountSourcesBody = z.object({
+  provider_ids: z.array(z.string().min(1)).min(1).max(8),
+  source: z.enum(ACCOUNT_SOURCES),
+}).strict()
 
 function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>) {
   if (!cred) return null
@@ -186,6 +194,14 @@ export async function requestOrg(request: Request, options: CredentialRoutesOpti
   return context.user.orgId?.trim() || context.user.subject.trim() || SINGLE_TENANT_ORG
 }
 
+export async function requestActor(request: Request, options: Pick<CredentialRoutesOptions, "authConfig" | "verifier">): Promise<string> {
+  const context = await controlPlaneAuthContext(request, {
+    ...(options.authConfig ? { config: options.authConfig } : {}),
+    ...(options.verifier ? { verifier: options.verifier } : {}),
+  })
+  return context.mode === "signed" ? context.user.subject : LOCAL_USER_ID
+}
+
 export function CredentialRoutes(
   credentials: ControlPlaneCredentials = defaultControlPlaneCredentials(),
   options: CredentialRoutesOptions = {},
@@ -193,6 +209,12 @@ export function CredentialRoutes(
   const app = new Hono()
   // Resolved once per request; every handler reads it instead of re-deriving,
   // so no handler can accidentally run unscoped.
+  const actors = new WeakMap<Request, string>()
+  const actor = (request: Request) => {
+    const person = actors.get(request)
+    if (!person) throw new Error("Credential request has no actor")
+    return person
+  }
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
   /**
@@ -201,10 +223,12 @@ export function CredentialRoutes(
    * on another org's key. A store with no id lookup answers from the list it
    * can scope.
    */
-  const findCredential = async (id: string, scope: string) =>
-    credentials.getCredential
+  const findCredential = async (id: string, scope: string, person: string) => {
+    const row = credentials.getCredential
       ? await credentials.getCredential(id, scope)
       : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+    return row?.owner === person ? row : undefined
+  }
   const checkOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.now ? { now: options.now } : {}),
@@ -272,6 +296,7 @@ export function CredentialRoutes(
   app.use(async (c, next) => {
     try {
       orgs.set(c.req.raw, await requestOrg(c.req.raw, options))
+      actors.set(c.req.raw, await requestActor(c.req.raw, options))
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(error), error.status)
@@ -298,7 +323,7 @@ export function CredentialRoutes(
   })
   return app
     .get("/", async (c) => {
-      const creds = (await credentials.listCredentials(org(c.req.raw))).map(redact)
+      const creds = (await credentials.listCredentials(org(c.req.raw))).filter((row) => row.owner === actor(c.req.raw)).map(redact)
       return c.json({ credentials: creds })
     })
     .get("/effective", async (c) => {
@@ -306,8 +331,21 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_effective_unsupported", "This host does not report effective credentials"), 501)
       }
       const scope = c.req.query("scope") === "shared" ? "shared" : "local"
-      const rows = await credentials.effectiveCredentials(scope, org(c.req.raw))
-      return c.json({ scope, credentials: rows.map(redact) })
+      const orgId = org(c.req.raw)
+      const person = actor(c.req.raw)
+      const sources = (await credentials.accountSelections(orgId))[person] ?? {}
+      const rows = await credentials.effectiveCredentials(scope, orgId)
+      return c.json({ scope, credentials: rows.filter((row) => spendsAccount(row, person, sources, LOCAL_USER_ID)).map(redact) })
+    })
+    .get("/account-sources", async (c) => {
+      const orgId = org(c.req.raw)
+      const team = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
+      return c.json({ sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {}, team: team.map(redact) })
+    })
+    .put("/account-sources", async (c) => {
+      const body = accountSourcesBody.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json(invalidBody(body.error), 400)
+      return c.json({ sources: await credentials.setAccountSources(body.data.provider_ids, body.data.source, org(c.req.raw), actor(c.req.raw)) })
     })
     .get("/machine-logins", async (c) => {
       if (!credentials.machineLogins) {
@@ -341,7 +379,7 @@ export function CredentialRoutes(
       }
     })
     .get("/:providerId", async (c) => {
-      const cred = await credentials.getCredentialByProvider(c.req.param("providerId"), undefined, org(c.req.raw))
+      const cred = (await credentials.listCredentials(org(c.req.raw))).find((row) => row.provider_id === c.req.param("providerId") && row.owner === actor(c.req.raw))
       if (!cred) return c.json({ credential: null })
       return c.json({ credential: redact(cred) })
     })
@@ -351,6 +389,7 @@ export function CredentialRoutes(
       try {
         const cred = await credentials.putCredential({
           ...body.data,
+          owner: actor(c.req.raw),
           ...(body.data.scope === "shared" ? {
             consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
           } : {}),
@@ -372,7 +411,7 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_discovery_unavailable", "Credential discovery is unavailable"), 501)
       }
       try {
-        return c.json(await credentials.discoverLocalCredentials(org(c.req.raw)))
+        return c.json(await credentials.discoverLocalCredentials(org(c.req.raw), actor(c.req.raw)))
       } catch (error) {
         const detail = credentialFailureDetail(error)
         log.warn("Credential discovery failed", detail)
@@ -389,7 +428,7 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_discovery_unavailable", "Credential discovery is unavailable"), 501)
       }
       try {
-        return c.json(await credentials.saveDiscoveredCredentials(body.data, org(c.req.raw)))
+        return c.json(await credentials.saveDiscoveredCredentials(body.data, org(c.req.raw), actor(c.req.raw)))
       } catch (error) {
         if (error instanceof CredentialDeliveryError) throw error
         if (error instanceof CredentialDiscoveryError) {
@@ -406,7 +445,7 @@ export function CredentialRoutes(
       const body = syncBody.safeParse(await c.req.json().catch(() => ({})))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       try {
-        const result = await credentials.syncLocalCredentials(body.data.provider_ids, org(c.req.raw))
+        const result = await credentials.syncLocalCredentials(body.data.provider_ids, org(c.req.raw), actor(c.req.raw))
         return c.json(result)
       } catch (error) {
         if (error instanceof CredentialDeliveryError) throw error
@@ -416,7 +455,7 @@ export function CredentialRoutes(
     .post("/:id/verify", async (c) => {
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      const credential = await findCredential(id, scope)
+      const credential = await findCredential(id, scope, actor(c.req.raw))
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -428,7 +467,7 @@ export function CredentialRoutes(
       if (!body.success) return c.json(invalidBody(body.error), 400)
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      const credential = await findCredential(id, scope)
+      const credential = await findCredential(id, scope, actor(c.req.raw))
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -463,13 +502,13 @@ export function CredentialRoutes(
         if (!isLoopbackLocalRequest(c.req.raw)) {
           return c.json(errorBody("loopback_required", "This computer's login is chosen from this computer only"), 403)
         }
-        const cleared = await credentials.clearActiveCredentials(body.data.machine_login.provider_ids, org(c.req.raw))
+        const cleared = await credentials.clearActiveCredentials(body.data.machine_login.provider_ids, org(c.req.raw), actor(c.req.raw))
         return c.json({ credentials: [], ...cleared })
       }
       if (!credentials.setActiveCredentials) {
         return c.json(errorBody("credential_activate_unsupported", "This host does not choose between accounts"), 501)
       }
-      const result = await credentials.setActiveCredentials(body.data.ids, org(c.req.raw))
+      const result = await credentials.setActiveCredentials(body.data.ids, org(c.req.raw), actor(c.req.raw))
       if (!result.ok) {
         if (result.reason === "not_found") {
           return c.json(errorBody("credential_not_found", "Credential not found"), 404)
@@ -482,6 +521,7 @@ export function CredentialRoutes(
       return c.json({ credentials: result.credentials.map(redact) })
     })
     .patch("/:id/status", async (c) => {
+      if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       const body = statusBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       try {
@@ -492,6 +532,7 @@ export function CredentialRoutes(
       }
     })
     .patch("/:id/scope", async (c) => {
+      if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       const body = scopeBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       if (!credentials.updateCredentialScope) {
@@ -511,15 +552,14 @@ export function CredentialRoutes(
       }
     })
     .delete("/:id", async (c) => {
+      if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json({ deleted: false })
       const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })
     })
     .delete("/provider/:providerId", async (c) => {
-      const count = await credentials.deleteCredentialsByProvider(
-        c.req.param("providerId"),
-        undefined,
-        org(c.req.raw),
-      )
+      const rows = (await credentials.listCredentials(org(c.req.raw))).filter((row) => row.provider_id === c.req.param("providerId") && row.owner === actor(c.req.raw))
+      const deleted = await Promise.all(rows.map((row) => credentials.deleteCredential(row.id, org(c.req.raw))))
+      const count = deleted.filter(Boolean).length
       return c.json({ deleted: count })
     })
 }

@@ -74,6 +74,8 @@ function hostedOptions(
       deleteCredentialsByProvider: vi.fn(async () => 0),
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
+      accountSelections: async () => ({}),
+      setAccountSources: async () => ({}),
     },
     relay: {
       relayUrl: "https://relay.example.test",
@@ -619,7 +621,7 @@ describe("control-plane services", () => {
   test("workspace supervisor accepts an explicit default sandbox driver override", async () => {
     const supervisor = await import("../workspace/supervisor")
     const supervisorOptions = await import("../workspace/supervisor/options")
-    supervisor.configureWorkspaceSupervisor({
+    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://127.0.0.1:0",
       default_sandbox_driver: "daytona",
     })

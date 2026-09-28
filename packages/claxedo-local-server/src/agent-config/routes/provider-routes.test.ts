@@ -64,9 +64,9 @@ const app = agentConfigProviderRoutes({
 
 beforeAll(async () => {
   setBackendOverride(createTestBackend())
-  await putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "test-key-a" }, "org_a")
-  await putCredential({ provider_id: "anthropic", kind: "api_key", source: "managed", secret: "test-key-b" }, "org_b")
-  await putCredential({ provider_id: "anthropic", kind: "api_key", source: "managed", secret: "host-key" })
+  await putCredential({ owner: "org_a", provider_id: "openai", kind: "api_key", source: "managed", secret: "test-key-a" }, "org_a")
+  await putCredential({ owner: "org_b", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "test-key-b" }, "org_b")
+  await putCredential({ owner: "local", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "host-key" })
 })
 afterAll(async () => {
   ClaxedoDB.close()

@@ -202,6 +202,8 @@ describe("host primitives package surface", () => {
           deleteCredentialsByProvider: vi.fn(async () => 0),
           updateCredentialStatus: vi.fn(async () => {}),
           syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
+          accountSelections: async () => ({}),
+          setAccountSources: async () => ({}),
         },
         relay: {
           relayUrl: "https://relay.example.test",
@@ -229,7 +231,7 @@ describe("host primitives package surface", () => {
     // Driven, not compared: the composition has to expose the injected
     // credential port as the one a route calls, and identity on the services
     // bag says nothing about which object answers that call.
-    await expect(services.credentials.putCredential({
+    await expect(services.credentials.putCredential({ owner: null,
       provider_id: "daytona",
       kind: "sandbox_driver",
       source: "managed",

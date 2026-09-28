@@ -7,7 +7,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
-import { DialogCustomProvider, removeCustomProviderConfig, useProviders } from "@/features/settings/app-ports"
+import { DialogCustomProvider, removeCustomProviderConfig, useProviders, useServerProduct } from "@/features/settings/app-ports"
 import { useSettingsScope } from "@/features/settings/scope/settings-scope"
 import {
   canDisconnectProvider,
@@ -18,6 +18,7 @@ import {
 } from "@/features/settings/provider-settings-logic"
 import { SettingsEmpty, SettingsList } from "@/ui/controls/settings-list"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
+import { HostedAccountSourceChoice, useHostedAccountSources } from "@/features/settings/ui/hosted-account-source"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -60,6 +61,12 @@ export const HarnessProvidersSection: Component<{
   const dialog = useDialog()
   const scope = useSettingsScope()
   const providers = useProviders(() => props.harness, scope.scopeRef)
+  const product = useServerProduct()
+  const accountSources = useHostedAccountSources({
+    harness: () => props.harness,
+    enabled: () => props.harness === "pi" && !product.localExecution(),
+    onChanged: async () => { await providers.refresh() },
+  })
   const providerList = createMemo(() => providers.state())
   const providerItems = createMemo(() => Array.from(providerList().all.values()))
   const [search, setSearch] = createSignal("")
@@ -176,6 +183,14 @@ export const HarnessProvidersSection: Component<{
         )}
       </Show>
 
+      <Show when={accountSources.error()}>
+        {(message) => (
+          <SettingsEmpty>
+            <span role="alert" data-component="account-source-error">{message()}</span>
+          </SettingsEmpty>
+        )}
+      </Show>
+
       <Show when={!providers.error() && !providers.loading() && providerItems().length === 0}>
         <SettingsEmpty>
           <span data-component={`${props.harness}-catalog-empty`}>
@@ -228,30 +243,32 @@ export const HarnessProvidersSection: Component<{
                   scope={scope.scopeRef()}
                   note={note(item.id) ? language.t(note(item.id)!) : undefined}
                   onConnected={async () => { await providers.refresh() }}
-                />
+                >
+                  <HostedAccountSourceChoice providerId={item.id} providerName={item.name} sources={accountSources} />
+                </ProviderSetupRow>
               )}
             >
-              <div
-                class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none"
-                data-provider={item.id}
-              >
-                <div class="flex min-w-0 items-center gap-3">
-                  <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
-                  <div class="flex min-w-0 flex-col gap-0.5">
-                    <span class="text-14-medium text-text-strong">{item.name}</span>
-                    <Show when={note(item.id)}>
-                      {(key) => <span class="text-12-regular text-text-weak">{language.t(key())}</span>}
+              <div class="border-b border-border-weak-base last:border-none" data-provider={item.id}>
+                <div class="flex flex-wrap items-center justify-between gap-4 py-3">
+                  <div class="flex min-w-0 items-center gap-3">
+                    <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
+                    <div class="flex min-w-0 flex-col gap-0.5">
+                      <span class="text-14-medium text-text-strong">{item.name}</span>
+                      <Show when={note(item.id)}>
+                        {(key) => <span class="text-12-regular text-text-weak">{language.t(key())}</span>}
+                      </Show>
+                    </div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <Tag>{type(item)}</Tag>
+                    <Show when={canDisconnect(item)}>
+                      <Button size="large" variant="ghost" onClick={() => void disconnect(item)}>
+                        {language.t("common.disconnect")}
+                      </Button>
                     </Show>
                   </div>
                 </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <Tag>{type(item)}</Tag>
-                  <Show when={canDisconnect(item)}>
-                    <Button size="large" variant="ghost" onClick={() => void disconnect(item)}>
-                      {language.t("common.disconnect")}
-                    </Button>
-                  </Show>
-                </div>
+                <HostedAccountSourceChoice providerId={item.id} providerName={item.name} sources={accountSources} />
               </div>
             </Show>
           )}

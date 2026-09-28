@@ -5,7 +5,7 @@ import type { CodexTransportOptions } from "./index"
 import { CodexRpc } from "./rpc"
 
 export async function spawnCodexProfile(input: StartInput, options: CodexTransportOptions, services: HarnessServices, signal: AbortSignal) {
-  const profileInput = { homeRoot: options.homeRoot, owner: input.owner, credentials: input.credentials, projection: input.projection }
+  const profileInput = { homeRoot: options.homeRoot, credentials: input.credentials, projection: input.projection }
   await services.recordHomeUse(codexProfileHome(profileInput))
   const profile = await prepareCodexProfile({ ...profileInput, ownerHome: options.ownerHome })
   const env = { ...stringRecord(options.env ?? process.env), CODEX_HOME: profile.home }

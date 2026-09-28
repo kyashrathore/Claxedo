@@ -35,7 +35,7 @@ async function backend(): Promise<OpenCodeBackend> {
   return {
     execution: "in-process", root, directory, server, expectedMcp: "config", get rotated() { return rotated.map((item) => item.server) },
     harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "proof" },
-    credentials: { providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
+    credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "one" },
     owner: { kind: "person", userId: "owner" },
     origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
@@ -57,7 +57,7 @@ async function backend(): Promise<OpenCodeBackend> {
       const port = await reservePort()
       const next = await startScriptedModelServer({ port, red: false })
       rotated.push({ port, server: next })
-      return { credentials: { providers: { proof: { baseUrl: next.v1Url, placeholder: "opencode-placeholder-two",
+      return { credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { proof: { baseUrl: next.v1Url, placeholder: "opencode-placeholder-two",
         authMode: "api-key" as const } }, secrets: {}, leaseGeneration: "two" },
         observed: () => next.requests.some((request) => request.authorization === "Bearer opencode-placeholder-two") }
     },
@@ -87,7 +87,7 @@ function proofProvider(extra: Record<string, unknown> = {}, models: Record<strin
 
 function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[0], state: OpenCodeBackend,
   config: Record<string, unknown> = {}) {
-  return new OpenCodeSdkTransport(services, { login: { placement: "loopback", machineOwnerUserId: "machine", canUseOwnLogin: true },
+  return new OpenCodeSdkTransport(services, {
     databasePath: path.join(state.root, "opencode.db"),
     configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
       provider: { proof: proofProvider() },
@@ -542,7 +542,6 @@ test("config options name the session's model, a requested model, and a draft's 
 test("the owner catalog applies carried custom definitions in a cloud transport and refuses a different owner", async () => {
   const context = await setupConformance({ name: "opencode-custom", backend,
     makeTransport: (services, current) => new OpenCodeSdkTransport(services, {
-      login: { placement: "cloud", machineOwnerUserId: "", canUseOwnLogin: false },
       databasePath: path.join((current as OpenCodeBackend).root, "opencode.db"),
     }) })
   try {
@@ -556,7 +555,7 @@ test("the owner catalog applies carried custom definitions in a cloud transport 
     const entries = await transport.providerCatalog.providers(draft)
     expect(entries.find((entry) => entry.id === "carried")).toMatchObject({ name: "Carried", connected: true, models: [expect.objectContaining({ id: "carried" })] })
     expect(entries.find((entry) => entry.id === "openai")).toMatchObject({ connected: false, models: [] })
-    await expect(transport.providerCatalog.providers({ ...draft, owner: { kind: "person", userId: "foreign" } })).rejects.toBeInstanceOf(OpenCodeOwnerMismatchError)
+    await expect(transport.providerCatalog.providers({ ...draft, credentials: { ...credentials, accountOwner: "foreign" } })).rejects.toBeInstanceOf(OpenCodeOwnerMismatchError)
     const events: RoutedEvent[] = []
     for await (const event of transport.send(context.session, { ...context.turn("Reply with exactly this one token: CARRIEDTURN"),
       model: { providerID: "carried", modelID: "carried" } }, context.turnBroker())) events.push(event)
@@ -607,15 +606,14 @@ test("OpenCode dispose retries an engine whose first close failed, and reports s
   } finally { await context.close() }
 }, 60_000)
 
-for (const machineOwnerUserId of ["owner", "machine"]) test(`a machine-env provider key is ${machineOwnerUserId === "owner" ? "spent by the machine owner's session" : "refused for anyone else"}`, async () => {
-  const context = await setupConformance({ name: `opencode-machine-env-${machineOwnerUserId}`, backend,
+for (const machineLoginAllowed of [true, false]) test(`a machine-env provider key is ${machineLoginAllowed ? "spent by a session whose owner may use the machine login" : "refused for anyone else"}`, async () => {
+  const context = await setupConformance({ name: `opencode-machine-env-${machineLoginAllowed}`, backend,
     makeTransport: (services, current) => new OpenCodeSdkTransport(services, {
-      login: { placement: "loopback", machineOwnerUserId, canUseOwnLogin: true },
       databasePath: path.join((current as OpenCodeBackend).root, "opencode.db"),
     }) })
   try {
     const server = (context.backend as OpenCodeBackend).server
-    const credentials = { ...context.start.credentials, providers: { ...context.start.credentials.providers,
+    const credentials = { ...context.start.credentials, machineLoginAllowed, providers: { ...context.start.credentials.providers,
       envco: { baseUrl: server.v1Url, placeholder: "machine-env-placeholder", authMode: "api-key" as const } } }
     await context.transport.configure(context.session, { credentials, providerDefinitions: [{ id: "envco", name: "Env Co",
       npm: "@ai-sdk/openai-compatible", baseURL: "https://unused.invalid/v1", headers: {}, models: { envco: { name: "Env Co" } },
@@ -625,7 +623,7 @@ for (const machineOwnerUserId of ["owner", "machine"]) test(`a machine-env provi
       for await (const event of context.transport.send(context.session, { ...context.turn("Reply with exactly this one token: MACHINEENV"),
         model: { providerID: "envco", modelID: "envco" } }, context.turnBroker())) events.push(event)
     })().then(() => undefined, (error: unknown) => error)
-    if (machineOwnerUserId === "owner") {
+    if (machineLoginAllowed) {
       expect(failure).toBeUndefined()
       expect(events.some((event) => event.event.type === "text-delta" && event.event.delta.includes("MACHINEENV"))).toBe(true)
       expect(server.requests.some((request) => request.authorization === "Bearer machine-env-placeholder")).toBe(true)

@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest"
 import { claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
 
 const endpoint = "https://control.test/api/runtime-authority/connection-secrets/workspace-1"
-const owner = { kind: "person" as const, userId: "actor-carol" }
+const owner = { kind: "person" as const, userId: "user-carol" }
 const descriptor = { connectionId: "custom-acp", providerKey: "acp", configRevision: 7, enabled: true, config: {}, secretRefs: { token: "ref-1" } }
 
 async function bootResolver() {
@@ -23,7 +23,7 @@ test("sandbox boot leases a request's connection secrets with the relay proof th
       .toEqual({ secrets: { token: "leased-secret" }, secretLeaseGeneration: "revision-1" })
     expect(fetcher).toHaveBeenCalledWith(endpoint, expect.objectContaining({
       headers: { authorization: "Bearer relay-proof", "content-type": "application/json" },
-      body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision: 7, ownerActorId: "actor-carol" }),
+      body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision: 7, ownerUserId: "user-carol" }),
     }))
   } finally { fetcher.mockRestore() }
 })
@@ -38,7 +38,7 @@ test("sandbox boot leases a background turn's connection secrets with the turn's
       .toEqual({ secrets: { token: "leased-secret" }, secretLeaseGeneration: "revision-1" })
     expect(fetcher).toHaveBeenCalledWith(endpoint, expect.objectContaining({
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision: 7, ownerActorId: "actor-carol",
+      body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision: 7, ownerUserId: "user-carol",
         turnLease: "signed-turn-lease" }),
     }))
     expect(contributions).not.toContain("connection-secrets")

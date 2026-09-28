@@ -47,7 +47,7 @@ export async function scriptedTransport(options: { holdTurnStart?: boolean; cloc
     clock: options.clock ?? { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
   const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner"), env: {} })
   const startInput: StartInput = { workspaceId: "w1", sessionId: "s1", directory: root, locality: "local", owner: { kind: "machine-owner" },
-    config: { harness: { id: "codex", access: "native" } }, credentials: { providers: {}, secrets: {}, leaseGeneration: "g1" },
+    config: { harness: { id: "codex", access: "native" } }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" },
     projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }
   const close = async () => {
     await transport.dispose()

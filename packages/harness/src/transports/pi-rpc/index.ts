@@ -76,13 +76,13 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
-    const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
+    const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.options)
     const rpc = await launchPi(this.host, input, profile, broker, { role: "harness" })
     return this.remember(input, profile, rpc, broker, await piUpstreamOf(rpc, this.services.clock))
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
-    const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
+    const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.options)
     const rpc = await resumePi(this.host, input, profile, broker, input.binding.upstreamSessionId)
     return this.remember(input, profile, rpc, broker, input.binding.upstreamSessionId)
   }
@@ -199,7 +199,7 @@ export class PiRpcTransport implements HarnessTransport {
     if (!update.credentials && !update.projection) return { state: "applied" }
     if (entry.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
     const start = mergeStartInput(entry.start, update)
-    const profile = selectPiProfile(start.owner, start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
+    const profile = selectPiProfile(start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
     await entry.rpc.retire(piDeadline(this.services.clock))
     this.entries.delete(session.binding.sessionId)
     entry.rpc = await resumePi(this.host, start, profile, entry.broker, entry.session.binding.upstreamSessionId)
@@ -224,7 +224,7 @@ export class PiRpcTransport implements HarnessTransport {
 
   private async probe<T>(draft: DraftLaunch, model: PromptModel | undefined, read: (rpc: PiRpc) => Promise<T>): Promise<T> {
     const input: StartInput = { ...draft, sessionId: prefixedRandomId("probe", "-"), ...(model ? { model } : {}) }
-    const profile = selectPiProfile(input.owner, input.credentials, input.directory, input.sessionId, this.options)
+    const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.options)
     const rpc = await launchPi(this.host, input, profile, undefined, { role: "probe" })
     try { return await read(rpc) }
     finally { await rpc.retire(piDeadline(this.services.clock)) }

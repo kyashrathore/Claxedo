@@ -457,6 +457,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         jti: "jti_htt",
         hostId: "host_1",
         enrollmentId: "enr_1",
+        ownerUserId: "usr_owner",
         workspaceIds: ["ws_1"],
         relayUrl: "https://relay.test/",
       },

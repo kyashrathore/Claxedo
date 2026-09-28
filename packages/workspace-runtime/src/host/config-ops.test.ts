@@ -21,7 +21,7 @@ test("runtime-owned previews read the current saved model on every request", asy
     attachments: { for: async () => ({ handle, session }) } as unknown as SessionAttachments,
     transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} },
     savedCommands: () => [],
-    launch: { workspaceId: "workspace", credentials: () => ({ providers: {}, secrets: {}, leaseGeneration: "one" }),
+    launch: { workspaceId: "workspace", credentials: () => ({ placement: "loopback", machineOwnerUserId: "fixture", canUseOwnLogin: true, accounts: {}, leaseGeneration: "one" }),
       projection: () => ({ generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }) },
   })
   await reads.configOptions({ sessionId: "session" })
