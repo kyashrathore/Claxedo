@@ -7,7 +7,7 @@ import {
   type JSX,
   type ParentProps,
 } from "solid-js"
-import { createMediaQuery } from "@solid-primitives/media"
+import { usePhone } from "@/lib/viewport"
 import { useActiveSession } from "@/files"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import type { PlacementId } from "@/server"
@@ -17,7 +17,7 @@ import type { ReviewFocus } from "@/review"
 import { filePathFromTab, type FileReveal, type PanelFocus } from "./focus"
 import { rememberPanelPerSession, type SessionPanelSnapshot } from "./session-memory"
 import { createPanelTabs } from "./tabs-store"
-import { clampPanelWidth, PANEL_PHONE_MAX_WIDTH, restingPanelWidth, workbenchInset } from "./width"
+import { clampPanelWidth, restingPanelWidth, workbenchInset } from "./width"
 import type { ReviewWorkspaceTab, WorkspacePanelNavigator } from "./workspace-tabs"
 
 export type PanelShowOptions = { readonly navigator?: WorkspacePanelNavigator | null }
@@ -59,7 +59,7 @@ function readWidth(value: unknown): number | null | undefined {
 }
 
 function createPanelSize(): PanelSize & { readonly setFullWidth: (fullWidth: boolean) => void } {
-  const phone = createMediaQuery(`(max-width: ${PANEL_PHONE_MAX_WIDTH}px)`)
+  const phone = usePhone()
   const [chosen, setChosen] = persistedSignal<number | null>(preferenceKey("panel", "width"), null, readWidth)
   const [fullWidth, setFullWidth] = createSignal(false)
   const [available, setAvailable] = createSignal(typeof window === "undefined" ? 1024 : window.innerWidth)

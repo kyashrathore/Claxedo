@@ -1,4 +1,4 @@
-import { NARROW_VIEWPORT_PX } from "./options"
+import { coarsePointerMediaQuery, isPhoneWidth } from "@/lib/viewport"
 
 export const MAX_WEBGL_RENDERERS = 12
 
@@ -22,8 +22,8 @@ export function probeWebGl(doc: Pick<Document, "createElement"> | undefined = do
 
 export function preferDomRenderer(win: Pick<Window, "matchMedia" | "innerWidth"> | undefined = window): boolean {
   if (!win) return false
-  if (win.matchMedia?.("(pointer: coarse)")?.matches) return true
-  return win.innerWidth <= NARROW_VIEWPORT_PX - 1
+  if (win.matchMedia?.(coarsePointerMediaQuery)?.matches) return true
+  return isPhoneWidth(win.innerWidth)
 }
 
 export function createRendererBudget(input?: { max?: number; probe?: () => boolean }): RendererBudget {

@@ -1,9 +1,11 @@
+import { fileURLToPath } from "node:url"
 import type { Page } from "@playwright/test"
 import {
   acpScriptToken,
   expect,
   expectWithinBaseline,
   SCRIPTED_ACP_HARNESS,
+  sessionRoute,
   test,
   type ClaxedoApi,
   type SessionRow,
@@ -11,6 +13,8 @@ import {
   type Workspace,
   UI,
 } from "../harness"
+
+const IMAGE = fileURLToPath(new URL("../../public/web-app-manifest-192x192.png", import.meta.url))
 
 type Arranged = { readonly workspace: Workspace; readonly first: SessionRow; readonly second: SessionRow }
 
@@ -86,4 +90,32 @@ test("33 phone: the drawer stays open on a session while another project gains s
   await expect(close).toBeVisible()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
   expect((await api.sessions(other.directory)).map((session) => session.title)).toContain("Arrived 2")
+})
+
+test("33 phone: what a mouse reveals on hover shows on touch", async ({ stack, api, app }) => {
+  const pages = await stack.localPages({ "/preview.html": "<!doctype html><title>Preview</title><h1>Preview page</h1>" })
+  const workspace = await stack.daemon.makeWorkspace("touch", "Touch")
+  await stack.acp.write("link", { steps: [{ kind: "text", text: `Open the [preview page](${pages.url}/preview.html).` }] })
+  const session = await api.createSession(workspace.directory, { title: "Touch", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, session.id, `Link the preview. ${acpScriptToken("link")}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("link", { name: "preview page" })).toBeVisible()
+
+  const chooser = app.waitForEvent("filechooser")
+  await app.getByRole("button", { name: "Add", exact: true }).tap()
+  await app.getByRole("menuitem", { name: /Images and files/ }).tap()
+  await (await chooser).setFiles(IMAGE)
+  await expect(app.getByRole("button", { name: "Remove attachment" })).toHaveCSS("opacity", "1")
+  await expect(app.getByRole("button", { name: "Mark up image" })).toHaveCSS("opacity", "1")
+
+  await app.getByRole("link", { name: "preview page" }).tap()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await expect(panel.getByRole("textbox", { name: "Enter URL or search" })).toHaveValue(`${pages.url}/preview.html`)
+  await expect(panel.getByRole("button", { name: "Close review" })).toHaveCSS("opacity", "1")
+  await panel.getByRole("button", { name: "Close workspace panel" }).tap()
+
+  await app.setViewportSize({ width: 1024, height: 768 })
+  await app.getByRole("button", { name: UI.hideSidebar }).tap()
+  await expect(app.getByRole("button", { name: "Close Touch", exact: true })).toHaveCSS("opacity", "1")
+  expect(pages.requested).toEqual(["/preview.html"])
 })

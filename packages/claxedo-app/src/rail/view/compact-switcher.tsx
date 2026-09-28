@@ -126,7 +126,7 @@ function SwitcherTab(props: { readonly item: SwitcherItem; readonly active: bool
       <button
         type="button"
         aria-label={t("rail.closeTab", { title: props.item.title })}
-        class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
+        class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100 pointer-coarse:opacity-100"
         classList={{ "opacity-65": props.active, "group-data-[command-hints]/switcher:hidden": !!props.hint }}
         onPointerDown={(event) => {
           event.preventDefault()
