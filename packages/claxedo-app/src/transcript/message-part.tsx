@@ -1,4 +1,4 @@
-import { claxedoToolName, toolNameAliases } from "@claxedo/agent-runtime-contract"
+import { claxedoToolName, toolNameAliases, toolOpensByDefault } from "@claxedo/agent-runtime-contract"
 import {
   Component,
   createEffect,
@@ -522,15 +522,9 @@ export function renderable(part: AgentContentPart, showReasoningSummaries = true
   return !!PART_MAPPING[part.type]
 }
 
-function toolDefaultOpen(tool: string, shell = false, edit = false): boolean | undefined {
-  if (tool === "bash") return shell
-  if (tool === "edit" || tool === "write" || tool === "apply_patch") return edit
-  return undefined
-}
-
 export function partDefaultOpen(part: AgentContentPart, shell = false, edit = false): boolean | undefined {
   if (part.type !== "tool") return undefined
-  return toolDefaultOpen(part.tool, shell, edit)
+  return toolOpensByDefault(part.tool, { shell, edit })
 }
 
 type GroupMember = { message: AgentAssistantMessage; part: AgentToolPart }
@@ -1197,6 +1191,7 @@ export interface ToolProps {
   onContentRendered?: () => void
   forceOpen?: boolean
   locked?: boolean
+  bodyPending?: boolean
 }
 
 export type ToolComponent = Component<ToolProps>
@@ -1349,7 +1344,15 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
 
   const render = createMemo(() => claxedo() ? ClaxedoTool : ToolRegistry.render(part().tool) ?? GenericTool)
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
-  const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
+  const [opened, setOpened] = createSignal(props.defaultOpen ?? false)
+  const bodyPending = () => part().headerOnly === true
+  createEffect(() => {
+    if (bodyPending() && (controlledOpen() ?? opened())) data.loadToolBody?.(part())
+  })
+  const handleToolOpenChange = (open: boolean) => {
+    setOpened(open)
+    props.onToolOpenChange?.(open)
+  }
 
   return (
     <Show when={!hideQuestion()}>
@@ -1383,7 +1386,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   }
                   defaultOpen={props.defaultOpen}
                   open={controlledOpen()}
-                  onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
+                  onOpenChange={handleToolOpenChange}
                   subtitle={taskSubtitle() ?? claxedoSubject()?.subtitle}
                   href={taskHref() ?? claxedoSubject()?.href}
                   exitCode={shellExitCode(partMetadata())}
@@ -1405,7 +1408,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               open={controlledOpen()}
-              onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
+              onOpenChange={handleToolOpenChange}
+              bodyPending={bodyPending()}
               deferContent={props.deferToolContent}
               virtualizeDiff={props.virtualizeDiff}
               onContentRendered={props.onContentRendered}
@@ -2246,7 +2250,7 @@ ToolRegistry.register({
   render(props) {
     const i18n = useTranscriptI18n()
     const fileComponent = useFileComponent()
-    const files = createMemo(() => patchFiles(props.metadata.files))
+    const files = createMemo(() => patchFiles(props.metadata.files, props.bodyPending))
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const single = createMemo(() => {
       const list = files()

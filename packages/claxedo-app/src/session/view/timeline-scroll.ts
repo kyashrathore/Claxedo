@@ -3,7 +3,6 @@ import { createStore } from "solid-js/store"
 import type { SessionView } from "@/session"
 import { createScrollGestureWindow, type MessageTimelineProps, type TimelineNavTurn } from "./timeline"
 import { createAutoScroll, type AutoScroll } from "./auto-scroll"
-import { createHistoryBackfill } from "./history-backfill"
 import { createHistoryPaging, type HistoryAnchor } from "./history-paging"
 import { createTurnPick } from "./turn-pick"
 import { computeScrollState, type ScrollState } from "./scroll-anchor"
@@ -28,6 +27,7 @@ export type TimelineScrollProps = Pick<
   | "setScrollToMessage"
   | "setHistoryAnchor"
   | "onMessageSelect"
+  | "onReaderToggle"
 >
 
 type ScrollHandles = {
@@ -59,7 +59,6 @@ type ScrollParts = {
   readonly auto: AutoScroll
   readonly gesture: ReturnType<typeof createScrollGestureWindow>
   readonly paging: ReturnType<typeof createHistoryPaging>
-  readonly backfill: ReturnType<typeof createHistoryBackfill>
   readonly schedule: (el: HTMLDivElement) => void
   readonly handles: ScrollHandles
   readonly selected: () => string | undefined
@@ -71,7 +70,7 @@ type ScrollParts = {
 }
 
 function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
-  const { auto, gesture, paging, backfill, schedule, handles } = parts
+  const { auto, gesture, paging, schedule, handles } = parts
   return {
     scroll: parts.scroll,
     onResumeScroll: parts.resume,
@@ -85,10 +84,7 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
     onMarkScrollGesture: gesture.mark,
     hasScrollGesture: gesture.active,
     onUserScroll: () => {},
-    onHistoryScroll: () => {
-      paging.onScroll()
-      backfill.onScroll()
-    },
+    onHistoryScroll: paging.onScroll,
     onHistoryPull: paging.onPull,
     shouldAnchorBottom: () => !parts.selected() && !auto.userScrolled(),
     hasScrollTarget: () => !!parts.selected(),
@@ -101,6 +97,7 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
     setScrollToEnd: (fn) => (handles.scrollToEnd = fn),
     setScrollToMessage: (fn) => (handles.scrollToMessage = fn ?? (() => false)),
     setHistoryAnchor: (anchor) => (handles.anchor = anchor),
+    onReaderToggle: () => auto.restoreFollowing(false),
     onMessageSelect: (turn: TimelineNavTurn) => {
       auto.pause()
       parts.select(turn.id)
@@ -115,7 +112,6 @@ type TimelineScrollInput = {
   readonly view: () => SessionView
   readonly active: () => boolean
   readonly working: () => boolean
-  readonly revealed: () => boolean
 }
 
 type HistoryInput = TimelineScrollInput & {
@@ -129,8 +125,7 @@ function createHistoryLoads(input: HistoryInput) {
   const { view, handles, scroller, selected } = input
   const paging = createHistoryPaging({ view, scroller, userScrolled: input.userScrolled, anchor: () => handles.anchor })
   const pick = createTurnPick({ view, loadUntil: paging.loadUntil, handles, selected, scroller })
-  const backfill = createHistoryBackfill({ view, scroller, anchor: () => handles.anchor, open: () => input.revealed() && !input.working() && !selected() })
-  return { paging, pick, backfill }
+  return { paging, pick }
 }
 
 export function createTimelineScroll(input: TimelineScrollInput) {
@@ -141,7 +136,7 @@ export function createTimelineScroll(input: TimelineScrollInput) {
   const gesture = createScrollGestureWindow({ scroller: () => scroller })
   const auto = createAutoScroll({ working: input.working, enabled: input.active, overflowAnchor: "none", mayFollow: () => !gesture.active() })
   const schedule = createScrollStateFrame((next) => setScroll(next))
-  const { paging, pick, backfill } = createHistoryLoads({ ...input, handles, scroller: () => scroller, selected, userScrolled: auto.userScrolled })
+  const { paging, pick } = createHistoryLoads({ ...input, handles, scroller: () => scroller, selected, userScrolled: auto.userScrolled })
   const settle = () => {
     handles.scrollToEnd()
     if (scroller) schedule(scroller)
@@ -156,7 +151,7 @@ export function createTimelineScroll(input: TimelineScrollInput) {
     })
   }
   const setScroller = (el: HTMLDivElement | undefined) => (scroller = el)
-  const parts = { scroll, auto, gesture, paging, backfill, schedule, handles, selected, select, resume, seekTurn: pick.seek, scroller: () => scroller, setScroller }
+  const parts = { scroll, auto, gesture, paging, schedule, handles, selected, select, resume, seekTurn: pick.seek, scroller: () => scroller, setScroller }
   return {
     props: timelineScrollProps(parts),
     selected,

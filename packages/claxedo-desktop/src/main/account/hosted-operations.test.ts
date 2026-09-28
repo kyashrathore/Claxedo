@@ -120,6 +120,48 @@ describe("resolveHostedOperation", () => {
     )
   })
 
+  test("forwards a cloud session's first read with the reader's viewport, and only the declared keys", () => {
+    expect(resolveHostedOperation("session.outline", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      rows: 40,
+      cols: 120,
+      reasoning: "1",
+      shell: "0",
+      edit: "1",
+      view: "must-not-reach-the-server",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/outline?workspaceId=ws_1&rows=40&cols=120&reasoning=1&shell=0&edit=1",
+    })
+    expect(resolveHostedOperation("session.outline", { sessionId: "ses_1", workspaceId: "ws_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/outline?workspaceId=ws_1",
+    })
+  })
+
+  test("forwards a cloud session's page read with its cursor and the reader's viewport, only the declared keys, and requires every one", () => {
+    const read = { sessionId: "ses_1", workspaceId: "ws_1", before: "cursor 1", rows: 40, cols: 120, reasoning: "0", shell: "1", edit: "0" }
+    expect(resolveHostedOperation("session.turnPage", { ...read, view: "must-not-reach-the-server", limit: 5 })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/page?workspaceId=ws_1&before=cursor+1&rows=40&cols=120&reasoning=0&shell=1&edit=0",
+    })
+    for (const key of ["workspaceId", "before", "rows", "cols", "reasoning", "shell", "edit"]) {
+      expect(() => resolveHostedOperation("session.turnPage", { ...read, [key]: undefined }), key).toThrow(MissingOperationParameter)
+    }
+  })
+
+  test("forwards a cloud session's part read with the message and part it names, only the declared keys, and requires every one", () => {
+    const read = { sessionId: "ses_1", workspaceId: "ws_1", messageId: "msg 1", partId: "prt_1" }
+    expect(resolveHostedOperation("session.part", { ...read, rows: 40, before: "must-not-reach-the-server" })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/part?workspaceId=ws_1&messageId=msg+1&partId=prt_1",
+    })
+    for (const key of ["sessionId", "workspaceId", "messageId", "partId"]) {
+      expect(() => resolveHostedOperation("session.part", { ...read, [key]: undefined }), key).toThrow(MissingOperationParameter)
+    }
+  })
+
   test("reads the account's cloud usage facts for a range, and has no hosted dashboard read to route to", () => {
     expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "total" })).toEqual({
       method: "GET",

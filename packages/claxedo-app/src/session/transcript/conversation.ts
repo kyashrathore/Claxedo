@@ -1,5 +1,5 @@
 import { batch } from "solid-js"
-import { produce, type SetStoreFunction } from "solid-js/store"
+import { produce, unwrap, type SetStoreFunction } from "solid-js/store"
 import type { QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
 import type { ConversationMessage } from "@/transcript"
 import { isOptimisticMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
@@ -87,6 +87,11 @@ export function appendDelta(set: SetTranscript, data: TranscriptData, messageId:
   if (field === "text" && !data.partsWithText[partId] && textIsPresent(text)) set("partsWithText", partId, true)
 }
 
+function landedParts(current: readonly TranscriptPart[] | undefined, read: readonly TranscriptPart[]): TranscriptPart[] {
+  const byId = new Map(current?.map((part) => [part.id, part]))
+  return read.map((part) => mergedPart(byId.get(part.id), part))
+}
+
 export function prependPage(set: SetTranscript, page: TranscriptPage): void {
   const older = pageMessages(page)
   batch(() => {
@@ -94,7 +99,7 @@ export function prependPage(set: SetTranscript, page: TranscriptPage): void {
     set(
       "parts",
       produce((parts) => {
-        for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
+        for (const entry of page.entries) parts[entry.info.id] = landedParts(unwrap(parts[entry.info.id]), entry.parts)
       }),
     )
     markTextParts(set, pageParts(page))
@@ -116,34 +121,9 @@ export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
       "parts",
       produce((parts) => {
         for (const id of Object.keys(parts)) if (!kept.has(id) && !freshIds.has(id)) delete parts[id]
-        for (const entry of page.entries) parts[entry.info.id] = entry.parts.slice()
+        for (const entry of page.entries) parts[entry.info.id] = landedParts(unwrap(parts[entry.info.id]), entry.parts)
       }),
     )
-    markTextParts(set, pageParts(page))
-  })
-}
-
-function mergedParts(current: readonly TranscriptPart[] | undefined, canonical: readonly TranscriptPart[]): TranscriptPart[] {
-  if (!current || current.length === 0) return canonical.slice()
-  const byId = new Map(current.map((part) => [part.id, part]))
-  const known = new Set(canonical.map((part) => part.id))
-  return [...canonical.map((part) => mergedPart(byId.get(part.id), part)), ...current.filter((part) => !known.has(part.id))]
-}
-
-function withLatestTurn(messages: readonly ConversationMessage[], fresh: readonly ConversationMessage[]): ConversationMessage[] {
-  const freshIds = new Set(fresh.map((message) => message.id))
-  const at = messages.findIndex((message) => freshIds.has(message.id))
-  const current = new Map(messages.map((message) => [message.id, message]))
-  const merged = fresh.map((message) => mergedMessage(current.get(message.id), message))
-  const rest = messages.filter((message) => !freshIds.has(message.id))
-  if (at === -1) return [...rest, ...merged]
-  return [...rest.slice(0, at), ...merged, ...rest.slice(at)]
-}
-
-export function mergeLatestTurn(set: SetTranscript, page: TranscriptPage): void {
-  batch(() => {
-    set("messages", (messages) => withLatestTurn(messages, pageMessages(page)))
-    for (const entry of page.entries) set("parts", entry.info.id, (parts) => mergedParts(parts, entry.parts))
     markTextParts(set, pageParts(page))
   })
 }

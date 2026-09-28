@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "Modelos",
   "settings.models.description": "Las cuentas en las que se ejecutan tus agentes y los modelos que ofrece cada una.",
   "settings.models.tab.accounts": "Cuentas",
-  "provider.connect.context.harness": "{{harness}} se ejecutará con esta cuenta.",
-  "provider.connect.context.engine": "{{engine}} la usará para los modelos de {{vendor}}.",
   "provider.connect.method.openKeyPage": "Abrir la página de claves",
   "provider.connect.method.anthropic.subscription.title": "Suscripción de Claude (Pro o Max)",
   "provider.connect.method.anthropic.subscription.for": "Usa tu plan de Claude.ai y sus límites.",

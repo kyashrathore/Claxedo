@@ -87,11 +87,10 @@ const DENY = [
   "/config",
   "/provider",
   "/auth",
-  // Family `project-files`' inventory half. `projectRoutes`
-  // (`local-server/shell/project-routes.ts`) answers for a caller it
-  // authenticates as the machine's own user when nothing signed it, so at
-  // root it lists every project this machine holds — not the one workspace
-  // the tunnel serves.
+  // Family `project-files`' inventory half. `/project/current` answers for a
+  // caller it authenticates as the machine's own user when nothing signed it,
+  // so it names the project of whatever workspace or directory the caller
+  // asks about — not the one workspace the tunnel serves.
   "/project",
 ] as const
 

@@ -1,7 +1,7 @@
 import { readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { FileSelection } from "./file-selection"
 
-export type PromptComment = {
+type PromptComment = {
   path: string
   selection?: FileSelection
   comment: string
@@ -17,18 +17,6 @@ function selection(value: unknown): FileSelection | undefined {
   if (startLine === undefined || startChar === undefined || endLine === undefined || endChar === undefined)
     return undefined
   return { startLine, startChar, endLine, endChar }
-}
-
-export function createCommentMetadata(input: PromptComment) {
-  return {
-    claxedoComment: {
-      path: input.path,
-      selection: input.selection,
-      comment: input.comment,
-      preview: input.preview,
-      origin: input.origin,
-    },
-  }
 }
 
 export function readCommentMetadata(value: unknown): PromptComment | undefined {
@@ -80,14 +68,10 @@ export function parseCommentNote(text: string) {
   } satisfies PromptComment
 }
 
-export type PromptImageMarkComment = {
+type PromptImageMarkComment = {
   filename: string
   number: number
   comment: string
-}
-
-export function createImageMarkMetadata(input: PromptImageMarkComment) {
-  return { claxedoImageMark: { filename: input.filename, number: input.number, comment: input.comment } }
 }
 
 export function readImageMarkMetadata(value: unknown): PromptImageMarkComment | undefined {

@@ -349,22 +349,25 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // 1,207 modules and 38 packages, no headroom. The Review tab's
+  // 1,210 modules and 38 packages, no headroom. The Review tab's
   // `review/loaded-diff-identity.ts` is its own module because the benchmark
   // driver imports it to compute the identity it waits for. The workbench
   // store's pane handover (`workbench/handover.ts`, `workbench/reveal-holds.ts`)
   // is the app's session-switch paint: one pane swap per switch, after the view
-  // it reveals is complete. The session outline (`server/session-outline.ts`,
-  // `server/wire/outline.ts`) and the rail's turn list
-  // (`session/view/nav-turns.ts`) let the rail list every turn before the
+  // it reveals is complete. A session opens from one first read
+  // (`server/wire/first-read.ts`) carrying its row, its turn outline and the
+  // page its transcript draws first, sized by `session/transcript-viewport.ts`
+  // from the transcript's measured size; the open view
+  // (`server/wire/session-open.ts`) carries the facts beside the row. Every
+  // later page and a tool row's whole part are read by
+  // `server/transcript-reads.ts` and parsed by `server/wire/turn-page.ts`. The
+  // rail's turn list (`session/view/nav-turns.ts`) lists every turn before the
   // transcript loads it, and `session/transcript/retained.ts` holds the latest
   // turn a return repaints from. The timeline's render range
   // (`session/view/timeline/timeline-render-range.ts`) is its own module so its
   // unit tests reach it without mounting the timeline.
   // The outgoing slot unmounts after the swap paints
-  // (`workbench/view/deferred-unmount.ts`), and after the first paint the
-  // session screen loads its history back in idle time
-  // (`session/view/history-backfill.ts`).
+  // (`workbench/view/deferred-unmount.ts`).
   // The kit (`@opencode-ai/ui`) is one of the packages; its source is not
   // walked. `@claxedo/agent-event-runtime/contracts` is one too: it owns the
   // event streams' heartbeat and the stall timeout the app's stream reader

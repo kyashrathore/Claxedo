@@ -56,11 +56,10 @@ describe("deny — the machine's credential and inventory families", () => {
     "/auth/anthropic",
     "/config",
     "/config?harness=opencode",
-    // Every project this machine holds, and the metadata write on one of them.
+    // The project of any workspace this machine holds.
     "/project",
     "/project/current",
     `/project/current?directory=${OTHER_WORKSPACE_ID}`,
-    "/project/prj_1",
   ])("%s", (path) => {
     expect(surface(path)).toEqual({ kind: "deny" })
   })

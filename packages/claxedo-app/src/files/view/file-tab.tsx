@@ -3,13 +3,13 @@ import { Portal } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
 import type { SelectedLineRange } from "@pierre/diffs"
 import { useTranslator } from "@/i18n"
+import { copyText } from "@/lib/clipboard"
 import type { FileContent, PlacementId } from "@/server"
 import { File, Markdown, type FileRevealHandle } from "@/transcript"
 import { ClaxedoIconButton as IconButton, DelayedLoading, fileHeaderActionsSlot, FileIcon, Tooltip } from "@/ui"
-import { checksum } from "@/ui/utils"
+import { checksum, getFilename } from "@/ui/utils"
 import { useFilesApi } from "../api"
 import { filesDictionary } from "../i18n"
-import { basename } from "../path"
 import { imagePreviewUrl, isMarkdownPath } from "../preview"
 import { useFiles } from "../store"
 import { createFileComments, type FileCommentProps, type FileLineComments } from "./file-comments"
@@ -17,7 +17,7 @@ import { createFileComments, type FileCommentProps, type FileLineComments } from
 const FOCUS_FRESH_MS = 5000
 const COPIED_MS = 2000
 
-export type FileTabProps = {
+type FileTabProps = {
   readonly placementId: PlacementId
   readonly path: string
   readonly headerActive: boolean
@@ -34,16 +34,12 @@ function CopyPathAction(props: { readonly path: string }): JSX.Element {
   let timer: ReturnType<typeof setTimeout> | undefined
   onCleanup(() => clearTimeout(timer))
   const copy = () => {
-    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-    if (!clipboard?.writeText) return
-    void clipboard.writeText(props.path).then(
-      () => {
-        setCopied(true)
-        clearTimeout(timer)
-        timer = setTimeout(() => setCopied(false), COPIED_MS)
-      },
-      (error: unknown) => console.warn("Copying the relative path failed", error),
-    )
+    void copyText(props.path).then((result) => {
+      if (!result.copied) return
+      setCopied(true)
+      clearTimeout(timer)
+      timer = setTimeout(() => setCopied(false), COPIED_MS)
+    })
   }
   const label = () => (copied() ? t("files.tab.copiedPath") : t("files.tab.copyPath"))
   return (
@@ -136,7 +132,7 @@ function BinaryNotice(props: { readonly path: string }): JSX.Element {
   return (
     <div class="flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-text-weak">
       <FileIcon node={{ path: props.path, type: "file" }} class="size-8 opacity-70" />
-      <div class="text-sm text-text-base">{basename(props.path)}</div>
+      <div class="text-sm text-text-base">{getFilename(props.path)}</div>
       <div class="text-xs">{t("files.tab.binary")}</div>
     </div>
   )
@@ -162,7 +158,7 @@ export function FileTab(props: FileTabProps): JSX.Element {
   }
   const file = createMemo((): TextFile | undefined => {
     const text = content()
-    return text ? { name: basename(props.path), contents: text, cacheKey: checksum(text) } : undefined
+    return text ? { name: getFilename(props.path), contents: text, cacheKey: checksum(text) } : undefined
   })
   const imageSrc = createMemo(() => {
     const current = data()
@@ -226,7 +222,7 @@ export function FileTab(props: FileTabProps): JSX.Element {
               <div class="flex min-h-full items-center justify-center p-6">
                 <img
                   src={src()}
-                  alt={basename(props.path)}
+                  alt={getFilename(props.path)}
                   class="max-h-full max-w-full object-contain"
                   style={{ "image-rendering": "auto" }}
                 />

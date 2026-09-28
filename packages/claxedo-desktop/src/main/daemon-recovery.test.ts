@@ -11,11 +11,8 @@ import {
   readDaemonOwnershipView,
   recoverPublishedDaemon,
 } from "./daemon-recovery"
-import {
-  CLAXEDO_DAEMON_PROTOCOL,
-  verifyClaxedoDaemonDiscovery,
-  type ClaxedoDaemonDiscovery,
-} from "./server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
+import { verifyClaxedoDaemonDiscovery, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
 const roots: string[] = []
 const children: Array<() => void> = []

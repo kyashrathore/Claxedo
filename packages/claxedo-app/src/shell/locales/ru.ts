@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "Системная",
   "shell.scheme.light": "Светлая",
   "shell.scheme.dark": "Тёмная",
-  "shell.failed": "Что-то пошло не так",
   "shell.navigation": "Проекты и сессии",
   "shell.category.theme": "Тема",
   "shell.category.view": "Просмотр",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "Цветовая схема",
   "shell.settingsGroup.account": "Аккаунт",
   "shell.settingsGroup.app": "Приложение",
-  "shell.settingsSections": "Разделы настроек",
   "shell.settingsEmpty": "Выберите раздел",
 }

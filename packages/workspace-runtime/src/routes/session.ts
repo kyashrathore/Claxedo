@@ -39,7 +39,7 @@ import { requestedSessionHarness } from "./config"
 import type { SessionPromptBody } from "../session/service"
 import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
-import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -155,6 +155,12 @@ export function SessionRoutes(
       sessionId: string
       page: AgentMessagePageInput
     }) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
+    getPart?: (input: {
+      directory: string
+      sessionId: string
+      messageId: string
+      partId: string
+    }) => Promise<AgentContentPart | undefined> | AgentContentPart | undefined
     turnCoverage?: (input: {
       directory: string
       sessionId: string
@@ -559,6 +565,9 @@ export function SessionRoutes(
           sessionId,
           page,
         })
+      : undefined,
+    getPart: options?.getPart
+      ? (_c, directory, sessionId, messageId, partId) => options.getPart!({ directory: requiredDirectory(directory), sessionId, messageId, partId })
       : undefined,
     turnCoverage: options?.turnCoverage
       ? (_c, directory, sessionId, turnId) => options.turnCoverage!({

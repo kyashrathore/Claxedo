@@ -12,7 +12,7 @@ import type {
   SessionConfigRequestUpdate,
   SessionModelGroup,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import type { CompatEnvelope } from "../compat-events"
@@ -169,6 +169,7 @@ export type SessionRouteOptions = {
     page: AgentMessagePageInput,
     adapter: AgentHarnessAdapter,
   ) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
+  getPart?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messageId: string, partId: string) => Promise<AgentContentPart | undefined> | AgentContentPart | undefined
   /**
    * The turn journal this route answers coverage from. No adapter is offered
    * one: an engine that does not hold the journal cannot establish coverage,

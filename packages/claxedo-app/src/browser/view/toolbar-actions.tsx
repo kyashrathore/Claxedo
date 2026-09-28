@@ -1,5 +1,6 @@
 import { createEffect, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { copyText } from "@/lib/clipboard"
 import { ClaxedoIcon as Icon, showToast, DropdownMenu, Tooltip, type ToastVariant } from "@/ui"
 import { browserDictionary, type BrowserKey } from "../i18n"
 import type { BrowserNotice } from "../model"
@@ -29,13 +30,8 @@ function toastStyle(notice: BrowserNotice): ToastStyle {
 async function copyUrl(tab: BrowserTab): Promise<void> {
   const url = tab.state().url
   if (!url) return
-  try {
-    await navigator.clipboard.writeText(url)
-    tab.notify({ key: "browser.toast.copied" })
-  } catch (error) {
-    console.error("Browser URL could not be copied", { error })
-    tab.notify({ key: "browser.toast.copyFailed" })
-  }
+  const result = await copyText(url)
+  tab.notify({ key: result.copied ? "browser.toast.copied" : "browser.toast.copyFailed" })
 }
 
 async function takeScreenshot(tab: BrowserTab): Promise<void> {

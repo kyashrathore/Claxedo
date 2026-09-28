@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "ยกเลิก",
-  "composer.action.save": "บันทึก",
   "composer.attachment.refused.title": "{{harness}} ใช้ไฟล์แนบนี้ไม่ได้",
   "composer.attachment.refused.description": "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีโฟลเดอร์พื้นที่ทำงานสำหรับเก็บไฟล์",
   "composer.attachment.unreadable.title": "อ่านไฟล์แนบไม่ได้",
   "composer.attachment.unreadable.description": "อ่าน {{filename}} จากอุปกรณ์นี้ไม่ได้",
-  "composer.marks.title": "ทำเครื่องหมายบนรูปภาพ",
-  "composer.marks.hint": "ลากเพื่อตีกรอบพื้นที่หรือคลิกเพื่อปักหมุด แล้วเพิ่มความคิดเห็น",
-  "composer.marks.delete": "ลบเครื่องหมาย",
-  "composer.marks.mark": "เครื่องหมาย {{number}}",
   "dialog.model.search.placeholder": "ค้นหาโมเดล",
   "dialog.model.empty": "ไม่พบผลลัพธ์โมเดล",
   "command.provider.connect": "เชื่อมต่อผู้ให้บริการ",

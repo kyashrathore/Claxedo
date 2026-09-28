@@ -6,7 +6,6 @@ import type { PermissionModeGroups } from "../permission/permission-mode"
 import type { PermissionModeOption } from "../permission/modes"
 import type { SubmitBlock } from "../submit-block-reason"
 import type { PromptInputMode } from "./editor-surface"
-import type { SessionStatusStage as SessionStatusStageValue } from "./session-status-stage"
 import { PromptSubmitControl } from "./submit-control"
 import { PromptToolbarControls } from "./toolbar-controls"
 
@@ -41,10 +40,7 @@ export type PromptToolbarProps = {
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
-  statusStage: Accessor<SessionStatusStageValue>
   stoppable: Accessor<boolean>
-  abort: VoidFunction
-  onRetry: Accessor<(() => void) | undefined>
   booting: Accessor<boolean>
   working: Accessor<boolean>
   blank: Accessor<boolean>
@@ -138,10 +134,7 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         onAgentSelect={props.onAgentSelect}
       />
       <PromptSubmitControl
-        stage={props.statusStage}
         busy={props.stoppable}
-        onCancel={props.abort}
-        onRetry={props.onRetry}
         booting={props.booting}
         working={props.working}
         blank={props.blank}

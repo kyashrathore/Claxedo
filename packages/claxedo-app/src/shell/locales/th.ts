@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "ระบบ",
   "shell.scheme.light": "สว่าง",
   "shell.scheme.dark": "มืด",
-  "shell.failed": "เกิดข้อผิดพลาด",
   "shell.navigation": "โปรเจกต์และเซสชัน",
   "shell.category.theme": "ธีม",
   "shell.category.view": "มุมมอง",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "โทนสี",
   "shell.settingsGroup.account": "บัญชี",
   "shell.settingsGroup.app": "แอป",
-  "shell.settingsSections": "ส่วนการตั้งค่า",
   "shell.settingsEmpty": "เลือกส่วน",
 }

@@ -61,8 +61,8 @@ import { readString } from "@claxedo/helpers/readers"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { claxedoServerForkOptions } from "./server-child-process"
 import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agent-plugins-signed-sync"
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import {
-  CLAXEDO_DAEMON_PROTOCOL,
   claxedoDaemonDiscoveryPath,
   readClaxedoDaemonDiscovery,
   verifyClaxedoDaemonDiscovery,

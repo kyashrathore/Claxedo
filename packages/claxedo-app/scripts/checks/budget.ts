@@ -11,7 +11,7 @@ const parts: readonly Part[] = [
   { name: "Server adapter (no budget until its dedicated rebuild; DECISIONS 2026-09-26)", folders: ["src/server"] },
   { name: "Session client, including the session list store", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen incl. the kept timeline and docks", budget: 14300, folders: ["src/session/view"] },
-  { name: "Composer (re-based to its measured size: the known-selection seed and its tests plus the kit v2 controls (DECISIONS 2026-09-26), and a draft's first send taking its text out and giving it back on refusal)", budget: 11181, folders: ["src/composer"] },
+  { name: "Composer (re-based to its measured size: the known-selection seed and its tests plus the kit v2 controls (DECISIONS 2026-09-26), a draft's first send taking its text out and giving it back on refusal, and the setup notice waiting for the harness's answers (DECISIONS 2026-09-28))", budget: 11260, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs (re-based to its measured size: the parity ruling kept v1's chrome; DECISIONS 2026-09-26)", budget: 1375, folders: ["src/browser"] },
   { name: "Shell and platform (re-based to its measured size: the desktop's local-service-lost alert; DECISIONS 2026-09-27)", budget: 6617, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },

@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "System",
   "shell.scheme.light": "Hell",
   "shell.scheme.dark": "Dunkel",
-  "shell.failed": "Etwas ist schiefgelaufen",
   "shell.navigation": "Projekte und Sitzungen",
   "shell.category.theme": "Thema",
   "shell.category.view": "Ansicht",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "Farbschema",
   "shell.settingsGroup.account": "Konto",
   "shell.settingsGroup.app": "App",
-  "shell.settingsSections": "Einstellungsbereiche",
   "shell.settingsEmpty": "Bereich auswählen",
 }

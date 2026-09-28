@@ -39,7 +39,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 const { Hono } = await import("hono")
 const { contains, containsCanonical, gitRun, locate, trees } = await import("./git")
 const { ShellRoutes } = await import("./routes")
-const { ensureWorkspace, resolveWorkspace } = await import("@claxedo/server-core/workspace/store/index")
+const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
 const { unsignedLocalRequestGuard } = await import("@claxedo/server-core/authority/deployment-mode")
 
@@ -300,21 +300,8 @@ describe("destructive worktree operations require a registered Git worktree", ()
   })
 })
 
-describe("GET /agent is discovery, not provisioning", () => {
-  test("an unregistered directory earns workspace_required and stays unregistered", async () => {
-    // A real repository on purpose: had the route still resolved with
-    // `create: true`, this GET would have registered a workspace for a path
-    // the caller merely named.
-    const unregistered = await makeRepo(`unregistered-agents-${randomUUID()}`)
-    const res = await app.request(`/agent?directory=${encodeURIComponent(unregistered)}`)
-    expect(res.status).toBe(400)
-    expect(await res.json()).toMatchObject({ error: { code: "workspace_required" } })
-    expect(await resolveWorkspace({ directory: unregistered })).toBeUndefined()
-  })
-})
-
 describe("the worktree surface is unreachable from off-box in unsigned self-host mode", () => {
-  // ClientPresentationRoutes carries no per-route bearer gate; the global
+  // ShellRoutes carries no per-route bearer gate; the global
   // `unsignedLocalRequestGuard` is the whole gate for `/experimental/*`. Assert
   // it actually covers the destructive verbs.
   function guarded() {

@@ -24,9 +24,10 @@ test("a new account cannot read unregistered files or remove another workspace's
     const privateDir = path.join(root, "unregistered-private")
     await fs.mkdir(privateDir)
     await fs.writeFile(path.join(privateDir, "secret.txt"), "AUDIT_SYNTHETIC_SECRET")
-    const fileUrl = `http://selfhost.test/file/content?directory=${encodeURIComponent(privateDir)}&path=secret.txt`
+    const fileUrl = `http://selfhost.test/api/wr/file/content?directory=${encodeURIComponent(privateDir)}&path=secret.txt`
     const anonymous = await app.request(fileUrl)
-    expect(anonymous.status).toBe(401)
+    expect(anonymous.status).toBe(404)
+    expect(await anonymous.text()).not.toContain("AUDIT_SYNTHETIC_SECRET")
     const signup = await app.request("http://selfhost.test/api/auth/sign-up/email", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "outsider@example.test", password: "audit-password-12345", name: "Outsider" }),
@@ -36,7 +37,7 @@ test("a new account cannot read unregistered files or remove another workspace's
     expect(token).toBeTruthy()
     const headers = { authorization: `Bearer ${token}` }
     const leaked = await app.request(fileUrl, { headers })
-    expect(leaked.status).toBe(403)
+    expect(leaked.status).toBe(404)
     expect(await leaked.text()).not.toContain("AUDIT_SYNTHETIC_SECRET")
 
     const repo = path.join(root, "owner-repo")

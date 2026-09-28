@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "Modelle",
   "settings.models.description": "Die Konten, auf denen Ihre Agenten laufen, und welche Modelle sie jeweils anbieten.",
   "settings.models.tab.accounts": "Konten",
-  "provider.connect.context.harness": "{{harness}} wird mit diesem Konto ausgeführt.",
-  "provider.connect.context.engine": "{{engine}} verwendet es für {{vendor}}-Modelle.",
   "provider.connect.method.openKeyPage": "Schlüsselseite öffnen",
   "provider.connect.method.anthropic.subscription.title": "Claude-Abo (Pro oder Max)",
   "provider.connect.method.anthropic.subscription.for": "Nutzt Ihren Claude.ai-Tarif und dessen Limits.",

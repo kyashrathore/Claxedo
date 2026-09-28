@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process"
 import { createHash, X509Certificate } from "node:crypto"
 import fs from "node:fs/promises"
-import { createServer, type Server } from "node:https"
+import { createServer } from "node:https"
 import path from "node:path"
 import { promisify } from "node:util"
 import { forward, forwardUpgrade } from "./proxy"
+import { listenOnLoopback } from "./ports"
 
 export type TlsTrust = { caPath: string; spki: string }
 
@@ -26,19 +27,12 @@ function spkiHash(cert: Buffer) {
   return createHash("sha256").update(spki).digest("base64")
 }
 
-function listen(server: Server, port: number) {
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", resolve)
-  })
-}
-
 export async function startTlsFront(input: { port: number; daemonUrl: string; certDir: string }): Promise<TlsFront> {
   const daemon = new URL(input.daemonUrl)
   const certificate = await selfSignedCertificate(input.certDir)
   const server = createServer({ key: certificate.key, cert: certificate.cert }, (request, response) => forward(request, response, daemon))
   server.on("upgrade", (request, socket, head) => forwardUpgrade(request, socket, head, daemon))
-  await listen(server, input.port)
+  await listenOnLoopback(server, input.port)
   return {
     url: `https://127.0.0.1:${input.port}`,
     trust: { caPath: certificate.certPath, spki: spkiHash(certificate.cert) },

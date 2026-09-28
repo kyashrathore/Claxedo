@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "Yeni bir çalışma alanı (worktree) oluşturduktan sonra çalışır.",
   "projects.edit.startup.placeholder": "örneğin bun install",
   "projects.edit.action": "Düzenle",
-  "projects.close": "Kapat",
   "projects.chip.project": "Proje",
   "projects.chip.self": "Bu bilgisayar",
   "projects.chip.workspace": "Çalışma Alanı",

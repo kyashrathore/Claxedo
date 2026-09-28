@@ -1,9 +1,10 @@
 import type { Terminal as XTerm } from "@xterm/xterm"
+import { copyText } from "@/lib/clipboard"
 
 type PasteTerminal = Pick<XTerm, "textarea" | "paste">
 type CopyTerminal = Pick<XTerm, "element" | "getSelection">
 
-export type PasteOptions = {
+type PasteOptions = {
   readonly onWrite: (data: string) => void
   readonly bracketedPaste: () => boolean
 }
@@ -69,9 +70,7 @@ export function setupCopy(xterm: CopyTerminal): () => void {
       .map((line) => line.trimEnd())
       .join("\n")
     if (!event.clipboardData) {
-      navigator.clipboard?.writeText(trimmed).catch((error: unknown) => {
-        console.warn("Terminal selection could not be copied", { error })
-      })
+      void copyText(trimmed)
       return
     }
     event.preventDefault()

@@ -15,8 +15,8 @@ import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
 import { CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE, claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
 import { recordStartupClock } from "../src/shared/startup-clock-probe"
+import { CLAXEDO_DAEMON_SERVICE } from "@claxedo/helpers/claxedo-daemon"
 import {
-  CLAXEDO_DAEMON_SERVICE,
   clearClaxedoDaemonDiscovery,
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,

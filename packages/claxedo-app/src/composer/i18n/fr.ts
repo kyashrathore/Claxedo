@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Annuler",
-  "composer.action.save": "Enregistrer",
   "composer.attachment.refused.title": "{{harness}} ne peut pas utiliser cette pièce jointe",
   "composer.attachment.refused.description": "{{harness}} n'a pas d'entrée de prompt pour {{mime}}, et cette session n'a pas de dossier d'espace de travail pour conserver le fichier.",
   "composer.attachment.unreadable.title": "La pièce jointe n'a pas pu être lue",
   "composer.attachment.unreadable.description": "{{filename}} n'a pas pu être lu depuis cet appareil.",
-  "composer.marks.title": "Annoter l'image",
-  "composer.marks.hint": "Faites glisser pour encadrer une zone ou cliquez pour placer une épingle, puis commentez.",
-  "composer.marks.delete": "Supprimer le repère",
-  "composer.marks.mark": "repère {{number}}",
   "dialog.model.search.placeholder": "Rechercher des modèles",
   "dialog.model.empty": "Aucun résultat de modèle",
   "command.provider.connect": "Connecter un fournisseur",

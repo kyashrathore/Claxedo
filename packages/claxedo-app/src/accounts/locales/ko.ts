@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "모델",
   "settings.models.description": "에이전트가 사용하는 계정과 각 계정이 제공하는 모델입니다.",
   "settings.models.tab.accounts": "계정",
-  "provider.connect.context.harness": "{{harness}}이(가) 이 계정으로 실행됩니다.",
-  "provider.connect.context.engine": "{{engine}}이(가) 이를 {{vendor}} 모델에 사용합니다.",
   "provider.connect.method.openKeyPage": "키 페이지 열기",
   "provider.connect.method.anthropic.subscription.title": "Claude 구독(Pro 또는 Max)",
   "provider.connect.method.anthropic.subscription.for": "사용 중인 Claude.ai 요금제와 그 한도를 사용합니다.",

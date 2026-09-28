@@ -1,4 +1,3 @@
-import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import { errorFromBody, ServerError } from "../errors"
 import type { AgentRequest, SessionGoalState, SessionStatus, Subagent, Todo } from "../types"
@@ -12,7 +11,6 @@ export const OPEN_VIEW = { view: "open" } as const
 export type SessionFact<T> = { readonly value: T } | { readonly error: ServerError }
 
 export type SessionOpenView = {
-  readonly session: AgentPresentationSession
   readonly status: SessionFact<SessionStatus | undefined>
   readonly requests: SessionFact<readonly AgentRequest[]>
   readonly todos: SessionFact<readonly Todo[]>
@@ -46,9 +44,8 @@ function requestsFromWire(permissions: SessionFact<readonly unknown[]>, question
 }
 
 export function sessionOpenFromWire(body: unknown): SessionOpenView {
-  if (!isRecord(body) || !isRecord(body.session)) throw new ServerError({ class: "internal", message: "The session's open view answered without its session" })
+  if (!isRecord(body)) throw new ServerError({ class: "internal", message: "The session's open view is not a record" })
   return {
-    session: body.session as AgentPresentationSession,
     status: factFromWire(body.status, "status", sessionStatusFromWire),
     requests: requestsFromWire(factFromWire(body.permissions, "permissions", listFromWire), factFromWire(body.questions, "questions", listFromWire)),
     todos: factFromWire(body.todos, "todos", (value) => listFromWire(value) as readonly Todo[]),

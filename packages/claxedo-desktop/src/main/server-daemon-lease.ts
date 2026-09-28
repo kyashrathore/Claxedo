@@ -2,11 +2,8 @@ import { randomUUID } from "node:crypto"
 import http from "node:http"
 import { readField, readRecord, readString } from "@claxedo/helpers/readers"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "./daemon-request"
-import {
-  CLAXEDO_DAEMON_PROTOCOL,
-  DAEMON_PROTOCOL_HEADER,
-  type ClaxedoDaemonDiscovery,
-} from "./server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
+import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
 type HeldConnection = { id: string; close: () => void; closed: Promise<void> }
 

@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "نظام",
   "shell.scheme.light": "فاتح",
   "shell.scheme.dark": "داكن",
-  "shell.failed": "حدث خطأ ما",
   "shell.navigation": "المشاريع والجلسات",
   "shell.category.theme": "سمة",
   "shell.category.view": "عرض",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "مخطط الألوان",
   "shell.settingsGroup.account": "الحساب",
   "shell.settingsGroup.app": "التطبيق",
-  "shell.settingsSections": "أقسام الإعدادات",
   "shell.settingsEmpty": "اختر قسمًا",
 }

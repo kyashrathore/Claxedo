@@ -1,5 +1,5 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
@@ -53,7 +53,8 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
+import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
@@ -668,21 +669,45 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       maxEventOrdinal: 0,
     })
   })
-  app.get("/api/control/sessions/:sessionId/outline", async (context) => {
+  const sessionNotFound = { error: { code: "SESSION_NOT_FOUND", message: "Session not found" } } as const
+  const transcriptRead = async (context: Context, read: (auth: SignedControlPlaneAuth, workspaceId: string) => Promise<Response>) => {
     const workspaceId = context.req.query("workspaceId")
     if (!workspaceId) return context.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
-    const authResult = await signedOrError(
-      context.req.raw,
-      {
-        authentication,
-        requireSigned: true,
-      },
-      services,
-    )
+    const authResult = await signedOrError(context.req.raw, { authentication, requireSigned: true }, services)
     if ("error" in authResult) return context.json(authResult.error, authResult.status)
-    if (!authResult.auth) {
-      return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+    if (!authResult.auth) return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+    try {
+      return await read(authResult.auth, workspaceId)
+    } catch (error) {
+      if (error instanceof TurnPageQueryError) return context.json({ error: { code: "turn_page_query_error", message: error.message } }, 400)
+      if (error instanceof AgentMessagePageError) {
+        return context.json({ error: { code: "message_page_error", message: error.message } }, contentfulStatus(error.status))
+      }
+      throw error
     }
-    return context.json(await services.authority!.readSessionOutline(authResult.auth, { sessionId: context.req.param("sessionId"), workspaceId }))
-  })
+  }
+  app.get("/api/control/sessions/:sessionId/outline", (context) => transcriptRead(context, async (auth, workspaceId) => {
+    const firstPage = parseTurnPageQuery((name) => context.req.query(name))
+    const read = await requireAuthority(services).readSessionFirstRead(auth, {
+      sessionId: context.req.param("sessionId"),
+      workspaceId,
+      ...(firstPage ? { firstPage } : {}),
+    })
+    return read ? context.json(read) : context.json(sessionNotFound, 404)
+  }))
+  app.get("/api/control/sessions/:sessionId/page", (context) => transcriptRead(context, async (auth, workspaceId) => {
+    const page = await requireAuthority(services).readSessionPage(auth, {
+      sessionId: context.req.param("sessionId"),
+      workspaceId,
+      page: parseOlderTurnPageQuery((name) => context.req.query(name)),
+    })
+    return page ? context.json(page) : context.json(sessionNotFound, 404)
+  }))
+  app.get("/api/control/sessions/:sessionId/part", (context) => transcriptRead(context, async (auth, workspaceId) => {
+    const at = parseSessionPartInput(context.req.query("messageId"), context.req.query("partId"))
+    const read = await requireAuthority(services).readSessionPart(auth, { sessionId: context.req.param("sessionId"), workspaceId, ...at })
+    if (!read) return context.json(sessionNotFound, 404)
+    if (!read.part) return context.json({ error: { code: "part_not_found", message: "The session has no such part" } }, 404)
+    return context.json({ part: read.part })
+  }))
 }

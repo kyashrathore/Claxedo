@@ -12,7 +12,7 @@ import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { DAEMON_CAPABILITY_HEADER } from "./daemon-admission"
-import { DAEMON_PROTOCOL_HEADER } from "./local-app"
+import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { openDaemonSocket, testDaemon } from "./test-support/daemon"
 
 /**

@@ -5,8 +5,6 @@ row 0:
 - text: Show the setup. acp-script:code-inside-prose-0 Build · <time>
 - button "Copy message"
 row 1:
-- button "Worked for 0s"
-row 2:
 - paragraph: "Run these first:"
 - code: bun install bun run build
 - button "Copy"

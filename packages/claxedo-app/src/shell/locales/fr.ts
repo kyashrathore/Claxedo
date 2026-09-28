@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "Système",
   "shell.scheme.light": "Clair",
   "shell.scheme.dark": "Sombre",
-  "shell.failed": "Quelque chose s'est mal passé",
   "shell.navigation": "Projets et sessions",
   "shell.category.theme": "Thème",
   "shell.category.view": "Affichage",
@@ -49,6 +48,5 @@ export default {
   "shell.toast.colorScheme": "Schéma de couleurs",
   "shell.settingsGroup.account": "Compte",
   "shell.settingsGroup.app": "Application",
-  "shell.settingsSections": "Sections des réglages",
   "shell.settingsEmpty": "Choisissez une section",
 }

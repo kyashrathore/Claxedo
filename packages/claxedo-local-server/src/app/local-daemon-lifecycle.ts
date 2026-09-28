@@ -122,7 +122,7 @@ export function localDaemonWorkActivity() {
 }
 
 /** Calls `changed` after every change to what {@link localDaemonWorkActivity} reads. */
-export function watchLocalDaemonWork(changed: () => void): () => void {
+function watchLocalDaemonWork(changed: () => void): () => void {
   const stopTerminals = Pty.onActivityChange(changed)
   const stopRuntimes = onEmbeddedWorkspaceRuntimeActivity(changed)
   return () => {

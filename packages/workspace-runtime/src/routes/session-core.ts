@@ -13,6 +13,7 @@ import type {
   AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSession, AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import { cancelledAssistantMessageId } from "@claxedo/agent-runtime-contract/turn-fold"
 import {
   AgentRuntimeContractError,
   parseRecoveryRequest,
@@ -29,7 +30,8 @@ import type {
   AgentInteractionResult,
   AgentMessagePage,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import { AGENT_MESSAGE_PAGE_LIMIT, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -242,6 +244,15 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
   return {
     limit: parsedLimit,
     ...(before !== undefined ? { before } : {}),
+  }
+}
+
+function pageQuery<T>(c: Ctx, parse: (query: (name: string) => string | undefined) => T): T {
+  try {
+    return parse((name) => c.req.query(name))
+  } catch (error) {
+    if (error instanceof TurnPageQueryError) throw new HTTPException(400, { message: error.message })
+    throw error
   }
 }
 
@@ -1045,15 +1056,43 @@ async function sessionFact<T>(read: () => Promise<T | Response>): Promise<Sessio
   }
 }
 
+async function readMessagePage(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, pageInput: AgentMessagePageInput): Promise<AgentMessagePage> {
+  const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+  try {
+    const page = await opts.getMessagePage?.(c, directory, sessionId, pageInput, adapter)
+    if (page) return page
+  } catch (error) {
+    return throwMessagePageError(error, 500)
+  }
+  if (!adapter.getMessagePage) throw new HTTPException(501, { message: "message paging is not supported for this session" })
+  try {
+    return await adapter.getMessagePage(await requireExecutionBinding(opts, c, directory, sessionId, adapter), pageInput)
+  } catch (error) {
+    return throwMessagePageError(error, 502)
+  }
+}
+
+function turnReader(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): TurnRead {
+  return (before) => readMessagePage(opts, c, directory, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before })
+}
+
+async function readPresentedSession(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
+  const session = await readRuntimeSession(opts, c, directory, sessionId)
+  if (!session) return undefined
+  timedSession(session)
+  await after(opts.afterGetSession?.(c, directory, session))
+  return session
+}
+
 /**
- * `GET /session/:id?view=open`: the row plus every fact a reader needs to open
- * the session, read by the producers the per-fact routes use. The session
+ * `GET /session/:id?view=open`: every fact a reader needs beside the row to
+ * open the session, read by the producers the per-fact routes use. The session
  * read's own guard admits them all: no session access policy tells one read
  * operation from another, because each classifies an operation only by its
  * `sessionAccessWriteClass`, and a read has none. The rows are narrowed to
  * this session here rather than filtered through the policy.
  */
-async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, session: AgentSession) {
+async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string) {
   const own = <T extends { sessionID: string }>(rows: T[] | Response) =>
     rows instanceof Response ? rows : rows.filter((row) => row.sessionID === sessionId)
   const [status, permissions, questions, todos, goal, subagents] = await Promise.all([
@@ -1064,7 +1103,7 @@ async function sessionOpenView(opts: Opts, c: Ctx, directory: RuntimeDirectory, 
     sessionFact(() => readSessionGoal(opts, c, directory, sessionId)),
     sessionFact(() => listSessionSubagents(opts, c, directory, sessionId)),
   ])
-  return { session: timedSession(session), status, permissions, questions, todos, goal, subagents }
+  return { status, permissions, questions, todos, goal, subagents }
 }
 
 /**
@@ -1685,11 +1724,10 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId })
       const view = c.req.query("view")
       if (view !== undefined && view !== "open") return noStoreJson(c, errorBody("session_view_unknown", `Unknown session view ${view}`), 400)
-      const session = await readRuntimeSession(opts, c, directory, sessionId)
+      const session = await readPresentedSession(opts, c, directory, sessionId)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
-      await after(opts.afterGetSession?.(c, directory, session))
-      if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId, session))
-      return noStoreJson(c, timedSession(session))
+      if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId))
+      return noStoreJson(c, session)
     })
     .get("/session/:id/config-options", async (c) => {
       const sessionId = c.req.param("id")
@@ -1908,6 +1946,16 @@ export function createSessionRoutes(opts: Opts) {
       if (!messages) return noStoreJson(c, sessionNotFound(), 404)
       return toolImageResponse({ messages, sessionId, messageId: c.req.param("messageId"), attachmentId: c.req.param("attachmentId") })
     })
+    .get("/session/:id/message/:messageId/part/:partId", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
+      if (guarded) return guarded
+      if (!opts.getPart) throw new HTTPException(501, { message: "part reads are not supported for this session" })
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const part = await opts.getPart(c, directory, sessionId, c.req.param("messageId"), c.req.param("partId"))
+      if (!part) return noStoreJson(c, { error: { code: "part_not_found", message: "The session has no such part" } }, 404)
+      return noStoreJson(c, part)
+    })
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
@@ -1940,26 +1988,7 @@ export function createSessionRoutes(opts: Opts) {
           return noStoreJson(c, { ...snapshot, session: timedSession(session) })
         }
       }
-      if (pageInput) {
-        const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-        try {
-          const page = await opts.getMessagePage?.(c, directory, sessionId, pageInput, adapter)
-          if (page) return messagePageResponse(c, page)
-        } catch (error) {
-          throwMessagePageError(error, 500)
-        }
-        if (adapter.getMessagePage) {
-          try {
-            return messagePageResponse(c, await adapter.getMessagePage(
-              await requireExecutionBinding(opts, c, directory, sessionId, adapter),
-              pageInput,
-            ))
-          } catch (error) {
-            throwMessagePageError(error, 502)
-          }
-        }
-        throw new HTTPException(501, { message: "message paging is not supported for this session" })
-      }
+      if (pageInput) return messagePageResponse(c, await readMessagePage(opts, c, directory, sessionId, pageInput))
       const replay = await opts.getMessages?.(c, directory, sessionId)
       if (replay) {
         if (!snapshotRequested) return noStoreJson(c, replay)
@@ -1983,10 +2012,25 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       if (!opts.getTurnOutline) throw new HTTPException(501, { message: "turn outlines are not supported for this session" })
+      const query = pageQuery(c, parseTurnPageQuery)
       const directory = await opts.resolveDirectory(c, { sessionId })
-      const outline = await opts.getTurnOutline(c, directory, sessionId)
-      if (!outline) return noStoreJson(c, sessionNotFound(), 404)
-      return noStoreJson(c, outline)
+      const session = await readPresentedSession(opts, c, directory, sessionId)
+      const outline = session ? await opts.getTurnOutline(c, directory, sessionId) : undefined
+      if (!session || !outline) return noStoreJson(c, sessionNotFound(), 404)
+      return noStoreJson(c, await readFirstRead(
+        session,
+        outline,
+        turnReader(opts, c, directory, sessionId),
+        query && { ...query, cancelledAssistantMessageId: cancelledAssistantMessageId(session.lastTurn) },
+      ))
+    })
+    .get("/session/:id/page", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
+      if (guarded) return guarded
+      const request = pageQuery(c, parseOlderTurnPageQuery)
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      return noStoreJson(c, await readTurnPage(turnReader(opts, c, directory, sessionId), request))
     })
     .get("/permission/modes", async (c) => {
       // DIRECTORY-scoped, for a draft that has no session yet.

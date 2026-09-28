@@ -1,5 +1,5 @@
 import { createEffect, createMemo, type JSX } from "solid-js"
-import { projectId, useServer, type Placement, type PlacementId, type Project, type ProjectId } from "@/server"
+import { projectId, useServer, type Placement, type Project, type ProjectId } from "@/server"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { pickProjectFolderWith } from "../pick-project-folder"

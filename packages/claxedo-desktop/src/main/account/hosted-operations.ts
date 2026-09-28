@@ -456,7 +456,17 @@ export const HOSTED_OPERATIONS = {
   "session.outline": {
     method: "GET",
     path: "/api/control/sessions/:sessionId/outline",
-    optionalQuery: ["workspaceId"],
+    optionalQuery: ["workspaceId", "rows", "cols", "reasoning", "shell", "edit"],
+  },
+  "session.turnPage": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/page",
+    query: ["workspaceId", "before", "rows", "cols", "reasoning", "shell", "edit"],
+  },
+  "session.part": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/part",
+    query: ["workspaceId", "messageId", "partId"],
   },
   "session.gateway": {
     method: "GET",

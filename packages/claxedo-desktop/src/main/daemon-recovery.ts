@@ -45,7 +45,8 @@ import {
 } from "@claxedo/agent-sdk-runtime/launch"
 
 import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
-import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
+import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 import type { DaemonFetch } from "./daemon-request"
 import { isMissingFile } from "@claxedo/helpers/fs"
 

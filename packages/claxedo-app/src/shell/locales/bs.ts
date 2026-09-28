@@ -22,7 +22,6 @@ export default {
   "shell.scheme.system": "Sistem",
   "shell.scheme.light": "Svijetlo",
   "shell.scheme.dark": "Tamno",
-  "shell.failed": "Nešto je pošlo po zlu",
   "shell.navigation": "Projekti i sesije",
   "shell.category.theme": "Tema",
   "shell.category.view": "Prikaz",
@@ -48,6 +47,5 @@ export default {
   "shell.toast.colorScheme": "Šema boja",
   "shell.settingsGroup.account": "Račun",
   "shell.settingsGroup.app": "Aplikacija",
-  "shell.settingsSections": "Odjeljci postavki",
   "shell.settingsEmpty": "Odaberite odjeljak",
 }

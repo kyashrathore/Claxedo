@@ -106,8 +106,12 @@ describe("turnFoldDecision", () => {
     expect(turnFoldDecision({ foldableCount: 3, settled: true, errored: true, busy: true })).toEqual({ canFold: true, folded: false, explicit: false })
   })
 
-  test("a turn whose parts are still arriving can fold before its groups are known", () => {
-    expect(turnFoldDecision({ foldableCount: 0, settled: true, partsPending: true }).canFold).toBe(true)
+  test("a turn with fewer foldable groups than the minimum never offers the fold, whoever asks", () => {
+    for (const foldableCount of [0, 1]) {
+      for (const status of [{}, { userChoice: true }, { interrupted: true }, { errored: true }]) {
+        expect(turnFoldDecision({ foldableCount, settled: true, ...status }).canFold, `${foldableCount} ${JSON.stringify(status)}`).toBe(false)
+      }
+    }
   })
 })
 

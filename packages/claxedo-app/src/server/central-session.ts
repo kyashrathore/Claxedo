@@ -1,23 +1,18 @@
-import { readField, readString } from "@claxedo/helpers/readers"
+import { readField } from "@claxedo/helpers/readers"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 import type { SessionContext } from "./session-context"
 import { withQuery } from "./transport"
-import type { SessionOutline, SessionRef, SessionRow, TranscriptPage } from "./types"
-import { outlineFromWire } from "./wire/outline"
+import type { PageShape, SessionFirstRead, SessionRef, SessionRow, TranscriptPage, TranscriptPart } from "./types"
+import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { sessionRowFromCentral } from "./wire/session-row"
-import { transcriptPageFromWire } from "./wire/transcript"
+import { partFromWire, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 
-const CENTRAL_PAGE_SIZE = 50
 const SESSIONS = "/api/control/sessions"
 
-export type CentralPage =
-  | { readonly view: "latest-surface" }
-  | { readonly view: "latest-turn"; readonly before?: string }
-  | { readonly before: string }
-
-async function storedMessages(context: SessionContext, ref: SessionRef, query: Readonly<Record<string, string>>): Promise<unknown> {
-  if (context.account) return context.account.run("session.messages", { sessionId: ref.sessionId, ...query })
-  return context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/messages`, query))
+async function storedRead(context: SessionContext, ref: SessionRef, operation: HostedOperationName, path: string, query: Readonly<Record<string, string>>): Promise<unknown> {
+  if (context.account) return context.account.run(operation, { sessionId: ref.sessionId, ...query })
+  return context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/${path}`, query))
 }
 
 async function storedInventory(context: SessionContext, workspaceId: string): Promise<unknown> {
@@ -25,27 +20,28 @@ async function storedInventory(context: SessionContext, workspaceId: string): Pr
   return context.transport.json(withQuery(SESSIONS, { workspaceId }))
 }
 
-export async function readCentralPage(context: SessionContext, workspaceId: string, ref: SessionRef, page: CentralPage): Promise<TranscriptPage> {
-  const window: Record<string, string> = !("view" in page)
-    ? { limit: String(CENTRAL_PAGE_SIZE), before: page.before }
-    : page.view === "latest-turn" && page.before !== undefined
-      ? { view: page.view, before: page.before }
-      : { view: page.view }
-  const body = await storedMessages(context, ref, { workspaceId, ...window })
-  return transcriptPageFromWire(readField(body, "messages"), readString(body, "nextCursor") ?? null)
+function storedRow(item: unknown, ref: SessionRef, workspaceId: string): SessionRow {
+  const row = sessionRowFromCentral(item, ref)
+  if (!row) throw new ServerError({ class: "not_found", message: `Session ${ref.sessionId} is not stored for workspace ${workspaceId}` })
+  return row
 }
 
-export async function readCentralOutline(context: SessionContext, workspaceId: string, ref: SessionRef): Promise<SessionOutline | undefined> {
-  const body = context.account
-    ? await context.account.run("session.outline", { sessionId: ref.sessionId, workspaceId })
-    : await context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/outline`, { workspaceId }))
-  return outlineFromWire(body)
+export async function readCentralTurnPage(context: SessionContext, workspaceId: string, ref: SessionRef, shape: PageShape, before: string): Promise<TranscriptPage> {
+  return turnPageFromWire(await storedRead(context, ref, "session.turnPage", "page", { workspaceId, before, ...viewportQuery(shape) }))
+}
+
+export async function readCentralPart(context: SessionContext, workspaceId: string, ref: SessionRef, messageId: string, partId: string): Promise<TranscriptPart> {
+  return partFromWire(readField(await storedRead(context, ref, "session.part", "part", { workspaceId, messageId, partId }), "part"))
+}
+
+export async function readCentralFirst(context: SessionContext, workspaceId: string, ref: SessionRef, shape: PageShape): Promise<SessionFirstRead> {
+  const read = firstReadFromWire(await storedRead(context, ref, "session.outline", "outline", { workspaceId, ...viewportQuery(shape) }))
+  return { row: storedRow(read.session, ref, workspaceId), diff: [], outline: read.outline, ...(read.page ?? NO_FIRST_PAGE) }
 }
 
 export async function readCentralRow(context: SessionContext, workspaceId: string, ref: SessionRef): Promise<SessionRow> {
   const sessions = readField(await storedInventory(context, workspaceId), "sessions")
   const rows = Array.isArray(sessions) ? sessions : []
-  const row = rows.map((item) => sessionRowFromCentral(item, ref)).find((candidate) => candidate !== undefined)
-  if (!row) throw new ServerError({ class: "not_found", message: `Session ${ref.sessionId} is not stored for workspace ${workspaceId}` })
-  return row
+  const listed = rows.find((item) => sessionRowFromCentral(item, ref) !== undefined)
+  return storedRow(listed, ref, workspaceId)
 }

@@ -100,8 +100,7 @@ async function canonical(input: string, hops = 0): Promise<string> {
  * first and containing second keeps that working while rejecting an absolute
  * path that points elsewhere.
  *
- * `contains()` (client-presentation-git.ts, the same route family's single
- * definition) compares with a trailing separator, so a sibling root like
+ * `contains()` (git.ts, the same route family's single definition) compares with a trailing separator, so a sibling root like
  * `/srv/project-evil` is not accepted as a child of `/srv/project`.
  *
  * Reject, never clamp: silently rewriting an escaping path to `root` would
@@ -124,10 +123,8 @@ async function canonical(input: string, hops = 0): Promise<string> {
  * Async because `canonical()` can walk up an arbitrarily deep path and follow up
  * to `LINK_HOPS` links, so the sync form blocked the event loop for a whole
  * chain of `realpath` syscalls on every file-browser request — on a server that
- * also holds long-lived SSE streams open. Both call sites
- * (`directoryEntriesBody`, `fileContentBody` in
- * client-presentation-file-browser.ts) were already `async`. The two
- * canonicalizations are independent, so they run concurrently.
+ * also holds long-lived SSE streams open. The two canonicalizations are
+ * independent, so they run concurrently.
  *
  * Residual, honestly: this is TOCTOU-bounded, not TOCTOU-free. Nothing stops a
  * component from being swapped for an escaping symlink between this check and
@@ -141,8 +138,8 @@ async function canonical(input: string, hops = 0): Promise<string> {
  * more syscalls, no narrower window. Closing it for real means reading from a
  * pinned handle (`O_NOFOLLOW`, as `readContained()` in
  * documents/session-hydration.ts does) rather than hardening the path helper;
- * `fs.readdir` has no such form at all. The window is narrow and both callers
- * here only read.
+ * `fs.readdir` has no such form at all. The window is narrow and the one
+ * caller here, the directory listing, only reads.
  */
 export async function workspacePath(root: string, input?: string) {
   const file = input?.trim()

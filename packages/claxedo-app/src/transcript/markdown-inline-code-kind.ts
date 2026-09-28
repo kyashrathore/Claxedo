@@ -1,3 +1,5 @@
+import { getFilename } from "@/ui/utils"
+
 const pathExtensions = new Set([
   "a51",
   "abap",
@@ -1899,7 +1901,7 @@ function filePathKind(text: string): "path" | "path-candidate" | undefined {
   const base = text.replace(/:\d+(?::\d+)?$/, "")
   if (!base || base === "/" || /^\/[a-z][a-z0-9-]*$/i.test(base) || /[/\\]$/.test(base)) return undefined
   if (base.split(/[/\\]/).some((segment) => segment === "..")) return undefined
-  const name = base.split(/[/\\]/).pop() ?? ""
+  const name = getFilename(base)
   if (hasPathExtension(name) || hasPathFileName(name)) return "path"
   if (/[/\\]/.test(base)) return "path-candidate"
   return undefined

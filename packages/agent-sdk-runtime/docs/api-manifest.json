@@ -65,6 +65,10 @@
       "status": "integration",
       "purpose": "Bounded transcript-page contracts and projections."
     },
+    "@claxedo/agent-sdk-runtime/turn-page": {
+      "status": "integration",
+      "purpose": "The pages of turns a transcript reads, the first one included: every part of each turn with its tools sent as headers, the fill chosen by an estimate of their lines, and the viewport and cursor queries every producer parses."
+    },
     "@claxedo/agent-sdk-runtime/turn-outline": {
       "status": "integration",
       "purpose": "A transcript's outline of turns without their content, folded from the rows any store reads for it."
@@ -133,7 +137,8 @@
     "@claxedo/agent-sdk-runtime/stores/sqlite": "af4e0698e35144038d0315661d7cbb7bb9923248b346778f91594999e47bca16",
     "@claxedo/agent-sdk-runtime/launch": "c6ae1e0deb72710355058ba6fa6b45981db145171b09dae809a06759ce31e3d0",
     "@claxedo/agent-sdk-runtime/launch-gate-child": "afec65c73d13c49ba01624719bbcad89235bf3f6af78751d6a71b7554e0c6051",
-    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
+    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311",
+    "@claxedo/agent-sdk-runtime/turn-page": "7588d56a6f8d3fd9c4facb86cbf021daf14b3f403d1c94dbd056896a375d0d27"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

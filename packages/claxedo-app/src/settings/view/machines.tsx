@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
+import { copyText } from "@/lib/clipboard"
 import { useServer, type Machine } from "@/server"
 import { Button, ClaxedoIconButton } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
@@ -12,10 +13,7 @@ const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-ser
 function CommandLine(props: { readonly command: string; readonly label: string }) {
   const [copied, setCopied] = createSignal(false)
   const copy = () => {
-    void navigator.clipboard.writeText(props.command).then(
-      () => setCopied(true),
-      (error: unknown) => console.warn("The command could not be copied", { error }),
-    )
+    void copyText(props.command).then((result) => setCopied(result.copied))
   }
   return (
     <div class="settings-command">

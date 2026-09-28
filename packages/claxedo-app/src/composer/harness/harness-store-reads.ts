@@ -40,6 +40,7 @@ export function harnessOptionsReads(read: Read) {
     optionsSource: (scope: string) => read(scope).optionsSource,
     optionsStale: (scope: string) => read(scope).optionsStale,
     optionsLoading: (scope: string) => read(scope).optionsLoading,
+    optionsAnswered: (scope: string) => read(scope).dynamicModels !== null,
     configError: (scope: string) => read(scope).configError,
     draftDefaultState: (scope: string) => read(scope).draftDefaultState,
     draftDefaultLabels: (scope: string) => read(scope).draftDefault?.labels,

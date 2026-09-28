@@ -1,9 +1,10 @@
-import { getOwner, onCleanup } from "solid-js"
-import type { Server, ServerEvent } from "@/server"
+import { createSignal, getOwner, onCleanup, untrack } from "solid-js"
+import type { ReaderSettings, Server, ServerEvent } from "@/server"
 import type { SessionStores } from "@/session"
 import { createSessionList, type SessionListInternal } from "../list"
 import { createRequests, type RequestsInternal } from "../requests"
 import { createSessionTranscript } from "../transcript"
+import { transcriptViewport } from "../transcript-viewport"
 import { CACHED_TURN_LIMIT, OPEN_SESSION_LIMIT, createOpenSessions, type OpenSessions } from "./open-sessions"
 
 function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): void {
@@ -18,14 +19,16 @@ function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requ
   open.byId(event.ref.sessionId)?.apply(event)
 }
 
-export function createSessionStores(server: Server): SessionStores {
+export function createSessionStores(server: Server, settings: () => ReaderSettings): SessionStores {
   const requests = createRequests(server)
   const list = createSessionList(server, requests)
+  const [viewport, recordViewport] = createSignal(transcriptViewport({ width: window.innerWidth, height: window.innerHeight }))
+  const pageShape = () => untrack(() => ({ ...viewport(), ...settings() }))
   const open = createOpenSessions({
     limit: OPEN_SESSION_LIMIT,
     cachedLimit: CACHED_TURN_LIMIT,
     owner: getOwner(),
-    make: (ref, seed) => createSessionTranscript(server, ref, { list, requests }, seed),
+    make: (ref, seed) => createSessionTranscript(server, ref, { list, requests, pageShape }, seed),
     onEvicted: (sessionId) => list.closed(sessionId),
     stamp: (sessionId) => list.rowOf(sessionId)?.updatedAt,
   })
@@ -37,6 +40,7 @@ export function createSessionStores(server: Server): SessionStores {
   list.start()
   return {
     list,
+    recordViewport,
     open: (ref) => {
       list.opened(ref.sessionId)
       return open.get(ref)

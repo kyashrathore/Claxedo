@@ -7,6 +7,7 @@ import type {
   AgentPresentationSession,
   AgentRuntimeStatus,
   AgentSnapshotFileDiff,
+  AgentToolPart,
 } from "@claxedo/agent-runtime-contract"
 import type { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
@@ -80,6 +81,7 @@ export type DataProviderProps = {
   resolveSubagents?: (parentSessionId: string, toolCallId?: string) => SubagentView[]
   fileUrl?: (path: string) => string | undefined
   readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
+  loadToolBody?: (part: AgentToolPart) => void
 }
 
 function transcriptData(props: DataProviderProps) {
@@ -97,6 +99,7 @@ function transcriptData(props: DataProviderProps) {
     resolveSubagents: props.resolveSubagents,
     fileUrl: props.fileUrl,
     readToolImage: props.readToolImage,
+    loadToolBody: props.loadToolBody,
   }
 }
 

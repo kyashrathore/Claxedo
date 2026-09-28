@@ -305,4 +305,21 @@ describe("the signed bootstrap project inventory", () => {
     expect(body.project[0]?.workspaces.ws_laptop?.reachable).toBe(true)
     expect(body.project[0]?.workspaces.ws_asleep?.reachable).toBe(false)
   })
+
+  test("replays stored project metadata onto the projects the authority lists, and no others", async () => {
+    const { ensureWorkspace, updateProjectMetadata } = await import("@claxedo/server-core/workspace/store/index")
+    await ensureWorkspace({ workspaceId: "ws_shared", project_id: "proj_shared", project_name: "Original", kind: "cloud", driver: "daytona", directory: "/srv/shared" })
+    await ensureWorkspace({ workspaceId: "ws_private", project_id: "proj_private", project_name: "Private", kind: "cloud", driver: "daytona", directory: "/srv/private" })
+    await updateProjectMetadata("proj_shared", { name: "Shared name", icon: { color: "purple" }, commands: { start: "bun dev" } })
+    await updateProjectMetadata("proj_private", { icon: { override: "private-marker" }, commands: { start: "private-command" } })
+
+    const response = await signedBootstrap({ workspaces: [{ workspace_id: "ws_shared", project_id: "proj_shared", display_name: "Authority name" }] })
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.project).toHaveLength(1)
+    expect(body.project[0]).toMatchObject({ id: "proj_shared", name: "Shared name", worktree: "ws_shared", icon: { color: "purple" }, commands: { start: "bun dev" } })
+    expect(JSON.stringify(body)).not.toContain("private-")
+    expect(JSON.stringify(body)).not.toContain("proj_private")
+  })
 })

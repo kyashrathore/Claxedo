@@ -1,6 +1,7 @@
 import type { FileNode } from "@/server"
 import { sortNodes } from "./model"
-import { basename, parentPath } from "./path"
+import { getFilename } from "@/ui/utils"
+import { parentPath } from "./path"
 import type { TreeSource } from "./tree-source"
 
 export type SearchTree = {
@@ -21,7 +22,7 @@ export function buildSearchTree(paths: readonly string[], previous: SearchTree |
   const add = (path: string, kind: FileNode["kind"]) => {
     if (!path || nodes.has(path)) return
     const known = previous?.nodes.get(path)
-    nodes.set(path, known?.kind === kind ? known : { name: basename(path), path, kind, ignored: false })
+    nodes.set(path, known?.kind === kind ? known : { name: getFilename(path), path, kind, ignored: false })
   }
   for (const path of paths) {
     add(path, "file")

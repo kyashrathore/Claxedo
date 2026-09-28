@@ -1,4 +1,4 @@
-import type { AgentSession } from "@claxedo/agent-runtime-contract"
+import type { AgentSession, AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
 import type { ServerEvent } from "./events"
 import { sessionEndpoint } from "./session-context"
@@ -12,7 +12,7 @@ export type StatusAdmission =
   | { readonly kind: "held"; readonly ref: SessionRef }
 
 export type StatusOwner = {
-  readonly read: (ref: SessionRef, row: AgentSession, live: SessionFact<SessionStatus | undefined>) => SessionStatus
+  readonly read: (ref: SessionRef, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => SessionStatus
   readonly listed: (ref: SessionRef, status: SessionStatus) => SessionStatus
   readonly settle: (route: RuntimeRoute, ref: SessionRef) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
@@ -21,14 +21,13 @@ export type StatusOwner = {
 
 type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
 
-function statusFromLastTurn(row: AgentSession): SessionStatus {
-  const outcome = row.lastTurn
+function statusFromLastTurn(outcome: AgentTurnOutcome | undefined): SessionStatus {
   if (outcome?.status !== "failed") return { kind: "idle" }
   return { kind: "failed", error: new ServerError({ class: "internal", message: outcome.error }) }
 }
 
-function settledStatus(live: SessionStatus | undefined, row: AgentSession): SessionStatus {
-  return live && live.kind !== "idle" ? live : statusFromLastTurn(row)
+function settledStatus(live: SessionStatus | undefined, lastTurn: AgentTurnOutcome | undefined): SessionStatus {
+  return live && live.kind !== "idle" ? live : statusFromLastTurn(lastTurn)
 }
 
 function failureKey(placementId: PlacementId, sessionId: string): string {
@@ -50,9 +49,9 @@ function createFailures() {
 
 export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
-  const read = (ref: SessionRef, row: AgentSession, live: SessionFact<SessionStatus | undefined>) => {
+  const read = (ref: SessionRef, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => {
     if ("error" in live) throw live.error
-    const read = settledStatus(live.value, row)
+    const read = settledStatus(live.value, lastTurn)
     const known = failures.get(ref)
     if (!known) return read
     if (read.kind === "failed") return known
@@ -63,8 +62,11 @@ export function createStatusOwner(transport: Transport): StatusOwner {
     read,
     listed: (ref, status) => (status.kind === "idle" ? (failures.get(ref) ?? status) : status),
     settle: async (route, ref) => {
-      const view = sessionOpenFromWire(await transport.runtimeJson<unknown>(route, withQuery(sessionEndpoint(ref), OPEN_VIEW)))
-      return read(ref, view.session, view.status)
+      const [row, view] = await Promise.all([
+        transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref)),
+        transport.runtimeJson<unknown>(route, withQuery(sessionEndpoint(ref), OPEN_VIEW)).then(sessionOpenFromWire),
+      ])
+      return read(ref, row.lastTurn, view.status)
     },
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }

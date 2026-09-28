@@ -214,6 +214,8 @@ export type AgentToolPart = AgentPartBase<"tool"> & {
   tool: string
   state: AgentToolState
   metadata?: Record<string, unknown>
+  /** A read sent only what the collapsed row draws (`toolPartHeader`); the whole part is read when the row opens. */
+  headerOnly?: true
 }
 
 /**

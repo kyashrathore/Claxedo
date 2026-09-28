@@ -6,12 +6,10 @@ const en = {
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",
   "terminal.retry": "Retry",
-  "terminal.close": "Close terminal",
   "terminal.overload.title": "Terminal output overflow",
   "terminal.overload":
     "This terminal produced too much output too quickly. It has been disconnected to keep the app responsive.",
   "terminal.restoreFailed": "Terminal restore failed",
-  "terminal.loadFailed": "The terminals could not be loaded.",
   "terminal.startFailed.title": "Terminal failed to start",
   "terminal.createFailed": "The terminal could not be created.",
   "terminal.closeFailed": "The terminal could not be ended. Its shell may still be running.",

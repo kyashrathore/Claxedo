@@ -5,6 +5,7 @@ import { isMissingFile } from "@claxedo/helpers/fs"
 
 export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
 export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
+export const ACP_NO_MODELS_ENV = "SCRIPTED_ACP_NO_MODELS"
 
 const SCRIPT_TOKEN = /acp-script:([A-Za-z0-9._-]+)/g
 

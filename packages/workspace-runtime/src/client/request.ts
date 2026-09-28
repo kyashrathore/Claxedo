@@ -119,10 +119,8 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
   /**
    * `data` is `T` because the operation says so, not because anything checked:
    * at an HTTP boundary nothing can without a validator. `T` is not even
-   * pinned to routes this package serves — `createWorkspaceRuntimeCaller` is
-   * exported, and the app's `createServerRoutesClient` sends it at `/project`,
-   * `/path`, provider OAuth and `/experimental/worktree`, which claxedo-server
-   * answers.
+   * pinned to routes this package serves: `createWorkspaceRuntimeCaller` is
+   * exported, so a caller may send it at any server's routes.
    *
    * Unlike a brand or an inexpressible constructor type, the claim IS
    * checkable: it needs a per-operation decoder, the way

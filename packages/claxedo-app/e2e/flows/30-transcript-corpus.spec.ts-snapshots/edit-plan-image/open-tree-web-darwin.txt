@@ -5,7 +5,7 @@ row 0:
 - text: Write the notes. acp-script:edit-plan-image-0 Build · <time>
 - button "Copy message"
 row 1:
-- button "Worked for 0s"
+- button "Edit notes.md / +4 -0": notes.md / +4 -0
 row 2:
 - img "image.png"
 row 3:

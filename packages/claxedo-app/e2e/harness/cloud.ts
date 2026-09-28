@@ -24,11 +24,11 @@ function asOwner(signed: SignedStack) {
   }
 }
 
-export async function makeCloudWorkspace(signed: SignedStack, projectName: string): Promise<CloudWorkspace> {
+export async function makeCloudWorkspace(signed: SignedStack, name: string): Promise<CloudWorkspace> {
   const call = asOwner(signed)
   await call("PUT", "/api/workspace/drivers/docker/auth", { auth: { image: DRIVER_IMAGE }, default: true })
-  const remoteDirectory = path.join(signed.stack.dataDir, "cloud-workspaces", `${projectName.toLowerCase()}-${randomUUID().slice(0, 8)}`)
-  const created = JSON.parse((await call("POST", "/api/workspace/create", { workspaceName: "main", projectName, remoteDirectory })).body) as { workspaceId: string; projectId: string }
+  const remoteDirectory = path.join(signed.stack.dataDir, "cloud-workspaces", `${name.toLowerCase()}-${randomUUID().slice(0, 8)}`)
+  const created = JSON.parse((await call("POST", "/api/workspace/create", { workspaceName: "main", remoteDirectory })).body) as { workspaceId: string; projectId: string }
   return { id: created.workspaceId, projectId: created.projectId }
 }
 

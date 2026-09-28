@@ -63,20 +63,6 @@
     }
   }
 
-  [data-slot="session-turn-loading"] {
-    display: flex;
-    align-items: center;
-    margin-top: 12px;
-    min-height: 20px;
-    opacity: 0;
-    animation: session-turn-loading-reveal 1ms linear 100ms forwards;
-
-    .ui-spinner {
-      width: 16px;
-      height: 16px;
-    }
-  }
-
   .ui-text-reveal.session-turn-thinking-heading {
     flex: 1 1 auto;
     min-width: 0;
@@ -241,10 +227,4 @@ body:not([data-new-layout]) [data-component="session-turn"] {
 
 [data-slot="session-turn-list"] {
   gap: var(--transcript-turn-gap, 24px);
-}
-
-@keyframes session-turn-loading-reveal {
-  to {
-    opacity: 1;
-  }
 }

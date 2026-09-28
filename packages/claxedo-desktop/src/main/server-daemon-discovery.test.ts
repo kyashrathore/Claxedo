@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import {
-  CLAXEDO_DAEMON_PROTOCOL,
   clearClaxedoDaemonDiscovery,
   readClaxedoDaemonDiscovery,
   verifyClaxedoDaemonDiscovery,

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 type FirstPaintWindow = Window & { __firstTranscriptPaint?: Promise<string> }
 
@@ -162,15 +162,19 @@ test("03 a draft's first send is one request: its message shows before the sessi
 test("03 a draft's first send the runtime refuses leaves no session, and its text goes back to the composer with the error", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("refused-first")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  await app.route((url) => url.pathname === "/session", async (route) => {
-    const request = route.request()
-    if (request.method() !== "POST") return route.fallback()
-    await route.continue({ postData: JSON.stringify({ ...request.postDataJSON(), permissionCeiling: "full" }) })
-  })
-  const text = "A first prompt under a ceiling the harness cannot enforce"
+  const picker = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
+  await expect(picker).toHaveAttribute("data-harness", "pi")
+  await picker.click()
+  await app.getByRole("button", { name: /^Harness/ }).click()
+  await app.getByRole("button", { name: "Scripted ACP" }).click()
+  await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
+  await app.keyboard.press("Escape")
+  const removed = await fetch(new URL(`/api/claxedo/agent-config/connections/${SCRIPTED_ACP_CONNECTION_ID}`, stack.url), { method: "DELETE" })
+  expect(removed.status, "the draft's connection removed from another window").toBe(200)
+  const text = "A first prompt to a connection removed since the draft picked it"
   await sendPrompt(app, text)
 
-  await expect(app.getByText("This harness offers no permission mode within the full ceiling").filter({ visible: true }).first()).toBeVisible()
+  await expect(app.getByText(`Connection "${SCRIPTED_ACP_CONNECTION_ID}" is not configured on this runtime`).filter({ visible: true }).first()).toBeVisible()
   await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText(text)
   await expect(app.locator('[data-component="user-message"]')).toHaveCount(0)
   expect(await api.sessions(workspace.directory)).toEqual([])

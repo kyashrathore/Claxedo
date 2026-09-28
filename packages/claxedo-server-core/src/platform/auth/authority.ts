@@ -10,6 +10,8 @@ import type {
 } from "./private-session-authority"
 import type { SessionShareLevel } from "./session-share-level"
 import type { LatestView } from "../../session/latest-view-page"
+import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 
 export {
@@ -589,7 +591,21 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) => Promise<unknown>
-  readSessionOutline: (auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) => Promise<unknown>
+  /** The session's row as `listSessions` lists it, its outline and, with `firstPage`, its first page; nothing when the reader cannot read it. */
+  readSessionFirstRead: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string; firstPage?: TurnPageRequest },
+  ) => Promise<FirstRead<AuthoritySessionInventoryRow> | undefined>
+  /** The turns before `page.before`, read and projected as the first page is; nothing when the reader cannot read the session. */
+  readSessionPage: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } },
+  ) => Promise<TurnPage | undefined>
+  /** One part of one of the session's messages whole, `{}` when there is no such part; nothing when the reader cannot read the session. */
+  readSessionPart: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string; messageId: string; partId: string },
+  ) => Promise<{ part?: AgentContentPart } | undefined>
   syncSessionMessages: PrivateSessionAuthority["syncSessionMessages"]
   upsertSessionVisibility: (
     auth: SignedControlPlaneAuth,

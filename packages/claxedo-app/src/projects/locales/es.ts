@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "Se ejecuta después de crear un nuevo espacio de trabajo (árbol de trabajo).",
   "projects.edit.startup.placeholder": "p. ej. bun install",
   "projects.edit.action": "Editar",
-  "projects.close": "Cerrar",
   "projects.chip.project": "Proyecto",
   "projects.chip.self": "Este ordenador",
   "projects.chip.workspace": "Espacio de trabajo",

@@ -52,6 +52,7 @@ import {
   DEFAULT_RECOVERY_BUDGETS,
   assertAgentExecutionBinding,
   requireAgentExecutionBinding,
+  type AgentContentPart,
   type RecoveryOutcome,
   type RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
@@ -112,6 +113,7 @@ export type WorkspaceRuntimeStore =
     getMessages(id: string): AgentMessage[]
     listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
+    getPart?: (id: string, messageId: string, partId: string) => AgentContentPart | undefined
     turnOutline?: (id: string) => TurnOutline | undefined
     /**
      * Whether a relayed turn reached this session or one above it. Optional: a
@@ -2185,6 +2187,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ...getMessagePage.call(runtimeStore, sessionId, page) ?? { messages: [] },
             maxEventOrdinal: runtimeStore.getSessionMaxSeq(sessionId),
           }
+        },
+        getPart: async ({ sessionId, messageId, partId }) => {
+          const runtimeStore = store()
+          if (!runtimeStore.getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
+          if (!runtimeStore.getPart) throw new HTTPException(501, { message: "Part reads are unavailable" })
+          return runtimeStore.getPart(sessionId, messageId, partId)
         },
         turnCoverage: async ({ sessionId, turnId }) => {
           const runtimeStore = store()

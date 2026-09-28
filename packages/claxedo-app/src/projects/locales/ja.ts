@@ -19,7 +19,6 @@ export default {
   "projects.edit.startup.description": "新しいワークスペース (ワークツリー) を作成した後に実行されます。",
   "projects.edit.startup.placeholder": "例: bun install",
   "projects.edit.action": "編集",
-  "projects.close": "閉じる",
   "projects.chip.project": "プロジェクト",
   "projects.chip.self": "このコンピュータ",
   "projects.chip.workspace": "ワークスペース",

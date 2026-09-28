@@ -8,6 +8,8 @@ import type { WorkbenchStore } from "@/workbench"
 import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
 import { desktopBridge } from "@/lib/desktop-bridge"
+import { resolveTranscriptTypography } from "@/ui/utils"
+import { transcriptViewport } from "../transcript-viewport"
 import { openExternal } from "@/lib/external-link"
 
 export type TimelineHostInput = {
@@ -91,5 +93,6 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     navigation: {
       toSession: (id) => input.routing.navigate(sessionPath(refFor(view, id))),
     },
+    recordViewport: (size) => input.stores.recordViewport(transcriptViewport(size, resolveTranscriptTypography(transcriptTypography()))),
   }
 }

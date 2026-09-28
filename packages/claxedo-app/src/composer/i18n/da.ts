@@ -1,16 +1,10 @@
 import type { ComposerTextKey } from "./en"
 
 export default {
-  "composer.action.cancel": "Annuller",
-  "composer.action.save": "Gem",
   "composer.attachment.refused.title": "{{harness}} kan ikke bruge denne vedhæftning",
   "composer.attachment.refused.description": "{{harness}} har ingen prompt-input til {{mime}}, og denne session har ingen arbejdsområdemappe at gemme filen i.",
   "composer.attachment.unreadable.title": "Vedhæftningen kunne ikke læses",
   "composer.attachment.unreadable.description": "{{filename}} kunne ikke læses fra denne enhed.",
-  "composer.marks.title": "Markér billede",
-  "composer.marks.hint": "Træk for at markere et område, eller klik for at sætte en nål, og skriv så en kommentar.",
-  "composer.marks.delete": "Slet markering",
-  "composer.marks.mark": "markering {{number}}",
   "dialog.model.search.placeholder": "Søg modeller",
   "dialog.model.empty": "Ingen modeller fundet",
   "command.provider.connect": "Tilslut udbyder",

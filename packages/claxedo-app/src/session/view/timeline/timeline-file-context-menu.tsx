@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard"
 import { ClaxedoIcon as Icon } from "@/ui"
 
 export function TimelineFileContextMenu(props: {
@@ -36,7 +37,7 @@ export function TimelineFileContextMenu(props: {
           type="button"
           class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
           onClick={() => {
-            void navigator.clipboard?.writeText(props.resolvePath(props.menu.path))
+            void copyText(props.resolvePath(props.menu.path))
             props.onDismiss()
           }}
         >

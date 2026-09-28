@@ -59,7 +59,7 @@ Also excluded from AccountPort (intentional non-rows):
 - **Sandbox driver** routes (`GET|PUT /api/workspace/drivers*`) — local sidecar
   only; signed hosted sessions may view them through the local proxy but do not
   spend the Hosted Server bearer on them.
-- **Machine pause / second-device-open** — desktop reaches these through Host
+- **Machine pause** — desktop reaches it through Host
   Connector IPC; browser self-hosted uses the page session over HTTP. The
   enrollment handshake itself is the `host.enrollmentNonce` and
   `host.enrollCurrentMachine` rows below, performed by main for the Host

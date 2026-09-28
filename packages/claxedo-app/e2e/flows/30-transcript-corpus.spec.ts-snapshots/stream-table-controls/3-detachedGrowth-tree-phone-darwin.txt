@@ -5,15 +5,13 @@ row 0:
 - text: Say hello first. acp-script:stream-table-controls-0 Build · <time>
 - button "Copy message"
 row 1:
-- button "Worked for <duration>"
-row 2:
 - paragraph: Hello, ready to stream.
 - button "Copy response"
 - text: Build · <duration>
-row 3:
+row 2:
 - text: Stream the table. acp-script:stream-table-controls-1 Build · <time>
 - button "Copy message"
-row 4:
+row 3:
 - paragraph: "The stages:"
 - table:
   - rowgroup:

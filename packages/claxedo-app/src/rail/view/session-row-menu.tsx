@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useTranslator } from "@/i18n"
+import { copyText } from "@/lib/clipboard"
 import { failureMessage } from "@/lib/failure"
 import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
@@ -33,8 +34,8 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
   const copySessionLink = () => {
     props.onDismiss()
     const link = new URL(sessionPath(props.row.ref), window.location.origin).toString()
-    navigator.clipboard.writeText(link).catch((error: unknown) => {
-      showToast({ title: t("rail.copyFailed"), description: failureMessage(error) })
+    void copyText(link).then((result) => {
+      if (!result.copied) showToast({ title: t("rail.copyFailed"), description: failureMessage(result.error) })
     })
   }
   return (

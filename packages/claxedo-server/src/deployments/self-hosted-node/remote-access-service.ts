@@ -480,7 +480,7 @@ export function createRemoteAccessService(input: {
   return {
     servingEnrollmentId: () => state?.enrollmentId,
     async status(auth) {
-      if (!auth) return { enrolled: false, enabled: false, secondDeviceOpen: false }
+      if (!auth) return { enrolled: false, enabled: false }
       const identity = await input.localHostIdentity()
       const assignments = authority.listHostAssignments ? await authority.listHostAssignments(auth) : []
       let enrolled = assignments.some((assignment) => assignment.host_id === identity.hostId)
@@ -488,15 +488,9 @@ export function createRemoteAccessService(input: {
         const active = await authority.activeHostEnrollment(auth)
         enrolled = active.active && active.host_id === identity.hostId
       }
-      const workspaceIds = [...new Set(assignments.flatMap((assignment) => assignment.workspace_ids))]
-      const secondDeviceOpen = (await Promise.all(workspaceIds.map(async (workspaceId) => {
-        const host = await authority.activeWorkspaceHost?.(auth, { workspaceId })
-        return !!(host?.active && host.second_device_open_at)
-      }))).some(Boolean)
       return {
         enrolled,
         enabled: enrolled && (input.machineTunnelActive?.(identity.hostId) ?? true),
-        secondDeviceOpen,
       }
     },
     async enable(auth, options) {
@@ -544,12 +538,6 @@ export function createRemoteAccessService(input: {
         }
         return result
       })
-    },
-    async markSecondDeviceOpen(auth, workspaceId) {
-      const result = await input.authority.markSecondDeviceOpen?.(auth, { workspaceId })
-      if (!result) throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Second-device completion storage is unavailable")
-      if (result.recorded) input.capture(auth.user.subject, "second_device_open", { workspaceId })
-      return { recorded: result.recorded }
     },
     async hostId() {
       return (await input.localHostIdentity()).hostId
@@ -613,12 +601,11 @@ export function unavailableRemoteAccessService(): LocalRemoteAccessService {
   }
   return {
     servingEnrollmentId: () => undefined,
-    status: async () => ({ enrolled: false, enabled: false, secondDeviceOpen: false }),
+    status: async () => ({ enrolled: false, enabled: false }),
     enable: unavailable,
     devices: unavailable,
     revoke: unavailable,
     rename: unavailable,
-    markSecondDeviceOpen: unavailable,
     hostId: unavailable,
     assignWorkspace: unavailable,
     unassignWorkspace: unavailable,

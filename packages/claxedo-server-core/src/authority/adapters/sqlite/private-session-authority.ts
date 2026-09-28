@@ -4,6 +4,9 @@ import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/j
 import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { readStoredTurnOutline } from "../../../session/turn-outline"
+import { readStoredPart } from "../../../session/stored-part"
+import type { StoredMessageQuery } from "../../../session/stored-messages"
+import { readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -41,7 +44,7 @@ import {
   type WorkspaceAction,
 } from "./workspace-authority-store"
 import { readSqliteSessionPage, type SessionPageRow } from "./session-page"
-import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
@@ -314,6 +317,15 @@ export function createSqlitePrivateSessionAuthority(input: {
   }
 
   /** The reader's role on the session's workspace, or nothing when the session or workspace refuses the read. */
+  const readableSession = (db: SqliteAuthorityDb, actor: AuthorityUser, sessionId: string, workspaceId: string): SessionRow | undefined => {
+    try {
+      return requireSessionAccess(db, actor, sessionId, workspaceId, "read").row
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) return undefined
+      throw error
+    }
+  }
+
   const sessionReadRole = (auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string): { role: string | undefined } | undefined => {
     const db = input.database()
     const actor = actorForAuth(auth)
@@ -743,12 +755,28 @@ export function createSqlitePrivateSessionAuthority(input: {
           : {}),
       }
     },
-    async readSessionOutline(auth, value) {
-      const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
-      if (!read) return { allowed: false, turns: [], complete: true }
+    async readSessionFirstRead(auth, value) {
       const db = input.database()
-      const outline = await readStoredTurnOutline((sql, params) => db.prepare(sql).all(...params), "data", value.sessionId, value.workspaceId)
-      return { allowed: true, role: read.role, ...outline }
+      const actor = actorForAuth(auth)
+      const row = readableSession(db, actor, value.sessionId, value.workspaceId)
+      if (!row) return undefined
+      return await readFirstRead(
+        publicSession(db, row, actor.token_identifier),
+        await readStoredTurnOutline(storedQuery(db), "data", value.sessionId, value.workspaceId),
+        sqliteTurnRead(db, value.sessionId, value.workspaceId),
+        value.firstPage,
+      )
+    },
+    async readSessionPage(auth, value) {
+      const db = input.database()
+      if (!readableSession(db, actorForAuth(auth), value.sessionId, value.workspaceId)) return undefined
+      return await readTurnPage(sqliteTurnRead(db, value.sessionId, value.workspaceId), value.page)
+    },
+    async readSessionPart(auth, value) {
+      const db = input.database()
+      if (!readableSession(db, actorForAuth(auth), value.sessionId, value.workspaceId)) return undefined
+      const part = await readStoredPart(storedQuery(db), "data", value)
+      return part ? { part } : {}
     },
 
     async syncSessionMessages(auth, value) {
@@ -1142,6 +1170,14 @@ function readLatestView(db: SqliteAuthorityDb, sessionId: string, workspaceId: s
     older,
     (ordinal) => encodeCursor(sessionId, ordinal),
   )
+}
+
+function storedQuery(db: SqliteAuthorityDb): StoredMessageQuery {
+  return (sql, params) => db.prepare(sql).all(...params)
+}
+
+function sqliteTurnRead(db: SqliteAuthorityDb, sessionId: string, workspaceId: string): TurnRead {
+  return (before) => storedTurn(readLatestView(db, sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeCursor(sessionId, before)))
 }
 
 function encodeCursor(sessionId: string, ordinal: number) {

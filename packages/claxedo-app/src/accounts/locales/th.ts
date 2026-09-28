@@ -75,8 +75,6 @@ export default {
   "settings.models.title": "โมเดล",
   "settings.models.description": "บัญชีที่เอเจนต์ของคุณใช้งาน และโมเดลที่แต่ละบัญชีให้บริการ",
   "settings.models.tab.accounts": "บัญชี",
-  "provider.connect.context.harness": "{{harness}} จะทำงานบนบัญชีนี้",
-  "provider.connect.context.engine": "{{engine}} จะใช้บัญชีนี้กับโมเดลของ {{vendor}}",
   "provider.connect.method.openKeyPage": "เปิดหน้าคีย์",
   "provider.connect.method.anthropic.subscription.title": "การสมัครสมาชิก Claude (Pro หรือ Max)",
   "provider.connect.method.anthropic.subscription.for": "ใช้แพ็กเกจ Claude.ai ของคุณและขีดจำกัดของแพ็กเกจนั้น",

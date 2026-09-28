@@ -9,8 +9,6 @@ row 0:
 - text: Delegate it. acp-script:subagent-chip-0 Build · <time>
 - button "Copy message"
 row 1:
-- button "Worked for 0s"
-row 2:
 - paragraph: The helper finished.
 - button "Copy response"
 - text: Build · 0s
