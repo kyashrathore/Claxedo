@@ -5,7 +5,9 @@ import {
   providerBinding,
   ProviderCredentialUnavailableError,
   providerProjection,
+  providerProjectionKey,
   providerProjectionRecord,
+  turnAccountFor,
 } from "./provider-projection"
 
 const minted = {
@@ -133,5 +135,26 @@ describe("provider projection", () => {
     }, appliedAt)).toBe(appliedAt + 5 * 60 * 1000)
     expect(projectionRenewalDueAt({ anthropic: { unavailable: true, reason: "auth_failed" } }, appliedAt))
       .toBeUndefined()
+  })
+})
+
+describe("the account a binding spends", () => {
+  const account = { credentialId: "cred-1", providerId: "claude-sdk", label: "contactyash" }
+
+  test("rides the binding without changing what the harness spawns on", () => {
+    expect(providerProjection({ ...minted, account })).toEqual({ ...minted, account })
+    expect(providerProjectionKey(providerProjection({ ...minted, account }))).toBe(providerProjectionKey(minted))
+  })
+
+  test("a malformed account makes the row unreadable rather than unnamed", () => {
+    expect(providerProjection({ ...minted, account: { providerId: "claude-sdk" } })).toBeUndefined()
+    expect(providerProjection({ ...minted, account: { ...account, label: 7 } })).toBeUndefined()
+  })
+
+  test("names a stored credential, the machine's login, or nothing it cannot know", () => {
+    expect(turnAccountFor("claude", { ...minted, account })).toEqual({ kind: "stored", harnessId: "claude", ...account })
+    expect(turnAccountFor("codex", undefined)).toEqual({ kind: "machine", harnessId: "codex" })
+    expect(turnAccountFor("claude", minted)).toBeUndefined()
+    expect(turnAccountFor("claude", { unavailable: true, reason: "revoked" })).toBeUndefined()
   })
 })

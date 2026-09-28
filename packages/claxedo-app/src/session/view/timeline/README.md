@@ -20,7 +20,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `useSessionSyncOptional().syncSession` | `syncSession?`: fetch a session's conversation (used for the parent of a subagent when its transcript is not loaded) |
 | `useSettings().general.*` | `settings`: the five accessors the timeline reads |
 | `useTranscriptTypography().typography` | `transcriptTypography` |
-| `useLanguage().t` | `t: TimelineTranslate`, typed on the 61 keys the timeline uses (`TimelineTextKey`) |
+| `useLanguage().t` | `t: TimelineTranslate`, typed on the 63 keys the timeline uses (`TimelineTextKey`) |
 | `usePlatform()` | `platform`: `openLink`, and `renderMermaid` from `desktopBridge()` (`@/lib/desktop-bridge`), present only on desktop |
 | `useClaxedoState().workspacePanel.open(...)` with `workspaceDir`, `targetPaneId`, `navigator: null` | `openFocus(focus)`: the host opens each focus as a workspace-panel tab; a `subagent` tab belongs to the session holding the pane |
 | `layout.showContent(layout.openSession(...))` at phone width | `openSessionInPane(sessionId, label?)` |
@@ -154,6 +154,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 - The recovery class is attached on every turn, not only the first: it is position-independent, the card mounts on its presence, and retry is registered on every submit.
 - `turn-recovery.ts` mirrors the server classifier `classifyFirstTurnError` (`packages/agent-sdk-runtime/src/first-turn-error.ts`), which is the source of truth and is not browser-safe. The server stamps `error.data.firstTurnErrorClass`, which wins; the regexes are a fallback for class-less errors and must stay in lockstep with that file. The credential broker's codes come from `@claxedo/agent-runtime-contract` on both sides, and are read first: without them a 403 naming a route the binding does not allow reads as `credential` and asks the user to reconnect a working account.
 - `rate_limit` is a temporary refusal (a 429, "try again later") that the same account clears by waiting, so its card offers Resend. `usage_limit` is an exhausted plan or quota window, which a resend on the same account hits again until it resets, so it is a status line asking for another model or account, with no button. Harness adapters name either from the harness's own structured error where it has one; the message is read only without it.
+- A failed turn names the account it ran on (`error.data.account`, which the runtime reads off the binding the turn launched on): a stored credential by its label, or this computer's login when none was bound. The runtime records it only for the native harnesses; a failure without one shows no account line.
 - Recovery copy is position-independent (never "first turn") and says "agent", never "harness", "ACP" or "adapter". The provider's own sentence wins whenever the error carried an HTTP status, for every class (a 401 classifies as `credential`, and the class copy is vaguer than "Anthropic rejected the credential (401)…"); without a status the class keeps its repair sentence, and `unknown` falls through to error-derived wording, ending at a last-resort sentence that still says what is known.
 - A completed tool step can precede the turn's answer under the same parent.
 

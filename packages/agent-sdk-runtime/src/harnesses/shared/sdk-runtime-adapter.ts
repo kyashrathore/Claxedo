@@ -507,9 +507,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       // instead of a runtime-channel-only side path nothing on the wire reads.
       onDiagnostic: (payload) => parentProjector.project(payload, { dir: "in", method: "child-event-routing" }),
     })
+    const account = this.driver.turnAccount(input)
     const ingest = (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => {
       const result = runtime.ingest(raw)
-      for (const runtimeEvent of result.events) router.project(runtimeEvent, source, route)
+      for (const runtimeEvent of result.events) {
+        router.project(runtimeEvent.type === "error" && account ? { ...runtimeEvent, account } : runtimeEvent, source, route)
+      }
     }
     const subagentChildren = createSubagentChildren({
       parentSessionId: id,
@@ -662,7 +665,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     for (const event of router.terminalizeParent(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
     const updated = messageUpdated(buildAssistantMessage(turnTerminalMessage(
       terminalIdentity(),
-      { name: "UnknownError", data: firstTurnErrorData(promptError) },
+      { name: "UnknownError", data: firstTurnErrorData(promptError, { account }) },
     )))
     this.store.appendEvent({
       ...fenced,
@@ -672,7 +675,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       source: { dir: "in", method: "prompt.error", frame: { message: promptError } },
     })
     yield updated
-    const error = sessionError(promptError, id)
+    const error = sessionError(promptError, id, { account })
     this.store.appendEvent({
       ...fenced,
       sessionId: id,

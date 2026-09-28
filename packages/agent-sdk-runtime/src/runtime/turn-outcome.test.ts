@@ -56,4 +56,19 @@ describe("outcomeFromPayload", () => {
     expect(outcomeFromPayload(projected("rate_limit"))).toMatchObject({ status: "failed", error: "429", errorClass: "rate_limit" })
     expect(outcomeFromPayload(projected("throttled"))).not.toHaveProperty("errorClass")
   })
+
+  test("the account a failed turn ran on rides its outcome from the event and from a projected session error", () => {
+    const account = { kind: "stored", harnessId: "claude", credentialId: "cred-1", providerId: "claude-sdk", label: "contactyash" } as const
+    expect(outcomeFromPayload({ type: "error", error: "429", account })).toMatchObject({ status: "failed", account })
+    expect(outcomeFromPayload({
+      id: "session.error:session-1",
+      type: "session.error",
+      properties: { sessionID: "session-1", error: { name: "UnknownError", data: { message: "429", account } } },
+    })).toMatchObject({ status: "failed", account })
+    expect(outcomeFromPayload({
+      id: "session.error:session-1",
+      type: "session.error",
+      properties: { sessionID: "session-1", error: { name: "UnknownError", data: { message: "429", account: { kind: "stored" } } } },
+    })).not.toHaveProperty("account")
+  })
 })

@@ -4,7 +4,7 @@ import { ClaxedoIcon as Icon, Button, Card, Tooltip } from "@/ui"
 import { ClaxedoIconButton as IconButton } from "@/ui"
 import type { DispatchContext } from "./provider-error-detail"
 import type { TimelineTranslate } from "./model"
-import { turnRecoveryKeys, sessionRecoveryDescription, sessionRecoveryTitle, type SessionErrorClass } from "./turn-recovery"
+import { turnRecoveryKeys, sessionRecoveryAccount, sessionRecoveryDescription, sessionRecoveryTitle, type SessionErrorClass } from "./turn-recovery"
 
 function RawDetail(props: { detail: string }) {
   const [open, setOpen] = createSignal(false)
@@ -144,6 +144,11 @@ export function FirstTurnRecoveryCard(props: {
   const title = () => sessionRecoveryTitle(props.kind, props.error, context()) ?? props.t(text().title)
   const description = () =>
     props.summary ?? sessionRecoveryDescription(props.kind, props.error, context()) ?? props.t(text().description)
+  const account = () => {
+    const named = sessionRecoveryAccount(props.error)
+    return named && props.t(named.key, named.params)
+  }
+  const accountLine = <Show when={account()}>{(value) => <div class="mt-0.5 text-12-regular">{value()}</div>}</Show>
   if (props.kind === "usage_limit") {
     return (
       <InlineErrorStatus
@@ -151,7 +156,9 @@ export function FirstTurnRecoveryCard(props: {
         recoveryClass={props.kind}
         title={title()}
         description={description()}
-      />
+      >
+        {accountLine}
+      </InlineErrorStatus>
     )
   }
   const detail = () => {
@@ -181,6 +188,7 @@ export function FirstTurnRecoveryCard(props: {
       title={title()}
       description={description()}
     >
+      {accountLine}
       <Show when={detail()}>{(value) => <RawDetail detail={value()} />}</Show>
       <Show when={actionError()}>{(value) => (
         <div class="mt-2 text-12-regular text-icon-critical-base" role="alert">{value()}</div>

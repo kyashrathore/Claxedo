@@ -24,6 +24,7 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     instructionChannel: "thread-start",
     interactions: { permissions: true, questions: true },
     applyConfig() {},
+    turnAccount: () => undefined,
     createAgentSession: async () => ({ id: "thread-1" }),
     deleteAgentSession() {},
     createRuntime() {

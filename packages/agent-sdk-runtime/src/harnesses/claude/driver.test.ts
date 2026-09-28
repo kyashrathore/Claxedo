@@ -726,6 +726,72 @@ describe("a 4xx from the broker base URL ends the turn", () => {
   }
 })
 
+describe("a failed turn names the account it ran on", () => {
+  const RATE_LIMITED = "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later."
+
+  async function failedTurn(auth: Record<string, unknown>, fail: "event" | "throw") {
+    const store = createMemoryRuntimeStore()
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      driver: (host) => createClaudeSdkDriver(host, {
+        executable: () => "/fake/claude",
+        query: () => Object.assign((async function* () {
+          if (fail === "throw") throw new Error(RATE_LIMITED)
+          yield {
+            type: "assistant",
+            error: "rate_limit",
+            session_id: "sdk-session",
+            parent_tool_use_id: null,
+            uuid: "assistant-1",
+            message: { content: [{ type: "text", text: RATE_LIMITED }] },
+          }
+        })(), {
+          close() {},
+          supportedModels: async () => [],
+        }) as unknown as Query,
+      }),
+    })
+    void adapter.applyConfig({ auth, mcp: {} })
+    const session = await adapter.createSession("/repo", undefined, `session-${fail}`)
+    const binding = {
+      workspaceId: "workspace",
+      directory: "/repo",
+      sessionId: session.id,
+      upstreamSessionId: store.getAgentSessionId(session.id)!,
+      connectionId: "native:claude",
+    } as AgentExecutionBinding
+    let last: unknown
+    for await (const event of adapter.executeTurn(binding, {
+      parts: [{ type: "text", text: "Say hello" }],
+      agent: "build",
+      assistantMessageId: `assistant-${fail}`,
+      model: { providerID: "claude", modelID: "auto" },
+    })) last = event
+    await adapter.dispose()
+    expect(last).toMatchObject({ type: "session.error" })
+    return (last as { properties: { error: { data: Record<string, unknown> } } }).properties.error.data
+  }
+
+  const stored = { ...brokerProjection, account: { credentialId: "cred-1", providerId: "claude-sdk", label: "contactyash" } }
+
+  for (const fail of ["event", "throw"] as const) {
+    test(`a stored credential, by label, when the turn fails by ${fail === "event" ? "the harness's error" : "a thrown error"}`, async () => {
+      expect(await failedTurn({ "claude-sdk": stored }, fail)).toMatchObject({
+        firstTurnErrorClass: "rate_limit",
+        account: { kind: "stored", harnessId: "claude", credentialId: "cred-1", providerId: "claude-sdk", label: "contactyash" },
+      })
+    })
+  }
+
+  test("the machine's own login when no credential is bound", async () => {
+    expect(await failedTurn({}, "event")).toMatchObject({ account: { kind: "machine", harnessId: "claude" } })
+  })
+
+  test("nothing when the binding's authority names no account", async () => {
+    expect(await failedTurn({ "claude-sdk": brokerProjection }, "event")).not.toHaveProperty("account")
+  })
+})
+
 describe("a brokered turn withholds the operator's Claude account", () => {
   function configDirs() {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "claude-config-"))

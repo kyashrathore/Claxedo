@@ -1,13 +1,21 @@
 import { describe, expect, test } from "bun:test"
 import { sessionScreenEnglish } from "../i18n/en"
 import type { TimelineTextKey } from "./model"
-import { turnRecoveryKeys, sessionRecoveryClass, sessionRecoveryDescription, sessionRecoveryTitle, type SessionErrorClass } from "./turn-recovery"
+import {
+  turnRecoveryKeys,
+  sessionRecoveryAccount,
+  sessionRecoveryClass,
+  sessionRecoveryDescription,
+  sessionRecoveryTitle,
+  type SessionErrorClass,
+} from "./turn-recovery"
 
 const RATE_LIMITED =
   "Claude assistant message failed: rate_limit\nAPI Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later."
 const USAGE_LIMITED = "You've reached your Codex usage limit. It will reset in about 5 hours."
 
-const english = (key: TimelineTextKey) => sessionScreenEnglish[`sessionScreen.timeline.${key}`]
+const english = (key: TimelineTextKey, params: Record<string, string> = {}) =>
+  sessionScreenEnglish[`sessionScreen.timeline.${key}`].replace(/\{\{(\w+)\}\}/g, (_, name: string) => params[name] ?? "")
 
 function copy(kind: SessionErrorClass) {
   const text = turnRecoveryKeys(kind)
@@ -54,5 +62,19 @@ describe("turn recovery", () => {
   test("a rate limit with no provider status falls back to its class copy", () => {
     expect(sessionRecoveryTitle("rate_limit", failed(RATE_LIMITED, "rate_limit"))).toBeUndefined()
     expect(sessionRecoveryDescription("rate_limit", failed(RATE_LIMITED, "rate_limit"))).toBeUndefined()
+  })
+
+  test("a failed turn names the account it ran on", () => {
+    const named = (account: unknown) => {
+      const line = sessionRecoveryAccount({ name: "UnknownError", data: { message: RATE_LIMITED, account } })
+      return line && english(line.key, line.params)
+    }
+    expect(named({ kind: "stored", harnessId: "claude", credentialId: "cred-1", providerId: "claude-sdk", label: "contactyash" }))
+      .toBe("Account: contactyash (Claude Code)")
+    expect(named({ kind: "stored", harnessId: "codex", credentialId: "cred-2", providerId: "codex-app-server" }))
+      .toBe("Account: codex-app-server (Codex)")
+    expect(named({ kind: "machine", harnessId: "claude" })).toBe("Account: this computer's login (Claude Code)")
+    expect(named({ kind: "stored", harnessId: "claude" })).toBeUndefined()
+    expect(named(undefined)).toBeUndefined()
   })
 })

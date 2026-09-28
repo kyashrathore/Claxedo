@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
-import { isProviderUnavailable, providerBinding, type ProviderProjection } from "../../provider-projection"
+import { isProviderUnavailable, providerBinding, turnAccountFor, type ProviderProjection } from "../../provider-projection"
 
 /** One `models.json` overlay per provider, merged onto Pi's own built-in definition. */
 export type PiProviderOverrides = Record<string, { baseUrl: string; apiKey: string }>
@@ -82,6 +82,10 @@ export function piProviderOverrides(auth: Record<string, ProviderProjection> | u
  * would otherwise take every Claude turn in the workspace down with it. A
  * resume and the model probe carry no model, so those refuse on any of them.
  */
+export function piTurnAccount(auth: Record<string, ProviderProjection> | undefined, providerId: string) {
+  return turnAccountFor("pi", piProjections(auth).find((entry) => entry.providerId === providerId)?.projection)
+}
+
 export function assertPiProvidersBindable(
   auth: Record<string, ProviderProjection> | undefined,
   model?: string,

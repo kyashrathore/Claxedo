@@ -489,7 +489,8 @@ export function createLocalCredentialBroker(input: {
           }
           entry.lease = lease
         }
-        rows[credential.provider_id] = { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt }
+        const account = { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) }
+        rows[credential.provider_id] = { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt, account }
       }
       return rows
     },

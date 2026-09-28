@@ -41,6 +41,7 @@ function claudeDriver(): SdkRuntimeDriver {
     instructionChannel: "turn-system-prompt",
     interactions: { permissions: true, questions: false },
     applyConfig() {},
+    turnAccount: () => undefined,
     createAgentSession: async () => ({ id: "claude-parent-thread" }),
     deleteAgentSession() {},
     createRuntime: (threadId) => createAgentEventRuntime({

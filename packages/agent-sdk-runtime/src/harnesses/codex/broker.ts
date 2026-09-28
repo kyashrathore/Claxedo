@@ -5,6 +5,7 @@ import path from "node:path"
 import {
   providerBinding,
   providerProjectionKey,
+  turnAccountFor,
   type ProviderBinding,
   type ProviderProjection,
 } from "../../provider-projection"
@@ -69,6 +70,11 @@ export class CodexBrokerProvider {
     if (providerProjectionKey(projection) === providerProjectionKey(this.projection)) return false
     this.projection = projection
     return true
+  }
+
+  /** The account the running app-server was launched on. */
+  account() {
+    return turnAccountFor("codex", this.projection)
   }
 
   /** Whether a thread must select the brokered provider rather than the default. */

@@ -3751,12 +3751,12 @@ export class RuntimeStore {
               directory: session?.directory ?? "",
               created: active.created_at,
               completed: input.outcome.completedAt,
-              error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed", input.outcome.errorClass) },
+              error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed", input.outcome) },
               ...(control.variant ? { variant: control.variant } : {}),
             }),
           ),
         )
-        events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome.errorClass))
+        events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome))
       } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
         terminal(messageCompleted(input.sessionId, active.assistant_message_id))
         terminal(sessionIdle(input.sessionId))

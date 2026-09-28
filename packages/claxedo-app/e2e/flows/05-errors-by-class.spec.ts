@@ -20,12 +20,14 @@ for (const failure of MODEL_FAILURES) {
 
     await expect(app.getByRole("status").filter({ hasText: failure.copy })).toBeVisible({ timeout: failure.within })
     await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
-    await expect
-      .poll(async () => {
-        const messages = await api.messages(workspace.directory, session.id)
-        return JSON.stringify(messages.filter((message) => message.info.role === "assistant").at(-1)?.info.error ?? null)
-      })
-      .toContain(String(failure.status))
+    const failedTurn = async () => {
+      const messages = await api.messages(workspace.directory, session.id)
+      return messages.filter((message) => message.info.role === "assistant").at(-1)?.info.error
+    }
+    await expect.poll(async () => JSON.stringify((await failedTurn()) ?? null)).toContain(String(failure.status))
+    const account = ((await failedTurn()) as { data?: { account?: { kind?: string; providerId?: string } } } | undefined)?.data?.account
+    expect(account).toMatchObject({ kind: "stored", harnessId: "pi" })
+    await expect(app.getByRole("status").filter({ hasText: failure.copy })).toContainText(`Account: ${account?.providerId} (Pi)`)
   })
 }
 

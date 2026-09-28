@@ -85,9 +85,18 @@ describe("first-turn error taxonomy", () => {
   })
 
   test("the harness's own class outranks the message it came with", () => {
-    expect(firstTurnErrorData("Claude assistant message failed: rate_limit", "usage_limit")).toEqual({
+    expect(firstTurnErrorData("Claude assistant message failed: rate_limit", { errorClass: "usage_limit" })).toEqual({
       message: "Claude assistant message failed: rate_limit",
       firstTurnErrorClass: "usage_limit",
+    })
+  })
+
+  test("names the account the turn ran on beside its class", () => {
+    const account = { kind: "stored", harnessId: "claude", credentialId: "cred-1", providerId: "claude-sdk", label: "contactyash" } as const
+    expect(firstTurnErrorData("Claude assistant message failed: rate_limit", { account })).toEqual({
+      message: "Claude assistant message failed: rate_limit",
+      firstTurnErrorClass: "rate_limit",
+      account,
     })
   })
 

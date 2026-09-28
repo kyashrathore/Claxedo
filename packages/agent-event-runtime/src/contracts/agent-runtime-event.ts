@@ -1,5 +1,5 @@
 import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
-import type { AgentSubagentUpdate, FirstTurnErrorClass, RuntimeGoalSnapshot, RuntimeQuestion, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
+import type { AgentSubagentUpdate, FirstTurnErrorClass, RuntimeGoalSnapshot, RuntimeQuestion, RuntimeUsageObservation, TurnAccount } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
@@ -123,8 +123,11 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "finish"; sessionId: string }
   /** The turn ended because it was stopped. Its own terminal, never inferred from `session-status` idle. */
   | { type: "cancelled"; sessionId: string }
-  /** `errorClass` is set only from the harness's own structured error, never guessed from `error`. */
-  | { type: "error"; error: string; errorClass?: FirstTurnErrorClass }
+  /**
+   * `errorClass` is set only from the harness's own structured error, never
+   * guessed from `error`; `account` is the one the turn was launched on.
+   */
+  | { type: "error"; error: string; errorClass?: FirstTurnErrorClass; account?: TurnAccount }
   | { type: "image-delta"; mimeType: string; data: string }
   | { type: "audio-delta"; mimeType: string; data: string }
   | { type: "resource-link-delta"; uri: string; name: string; mimeType?: string; title?: string }

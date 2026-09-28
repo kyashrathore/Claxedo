@@ -213,6 +213,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.turnRecovery.unknown.title": "That turn didn't complete",
   "sessionScreen.timeline.turnRecovery.unknown.description": "The agent returned an error before completing this turn. Resend the last prompt.",
   "sessionScreen.timeline.turnRecovery.unknown.action": "Resend last prompt",
+  "sessionScreen.timeline.turnRecovery.account.stored": "Account: {{label}} ({{harness}})",
+  "sessionScreen.timeline.turnRecovery.account.machine": "Account: this computer's login ({{harness}})",
   "command.message.previous": "Previous message",
   "command.message.previous.description": "Go to the previous user message",
   "command.message.next": "Next message",

@@ -37,6 +37,7 @@ import {
   isProviderUnavailable,
   providerBinding,
   providerProjectionRecord,
+  turnAccountFor,
   type ProviderProjection,
 } from "../../provider-projection"
 import {
@@ -302,6 +303,10 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         local: { cwd: directory, ...cursorPluginLocalOptions(this.currentPluginRoots) },
       }),
     })
+  }
+
+  turnAccount() {
+    return turnAccountFor("cursor", this.auth)
   }
 
   async runTurn(input: SdkRuntimeTurnInput) {

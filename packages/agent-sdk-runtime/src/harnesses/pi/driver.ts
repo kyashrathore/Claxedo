@@ -4,6 +4,7 @@ import {
   assertPiProvidersBindable,
   piProviderOverrides,
   piSpawnEnv,
+  piTurnAccount,
   retainPiAuth,
   type PiProviderOverrides,
 } from "./auth"
@@ -433,6 +434,11 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       throw error
     }
   }
+  turnAccount(input: PromptInput) {
+    const provider = input.model ? piModelKey(input.model)?.providerID : undefined
+    return provider ? piTurnAccount(this.auth, provider) : undefined
+  }
+
   async runTurn(input: SdkRuntimeTurnInput) {
     const agentSessionId = input.getAgentSessionId()
     const entry = await this.ensure(agentSessionId, input.directory)
@@ -752,10 +758,14 @@ function piImageContents(parts: PromptInput["parts"]) {
 }
 
 /** A native model key belongs to its harness; Pi qualifies its models by provider. */
-function piModel(model: { providerID: string; modelID: string }) {
+function piModelKey(model: { providerID: string; modelID: string }) {
   const slash = model.modelID.indexOf("/")
-  if (model.providerID !== "pi" || slash < 1 || slash === model.modelID.length - 1) {
-    throw new Error("Pi requires a pi model key with a provider/model ID")
-  }
+  if (model.providerID !== "pi" || slash < 1 || slash === model.modelID.length - 1) return undefined
   return { providerID: model.modelID.slice(0, slash), modelID: model.modelID.slice(slash + 1) }
+}
+
+function piModel(model: { providerID: string; modelID: string }) {
+  const key = piModelKey(model)
+  if (!key) throw new Error("Pi requires a pi model key with a provider/model ID")
+  return key
 }

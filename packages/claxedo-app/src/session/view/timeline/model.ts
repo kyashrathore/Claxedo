@@ -58,6 +58,8 @@ export type TimelineTextKey =
   | `turnRecovery.${FirstTurnErrorClass}.title`
   | `turnRecovery.${FirstTurnErrorClass}.description`
   | `turnRecovery.${Exclude<FirstTurnErrorClass, "usage_limit">}.action`
+  | "turnRecovery.account.stored"
+  | "turnRecovery.account.machine"
 
 export type TimelineTranslate = (key: TimelineTextKey, params?: Record<string, string | number>) => string
 

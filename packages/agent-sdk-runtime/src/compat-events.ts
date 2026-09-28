@@ -13,7 +13,7 @@ import type {
   AgentTodo,
   ConnectionRuntimeStatus,
 } from "@claxedo/agent-runtime-contract"
-import { parseAgentContentPart, promptPartId, type FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
+import { parseAgentContentPart, promptPartId, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentHarnessAdapterHealth } from "./harness-health"
@@ -428,7 +428,11 @@ export function sessionIdle(sessionID: string): EventSessionIdle {
   }
 }
 
-export function sessionError(message: string, sessionID?: string, errorClass?: FirstTurnErrorClass): EventSessionError {
+export function sessionError(
+  message: string,
+  sessionID?: string,
+  facts: { errorClass?: FirstTurnErrorClass; account?: TurnAccount } = {},
+): EventSessionError {
   return {
     id: `session.error:${sessionID ?? "global"}`,
     type: "session.error",
@@ -436,7 +440,7 @@ export function sessionError(message: string, sessionID?: string, errorClass?: F
       ...(sessionID ? { sessionID } : {}),
       error: {
         name: "UnknownError",
-        data: firstTurnErrorData(message, errorClass),
+        data: firstTurnErrorData(message, facts),
       },
     },
   }
