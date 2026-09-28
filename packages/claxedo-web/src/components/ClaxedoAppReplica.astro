@@ -530,38 +530,40 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
     }))
     root.querySelector<HTMLButtonElement>("[data-account-toggle]")?.addEventListener("click", (event) => { const open = root.dataset.account === "open"; root.dataset.account = open ? "closed" : "open"; (event.currentTarget as HTMLButtonElement).setAttribute("aria-expanded", String(!open)) })
     root.querySelectorAll<HTMLButtonElement>("[data-demo-open]").forEach((button) => button.addEventListener("click", () => selectSession(button.dataset.demoOpen ?? "")))
-    const touched = (event: Event) => { if (event.isTrusted) root.dispatchEvent(new CustomEvent("demo:touched")) }
-    root.addEventListener("pointerdown", touched)
-    root.addEventListener("keydown", touched)
     const pluginItem = root.querySelector<HTMLElement>("[data-plugin-item]")!
     const approval = root.querySelector<HTMLElement>("[data-plugin-approval]")!
     const approveButton = approval.querySelector<HTMLButtonElement>("[data-plugin-approve]")!
-    let storyTimers: number[] = []
-    const later = (ms: number, step: () => void) => { storyTimers.push(window.setTimeout(step, ms)) }
-    const stopStory = () => { storyTimers.forEach(clearTimeout); storyTimers = [] }
-    const install = () => {
-      approval.hidden = true
-      approveButton.classList.remove("is-pressed")
-      if (!pluginItem.hidden) return
-      pluginItem.hidden = false
+    const showPlugin = (shown: boolean) => {
+      if (pluginItem.hidden !== shown) return
+      pluginItem.hidden = !shown
       pluginItem.classList.remove("is-new")
+      if (!shown) return
       void pluginItem.offsetWidth
       pluginItem.classList.add("is-new")
     }
+    const install = () => {
+      approval.hidden = true
+      approveButton.classList.remove("is-pressed")
+      showPlugin(true)
+    }
     approveButton.addEventListener("click", install)
     approval.querySelector("[data-plugin-decline]")!.addEventListener("click", () => { approval.hidden = true })
-    root.addEventListener("pointerdown", (event) => { if (event.isTrusted) stopStory() })
+    const PLUGIN_STAGES = [0.2, 0.4, 0.5, 0.68] as const
+    let pluginStage = -1
+    const setPluginStage = (progress: number) => {
+      const stage = PLUGIN_STAGES.filter((edge) => progress >= edge).length
+      if (stage === pluginStage) return
+      pluginStage = stage
+      approval.hidden = stage !== 1 && stage !== 2
+      approveButton.classList.toggle("is-pressed", stage === 2)
+      showPlugin(stage >= 3)
+      if (stage >= 4) setSurface("standup")
+      else selectSession("standup")
+    }
     const storyStates: Record<string, () => void> = {
       speed: () => selectSession("usage-meter"),
-      prompt: () => {
-        pluginItem.hidden = true
-        selectSession("standup")
-        later(1100, () => { approval.hidden = false })
-        later(1900, () => approveButton.classList.add("is-pressed"))
-        later(2200, install)
-        later(3000, () => setSurface("standup"))
-      },
-      team: () => { root.dataset.account = "open"; root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "true") },
+      prompt: () => { pluginStage = -1; setPluginStage(0) },
+      team: () => { selectSession("usage-meter"); root.dataset.account = "open"; root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "true") },
       place: () => { selectSession("relay-tokens"); if (window.innerWidth > 920) root.dataset.environment = "expanded" },
       tools: () => setSurface("marketplace"),
       terminal: () => selectSession("terminal-claude"),
@@ -571,14 +573,18 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       if (spot) root.dataset.spot = spot
       else delete root.dataset.spot
       if (!spot || !open) return
-      stopStory()
       approval.hidden = true
-      pluginItem.hidden = false
+      approveButton.classList.remove("is-pressed")
+      showPlugin(true)
       root.dataset.account = "closed"
       root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "false")
       setComposerMenu("closed")
       closePanel()
       storyStates[spot]?.()
+    })
+    root.addEventListener("demo:progress", (event) => {
+      const { spot, progress } = (event as CustomEvent<{ spot: string; progress: number }>).detail
+      if (spot === "prompt") setPluginStage(progress)
     })
   }
 </script>
@@ -609,7 +615,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       --send-bg: #1a1c1f; --send-ink: #ffffff;
     }
   }
-  .hero.canvas-only{padding:0;background:transparent;overflow:visible}.hero.canvas-only .app-window{width:100%;height:38rem;min-height:0;aspect-ratio:auto}
+  .hero.canvas-only{padding:0;background:transparent;overflow:visible}.hero.canvas-only{height:100%}.hero.canvas-only .app-window{width:100%;height:100%;min-height:0;aspect-ratio:auto}
 
   .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid rgb(var(--fg) / .2);border-radius:12px;background:var(--background-base);box-shadow:0 48px 100px -36px rgb(0 0 0 / calc(.92 * var(--shadow-k))),0 0 0 1px rgb(var(--fg) / .02);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
   button,input,textarea{font:inherit}.app-window :global(svg){width:16px;height:16px}.shell-header{height:36px;display:flex;border-bottom:1px solid var(--border-weak);background:var(--background-base)}
@@ -631,7 +637,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
   .review-toolbar .commit-scope{display:flex;align-items:center;gap:6px;white-space:nowrap}.review-toolbar .commit-scope :global(svg){width:13px;height:13px}.review-toolbar>button:not(.commit-scope){width:26px;display:grid;place-items:center;padding:0}.review-toolbar>button>:global(svg){width:16px;height:16px}.repo-row{width:100%;grid-template-columns:12px 16px minmax(0,1fr) 7px;border:0;background:transparent;text-align:left}.repo-row :global(.repo-chevron){width:12px;height:12px;transition:transform .12s}.repo-row[aria-expanded=true] :global(.repo-chevron){transform:rotate(90deg)}.repo-row .repo-folder{width:15px;height:15px}.repo-children{display:grid;padding:2px 0 5px 42px;color:var(--text-weaker);font-size:11px}.repo-children[hidden]{display:none}.repo-children span{height:24px;display:flex;align-items:center}.workspace-tab[data-panel-button].active{background:var(--surface-base-hover);color:var(--text-base)}
   @container(max-width:1050px){.rail-titlebar,.project-rail{width:230px;flex-basis:230px}.timeline-column{padding-left:16px}.app-window[data-environment=expanded] .timeline-column{padding-right:248px}.app-window[data-panel=open] .timeline-column{padding-right:16px}.environment-expanded{width:228px}.app-window[data-panel=open] .workspace-panel{width:52%;flex-basis:52%}.app-window[data-panel=open] .workspace-l1{width:52%}.review-view{grid-template-columns:minmax(240px,1.6fr) minmax(150px,1fr)}.harness-control>b,.harness-control>i{display:none}}
   @media(max-width:58rem){.app-window{min-height:39rem;aspect-ratio:auto}}
-  @media(max-width:47.99rem){.hero{padding-inline:.7rem}.hero.canvas-only{padding-inline:0}.app-window,.hero.canvas-only .app-window{height:36rem;min-height:0;aspect-ratio:auto;border-radius:9px}.rail-titlebar{position:absolute;z-index:12;width:230px}.project-rail{position:absolute;inset:0 auto 0 0;z-index:12;width:min(230px,82vw);box-shadow:16px 0 34px rgb(0 0 0 / calc(.45 * var(--shadow-k)))}.app-window[data-sidebar=closed] .project-rail{width:0}.app-window[data-sidebar=open] .workbench-l1{padding-left:34px}.environment-card{display:none}.timeline-column,.app-window[data-environment=expanded] .timeline-column,.app-window[data-environment=collapsed] .timeline-column{padding:12px 12px 132px}.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{padding:22px 8px 8px}.permission-control b,.harness-control b,.harness-control i,.harness-control>span:not([data-hero-harness-mark]),.harness-control small{display:none}.workspace-panel{display:none;position:absolute;inset:0;width:100%;z-index:20;flex-basis:100%}.app-window[data-panel=open] .workspace-panel{display:flex;width:100%;flex-basis:100%}.workspace-l1{display:none}}
+  @media(max-width:47.99rem){.hero{padding-inline:.7rem}.hero.canvas-only{padding-inline:0}.app-window,.hero.canvas-only .app-window{height:100%;min-height:0;aspect-ratio:auto;border-radius:9px}.rail-titlebar{position:absolute;z-index:12;width:230px}.project-rail{position:absolute;inset:0 auto 0 0;z-index:12;width:min(230px,82vw);box-shadow:16px 0 34px rgb(0 0 0 / calc(.45 * var(--shadow-k)))}.app-window[data-sidebar=closed] .project-rail{width:0}.app-window[data-sidebar=open] .workbench-l1{padding-left:34px}.environment-card{display:none}.timeline-column,.app-window[data-environment=expanded] .timeline-column,.app-window[data-environment=collapsed] .timeline-column{padding:12px 12px 132px}.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{padding:22px 8px 8px}.permission-control b,.harness-control b,.harness-control i,.harness-control>span:not([data-hero-harness-mark]),.harness-control small{display:none}.workspace-panel{display:none;position:absolute;inset:0;width:100%;z-index:20;flex-basis:100%}.app-window[data-panel=open] .workspace-panel{display:flex;width:100%;flex-basis:100%}.workspace-l1{display:none}}
   @media(max-width:47.99rem){.app-window button{scroll-margin-top:72px}.mobile-panel-close{display:grid!important}.review-view{grid-template-columns:1fr}.repo-tree{display:none}.add-popover,.permission-popover{left:-4px;width:calc(100cqw - 28px)}.harness-popover{right:0;width:min(304px,calc(100cqw - 28px))}.permission-popover>button{min-height:48px}.permission-popover>button span i{font-size:11px}.model-options{max-height:220px}}
   .panel-width-toggle{position:relative}
   .panel-width-toggle :global(.panel-restore-icon){display:none}

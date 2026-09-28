@@ -9,102 +9,148 @@ import { home, site, type HomeLine } from "../content/site"
 
 for (const id of [...home.benchmark.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
 
-const holdMs = { speed: 5200, prompt: 5400, team: 3600, place: 3600, tools: 3600, terminal: 3800 } as const
-const split = (line: HomeLine) => {
+/** Loud words reveal first, then the muted ones, so `--i` counts loud words before muted words. */
+const parts = (line: HomeLine) => {
   const at = line.text.indexOf(line.loud)
-  return [
+  const pieces = [
     { text: line.text.slice(0, at), loud: false },
     { text: line.loud, loud: true },
     { text: line.text.slice(at + line.loud.length), loud: false },
   ].filter((part) => part.text.trim().length > 0)
+  const loudCount = line.loud.trim().split(/\s+/).length
+  let loud = 0
+  let muted = loudCount
+  return {
+    count: line.text.trim().split(/\s+/).length,
+    pieces: pieces.map((part) => ({
+      loud: part.loud,
+      words: part.text.trim().split(/\s+/).map((word) => ({ word, order: part.loud ? loud++ : muted++ })),
+    })),
+  }
 }
-const words = (text: string) => text.trim().split(/\s+/)
 ---
 
 <Layout title={`Claxedo — ${site.headline}`} description={site.description}>
   <Nav />
   <main id="main-content" class="home">
     <h1 class="sr-only">Claxedo</h1>
-    <section class="intro" aria-label="What Claxedo does" data-stage-root>
-      <ol class="stage" data-stage>
-        {home.lines.map((line, index) => {
-          let order = 0
-          return (
-            <li class:list={["stage-line", { "is-in": index === 0 }]} data-stage-line={line.id} data-hold={holdMs[line.id]}>
-              <p class="sentence">
-                <span class="sr-only">{line.text}</span>
-                <span class="voice" aria-hidden="true">
-                  {split(line).map((part) => (
-                    <span class:list={["part", part.loud ? "loud" : "muted"]}>
-                      {words(part.text).map((word) => <><span class="word" style={`--i:${order++}`}>{word}</span>{" "}</>)}
+    <section class="story" aria-label="What Claxedo does" data-story style={`--steps:${home.lines.length}`}>
+      <div class="pin">
+        <div class="head">
+          <ol class="stage" data-stage>
+            {home.lines.map((line, index) => {
+              const { count, pieces } = parts(line)
+              return (
+                <li class:list={["stage-line", { "is-in": index === 0 }]} data-stage-line={line.id} style={`--n:${count}`}>
+                  <p class="sentence">
+                    <span class="sr-only">{line.text}</span>
+                    <span class="voice" aria-hidden="true">
+                      {pieces.map((part) => (
+                        <span class:list={["part", part.loud ? "loud" : "muted"]}>
+                          {part.words.map(({ word, order }) => <><span class="word" style={`--i:${order}`}>{word}</span>{" "}</>)}
+                        </span>
+                      ))}
                     </span>
-                  ))}
-                </span>
-              </p>
-              {home.benchmark.line === line.id && (
-                <dl class="metrics">
-                  {home.benchmark.metrics.map((metric, i) => (
-                    <div class="metric" style={`--i:${i}`}>
-                      <dt><b>{metric.lead}</b> <span>{metric.label}</span></dt>
-                      <dd>{metric.detail.join(" · ")}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-              <span class="proof-cell">
-                {line.proof && <a class="proof" href={line.proof.href} data-proof>{line.proof.label}</a>}
-              </span>
-            </li>
-          )
-        })}
-      </ol>
-      <div class="rail-row">
-        <a class="proof slot" data-link-slot hidden>
-          <span data-link-label></span>
-          <Icon name="open-external" />
-        </a>
-        <div class="controls" data-stage-controls hidden>
-          <div class="steps" role="group" aria-label="Choose a line">
-            {home.lines.map((line, index) => (
-              <button type="button" class="step" data-step={index} aria-label={line.text} aria-current={index === 0 ? "step" : undefined}><i></i></button>
-            ))}
+                  </p>
+                  {line.proof && <a class="proof sr-proof" href={line.proof.href} data-proof>{line.proof.label}</a>}
+                </li>
+              )
+            })}
+          </ol>
+          <div class="rail-row">
+            <a class:list={["proof", "slot", { "is-empty": !home.lines[0].proof }]} href={home.lines[0].proof?.href} data-link-slot>
+              <span data-link-label>{home.lines[0].proof?.label}</span>
+              <Icon name="open-external" />
+            </a>
+            <div class="steps" role="group" aria-label="Jump to a line" data-steps hidden>
+              {home.lines.map((line, index) => (
+                <button type="button" class="step" data-step={index} aria-label={line.text} aria-current={index === 0 ? "step" : undefined}><i></i></button>
+              ))}
+            </div>
           </div>
-          <button type="button" class="pause" data-stage-pause aria-label="Pause" aria-pressed="false">
-            <svg class="icon-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"></path></svg>
-            <svg class="icon-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7.5-4.5z"></path></svg>
-          </button>
+        </div>
+        <div class="demo-area">
+          <div class="demo-frame" data-zoom>
+            <ClaxedoAppReplica />
+            <dl class="metrics" data-metrics>
+              {home.benchmark.metrics.map((metric) => (
+                <div class="metric">
+                  <dt><b>{metric.lead}</b> <span>{metric.label}</span></dt>
+                  <dd>{metric.detail.join(" · ")}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </div>
       </div>
     </section>
-    <div class="preview" data-zoom>
-      <ClaxedoAppReplica />
-    </div>
+
+    <section class="stills" aria-label="What Claxedo does, one line at a time">
+      {home.lines.map((line) => {
+        const { pieces } = parts(line)
+        return (
+          <article class="still">
+            <p class="sentence">
+              {pieces.map((part) => <span class:list={["part", part.loud ? "loud" : "muted"]}>{part.words.map(({ word }) => word).join(" ")} </span>)}
+            </p>
+            <span class="still-proof">{line.proof && <a class="proof" href={line.proof.href}>{line.proof.label} <Icon name="open-external" /></a>}</span>
+            {home.benchmark.line === line.id && (
+              <dl class="metrics still-metrics">
+                {home.benchmark.metrics.map((metric) => (
+                  <div class="metric">
+                    <dt><b>{metric.lead}</b> <span>{metric.label}</span></dt>
+                    <dd>{metric.detail.join(" · ")}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <picture class="still-image">
+              <source media="(prefers-color-scheme: dark)" srcset={`/home/demo-${line.id}-dark.jpg`} />
+              <img src={`/home/demo-${line.id}-light.jpg`} alt={`The Claxedo app for “${line.text}”`} width="1330" height="675" loading="lazy" decoding="async" />
+            </picture>
+          </article>
+        )
+      })}
+    </section>
   </main>
   <Footer />
 </Layout>
 
 <script>
-  const root = document.querySelector<HTMLElement>("[data-stage-root]")
+  const story = document.querySelector<HTMLElement>("[data-story]")
   const demo = document.querySelector<HTMLElement>("[data-demo]")
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)")
-  if (root && !reduce.matches) {
-    const stage = root.querySelector<HTMLElement>("[data-stage]")!
-    const lines = Array.from(stage.querySelectorAll<HTMLElement>("[data-stage-line]"))
-    const controls = root.querySelector<HTMLElement>("[data-stage-controls]")!
-    const steps = Array.from(controls.querySelectorAll<HTMLButtonElement>("[data-step]"))
-    const pauseButton = controls.querySelector<HTMLButtonElement>("[data-stage-pause]")!
-    const reasons = new Set<string>()
-    let index = 0
-    let fill: Animation | undefined
-
-    const slot = root.querySelector<HTMLAnchorElement>("[data-link-slot]")!
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)")
+  if (story && demo && !still.matches) {
+    const lines = Array.from(story.querySelectorAll<HTMLElement>("[data-stage-line]"))
+    const steps = Array.from(story.querySelectorAll<HTMLButtonElement>("[data-step]"))
+    const slot = story.querySelector<HTMLAnchorElement>("[data-link-slot]")!
     const slotLabel = slot.querySelector<HTMLElement>("[data-link-label]")!
-    stage.querySelectorAll<HTMLAnchorElement>("[data-proof]").forEach((link) => { link.tabIndex = -1 })
-    controls.hidden = false
-    slot.hidden = false
-    root.dataset.playing = "true"
+    const frame = story.querySelector<HTMLElement>("[data-zoom]")!
+    const metrics = story.querySelector<HTMLElement>("[data-metrics]")!
+    const wide = window.matchMedia("(min-width: 48rem)")
+    const scrollLinked = CSS.supports("animation-timeline: scroll()")
+    const clamp = (value: number) => Math.min(1, Math.max(0, value))
+    const segment = () => innerHeight * 0.9
+    let current = -1
+    let frameRequest = 0
 
-    const syncSlot = (line: HTMLElement) => {
+    story.querySelector<HTMLElement>("[data-steps]")!.hidden = false
+    story.querySelectorAll<HTMLAnchorElement>("[data-proof]").forEach((link) => { link.tabIndex = -1 })
+    story.dataset.playing = "true"
+
+    const measure = () => {
+      const from = wide.matches ? Math.min(1, 1200 / frame.offsetWidth, 608 / frame.offsetHeight) : 1
+      frame.style.setProperty("--zoom-from", from.toFixed(3))
+      update()
+    }
+
+    const enter = (step: number) => {
+      const line = lines[step]
+      lines.forEach((item) => item.classList.toggle("is-in", item === line))
+      steps.forEach((button, i) => {
+        if (i === step) button.setAttribute("aria-current", "step")
+        else button.removeAttribute("aria-current")
+      })
       const proof = line.querySelector<HTMLAnchorElement>("[data-proof]")
       slot.classList.toggle("is-empty", !proof)
       if (proof) {
@@ -114,121 +160,47 @@ const words = (text: string) => text.trim().split(/\s+/)
         slot.removeAttribute("href")
         slotLabel.textContent = ""
       }
-    }
-
-    const syncDemo = (line: HTMLElement) => {
-      if (!demo) return
       demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: line.dataset.stageLine, open: true } }))
+      current = step
     }
 
-    const applyPause = () => {
-      const paused = reasons.size > 0
-      root.dataset.paused = String(paused)
-      if (paused) fill?.pause()
-      else fill?.play()
-      const byUser = reasons.has("user") || reasons.has("demo")
-      pauseButton.setAttribute("aria-pressed", String(byUser))
-      pauseButton.setAttribute("aria-label", byUser ? "Play" : "Pause")
-    }
-
-    const show = (next: number) => {
-      const from = lines[index]
-      const to = lines[next]
-      if (from !== to) {
-        from.classList.remove("is-in")
-        from.classList.add("is-out")
-        const settle = (event: AnimationEvent) => {
-          if (event.target !== from) return
-          from.classList.remove("is-out")
-          from.removeEventListener("animationend", settle)
-        }
-        from.addEventListener("animationend", settle)
+    const update = () => {
+      const position = scrollY / segment()
+      const step = Math.min(lines.length - 1, Math.max(0, Math.floor(position)))
+      const local = clamp(position - step)
+      if (step !== current) enter(step)
+      const line = lines[step]
+      line.style.setProperty("--p", step === 0 ? "1" : clamp(local / 0.35).toFixed(3))
+      line.style.setProperty("--out", step === lines.length - 1 ? "1" : clamp((1 - local) / 0.12).toFixed(3))
+      steps.forEach((button, i) => button.style.setProperty("--fill", i < step ? "1" : i === step ? local.toFixed(3) : "0"))
+      metrics.classList.toggle("is-gone", position > 0.5)
+      if (line.dataset.stageLine === "prompt") {
+        demo.dispatchEvent(new CustomEvent("demo:progress", { detail: { spot: "prompt", progress: local } }))
       }
-      to.classList.remove("is-out", "is-in")
-      void to.offsetWidth
-      to.classList.add("is-in")
-      index = next
-      steps.forEach((step, i) => {
-        step.classList.toggle("is-done", i < next)
-        if (i === next) step.setAttribute("aria-current", "step")
-        else step.removeAttribute("aria-current")
-      })
-      fill?.cancel()
-      fill = steps[next].querySelector("i")!.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], {
-        duration: Number(to.dataset.hold),
-        easing: "linear",
-        fill: "forwards",
-      })
-      fill.onfinish = () => show((index + 1) % lines.length)
-      syncSlot(to)
-      syncDemo(to)
-      applyPause()
+      if (!scrollLinked) {
+        const grow = clamp(position)
+        const from = Number(frame.style.getPropertyValue("--zoom-from") || 1)
+        frame.style.scale = String(from + (1 - from) * grow)
+        metrics.style.opacity = String(clamp(1 - position / 0.5))
+      }
     }
 
-    const hold = (reason: string, on: boolean) => {
-      if (on) reasons.add(reason)
-      else reasons.delete(reason)
-      applyPause()
-    }
-
-    steps.forEach((step, i) => step.addEventListener("click", () => show(i)))
-    controls.querySelector(".steps")!.addEventListener("keydown", (event) => {
+    steps.forEach((button, i) => button.addEventListener("click", () => scrollTo({ top: (i + 0.5) * segment(), behavior: "smooth" })))
+    story.querySelector("[data-steps]")!.addEventListener("keydown", (event) => {
       const key = (event as KeyboardEvent).key
       if (key !== "ArrowRight" && key !== "ArrowLeft") return
       event.preventDefault()
       const focused = steps.indexOf(document.activeElement as HTMLButtonElement)
-      const next = ((focused < 0 ? index : focused) + (key === "ArrowRight" ? 1 : lines.length - 1)) % lines.length
-      show(next)
+      const next = Math.min(steps.length - 1, Math.max(0, (focused < 0 ? current : focused) + (key === "ArrowRight" ? 1 : -1)))
       steps[next].focus()
+      steps[next].click()
     })
-    pauseButton.addEventListener("click", () => {
-      const resume = reasons.has("user") || reasons.has("demo")
-      reasons.delete("demo")
-      hold("user", !resume)
-    })
-    stage.addEventListener("pointerenter", () => hold("hover", true))
-    stage.addEventListener("pointerleave", () => hold("hover", false))
-    stage.addEventListener("focusin", (event) => {
-      hold("focus", true)
-      const line = (event.target as Element).closest<HTMLElement>("[data-stage-line]")
-      if (line && line !== lines[index]) show(lines.indexOf(line))
-    })
-    stage.addEventListener("focusout", (event) => {
-      if (!stage.contains(event.relatedTarget as Node | null)) hold("focus", false)
-    })
-    demo?.addEventListener("demo:touched", () => hold("demo", true))
-    document.addEventListener("visibilitychange", () => hold("hidden", document.hidden))
-
-    show(0)
-  }
-</script>
-
-<script>
-  const preview = document.querySelector<HTMLElement>("[data-zoom]")
-  const wide = window.matchMedia("(min-width: 48rem)")
-  const still = window.matchMedia("(prefers-reduced-motion: reduce)")
-  const scrollLinked = CSS.supports("animation-timeline: scroll()")
-  if (preview) {
-    let frame = 0
-    const zoomTo = () => {
-      const { offsetWidth: width, offsetHeight: height } = preview
-      const byArea = Math.sqrt((0.75 * innerWidth * innerHeight) / (width * height))
-      return Math.max(1, Math.min(byArea, (innerWidth - 32) / width, (innerHeight * 0.92) / height))
-    }
-    const measure = () => {
-      const to = wide.matches ? zoomTo() : 1
-      preview.style.setProperty("--zoom-to", to.toFixed(3))
-      preview.style.setProperty("--zoom-extra", `${Math.round((to - 1) * preview.offsetHeight)}px`)
-      follow()
-    }
-    const follow = () => {
-      if (scrollLinked || still.matches || !wide.matches) return preview.style.removeProperty("scale")
-      const progress = Math.min(1, Math.max(0, scrollY / (innerHeight * 0.4)))
-      preview.style.scale = String(1 + (Number(preview.style.getPropertyValue("--zoom-to")) - 1) * progress)
-    }
-    measure()
+    addEventListener("scroll", () => {
+      cancelAnimationFrame(frameRequest)
+      frameRequest = requestAnimationFrame(update)
+    }, { passive: true })
     addEventListener("resize", measure, { passive: true })
-    if (!scrollLinked) addEventListener("scroll", () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(follow) }, { passive: true })
+    measure()
   }
 </script>
 
@@ -236,113 +208,100 @@ const words = (text: string) => text.trim().split(/\s+/)
   .home {
     --home-width: min(100% - 2 * var(--gutter), 75rem);
     --stage-muted: #9a9a9a;
+    --segment: 90vh;
   }
   @media (prefers-color-scheme: light) {
     .home { --stage-muted: #6b6b6b; }
   }
-  .intro { width: var(--home-width); margin: 0 auto; padding-block: clamp(1.75rem, 5vh, 3rem) clamp(1.5rem, 3.5vh, 2.25rem); }
+  :global(.nav) { position: relative; }
+
+  .story { position: relative; height: calc(100vh + var(--steps) * var(--segment)); }
+  .pin { position: sticky; top: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; overflow: clip; }
+  .head { width: var(--home-width); margin: 0 auto; padding-top: clamp(1rem, 3vh, 2rem); }
 
   .stage {
-    --stage-size: clamp(2.25rem, 5.9vw, 5.5rem);
-    --line-box: calc(var(--stage-size) * 1 * 2);
-    --strip-box: 6rem;
+    --stage-size: min(5.6vw, 7.6vh, 5.25rem);
     position: relative;
-    height: calc(var(--line-box) + var(--strip-box) + 1.25rem);
+    height: calc(var(--stage-size) * 2);
     margin: 0;
     padding: 0;
-    overflow-x: clip;
     list-style: none;
   }
-  .stage-line {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    grid-template-rows: var(--line-box) var(--strip-box);
-    row-gap: 1.25rem;
-    opacity: 0;
-    pointer-events: none;
-  }
-  .stage-line.is-in, .stage-line.is-out { opacity: 1; }
-  .stage-line.is-in { pointer-events: auto; }
-  .stage-line.is-out { animation: line-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-  @keyframes line-out { to { opacity: 0; transform: translateY(-8px); filter: blur(3px); } }
-  .intro[data-paused="true"] .stage-line.is-in, .intro[data-paused="true"] .stage-line.is-in * { animation-play-state: paused; }
-
-  .sentence { align-self: end; margin: 0; font: 800 var(--stage-size)/1 var(--font-display); letter-spacing: -.048em; text-wrap: balance; }
+  .stage-line { position: absolute; inset: 0; display: flex; align-items: flex-end; opacity: 0; pointer-events: none; }
+  .stage-line.is-in { opacity: var(--out, 1); pointer-events: auto; }
+  .sentence { margin: 0; font: 800 var(--stage-size)/1 var(--font-display); letter-spacing: -.048em; text-wrap: balance; }
   .voice { display: block; }
   .loud { color: var(--ink); }
   .muted { color: var(--stage-muted); }
-  .word { display: inline-block; }
-  .stage-line.is-in .loud .word { animation: word-in 620ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i) * 55ms); }
-  .stage-line.is-in .muted .word { animation: muted-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(380ms + var(--i) * 40ms); }
-  @keyframes word-in { from { opacity: 0; transform: translateY(.35em); clip-path: inset(0 0 100% 0); } to { opacity: 1; transform: none; clip-path: inset(-.2em -.1em -.25em -.1em); } }
-  @keyframes muted-in { from { opacity: 0; filter: blur(4px); } }
+  .word {
+    --shown: clamp(0, var(--p, 1) * (var(--n) + 1) - var(--i), 1);
+    display: inline-block;
+    opacity: var(--shown);
+    transform: translateY(calc((1 - var(--shown)) * .3em));
+  }
+  .sr-proof { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
-  .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.5rem; align-self: start; margin: 0; }
-  .metric { display: grid; align-content: start; gap: .35rem; padding-top: .75rem; border-top: 1px solid var(--line-strong); }
-  .metric dt { display: grid; gap: .15rem; }
-  .metric b { color: var(--ink); font: 800 clamp(1.75rem, 2.6vw, 2.5rem)/1 var(--font-display); letter-spacing: -.045em; }
-  .metric dt span { color: var(--ink); font-size: .9375rem; font-weight: 600; letter-spacing: -.01em; }
-  .metric dd { margin: 0; color: var(--ink-faint); font-size: .75rem; line-height: 1.35; }
-  .stage-line.is-in .metric { animation: metric-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(700ms + var(--i) * 70ms); }
-  @keyframes metric-in { from { opacity: 0; transform: translateY(8px); } }
-
-  .intro[data-playing="true"] .proof-cell { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .proof { display: inline-flex; align-items: center; gap: .3rem; min-height: 2rem; color: var(--ink-soft); font-size: .875rem; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: .2em; }
   .proof:hover { color: var(--ink); text-decoration-color: currentColor; }
   .proof :global(svg) { width: 1rem; height: 1rem; }
-  .rail-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2rem; margin-top: .5rem; }
-  .slot { min-width: 14rem; }
-  .slot[hidden] { display: none; }
+  .rail-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.25rem; margin-top: .5rem; }
+  .slot { min-width: 12rem; }
   .slot.is-empty { visibility: hidden; }
 
-  .controls { display: flex; align-items: center; gap: .75rem; }
-  .controls[hidden] { display: none; }
   .steps { display: flex; gap: .375rem; }
+  .steps[hidden] { display: none; }
   .step { position: relative; display: block; width: 2.5rem; height: 1.5rem; padding: 0; border: 0; background: none; cursor: pointer; }
-  .step::before { content: ""; position: absolute; inset: calc(50% - 1.5px) 0 auto; height: 3px; border-radius: 3px; background: var(--line-strong); }
-  .step i { position: absolute; inset: calc(50% - 1.5px) 0 auto; height: 3px; border-radius: 3px; background: var(--ink); transform: scaleX(0); transform-origin: left; }
-  .step.is-done i { transform: scaleX(1); }
+  .step::before, .step i { content: ""; position: absolute; inset: calc(50% - 1.5px) 0 auto; height: 3px; border-radius: 3px; }
+  .step::before { background: var(--line-strong); }
+  .step i { background: var(--ink); transform: scaleX(var(--fill, 0)); transform-origin: left; }
   .step:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
-  .pause { position: relative; display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-soft); cursor: pointer; }
-  .pause:hover { background: var(--surface-hover); color: var(--ink); }
-  .pause::after { content: ""; position: absolute; inset: -.25rem; }
-  .pause svg { grid-area: 1 / 1; width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1); }
-  .pause .icon-play { fill: currentColor; stroke: none; opacity: 0; scale: .25; filter: blur(4px); }
-  .pause[aria-pressed="true"] .icon-play { opacity: 1; scale: 1; filter: none; }
-  .pause[aria-pressed="true"] .icon-pause { opacity: 0; scale: .25; filter: blur(4px); }
 
-  .preview { --zoom-to: 1; --zoom-extra: 0px; width: var(--home-width); margin: 0 auto calc(clamp(4rem, 8vw, 6rem) + var(--zoom-extra)); transform-origin: 50% 0; }
-  @keyframes demo-zoom { from { scale: 1; } to { scale: var(--zoom-to); } }
+  .demo-area { display: grid; justify-items: center; align-content: start; min-height: 0; padding-top: clamp(.5rem, 1.5vh, 1rem); }
+  .demo-frame {
+    --zoom-from: 1;
+    position: relative;
+    width: min(100vw - 6rem, 88rem, 75vh * 1.97);
+    height: 75vh;
+    transform-origin: 50% 0;
+    scale: var(--zoom-from);
+  }
+  @keyframes demo-grow { from { scale: var(--zoom-from); } to { scale: 1; } }
+  @keyframes metrics-out { to { opacity: 0; transform: translate(-50%, -12px); } }
   @supports (animation-timeline: scroll()) {
-    @media (min-width: 48rem) and (prefers-reduced-motion: no-preference) {
-      .preview { animation: demo-zoom linear both; animation-timeline: scroll(root); animation-range: 0 40vh; }
-    }
-  }
-  @media (min-width: 48rem) and (prefers-reduced-motion: reduce) {
-    .preview { scale: var(--zoom-to); }
+    .demo-frame { animation: demo-grow linear both; animation-timeline: scroll(root); animation-range: 0 var(--segment); }
+    .metrics { animation: metrics-out linear both; animation-timeline: scroll(root); animation-range: 0 calc(var(--segment) * .5); }
   }
 
-  @media (max-width: 38rem) {
-    .home { --home-width: calc(100% - 2rem); }
-    .stage { --stage-size: 2.35rem; --line-box: calc(var(--stage-size) * 1 * 3); --strip-box: 15.5rem; }
-    .metrics { grid-template-columns: minmax(0, 1fr); gap: 0; }
-    .metric { grid-template-columns: 4.25rem minmax(0, 1fr); align-items: center; gap: 0 .75rem; padding: .4rem 0; }
-    .metric dt span { font-size: .875rem; line-height: 1.25; }
-    .metric dd { font-size: .6875rem; }
-    .metric dt { display: contents; }
-    .metric b { grid-row: span 2; font-size: 1.625rem; }
-    .metric dt span, .metric dd { grid-column: 2; }
-    .rail-row { flex-direction: column-reverse; align-items: flex-start; gap: .25rem; }
-    .step { width: 1.9rem; }
+  .metrics { position: absolute; top: 4.25rem; left: 50%; z-index: 30; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .625rem; width: min(100% - 3rem, 60rem); margin: 0; transform: translateX(-50%); }
+  .metrics.is-gone { pointer-events: none; }
+  .metric { display: grid; align-content: start; gap: .3rem; padding: .875rem 1rem .9rem; border-radius: 12px; background: color-mix(in srgb, var(--surface-raised) 92%, transparent); box-shadow: var(--shadow-panel); backdrop-filter: blur(12px); }
+  .metric dt { display: grid; gap: .15rem; }
+  .metric b { color: var(--ink); font: 800 clamp(1.75rem, 2.4vw, 2.375rem)/1 var(--font-display); letter-spacing: -.045em; }
+  .metric dt span { color: var(--ink); font-size: .875rem; font-weight: 600; letter-spacing: -.01em; }
+  .metric dd { margin: 0; color: var(--ink-faint); font-size: .6875rem; line-height: 1.35; }
+
+  .stills { display: none; }
+
+  @media (max-width: 47.99rem) {
+    .home { --home-width: calc(100% - 2rem); --segment: 85vh; }
+    .stage { --stage-size: min(9.5vw, 5.2vh); height: calc(var(--stage-size) * 3); }
+    .rail-row { flex-direction: row-reverse; justify-content: space-between; }
+    .step { width: 1.6rem; }
+    .demo-frame { width: calc(100vw - 2rem); height: 70vh; }
+    .metrics { top: 3rem; grid-template-columns: repeat(2, minmax(0, 1fr)); width: calc(100% - 1.5rem); gap: .5rem; }
+    .metric { padding: .6rem .7rem; }
+    .metric b { font-size: 1.5rem; }
+    .metric dd { display: none; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .stage { display: grid; gap: 1.25rem; height: auto; --stage-size: clamp(1.5rem, 2.6vw, 2.1rem); }
-    .stage-line { position: static; grid-template-columns: minmax(0, 1fr) 15rem; grid-template-rows: auto; gap: .75rem 2rem; opacity: 1; pointer-events: auto; }
-    .sentence { align-self: start; max-width: none; }
-    .metrics { grid-column: 1; grid-row: 2; }
-    .proof-cell { grid-column: 2; grid-row: 1; align-self: center; }
-    .stage-line *, .stage-line *::after { animation: none !important; }
+    .story { display: none; }
+    .stills { display: grid; gap: clamp(3rem, 6vw, 5rem); width: var(--home-width); margin: 0 auto; padding: clamp(1.5rem, 4vh, 3rem) 0 clamp(4rem, 8vw, 6rem); }
+    .still { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem 2rem; align-items: end; }
+    .still .sentence { --stage-size: clamp(1.75rem, 3.4vw, 3rem); font-size: var(--stage-size); }
+    .still-proof { justify-self: end; }
+    .still-metrics { position: static; grid-column: 1 / -1; width: 100%; transform: none; }
+    .still-image { grid-column: 1 / -1; }
+    .still-image img { display: block; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 0 0 1px var(--line-strong); }
   }
 </style>
