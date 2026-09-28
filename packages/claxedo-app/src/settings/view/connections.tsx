@@ -1,10 +1,9 @@
 import { createSignal, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
+import { toAppError, useServer, type AppError, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
 import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { showToast, Tag, Button, Icon } from "@/ui"
-import { useTranslator } from "@/i18n"
-import { failureMessage } from "@/lib/failure"
+import { useErrorCopy, useTranslator } from "@/i18n"
 import { verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { ConnectForm } from "./connect-form"
@@ -20,23 +19,29 @@ const STATUS_TONE = { connected: "success", degraded: "warning", broken: "danger
 
 export function ConnectionsSection() {
   const t = useTranslator(settingsDictionary)
+  const errorCopy = useErrorCopy()
   const server = useServer()
-  const catalog = useQuery(() => server.queries.integrations.catalog())
+  const offered = () => server.capabilities()?.features.connections === true
+  const catalog = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: offered() }))
   const agents = useQuery(() => server.queries.agentConnections.list())
   const [connecting, setConnecting] = createSignal<Connecting>()
   const [busy, setBusy] = createSignal<string>()
   const reverify = async (id: string) => {
     const outcome = await server.integrations.reverify(id)
-    if (!outcome.ok) throw new Error(verifyFailedMessage(outcome.verifyReason))
+    return outcome.ok ? undefined : verifyFailedMessage(outcome.verifyReason)
+  }
+  const settle = (task: () => Promise<void>) => async () => {
+    await task()
+    return undefined
   }
 
-  const act = async (id: string, task: () => Promise<void>, done: string) => {
+  const act = async (id: string, task: () => Promise<string | undefined>, done: string) => {
     setBusy(id)
     try {
-      await task()
-      showToast({ title: done })
+      const refused = await task()
+      showToast(refused ? { title: t("settings.common.requestFailed"), description: refused } : { title: done })
     } catch (error) {
-      showToast({ title: t("settings.common.requestFailed"), description: failureMessage(error) })
+      showToast({ title: t("settings.common.requestFailed"), description: errorCopy(toAppError(error)).message })
     } finally {
       setBusy(undefined)
     }
@@ -45,10 +50,13 @@ export function ConnectionsSection() {
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.connections.description")} />
-      <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => server.agentConnections.remove(row.connectionId), `${row.label} removed`)} busy={busy()} />
+      <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, settle(() => server.agentConnections.remove(row.connectionId)), `${row.label} removed`)} busy={busy()} />
       <SettingsGroup title={t("settings.connections.integrations")}>
-        <Show when={catalog.error}>{(error) => <SettingsNote tone="danger">{failureMessage(error())}</SettingsNote>}</Show>
-        <Show when={catalog.data} fallback={<SettingsEmpty>{catalog.isPending ? t("settings.common.loading") : t("settings.connections.integrations.empty")}</SettingsEmpty>}>
+        <Show when={!offered()}>
+          <SettingsNote>{t("settings.connections.integrations.unoffered")}</SettingsNote>
+        </Show>
+        <Show when={catalog.error}>{(error) => <SettingsNote tone="danger">{errorCopy(error()).message}</SettingsNote>}</Show>
+        <Show when={offered() && catalog.data} fallback={<Show when={offered()}><SettingsEmpty>{catalog.isPending ? t("settings.common.loading") : t("settings.connections.integrations.empty")}</SettingsEmpty></Show>}>
           {(data) => (
             <SettingsList>
               <For each={data().integrations}>
@@ -60,7 +68,7 @@ export function ConnectionsSection() {
                     busy={busy()}
                     onConnecting={setConnecting}
                     onReverify={(entry) => void act(entry.id, () => reverify(entry.id), `${integration.name} verified`)}
-                    onDisconnect={(entry) => void act(entry.id, () => server.integrations.disconnect(entry.id), `${integration.name} disconnected`)}
+                    onDisconnect={(entry) => void act(entry.id, settle(() => server.integrations.disconnect(entry.id)), `${integration.name} disconnected`)}
                   />
                 )}
               </For>
@@ -162,16 +170,17 @@ function ConnectionRow(props: {
 
 function AgentConnections(props: {
   readonly rows: HarnessConnectionsCatalog | undefined
-  readonly error: unknown
+  readonly error: AppError | null
   readonly loading: boolean
   readonly busy: string | undefined
   readonly onRemove: (row: HarnessConnectionRef) => void
 }) {
   const t = useTranslator(settingsDictionary)
+  const errorCopy = useErrorCopy()
   const supported = () => (props.rows?.status === "supported" ? props.rows.connections : undefined)
   return (
     <SettingsGroup title={t("settings.connections.agents")} description={t("settings.connections.agents.description")}>
-      <Show when={props.error}>{(error) => <SettingsNote tone="danger">{failureMessage(error())}</SettingsNote>}</Show>
+      <Show when={props.error}>{(error) => <SettingsNote tone="danger">{errorCopy(error()).message}</SettingsNote>}</Show>
       <Show when={props.rows?.status === "unsupported"}>
         <SettingsNote>{props.rows?.status === "unsupported" && props.rows.reason === "operator_local_configuration" ? t("settings.connections.agents.operator") : props.rows?.status === "unsupported" ? props.rows.reason : ""}</SettingsNote>
       </Show>

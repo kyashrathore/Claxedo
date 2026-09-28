@@ -69,6 +69,7 @@ export default {
   "settings.connections.agents.operator": "ผู้ดูแลเป็นผู้กำหนดค่าการเชื่อมต่อเอเจนต์บนโฮสต์ในเครื่อง",
   "settings.connections.integrations": "การผสานรวม",
   "settings.connections.integrations.empty": "ไม่มีการผสานรวมที่ใช้ได้",
+  "settings.connections.integrations.unoffered": "เซิร์ฟเวอร์นี้ไม่มีการผสานรวม",
   "settings.connections.add": "เพิ่มการเชื่อมต่อ",
   "settings.connections.status.connected": "เชื่อมต่อแล้ว",
   "settings.connections.status.degraded": "ทำงานไม่เต็มที่",

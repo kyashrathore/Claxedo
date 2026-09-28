@@ -40,7 +40,7 @@ function capabilitiesFromDeclaration(declaration: BootstrapDeclaration, loopback
     signedIn,
     ...(machine ? { thisMachine: machine } : {}),
     harnesses: harnessesFrom(loopback),
-    features: { documents: declaration.documents, cloud: signedIn, remoteAccess: loopback, marketplace: true, terminals: loopback, browser: loopback, sharing: signedIn, livePlugins: loopback },
+    features: { documents: declaration.documents, connections: declaration.connections, cloud: signedIn, remoteAccess: loopback, marketplace: true, terminals: loopback, browser: loopback, sharing: signedIn, livePlugins: loopback },
   }
 }
 

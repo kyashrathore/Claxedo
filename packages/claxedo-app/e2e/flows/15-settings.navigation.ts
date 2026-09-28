@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
 import { expect, UI } from "../harness"
 
-export type Section = "Appearance" | "Keyboard shortcuts" | "Organization" | "Models" | "Machines"
+export type Section = "Appearance" | "Keyboard shortcuts" | "Organization" | "Models" | "Machines" | "Connections"
 
 export const SECTIONS: readonly Section[] = ["Appearance", "Keyboard shortcuts", "Organization", "Models", "Machines"]
 

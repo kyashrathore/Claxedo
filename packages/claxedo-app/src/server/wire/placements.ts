@@ -12,6 +12,7 @@ export type BootstrapDeclaration = {
   readonly hostAggregate: boolean
   readonly issuesSessions: boolean
   readonly documents: boolean
+  readonly connections: boolean
   readonly enrollmentId?: string
 }
 
@@ -97,6 +98,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
       hostAggregate: events.hostAggregate === true,
       issuesSessions: deployment.issuesSessions === true,
       documents: deployment.documents === true,
+      connections: deployment.connections === true,
       ...(enrollmentId ? { enrollmentId } : {}),
     },
     placements: placementsFromProjects(root.project, enrollmentId),
