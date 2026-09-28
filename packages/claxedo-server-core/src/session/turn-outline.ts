@@ -48,9 +48,9 @@ export function turnOutlineOfMessages(messages: readonly unknown[], bounds: Turn
 
 type UserRow = OutlineUserRow & { ordinal: number }
 
-export type TurnOutlineBounds = { limit: number; snippetLength: number }
+type TurnOutlineBounds = { limit: number; snippetLength: number }
 
-export const TURN_OUTLINE_BOUNDS: TurnOutlineBounds = { limit: TURN_OUTLINE_LIMIT, snippetLength: TURN_OUTLINE_SNIPPET_LENGTH }
+const TURN_OUTLINE_BOUNDS: TurnOutlineBounds = { limit: TURN_OUTLINE_LIMIT, snippetLength: TURN_OUTLINE_SNIPPET_LENGTH }
 
 function newestUsersSql(column: StoredMessageColumn): string {
   return `

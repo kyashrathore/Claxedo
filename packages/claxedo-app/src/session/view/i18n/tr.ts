@@ -86,6 +86,4 @@ export default {
   "command.message.next": "Sonraki mesaj",
   "command.message.next.description": "Sonraki kullanıcı mesajına git",
   "sessionScreen.requests.loadFailed": "Bekleyen izinler veya sorular yüklenemedi. Devam etmek için yeniden deneyin.",
-  "command.session.new": "Yeni oturum",
-  "command.category.session": "Oturum",
 } satisfies Partial<Record<SessionScreenTextKey, string>>

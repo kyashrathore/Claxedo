@@ -1,10 +1,8 @@
 import { createMemo, onCleanup, onMount } from "solid-js"
-import { eventTargetIsEditable, matchKey, resolveKeyMap, type createSurfaceKeyRouter } from "../keyboard"
+import { eventTargetIsEditable, matchKey, resolveKeyMap } from "../keyboard"
 import type { WorkbenchStore } from "../store"
 import type { KeyMap } from "../types"
 import { paneInDirection, type FocusDirection } from "./focus-direction"
-
-type SurfaceKeys = ReturnType<typeof createSurfaceKeyRouter>
 
 const directions: readonly [keyof KeyMap, FocusDirection][] = [
   ["focusLeft", "left"],
@@ -16,7 +14,6 @@ const directions: readonly [keyof KeyMap, FocusDirection][] = [
 type ChordInput = {
   wb: WorkbenchStore
   keyMap?: Partial<KeyMap>
-  surfaceKeys: SurfaceKeys
   onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }
 
@@ -63,7 +60,6 @@ export function useWorkbenchChords(input: ChordInput) {
     if (event.defaultPrevented) return
     if (event.key === "Escape" && input.wb.drag.active()) return input.wb.drag.cancel()
     handleChord(input, keyMap(), event)
-    if (!event.defaultPrevented) input.surfaceKeys.forward(event)
   }
   onMount(() => {
     window.addEventListener("keydown", onKeyDown)

@@ -104,7 +104,7 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
         <div class="flex shrink-0 items-center gap-2 px-1">
           <span class="text-12-regular text-text-weak mr-auto">{t("prompt.imageMarks.hint")}</span>
           <Button size="large" variant="ghost" onClick={() => dialog.close()}>
-            {t("common.cancel")}
+            {t("composer.cancel")}
           </Button>
           <Button size="large" variant="contrast" onClick={save}>
             {t("common.save")}

@@ -1,25 +1,31 @@
 # access
 
-Owns: who may do what, answered only from facts the server reports. Every access question in the UI goes through `useAccess().can()`. "Permission" means an agent request and lives in `src/session/requests/`; this domain never uses the word.
+Owns: who may do what, answered only from facts the server reports, and the Organization settings section. "Permission" means an agent request and lives in `src/session/requests/`; this domain never uses the word.
 
 ## Concepts
 
-- **Principal**: `Capabilities.principal` from the adapter: a signed user with an optional org and org role, or the machine itself when unsigned.
-- **Org role**: `owner`, `admin` or `member`. Owners and admins manage the org's provider accounts, org plugins and network policy; members manage nothing. An org groups people and grants nothing on any machine, folder or project.
-- **Session share**: the only grant between people. `follow` reads and streams; `send` also prompts. It ends when revoked, and never controls the machine.
+- **Principal**: `Capabilities.principal` from `@/server`: a user (`userId`, `name`, optional `orgId` and `orgRole`) or a machine (`machineId`). The adapter (`src/server/capabilities.ts`) reports only the machine principal, so every `can()` answers `false` and the Organization section shows its signed-out branch until the server reports a user.
+- **Org role**: `owner`, `admin` or `member`. Owners and admins manage the org; members manage nothing. An org groups people and grants nothing on any machine, folder or project.
 
-## `can(action)`
+## `useAccess()` (`store.ts`)
 
-| Action | Answered from |
+Returns `principal`, `orgRole` (the user principal's role, `undefined` for a machine) and `can(action)`. It holds no state of its own: it reads `server.capabilities()`, so it needs no provider.
+
+| Action (`AccessAction`, `model.ts`) | Answered from |
 | --- | --- |
-| `org.manage`, `org.accounts`, `plugins.manage` | the principal's org role is `owner` or `admin` |
+| `org.manage`, `org.accounts`, `plugins.manage` | the principal's org role is `owner` or `admin` (`isOrgManager`) |
 
-A fact the server has not reported answers `false`. Nothing is re-derived from relay, runtime or control-plane rules. `useAccess()` holds no state of its own: it reads `server.capabilities()`, so it needs no provider.
+A fact the server has not reported answers `false`. Nothing is re-derived from relay, runtime or control-plane rules. `scripts/checks/access-boundary.ts` enforces this outside `src/access`: it fails a comparison, `switch` case or list membership on a role name, an ordering on a rank, and a read of `capabilities.prompt` or of a share-management flag.
 
 ## Screens
 
-- **Organization** settings section (`/settings/organization`): the org and your role. Owners and admins see where the org's provider accounts are managed; members see that only owners and admins manage the org. There is no member list, because today's server has no route that lists members, and no team screens or org switcher.
+- **Organization** settings section (`organizationSettingsSection`, `/settings/organization`, the only export of `index.ts`), drawn by `view/organization.tsx`:
+  - signed out: the sign-in button when the auth binding offers sign-in (a failed sign-in shows a toast), "Checking account…" while signing in, otherwise a note to sign in;
+  - a user with no org: a note that they are not in one;
+  - a user in an org: their name, "You" and their role; owners and admins also see where the org's provider accounts are managed, members see that only owners and admins manage the org.
+
+There is no member list, team screen or org switcher: `src/server/` has no route that lists members.
 
 ## Flows
 
-36 (org settings open only to owners and admins; follow reads, send prompts, revoke ends both) and 23 (team sharing across two browsers) run on the signed stack.
+Flow 15 (`e2e/flows/15-settings.spec.ts`) opens the Organization section among the settings sections (`15-settings.navigation.ts`). No flow covers a signed-in user's org role.

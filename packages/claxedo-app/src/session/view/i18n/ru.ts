@@ -86,6 +86,4 @@ export default {
   "command.message.next": "Следующее сообщение",
   "command.message.next.description": "Перейти к следующему сообщению пользователя",
   "sessionScreen.requests.loadFailed": "Не удалось загрузить ожидающие разрешения или вопросы. Повторите попытку, чтобы продолжить.",
-  "command.session.new": "Новая сессия",
-  "command.category.session": "Сессия",
 } satisfies Partial<Record<SessionScreenTextKey, string>>

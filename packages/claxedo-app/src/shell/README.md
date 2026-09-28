@@ -30,7 +30,7 @@ Rules in those sheets that code cannot explain:
 - `styles/app-shell.css`:
   - The `--bp-*` properties are the layout thresholds on Tailwind's `sm`/`md`/`lg`/`xl`/`2xl` scale plus three document-editor widths, for `calc()` and inline styles. `@media` cannot read a custom property, so media rules keep the literal pixels (767 is the complement of `md`).
   - The modal stack is named, not guessed. Every layer is portaled to `<body>`, so only these numbers decide what paints over what. A dialog's layer wrapper sits in the same elevated context, so a dialog opened from another opens above it, and a select's portaled list clears the dialog layer.
-  - Below `md` or on a coarse pointer, icon and labelled buttons get a 40 px floor. `data-claxedo-compact-touch` exempts an element or a dense region such as the rail, whose full-width rows are the tap targets.
+  - Below `md` or on a coarse pointer, icon and labelled buttons get a `--touch-target` (44 px) floor. `data-claxedo-compact-touch` exempts an element or a dense region such as the rail, whose full-width rows are the tap targets.
   - The palette gets an 8 px gutter and a 14 px radius, concentric with its rows. The palette and the page-scale dialogs dim their backdrop because the shared 0.2 alpha is invisible on dark chrome. The overlay is a sibling of the dialog layer, so the backdrop is selected from `<body>`, and it moves at the dialog's own 150 ms in and 100 ms out.
   - The main column is a positioned layer above the panel. The floating session stack's `z-index` is otherwise trapped in its pane's `contain: strict` context.
 - `styles/index.css`:

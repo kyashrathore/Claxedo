@@ -7,7 +7,7 @@ export type PartRef = {
   partId: string
 }
 
-export type WorkGroupTool = "bash" | "edit" | "webfetch"
+type WorkGroupTool = "bash" | "edit" | "webfetch"
 
 export type PartGroup =
   | {
@@ -32,17 +32,17 @@ export type PartGroup =
       refs: PartRef[]
     }
 
-export type GroupablePart = { messageId: string; part: AgentContentPart }
+type GroupablePart = { messageId: string; part: AgentContentPart }
 
-export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
+const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 
-export const STANDALONE_TOOLS = new Set(["question"])
+const STANDALONE_TOOLS = new Set(["question"])
 
 export const EDIT_TOOL_NAMES = new Set(["edit", "write", "apply_patch"])
 
 export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch"])
 
-export const HIDDEN_TOOLS = new Set(["todowrite"])
+const HIDDEN_TOOLS = new Set(["todowrite"])
 
 const GROUPABLE_PART_TYPES = new Set(["compaction", "handoff", "text", "reasoning", "tool", "file"])
 
@@ -66,7 +66,7 @@ function producedImage(part: AgentToolPart) {
   return !!state.attachments?.some((file) => file.mime.startsWith("image/"))
 }
 
-export function isStandaloneTool(part: { type: string; tool?: string }): boolean {
+function isStandaloneTool(part: { type: string; tool?: string }): boolean {
   return part.type === "tool" && !!part.tool && STANDALONE_TOOLS.has(canonicalToolName(part.tool))
 }
 
@@ -76,18 +76,18 @@ export function isPendingQuestion(part: { type: string; tool?: string; state?: {
   return status === "pending" || status === "running"
 }
 
-export function isContextGroupTool(part: AgentContentPart): part is AgentToolPart {
+function isContextGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool" || !CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool))) return false
   return !isClaxedoToolPart(part) && !producedImage(part)
 }
 
-export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
+function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool") return false
   if (CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool)) || isHiddenTool(part) || isStandaloneTool(part)) return false
   return !isSubagentToolPart(part) && !isClaxedoToolPart(part)
 }
 
-export function isClaxedoToolPart(part: { type: string; tool?: string; state?: { input?: unknown } }): boolean {
+function isClaxedoToolPart(part: { type: string; tool?: string; state?: { input?: unknown } }): boolean {
   if (part.type !== "tool" || !part.tool) return false
   return claxedoToolName(part.tool, asRecord(part.state?.input)) !== undefined
 }
@@ -228,11 +228,11 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error
 }
 
-export function answerGroupKey(groups: readonly PartGroup[], part: FoldablePartLookup): string | undefined {
+function answerGroupKey(groups: readonly PartGroup[], part: FoldablePartLookup): string | undefined {
   return groups.findLast((group) => group.type === "part" && part(group.ref)?.type === "text")?.key
 }
 
-export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKey: string | undefined): boolean {
+function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKey: string | undefined): boolean {
   if (group.type !== "part") return true
   if (group.key === answerKey) return false
   const resolved = part(group.ref)
@@ -245,7 +245,7 @@ export function countFoldableGroups(groups: readonly PartGroup[], part: Foldable
   return groups.reduce((count, group) => (isFoldableGroup(group, part, answerKey) ? count + 1 : count), 0)
 }
 
-export type TurnFoldStatus = {
+type TurnFoldStatus = {
   foldableCount: number
   settled: boolean
   interrupted?: boolean
@@ -255,7 +255,7 @@ export type TurnFoldStatus = {
   userChoice?: boolean
 }
 
-export type TurnFoldDecision = {
+type TurnFoldDecision = {
   canFold: boolean
   folded: boolean
   explicit: boolean
@@ -298,9 +298,9 @@ export function foldedGroupKeys(
   )
 }
 
-export type TurnPartRef = GroupablePart & { messageIndex: number }
+type TurnPartRef = GroupablePart & { messageIndex: number }
 
-export type TurnFoldShape = {
+type TurnFoldShape = {
   /** The assistant message the turn was interrupted at, or -1. */
   interruptedMessageIndex: number
   /** The interruption is the message's own abort error rather than the runtime's cancelled outcome. */

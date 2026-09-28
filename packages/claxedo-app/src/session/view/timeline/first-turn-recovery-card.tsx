@@ -83,7 +83,7 @@ function InlineErrorStatus(props: ParentProps<{
   )
 }
 
-export function TurnAdmissionStatus(props: { summary?: string }) {
+function TurnAdmissionStatus(props: { summary?: string }) {
   return (
     <InlineErrorStatus
       testId="turn-admission-status-message"
@@ -99,8 +99,10 @@ export function TimelineErrorPresentation(props: {
   text: string
   summary?: string
   error?: unknown
+  providerId?: string
+  modelId?: string
   onAction: (value: SessionErrorClass) => unknown
-} & DispatchContext) {
+}) {
   return (
     <Show
       when={props.presentation === "turn-conflict"}
@@ -115,8 +117,8 @@ export function TimelineErrorPresentation(props: {
               detail={props.text}
               summary={props.summary}
               error={props.error}
-              providerID={props.providerID}
-              modelID={props.modelID}
+              providerId={props.providerId}
+              modelId={props.modelId}
               onAction={props.onAction}
             />
           )}
@@ -128,17 +130,18 @@ export function TimelineErrorPresentation(props: {
   )
 }
 
-export function FirstTurnRecoveryCard(props: {
+function FirstTurnRecoveryCard(props: {
   kind: SessionErrorClass
   detail?: string
   summary?: string
   error?: unknown
+  providerId?: string
+  modelId?: string
   onAction: (kind: SessionErrorClass) => unknown
-} & DispatchContext) {
-  const recovery = () => sessionRecovery(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
-  const description = () =>
-    props.summary ??
-    sessionRecoveryDescription(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
+}) {
+  const dispatch = (): DispatchContext => ({ providerID: props.providerId, modelID: props.modelId })
+  const recovery = () => sessionRecovery(props.kind, props.error, dispatch())
+  const description = () => props.summary ?? sessionRecoveryDescription(props.kind, props.error, dispatch())
   if (props.kind === "usage_limit") {
     return (
       <InlineErrorStatus

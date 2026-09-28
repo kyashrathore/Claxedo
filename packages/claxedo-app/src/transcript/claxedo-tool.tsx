@@ -58,9 +58,8 @@ export function ClaxedoTool(props: ToolProps) {
   const i18n = useTranscriptI18n()
   const data = useData()
   const name = createMemo(() => claxedoToolName(props.tool, props.input) ?? props.tool)
-  const sessionTitle = (id: string) => data.store.session.find((session) => session.id === id)?.title
   const view = createMemo(() =>
-    claxedoToolView({ name: name(), input: props.input, output: props.output, i18n, sessionTitle }),
+    claxedoToolView({ name: name(), input: props.input, output: props.output, i18n }),
   )
   const href = () => safeLinkHref(data.claxedoToolHref?.(name(), props.input, props.output))
   const running = () => props.status === "pending" || props.status === "running"

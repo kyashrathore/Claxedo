@@ -86,6 +86,4 @@ export default {
   "command.message.next": "다음 메시지",
   "command.message.next.description": "다음 사용자 메시지로 이동",
   "sessionScreen.requests.loadFailed": "대기 중인 권한 요청이나 질문을 불러오지 못했습니다. 다시 시도하여 계속하세요.",
-  "command.session.new": "새 세션",
-  "command.category.session": "세션",
 } satisfies Partial<Record<SessionScreenTextKey, string>>

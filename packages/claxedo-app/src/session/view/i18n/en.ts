@@ -77,8 +77,6 @@ export type SessionScreenTextKey =
   | "command.message.previous.description"
   | "command.message.next"
   | "command.message.next.description"
-  | "command.session.new"
-  | "command.category.session"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
@@ -194,6 +192,4 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "command.message.previous.description": "Go to the previous user message",
   "command.message.next": "Next message",
   "command.message.next.description": "Go to the next user message",
-  "command.session.new": "New session",
-  "command.category.session": "Session",
 }

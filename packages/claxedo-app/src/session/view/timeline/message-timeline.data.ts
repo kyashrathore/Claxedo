@@ -37,7 +37,7 @@ import { TimelineRow } from "./timeline-row-model"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
-export function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
+function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
   const files = new Set<string>()
   return (diffs ?? [])
     .reduceRight<SummaryDiff[]>((result, diff) => {
@@ -260,7 +260,7 @@ export namespace Timeline {
 
     if (error && !interrupted) {
       const data = error.data?.message
-      const raw = typeof data === "string" ? data : data === undefined || data === null ? "" : String(data)
+      const raw = typeof data === "string" ? data : data === undefined || data === null ? "" : isRecord(data) ? JSON.stringify(data) : String(data)
       const message = unwrapErrorMessage(stripRelayPrefix(raw).message)
       const rawBody = readField(error.data, "responseBody")
       const body = typeof rawBody === "string" ? rawBody.trim() : ""

@@ -34,7 +34,7 @@ Below 768 px of workbench width the layout projects to one full-bleed pane (`col
 
 ## Keyboard
 
-`mod+w` closes the focused pane (content stays as a tab), `mod+\` and `mod+shift+\` split the most recently hidden content beside the focused pane, and `mod+alt+arrows` move focus. Keys with no focused element are forwarded to the focused pane's content through `usePaneContext().onKeyDown`.
+`mod+w` closes the focused pane (content stays as a tab), `mod+\` and `mod+shift+\` split the most recently hidden content beside the focused pane, and `mod+alt+arrows` move focus.
 
 ## Flows
 

@@ -86,6 +86,4 @@ export default {
   "command.message.next": "Próxima mensagem",
   "command.message.next.description": "Ir para a próxima mensagem de usuário",
   "sessionScreen.requests.loadFailed": "Não foi possível carregar as permissões ou perguntas pendentes. Tente novamente para continuar.",
-  "command.session.new": "Nova sessão",
-  "command.category.session": "Sessão",
 } satisfies Partial<Record<SessionScreenTextKey, string>>

@@ -14,7 +14,6 @@ export type TreeRowContext = {
   readonly active: () => string | undefined
   readonly kinds: () => ReadonlyMap<string, ChangeKind> | undefined
   readonly marks: () => TreeMarks
-  readonly loadingEpisode: () => string | undefined
   readonly showMore: (dir: string, side: "before" | "after") => void
   readonly onFileClick: (file: FileNode) => void
   readonly onFilePress: (file: FileNode) => void
@@ -85,7 +84,7 @@ export function TreeRowView(props: { readonly tree: TreeRowContext; readonly row
         {(row) => <ShowMore count={row().count} onClick={() => props.tree.showMore(row().dir, row().side)} />}
       </Match>
       <Match when={props.row.kind === "loading" && props.row}>
-        {(row) => <TreeLoading level={row().level} episode={props.tree.loadingEpisode()} />}
+        {(row) => <TreeLoading level={row().level} />}
       </Match>
       <Match when={props.row.kind === "failed" && props.row}>
         {(row) => <FailureNotice title={t("files.loadFailed")} message={row().error.message} retryLabel={t("files.retry")} onRetry={row().retry} />}
