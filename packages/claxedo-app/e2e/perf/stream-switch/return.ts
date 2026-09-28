@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { acpScriptToken } from "../../harness/acp/script"
+import { acpScriptToken } from "../../../../harness/e2e/harness/acp/script"
 import { sessionRoute } from "../../harness/ui-names"
 import { streamScript } from "../stream-script"
 import { dwell, mainThreadIdle, seedSession, webSurface, type Surface } from "./surface"

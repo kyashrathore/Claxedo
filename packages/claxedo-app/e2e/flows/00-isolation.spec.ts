@@ -1,8 +1,8 @@
 import {
+  APP_SCRIPTED_PROVIDER_IDS,
   assistantText,
   expect,
   installedCli,
-  SCRIPTED_PROVIDER_IDS,
   sendPrompt,
   sessionRoute,
   test,
@@ -41,7 +41,7 @@ test("00 isolation: Pi's default model and every chosen provider answer only fro
   await expect(app.getByText("ISOLATEDDEFAULT", { exact: true })).toBeVisible()
 
   const catalog = await api.providerCatalog("pi")
-  expect([...catalog.connected].sort()).toEqual([...SCRIPTED_PROVIDER_IDS].sort())
+  expect([...catalog.connected].sort()).toEqual([...APP_SCRIPTED_PROVIDER_IDS].sort())
   expect(stack.scripted.requests.map((request) => request.model)).toEqual(expect.arrayContaining(CHOSEN.map(({ vendorModel }) => vendorModel)))
   expect(unexpectedEgress(stack.egress.attempts)).toEqual([])
 })

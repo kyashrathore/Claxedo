@@ -1,5 +1,5 @@
 import path from "node:path"
-import type { AcpScript, AcpStep } from "../harness/acp/script"
+import type { AcpScript, AcpStep } from "../../../harness/e2e/harness/acp/script"
 
 export const STREAM_END = "Stream finished: all checks pass."
 

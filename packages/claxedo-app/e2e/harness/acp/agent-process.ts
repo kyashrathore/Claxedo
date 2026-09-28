@@ -1,7 +1,5 @@
 import { execFileSync } from "node:child_process"
-import path from "node:path"
-
-const AGENT_ENTRY = path.join(import.meta.dirname, "agent.ts")
+import { SCRIPTED_ACP_AGENT_ENTRY } from "../../../../harness/e2e/harness/acp/connection"
 
 type ProcessRow = { readonly pid: number; readonly ppid: number; readonly command: string }
 
@@ -28,5 +26,5 @@ export function scriptedAgentPids(daemonPort: number): number[] {
     for (let parent = parentOf.get(pid); parent !== undefined && parent > 1; parent = parentOf.get(parent)) if (parent === daemon) return true
     return false
   }
-  return table.filter((row) => row.command.includes(AGENT_ENTRY) && underDaemon(row.pid)).map((row) => row.pid)
+  return table.filter((row) => row.command.includes(SCRIPTED_ACP_AGENT_ENTRY) && underDaemon(row.pid)).map((row) => row.pid)
 }

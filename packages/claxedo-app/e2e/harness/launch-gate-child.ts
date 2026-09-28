@@ -1,4 +1,4 @@
-import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, LAUNCH_GATE_CHILD_DIST } from "./workspace-dists"
+import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, LAUNCH_GATE_CHILD_DIST } from "../../../harness/e2e/harness/workspace-dists"
 
 export async function ensureLaunchGateChild(): Promise<{ built: boolean; ms: number }> {
   const started = Date.now()

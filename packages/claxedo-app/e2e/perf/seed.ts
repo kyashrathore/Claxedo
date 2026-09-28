@@ -1,5 +1,5 @@
-import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
-import { acpScriptToken, type AcpScript } from "../harness/acp/script"
+import { SCRIPTED_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
+import { acpScriptToken, type AcpScript } from "../../../harness/e2e/harness/acp/script"
 import type { ClaxedoApi } from "../harness/api"
 import { seedTurnScript } from "./stream-script"
 

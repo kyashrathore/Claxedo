@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { directTransport, type HttpTransport } from "./transport"
+import { directTransport, type HttpTransport } from "../../../harness/e2e/harness/transport"
 
 export type LivePluginFolder = {
   id: string

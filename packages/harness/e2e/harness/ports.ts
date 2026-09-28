@@ -3,6 +3,7 @@ import type { Server } from "node:http"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
+import { sleep } from "@claxedo/helpers"
 
 function portRange() {
   const match = /^(\d+)-(\d+)$/.exec(process.env.CLAXEDO_E2E_PORT_RANGE ?? "")
@@ -95,7 +96,7 @@ export async function portFreed(port: number, withinMs: number) {
   const deadline = Date.now() + withinMs
   while (!(await portIsFree(port))) {
     if (Date.now() > deadline) return false
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await sleep(100)
   }
   return true
 }

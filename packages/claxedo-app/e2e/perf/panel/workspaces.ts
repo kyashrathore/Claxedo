@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { SCRIPTED_ACP_HARNESS } from "../../harness/acp/connection"
-import { acpScriptToken } from "../../harness/acp/script"
+import { SCRIPTED_ACP_HARNESS } from "../../../../harness/e2e/harness/acp/connection"
+import { acpScriptToken } from "../../../../harness/e2e/harness/acp/script"
 import type { ClaxedoApi } from "../../harness/api"
-import { git } from "../../harness/git"
+import { git } from "../../../../harness/e2e/harness/git"
 import type { Stack } from "../../harness/stack"
 import { buildWorkspaceFixture, generateWorkspaceFileBytes } from "./workspace-fixture"
 

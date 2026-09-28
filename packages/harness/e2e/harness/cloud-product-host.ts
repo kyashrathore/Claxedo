@@ -8,6 +8,7 @@ import { daemonRuntime } from "./daemon"
 import { startEgressGuard } from "./egress-guard"
 import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
+import { pinnedAgentEnv } from "./pinned-agent-env"
 import { claxedoAgentPluginsWorkspaceRuntimeEntry } from "../../../claxedo-server/src/hosts/workspace-runtime/startup"
 import { nativeProviderAuth, nativeProviderDeliveriesFromRepository, nativeProviderSecrets } from "../../../claxedo-server-core/src/credentials/native-delivery-plan"
 import {
@@ -49,7 +50,7 @@ export async function startCloudProductHost(nativeHarness?: RuntimeNativeHarness
   const guard = await startEgressGuard(guardPort)
   const deliveries = options.accountOwner ? await ownerAccountDelivery(options.accountOwner) : []
   const env: NodeJS.ProcessEnv = {
-    ...await isolatedEnv(root, guard.url),
+    ...await isolatedEnv(root, guard.url, pinnedAgentEnv()),
     ...workspaceRuntimeBootEnv({ workspaceId: WORKSPACE_ID, directory, port, nativeHarness }),
     ...Object.fromEntries(nativeProviderSecrets(deliveries).map((secret) => [secret.name, `claxedo-broker:${secret.name}`])),
     WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: HOSTED_SIGNING_PUBLIC_KEY,

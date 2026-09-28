@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
-import { captureOutput, exited } from "./process"
+import { captureOutput, exited } from "../../../harness/e2e/harness/process"
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../..")
 const BUILD_STAMP = "claxedo-e2e-build.json"

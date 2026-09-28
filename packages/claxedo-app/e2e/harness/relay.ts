@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import path from "node:path"
-import { REPO_ROOT } from "./node-loader"
-import { captureOutput, stopProcess, type OwnedProcess } from "./process"
+import { REPO_ROOT } from "../../../harness/e2e/harness/node-loader"
+import { captureOutput, stopProcess, type OwnedProcess } from "../../../harness/e2e/harness/process"
 
 const RELAY_DIR = path.join(REPO_ROOT, "packages/workspace-relay")
 const START_TIMEOUT_MS = 30_000

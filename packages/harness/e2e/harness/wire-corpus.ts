@@ -313,7 +313,7 @@ if (mode) {
     }
     return reply
   }
-  globalThis.fetch = Object.assign(observedFetch, { preconnect: nativeFetch.preconnect }) as typeof fetch
+  globalThis.fetch = new Proxy(nativeFetch, { apply: (_target, _this, args: Parameters<typeof fetch>) => observedFetch(...args) })
 }
 
 if (mode) process.on("exit", (code) => {

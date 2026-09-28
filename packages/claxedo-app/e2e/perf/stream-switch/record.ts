@@ -1,7 +1,7 @@
 import type { CDPSession, Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { acpScriptToken } from "../../harness/acp/script"
+import { acpScriptToken } from "../../../../harness/e2e/harness/acp/script"
 import { sessionRoute } from "../../harness/ui-names"
 import { longReplyScript, streamScript } from "../stream-script"
 import { recordScreen } from "./screen"

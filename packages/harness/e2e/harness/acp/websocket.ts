@@ -37,8 +37,8 @@ export async function startScriptedAcpWebSocket(scriptDir: string, options: { re
           const writable = new WritableStream<StreamMessage>({
             write(message) { socket.send(JSON.stringify(message)) },
           })
-          new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir, socket.data.headers, false, options.restoreMode,
-            options.startupQuestion, options.groups, options.mcpCapabilities), { readable, writable })
+          new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir, { headers: socket.data.headers, record: false,
+            restoreMode: options.restoreMode, startupQuestion: options.startupQuestion, groups: options.groups, mcpCapabilities: options.mcpCapabilities }), { readable, writable })
         },
         async message(socket, message) {
           const value = JSON.parse(typeof message === "string" ? message : Buffer.from(message).toString("utf8")) as StreamMessage

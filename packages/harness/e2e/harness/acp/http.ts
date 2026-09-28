@@ -12,7 +12,7 @@ export async function startScriptedAcpHttp(scriptDir: string, options: {
 } = {}): Promise<ScriptedAcpHttp> {
   const port = await reservePort()
   const acp = new AcpServer({ createLegacyAgent: (connection) =>
-    new ScriptedAgent(connection, scriptDir, {}, true, options.restoreMode, options.startupQuestion, options.groups, options.mcpCapabilities) })
+    new ScriptedAgent(connection, scriptDir, options) })
   const handler = createNodeHttpHandler(acp)
   const server = createServer((request, response) => {
     if (new URL(request.url ?? "/", "http://127.0.0.1").pathname === "/acp") handler(request, response)

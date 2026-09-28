@@ -21,10 +21,11 @@ import {
   type ForkSessionRequest,
   type PromptRequest,
   type PromptResponse,
+  type SessionConfigOption,
   type SetSessionConfigOptionRequest,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
-import { ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
+import { ACP_CORE_ENV, ACP_NO_MODELS_ENV, ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
 import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
 import { recordAcpRequest } from "./requests"
@@ -57,24 +58,78 @@ async function scriptFor(text: string, dir: string): Promise<AcpScript> {
   return script
 }
 
+const SCRIPTED_MODES = { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] }
+
+const NO_MODELS: SessionConfigOption = { id: "model", name: "Model", category: "model", type: "select", currentValue: "", options: [] }
+
+function agentOption(currentValue: string): SessionConfigOption {
+  return { id: "mode", name: "Agent", category: "mode", type: "select", currentValue, options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] }
+}
+
+const JETBRAINS_META = { air: { version: 1, capabilities: ["nativeSubagentSessions"] } }
+
+const PROMPT_CAPABILITIES = { image: true, embeddedContext: true }
+
+export type ScriptedAgentOptions = {
+  /** Only core ACP: modes and session/load of any id, with no Claxedo extensions, config options, commands, fork, resume or MCP transports. */
+  core?: boolean
+  /** Advertises a model selector with no models, as an agent that has none configured. */
+  noModels?: boolean
+  /** A turn cancelled during its last step ends with stopReason "cancelled" instead of "end_turn". */
+  reportsCancel?: boolean
+  headers?: Record<string, string>
+  record?: boolean
+  restoreMode?: "load" | "resume"
+  startupQuestion?: boolean
+  groups?: readonly string[]
+  mcpCapabilities?: McpCapabilities
+}
+
 export class ScriptedAgent implements Agent {
   private readonly turns = new Map<string, AbortController>()
   private readonly mcpUrls = new Map<string, { url: string; headers: Record<string, string> }>()
   private readonly goalRequest: ReturnType<typeof scriptedGoals>
+  private readonly core: boolean
+  private readonly noModels: boolean
+  private readonly reportsCancel: boolean
+  private readonly headers: Record<string, string>
+  private readonly record: boolean
+  private readonly restoreMode: "load" | "resume"
+  private readonly startupQuestion: boolean
+  private readonly groups: readonly string[]
+  private readonly mcpCapabilities: McpCapabilities
 
-  constructor(private readonly connection: AgentSideConnection, private readonly dir: string, private readonly headers: Record<string, string> = {}, private readonly record = true,
-    private readonly restoreMode: "load" | "resume" = "resume", private readonly startupQuestion = process.env.SCRIPTED_ACP_START_QUESTION === "1",
-    private readonly groups: readonly string[] = process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals"],
-    private readonly mcpCapabilities: McpCapabilities = { http: true, sse: true }) {
+  constructor(private readonly connection: AgentSideConnection, private readonly dir: string, options: ScriptedAgentOptions = {}) {
+    this.core = options.core ?? false
+    this.noModels = options.noModels ?? false
+    this.reportsCancel = options.reportsCancel ?? false
+    this.headers = options.headers ?? {}
+    this.record = options.record ?? true
+    this.restoreMode = options.restoreMode ?? "resume"
+    this.startupQuestion = options.startupQuestion ?? process.env.SCRIPTED_ACP_START_QUESTION === "1"
+    this.groups = options.groups ?? process.env.SCRIPTED_ACP_GROUPS?.split(",") ?? ["agents", "goals"]
+    this.mcpCapabilities = options.mcpCapabilities ?? { http: true, sse: true }
     this.goalRequest = scriptedGoals(dir)
   }
 
+  private configOptions(): SessionConfigOption[] {
+    return [...(this.core ? [] : [agentOption("default")]), ...(this.noModels ? [NO_MODELS] : [])]
+  }
+
+  private sessionOptions() {
+    const configOptions = this.configOptions()
+    return { modes: SCRIPTED_MODES, ...(configOptions.length ? { configOptions } : {}) }
+  }
+
   initialize(): InitializeResponse {
+    if (this.core) {
+      return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: true, promptCapabilities: PROMPT_CAPABILITIES }, authMethods: [], _meta: { jetbrains: JETBRAINS_META } }
+    }
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: { image: true, embeddedContext: true }, mcpCapabilities: this.mcpCapabilities },
+      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {}, ...(this.restoreMode === "resume" ? { resume: {} } : {}) }, promptCapabilities: PROMPT_CAPABILITIES, mcpCapabilities: this.mcpCapabilities },
       authMethods: [],
-      _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } },
+      _meta: { jetbrains: JETBRAINS_META,
         ...(this.groups.includes("goals") ? { goal: scriptedGoalExtension } : {}),
         claxedo: { version: 1, methods: [
           ...(this.groups.includes("steer") ? ["session/steer"] : []),
@@ -88,6 +143,7 @@ export class ScriptedAgent implements Agent {
     if (process.env.SCRIPTED_ACP_HANG_NEW === "1") await new Promise<never>(() => {})
     const sessionId = `scripted-${randomUUID()}`
     rememberSession(this.dir, sessionId)
+    if (this.core) return { sessionId, ...this.sessionOptions() }
     const mcp = params.mcpServers.find((server) => server.name === "scripted" || server.name.endsWith("-scripted"))
     if (mcp && "url" in mcp && typeof mcp.url === "string") {
       const headers = Array.isArray(mcp.headers) ? mcp.headers : []
@@ -101,17 +157,13 @@ export class ScriptedAgent implements Agent {
     queueMicrotask(() => {
       void this.connection.sessionUpdate({ sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "scripted", description: "Run a named scripted reply" }] } })
     })
-    return {
-      sessionId,
-      modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] },
-      configOptions: [{ id: "mode", name: "Agent", category: "mode", type: "select", currentValue: "default", options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] }],
-    }
+    return { sessionId, ...this.sessionOptions() }
   }
 
   async loadSession(params: LoadSessionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/load", params, this.headers)
-    if (!knowsSession(this.dir, params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
-    return { modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default", description: "Scripted replies" }] } }
+    if (!this.core && !knowsSession(this.dir, params.sessionId)) throw RequestError.resourceNotFound(params.sessionId)
+    return { modes: SCRIPTED_MODES, ...(this.noModels ? { configOptions: [NO_MODELS] } : {}) }
   }
 
   async resumeSession(params: ResumeSessionRequest) {
@@ -138,8 +190,7 @@ export class ScriptedAgent implements Agent {
   async setSessionConfigOption(params: SetSessionConfigOptionRequest) {
     if (this.record) await recordAcpRequest(this.dir, "session/set_config_option", params, this.headers)
     if (params.configId !== "mode" || typeof params.value !== "string") throw RequestError.invalidParams()
-    return { configOptions: [{ id: "mode", name: "Agent", category: "mode" as const, type: "select" as const,
-      currentValue: params.value, options: [{ value: "default", name: "Default" }, { value: "review", name: "Review" }] }] }
+    return { configOptions: [agentOption(params.value)] }
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
@@ -159,7 +210,7 @@ export class ScriptedAgent implements Agent {
     this.turns.get(params.sessionId)?.abort()
     this.turns.set(params.sessionId, controller)
     try {
-      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcp: this.mcpUrls.get(params.sessionId) }, script)
+      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcp: this.mcpUrls.get(params.sessionId), reportsCancel: this.reportsCancel }, script)
     } finally {
       if (this.turns.get(params.sessionId) === controller) this.turns.delete(params.sessionId)
     }
@@ -197,5 +248,7 @@ if (import.meta.main) {
     Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
     Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,
   )
-  new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir), stream)
+  const core = process.env[ACP_CORE_ENV] === "1"
+  const options = { core, reportsCancel: core, noModels: process.env[ACP_NO_MODELS_ENV] === "1" }
+  new AgentSideConnection((connection) => new ScriptedAgent(connection, scriptDir, options), stream)
 }

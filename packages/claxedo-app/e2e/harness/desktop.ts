@@ -2,22 +2,24 @@ import { _electron as electron, type ElectronApplication, type Page } from "@pla
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
+import { releaseAcpHold, writeAcpScript, type AcpScript } from "../../../harness/e2e/harness/acp/script"
 import { ClaxedoApi } from "./api"
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
 import { daemonExited, desktopDaemonPid } from "./desktop-daemon"
 import { serveRenderer, type DesktopRenderer, type RendererServer } from "./desktop-renderer"
-import { startEgressGuard, type EgressGuard } from "./egress-guard"
+import { startEgressGuard, type EgressGuard } from "../../../harness/e2e/harness/egress-guard"
 import type { TlsTrust } from "./tls-front"
-import { isolatedEnv } from "./isolated-env"
-import { writeScriptedModelCatalog } from "./model-catalog"
-import { releasePort, reservePort } from "./ports"
-import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
+import { isolatedEnv } from "../../../harness/e2e/harness/isolated-env"
+import { APP_AGENT_ENV } from "./agent-env"
+import { writeScriptedModelCatalog } from "../../../harness/e2e/harness/model-catalog"
+import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
+import { startScriptedModelServer, type ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
 import { prepareScriptedServer } from "./scripted-world"
 import { safeLabel } from "./stack"
-import { pageTransport, type HttpTransport } from "./transport"
-import { makeWorkspace, type Workspace } from "./workspaces"
+import type { HttpTransport } from "../../../harness/e2e/harness/transport"
+import { pageTransport } from "./page-transport"
+import { makeWorkspace, type Workspace } from "../../../harness/e2e/harness/workspaces"
 
 const SHELL_DOCUMENT = /index\.local\.html$/
 
@@ -99,7 +101,7 @@ async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefin
   const zdotdir = path.join(world.dataDir, "zdotdir")
   await fs.mkdir(zdotdir, { recursive: true })
   const entries = {
-    ...(await isolatedEnv(world.dataDir, world.egress.url)),
+    ...(await isolatedEnv(world.dataDir, world.egress.url, APP_AGENT_ENV)),
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(world.dataDir),
     CLAXEDO_DESKTOP_USER_DATA_DIR: path.join(world.dataDir, "user-data"),
     CLAXEDO_DATA_DIR: serverDataDir(world),

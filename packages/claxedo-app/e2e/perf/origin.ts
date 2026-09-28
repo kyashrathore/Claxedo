@@ -2,7 +2,7 @@ import fs from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import path from "node:path"
 import { forward, forwardUpgrade } from "../harness/proxy"
-import { listenOnLoopback } from "../harness/ports"
+import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 
 export type AppOrigin = { url: string; close(): Promise<void> }
 

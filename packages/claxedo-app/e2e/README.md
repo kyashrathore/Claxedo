@@ -27,7 +27,7 @@ Nothing a spec does reaches the internet or this Mac's accounts, and every spec 
 - **Environment.** The daemon gets an allow-list environment: `PATH`, `TMPDIR`, `LANG`, `LC_ALL`, `LC_CTYPE`, `USER`, `LOGNAME`, `SHELL`, `TZ` and `CI` are inherited, nothing else. No provider key, no `ANTHROPIC_*`, `OPENAI_*` or `CLAUDE_*` variable and no agent session variable of the shell running the suite reaches it. `HOME` and every `XDG_*` directory sit in the spec's data directory, which also hides the login keychain from the `security` tool, and the daemon runs from that directory, so no project config in this repository applies. Git reads no system config and has a test identity.
 - **Model traffic.** The stack stores an `anthropic` and an `openai` key and declares a custom provider of each id whose base URL is the scripted model server. The credential broker then sends every brokered turn there: Pi on either provider, Claude Code on `anthropic`, Codex on `openai`. Pi's model key is `{ providerId: "pi", modelId: "openai/gpt-4.1" }`.
 - **Other traffic.** `PI_OFFLINE=1` and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` turn off the agents' own update and telemetry calls. The OpenCode model catalog reads a snapshot of the scripted providers (`CLAXEDO_OPENCODE_CATALOG_CACHE`) instead of models.dev. Usage cost reads token-tracker's own bundled price list, seeded fresh into the stack's `~/.tokentracker/cache/pricing.json`, instead of fetching LiteLLM's from GitHub.
-- **Agent CLIs.** Pi is the runtime's pinned version (`PI_EXECUTABLE`), installed by global setup. `harness/stand-ins/` sits first on the daemon's `PATH`: its `cursor-agent` answers the machine-logins probe with a signed-out status, so no real Cursor CLI runs and every machine reports the same.
+- **Agent CLIs.** Pi is the runtime's pinned version (`PI_EXECUTABLE`), installed by global setup. `packages/harness/e2e/harness/stand-ins/` and this suite's `harness/stand-ins/` sit first on the daemon's `PATH`: the former's `cursor-agent` answers the machine-logins probe with a signed-out status, so no real Cursor CLI runs and every machine reports the same.
 - **The egress guard.** Each stack runs a proxy that refuses every request and records it, and the daemon's `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` point at it (`NODE_USE_ENV_PROXY=1`, loopback excluded). `stack.egress.attempts` is the record. The `stack` fixture fails any spec that made an attempt outside `REFUSED_BACKGROUND_TARGETS`, the calls no switch reaches: the embedded OpenCode engine's model refresh and Codex's start-up calls. Those are refused too, just not counted.
 - **Proof.** `00-isolation.spec.ts` sends Pi's default model through the app and chosen `openai` and `anthropic` models, Claude Code and Codex through the API; each must answer from the scripted server with no unexpected attempt, and Pi's connected providers must be exactly the scripted two. Its red run, `CLAXEDO_E2E_RED=1`, stores the keys without the custom providers, so the broker sends them to the vendors' hosts and every case fails on the refused attempts.
 
@@ -112,7 +112,7 @@ A loopback web server on a port from the run's range that answers each path in `
 
 ### `stack.acp`
 
-The scripted ACP agent is installed as the harness connection `scripted-acp` (`SCRIPTED_ACP_HARNESS = { id: "scripted-acp", access: "connection" }`). The daemon spawns it per workspace; each prompt looks for the last `acp-script:<name>` token in the prompt text and plays `<name>.json` from the spec's script directory. A prompt without a token gets the marker convention below or `ok`.
+The scripted ACP agent (`packages/harness/e2e/harness/acp/`, shared with the harness flows) is installed as the harness connection `scripted-acp` (`SCRIPTED_ACP_HARNESS = { id: "scripted-acp", access: "connection" }`). This suite runs it as a core ACP agent: modes and `session/load` only, with none of the Claxedo extensions, config options, commands, fork or resume the harness flows exercise, and a turn stopped during its last step ends `cancelled`. The daemon spawns it per workspace; each prompt looks for the last `acp-script:<name>` token in the prompt text and plays `<name>.json` from the spec's script directory. A prompt without a token gets the marker convention below or `ok`.
 
 | Member | Meaning |
 | --- | --- |
@@ -232,38 +232,29 @@ e2e/
     global-setup.ts      prepareHarness: the launch gate child, the daemon port, the app build
     stack.ts             starts the egress guard, the model server and the daemon, owns ports and the data dir
     daemon.ts            the real self-hosted daemon with the built app and scripted agents
-    isolated-env.ts      the daemon's allow-list environment
-    egress-guard.ts      the refusing proxy and REFUSED_BACKGROUND_TARGETS
-    scripted-providers.ts  routes anthropic and openai to the scripted model server
-    model-catalog.ts     the OpenCode catalog snapshot
+    agent-env.ts         the agent CLIs this suite's daemon finds: its stand-ins and the pinned Pi
     launch-gate-child.ts builds the runtime's launch gate child
-    workspace-dists.ts   builds a workspace package's dist when it is missing
     desktop-build.ts     builds packages/claxedo-desktop when stale
     desktop-renderer.ts  serves the built desktop renderer over http for desktopRenderer "http"
     desktop-daemon.ts    the daemon a desktop started, and waiting for it to exit
     desktop.ts           launches the Electron app isolated, with its scripted world
-    scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent
-    workspaces.ts        a fresh repository registered with a server
-    transport.ts         HTTP straight to a server, or through a page
-    node-loader.ts       the tsx loader for scripts that run under node
-    usage-pricing.ts     token-tracker's bundled price list, seeded into the stack's home
-    stand-ins/           agent CLIs the stack must not run for real (cursor-agent)
+    scripted-world.ts    prepares a server: anthropic and openai routed to the scripted model server, Pi by default, the scripted ACP agent
+    page-transport.ts    HTTP through a page
+    stand-ins/           CLIs the stack must not run for real (docker)
     ui-names.ts          the accessible names and routes every flow uses
     composer.ts          sendPrompt: type into the composer and send once it accepts
     a11y.ts              the axe sweep and a11y-baseline.json, the rules each surface may still break
-    git.ts               git with a test identity; one-commit repositories
     git-remote.ts        a bare repository served over dumb HTTP
     local-pages.ts       loopback HTML pages for the browser tab
     signed-stack.ts      the signed stack: HTTPS front, the owner and other accounts, sign-in
     tls-front.ts         an HTTPS origin in front of the daemon (self-signed)
     proxy.ts             request and websocket forwarding to a daemon
     api.ts               ClaxedoApi
-    stream.ts            the /api/wr/events reader
     app.ts               the dist-e2e build
-    scripted-model-*.ts  the scripted model endpoint (chat, messages, responses dialects)
     installed-cli.ts     Claude / Codex CLI detection
-    acp/                 the scripted ACP agent: script.ts (types), turn.ts (steps), agent.ts (the process), agent-process.ts (its PIDs under a stack's daemon)
-    ports.ts, process.ts, health.ts
+    acp/agent-process.ts the scripted ACP agent's PIDs under a stack's daemon
   perf/                  bun run e2e:perf-stream: a streaming turn measured on one or more builds; first-send.ts: pointerdown to the sent message painted and to the first reply text, over fresh drafts
   probes/                one-off probes (P0.7 harness status, harness health after a killed agent), not collected as flows
 ```
+
+The real-stack parts both suites use are owned by `packages/harness/e2e/harness/`, which this suite imports by relative path: the isolated environment, the egress guard, ports, processes, health, git, workspaces, the HTTP transport, the event stream, the scripted model server and providers, the model catalog, usage pricing, workspace dists, the tsx loader and the scripted ACP agent. The harness also owns `ClaxedoApi`'s message rows and `assistantText`.

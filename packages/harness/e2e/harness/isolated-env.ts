@@ -1,9 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { egressProxyEnv } from "./egress-guard"
-import { PINNED_PI } from "./pinned-pi"
-import { PINNED_CODEX } from "./pinned-codex"
-import { PINNED_CLAUDE } from "./pinned-claude"
 import { writePricingSnapshot } from "./usage-pricing"
 
 const STAND_INS = path.join(import.meta.dirname, "stand-ins")
@@ -14,11 +11,14 @@ const GIT_IDENTITY = "[user]\n\tname = Claxedo e2e\n\temail = e2e@claxedo.test\n
 
 const AGENTS_STAY_OFFLINE = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", PI_OFFLINE: "1" }
 
+/** Where the stack finds the agent CLIs it runs: directories that lead PATH, and the variables that name or steer them. */
+export type AgentCliEnv = { readonly path: readonly string[]; readonly env: Readonly<Record<string, string>> }
+
 function inherited(): NodeJS.ProcessEnv {
   return Object.fromEntries(INHERITED.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])))
 }
 
-export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJS.ProcessEnv> {
+export async function isolatedEnv(home: string, guardUrl: string, agents: AgentCliEnv): Promise<NodeJS.ProcessEnv> {
   const xdg = {
     XDG_CONFIG_HOME: path.join(home, ".config"),
     XDG_DATA_HOME: path.join(home, ".local", "share"),
@@ -36,21 +36,14 @@ export async function isolatedEnv(home: string, guardUrl: string): Promise<NodeJ
   await writePricingSnapshot(home)
   return {
     ...inherited(),
-    // The runtime resolves Codex on PATH, so the pinned CLI's directory leads it.
-    PATH: [STAND_INS, path.dirname(PINNED_CODEX), process.env.PATH].filter(Boolean).join(path.delimiter),
+    PATH: [STAND_INS, ...agents.path, process.env.PATH].filter(Boolean).join(path.delimiter),
     HOME: home,
     ...windowsHome,
     ...xdg,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
     ...AGENTS_STAY_OFFLINE,
-    PI_EXECUTABLE: PINNED_PI,
-    CLAUDE_CODE_EXECUTABLE: PINNED_CLAUDE,
-    ...(process.env.H11_DROP_ACP_IMAGE === "1" ? { H11_DROP_ACP_IMAGE: "1" } : {}),
-    ...(process.env.H1_DROP_ACP_TOOL_OUTPUT === "1" ? { H1_DROP_ACP_TOOL_OUTPUT: "1" } : {}),
-    ...(process.env.H13_DROP_ACP_USAGE === "1" ? { H13_DROP_ACP_USAGE: "1" } : {}),
-    ...(process.env.CLAXEDO_E2E_ACP_WITHHOLD_ONCE_OPTION === "1" ? { CLAXEDO_E2E_ACP_WITHHOLD_ONCE_OPTION: "1" } : {}),
-    ...(process.env.CLAXEDO_E2E_ACP_FAULT ? { CLAXEDO_E2E_ACP_FAULT: process.env.CLAXEDO_E2E_ACP_FAULT } : {}),
+    ...agents.env,
     ...egressProxyEnv(guardUrl),
   }
 }

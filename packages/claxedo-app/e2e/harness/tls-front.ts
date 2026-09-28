@@ -5,7 +5,7 @@ import { createServer } from "node:https"
 import path from "node:path"
 import { promisify } from "node:util"
 import { forward, forwardUpgrade } from "./proxy"
-import { listenOnLoopback } from "./ports"
+import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 
 export type TlsTrust = { caPath: string; spki: string }
 

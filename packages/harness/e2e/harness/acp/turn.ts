@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs"
 import { RequestError, type AgentSideConnection, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk"
+import { sleep } from "@claxedo/helpers"
 import { asString } from "@claxedo/helpers/guards"
 import { recordElicitationReceipt, recordPermissionReceipt } from "./receipts"
 import { ACP_FAULT_ENV, ACP_WITHHOLD_ONCE_ENV, holdEnteredFile, holdReleaseFile, type AcpScript, type AcpStep, type AcpToolStep } from "./script"
@@ -14,6 +15,7 @@ export type TurnContext = {
   signal: AbortSignal
   prompt: string
   mcp?: { url: string; headers: Record<string, string> }
+  reportsCancel: boolean
 }
 
 type Update = SessionNotification["update"]
@@ -45,9 +47,11 @@ function splitText(text: string, chunks: number) {
   return out.length ? out : [text]
 }
 
-async function sendText(context: TurnContext, text: string, chunks = 1) {
+async function sendText(context: TurnContext, text: string, chunks = 1, delayMs = 0) {
   for (const piece of splitText(text, chunks)) {
+    if (context.signal.aborted) return
     await update(context, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: piece } })
+    if (delayMs > 0) await sleep(delayMs)
   }
 }
 
@@ -63,6 +67,7 @@ async function playTool(context: TurnContext, step: AcpToolStep) {
     ...(step.locations ? { locations: step.locations } : {}),
   })
   const status = step.status ?? "completed"
+  if (status === "in_progress") return
   const content = step.content ?? (step.text !== undefined ? [textContent(step.text)] : [])
   const rawOutput = step.output ?? (status === "failed" ? { error: step.text ?? "The scripted tool failed" } : step.text ?? null)
   await update(context, { sessionUpdate: "tool_call_update", toolCallId, status, content, rawOutput: deliveredToolOutput(rawOutput) })
@@ -154,19 +159,19 @@ async function playSubagent(context: TurnContext, step: Extract<AcpStep, { kind:
   return undefined
 }
 
-async function hold(context: TurnContext, name: string) {
+async function hold(context: TurnContext, name: string, ignoresCancel: boolean) {
   const file = holdReleaseFile(context.scriptDir, name)
   fs.writeFileSync(holdEnteredFile(context.scriptDir, name), "entered")
-  while (!context.signal.aborted) {
-    if (fs.existsSync(file)) return
-    await new Promise((resolve) => setTimeout(resolve, 50))
+  while (!fs.existsSync(file)) {
+    if (!ignoresCancel && context.signal.aborted) return
+    await sleep(50)
   }
 }
 
 async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResponse | undefined> {
   switch (step.kind) {
     case "text":
-      await sendText(context, step.text, step.chunks)
+      await sendText(context, step.text, step.chunks, step.delayMs)
       return undefined
     case "usage":
       await update(context, { sessionUpdate: "usage_update", used: step.used, size: step.size })
@@ -214,7 +219,7 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
     case "subagent":
       return playSubagent(context, step)
     case "hold":
-      await hold(context, step.name)
+      await hold(context, step.name, step.ignoresCancel === true)
       return undefined
     case "error":
       throw RequestError.internalError(undefined, step.message)
@@ -231,6 +236,7 @@ export async function playScript(context: TurnContext, script: AcpScript): Promi
     const result = await playStep(context, step)
     if (result) return result
   }
+  if (context.reportsCancel && context.signal.aborted) return { stopReason: "cancelled" }
   const usage = deliveredUsage(script.usage)
   return { stopReason: script.stopReason ?? "end_turn", ...(usage ? { usage } : {}) }
 }

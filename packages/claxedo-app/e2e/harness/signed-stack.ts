@@ -3,13 +3,14 @@ import path from "node:path"
 import { expect, type Page } from "@playwright/test"
 import { ClaxedoApi } from "./api"
 import type { SignedDaemon } from "./daemon"
-import { storeScriptedKeys } from "./scripted-providers"
-import { releasePort, reservePort } from "./ports"
+import { storeScriptedKeys } from "../../../harness/e2e/harness/scripted-providers"
+import { APP_SCRIPTED_PROVIDER_IDS } from "./scripted-world"
+import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
 import { relayResolverToken, startRelay, type Relay } from "./relay"
 import { startStack, type Stack, type StackInput } from "./stack"
 import { startTlsFront, type TlsFront, type TlsTrust } from "./tls-front"
-import { bearerTransport, type HttpTransport } from "./transport"
-import { makeSignedWorkspace, type Workspace } from "./workspaces"
+import { bearerTransport, type HttpTransport } from "../../../harness/e2e/harness/transport"
+import { makeSignedWorkspace, type Workspace } from "../../../harness/e2e/harness/workspaces"
 
 export type Account = {
   name: string
@@ -46,7 +47,7 @@ async function signUp(stack: Stack, frontUrl: string, name: string): Promise<Acc
   if (response.status !== 200 || !token) throw new Error(`Signing up ${email} failed: ${response.status} ${await response.text()}`)
   const { user } = (await response.json()) as { user: { id: string } }
   const transport = bearerTransport(token)
-  await storeScriptedKeys(transport, stack.url)
+  await storeScriptedKeys(transport, stack.url, APP_SCRIPTED_PROVIDER_IDS)
   return { name, email, password, subject: user.id, api: new ClaxedoApi(stack.url, transport, { reserveSessions: true }), transport }
 }
 

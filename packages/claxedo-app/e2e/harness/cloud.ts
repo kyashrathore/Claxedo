@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { expect } from "@playwright/test"
-import { acpScriptToken } from "./acp/script"
-import { SCRIPTED_ACP_HARNESS } from "./acp/connection"
+import { acpScriptToken } from "../../../harness/e2e/harness/acp/script"
+import { SCRIPTED_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
 import type { SignedStack } from "./signed-stack"
 
 const DRIVER_IMAGE = "claxedo/e2e-runtime:local"

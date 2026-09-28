@@ -1,16 +1,17 @@
 import { spawn } from "node:child_process"
-import fs from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { waitForHealth } from "./health"
-import { isolatedEnv } from "./isolated-env"
-import { REPO_ROOT, SERVER_DIR, TSX_LOADER } from "./node-loader"
-import { writeScriptedModelCatalog } from "./model-catalog"
-import { captureOutput, stopProcess, type OwnedProcess } from "./process"
-import type { ScriptedModelServer } from "./scripted-model-server"
+import { daemonDirs } from "../../../harness/e2e/harness/daemon-dirs"
+import { waitForHealth } from "../../../harness/e2e/harness/health"
+import { isolatedEnv } from "../../../harness/e2e/harness/isolated-env"
+import { APP_AGENT_ENV } from "./agent-env"
+import { REPO_ROOT, SERVER_DIR, TSX_LOADER } from "../../../harness/e2e/harness/node-loader"
+import { writeScriptedModelCatalog } from "../../../harness/e2e/harness/model-catalog"
+import { captureOutput, stopProcess, type OwnedProcess } from "../../../harness/e2e/harness/process"
+import type { ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
 import { prepareScriptedServer } from "./scripted-world"
-import { directTransport } from "./transport"
-import { makeWorkspace, type Workspace } from "./workspaces"
+import { directTransport } from "../../../harness/e2e/harness/transport"
+import { makeWorkspace, type Workspace } from "../../../harness/e2e/harness/workspaces"
 
 export type { Workspace }
 
@@ -48,20 +49,9 @@ export type DaemonInput = {
   env?: Readonly<Record<string, string>>
 }
 
-type DaemonDirs = { acpScriptDir: string; workspaces: string }
-
-async function daemonDirs(dataDir: string): Promise<DaemonDirs> {
-  const dirs = {
-    acpScriptDir: path.join(dataDir, "acp-scripts"),
-    workspaces: path.join(dataDir, "workspaces"),
-  }
-  await Promise.all(Object.values(dirs).map((dir) => fs.mkdir(dir, { recursive: true })))
-  return dirs
-}
-
 async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
   return {
-    ...(await isolatedEnv(input.dataDir, input.guardUrl)),
+    ...(await isolatedEnv(input.dataDir, input.guardUrl, APP_AGENT_ENV)),
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(input.dataDir),
     CLAXEDO_DATA_DIR: input.dataDir,
     CLAXEDO_SERVER_PORT: String(input.port),

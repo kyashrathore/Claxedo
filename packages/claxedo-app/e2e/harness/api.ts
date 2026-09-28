@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
-import { ascendingMessageIds } from "./message-ids"
-import { directTransport, type HttpTransport } from "./transport"
+import type { MessageRow } from "../../../harness/e2e/harness/api"
+import { ascendingMessageIds } from "../../../harness/e2e/harness/message-ids"
+import { directTransport, type HttpTransport } from "../../../harness/e2e/harness/transport"
 
 export class ApiError extends Error {
   constructor(readonly method: string, readonly route: string, readonly status: number, readonly body: string) {
@@ -22,8 +23,6 @@ export type SessionRow = {
   [key: string]: unknown
 }
 
-export type MessagePart = { id?: string; type: string; text?: string; [key: string]: unknown }
-export type MessageRow = { info: { id: string; role: string; [key: string]: unknown }; parts: MessagePart[] }
 export type PermissionRow = { id: string; sessionID: string; [key: string]: unknown }
 export type QuestionRow = { id: string; sessionID: string; [key: string]: unknown }
 
@@ -32,15 +31,6 @@ type CallOptions = { directory?: string; body?: unknown; query?: Record<string, 
 export type ApiOptions = { reserveSessions?: boolean }
 
 type Reservation = { operationId: string; sessionId: string }
-
-export function assistantText(messages: MessageRow[]) {
-  return messages
-    .filter((message) => message.info.role === "assistant")
-    .flatMap((message) => message.parts)
-    .filter((part) => part.type === "text")
-    .map((part) => part.text ?? "")
-    .join("")
-}
 
 export class ClaxedoApi {
   private readonly nextMessageId = ascendingMessageIds()

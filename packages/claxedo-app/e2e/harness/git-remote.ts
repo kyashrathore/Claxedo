@@ -1,8 +1,8 @@
 import fs from "node:fs/promises"
 import { createServer, type Server } from "node:http"
 import path from "node:path"
-import { git, gitFolder } from "./git"
-import { listenOnLoopback } from "./ports"
+import { git, gitFolder } from "../../../harness/e2e/harness/git"
+import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 
 export type GitRemote = { url: string; source: string; close(): Promise<void> }
 

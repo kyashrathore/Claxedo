@@ -5,7 +5,7 @@ import { daemonRuntime } from "../harness/daemon"
 import { ensurePinnedPi } from "../harness/pinned-pi"
 import { ensurePinnedCodex } from "../harness/pinned-codex"
 import { ensurePinnedClaude } from "../harness/pinned-claude"
-import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, PROCESS_OWNERSHIP_DIST } from "../harness/workspace-dists"
+import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, LAUNCH_GATE_CHILD_DIST } from "../harness/workspace-dists"
 
 type Flow = { run(): Promise<void> }
 
@@ -49,7 +49,7 @@ function firstLine(error: unknown) {
   return (error instanceof Error ? error.message : String(error)).split("\n")[0]
 }
 
-for (const dist of [HELPERS_DIST, CONTRACT_DIST, PROCESS_OWNERSHIP_DIST]) await ensureWorkspaceDist(dist)
+for (const dist of [HELPERS_DIST, CONTRACT_DIST, LAUNCH_GATE_CHILD_DIST]) await ensureWorkspaceDist(dist)
 const pi = await ensurePinnedPi()
 const codex = await ensurePinnedCodex()
 const claude = await ensurePinnedClaude()

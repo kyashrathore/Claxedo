@@ -1,7 +1,7 @@
 import { ensureAppBuilt } from "./app"
 import { ensureLaunchGateChild } from "./launch-gate-child"
 import { ensurePinnedPi } from "../../../harness/e2e/harness/pinned-pi"
-import { DAEMON_PORT_ENV, fixedDaemonPort, releasePort, reservePort } from "./ports"
+import { DAEMON_PORT_ENV, fixedDaemonPort, releasePort, reservePort } from "../../../harness/e2e/harness/ports"
 
 export async function prepareHarness() {
   const gate = await ensureLaunchGateChild()

@@ -1,4 +1,5 @@
 import type { ServerResponse } from "node:http"
+import { sleep } from "@claxedo/helpers"
 import type { ContentBlock, Message, MessageCreateParams, RawMessageStreamEvent } from "@anthropic-ai/sdk/resources/messages"
 import type { ChatCompletionChunk } from "openai/resources/chat/completions"
 import type {
@@ -10,7 +11,7 @@ import type {
 
 export type ScriptedReply =
   | { kind: "text"; text: string; reasoning?: string }
-  | { kind: "tool"; name: string; input: unknown; namespace?: string }
+  | { kind: "tool"; name: string; input: unknown; namespace?: string; format?: "custom" }
   | { kind: "error"; status: number; message: string }
 
 export type StreamPacing = { chunks: number; delayMs: number }
@@ -44,7 +45,7 @@ async function writeTextStream<T extends { type: string }>(
   let emittedText = false
   for (const event of events) {
     if (isTextDelta(event)) {
-      if (emittedText && pacing) await new Promise((resolve) => setTimeout(resolve, pacing.delayMs))
+      if (emittedText && pacing) await sleep(pacing.delayMs)
       emittedText = true
     }
     if (outgoing.destroyed) return
@@ -89,7 +90,7 @@ export async function respondChat(outgoing: ServerResponse, sequence: number, re
   const textCount = reply.kind === "text" ? deltas(reply.text, pacing).length : 0
   outgoing.writeHead(200, { ...SSE_HEADERS, connection: "keep-alive" })
   for (const [index, event] of events.entries()) {
-    if (pacing && index > 1 && index <= textCount) await new Promise((resolve) => setTimeout(resolve, pacing.delayMs))
+    if (pacing && index > 1 && index <= textCount) await sleep(pacing.delayMs)
     outgoing.write(`data: ${JSON.stringify(event)}\n\n`)
   }
   outgoing.end("data: [DONE]\n\n")
@@ -214,8 +215,15 @@ function responsesTextEvents(sequence: number, text: string, pacing?: StreamPaci
   ]
 }
 
-function responsesToolEvents(item: Extract<ResponseOutputItem, { type: "function_call" }>): ResponseStreamEvent[] {
+function responsesToolEvents(item: Extract<ResponseOutputItem, { type: "function_call" | "custom_tool_call" }>): ResponseStreamEvent[] {
   const itemId = item.id ?? item.call_id
+  if (item.type === "custom_tool_call") {
+    return [
+      { type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { ...item, input: "" } },
+      { type: "response.custom_tool_call_input.delta", sequence_number: 0, item_id: itemId, output_index: 0, delta: item.input },
+      { type: "response.custom_tool_call_input.done", sequence_number: 0, item_id: itemId, output_index: 0, input: item.input },
+    ]
+  }
   return [
     { type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { ...item, arguments: "", status: "in_progress" } },
     { type: "response.function_call_arguments.delta", sequence_number: 0, item_id: itemId, output_index: 0, delta: item.arguments },
@@ -230,8 +238,16 @@ export async function respondResponses(
   reply: StreamedReply,
   pacing?: StreamPacing,
 ) {
+  if (reply.kind === "tool" && reply.format === "custom" && typeof reply.input !== "string") throw new Error("Custom tool input must be text")
   const item: ResponseOutputItem = reply.kind === "tool"
-    ? {
+    ? reply.format === "custom" ? {
+        type: "custom_tool_call",
+        id: `ct_${sequence}`,
+        call_id: `call_${sequence}`,
+        name: reply.name,
+        input: reply.input as string,
+        ...(reply.namespace ? { namespace: reply.namespace } : {}),
+      } : {
         type: "function_call",
         id: `fc_${sequence}`,
         call_id: `call_${sequence}`,
@@ -250,7 +266,7 @@ export async function respondResponses(
   const reasoning: ResponseOutputItem | undefined = reply.kind === "text" && reply.reasoning
     ? { type: "reasoning", id: `rs_${sequence}`, summary: [{ type: "summary_text", text: reply.reasoning }], status: "completed" }
     : undefined
-  const streamed = item.type === "function_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", pacing)
+  const streamed = item.type === "function_call" || item.type === "custom_tool_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", pacing)
   const events: ResponseStreamEvent[] = [
     { type: "response.created", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "in_progress", []) },
     ...streamed,

@@ -4,8 +4,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { isRecord } from "@claxedo/helpers/guards"
+import { daemonDirs } from "./daemon-dirs"
 import { waitForHealth } from "./health"
 import { isolatedEnv } from "./isolated-env"
+import { pinnedAgentEnv } from "./pinned-agent-env"
 import { REPO_ROOT, SERVER_DIR, TSX_LOADER } from "./node-loader"
 import { writeScriptedModelCatalog } from "./model-catalog"
 import { captureOutput, exited, stopProcess, type OwnedProcess } from "./process"
@@ -62,19 +64,8 @@ export type DaemonInput = {
   retirementFault?: boolean
 }
 
-type DaemonDirs = { acpScriptDir: string; workspaces: string }
-
-async function daemonDirs(dataDir: string): Promise<DaemonDirs> {
-  const dirs = {
-    acpScriptDir: path.join(dataDir, "acp-scripts"),
-    workspaces: path.join(dataDir, "workspaces"),
-  }
-  await Promise.all(Object.values(dirs).map((dir) => fs.mkdir(dir, { recursive: true })))
-  return dirs
-}
-
 async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
-  const isolated = await isolatedEnv(input.dataDir, input.guardUrl)
+  const isolated = await isolatedEnv(input.dataDir, input.guardUrl, pinnedAgentEnv())
   const runtimeKeys = (input.cloud || process.platform === "win32") && !input.coldStartWithoutKeys ? generateKeyPairSync("ed25519") : undefined
   return {
     ...isolated,

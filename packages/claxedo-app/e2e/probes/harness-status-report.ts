@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { frameSessionId, frameType, type EventStream, type StreamFrame } from "../harness/stream"
+import { frameSessionId, frameType, type EventStream, type StreamFrame } from "../../../harness/e2e/harness/stream"
 
 export const WATCHED_EVENTS = ["session.status", "session.idle", "session.error", "permission.asked", "question.asked"] as const
 export type WatchedEvent = (typeof WATCHED_EVENTS)[number]

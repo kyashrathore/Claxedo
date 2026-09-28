@@ -1,4 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http"
+import { sleep } from "@claxedo/helpers"
 import { listenOnLoopback } from "./ports"
 import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type StreamPacing } from "./scripted-model-replies"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -32,7 +33,7 @@ export type ScriptedModelRequest = {
   tools: ScriptedModelTool[]
 }
 
-export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; whenPromptIncludes?: string; autoModeSeverity?: 0 }
+export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: "custom"; whenPromptIncludes?: string; autoModeSeverity?: 0 }
 export type ScriptedError = { marker: string; status: number; message: string; model?: string }
 
 export type ScriptedModelServer = {
@@ -91,17 +92,21 @@ function goalReply(state: ServerState, prompt: string): ScriptedReply | undefine
     : { kind: "text", text: JSON.stringify({ met: true, reason: "The scripted continuation supplied the required evidence" }) }
 }
 
+function toolReply(call: ScriptedToolCall): ScriptedReply {
+  return { kind: "tool", name: call.name, input: call.input, ...(call.namespace ? { namespace: call.namespace } : {}), ...(call.format ? { format: call.format } : {}) }
+}
+
 function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: string): ScriptedReply | undefined {
   const sequence = state.pendingSequence
   if (sequence && prompt.includes(sequence.marker) && sequence.calls.length) {
     const next = sequence.calls.shift()!
     if (!sequence.calls.length) state.pendingSequence = undefined
-    return { kind: "tool", name: next.name, input: next.input, ...(next.namespace ? { namespace: next.namespace } : {}) }
+    return toolReply(next)
   }
   const tool = state.pendingTools[0]
   if (tool && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
     state.pendingTools.shift()
-    return { kind: "tool", name: tool.name, input: tool.input, ...(tool.namespace ? { namespace: tool.namespace } : {}) }
+    return toolReply(tool)
   }
   const text = state.pendingText
   if (text && prompt.includes(text.marker)) {
@@ -130,7 +135,7 @@ async function writeReply(outgoing: ServerResponse, state: ServerState, sequence
     gate.arrive()
     await gate.promise
   }
-  if (state.replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.replyDelayMs))
+  if (state.replyDelayMs > 0) await sleep(state.replyDelayMs)
   if (request.dialect === "chat") return respondChat(outgoing, sequence, reply, state.pacing)
   if (request.dialect === "responses") return respondResponses(outgoing, sequence, request.body, reply, state.pacing)
   return respondMessages(outgoing, sequence, request.body, reply, state.pacing)
@@ -143,7 +148,7 @@ function closeAll(server: Server) {
   })
 }
 
-export async function startScriptedModelServer(input: { port: number; red: boolean }): Promise<ScriptedModelServer> {
+export async function startScriptedModelServer(input: { port: number; red?: boolean }): Promise<ScriptedModelServer> {
   const requests: ScriptedModelRequest[] = []
   const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0, pendingTools: [] }
   const server = createServer(async (incoming, outgoing) => {
