@@ -11,7 +11,7 @@ Owns: the workspace panel, v1's right-hand overlay with its own tab strip. Files
 - **Focus** (`focus.ts`): `PanelFocus` is how a caller opens something: `usePanel().show(focus)` opens the panel and appends or selects the tab. A file focus also records the line and column to reveal, with a version, so a repeated click reveals again.
 - **Navigator** (`view/panel-body.tsx`, `view/tool-buttons.tsx`): the column beside the tab content, `min(280px, 45%)` wide: Files (`@/files`) or Changes (`@/review`), toggled by the L2 row's "Open Files" / "Open Changes". The choice persists in `panel.navigator`. Only the selected view is mounted (the last one is held through the close grace); its state lives per placement in `FilesProvider` and `ReviewProvider`, and it sets its scroll position back once its rows have rendered (`@/lib/scroll-restore`). A Changes row selects the Review tab and reveals that file's diff.
 - **Maximized** (`store.tsx`): `usePanel().maximized()` is true while the panel is open at full width, covering the workbench column; the session screen floats its composer over the panel then.
-- **Header** (`view/panel-header.tsx`, `view/tab-strip.tsx`, `view/toggle.tsx`): L1 is the tab strip, "+" ("Add workspace tab"), "Maximize workspace panel" and "Close workspace panel". L2 shows the active tab's context: the review toolbar slots, the browser toolbar slot, a file's path with the Markdown source toggle and its actions slot, or a plan's title. `PanelToggle` is the top bar's "Open workspace panel", shown while the panel is closed.
+- **Header** (`view/panel-header.tsx`, `view/tab-strip.tsx`, `view/toggle.tsx`): L1 is the tab strip, "+" ("Add workspace tab"), "Maximize workspace panel" and "Close workspace panel". L2 shows the active tab's context: the review toolbar slots, the browser toolbar slot, a file's path with the Markdown source toggle and its actions slot, or a plan's title. "Open Files" / "Open Changes", with the review's "Expand all" and diff style controls beside them, sit at the row's edge on the navigator's side and the context at the other edge, so each stays above the area it acts on. The row mirrors, in DOM and so in Tab order, when the Appearance setting "Files navigator side" is Left; on a phone, where no navigator column shows, it keeps the right-side order. `PanelToggle` is the top bar's "Open workspace panel", shown while the panel is closed.
 
 ## Invariants
 
@@ -21,4 +21,4 @@ Owns: the workspace panel, v1's right-hand overlay with its own tab strip. Files
 
 ## Flows
 
-Flow 11 (a transcript file link opens a panel tab), flow 13 (a terminal link opens the file at the line), flow 14 (Review), flow 27 (the tree opens a file tab) and flow 33 (phone).
+Flow 11 (a transcript file link opens a panel tab), flow 13 (a terminal link opens the file at the line), flow 14 (Review, and the L2 row on either navigator side), flow 27 (the tree opens a file tab) and flow 33 (phone).
