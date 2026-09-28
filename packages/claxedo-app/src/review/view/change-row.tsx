@@ -4,6 +4,7 @@ import { useTranslator } from "@/i18n"
 import type { ChangeStatus } from "@/server"
 import { FileIcon } from "@/ui"
 import { getFilename } from "@/ui/utils"
+import { folderLabel } from "../folder-label"
 import { reviewDictionary, type ReviewKey } from "../i18n"
 import { ChangeCounts } from "./change-counts"
 
@@ -65,17 +66,22 @@ export function ChangeRow(props: {
         onClick={() => props.onOpen()}
       >
         <FileIcon node={{ path: props.entry.path, type: "file" }} class="size-4 shrink-0" />
-        <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span class="flex h-[1lh] min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 overflow-hidden">
           <span
             class="max-w-full shrink-0 truncate text-text-strong"
             classList={{ "line-through decoration-text-weaker": props.entry.status === "deleted" }}
           >
             {getFilename(props.entry.path)}
           </span>
-          <Show when={parentPath(props.entry.path)}>
-            {(directory) => (
-              <span class="min-w-0 flex-1 truncate text-left text-12-regular text-text-weaker [direction:rtl]">
-                {`‪${directory()}‬`}
+          <Show when={folderLabel(parentPath(props.entry.path))}>
+            {(folder) => (
+              <span data-slot="source-control-folder" class="flex grow basis-0 text-12-regular text-text-weaker">
+                <Show when={folder().cut}>
+                  {(cut) => (
+                    <span class="w-[2ch] grow truncate text-left [direction:rtl]">{`\u202a${cut()}\u202c`}</span>
+                  )}
+                </Show>
+                <span class="shrink-0 whitespace-nowrap">{folder().whole}</span>
               </span>
             )}
           </Show>

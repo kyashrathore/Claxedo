@@ -112,3 +112,41 @@ for (const side of ["left", "right"] as const) {
     await expect.poll(width, { message: "the width after a reload" }).toBe(244)
   })
 }
+
+test("14 a Changes row shows its folder's last segment whole or hides the folder, and its title keeps the full path", async ({ stack, api, app }) => {
+  await app.setViewportSize({ width: 1400, height: 800 })
+  const workspace = await stack.daemon.makeWorkspace("folder-label")
+  const file = "packages/claxedo-app/src/review/view/source-control-commit-box.tsx"
+  await fs.mkdir(path.join(workspace.directory, path.dirname(file)), { recursive: true })
+  await fs.writeFile(path.join(workspace.directory, file), "export const box = 1\n")
+  const session = await api.createSession(workspace.directory, { title: "Folder", harness: SCRIPTED_ACP_HARNESS })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await app.getByRole("button", { name: UI.openPanel }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await panel.getByRole("button", { name: "Open Changes", exact: true }).click()
+  const row = panel.getByTestId("source-control-row").filter({ hasText: "source-control-commit-box.tsx" })
+  await expect(row.getByRole("button").first()).toHaveAttribute("title", file)
+  const folder = () =>
+    row.evaluate((element) => {
+      const label = element.querySelector<HTMLElement>('[data-slot="source-control-folder"]')
+      const line = label?.parentElement
+      if (!label || !line) return "missing"
+      const box = line.getBoundingClientRect()
+      const shown = label.getBoundingClientRect()
+      if (shown.top >= box.bottom - 0.5) return "hidden"
+      const whole = label.lastElementChild?.getBoundingClientRect()
+      return whole && whole.left >= box.left - 0.5 && whole.right <= box.right + 0.5 ? `whole ${label.lastElementChild?.textContent}` : "fragment"
+    })
+  const handle = panel.getByRole("separator", { name: "Resize navigator" })
+  await handle.focus()
+  await app.keyboard.press("End")
+  await expect.poll(folder, { message: "the widest navigator" }).toBe("whole view")
+  await app.keyboard.press("Home")
+  await expect.poll(folder, { message: "the narrowest navigator" }).toBe("hidden")
+  for (let step = 0; step < 16; step++) {
+    await app.keyboard.press("ArrowRight")
+    expect(await folder(), `the folder after ${step + 1} steps from the narrowest`).not.toBe("fragment")
+  }
+})
