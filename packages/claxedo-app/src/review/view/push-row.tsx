@@ -11,7 +11,13 @@ function ActionButton(props: {
   readonly onClick: () => void
 }): JSX.Element {
   return (
-    <Button data-testid={props.testId} variant="ghost" size="small" class="gap-1.5" onClick={() => props.onClick()}>
+    <Button
+      data-testid={props.testId}
+      variant="ghost-muted"
+      size="small"
+      class="gap-1.5"
+      onClick={() => props.onClick()}
+    >
       <Show when={props.pending} fallback={<SemanticIcon concept="push" size="small" />}>
         <Spinner class="size-3" />
       </Show>
@@ -65,7 +71,7 @@ export function PushRow(props: {
             href={url()}
             target="_blank"
             rel="noopener noreferrer"
-            variant="ghost"
+            variant="ghost-muted"
             size="small"
             class="gap-1.5"
           >

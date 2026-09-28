@@ -1,6 +1,6 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, SemanticIcon, Button, DropdownMenu, Spinner } from "@/ui"
+import { ClaxedoIcon as Icon, SemanticIcon, Button, DropdownMenu, Spinner, Textarea } from "@/ui"
 import { reviewDictionary } from "../i18n"
 
 export type CommitVariant = "commit" | "commit-push" | "amend"
@@ -63,15 +63,15 @@ export function CommitBox(props: {
   const t = useTranslator(reviewDictionary)
   const canCommit = () => props.hasMessage && props.hasStaged
   return (
-    <div class="flex shrink-0 flex-col gap-2 border-b border-border-weak-base p-2">
-      <textarea
+    <div class="flex shrink-0 flex-col gap-2 px-2 pt-2 pb-1">
+      <Textarea
         data-testid="source-control-message"
         rows={rowsFor(props.message)}
         value={props.message}
         placeholder={t("review.sourceControl.message")}
         aria-label={t("review.sourceControl.message")}
-        aria-invalid={props.error ? "true" : undefined}
-        class="w-full resize-none rounded-md border border-border-weak-base bg-surface-base px-2 py-1.5 text-13-regular text-text-base outline-none placeholder:text-text-weak focus:border-border-strong-base"
+        invalid={!!props.error}
+        class="claxedo-source-control-message textarea-v2--full-width"
         onInput={(event) => props.onMessage(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return

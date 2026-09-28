@@ -1,45 +1,11 @@
 import { For, Show, type JSX } from "solid-js"
-import { parentPath } from "@/files"
 import { useTranslator } from "@/i18n"
-import type { ChangeStatus } from "@/server"
-import { ClaxedoIcon as Icon, SemanticIcon, DiffChanges, Spinner } from "@/ui"
-import { getFilename } from "@/ui/utils"
+import { ClaxedoIcon as Icon, SemanticIcon, Spinner } from "@/ui"
 import type { GitAction } from "../git-actions"
-import { reviewDictionary, type ReviewKey } from "../i18n"
+import { reviewDictionary } from "../i18n"
+import { ChangeRow, type ChangeEntry } from "./change-row"
 
 type ChangeGroupId = "staged" | "changes"
-
-export type ChangeEntry = {
-  readonly path: string
-  readonly status: ChangeStatus
-  readonly additions: number
-  readonly deletions: number
-}
-
-const STATUS_LETTER: Readonly<Record<ChangeStatus, string>> = {
-  added: "A",
-  modified: "M",
-  deleted: "D",
-  renamed: "R",
-  untracked: "U",
-  conflicted: "C",
-}
-
-const STATUS_LABEL: Readonly<Record<ChangeStatus, ReviewKey>> = {
-  added: "review.status.added",
-  modified: "review.status.modified",
-  deleted: "review.status.deleted",
-  renamed: "review.status.renamed",
-  untracked: "review.status.untracked",
-  conflicted: "review.status.conflicted",
-}
-
-function statusColor(status: ChangeStatus): string {
-  if (status === "added" || status === "untracked") return "color: var(--icon-diff-add-base)"
-  if (status === "deleted") return "color: var(--icon-diff-delete-base)"
-  if (status === "conflicted") return "color: var(--icon-critical-base)"
-  return "color: var(--icon-diff-modified-base)"
-}
 
 export function SourceControlSectionHeader(props: {
   readonly testId: string
@@ -57,13 +23,13 @@ export function SourceControlSectionHeader(props: {
       data-count={props.count}
       data-collapsed={props.collapsed ? "true" : undefined}
       data-active={props.active ? "true" : undefined}
-      class="claxedo-source-control-header group flex h-7 shrink-0 items-center gap-1 pr-2 pl-3"
+      class="claxedo-source-control-header group flex h-7 shrink-0 items-center gap-1 pr-2 pl-2"
     >
       <button
         type="button"
         aria-expanded={!props.collapsed}
-        class="flex min-w-0 flex-1 items-center gap-1 text-left text-xs font-medium hover:text-text-base"
-        classList={{ "text-text-base": props.active, "text-text-weaker": !props.active }}
+        class="sidebar-section-label flex min-w-0 flex-1 items-center gap-1.5 text-left transition-colors duration-100 hover:text-text-base"
+        classList={{ "text-text-base": props.active }}
         onClick={() => props.onToggle()}
       >
         <Icon
@@ -76,59 +42,10 @@ export function SourceControlSectionHeader(props: {
           {props.label}
         </span>
         <Show when={props.count !== undefined}>
-          <span class="text-text-weaker/80">({props.count})</span>
+          <span class="tabular-nums text-text-weaker">{props.count}</span>
         </Show>
       </button>
       {props.children}
-    </div>
-  )
-}
-
-export function ChangeRow(props: {
-  readonly entry: ChangeEntry
-  readonly group: string
-  readonly active: boolean
-  readonly onOpen: () => void
-  readonly action?: JSX.Element
-}): JSX.Element {
-  const t = useTranslator(reviewDictionary)
-  const label = () => t(STATUS_LABEL[props.entry.status])
-  return (
-    <div
-      role="listitem"
-      data-testid="source-control-row"
-      data-path={props.entry.path}
-      data-status={props.entry.status}
-      data-group={props.group}
-      data-active={props.active ? "true" : undefined}
-      class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover"
-      classList={{ "bg-surface-base-active": props.active }}
-    >
-      <button
-        type="button"
-        class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
-        onClick={() => props.onOpen()}
-      >
-        <span
-          class="w-3.5 shrink-0 text-center text-12-medium"
-          style={statusColor(props.entry.status)}
-          aria-label={label()}
-          title={label()}
-        >
-          {STATUS_LETTER[props.entry.status]}
-        </span>
-        <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span class="min-w-0 truncate text-text-base">{getFilename(props.entry.path)}</span>
-          <Show when={parentPath(props.entry.path)}>
-            {(directory) => <span class="min-w-0 truncate text-11-regular text-text-weak/70">{directory()}</span>}
-          </Show>
-        </span>
-        <DiffChanges
-          class="shrink-0 text-11-regular"
-          changes={{ additions: props.entry.additions, deletions: props.entry.deletions }}
-        />
-      </button>
-      {props.action}
     </div>
   )
 }

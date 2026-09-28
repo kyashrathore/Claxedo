@@ -1,9 +1,10 @@
 import { Show, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, reviewControlsSlot, reviewToolbarSlot, DiffChanges, Spinner, Tooltip } from "@/ui"
+import { ClaxedoIcon as Icon, reviewControlsSlot, reviewToolbarSlot, Spinner, Tooltip } from "@/ui"
 import { reviewDictionary } from "../i18n"
 import type { DiffStyle } from "../model"
+import { ChangeCounts } from "./change-counts"
 import { CompareMenu, type CompareMenuProps } from "./compare-menu"
 
 export type ReviewToolbarProps = CompareMenuProps & {
@@ -77,9 +78,6 @@ function ReviewToolbarControls(props: {
   )
 }
 
-const TOTALS_CLASS =
-  "tabular-nums [&]:!gap-2 [&_[data-slot=diff-changes-additions]]:![font-family:var(--font-family-sans)] [&_[data-slot=diff-changes-deletions]]:![font-family:var(--font-family-sans)] [&_[data-slot=diff-changes-additions]]:!font-normal [&_[data-slot=diff-changes-deletions]]:!font-normal [&_[data-slot=diff-changes-additions]]:![color:color-mix(in_srgb,var(--text-diff-add-base)_82%,var(--text-weaker))] [&_[data-slot=diff-changes-deletions]]:![color:color-mix(in_srgb,var(--text-diff-delete-base)_76%,var(--text-weaker))]"
-
 function ReviewToolbarBody(props: ReviewToolbarProps): JSX.Element {
   const controls = () => (
     <ReviewToolbarControls
@@ -97,7 +95,11 @@ function ReviewToolbarBody(props: ReviewToolbarProps): JSX.Element {
           <Spinner class="h-3 w-3 shrink-0 text-text-weak" />
         </Show>
         <Show when={props.hasReview}>
-          <DiffChanges changes={props.totalChanges} class={TOTALS_CLASS} />
+          <ChangeCounts
+            additions={props.totalChanges.additions}
+            deletions={props.totalChanges.deletions}
+            class="text-12-regular"
+          />
         </Show>
       </div>
       <span class="flex-1 min-w-0" />

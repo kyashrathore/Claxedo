@@ -48,3 +48,13 @@
   background: var(--surface-raised-strong);
   max-width: 9rem;
 }
+
+.claxedo-source-control-message.ui-textarea-v2 {
+  min-height: 0;
+}
+
+.claxedo-source-control-message[data-component="textarea-v2"] .ui-textarea-v2-textarea {
+  min-height: 0;
+  padding: 6px 8px;
+  resize: none;
+}

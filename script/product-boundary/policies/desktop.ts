@@ -383,8 +383,10 @@ export const desktopRenderer: Policy = {
   // settings rows take their height, radius and type size from one stylesheet
   // (`shell/view/sidebar.css`), and `notifications/unseen-failures.ts` owns
   // which failed sessions the reader has not opened, the one fact the rail's
-  // failure dot reads.
-  ceilings: { modules: 1224, packages: 37 },
+  // failure dot reads. The Review column's file row (`review/view/change-row.tsx`)
+  // and its muted diff counts (`review/view/change-counts.tsx`), which the
+  // review toolbar's totals also draw, are modules of their own.
+  ceilings: { modules: 1226, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

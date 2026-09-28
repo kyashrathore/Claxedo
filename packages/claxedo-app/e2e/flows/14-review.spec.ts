@@ -55,11 +55,14 @@ test("14 review: diff, line comment, commit, push to a bare remote, the comment 
   await commentOnLine(panel, "a reviewed line", "Why was this line added?")
   await expect(panel.getByText("Why was this line added?")).toBeVisible()
 
+  const changed = panel.getByTestId("source-control-row").filter({ hasText: "README.md" })
+  await expect(changed.getByText("+1", { exact: true }), "a changed file's additions").toBeVisible()
+  await expect(changed.getByText("-0", { exact: true }), "a zero count is not shown").toHaveCount(0)
   await panel.getByRole("button", { name: "Stage all" }).click()
-  await expect(panel.getByRole("button", { name: "Staged changes (1)" })).toBeVisible()
+  await expect(panel.getByRole("button", { name: "Staged changes 1" })).toBeVisible()
   await panel.getByRole("textbox", { name: "Message (⌘⏎ to commit)" }).fill("Add a reviewed line")
   await panel.getByRole("button", { name: "Commit", exact: true }).click()
-  await expect(panel.getByRole("button", { name: "Staged changes (0)" })).toBeVisible()
+  await expect(panel.getByRole("button", { name: "Staged changes 0" })).toBeVisible()
   await expect(panel.getByText("No changes", { exact: true })).toBeVisible()
   await expect.poll(() => lastSubject(workspace.directory)).toBe("Add a reviewed line")
 

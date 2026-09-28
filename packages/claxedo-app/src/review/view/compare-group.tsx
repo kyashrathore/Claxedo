@@ -3,7 +3,8 @@ import { useTranslator } from "@/i18n"
 import type { AppError } from "@/server"
 import { useErrorText } from "../errors"
 import { reviewDictionary } from "../i18n"
-import { ChangeRow, SourceControlSectionHeader, type ChangeEntry } from "./change-group"
+import { SourceControlSectionHeader } from "./change-group"
+import { ChangeRow, type ChangeEntry } from "./change-row"
 
 function CompareRows(props: {
   readonly entries: readonly ChangeEntry[]
