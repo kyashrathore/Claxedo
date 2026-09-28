@@ -1,5 +1,5 @@
 import { traceDirectories, type DirectoryValues } from "./lib/directory-flow"
-import { codeExtensions, listFiles, parseArgs, shown, under } from "./lib/files"
+import { codeExtensions, listFiles, parseArgs, rel, under } from "./lib/files"
 import { compilerOptions, createProgram, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, textOf, unwrap, walk } from "./lib/tree"
@@ -25,7 +25,7 @@ const guidance = "key by project id, placement id or SessionRef; only src/server
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions)
+  const files = listFiles(root, ["src"], codeExtensions)
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
   const directories = traceDirectories(program, files, identityNames)
@@ -47,7 +47,7 @@ function main(): never {
     }
     const key = identityKey(node, checker)
     const origin = key && values.originOf(key.expression)
-    return origin ? `${key.use} holds the folder path ${origin.name} from ${shown(root, origin.file)}:${origin.line}; ${guidance}` : undefined
+    return origin ? `${key.use} holds the folder path ${origin.name} from ${rel(root, origin.file)}:${origin.line}; ${guidance}` : undefined
   }
 }
 

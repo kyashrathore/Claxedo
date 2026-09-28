@@ -10,7 +10,7 @@ const measuredOnly = ["src/transcript", "src/session/view/timeline"]
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const appFiles = listFiles(root, ["src", "plugins", "scripts"], codeExtensions)
+  const appFiles = listFiles(root, ["src", "scripts"], codeExtensions)
   const e2eFiles = new Set(listFiles(root, ["e2e"], codeExtensions))
   const violations: Violation[] = []
   const measured: Violation[] = []

@@ -19,12 +19,10 @@ export function createLiveReconciler(host: PluginHost, loadBuild: (row: LiveRow)
     if (requested.get(row.id) === hash) host.put(build)
   }
 
-  const liveIds = () => host.plugins().flatMap((plugin) => (plugin.origin.kind === "live" ? [plugin.id] : []))
-
   return {
     reconcile: (rows) => {
       const listed = new Set(rows.map((row) => row.id))
-      for (const id of liveIds()) {
+      for (const { id } of host.plugins()) {
         if (listed.has(id)) continue
         requested.delete(id)
         host.drop(id)
@@ -33,8 +31,8 @@ export function createLiveReconciler(host: PluginHost, loadBuild: (row: LiveRow)
         const hash = servedHash(row)
         if (!hash) continue
         const current = host.plugins().find((plugin) => plugin.id === row.id)
-        const loaded = current?.origin.kind === "live" && current.origin.hash === hash
-        if (loaded && current.origin.kind === "live" && current.origin.buildError === (row.lastError ?? undefined)) continue
+        const loaded = current?.origin.hash === hash
+        if (loaded && current.origin.buildError === (row.lastError ?? undefined)) continue
         if (requested.get(row.id) === hash && !loaded) continue
         void load(row, hash)
       }

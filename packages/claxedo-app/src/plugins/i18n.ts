@@ -4,8 +4,6 @@ const en = {
   "plugins.settings.title": "App plugins",
   "plugins.settings.description": "App plugins add pages, panes, commands and themes to this app. Agent plugins, which add skills and tools to agents, live in the Marketplace. Switching an app plugin off removes everything it added.",
   "plugins.settings.empty": "No app plugins yet.",
-  "plugins.origin.bundled": "Built in",
-  "plugins.origin.live": "From this machine",
   "plugins.state.off": "Off",
   "plugins.state.loading": "Starting",
   "plugins.state.on": "On",

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { codeExtensions, packageRoot, pluginsDirectory, repoRoot, styleExtensions } from "./files"
+import { codeExtensions, packageRoot, repoRoot, styleExtensions } from "./files"
 
 export type SlotHook = "data-slot" | "data-component"
 
@@ -76,13 +76,13 @@ function matches(selector: Selector, value: string): boolean {
 }
 
 function readerFolders(root: string): string[] {
-  const own = [join(root, "src"), join(root, "e2e"), pluginsDirectory(root)]
+  const own = [join(root, "src"), join(root, "e2e")]
   if (root !== packageRoot) return [...own, join(root, "readers")]
   return [...own, join(root, "perf-harness"), join(repoRoot, "packages/ui/src")]
 }
 
 function writerFolders(root: string): string[] {
-  const own = [join(root, "src"), pluginsDirectory(root)]
+  const own = [join(root, "src")]
   if (root !== packageRoot) return [...own, join(root, "writers")]
   return [...own, join(repoRoot, "packages/ui/src")]
 }

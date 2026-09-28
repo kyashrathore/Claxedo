@@ -11,7 +11,6 @@ import { walk } from "./lib/tree"
 const baseline: readonly Baselined[] = [
   { file: "src/settings/view/settings.css", matcher: ".settings-toolbar > :first-child", owner: "settings", reason: "first toolbar child loses its margin; give the child a class" },
   { file: "src/shell/styles/index.css", matcher: '[data-action="prompt-harness-model"] > :not(:first-child)', owner: "composer", reason: "collapsed composer hides the model button's trailing children; give them a class" },
-  { file: "src/tasks/view/tasks.css", matcher: ".tiptap > :first-child", owner: "tasks", reason: "the editor's first block loses its top margin; style the block type" },
   { file: "src/onboarding/view/first-project-canvas.css", matcher: "> form > *:nth-child(", owner: "onboarding", reason: "the project step staggers its form rows by position; give each row its delay" },
   { file: "src/tasks/view/tasks.css", matcher: '.tsk-dot[data-liveness="live"] { animation:', owner: "tasks", reason: "pulse on a live task's dot for as long as it is live" },
   { file: "src/auth/view/auth.css", matcher: "animation: auth-spin", owner: "auth", reason: "spinner while a sign-in request is pending" },
@@ -36,8 +35,8 @@ const utilityToken = /^-?(?:[\w[\]/.-]+:)*(?:space-[xy]-[\w[\].-]+|divide-[xy](?
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const appSheets = listFiles(root, ["src", "plugins"], styleExtensions)
-  const code = listFiles(root, ["src", "plugins"], codeExtensions).filter((file) => !isTestFile(file))
+  const appSheets = listFiles(root, ["src"], styleExtensions)
+  const code = listFiles(root, ["src"], codeExtensions).filter((file) => !isTestFile(file))
   const sheets = [...appSheets, ...kitSheets(code, appSheets)]
   const candidates = [...sheets.flatMap(sheetViolations), ...code.flatMap(utilityViolations)]
   finish("css-invalidation", root, applyBaseline(root, baseline, candidates), sheets.length + code.length)

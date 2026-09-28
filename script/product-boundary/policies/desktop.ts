@@ -349,7 +349,7 @@ export const desktopRenderer: Policy = {
     requiredPackages: ["solid-js"],
   },
 
-  // 1,223 modules and 38 packages, no headroom. The Review tab's
+  // 1,224 modules and 37 packages, no headroom. The Review tab's
   // `review/loaded-diff-identity.ts` is its own module because the benchmark
   // driver imports it to compute the identity it waits for. The workbench
   // store's pane handover (`workbench/handover.ts`, `workbench/reveal-holds.ts`)
@@ -384,7 +384,7 @@ export const desktopRenderer: Policy = {
   // (`shell/view/sidebar.css`), and `notifications/unseen-failures.ts` owns
   // which failed sessions the reader has not opened, the one fact the rail's
   // failure dot reads.
-  ceilings: { modules: 1225, packages: 38 },
+  ceilings: { modules: 1224, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

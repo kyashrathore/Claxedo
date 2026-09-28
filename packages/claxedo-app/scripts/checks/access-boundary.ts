@@ -22,7 +22,7 @@ const guidance = "ask can() in src/access, which answers from server facts"
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions)
+  const files = listFiles(root, ["src"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
     if (under(root, file, "src/access")) continue

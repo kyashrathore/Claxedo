@@ -382,3 +382,6 @@ A **Settings → Projects** section lists the projects and holds their managemen
 
 ## Lane fix/rate-limit-vs-usage-limit, 2026-09-28: a failed turn names its account
 - Owner ruling (unreleased, no users, no backward compatibility): a runtime that receives the provider projection's new `account` field before its rebuild refuses the whole snapshot, and that is accepted. The validator and the broker that sends the field changed in one commit, ungated; a separately deployed runtime picks it up with its next build.
+
+## Owner, 2026-09-28: Pages removed pending a real build
+- The empty Pages plugin stub (`plugins/pages`) is removed with the app's bundled-plugin path and the editor dependencies only Pages would have used; the app runs only the machine's live plugins. Pages comes back when it is actually built. The server's documents service stays.

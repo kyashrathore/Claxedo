@@ -40,9 +40,8 @@ function FolderEntry(props: { readonly directory: string }): JSX.Element {
 
 export function PluginManifestSummary(props: { readonly plugin: PluginSummary }): JSX.Element {
   const i18n = useI18n()
-  const live = () => (props.plugin.origin.kind === "live" ? props.plugin.origin : undefined)
   const builtAt = () => {
-    const at = live()?.builtAt
+    const at = props.plugin.origin.builtAt
     return at ? [formatDateTimeMed(Date.parse(at), i18n.intlTag())] : []
   }
   return (
@@ -50,18 +49,12 @@ export function PluginManifestSummary(props: { readonly plugin: PluginSummary })
       <Entry label="plugins.manifest.name" values={[props.plugin.name]} />
       <Entry label="plugins.manifest.id" values={[props.plugin.id]} code />
       <Entry label="plugins.manifest.version" values={[props.plugin.version]} />
-      <Show when={live()}>{(origin) => <FolderEntry directory={origin().directory} />}</Show>
+      <FolderEntry directory={props.plugin.origin.directory} />
       <Entry label="plugins.manifest.routes" values={props.plugin.manifest.server.routes} code />
       <Entry label="plugins.manifest.operations" values={props.plugin.manifest.server.operations} code />
       <Entry label="plugins.manifest.requires" values={props.plugin.manifest.requires} />
-      <Show when={live()}>
-        {(origin) => (
-          <>
-            <Entry label="plugins.manifest.build" values={[origin().hash]} code />
-            <Entry label="plugins.manifest.builtAt" values={builtAt()} />
-          </>
-        )}
-      </Show>
+      <Entry label="plugins.manifest.build" values={[props.plugin.origin.hash]} code />
+      <Entry label="plugins.manifest.builtAt" values={builtAt()} />
     </dl>
   )
 }

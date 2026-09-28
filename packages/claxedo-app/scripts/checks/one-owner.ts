@@ -11,7 +11,7 @@ const windowLines = 25
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions)
+  const files = listFiles(root, ["src"], codeExtensions)
   const sources = files.map(readSource)
   const violations = [...duplicateExports(root, sources), ...duplicateBlocks(root, sources)]
   finish("one-owner", root, violations, files.length)
@@ -39,9 +39,7 @@ function duplicateExports(root: string, sources: readonly Source[]): Violation[]
 
 function unitOf(root: string, file: string): string | undefined {
   const domain = topFolder(root, file, "src")
-  if (domain && domain !== "lib") return `src/${domain}`
-  const plugin = topFolder(root, file, "plugins")
-  return plugin ? `plugins/${plugin}` : undefined
+  return domain && domain !== "lib" ? `src/${domain}` : undefined
 }
 
 function exportsOf({ file, sf }: Source, unit: string): Export[] {

@@ -30,7 +30,6 @@ export function rowManifest(row: LivePlugin): PluginManifest {
 
 function originOf(row: LivePlugin, hash: string): PluginOrigin {
   return {
-    kind: "live",
     hash,
     directory: row.directory,
     ...(row.builtAt && row.hash === hash ? { builtAt: row.builtAt } : {}),

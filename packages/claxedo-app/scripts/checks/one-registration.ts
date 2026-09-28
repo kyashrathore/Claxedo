@@ -7,7 +7,7 @@ type Registration = { readonly file: string; readonly line: number; readonly own
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions).filter((file) => !/\.test\.tsx?$/.test(file))
+  const files = listFiles(root, ["src"], codeExtensions).filter((file) => !/\.test\.tsx?$/.test(file))
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
   const keys = new Map<string, Registration[]>()

@@ -35,7 +35,7 @@ type ModuleState = { readonly binding: string; readonly message: string }
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions)
+  const files = listFiles(root, ["src"], codeExtensions)
   const violations: Violation[] = []
   const used = new Set<string>()
   const mutatedExports = exportedMutations(files)

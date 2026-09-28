@@ -3,9 +3,7 @@ import type { Translations } from "@/i18n"
 import { machine, unreachable, type Machine } from "@/lib/machine"
 import type { ApprovalCheck } from "./approval"
 
-export type PluginOrigin =
-  | { readonly kind: "bundled" }
-  | { readonly kind: "live"; readonly hash: string; readonly directory: string; readonly builtAt?: string; readonly buildError?: string }
+export type PluginOrigin = { readonly hash: string; readonly directory: string; readonly builtAt?: string; readonly buildError?: string }
 
 export type PluginBuild = {
   readonly manifest: PluginManifest
@@ -44,7 +42,7 @@ export type PluginSummary = {
 }
 
 export function buildIdOf(build: PluginBuild): string {
-  return build.origin.kind === "live" ? build.origin.hash : build.manifest.version
+  return build.origin.hash
 }
 
 export function pluginTransition(state: PluginState, event: PluginEvent): PluginState {

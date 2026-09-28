@@ -7,7 +7,7 @@ const wireSpecifier = /(^|\/)server\/wire(\/|$)/
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
   const resolve = createResolver(compilerOptions())
-  const files = listFiles(root, ["src", "e2e", "plugins"], codeExtensions)
+  const files = listFiles(root, ["src", "e2e"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
     if (under(root, file, "src/server")) continue

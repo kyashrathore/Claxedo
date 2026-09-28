@@ -79,7 +79,6 @@ function ApprovalDialog(props: { readonly plugin: PluginSummary; readonly platfo
 }
 
 export function requestApproval(input: ApprovalRequest, plugin: PluginSummary): void {
-  if (plugin.origin.kind !== "live") return
   const hash = plugin.origin.hash
   const decide = (approved: boolean) => {
     input.dialog.close()

@@ -1229,66 +1229,6 @@
   opacity: 0.7;
 }
 
-.tsk-prose .notion-editor .tiptap {
-  min-height: 1.6em;
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-relaxed);
-}
-
-.tsk-prose .notion-editor .tiptap > :first-child {
-  margin-top: 0;
-}
-
-.tsk-prose .notion-editor .tiptap p {
-  margin: 0 0 6px;
-}
-
-.tsk-prose .notion-editor .tiptap h1 {
-  font-size: var(--font-size-title-small);
-  line-height: var(--line-height-large);
-  margin: 28px 0 12px;
-}
-
-.tsk-prose .notion-editor .tiptap h2 {
-  font-size: var(--font-size-intermediate);
-  line-height: var(--line-height-large);
-  margin: 24px 0 10px;
-}
-
-.tsk-prose .notion-editor .tiptap h3 {
-  font-size: var(--font-size-compact);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--line-height-large);
-  margin: 20px 0 8px;
-}
-
-.tsk-prose .notion-editor .tiptap ul,
-.tsk-prose .notion-editor .tiptap ol {
-  margin: 8px 0 12px;
-}
-
-.tsk-prose .notion-editor .tiptap code {
-  font-size: var(--font-size-inline-code);
-  font-weight: var(--font-weight-medium);
-  padding: 1px 0.3rem;
-}
-
-.tsk-prose .notion-editor .tiptap pre {
-  padding: 12px;
-  font-size: var(--font-size-compact);
-  line-height: var(--line-height-relaxed);
-}
-
-.tsk-prose .notion-editor .tiptap pre code {
-  font-size: inherit;
-  font-weight: inherit;
-  padding: 0;
-}
-
-.tsk-prose .notion-bottom-space {
-  display: none;
-}
-
 .tsk-rise {
   animation: tsk-rise 260ms cubic-bezier(0.2, 0, 0, 1) backwards;
   animation-delay: calc(min(var(--tsk-i, 0), 14) * 20ms);

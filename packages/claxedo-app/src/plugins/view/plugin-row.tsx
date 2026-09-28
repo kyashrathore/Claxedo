@@ -2,7 +2,7 @@ import { createSignal, For, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { unreachable } from "@/lib/machine"
-import { Switch, Tag, Button, useDialog } from "@/ui"
+import { Switch, Button, useDialog } from "@/ui"
 import { approvalLetsRun } from "../approval"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
@@ -40,7 +40,7 @@ function failureDetail(t: PluginsText, plugin: PluginSummary): string | undefine
   const failure = failureOf(plugin.state)
   if (failure && plugin.state.kind === "failed") return t("plugins.failure", { reason: failure.reason })
   if (failure) return t("plugins.lastFailure", { reason: failure.reason })
-  if (plugin.origin.kind === "live" && plugin.origin.buildError) return t("plugins.lastFailure", { reason: plugin.origin.buildError })
+  if (plugin.origin.buildError) return t("plugins.lastFailure", { reason: plugin.origin.buildError })
   if (plugin.switchedOn && plugin.missing.length > 0) return t("plugins.missing", { capabilities: plugin.missing.join(", ") })
   return undefined
 }
@@ -74,11 +74,9 @@ function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: 
       <Button type="button" variant="ghost" size="small" aria-expanded={props.expanded} onClick={() => props.toggle()}>
         {t("plugins.details")}
       </Button>
-      <Show when={props.plugin.origin.kind === "live"}>
-        <Button type="button" variant="ghost" size="small" onClick={() => void remove()}>
-          {t("plugins.remove")}
-        </Button>
-      </Show>
+      <Button type="button" variant="ghost" size="small" onClick={() => void remove()}>
+        {t("plugins.remove")}
+      </Button>
       <Show when={removeFailure()}>{(text) => <p role="alert">{text()}</p>}</Show>
     </div>
   )
@@ -101,7 +99,6 @@ export function PluginRow(props: { readonly plugin: PluginSummary }): JSX.Elemen
         <div class="plugin-row-text">
           <div class="plugin-row-heading">
             <span class="plugin-row-name">{props.plugin.name}</span>
-            <Tag>{t(props.plugin.origin.kind === "live" ? "plugins.origin.live" : "plugins.origin.bundled")}</Tag>
             <span class="plugin-row-version">{props.plugin.version}</span>
             <span class="plugin-row-state" data-state={props.plugin.state.kind}>
               {t(stateKey(props.plugin.state))}

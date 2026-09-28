@@ -27,7 +27,7 @@ type Lookup = { readonly declarations: readonly ts.Declaration[]; readonly refer
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
   const events = new Set(readFileSync(join(import.meta.dir, "data/server-event-names.txt"), "utf8").split("\n").filter(Boolean))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions).filter(
+  const files = listFiles(root, ["src"], codeExtensions).filter(
     (file) => !under(root, file, "src/server/wire") && !isTranslationFile(root, file),
   )
   const program = createProgram(files, compilerOptions())
@@ -56,7 +56,7 @@ function retiredName(root: string, node: ts.Node, checker: ts.TypeChecker): stri
   const { declarations, reference } = lookup(node, checker)
   const files = declarations.map((declaration) => declaration.getSourceFile().fileName)
   if (!isJsxPropName(node) && files.some((file) => isExempt(root, file))) return undefined
-  if (reference && files.some((file) => under(root, file, "src") || under(root, file, "plugins"))) return undefined
+  if (reference && files.some((file) => under(root, file, "src"))) return undefined
   return `${node.text} is an OpenCode name; use ${claxedoName(node.text)}`
 }
 

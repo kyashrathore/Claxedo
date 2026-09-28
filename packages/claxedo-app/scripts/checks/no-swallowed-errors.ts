@@ -16,7 +16,7 @@ const silentHandler = ".catch handler ignores the error; make it a machine state
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src", "plugins"], codeExtensions)
+  const files = listFiles(root, ["src"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
     const { sf } = readSource(file)

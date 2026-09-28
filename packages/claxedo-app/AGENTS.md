@@ -1,6 +1,6 @@
 # Claxedo app
 
-This package is the Claxedo app. These rules apply to everything in it and to `plugins/*`. The repo root `AGENTS.md` still applies; where the two differ, this file wins for this work.
+This package is the Claxedo app. These rules apply to everything in it. The repo root `AGENTS.md` still applies; where the two differ, this file wins for this work.
 
 ## Today's server
 

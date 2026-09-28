@@ -1,6 +1,6 @@
 # @claxedo/plugin-api
 
-The contract between a Claxedo plugin and the app that hosts it. First-party plugins under `plugins/` and user plugins registered with the daemon use the same package.
+The contract between a Claxedo plugin and the app that hosts it. Every plugin is a user plugin registered with the daemon.
 
 ## The manifest
 

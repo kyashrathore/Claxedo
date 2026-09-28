@@ -6,7 +6,7 @@ import type { PluginBuild } from "./model"
 
 const build: PluginBuild = {
   manifest: { id: "fixture", name: "Fixture", version: "0.1.0", app: "./app.tsx", requires: [], server: { routes: [], operations: [] } },
-  origin: { kind: "live", hash: "a".repeat(16), directory: "/tmp/fixture" },
+  origin: { hash: "a".repeat(16), directory: "/tmp/fixture" },
   definition: { activate: () => undefined },
 }
 
@@ -28,7 +28,7 @@ describe("a plugin's lifecycle", () => {
     setSwitches({ on: true })
     await settle()
     expect(pending).toHaveLength(1)
-    pending[0]({ build: build.origin.kind === "live" ? build.origin.hash : "", dispose: () => disposed.push("first") })
+    pending[0]({ build: build.origin.hash, dispose: () => disposed.push("first") })
     await settle()
     expect(lifecycle.state()).toEqual({ kind: "on", build: "a".repeat(16) })
     expect(disposed).toEqual([])

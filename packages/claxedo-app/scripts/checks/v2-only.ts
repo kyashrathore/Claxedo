@@ -14,8 +14,8 @@ const styleImport = /@import\s+(?:url\()?["']([^"']+)["']/g
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
   const resolve = createResolver(compilerOptions())
-  const codeFiles = listFiles(root, ["src", "e2e", "plugins"], codeExtensions)
-  const styleFiles = listFiles(root, ["src", "plugins"], styleExtensions)
+  const codeFiles = listFiles(root, ["src", "e2e"], codeExtensions)
+  const styleFiles = listFiles(root, ["src"], styleExtensions)
   const violations: Violation[] = []
   for (const file of codeFiles) violations.push(...kitImports(root, readSource(file), resolve))
   for (const file of styleFiles) violations.push(...kitStyleImports(root, file, readFileSync(file, "utf8"), resolve))

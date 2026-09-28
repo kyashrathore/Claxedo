@@ -40,7 +40,6 @@ test("35 a live plugin on the web: every primitive but panes and icon skins work
 
   await app.goto(`${stack.url}/settings/app-plugins`)
   await approveAppPlugin(app, "Turn on the app plugin Fixture?", APP_PLUGIN_WARNING.web)
-  await expect(appPluginRow(app, "Pages")).toContainText("On")
   await expect(appPluginRow(app, "Fixture")).toContainText("On")
 
   const home = await openFixture(stack, app)
@@ -138,6 +137,7 @@ test("35 a live plugin on the web swaps on save, keeps its last build on a broke
   await appPluginRow(app, "Fixture").getByRole("button", { name: "Remove" }).click()
   await appPluginDialog(app, "Remove Fixture?").getByRole("button", { name: "Remove" }).click()
   await expect(appPluginRow(app, "Fixture")).toHaveCount(0)
+  await expect(app.getByText("No app plugins yet.")).toBeVisible()
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
   await expect(fs.access(path.join(folder, "package.json"))).resolves.toBeUndefined()
 })
@@ -153,7 +153,7 @@ test("35 a machine owner's app plugins never list, serve, activate or ask for an
   await signed.signIn(page, member)
   await page.goto(`${signed.url}/settings/app-plugins`)
   await expect(page.getByRole("status").filter({ hasText: "App plugins on this machine belong to its owner" })).toBeVisible()
-  await expect(appPluginRow(page, "Pages")).toBeVisible()
+  await expect(page.getByText("No app plugins yet.")).toBeVisible()
   await expect(appPluginRow(page, "Fixture")).toHaveCount(0)
   await expect(appPluginDialog(page, "Turn on the app plugin Fixture?")).toHaveCount(0)
 

@@ -11,7 +11,6 @@ import { useWorkbench } from "@/workbench"
 import { activatePlugin, type Activation } from "./activation"
 import { pluginServerCalls } from "./api"
 import { createApiFactory, createClaims, createOverlayTracker, type HostServices } from "./bindings"
-import { bundledPlugins } from "./bundled"
 import { createPluginHost, type PluginHost } from "./host"
 import { pluginsDictionary, usePluginsText } from "./i18n"
 import { createFrameRuntimeSource } from "./frame/runtime-source"
@@ -91,7 +90,7 @@ function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: 
   createEffect(() => {
     if (host.safeMode()) return
     for (const plugin of host.plugins()) {
-      if (plugin.origin.kind !== "live" || plugin.origin.builtAt === undefined || approvalLetsRun(plugin.approval)) continue
+      if (plugin.origin.builtAt === undefined || approvalLetsRun(plugin.approval)) continue
       const build = `${plugin.id}:${plugin.origin.hash}`
       if (asked.has(build)) continue
       asked.add(build)
@@ -120,7 +119,6 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
     removeLive: services.calls.removeLive,
   })
   const offered = useOfferedCapabilities(services, host.required)
-  for (const build of bundledPlugins()) host.put(build)
   onCleanup(host.dispose)
   const value: PluginsContext = {
     ...host,

@@ -18,8 +18,8 @@ type Range = { readonly pos: number; readonly end: number }
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const codeFiles = listFiles(root, ["src", "e2e", "plugins", "scripts"], codeExtensions)
-  const styleFiles = listFiles(root, ["src", "plugins"], styleExtensions)
+  const codeFiles = listFiles(root, ["src", "e2e", "scripts"], codeExtensions)
+  const styleFiles = listFiles(root, ["src"], styleExtensions)
   const violations: Violation[] = []
   for (const file of codeFiles) violations.push(...commentsInCode(file))
   for (const file of styleFiles) violations.push(...commentsInStyle(file))

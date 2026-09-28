@@ -37,13 +37,12 @@ function createBuildPolicy(deps: PluginHostDeps): BuildPolicy {
   const missing = (build: PluginBuild): readonly PluginCapability[] =>
     build.manifest.requires.filter((capability) => !deps.offered(capability))
   const approval = (build: PluginBuild): ApprovalCheck => {
-    if (build.origin.kind === "bundled") return { kind: "approved" }
     if (build.origin.builtAt === undefined) return { kind: "unapproved" }
     return approvalCheck(preferences.approval(build.manifest.id), { manifest: build.manifest, hash: build.origin.hash, builtAt: build.origin.builtAt })
   }
   const wanted = (build: PluginBuild) => {
     if (!preferences.switchedOn(build.manifest.id) || missing(build).length > 0) return false
-    return build.origin.kind === "bundled" || (!preferences.safeMode() && approvalLetsRun(approval(build)))
+    return !preferences.safeMode() && approvalLetsRun(approval(build))
   }
   return { missing, approval, wanted }
 }
@@ -64,7 +63,7 @@ function pluginSummaryOf(lifecycle: PluginLifecycle, policy: BuildPolicy, prefer
 }
 
 function approveBuild(preferences: PluginPreferences, build: PluginBuild | undefined, pluginId: string, hash: string): boolean {
-  if (build?.origin.kind !== "live" || build.origin.hash !== hash || build.origin.builtAt === undefined) return false
+  if (build?.origin.hash !== hash || build.origin.builtAt === undefined) return false
   preferences.approve(pluginId, approvalFor({ manifest: build.manifest, hash, builtAt: build.origin.builtAt }, new Date()))
   return true
 }

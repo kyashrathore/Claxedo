@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { codeExtensions, isTranslationFile, listFiles, parseArgs, pluginsDirectory, rel, topFolder } from "./lib/files"
+import { codeExtensions, isTranslationFile, listFiles, parseArgs, rel } from "./lib/files"
 import { lineCount } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
@@ -32,8 +32,6 @@ const parts: readonly Part[] = [
   { name: "UI kit (src/ui) and kept transcript renderers (src/transcript)", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
 const totalBudget = 94000
-const pluginsBudget = 7000
-const pluginBudgets: Readonly<Record<string, number>> = { pages: 3000, "compact-tabs": 600, "codex-theme": 600 }
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
@@ -49,7 +47,7 @@ function main(): never {
     else unmapped.add(dirname(rel(root, file)))
   }
   const rows = parts.map((part) => ({ name: part.name, lines: counted.get(part.name) ?? 0, budget: part.budget, at: join(root, part.folders[0] ?? "src") }))
-  const over = [...printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: join(root, "src") }]), ...printTable(pluginLines(root))]
+  const over = printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: join(root, "src") }])
   const violations: Violation[] = over.map((row) => ({ file: row.at, line: 1, message: `${row.name} has ${row.lines} lines; the budget is ${row.budget}` }))
   for (const folder of unmapped) violations.push({ file: join(root, folder), line: 1, message: "not in the budget table; add the part it belongs to" })
   finish("budget", root, violations, appFiles.length)
@@ -70,20 +68,6 @@ function partOf(path: string): Part | undefined {
 function matches(path: string, folder: string): boolean {
   if (folder === "src/*") return dirname(path) === "src"
   return path === folder || path.startsWith(`${folder}/`)
-}
-
-function pluginLines(root: string): Row[] {
-  const byPlugin = new Map<string, number>()
-  let total = 0
-  for (const file of listFiles(root, ["plugins"], codeExtensions).filter((file) => !isTranslationFile(root, file))) {
-    const plugin = topFolder(root, file, "plugins") ?? "(root)"
-    const lines = lineCount(readFileSync(file, "utf8"))
-    byPlugin.set(plugin, (byPlugin.get(plugin) ?? 0) + lines)
-    total += lines
-  }
-  const plugins = pluginsDirectory(root)
-  const rows = [...byPlugin].sort().map(([plugin, lines]) => ({ name: `plugins/${plugin}`, lines, budget: pluginBudgets[plugin], at: join(plugins, plugin) }))
-  return rows.length === 0 ? [] : [...rows, { name: "First-party plugins total", lines: total, budget: pluginsBudget, at: plugins }]
 }
 
 function printTable(rows: readonly Row[]): Row[] {

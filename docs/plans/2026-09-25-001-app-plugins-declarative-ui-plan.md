@@ -84,7 +84,6 @@ An opt-in `custom-view` component (a sandboxed frame with no network) for canvas
   - Progress:
 - [ ] **P7. Cut over.**
   - Remove the JSX plugin host (`src/plugins/activation.ts`, `bindings/` render paths, `frame/`, `live/runtime.ts` shared-module runtime) and the in-app desktop path.
-  - Port the bundled Pages plugin, or keep it as first-party app code.
   - Update the App plugins warning: plugins now run sandboxed on every platform.
   - No compatibility layer for old plugins.
   - Progress:

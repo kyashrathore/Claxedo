@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { pluginsDirectory, rel } from "./files"
+import { rel } from "./files"
 import type { Violation } from "./report"
 
 export type Baselined = { readonly file: string; readonly matcher: string; readonly owner: string; readonly reason: string }
@@ -18,13 +18,9 @@ export function applyBaseline(root: string, entries: readonly Baselined[], candi
   }
   for (const entry of entries) {
     if (matched.has(entry)) continue
-    reported.push({ file: absolute(root, entry.file), line: 1, message: `fixed: remove it from the baseline: "${entry.matcher}" (owner: ${entry.owner})` })
+    reported.push({ file: join(root, entry.file), line: 1, message: `fixed: remove it from the baseline: "${entry.matcher}" (owner: ${entry.owner})` })
   }
   return reported
-}
-
-function absolute(root: string, path: string): string {
-  return path.startsWith("plugins/") ? join(pluginsDirectory(root), path.slice("plugins/".length)) : join(root, path)
 }
 
 export function isTestFile(file: string): boolean {

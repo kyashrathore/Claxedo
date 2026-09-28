@@ -60,7 +60,6 @@ async function openFixture(window: Page) {
 test("34 a live plugin on the desktop: every primitive works in the app, panes and icon skins included", { tag: "@desktop" }, async ({ desktop }) => {
   const { workspace, window } = await startWithFixture(desktop)
   await openSettingsSection(window, "App plugins")
-  await expect(appPluginRow(window, "Pages")).toContainText("On")
   await expect(appPluginRow(window, "Fixture")).toContainText("On")
   await leaveSettings(window)
 
@@ -144,5 +143,6 @@ test("34 a live plugin on the desktop swaps on save, keeps its last build on a b
   await appPluginRow(window, "Fixture").getByRole("button", { name: "Remove" }).click()
   await appPluginDialog(window, "Remove Fixture?").getByRole("button", { name: "Remove" }).click()
   await expect(appPluginRow(window, "Fixture")).toHaveCount(0)
+  await expect(window.getByText("No app plugins yet.")).toBeVisible()
   expect((await listLivePlugins(desktop.url, pageTransport(window))).plugins).toEqual([])
 })
