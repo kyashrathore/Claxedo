@@ -26,9 +26,10 @@ export interface BenchmarkPage {
    *
    * The signature stays Playwright's `Page.evaluate` shape minus the result
    * type, because `agent-browser-observer` drives a real Playwright page and
-   * this one through the same structural type.
+   * this one through the same structural type. A string is evaluated as an
+   * expression, as Playwright does.
    */
-  evaluate<A = undefined>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>
+  evaluate<A = undefined>(fn: string | ((arg: A) => unknown) | (() => unknown), arg?: A): Promise<unknown>
   waitForFunction<A = undefined>(
     fn: ((arg: A) => unknown) | (() => unknown),
     arg?: A,
@@ -156,8 +157,11 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     }
     return read((recordField(envelope, "result") ?? {}).value)
   }
-  const evaluate = <A>(fn: ((arg: A) => unknown) | (() => unknown), arg?: A) =>
-    evaluateExpression(`(${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)})`, rawValue)
+  const evaluate = <A>(fn: string | ((arg: A) => unknown) | (() => unknown), arg?: A) =>
+    evaluateExpression(
+      typeof fn === "string" ? fn : `(${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)})`,
+      rawValue,
+    )
 
   const key = async (value: string) => {
     const description = keyDescription(value)

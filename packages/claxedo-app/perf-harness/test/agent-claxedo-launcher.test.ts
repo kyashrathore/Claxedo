@@ -2,8 +2,9 @@ import { expect, test } from "bun:test"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher"
+import { appStartClock, launchPackagedClaxedo } from "../src/agent-claxedo-launcher"
 import { readProcessTable, sameProcessIdentity, type ProcessSnapshot } from "../src/agent-process-family"
+import { frameLogMismatch, resolvedSettle } from "./page-settle"
 
 test("failed startup waits for owned descendants before disposable state is removed", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "claxedo-launch-cleanup-"))
@@ -91,3 +92,14 @@ test("the app resolves HOME and every XDG root inside the run's home, whatever t
     await rm(root, { recursive: true, force: true })
   }
 }, 20_000)
+
+test("app start runs on the driver's clock from the spawn to the renderer's settle frame", () => {
+  const driverTimeOrigin = 1_700_000_000_000
+  const settle = resolvedSettle({ startAt: 900, timeOrigin: driverTimeOrigin + 250, unready: 6 })
+  const spawnAt = 120
+  const { endTimestamp, frameLog } = appStartClock(settle, spawnAt, driverTimeOrigin)
+  expect(endTimestamp).toBe(settle.settledAt + 250)
+  expect(frameLog).toEqual({ startAt: spawnAt - 250, offsetMs: 250, frames: settle.frames })
+  expect(frameLogMismatch(frameLog, { start: spawnAt, end: endTimestamp })).toBeNull()
+  expect(frameLogMismatch(frameLog, { start: spawnAt, end: settle.settledAt })).not.toBeNull()
+})

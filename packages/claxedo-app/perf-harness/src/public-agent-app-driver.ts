@@ -4,8 +4,15 @@ import { constants as fsConstants } from "node:fs"
 import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { serveDriver, type DriverHandlers, type PrepareParams } from "agent-app-benchmark/driver-sdk"
-import { measureSessionActivation, type FrameLog } from "./agent-browser-observer"
+import {
+  frameLogOf,
+  serveDriver,
+  type DriverHandlers,
+  type FrameLog,
+  type PageSettle,
+  type PrepareParams,
+} from "agent-app-benchmark/driver-sdk"
+import { measureSessionActivation } from "./agent-browser-observer"
 import { ensureFrontWindow } from "./front-window"
 import { readText } from "./page-value"
 import { launchPackagedClaxedo, type ClaxedoLaunch, type OwnedProcess as LaunchedProcess } from "./agent-claxedo-launcher"
@@ -231,6 +238,19 @@ function activationExecution(caseId: string, measured: Activation) {
   return { ...execution(caseId, measured.clock, readinessReceipt(measured.clock.end)), frameLog: measured.frameLog }
 }
 
+/** A switch on the renderer's clock: from the trusted pointerdown to the settle frame. */
+export function switchActivation(settle: PageSettle): Activation {
+  return {
+    clock: {
+      kind: "single-monotonic-clock",
+      clock: "claxedo-renderer-performance",
+      start: settle.startAt,
+      end: settle.settledAt,
+    },
+    frameLog: frameLogOf(settle),
+  }
+}
+
 function readinessReceipt(observedAt?: number): ReadinessReceipt {
   return {
     endpoint: "correct-content-painted-and-input-ready",
@@ -272,6 +292,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     path.join(import.meta.dir, "with-claxedo-data-directory.ts"),
     path.join(import.meta.dir, "agent-claxedo-launcher.ts"),
     path.join(import.meta.dir, "agent-browser-observer.ts"),
+    path.join(import.meta.dir, "claxedo-settle-facts.ts"),
     path.join(import.meta.dir, "browser/painted-frames.ts"),
     path.join(import.meta.dir, "agent-cdp-page.ts"),
     path.join(import.meta.dir, "agent-display-contract.ts"),
@@ -335,7 +356,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     hello: {
       protocolVersion: 1,
       application: { ...APPLICATION, version: desktopVersion, buildDigestSha256 },
-      driver: { name: "claxedo-reference", version: "2", sourceCommit, digestSha256: driverDigestSha256 },
+      driver: { name: "claxedo-reference", version: "3", sourceCommit, digestSha256: driverDigestSha256 },
       sourceEventFormats: ["opencode-event"],
       materializationModes: ["native-opencode"],
       guiFramework: "electron",
@@ -401,17 +422,9 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     activate: async (target, readinessTimeoutMs) => {
       if (!current) throw new Error("Claxedo renderer is not running")
       await ensureFrontWindow(current.page, current.application.pid)
-      const result = await measureSessionActivation(current.page, target, { readinessTimeoutMs })
-      if (result.state !== "exact") throw new Error(`Claxedo session activation failed: ${result.reason}`)
-      return {
-        clock: {
-          kind: "single-monotonic-clock",
-          clock: "claxedo-renderer-performance",
-          start: result.trustedEventAtMs,
-          end: result.endAtMs,
-        },
-        frameLog: result.frameLog,
-      }
+      return switchActivation(
+        await measureSessionActivation(current.page, target, { readinessTimeoutMs }),
+      )
     },
     listedSessionIds: async () => {
       if (!current) throw new Error("Claxedo renderer is not running")

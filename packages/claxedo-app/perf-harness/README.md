@@ -5,18 +5,35 @@ The application-owned driver of the public [agent-app-benchmark](https://github.
 - `src/public-agent-app-driver.ts`: the NDJSON driver. It lists the scenario ids it serves and dispatches each to its kind: app start or session switch.
 - `src/public-corpus-materializer.ts`, `src/corpus-workspace.ts`, `src/fixture-registration.ts`, `src/opencode-corpus.ts`: write the benchmark corpus into a Claxedo data directory through the app's own server-core and workspace-runtime writers (`src/production-modules.ts`).
 - `src/agent-claxedo-launcher.ts`, `src/agent-cdp-page.ts`: launch the packaged app and attach over CDP.
-- `src/agent-browser-observer.ts`: the readiness predicates and frame timing. It reads the app's `data-testid`, `data-slot` and `data-component` hooks, so the app's `claxedo-names` check counts this folder as a reader.
-- `src/browser/painted-frames.ts`: the one frame clock those predicates run on. Each frame is sampled in its own rendering step, after layout and before paint, so a sample reads what the frame painted. The driver times a session frame at its observation, `performance.now()` right after the sample, as the benchmark's `settle-31-frames` rule does; the clock also stamps when the frame was painted, in a task posted from that step.
+- `src/agent-browser-observer.ts`: reveals a session's rail row, arms the benchmark's page clock and opens the session with a trusted click; also the trusted-input probe after app start.
+- `src/claxedo-settle-facts.ts`: what the page clock asks about Claxedo on every frame. It and the observer read the app's `data-testid`, `data-slot` and `data-component` hooks, so the app's `claxedo-names` check counts this folder as a reader.
+- `src/browser/painted-frames.ts`: the frame clock the app's e2e rigs run on. The driver uses it only to stamp the paint after its trusted-input probe; session settles are timed by the benchmark's page clock.
+
+## Settle clock
+
+The driver does not compute its own settle. `settleExpression` from `agent-app-benchmark/driver-sdk` builds the benchmark's in-page clock for the rule `settle-31-frames`; the driver evaluates it in the renderer before the click, and the clock resolves to every frame it sampled and the settle frame. The benchmark computes the six ready gates, the frame signature and the transcript mutation flag, samples each frame after style and layout, and re-derives the settle from the frame log the driver returns (`frameLogOf`).
+
+The driver supplies only facts about Claxedo, `claxedoSettleFacts`, evaluated in the page for the destination session:
+
+- `displayed`: the destination's `session-page-root` sits in a `data-workbench-content` surface that is neither `aria-hidden` nor `inert`, it is the one visible session root, and its rail row is the one active rail row.
+- `latestTurnRows`: the destination's `UserMessage` and `AssistantPart` timeline rows whose content message id is one of the latest turn's messages; an assistant row with a part id must show one of the latest turn's parts. Each row is answered by its text body (`user-message-text`, or the matching `text-part`'s `text-part-body`) when it has one, otherwise by the row.
+- `composer`: the destination's `prompt-input` when it is `contenteditable="true"`.
+- `placeholder`: no destination root or timeline, a `data-session-timeline-loading` marker, or a `skeleton` slot in the timeline.
+- `transcript`: the timeline's scroller, `[data-slot="session-timeline-scroll"] [data-scrollable]`; `rows` are its `data-timeline-key` rows, keyed by that attribute.
+
+A switch runs on the renderer's clock, from the first trusted pointerdown after the clock is armed to the settle frame. App start clicks the control session's row like a switch and runs on the driver's clock, from the process spawn to the settle frame: the renderer's frames map onto it by the difference between the renderer's and the driver's `performance.timeOrigin`.
 
 ## Settle stamp
 
-Driver version 2 reports the settle frame's observation time and declares `settle-31-frames`. Version 1 reported the time the painted-frames clock saw that frame painted and declared no clock rule. On one run of the packaged 394ff45ca5 app that recorded both for every settle (111 s, 1-minute load 20–30), the painted time was later than the observation by 3.2 ms median, 5.4 ms p95 and 6.0 ms at most over 98 switches, and by 3.2 ms median and 6.2 ms at most over 15 app-start and control settles. Version 2 durations are shorter than version 1's by that much for the same frames.
+Driver version 3 is timed by the benchmark's page clock above. It samples in the same rendering step as the painted-frames clock and reports the settle frame's observation, `performance.now()` right after the sample, with the benchmark's gates, signature and mutation scope in place of the driver's own. The measurements below compare earlier versions.
 
-The published results from before the rule came from driver commit 0df673fff3, which sampled each frame inside its requestAnimationFrame callback and reported that sample's observation. That sample ran before the frame's style and layout, where the current one runs after them: on the same run the current observation came 2.2 ms median and 4.5 ms at most after the callback began. The two samples can read different content for the same frame, so the difference from those results is not a fixed offset. Results from either earlier driver declare no clock rule, and the benchmark's verdict refuses to pair them with results that declare one.
+Driver version 2 reported the settle frame's observation time and declared `settle-31-frames`. Version 1 reported the time the painted-frames clock saw that frame painted and declared no clock rule. On one run of the packaged 394ff45ca5 app that recorded both for every settle (111 s, 1-minute load 20–30), the painted time was later than the observation by 3.2 ms median, 5.4 ms p95 and 6.0 ms at most over 98 switches, and by 3.2 ms median and 6.2 ms at most over 15 app-start and control settles. Version 2 durations are shorter than version 1's by that much for the same frames.
+
+The published results from before the rule came from driver commit 0df673fff3, which sampled each frame inside its requestAnimationFrame callback and reported that sample's observation. That sample ran before the frame's style and layout, where version 2's ran after them: on the same run version 2's observation came 2.2 ms median and 4.5 ms at most after the callback began. The two samples can read different content for the same frame, so the difference from those results is not a fixed offset. Results from either earlier driver declare no clock rule, and the benchmark's verdict refuses to pair them with results that declare one.
 
 ## Frame clock
 
-`installPaintedFrames` in `src/browser/painted-frames.ts` is serialized into the page, so it has no runtime imports: its one import is the `PaintedFrames` type from `src/browser/page-globals.ts`. The app's e2e suite imports the file by path, not through an install, and `typecheck:e2e` checks it through that import. It is installed before any readiness loop runs.
+`installPaintedFrames` in `src/browser/painted-frames.ts` is serialized into the page, so it has no runtime imports: its one import is the `PaintedFrames` type from `src/browser/page-globals.ts`. The app's e2e suite imports the file by path, not through an install, and `typecheck:e2e` checks it through that import. The driver installs it when it attaches to the renderer.
 
 Each frame's requestAnimationFrame callback records `performance.now()` as the frame's start, requests the next frame and observes a 1 px sentinel with a new ResizeObserver. Chromium delivers that observer in the same rendering step, after every requestAnimationFrame callback and its microtasks and after style and layout, before paint. Its callback disconnects the observer, runs `sample` and posts a task, and that task reads the painted time and runs `painted`. No task runs inside a rendering step, so an input or data task that Chromium runs between the frame and its posted task is not in the sample.
 

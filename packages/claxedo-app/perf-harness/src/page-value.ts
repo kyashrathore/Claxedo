@@ -83,7 +83,7 @@ export function optionalRecord(value: unknown): Record<string, unknown> | undefi
 }
 
 /** An array, dropping nothing — entries stay `unknown` until the caller reads them. */
-export function readList(value: unknown): unknown[] {
+function readList(value: unknown): unknown[] {
   if (!Array.isArray(value)) {
     throw new Error(`page evaluation answered ${describe(value)} where an array was required`)
   }

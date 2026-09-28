@@ -7,8 +7,10 @@ import {
   PRIVATE_CORPUS_SCENARIO_IDS,
   PUBLIC_SCENARIO_IDS,
   readPreparedCache,
+  switchActivation,
   writePreparedCache,
 } from "../src/public-agent-app-driver"
+import { frameLogMismatch, resolvedSettle } from "./page-settle"
 
 const receipt = {
   endpoint: "correct-content-painted-and-input-ready" as const,
@@ -271,5 +273,15 @@ describe("Claxedo prepared-state cache", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe("Claxedo switch clock", () => {
+  test("runs on the renderer clock from the trusted pointerdown to the settle frame the framework re-derives", () => {
+    const settle = resolvedSettle({ startAt: 5_000, timeOrigin: 1_700_000_000_000, unready: 4 })
+    const { clock, frameLog } = switchActivation(settle)
+    expect(clock).toEqual({ kind: "single-monotonic-clock", clock: "claxedo-renderer-performance", start: 5_000, end: 5_040 })
+    expect(frameLog).toEqual({ startAt: 5_000, offsetMs: 0, frames: settle.frames })
+    expect(frameLogMismatch(frameLog, clock)).toBeNull()
   })
 })
