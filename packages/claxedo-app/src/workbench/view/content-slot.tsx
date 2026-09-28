@@ -3,7 +3,6 @@ import { Dynamic } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import { FailureBoundary } from "@/lib/failure"
 import { workbenchDictionary } from "../i18n"
-import type { createSurfaceKeyRouter, SurfaceKeySlot } from "../keyboard"
 import { PaneContextProvider, type PaneContext } from "../pane-context"
 import { useWorkbench } from "../provider"
 import type { PaneRect } from "../types"
@@ -19,7 +18,6 @@ export function ContentSlot(props: {
   heldBy: (contentId: string) => string | undefined
   holds: RevealHolds
   displayRects: Accessor<Map<string, PaneRect>>
-  surfaceKeys: ReturnType<typeof createSurfaceKeyRouter>
 }): JSX.Element {
   const wb = useWorkbench()
   const t = useTranslator(workbenchDictionary)
@@ -41,31 +39,16 @@ export function ContentSlot(props: {
     if (!id) return {}
     return rectStyle(props.displayRects().get(id))
   }
-  let element: HTMLDivElement | undefined
-  const slot: SurfaceKeySlot = { paneId, visible, keydown: new Set() }
-  onCleanup(props.surfaceKeys.add(props.contentId, slot))
-  const pane: PaneContext = {
-    paneId,
-    isFocused: focused,
-    isVisible: visible,
-    element: () => element,
-    onKeyDown: (handler) => onCleanup(props.surfaceKeys.subscribe(slot, handler)),
-    requestClose: (opts) => {
-      const id = paneId()
-      if (id) wb.split.close(id, opts ?? { destroyContent: false })
-    },
-    requestFocus: () => {
-      const id = paneId()
-      if (id) wb.split.focus(id)
-    },
-    holdReveal: (pending) => props.holds.hold(props.contentId, pending),
+  const pane: PaneContext = { holdReveal: (pending) => props.holds.hold(props.contentId, pending) }
+  const focus = () => {
+    const id = paneId()
+    if (id) wb.split.focus(id)
   }
   const opened = createMemo(() => wb.content(props.contentId))
   const mounted = createDeferredUnmount(() => visible() || opened()?.kind.keepMounted === true)
 
   return (
     <div
-      ref={element}
       class="workbench-slot"
       data-workbench-content={props.contentId}
       data-pane-id={paneId() ?? undefined}
@@ -75,7 +58,7 @@ export function ContentSlot(props: {
       aria-hidden={visible() ? undefined : "true"}
       inert={presence() !== "shown"}
       style={style()}
-      onMouseDown={() => pane.requestFocus()}
+      onMouseDown={focus}
     >
       <PaneContextProvider value={pane}>
         <FailureBoundary title={t("workbench.failed")} retryLabel={t("workbench.retry")}>

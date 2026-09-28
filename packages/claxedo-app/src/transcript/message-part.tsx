@@ -697,10 +697,6 @@ function ExaOutput(props: { output?: string }) {
   )
 }
 
-export function registerPartComponent(type: string, component: PartComponent) {
-  PART_MAPPING[type] = component
-}
-
 function userMessage(message: AgentPresentationMessage): AgentUserMessage | undefined {
   if (message.role === "user") return message
   return undefined

@@ -36,31 +36,3 @@ export function eventTargetIsEditable(target: EventTarget | null): boolean {
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
   return target instanceof HTMLElement && target.isContentEditable
 }
-
-export type SurfaceKeySlot = {
-  paneId: () => string | null
-  visible: () => boolean
-  keydown: Set<(event: KeyboardEvent) => void>
-}
-
-export function createSurfaceKeyRouter(focusedPaneId: () => string | null) {
-  const slots = new Map<string, SurfaceKeySlot>()
-  return {
-    add(contentId: string, slot: SurfaceKeySlot) {
-      slots.set(contentId, slot)
-      return () => slots.delete(contentId)
-    },
-    subscribe(slot: SurfaceKeySlot, handler: (event: KeyboardEvent) => void) {
-      slot.keydown.add(handler)
-      return () => slot.keydown.delete(handler)
-    },
-    forward(event: KeyboardEvent) {
-      const focused = focusedPaneId()
-      if (!focused) return
-      for (const slot of slots.values()) {
-        if (slot.paneId() !== focused || !slot.visible()) continue
-        for (const handler of slot.keydown) handler(event)
-      }
-    },
-  }
-}

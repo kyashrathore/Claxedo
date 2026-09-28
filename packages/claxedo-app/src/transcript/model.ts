@@ -1,5 +1,4 @@
 import type {
-  AgentAssistantMessage,
   AgentContentPart,
   AgentPresentationMessage,
   AgentUserMessage,
@@ -11,8 +10,6 @@ export type OptimisticUserMessage = AgentUserMessage & {
 }
 
 export type TranscriptUserMessage = AgentUserMessage | OptimisticUserMessage
-
-export type TranscriptAssistantMessage = AgentAssistantMessage
 
 export type ConversationMessage = AgentPresentationMessage | OptimisticUserMessage
 
