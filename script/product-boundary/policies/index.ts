@@ -8,13 +8,13 @@
 import type { Policy } from "../policy.ts"
 import { localServer } from "./local-server.ts"
 import { hostConnector } from "./host-connector.ts"
-import { serverSelfHosted } from "./server.ts"
+import { serverWorkerd } from "./server.ts"
 import { desktopAccountComposition, desktopMainComposition, desktopRenderer } from "./desktop.ts"
 
 export const POLICIES: Policy[] = [
   localServer,
   hostConnector,
-  serverSelfHosted,
+  serverWorkerd,
   desktopMainComposition,
   desktopAccountComposition,
   desktopRenderer,
@@ -24,7 +24,7 @@ export const POLICIES: Policy[] = [
 export const PRODUCTS: Record<string, string[]> = {
   "@claxedo/local-server": ["local-server"],
   "@claxedo/host-connector": ["host-connector"],
-  "@claxedo/server": ["server-self-hosted"],
+  "@claxedo/server": ["server-workerd"],
   "@claxedo/desktop": [
     "desktop-main-composition",
     "desktop-account-composition",

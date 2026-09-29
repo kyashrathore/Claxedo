@@ -1,98 +1,17 @@
 # `@claxedo/workspace-relay`
 
-The Claxedo workspace relay — the single canonical tunnel process between
-cloud-hosted browsers and workspace-runtime hosts, whether the host is a cloud
-VM or a user laptop. One package, one process, one config surface — there is no
-separate `dev-relay` codepath.
+The Claxedo workspace relay: the tunnel between browsers and workspace-runtime
+hosts, whether the host is a cloud VM or a user laptop.
 
-Runtime requirement: the packaged `workspace-relay` bin and the default server
-bootstrap run on **Bun** (they use `Bun.*` APIs via the Bun adapter). Node is
-not supported for the standalone process today; the Cloudflare Worker adapter
-is the other supported runtime.
+It deploys as a Cloudflare Worker. `src/worker.ts` is a stateless gateway that
+routes each workspace to its own Durable Object room (`src/cloudflare.ts`), so
+the room that owns a workspace's host tunnel also serves every request for that
+workspace. `scripts/deploy-cloudflare.ts` deploys it, and `bun run bench:gate`
+boots it locally on workerd (see [bench/README.md](bench/README.md)).
 
-Production v1 is deliberately single-instance for host-tunnel traffic. The
-relay keeps host presence and host-tunnel sockets in process-local maps, and a
-`hostId` has exactly one active tunnel at a time. Deploy one active relay
-process per host-tunnel relay fleet; horizontal scaling needs a future routing
-owner for sticky host tunnels, split-brain prevention, and failover. A relay
-process, VM, or region failure drops existing tunnelled HTTP, WebSocket, SSE,
-and PTY sessions until workspace runtimes reconnect.
-
-## Quickstart
-
-```sh
-bun add @claxedo/workspace-relay jose
-```
-
-The smallest runnable relay: mint an EdDSA key pair to stand in for the
-control plane's signing key, point `resolveTarget` at a cloud-VM-style
-workspace host, boot the Bun adapter, then mint a Runtime Access Token the
-way `claxedo-control-plane` would and use it to reach the target through the
-relay.
-
-```ts
-// relay.ts
-import { generateKeyPair } from "jose"
-import { createWorkspaceRelayBun, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
-
-const runtimeAccessKey = await generateKeyPair("EdDSA", { extractable: true })
-const relayHostKey = await generateKeyPair("EdDSA", { extractable: true })
-
-// Stand-in workspace host: whatever the relay forwards accepted traffic to.
-const host = Bun.serve({
-  port: 0,
-  fetch: (request) => new Response(`host saw ${new URL(request.url).pathname}`),
-})
-
-const handler = createWorkspaceRelayBun({
-  runtimeAccessKey: runtimeAccessKey.publicKey,
-  relayHostSigningKey: relayHostKey.privateKey,
-  relayHostAlgorithm: "EdDSA",
-  resolveTarget: (claims) => ({
-    workspaceId: claims.workspace_id,
-    hostId: claims.host_id,
-    baseUrl: String(host.url).replace(/\/$/, ""),
-    access: "cloud",
-    backing: "cloud-vm",
-  }),
-})
-
-const relay = Bun.serve({
-  port: 7777,
-  fetch: handler.fetch,
-  websocket: handler.websocket,
-})
-
-const token = await mintRuntimeAccessToken(
-  {
-    principalKind: "user",
-    actorId: "user_1",
-    actorKind: "human",
-    orgId: "org_1",
-    workspaceId: "ws_1",
-    hostId: "host_1",
-    role: "editor",
-  },
-  runtimeAccessKey.privateKey,
-  "EdDSA",
-)
-
-console.log(`relay listening on ${relay.url}`)
-console.log(`curl -H "Authorization: Bearer ${token}" ${relay.url}workspaces/ws_1/hello`)
-```
-
-```sh
-bun run relay.ts
-```
-
-Run the printed `curl` command in another terminal — the relay verifies the
-Runtime Access Token, calls `resolveTarget`, mints a Relay Host Token, and
-forwards the request; you'll see `host saw /hello` come back. This mirrors
-what [`src/main.ts`](src/main.ts) assembles for production, minus the
-env-driven resolver client, JWKS, and graceful drain — see
-[docs/architecture.md](docs/architecture.md) for how those pieces fit
-together, and the Configuration table below for the env vars that replace
-the hardcoded values above in a real deployment.
+`src/bun.ts` and `src/main.ts` run the same server core as a Bun process. It is
+not deployed; the app and harness e2e suites and the server's host-tunnel tests
+start it as their local relay.
 
 ## Deployment Security
 
@@ -129,8 +48,8 @@ than allowing a stale positive-cache window. The relay does not retry upstream f
 
 ### Revocation And Active Checks
 
-`isRuntimeAccessTokenActive` is the revocation/target freshness hook. Production
-deployments should implement it by calling the control plane or an equivalent
+`isRuntimeAccessTokenActive` is the revocation/target freshness hook. A deployed
+relay implements it by calling the control plane or an equivalent
 authority on every new HTTP request and WebSocket upgrade. A false result
 rejects before forwarding to the host.
 
@@ -175,8 +94,8 @@ identities, and a socket that became fenced starts the 30 s re-check (or arms
 the hibernation alarm).
 
 A relay composed directly from `createWorkspaceRelayBun` /
-`createWorkspaceRelayDurableObjectRoom` without `resolveHostGeneration` — the
-desktop and self-hosted composition — admits tokens without a generation
+`createWorkspaceRelayDurableObjectRoom` without `resolveHostGeneration` admits
+tokens without a generation
 newest-wins and refuses any token that carries one with
 `403 host_generation_unverifiable` (an update: closed `1008`). A generation is
 a fence the relay cannot verify without the resolver, and the refusal is not
@@ -211,11 +130,10 @@ closed.
 
 ### Host-Tunnel Topology
 
-Production v1 supports one active relay instance for host-tunnel traffic, or a
-load balancer with strict stickiness that keeps each `hostId` on the relay
-process that owns its tunnel socket. Non-sticky horizontal scaling needs an
-external directory and tunnel routing owner before it is safe to advertise as
-durable.
+A Durable Object room is scoped to one workspace, so a host tunnel registering
+through the Worker presents exactly one `workspaceId` per connection. The Bun
+process keeps every host tunnel in process-local maps and admits one tunnel
+registering several workspaces.
 
 ## Why one package, no parallel impl
 
@@ -238,7 +156,10 @@ Re-exported from [`src/index.ts`](src/index.ts):
 | Token issuance / verification | [`src/auth.ts`](src/auth.ts) | `mintRuntimeAccessToken`, `verifyRuntimeAccessToken`, `mintRelayHostToken`, `verifyRelayHostToken`, `mintHostTunnelToken`, `verifyHostTunnelToken`, types `RelayRole`, `RelayBacking`, `RelayJwtAlgorithm`, `RuntimeAccessTokenClaims`, `RelayKey`, `RelayKeyResolver`, error class `WorkspaceRelayAuthError` |
 | Hono HTTP surface | [`src/server.ts`](src/server.ts) | `createWorkspaceRelay`, `authorizeWorkspaceRelayRequest`, types `WorkspaceRelayOptions`, `WorkspaceRelayTarget`, `RuntimeAccessTokenActiveResult`, `WorkspaceRelayAuditEvent`, `WorkspaceRelayMetricsSources`, `RelayHostPublicKey` |
 | Active-host directory | [`src/directory.ts`](src/directory.ts) | `createWorkspaceRelayDirectory`, `disposeWorkspaceRelayDirectory`, types `WorkspaceRelayDirectory`, `HostTunnelPresence` |
-| Bun-specific server bootstrap | [`src/bun.ts`](src/bun.ts) | `createWorkspaceRelayBun`, type `WorkspaceRelayBunOptions`, `WorkspaceRelayBunDrainController`, metrics `getFragmentationStats`, `getSlowConsumerStats` |
+| Cloudflare Worker gateway and room | [`src/cloudflare.ts`](src/cloudflare.ts) | `createWorkspaceRelayDurableObjectGateway`, `createWorkspaceRelayDurableObjectRoom` |
+
+The Bun adapter is not in the root barrel: import `createWorkspaceRelayBun` from
+`@claxedo/workspace-relay/bun`.
 
 Wire types live in the sibling package
 [`@claxedo/workspace-relay-protocol`](../workspace-relay-protocol/)
@@ -248,16 +169,15 @@ implement the tunnel protocol without pulling Hono and Jose.
 
 ## Configuration
 
-All knobs are environment variables. The relay refuses to boot in
-production if `CLAXEDO_RELAY_RESOLVER_TOKEN` is missing — the
-production fail-closed gate at `src/main.ts`.
+All knobs are environment variables: Worker vars and secrets in
+`wrangler.toml` and `scripts/deploy-cloudflare.ts`, `process.env` for the Bun
+process.
 
 | Env var | Purpose |
 | --- | --- |
-| `CLAXEDO_RELAY_BIND_HOST`, `CLAXEDO_RELAY_BIND_PORT` | Listening socket. Loopback by default. |
-| `CLAXEDO_RELAY_PUBLIC_URL` | Externally-resolvable URL the relay advertises in tokens. |
+| `CLAXEDO_WORKSPACE_RELAY_HOST`, `CLAXEDO_WORKSPACE_RELAY_PORT` | Bun process only: listening socket, `127.0.0.1:7777` by default. |
 | `CLAXEDO_RELAY_RESOLVER_URL` | Control-plane resolver base (`https://<control-plane>/internal/relay`). The relay derives `/target`, `/revocation`, and `/host-generation` from it. Required by the Bun process; the Worker also accepts `CLAXEDO_CENTRAL_URL` and appends `/internal/relay`. |
-| `CLAXEDO_RELAY_RESOLVER_TOKEN` | Bearer token the relay sends to the resolver. **Required in production.** |
+| `CLAXEDO_RELAY_RESOLVER_TOKEN` | Bearer token the relay sends to the resolver. The Worker refuses to start without it. |
 | `CLAXEDO_RELAY_HOST_GENERATION_URL` | Optional absolute URL of the host-generation lookup. Unset (the normal case) derives `<CLAXEDO_RELAY_RESOLVER_URL>/host-generation`; set it only when the lookup lives at a different origin than the rest of the resolver. There is no way to turn the fence off on a resolver-backed relay. |
 | `CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS` | Cache TTL for host-generation answers. Defaults to 10000. A superseded tunnel closes within the re-check interval (30 s) plus this TTL. |
 | `CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS` | Cache TTL for `/revocation` answers (default 10000 ms). Target answers are not retained. |
@@ -266,9 +186,8 @@ production fail-closed gate at `src/main.ts`.
 | `CLAXEDO_RELAY_HOST_VERIFY_PEM` | Public PEM the relay uses to verify host-tunnel tokens. |
 | `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` | Private PEM the relay uses to mint relay-host tokens. |
 | `CLAXEDO_RELAY_METRICS_TOKEN` | Optional bearer token for `/metrics`. Without it, `/metrics` requires a trusted loopback remote-address resolver. |
-| `CLAXEDO_RELAY_DRAIN_TIMEOUT_MS` | Graceful shutdown wait before force-closing sockets. Defaults to 30000. |
-| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts) — self-hosted deployments set their own origins here. Grammar: exact origin, `https://*.example.com`, `http://localhost:*`. Works on both the Bun process and the Cloudflare Worker. |
-| `NODE_ENV` | `production` / `development` / `test`. Switches the production fail-closed gate. |
+| `CLAXEDO_RELAY_DRAIN_TIMEOUT_MS` | Bun process only: SIGTERM drain wait before force-closing sockets. Defaults to 30000. |
+| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`. Works on both the Bun process and the Cloudflare Worker. |
 
 Cloudflare Worker tracing knobs (Durable Object deployment):
 
@@ -287,7 +206,7 @@ crypto/introspection authority; the relay still validates its output into
 `RuntimeAccessTokenClaims`, binds the URL workspace id to the claims, applies
 revocation, and allowlists roles. Missing, unknown, or malformed roles deny.
 
-To swap the relay's auth backend in a self-hosted deployment:
+To swap the relay's auth backend:
 
 ```ts
 import { createStaticTokenVerifier } from "@claxedo/workspace-relay-protocol"
@@ -305,7 +224,7 @@ JWKS fetching, audience binding, and replay caches belong to the
 implementation. Two reference implementations ship in the protocol
 package: `createHttpTokenVerifier` for remote verifiers
 (token introspection, custom OIDC), and `createStaticTokenVerifier`
-for tests and self-hosted single-tenant setups.
+for tests and single-tenant setups.
 
 `createHttpTokenVerifier` is a reference implementation. Its HTTPS endpoint is
 the crypto authority and must enforce issuer, audience, expiry, key selection,
@@ -325,12 +244,11 @@ heartbeat timer, and buffered work before installing the new socket. Stale close
 events identity-check the current owner before deleting presence, so an old
 socket cannot mark a replacement offline.
 
-Relay drain sets `/health` unhealthy, rejects new workspace requests and tunnel
-registrations with `503 relay_draining`, closes active host tunnels so runtimes
-reconnect promptly, waits for pending work up to the configured timeout, then
-stops the server. Truly uncaught exceptions and unhandled rejections are fatal:
-the relay marks itself draining, stops accepting work, disposes timers, and
-exits for supervisor restart.
+On SIGTERM the Bun process drains: `/health` turns unhealthy, new workspace
+requests and tunnel registrations get `503 relay_draining`, active host tunnels
+close so runtimes reconnect promptly, and pending work gets up to the drain
+timeout before the server stops. An uncaught exception or unhandled rejection
+drains the same way and exits 1.
 
 ## External Directory Design
 
@@ -400,9 +318,9 @@ decisions. The decision data crosses the seam as
 ## Development
 
 ```sh
-bun --cwd packages/workspace-relay dev   # hot-reload main.ts
-bun --cwd packages/workspace-relay test  # run all *.test.ts
+bun --cwd packages/workspace-relay test        # unit suites, including the workerd ones
 bun --cwd packages/workspace-relay typecheck
+bun --cwd packages/workspace-relay bench:gate  # the Worker on workerd, end to end
 ```
 
 The TS error baseline for this package is **0** — keep it that way.

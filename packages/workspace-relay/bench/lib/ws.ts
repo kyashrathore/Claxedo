@@ -24,10 +24,8 @@ export type WsProbeResult = {
   // codes; "timeout" when the open never completed within the deadline.
   failureCode?: string
   // The close REASON that accompanied `failureCode`. The code alone says a
-  // connection died; the reason says why, and the relay always supplies one
-  // (e.g. "Upstream WebSocket queue limit exceeded"). Dropping it is what made
-  // the 2026-07-17 dialin-100k failure unreadable for two weeks — the report
-  // said `1011x50` while the relay was naming the exact guard that fired.
+  // connection died; the relay's reason names the guard that fired (e.g.
+  // "Upstream WebSocket queue limit exceeded").
   failureReason?: string
 }
 

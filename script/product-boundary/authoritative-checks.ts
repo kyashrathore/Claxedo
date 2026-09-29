@@ -78,34 +78,13 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
       command: ["bun", "run", "smoke:workerd-boundary"],
     },
     {
-      label: "self-hosted production build",
-      cwd: "packages/claxedo-server",
-      command: ["bun", "run", "build:self-hosted-boundary"],
-    },
-    {
-      label: "self-hosted built process smoke",
-      cwd: "packages/claxedo-server",
-      command: ["bun", "run", "smoke:self-hosted-boundary"],
-    },
-    {
-      label: "cloud and self-hosted deployment closures",
+      label: "Worker deployment closures",
       cwd: "packages/claxedo-server",
       command: [
         "node",
         "./node_modules/vitest/vitest.mjs",
         "run",
         "src/deployments/deployment-closures.test.ts",
-        "--reporter=default",
-      ],
-    },
-    {
-      label: "self-hosted local-server public subpath",
-      cwd: "packages/claxedo-local-server",
-      command: [
-        "node",
-        "./node_modules/vitest/vitest.mjs",
-        "run",
-        "src/self-hosted-execution.test.ts",
         "--reporter=default",
       ],
     },

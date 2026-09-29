@@ -12,7 +12,6 @@ version to fall behind and no port to get wrong.
 | You are connecting from | URL | Credential |
 | --- | --- | --- |
 | Any app you install Claxedo MCP in | `https://<your control plane>/api/claxedo/mcp` | the CLI sign-in (`~/.claxedo/credentials.json`) as a bearer, or the OAuth consent the client drives when it receives the endpoint's challenge |
-| A self-hosted node | `https://<node>/api/claxedo/mcp` | as above; on an unsigned node, a loopback caller needs none |
 | A session Claxedo launched, on your machine or in a cloud VM | the loopback URL of the runtime that launched it | injected by that runtime at launch, together with `?session=<id>`; nothing else is accepted there |
 
 The loopback URLs are never something you configure. The runtime places them

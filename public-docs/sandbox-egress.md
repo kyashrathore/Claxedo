@@ -75,11 +75,11 @@ credentials configured — which is the common case, since the same account host
 the Worker — runs every hosted sandbox with unrestricted egress unless
 `CLAXEDO_SANDBOX_DRIVER=daytona` is set explicitly.
 
-Self-hosted and local deployments (`workspace-supervisor-sandbox.ts`) can
-additionally compose `vercel`, `modal`, `box`, and `docker`. They pass a policy
-only when the workspace has network-policy rows configured, and never for
-`docker`; with no rows configured the sandbox is allow-all by request, which is
-the intended single-tenant posture.
+Local deployments (`workspace-supervisor-sandbox.ts`) can additionally compose
+`vercel`, `modal`, `box`, and `docker`. They pass a policy only when the
+workspace has network-policy rows configured, and never for `docker`; with no
+rows configured the sandbox is allow-all by request, which is the intended
+single-tenant posture.
 
 ## What "unrestricted" costs you
 
@@ -114,7 +114,7 @@ plus `CLAXEDO_DAYTONA_SNAPSHOT`. That is the only hosted configuration where the
 allowlist below actually binds. Setting the variable is required even if Daytona
 credentials are present, because Cloudflare wins the auto-selection.
 
-**Self-hosted:** compose `daytona` or `vercel`. Vercel enforces names only, so a
+**Local:** compose `daytona` or `vercel`. Vercel enforces names only, so a
 policy expressed purely as CIDRs will be refused (see "Failure modes").
 
 Verify from the logs: an enforcing deployment prints **no**
@@ -156,7 +156,7 @@ directly. Hostnames only; the hosted policy carries no CIDRs.
 | Situation | What happens |
 | --- | --- |
 | Capable driver, restricted policy | Policy is passed verbatim and enforced. |
-| No policy, or `mode: "allow-all"` | Nothing to enforce. Provisioning proceeds silently — this is the intended single-tenant/self-host path. |
+| No policy, or `mode: "allow-all"` | Nothing to enforce. Provisioning proceeds silently — this is the intended single-tenant local path. |
 | `egressControl: "none"`, restricted policy | **Policy is withheld and provisioning proceeds.** The driver is handed no `net` at all, so the drivers that throw on one never see it and the drivers that would silently drop it are not pretending. A warning is emitted (below). The sandbox has unrestricted egress. |
 | Hosts-only driver (`vercel`), address-only policy | **Refused** — `status: "unavailable", error: "sandbox_egress_policy_unenforceable"`. This driver *does* enforce egress, it just cannot express this encoding, so degrading it to unrestricted would weaken a working control. Express the policy with hostnames. The hosted policy builder only ever emits hostnames, so no hosted path reaches this. |
 

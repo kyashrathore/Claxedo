@@ -36,7 +36,7 @@ All 10 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@claxedo/workspace-runtime`](https://www.npmjs.com/package/@claxedo/workspace-runtime)               | Per-workspace host runtime for agent sessions, terminals, processes, files, diffs, and relay attachment                                 |
 | [`@claxedo/agent-runtime-contract`](https://www.npmjs.com/package/@claxedo/agent-runtime-contract)     | Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events                                  |
-| [`@claxedo/workspace-relay`](https://www.npmjs.com/package/@claxedo/workspace-relay)                   | Relay/tunnel server that routes authenticated traffic to workspace runtimes, with Bun and Cloudflare adapters                           |
+| [`@claxedo/workspace-relay`](https://www.npmjs.com/package/@claxedo/workspace-relay)                   | Relay/tunnel that routes authenticated traffic to workspace runtimes, deployed as a Cloudflare Worker                                   |
 | [`@claxedo/workspace-relay-protocol`](https://www.npmjs.com/package/@claxedo/workspace-relay-protocol) | Wire types, message validation, and token verifier interfaces for the workspace relay tunnel protocol                                   |
 | [`@claxedo/sandbox-contract`](https://www.npmjs.com/package/@claxedo/sandbox-contract)                 | Dependency-neutral sandbox driver identity and credential configuration contracts                                                       |
 | [`@claxedo/sandbox-manager`](https://www.npmjs.com/package/@claxedo/sandbox-manager)                   | Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker |
@@ -48,7 +48,7 @@ All 10 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 ## Layout
 
 - `packages/claxedo-server` — hosted control plane (runs local/cloud/hybrid sessions; embeds the published OpenCode SDK host via `@claxedo/workspace-runtime/opencode`)
-- `packages/claxedo-local-server` — the desktop's self-hosted server; `packages/claxedo-server-core` — storage- and vendor-agnostic core shared by both servers
+- `packages/claxedo-local-server` — the desktop's local server; `packages/claxedo-server-core` — storage- and vendor-agnostic core shared by both servers
 - `packages/claxedo-app` — web app (Solid); `packages/claxedo-desktop` — Electron shell
 - `packages/workspace-runtime`, `workspace-relay*`, `sandbox-manager` — session execution + routing
 - `packages/{channels,connections,mcp,agent-*}` — first-party `@claxedo/*` capabilities
