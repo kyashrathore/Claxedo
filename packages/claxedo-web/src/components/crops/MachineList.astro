@@ -7,12 +7,12 @@ const places = [
   { icon: "server", name: "studio-mac", detail: "Connected with the Claxedo CLI" },
   { icon: "cloud", name: "Daytona", detail: "Cloud sandbox" },
   { icon: "cloud", name: "Modal", detail: "Cloud sandbox" },
+  { icon: "cloud", name: "Vercel", detail: "Cloud sandbox" },
   { icon: "cloud", name: "Docker", detail: "Sandbox on your Docker host" },
-  { icon: "plus-small", name: "Your own driver", detail: "One open SandboxDriver contract" },
 ] as const
 ---
 
-<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, a connected machine, or a Daytona, Modal or Docker sandbox">
+<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, a connected machine, or a Daytona, Modal, Vercel or Docker sandbox">
   <div class="app-card list">
     <p class="head">Run this session on</p>
     {places.map((place) => (

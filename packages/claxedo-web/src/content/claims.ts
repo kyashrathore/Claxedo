@@ -44,6 +44,18 @@ export const claims = [
     verifiedAt: "2026-09-28",
   },
   {
+    id: "sidebar-or-tabs",
+    publicWording: "Sessions sit in a pinned sidebar, or, with the sidebar unpinned, as tabs in the workbench header.",
+    owner: "Claxedo App",
+    evidence: [
+      "packages/claxedo-app/src/rail/view/compact-switcher.tsx",
+      "packages/claxedo-app/src/shell/view/app-shell.tsx",
+      "packages/claxedo-app/e2e/flows/12-workbench-shell.spec.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-09-29",
+  },
+  {
     id: "agent-cli-access",
     publicWording: "Use supported coding agents through Claxedo's chat UI, or run any installed agent CLI in a terminal.",
     owner: "Claxedo App",

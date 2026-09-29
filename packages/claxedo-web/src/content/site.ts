@@ -27,8 +27,8 @@ export const home = {
     claims: ["harness-coverage", "acp-client", "agent-cli-access", "core-metrics", "agent-plugins", "connected-placement"],
   },
   benchmark: {
-    title: "Faster than T3 Code and OpenCode on every core metric.",
-    subtitle: "Measured in the open Agent App Benchmark on 28 September 2026.",
+    title: "Fast, light and efficient.",
+    subtitle: "Faster than T3 Code and OpenCode on every core metric, and it idles at 0% CPU. Measured in the open Agent App Benchmark on 28 September 2026.",
     href: `${benchmark}#latest-results`,
     claims: ["core-metrics"],
     metrics: [
@@ -39,48 +39,39 @@ export const home = {
       { lead: "0%", label: "idle CPU", detail: "T3 Code idles at 1.6%, OpenCode at 20.4%." },
     ],
   },
-  place: {
-    title: "Any machine. Any sandbox.",
-    subtitle: "Run a session where the work belongs, and reopen it from anywhere.",
-    panels: [
-      {
-        title: "This computer, your machines, or a sandbox.",
-        text: "Connect another computer with the Claxedo CLI, or start a cloud sandbox on Daytona, Modal, Vercel, Cloudflare, exe.dev, Box or Docker. Every driver implements one open contract.",
-        claims: ["connected-placement", "sandbox-providers"],
-      },
-      {
-        title: "Five agents, built in.",
-        text: "Pick Claude Code, Codex, Cursor, OpenCode or Pi, then its model and effort, from the same composer. Any ACP agent can join them.",
-        claims: ["harness-coverage", "acp-client"],
-      },
-    ],
-  },
-  features: [
+  rows: [
     {
       id: "prompt",
-      title: "Build your own features with a prompt",
-      text: "Ask an agent for a page. It builds an app plugin, and the app runs it once you turn it on.",
+      title: "Extend it with a prompt.",
+      text: "Ask an agent for the feature you're missing. It builds an app plugin, and Claxedo runs it once you turn it on.",
       claims: ["app-plugins-by-prompt"],
     },
     {
-      id: "team",
-      title: "Self-host for your team on Cloudflare",
-      text: "Deploy the open control plane for your organization to your own Cloudflare account.",
+      id: "cloudflare",
+      title: "Open source. On your Cloudflare in minutes.",
+      text: "MIT licensed. Deploy the control plane for your team to your own Cloudflare account.",
       href: `${github}/blob/dev/public-docs/user-deployed-cloudflare.md`,
-      claims: ["user-deployed-cloudflare", "mit-platform"],
+      claims: ["mit-platform", "user-deployed-cloudflare"],
     },
     {
-      id: "tools",
-      title: "Your tools follow you everywhere",
-      text: "Turn on a skill or MCP server once. It reaches this computer, your machines and your sandboxes.",
+      id: "sandbox",
+      title: "Bring your own sandbox.",
+      text: "Run sessions on this computer, your other machines, or Daytona, Modal, Vercel, Cloudflare, exe.dev, Box and Docker. Every one of them runs behind the same open driver contract.",
+      claims: ["connected-placement", "sandbox-providers"],
+    },
+    {
+      id: "plugins",
+      title: "Configure agent plugins once.",
+      text: "Turn on a skill or MCP server once, and it reaches every machine and sandbox you sign into, for Claude Code, Codex, Cursor and OpenCode.",
       claims: ["agent-plugins", "agent-plugins-follow-you"],
     },
+    {
+      id: "terminal",
+      title: "GUI or terminal. Sidebar or tabs.",
+      text: "Talk to agents in Claxedo's chat, or run any agent CLI you've installed in a terminal beside it. Keep sessions in a sidebar or open them as tabs.",
+      claims: ["sessions-and-terminals", "agent-cli-access", "harness-coverage", "sidebar-or-tabs"],
+    },
   ],
-  terminal: {
-    title: "Chat or terminal. Your call.",
-    text: "Talk to an agent in Claxedo's chat, or open a terminal beside it and run any agent CLI you have installed.",
-    claims: ["sessions-and-terminals", "agent-cli-access", "harness-coverage"],
-  },
   closing: {
     text: "Open source under MIT. Works locally without an account.",
     claims: ["mit-platform", "desktop-local-mode"],

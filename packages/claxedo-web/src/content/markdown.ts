@@ -46,14 +46,9 @@ ${home.benchmark.subtitle} Results: ${home.benchmark.href}
 
 ${home.benchmark.metrics.map((metric) => `- ${metric.lead} ${metric.label}: ${metric.detail}`).join("\n")}
 
-## ${home.place.title}
+## What it does
 
-${home.place.panels.map((panel) => `- **${panel.title}** ${panel.text}`).join("\n")}
-
-## What else it does
-
-${home.features.map((feature) => `- **${feature.title}.** ${feature.text}${"href" in feature ? ` Guide: ${feature.href}` : ""}`).join("\n")}
-- **${home.terminal.title}** ${home.terminal.text}
+${home.rows.map((row) => `- **${row.title}** ${row.text}${"href" in row ? ` Guide: ${row.href}` : ""}`).join("\n")}
 
 ${home.closing.text}
 
