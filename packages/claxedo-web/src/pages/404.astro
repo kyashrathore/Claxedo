@@ -1,0 +1,25 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import SectionHead from "../components/SectionHead.astro"
+import { routes } from "../content/routes"
+---
+
+<Layout title="Page not found" description="This page doesn't exist on claxedo.com." noindex>
+  <Nav />
+  <main id="main-content" class="page">
+    <div class="page-head">
+      <SectionHead as="h1" title="This page doesn't exist.">The link may be old, or the address has a typo.</SectionHead>
+      <div class="not-found-actions">
+        <a class="btn-primary" href={routes.home}>Go to the home page</a>
+        <a class="quiet-link" href={routes.compare}>See how Claxedo compares</a>
+      </div>
+    </div>
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .not-found-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; margin-top: 2rem; }
+</style>
