@@ -1,29 +1,29 @@
 import assert from "node:assert/strict"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
+import { waitForAcpHold } from "../harness/acp/hold"
 import { readAcpRequests } from "../harness/acp/requests"
 import { acpScriptToken } from "../harness/acp/script"
+import { eventually } from "../harness/eventually"
 import { applyScriptedPluginProfile } from "../harness/scripted-plugin-profile"
 import { startStack } from "../harness/stack"
-import { frameSessionId, frameType } from "../harness/stream"
+import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
-async function waitForHold(scriptDir: string) {
-  const deadline = Date.now() + 10_000
-  while (Date.now() < deadline) {
-    const requests = await readAcpRequests(scriptDir)
-    if (requests.some((request) => request.method === "session/prompt" && JSON.stringify(request.params).includes("acp-script:h21-hold"))) return
-    await Bun.sleep(50)
-  }
-  throw new Error("H21 held turn never reached the scripted ACP agent")
+function idles(stream: EventStream, sessionId: string) {
+  return stream.frames.filter((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionId).length
+}
+
+async function resumed(scriptDir: string, directory: string) {
+  const requests = await readAcpRequests(scriptDir)
+  return requests.some((request) => request.method === "session/resume" && request.params.cwd === directory) ? true : undefined
 }
 
 export async function run() {
   const stack = await startStack({ label: "h21-workspace-restart" })
   try {
     const api = new ClaxedoApi(stack.url)
-    const [workspaceA, workspaceB] = await Promise.all([
-      stack.daemon.makeWorkspace("h21-running"), stack.daemon.makeWorkspace("h21-restarting"),
-    ])
+    const workspaceA = await stack.daemon.makeWorkspace("h21-running")
+    const workspaceB = await stack.daemon.makeWorkspace("h21-restarting")
     await stack.acp.write("h21-hold", { steps: [{ kind: "hold", name: "h21-running" }, { kind: "text", text: "H21 A released" }] })
     await stack.acp.write("h21-reply", { steps: [{ kind: "text", text: "H21 B continued" }] })
     const streamA = await stack.events(workspaceA.directory)
@@ -34,36 +34,42 @@ export async function run() {
     await streamB.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionB.id, { label: "H21 initial B idle" })
     assert.ok(streamB.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === sessionB.id))
     assert.match(assistantText(await api.messages(workspaceB.directory, sessionB.id)), /H21 B continued/)
-    assert.equal((await api.session(workspaceB.directory, sessionB.id)).id, sessionB.id)
     await api.promptAsync(workspaceA.directory, sessionA.id, acpScriptToken("h21-hold"))
-    await waitForHold(stack.acp.scriptDir)
-    // The install answers once every running runtime took the change, and
-    // workspace A's runtime takes it only after its held turn; the claim under
-    // test is what B does in the meantime.
+    await waitForAcpHold(stack.acp.scriptDir, "h21-running")
     const change = applyScriptedPluginProfile(stack.url, {
       harnessIds: ["acp"],
       servers: { h21_change: { type: "streamable-http", url: "https://mcp.example.test/h21" } },
     })
     try {
-      await assert.doesNotReject(Promise.race([
-        api.promptAsync(workspaceB.directory, sessionB.id, acpScriptToken("h21-reply")),
-        Bun.sleep(8_000).then(() => { throw new Error("workspace B prompt admission waited for workspace A") }),
-      ]), "H-8: workspace B must admit a turn while workspace A is running")
-      await streamB.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionB.id && streamB.frames.filter((item) => frameType(item) === "session.idle" && frameSessionId(item) === sessionB.id).length >= 2,
-        { label: "H-8: workspace B turn after ACP config restart while A is running", timeoutMs: 8_000 })
-      assert.ok(streamB.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === sessionB.id))
-      assert.match(assistantText(await api.messages(workspaceB.directory, sessionB.id)), /H21 B continued/)
-      assert.equal((await api.session(workspaceB.directory, sessionB.id)).id, sessionB.id)
-      const requests = await readAcpRequests(stack.acp.scriptDir)
-      assert.ok(requests.some((request) => request.method === "session/resume" && request.params.cwd === workspaceB.directory), "H-8: B did not restart its ACP connection while A ran")
+      try {
+        await eventually("workspace B's ACP session/resume", () => resumed(stack.acp.scriptDir, workspaceB.directory), 8_000)
+      } catch (error) {
+        throw new Error(`H-8: workspace B did not restart its ACP connection while workspace A's turn ran: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+      }
+      assert.equal(idles(streamA, sessionA.id), 0, "H-8: workspace A's turn ended before B restarted")
+      assert.equal(await resumed(stack.acp.scriptDir, workspaceA.directory), undefined, "workspace A restarted during its own turn")
+      const since = streamB.frames.length
+      await api.promptAsync(workspaceB.directory, sessionB.id, acpScriptToken("h21-reply"))
+      await streamB.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionB.id
+        && streamB.frames.indexOf(frame) >= since,
+        { label: "H-8: workspace B turn after its ACP config restart while A is running", timeoutMs: 8_000 })
+      assert.equal(countReplies(assistantText(await api.messages(workspaceB.directory, sessionB.id))), 2)
+      assert.equal((await api.session(workspaceB.directory, sessionB.id)).lastTurn?.status, "completed")
+      assert.equal(idles(streamA, sessionA.id), 0, "H-8: workspace A's turn ended before B's turn completed")
       console.log("H21: workspace B restarted and completed a turn while A remained active")
     } finally {
       await stack.acp.release("h21-running")
       await streamA.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionA.id, { label: "H21 A idle after release" })
       assert.equal((await change).active, true)
     }
+    await eventually("workspace A's deferred ACP session/resume", () => resumed(stack.acp.scriptDir, workspaceA.directory))
+    assert.match(assistantText(await api.messages(workspaceA.directory, sessionA.id)), /H21 A released/)
     assert.equal(stack.egress.attempts.length, 0)
   } finally {
     await stack.close()
   }
+}
+
+function countReplies(text: string) {
+  return text.split("H21 B continued").length - 1
 }

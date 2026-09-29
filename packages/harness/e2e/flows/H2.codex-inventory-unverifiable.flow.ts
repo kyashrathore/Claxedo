@@ -14,7 +14,6 @@ export async function run() {
       harness: { id: "codex", access: "native" },
       model: { providerId: "codex", modelId: "gpt-5.5" },
       state: "needs_action",
-      stored: "cancelled",
       command: true,
       cleanup: "owned",
     })

@@ -35,6 +35,16 @@ test("wire normalization keeps temporary runtime identities linked", () => {
   expect(result.stored.error).toContain(`-p ${result.live.pid}`)
 })
 
+test("an OpenCode form ID keeps one placeholder across its question key, event ID and reply route", () => {
+  const form = "frm_0ebba14e0001EFuA7J5oM7wMZO"
+  const result = normalizeWireCorpus({ key: `question:${form}`, id: `question.replied:ses_11111111:${form}`, route: `/question/${form}/reply` }) as
+    { key: string; id: string; route: string }
+  const placeholder = result.key.slice("question:".length)
+  expect(placeholder).not.toContain("frm_")
+  expect(result.id.endsWith(`:${placeholder}`)).toBe(true)
+  expect(result.route).toBe(`/question/${placeholder}/reply`)
+})
+
 test("goal event IDs normalize their embedded second timestamps", () => {
   const first = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790334985" })
   const second = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790337074" })

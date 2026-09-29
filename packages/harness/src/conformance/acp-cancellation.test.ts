@@ -9,6 +9,8 @@ import { startScriptedAcpWebSocket } from "../../e2e/harness/acp/websocket"
 import { writeAcpScript, acpScriptToken, releaseAcpHold } from "../../e2e/harness/acp/script"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { pollUntil } from "./test-support/poll"
+import { collect, reached, wireFixture } from "./test-support/acp-wire"
+import type { RoutedEvent } from "../contract"
 
 test("ACP acknowledged cancellation with a still-open prompt reaches its deadline without claiming terminal, and reads degraded until the turn ends", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "acp-cancellation-"))
@@ -87,4 +89,31 @@ test("ACP never submits a prompt whose turn was stopped while its configuration 
     expect((await readAcpRequests(directory)).filter((row) => row.method === "session/prompt")).toEqual([])
     expect(events).toEqual([{ type: "session-status", status: "idle" }, { type: "cancelled", sessionId: "s1" }])
   } finally { await releaseAcpHold(directory, "configuring"); await drained; await context.close() }
+})
+
+test("ACP quiet expiry fails the turn once, drops the provider's late output and keeps the session fenced after it settles", async () => {
+  const f = wireFixture((_peer, message) => message.method === "session/prompt", { promptTimeoutMs: 35 })
+  try {
+    const session = await f.start()
+    const events: RoutedEvent[] = []
+    const running = (async () => { for await (const routed of f.transport.send(session, f.turn, f.turnBroker())) events.push(routed) })()
+      .then(() => "completed", (error: unknown) => error)
+    const peer = f.peers[0]!
+    const prompt = await reached(() => peer.messages.find((row) => row.method === "session/prompt"))
+    peer.text(session.binding.upstreamSessionId, "before silence")
+    await reached(() => peer.messages.find((row) => row.method === "session/cancel"))
+    peer.text(session.binding.upstreamSessionId, "after expiry")
+    peer.reply(prompt, { stopReason: "end_turn" })
+    expect(await running).toMatchObject({ code: "session", detail: { acpOutcome: "uncertain" }, cause: { code: "timeout" } })
+    await expect(collect(f.transport.send(session, f.turn, f.turnBroker()))).rejects.toThrow("outcome is uncertain")
+    expect(await f.transport.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1_000, signal: new AbortController().signal }))
+      .toEqual({ execution: "unknown", cleanup: "unknown" })
+    expect(await f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } }))
+      .toEqual({ state: "refused", reason: "ACP session outcome is uncertain" })
+    const text = events.flatMap(({ event }) => event.type === "text-delta" ? [event.delta] : [])
+    expect(text.join("")).toBe("before silence")
+    expect(events.some(({ event }) => event.type === "finish" || event.type === "cancelled")).toBe(false)
+    expect(peer.messages.filter((row) => row.method === "session/cancel")).toHaveLength(1)
+    expect(peer.messages.filter((row) => row.method === "session/prompt")).toHaveLength(1)
+  } finally { await f.transport.dispose() }
 })

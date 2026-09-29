@@ -1224,6 +1224,23 @@ describe("cancellation outcomes", () => {
     } finally { release(); await f.dispose() }
   })
 
+  test("a stop whose provider ends the turn with its ordinary finish before answering records the turn cancelled", async () => {
+    const control = controlledTurn("s")
+    const transport = new FakeTransport({ turn: () => control.events, drainsAfterAbort: true, cancel: async () => {
+      control.finish()
+      await until(() => f.store.getSession("s")?.status === "idle", "the producer to finalize the turn")
+      return { execution: "terminal", cleanup: "unknown" }
+    } })
+    const f = createHostFixture({ transports: { pi: transport }, recovery: { budgets } })
+    try {
+      const { refused: stopped } = await heldTurn(f)
+      expect(stopped.facts.execution.value).toBe("terminal")
+      expect(stopped.facts.persistence.value).toBe("committed")
+      expect(f.store.getSession("s")?.lastTurn).toMatchObject({ status: "cancelled", reason: "abort" })
+      expect(transport.cancels).toHaveLength(1)
+    } finally { control.finish(); await f.dispose() }
+  })
+
   test("a Claude-shaped stop that aborts its stream and answers unknown ends the turn cancelled on the first stop", async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })

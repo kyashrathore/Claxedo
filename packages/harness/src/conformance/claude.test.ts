@@ -788,3 +788,17 @@ describe("Claude SDK protocol", () => {
   })
 
 })
+
+test("the /compact Claude declares runs Claude's own compaction", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  try {
+    expect((await context.transport.commands.list({ session: context.session() })).some((command) => command.name === "compact")).toBe(true)
+    expect((await context.collect("t1", "Reply with exactly this one token: CLAUDEWARM")).some((row) => row.event.type === "finish")).toBe(true)
+    const before = state.server.requests.length
+    const events = await context.collect("t2", "/compact")
+    expect(events.some((row) => row.event.type === "finish")).toBe(true)
+    const compaction = state.server.requests.slice(before).map((request) => request.prompt)
+    expect(compaction.some((prompt) => prompt.includes("<summary>") && prompt.includes("CLAUDEWARM"))).toBe(true)
+  } finally { await context.close(); await state.close() }
+}, 60_000)

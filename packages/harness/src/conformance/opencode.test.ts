@@ -643,3 +643,20 @@ for (const machineLoginAllowed of [true, false]) test(`a machine-env provider ke
     }
   } finally { await context.close() }
 }, 60_000)
+
+test("a prompt naming a declared OpenCode command runs that command, not its literal text", async () => {
+  const context = await setupConformance({ name: "opencode-command", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+      command: { h12: { description: "H12 proof", template: "Reply with exactly this one token: H12COMMAND$ARGUMENTS" } },
+    }) })
+  try {
+    const server = (context.backend as OpenCodeBackend).server
+    const declared = await context.transport.commands!.list({ session: context.session })
+    expect(declared.map((command) => command.name)).toContain("h12")
+    const events = await collect(context, context.turn("/h12 RUN"))
+    expect(events.some((event) => event.event.type === "finish")).toBe(true)
+    const prompts = server.requests.map((request) => request.prompt)
+    expect(prompts.some((prompt) => prompt.includes("H12COMMAND RUN") || prompt.includes("H12COMMANDRUN"))).toBe(true)
+    expect(prompts.some((prompt) => prompt.includes("/h12 RUN"))).toBe(false)
+  } finally { await context.close() }
+}, 60_000)

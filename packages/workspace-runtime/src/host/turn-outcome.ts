@@ -39,6 +39,10 @@ function failed(error: string, facts: FailureFacts): AgentTurnOutcome {
   }
 }
 
+export function stoppedOutcome(outcome: AgentTurnOutcome, stopSent: boolean): AgentTurnOutcome {
+  return stopSent && outcome.status === "completed" ? cancelledOutcome() : outcome
+}
+
 function cancelledOutcome(): AgentTurnOutcome {
   return { status: "cancelled", completedAt: Date.now(), reason: "abort" }
 }
