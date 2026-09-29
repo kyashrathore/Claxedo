@@ -33,7 +33,7 @@ for (const { key, label } of featureRows) {
 }
 ---
 
-<Layout title="Claxedo vs. the alternatives — a sourced comparison" description="How Claxedo compares to Paseo, Synara, Conductor, Superset, T3 Code, and OpenCode — a feature matrix with first-party sources.">
+<Layout title="Claxedo vs. the alternatives" description="How Claxedo compares to Paseo, Synara, Conductor, Superset, T3 Code and OpenCode, feature by feature, with a first-party source for every claim.">
   <Nav active="compare" />
   <main id="main-content" class="page">
     <div class="page-head">
@@ -70,7 +70,7 @@ for (const { key, label } of featureRows) {
       </div>
       <p class="legend">✓ Yes · ✓* Partial, see notes · — No</p>
       <ul class="notes">{partials.map((p) => <li><strong>{p.product}</strong>, {p.feature.toLowerCase()}: {p.note}</li>)}</ul>
-      <p class="takeaway">Almost everyone falls short on being fully open or on working for more than one person. Only Paseo is a real self-host peer.</p>
+      <p class="takeaway">Most tools are either closed or built for one person. Claxedo is open, self-hostable and made for teams.</p>
     </section>
 
     {rows.length > 0 && <section class="section">
@@ -111,6 +111,7 @@ for (const { key, label } of featureRows) {
   .feature-label { display: block; }
   .feature-desc { display: block; margin-top: .25rem; color: var(--ink-soft); font-size: .8125rem; line-height: 1.45; text-wrap: pretty; }
   .matrix td { text-align: center; vertical-align: middle; }
+  .matrix td, .matrix thead th:not(:first-child) { padding-inline: .7rem; }
   .matrix .matrix-us { background: #f7f7f7; }
   .matrix thead .matrix-us { font-weight: 500; }
   .tick { color: var(--ink); }
@@ -129,5 +130,7 @@ for (const { key, label } of featureRows) {
   .tracked dd { line-height: 1.6; }
   @media (max-width: 47.99rem) {
     .deep-cards { grid-template-columns: minmax(0, 1fr); }
+    .matrix { min-width: 0; }
+    .matrix tbody th { min-width: 11rem; }
   }
 </style>
