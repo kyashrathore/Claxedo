@@ -500,10 +500,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       })
       const unsubscribeControl = bus.subscribe((event) => {
         if (!owns(event)) return
-        const frame = { directory: "directory" in event && event.directory ? event.directory : options.directory, payload: unownedLifecyclePayload(event) }
-        const sessionId = workspaceRuntimeEventSessionId(event)
-        if (sessionId) options.eventHub.sequence(sessionId, () => emit(frame))
-        else emit(frame)
+        emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: unownedLifecyclePayload(event) })
       })
       return () => {
         unsubscribeCompat()

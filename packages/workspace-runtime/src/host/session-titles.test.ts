@@ -119,20 +119,20 @@ describe("a generated title", () => {
 })
 
 describe("a title side turn that never answers", () => {
-  test("is dropped at its deadline and releases the turnless frames that waited behind it", async () => {
+  test("is dropped at its deadline and holds no other frame meanwhile", async () => {
     const f = createHostFixture({ transports: { pi: new FakeTransport() } })
     fixtures.push(f)
     const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_hangs", harness: PI }))
     const titles = createSessionTitleOwner({ store: f.store, eventHub: f.eventHub, deadlineMs: 20 })
     const attached = await f.runtime.transportFor(id)
     const seen = sessionFrames(f, id)
-    const generated = titles.generate({ sessionId: id, directory: attached.session.directory, turnMessageId: "msg_asking",
+    const generated = titles.generate({ sessionId: id, directory: attached.session.directory,
       transport: { naming: { generateTitle: () => new Promise<string>(() => {}) } }, session: attached.session })
-    f.eventHub.publishGlobal({ directory: attached.session.directory, payload: sessionStatus(id, { type: "idle" }) })
-    expect(seen).toEqual([])
+    f.eventHub.publishGlobal({ directory: attached.session.directory, payload: sessionStatus(id, { type: "busy" }) })
+    expect(seen).toEqual(["status:busy"])
     expect(await Promise.race([generated.then(() => "dropped"), new Promise((resolve) => setTimeout(() => resolve("still waiting"), 500))]))
       .toBe("dropped")
-    expect(seen).toEqual(["status:idle"])
+    expect(seen).toEqual(["status:busy"])
     expect(f.store.getSession(id)?.titleSource).toBeUndefined()
   })
 })
