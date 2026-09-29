@@ -12,7 +12,8 @@ export type HarnessPermissionModes = {
   appliesFrom: PermissionModesApplyFrom
   /**
    * The mode a session runs under before anyone has chosen, as the transport
-   * launches it. Absent where the harness's own configuration decides instead.
+   * launches it. Absent where the harness's own configuration decides instead,
+   * so a session that chose nothing names no mode.
    */
   defaultModeId?: string
 }
@@ -62,9 +63,9 @@ export const CLAUDE_PERMISSION_MODES = {
  * change closes the session's agent and the next turn resumes it with the new
  * options.
  *
- * A session that chose nothing runs `auto-review`, the auto rung. Both
- * sandboxed modes need Cursor's `cursorsandbox` binary; where it is missing the
- * SDK refuses the turn rather than run it unsandboxed.
+ * No default: with nothing chosen the transport passes no sandbox options and
+ * Cursor's own configured defaults decide. A sandboxed mode needs Cursor's
+ * `cursorsandbox` binary, which the SDK refuses to run without.
  *
  * `force` is deliberately NOT mapped to a rung. It expires a wedged run after a
  * crashed CLI — a recovery flag, not a permission control — and treating it as
@@ -78,7 +79,6 @@ export const CURSOR_PERMISSION_MODES = {
     mode("unsandboxed", "Unsandboxed", "Run tool calls directly, with no sandbox", "full"),
   ],
   appliesFrom: "next-turn",
-  defaultModeId: "auto-review",
 } satisfies HarnessPermissionModes
 
 /**

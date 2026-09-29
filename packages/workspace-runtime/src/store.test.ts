@@ -2938,7 +2938,7 @@ void describe("RuntimeStore", () => {
     assert.equal(config("native")?.model, undefined)
 
     store.updateSessionConfig("native", { harness: { id: "cursor", access: "native" } })
-    assert.equal(config("native")?.permissionMode, "auto-review")
+    assert.equal(config("native")?.permissionMode, null, "Cursor declares no default mode: its transport applies none until the person picks one")
     assert.deepEqual(config("native")?.model, { providerID: "cursor", modelID: "auto" })
 
     store.bindSession({ sessionId: "engine", directory: "/work", agentSessionId: "a2" })
