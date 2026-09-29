@@ -1,7 +1,7 @@
 {
   "name": "@claxedo/server",
   "version": "1.0.0",
-  "description": "Self-hostable control plane for Claxedo workspaces and sessions",
+  "description": "Claxedo control plane for workspaces and sessions",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -40,8 +40,6 @@
     "node": ">=22 <25"
   },
   "scripts": {
-    "dev": "CLAXEDO_WAKES=${CLAXEDO_WAKES:-1} CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS=${CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS:-http://localhost:4444,http://127.0.0.1:4444} node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx --watch src/deployments/self-hosted-node/index.ts",
-    "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/self-hosted-node/index.ts",
     "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
     "deploy:hosted": "bun run scripts/deploy/deploy-hosted.ts",
@@ -57,8 +55,6 @@
     "auth:migration:generate": "node --import tsx scripts/deploy/generate-better-auth-d1-migration.ts",
     "typecheck:auth-d1": "tsc --noEmit -p tsconfig.auth-d1.json",
     "typecheck:services": "tsc --noEmit -p tsconfig.services.json",
-    "build:self-hosted-boundary": "bun run scripts/boundary/build-self-hosted.ts",
-    "smoke:self-hosted-boundary": "node scripts/boundary/smoke-self-hosted.mjs",
     "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
     "smoke:workerd-boundary": "node --import tsx scripts/boundary/smoke-workerd.ts",
     "smoke:central": "bun run scripts/smoke/smoke-central.ts",
@@ -72,8 +68,6 @@
     "test": "node scripts/test/unit.mjs",
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
     "rebuild:native": "npm rebuild better-sqlite3",
-    "smoke:self-hosted-restart": "./scripts/smoke/self-hosted-restart.sh",
-    "smoke:self-hosted-upgrade": "./scripts/smoke/self-hosted-upgrade.sh",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "dependencies": {

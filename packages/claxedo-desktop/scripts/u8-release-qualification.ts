@@ -23,7 +23,6 @@ export const REQUIRED_BOUNDARY_MANIFESTS = [
   "host-connector",
   "server-cloud-node",
   "server-workerd",
-  "server-self-hosted",
   "desktop-main",
   "desktop-account",
   "desktop-renderer-local",
@@ -52,7 +51,6 @@ export const REQUIRED_RELEASE_GATES = [
   "hostedDevelopmentIdentity",
   "betaCallbackRegistration",
   "productionCallbackRegistration",
-  "selfHostedUpgrade",
   "remoteAccessHardCut",
 ] as const
 
@@ -405,7 +403,6 @@ const RELEASE_GATE_RESULT_FIELDS = {
   hostedDevelopmentIdentity: ["developmentIdentityConfigured", "sessionValidated", "tokenExchangeValidated"],
   betaCallbackRegistration: ["publicClientRegistered", "loopbackCallbackRegistered", "schemeCallbackRegistered"],
   productionCallbackRegistration: ["publicClientRegistered", "loopbackCallbackRegistered", "schemeCallbackRegistered"],
-  selfHostedUpgrade: ["oldVersionStarted", "upgradeCompleted", "dataPreserved", "newVersionStarted"],
   remoteAccessHardCut: ["preflight", "maintenanceEntered", "legacyRetired", "retirementVerified", "newAuthorityVerified", "maintenanceExited"],
 } as const
 

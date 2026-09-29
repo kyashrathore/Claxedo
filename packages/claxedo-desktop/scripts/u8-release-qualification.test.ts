@@ -142,7 +142,6 @@ function fixture() {
     hostedDevelopmentIdentity: { developmentIdentityConfigured: true, sessionValidated: true, tokenExchangeValidated: true },
     betaCallbackRegistration: { publicClientRegistered: true, loopbackCallbackRegistered: true, schemeCallbackRegistered: true },
     productionCallbackRegistration: { publicClientRegistered: true, loopbackCallbackRegistered: true, schemeCallbackRegistered: true },
-    selfHostedUpgrade: { oldVersionStarted: true, upgradeCompleted: true, dataPreserved: true, newVersionStarted: true },
     remoteAccessHardCut: { preflight: true, maintenanceEntered: true, legacyRetired: true, retirementVerified: true, newAuthorityVerified: true, maintenanceExited: true },
   }
   const gate = (key: string, options: {
@@ -363,14 +362,14 @@ describe("U8 release qualification", () => {
 
   test("rejects generic release-gate results without the gate's semantic proof", () => {
     const input = fixture()
-    const gateFile = input.gateFiles.get("selfHostedUpgrade")!
+    const gateFile = input.gateFiles.get("remoteAccessHardCut")!
     const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
     gate.results = { completed: true }
     fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
-    input.evidence.releaseGates.selfHostedUpgrade.sha256 = hash(gateFile)
+    input.evidence.releaseGates.remoteAccessHardCut.sha256 = hash(gateFile)
     input.writeEvidence()
 
-    expect(() => qualify(input)).toThrow("release gate selfHostedUpgrade.results keys differ")
+    expect(() => qualify(input)).toThrow("release gate remoteAccessHardCut.results keys differ")
   })
 
   test("binds each native credential gate to its own platform artifact", () => {

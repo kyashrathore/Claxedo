@@ -3,129 +3,17 @@ import path from "node:path"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 /**
- * What each server deployment entry closes over.
+ * What each Cloudflare Worker entry of this package closes over.
  *
- * This package ships one Node entry — the single-binary
- * (`self-hosted-node`) that runs local workspaces — plus the Better Auth +
- * D1 worker compositions. Entries share `src/`, so the only
- * thing keeping them apart is which modules each entry can reach — and
- * reachability is not visible in a composition file, which lists what a
- * deployment mounts rather than what its graph drags along.
- *
- * Scope is deliberately narrow, because most of this boundary is already
- * enforced and a second copy of a rule is a second thing to keep in step:
- *
-
- *   - `@claxedo/local-server`'s own `self-hosted-execution.test.ts` already
- *     forbids every production file in this package from reaching a deep
- *     `@claxedo/local-server/...` path — but it constrains which subpath, not
- *     which deployment. Under that rule a cloud entry could import the desktop
- *     product's execution surface through the blessed subpath and pass.
- *   - `local-product-contract.test.ts` / `hosted-core-app.test.ts`
- *     pin the mounted route inventories, which is a different question from
- *     the import graph: a module can be reached without mounting a route.
- *
- * So what is left, and what this file adds, is: the Node cloud entry had no
- * import-graph gate at all, and no entry was ever checked for reaching the
- * desktop package.
+ * The entries share `src/`, so the only thing keeping them apart is which
+ * modules each can reach, and reachability is not visible in a composition
+ * file: it lists what a deployment mounts rather than what its graph drags
+ * along. `hosted-core-app.test.ts` pins the mounted route inventory, which is a
+ * different question: a module can be reached without mounting a route.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "../..")
 
-/**
- * Baselines are measured directly from the entries themselves, with
- * `runtimeOnly: true` — the edges that survive compilation, i.e. what the
- * deployment can actually execute. The ceilings are the measured values with
- * no headroom on purpose: a ceiling that leaves slack lets a closure grow by a
- * fifth without anyone reading it, and the point of a recorded number is that
- * it gets read when it changes. Growth is a deliberate one-line bump; a fall
- * should lower the number with it.
- */
-const ENTRIES = [
-  // self-hosted-node's closure reaches `@claxedo/sandbox-contract` (the
-  // dependency-neutral driver identity and credential schema shared with
-  // sandbox-manager), `deployments/route-ownership.ts` (the composition guard
-  // installed alongside the hosted core), the self-host-only
-  // history/provenance adapters, durable outbox, and ledger adapter, the
-  // pinned read-only `tokentracker-cli` scanner/pricing library, and the
-  // canonical `@claxedo/workspace-relay-protocol` lease TTL contract reached
-  // through runtime authority.
-  //
-  // It also reaches `session/list.ts`'s `hostedSessions()` path into
-  // `authority/hosted-session-pull.ts`: this single-binary control plane
-  // answers `/api/control/sessions` for workspaces it routes to a remote
-  // host, not only ones it runs locally, and shares the `authority/
-  // relay-token-record.ts` dedup with the hosted entries (self-hosted mints
-  // relay runtime tokens through the same owner). It keeps its own full
-  // `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`, which
-  // also enrolls this machine) and its own usage ledger; that service composes
-  // hosted-shared's `hosted-remote-access-service.ts` for the owner's revoke,
-  // so a `claxedo connect` machine is revoked the same way on both planes.
-  //
-  // The workspace `SessionEnv` is split into focused factory, protocol,
-  // runtime-env, and admission modules, and the local signed-web
-  // composition's Better Auth native-client is reached as well.
-  //
-  // `@claxedo/helpers` is the canonical owner of the record-narrowing guards
-  // that `workspace/signed-access.ts`, `workspace/routes/index.ts`,
-  // `workspace/runtime-token-guards.ts`, `workspace/local-host.ts`, and
-  // `hosts/workspace-runtime/workspace-session-admission.ts` each used to
-  // define privately. Its `/guards` subpath has zero imports and no host APIs,
-  // so it adds one package name and no transitive edges.
-  //
-  // `@claxedo/mcp` is the first-party MCP endpoint (`/api/claxedo/mcp`); the
-  // node mounts it through `src/mcp/first-party-mcp.ts`, the one module the
-  // hosted worker shares with it. The package reaches only the MCP SDK, hono,
-  // zod, helpers and the runtime contract.
-  // +2 modules: `src/mcp/oauth-protected-resource.ts` answers the RFC 9728
-  // document that endpoint's own 401 names, and
-  // `src/platform/auth/mcp-oauth-scopes.ts` holds the scope and resource names
-  // it shares with the OAuth provider. The scope module stays dependency-free
-  // on purpose — it is in every auth composition's closure, the Worker's
-  // included.
-  // +1 module: `src/mcp/oauth-credential.ts`, which turns a consented access
-  // token into an MCP credential. Consent revocation adds platform/auth/oauth-consent-revocation.ts; 139/38.
-  // +1 package: `@claxedo/tasks`, reached only through
-  // `src/tasks/self-hosted-composition.ts` — the SIGNED posture's Tasks
-  // composition, which `self-hosted-node/start.ts` selects from the composed
-  // `services.auth.config.enabled`.
-  // +1 package: `@claxedo/egress-broker`, whose mount policy — the
-  // `/bindings/*` pattern, the loopback gate and the CORS carve-out — this
-  // binary shares with the desktop composition rather than hand-typing. It
-  // holds the credential values and may bind 0.0.0.0, so it is a broker host;
-  // the package reaches only jose, @hono/node-server and the runtime contract.
-  // The host-connect control plane this node serves for a `claxedo connect`
-  // fleet is four modules of the closure: `routes/hosted/host-enrollment.ts`
-  // owns invitations, machine beats, acquire and scope;
-  // `workspace/host-assignment-handlers.ts` owns the owner assigning a directory
-  // on an enrolled machine, which the self-host workspace routes dispatch to
-  // on a `hostId` body; hosted-shared's `hosted-remote-access-service.ts`
-  // owns revoke; `platform/http/status.ts` is how the two routes answer an
-  // authority refusal with its own status.
-  //
-  // `@claxedo/agent-runtime-contract` is a package edge, reached from
-  // `src/channels/control-plane.ts` so a channel Stop decodes the outcome its
-  // workspace runtime answers with instead of reading fields off the JSON.
-  // +2 modules: `session/deferred-turn-grant.ts`, the signed proof a
-  // background turn redeems in place of the credential it no longer holds,
-  // which the embedded runtime policy mints and redeems in process over the
-  // same key the HTTP oracle uses; and `platform/auth/runtime-token-keys.ts`,
-  // the key-pair loader it shares with the owner grant, unreached here before
-  // because this node composes no owner grants. No package edge.
-  // +1 module: `routes/hosted/host-session-rows.ts`, the intake for the
-  // session rows an enrolled machine publishes. No package edge.
-  // +1 module: `authority/pulled-session.ts`, the one reader of a session
-  // pull's answer that both pulls share. No package edge.
-  // +1 module: `deployments/private-repo-hosts.ts`, the one reader of
-  // CLAXEDO_PRIVATE_REPO_HOSTS that the self-hosted and hosted deployments
-  // share. No package edge.
-  // `script/product-boundary/policies/server.ts` holds the review; this is the
-  // same measurement recorded a second time, so the two must agree. 130/39.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 130, packages: 39 },
-] as const
-
-/** The remaining cloud compositions. */
-const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
 const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
 const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
 const BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY =
@@ -133,6 +21,18 @@ const BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY =
 const BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY =
   "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
 const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
+
+/**
+ * Measured with `runtimeOnly: true`, the edges that survive compilation, and
+ * recorded with no headroom: a fall lowers the number with it, and growth is a
+ * deliberate bump someone reads. The locked entry sits below the positive
+ * control's floor and is measured in its own test.
+ */
+const ENTRIES = [
+  { name: "candidate", entry: BETTER_AUTH_D1_CANDIDATE_ENTRY, modules: 104, packages: 20 },
+  { name: "candidate-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 148, packages: 22 },
+  { name: "candidate-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 153, packages: 22 },
+] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
   return sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, ...options })
@@ -336,20 +236,15 @@ describe("server deployment entry closures", () => {
     }
   })
 
-  it("keeps the desktop package out of both cloud entries", () => {
+  it("keeps the desktop package out of every Worker entry", () => {
     // `@claxedo/local-server` is the desktop product: PTY proxying, the local
-    // credential store, the embedded Workspace Runtime, the OpenCode compat
-    // routes. `self-hosted-node` reaches it on purpose and only through the
-    // `self-hosted-execution` port, because the single binary genuinely runs
-    // local workspaces — that is why this rule is scoped to the cloud entries
-    // rather than to every entry.
-    //
-    // Nothing else catches this. The Worker's forbidden-bare list names
-    // `@claxedo/workspace-runtime` and `better-sqlite3` but not
-    // `@claxedo/local-server`, and neither walk follows a bare specifier — so
-    // a cloud entry importing the desktop package would drag none of the
-    // named packages into its own graph and would pass every existing gate.
-    const offenders = CLOUD_ENTRIES.flatMap(({ name, entry }) =>
+    // credential store, the embedded Workspace Runtime. The Worker's
+    // forbidden-bare list names `@claxedo/workspace-runtime` and
+    // `better-sqlite3` but not `@claxedo/local-server`, and neither walk
+    // follows a bare specifier, so an entry importing the desktop package would
+    // drag none of the named packages into its own graph and pass every other
+    // gate.
+    const offenders = ENTRIES.flatMap(({ name, entry }) =>
       closure(entry)
         .packages.filter((pkg) => pkg === "@claxedo/local-server")
         .map((pkg) => `${name} -> ${pkg}`),
