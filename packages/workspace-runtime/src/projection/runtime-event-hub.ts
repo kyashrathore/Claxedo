@@ -1,6 +1,5 @@
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { createSessionOrder, type SessionSlot } from "./session-order"
 
 type Subscriber = (event: CompatEnvelope) => void
 type RuntimeSubscriber = (event: RuntimeEventEnvelope) => void
@@ -28,10 +27,6 @@ export type RuntimeEventHub = {
   subscribeGlobal: (fn: Subscriber) => () => void
   publishRuntime: (event: RuntimeEventEnvelopeInput) => void
   subscribeRuntime: (fn: RuntimeSubscriber) => () => void
-  /** Holds the session's later frames until the slot closes; see `SessionSlot`. */
-  openSlot: (sessionId: string, turnMessageId: string) => SessionSlot
-  /** Delivers a session frame published outside the hub in the same order as the hub's own. */
-  sequence: (sessionId: string, send: () => void) => void
 }
 
 export type RuntimeEventPublishers = Pick<RuntimeEventHub, "publishGlobal" | "publishRuntime">
@@ -58,24 +53,20 @@ export function createRuntimeEventHub(): RuntimeEventHub {
       }
     }
   }
-  const order = createSessionOrder()
   return {
     publishGlobal(event) {
-      order.global(event, () => publish(subscribers, event))
+      publish(subscribers, event)
     },
     subscribeGlobal(fn) {
       subscribers.add(fn)
       return () => subscribers.delete(fn)
     },
     publishRuntime(event) {
-      const envelope = runtimeEventEnvelope(event)
-      order.runtime(envelope, () => publish(runtimeSubscribers, envelope))
+      publish(runtimeSubscribers, runtimeEventEnvelope(event))
     },
     subscribeRuntime(fn) {
       runtimeSubscribers.add(fn)
       return () => runtimeSubscribers.delete(fn)
     },
-    openSlot: (sessionId, turnMessageId) => order.open(sessionId, turnMessageId, (event) => publish(subscribers, event)),
-    sequence: order.sequence,
   }
 }

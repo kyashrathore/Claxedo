@@ -98,40 +98,38 @@ describe("a generated title", () => {
     expect(seen.slice(seen.indexOf("idle"))).toEqual(["idle", "title"])
   })
 
-  test("goes out ahead of every frame of a turn that started while it was pending", async () => {
+  test("never delays a turn sent while it is pending, and lands whenever it answers", async () => {
     const title = deferredTitle()
     const f = createHostFixture({ transports: { pi: title.transport } })
     fixtures.push(f)
-    const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_before_next", harness: PI }))
+    const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_pending_next", harness: PI }))
     const seen = sessionFrames(f, id)
     await f.runtime.turns.start({ sessionId: id, parts: [{ type: "text", text: "Plan the release" }], origin: LOOPBACK_ORIGIN })
     await title.asked
     const firstIdle = seen.length
     await f.runtime.turns.start({ sessionId: id, parts: [{ type: "text", text: "Ship it" }], origin: LOOPBACK_ORIGIN })
-    for (let attempt = 0; attempt < 200 && title.transport.turns.length < 2; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
-    await f.runtime.turns.whenIdle(id)
-    expect(seen.slice(firstIdle)).toEqual([])
-    title.answer("Generated title")
+    expect(seen.slice(firstIdle)[0]).toBe("status:busy")
     for (let attempt = 0; attempt < 200 && seen.slice(firstIdle).at(-1) !== "idle"; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
-    const next = seen.slice(firstIdle)
-    expect(next[0]).toBe("title")
-    expect(next.slice(1)).toContain("status:busy")
-    expect(next.at(-1)).toBe("idle")
+    expect(seen.slice(firstIdle)).not.toContain("title")
+    expect(seen.slice(firstIdle).at(-1)).toBe("idle")
+    title.answer("Generated title")
+    for (let attempt = 0; attempt < 200 && seen.at(-1) !== "title"; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(seen.at(-1)).toBe("title")
   })
 })
 
 describe("a title side turn that never answers", () => {
-  test("is dropped at its deadline and releases what waited behind it", async () => {
+  test("is dropped at its deadline and holds no other frame meanwhile", async () => {
     const f = createHostFixture({ transports: { pi: new FakeTransport() } })
     fixtures.push(f)
     const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_hangs", harness: PI }))
     const titles = createSessionTitleOwner({ store: f.store, eventHub: f.eventHub, deadlineMs: 20 })
     const attached = await f.runtime.transportFor(id)
     const seen = sessionFrames(f, id)
-    const generated = titles.generate({ sessionId: id, directory: attached.session.directory, turnMessageId: "msg_asking",
+    const generated = titles.generate({ sessionId: id, directory: attached.session.directory,
       transport: { naming: { generateTitle: () => new Promise<string>(() => {}) } }, session: attached.session })
     f.eventHub.publishGlobal({ directory: attached.session.directory, payload: sessionStatus(id, { type: "busy" }) })
-    expect(seen).toEqual([])
+    expect(seen).toEqual(["status:busy"])
     expect(await Promise.race([generated.then(() => "dropped"), new Promise((resolve) => setTimeout(() => resolve("still waiting"), 500))]))
       .toBe("dropped")
     expect(seen).toEqual(["status:busy"])

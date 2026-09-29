@@ -155,19 +155,6 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(pty.directory).toBe(DIRECTORY)
   })
 
-  test("a session's control frames wait behind its open slot with its other frames, in publish order", () => {
-    const { hub, bus, frames } = harness({})
-    const seen: string[] = []
-    const unsubscribe = frames.subscribe((frame) => { if ("payload" in frame) seen.push(frame.payload.type) })
-    const slot = hub.openSlot("ses-slot", "msg_asking")
-    bus.publish({ type: "session.queue", directory: DIRECTORY, sessionID: "ses-slot", queue: [] })
-    hub.publishGlobal(part("ses-slot", "prt-slot", { status: "running" }))
-    expect(seen).toEqual([])
-    slot.close()
-    unsubscribe()
-    expect(seen).toEqual(["session.queue", "message.part.updated"])
-  })
-
   test("the frame tap and the runtime's own stream are fed by one subscription: each of the three sources' frames reaches both once, verbatim", async () => {
     const { app, hub, bus, ptys, frames } = harness({})
     ptys.set("pty-tap", DIRECTORY)
