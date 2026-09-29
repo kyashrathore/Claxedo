@@ -238,7 +238,6 @@ export const localServer: Policy = {
       // driver contract; its published subpath is dist-only.
       { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/agent-runtime-contract" },
-      { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/process-ownership" },
       { packageDir: "packages/agent-sdk-runtime" },
       // The loopback credential broker the desktop composition mounts; its

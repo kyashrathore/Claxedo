@@ -42,12 +42,11 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
 }
 
 describe("publish-claxedo-packages", () => {
-  test("covers the 13 public packages, on five version tracks", () => {
-    expect(claxedoPackages).toHaveLength(13)
+  test("covers the 12 public packages, on five version tracks", () => {
+    expect(claxedoPackages).toHaveLength(12)
     expect(selectPackages("all")).toEqual(claxedoPackages)
     expect(selectPackages("helpers").map((item) => item.name)).toEqual(["@claxedo/helpers"])
     expect(selectPackages("runtime").map((item) => item.name).sort()).toEqual([
-      "@claxedo/agent-event-runtime",
       "@claxedo/agent-runtime-contract",
       "@claxedo/agent-sdk-runtime",
       "@claxedo/sandbox-contract",

@@ -5,8 +5,9 @@ import { createSequentialIdFactory, systemClock } from "@claxedo/agent-runtime-c
 import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import { rawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "./adapter"
-import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
-import { assertRuntimeSnapshot, cloneSnapshotValue, runtimeSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeSnapshot } from "./snapshot"
+import { assertRuntimeSnapshot, runtimeSnapshot } from "./snapshot"
+import { cloneSnapshotValue } from "@claxedo/helpers"
 
 export type TranslateRawHarnessEventInput<State = unknown> = {
   adapter: HarnessEventAdapter<State>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeSnapshot } from "../../../translate/snapshot"
 import {
   codexAppServerAdapter,
   codexCollabAgentCall,

@@ -1,11 +1,12 @@
 import { asRecord } from "@claxedo/helpers/guards"
+import { boundKeyedMap } from "@claxedo/helpers"
 import { canonicalToolName, type AgentSessionTitleSource, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
-import { boundKeyedMap, object, text } from "../../value"
+import { asRecord as object, asText as text } from "@claxedo/agent-runtime-contract"
 import { userMessageIdForAssistantReply } from "@claxedo/agent-runtime-contract"
-import type { RuntimeProjection } from "../../core/projection"
-import type { ProjectionSnapshot } from "../../core/state"
-import { projectionSnapshot } from "../../core/state"
+import type { RuntimeProjection } from "./snapshot"
+import type { ProjectionSnapshot } from "./snapshot"
+import { projectionSnapshot } from "./snapshot"
 import { normalizeCompatEventWithDiagnostics, type CompatEnvelope, withDir } from "./normalize"
 import {
   createClientPresentationProjectionState,

@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { text } from "@claxedo/agent-event-runtime/value"
+import { text } from "../../../translate/value"
 
 export type ClaudeTrackedTask = { id: string; description: string; status: string }
 

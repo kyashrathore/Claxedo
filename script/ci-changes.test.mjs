@@ -118,7 +118,6 @@ await test("the sandbox image is selected by the Worker and every package baked 
     "packages/workspace-runtime/src/workspace/runtime.ts",
     "packages/agent-sdk-runtime/src/harnesses/pi/index.ts",
     "packages/agent-runtime-contract/src/elicitation.ts",
-    "packages/agent-event-runtime/src/index.ts",
     ".github/workflows/deploy-cloudflare-sandbox-worker.yml",
   ]) {
     assert.equal(classifyChangedFiles([file]).sandbox_image, true, file)

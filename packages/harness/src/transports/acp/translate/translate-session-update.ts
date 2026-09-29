@@ -11,7 +11,8 @@ import { drainContent, drainSpots, reduceTool, RETAINED_MESSAGE_TEXTS_MAX, viewT
 import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
-import { boundKeyedMap, jsonText, object, text } from "@claxedo/agent-event-runtime/value"
+import { boundKeyedMap } from "@claxedo/helpers"
+import { jsonText, object, text } from "../../../translate/value"
 import { contentBlockImages } from "../../../translate/tool-attachments"
 
 export type { SessionUpdate }

@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeSnapshot } from "../../../translate/snapshot"
 import { createAcpEventTranslator, type AcpEventTranslatorState } from "./event-translator"
 import { RETAINED_MESSAGE_TEXTS_MAX, RETAINED_TOOLS_MAX } from "./state"
 

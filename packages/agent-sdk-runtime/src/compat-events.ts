@@ -14,8 +14,7 @@ import type {
   AgentTodo,
   ConnectionRuntimeStatus,
 } from "@claxedo/agent-runtime-contract"
-import { parseAgentContentPart, promptPartId, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
-import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
+import { parseAgentContentPart, promptPartId, withClaxedoMessageAuthor, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"

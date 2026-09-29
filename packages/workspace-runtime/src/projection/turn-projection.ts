@@ -1,5 +1,5 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
+import { createClientPresentationProjection } from "./client-presentation/projection"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   buildAssistantMessage,

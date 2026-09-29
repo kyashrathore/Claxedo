@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 13 public `@claxedo/*` packages.
+ * The one publisher for the 12 public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -47,7 +47,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 13 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 12 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -60,7 +60,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes" },
   // Tier 1
   { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime" },
-  { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime" },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps" },
   { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps" },
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },

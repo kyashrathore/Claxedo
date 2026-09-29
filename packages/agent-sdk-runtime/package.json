@@ -106,7 +106,6 @@
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --timeout 20000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
-    "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*"
   },

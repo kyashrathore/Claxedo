@@ -35,7 +35,6 @@ const DOC_PREFIXES = [
 ]
 
 const WINDOWS_PREFIXES = [
-  "packages/agent-event-runtime/",
   "packages/agent-sdk-runtime/",
   "packages/claxedo-desktop/",
   "packages/claxedo-host-connector/",
@@ -53,7 +52,6 @@ const WINDOWS_PREFIXES = [
 ]
 
 const SERVER_DEPENDENCY_PREFIXES = [
-  "packages/agent-event-runtime/",
   "packages/agent-sdk-runtime/",
   "packages/claxedo-channels/",
   "packages/claxedo-connections/",
@@ -73,7 +71,6 @@ const SERVER_DEPENDENCY_PREFIXES = [
 // rather than run on every push: the Worker and its build script, plus every
 // package `build-sandbox-image.ts` bundles into the host it ships.
 const SANDBOX_IMAGE_PREFIXES = [
-  "packages/agent-event-runtime/",
   "packages/agent-runtime-contract/",
   "packages/agent-sdk-runtime/",
   "packages/claxedo-server/scripts/sandbox/",

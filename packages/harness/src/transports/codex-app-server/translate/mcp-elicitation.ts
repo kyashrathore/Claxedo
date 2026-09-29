@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { text } from "@claxedo/agent-event-runtime/value"
+import { text } from "../../../translate/value"
 import type { McpServerElicitationRequestResponse } from "./protocol/v2/McpServerElicitationRequestResponse"
 
 export function codexMcpApproval(params: Record<string, unknown>) {

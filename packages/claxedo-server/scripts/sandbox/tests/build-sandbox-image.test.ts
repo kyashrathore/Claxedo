@@ -315,7 +315,7 @@ describe("build-sandbox-image", () => {
     expect(index("claxedo-mcp")).toBeGreaterThan(index("workspace-runtime"))
 
     // workspace-runtime's known @claxedo deps are all present and precede it.
-    for (const dep of ["agent-event-runtime", "agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay"]) {
+    for (const dep of ["agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay"]) {
       expect(index(dep), dep).toBeGreaterThanOrEqual(0)
       expect(index(dep), dep).toBeLessThan(index("workspace-runtime"))
     }

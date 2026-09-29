@@ -1,6 +1,6 @@
 import type { AgentMessage, PromptDelivery, PromptDeliveryRequest, PromptInput, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
-import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
+import { createClientPresentationProjection } from "../projection/client-presentation/projection"
 import { firstTurnErrorData, type AgentRuntimeStreamEvent, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
 import type { TurnOrigin } from "@claxedo/harness/contract"
 import { isAgentRuntimeTurnAdmissionError, type AgentRuntime, type AgentRuntimeTurnStartInput } from "../host/runtime"

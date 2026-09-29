@@ -1,7 +1,7 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, type SseReplayBuffer } from "../projection/sse"
 import { isRetainedCompatEvent, type CompatEnvelope, type EventSessionDeleted } from "@claxedo/agent-sdk-runtime/compat-events"
-import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runtime/projections/client-presentation"
+import { presentationEventsFromRuntimeEnvelope } from "../projection/client-presentation/runtime-envelope"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import type { AgentEventEnvelope, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"

@@ -17,9 +17,7 @@ const retiredStrings = [
 ]
 const exemptPackages = [
   "/packages/agent-runtime-contract/",
-  "/packages/agent-event-runtime/",
   "/node_modules/@claxedo/agent-runtime-contract/",
-  "/node_modules/@claxedo/agent-event-runtime/",
 ]
 
 type Lookup = { readonly declarations: readonly ts.Declaration[]; readonly reference: boolean }

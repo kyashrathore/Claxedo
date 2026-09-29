@@ -35,10 +35,8 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/agent-sdk-runtime/*",
   "@claxedo/process-ownership",
   "@claxedo/process-ownership/*",
-  "@claxedo/agent-event-runtime",
   "@claxedo/harness",
   "@claxedo/harness/*",
-  "@claxedo/agent-event-runtime/*",
 ]
 
 const EXTERNALS = [

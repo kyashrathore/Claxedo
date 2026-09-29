@@ -1,4 +1,5 @@
-import { boundKeyedMap, boundList, text as str } from "@claxedo/agent-event-runtime/value"
+import { boundKeyedMap, boundList } from "@claxedo/helpers"
+import { text as str } from "../../../translate/value"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "@claxedo/agent-runtime-contract"
