@@ -65,7 +65,7 @@ export const home = {
     claims: ["harness-coverage", "sessions-and-terminals", "agent-cli-access", "sidebar-or-tabs"],
   },
   closing: {
-    text: "Open source. Local-first. No account needed.",
+    text: "Open source. Local‑first. No account needed.",
     claims: ["mit-platform", "desktop-local-mode"],
   },
 } as const

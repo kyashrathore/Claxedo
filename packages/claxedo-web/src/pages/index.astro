@@ -97,7 +97,7 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
     </section>
 
     <section class="closing">
-      <p>{home.closing.text}</p>
+      <h2>{home.closing.text}</h2>
       <MacDownload placement="closing" />
       <a class="quiet-link" href={routes.download}>Windows, Linux and Intel Macs</a>
     </section>
@@ -170,7 +170,7 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
   .crop.centered { left: 50%; width: var(--crop-w, 44rem); translate: -50% 0; }
 
   .closing { display: grid; justify-items: center; gap: 1.25rem; width: var(--width); margin: clamp(7rem, 13vw, 11rem) auto 0; text-align: center; }
-  .closing p { margin: 0 0 .5rem; color: var(--ink); font-size: 1.25rem; }
+  .closing h2 { max-width: none; margin: 0 0 .75rem; }
   .closing .quiet-link { font-size: .875rem; }
 
   @media (prefers-reduced-motion: no-preference) {

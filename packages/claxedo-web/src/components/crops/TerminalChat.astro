@@ -4,9 +4,9 @@ import Icon from "../Icon.astro"
 import "../../styles/app-theme.css"
 ---
 
-<div class="split app-theme" role="img" aria-label="Claude Code running in a Claxedo terminal, beside a Codex chat session">
+<div class="split app-theme" role="img" aria-label="Session tabs across the top, Claude Code running in a terminal tab, and a Codex chat beside it">
   <div class="app-card terminal">
-    <div class="tabs"><span class="active"><Icon name="terminal" />claude</span><span><Icon name="terminal" />codex</span></div>
+    <div class="tabs"><span class="session"><span class="tab-mark"><HarnessMark name="codex" /></span>Fix usage meter</span><span class="active"><Icon name="terminal" />claude</span><span><Icon name="terminal" />codex</span></div>
     <div class="screen">
       <p><b>✦ Claude Code</b> <span class="muted">v2.1.247</span></p>
       <p>Opus 5 (1M context) · high effort</p>
@@ -32,8 +32,10 @@ import "../../styles/app-theme.css"
   .split { position: relative; width: 100%; height: 100%; }
   .terminal { position: absolute; top: 0; left: 0; width: 32rem; overflow: hidden; }
   .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--border); background: var(--rail-bg); }
-  .tabs span { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; color: var(--text-weak); font: 12px var(--font-mono); }
+  .tabs > span { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; color: var(--text-weak); font: 12px var(--font-mono); }
   .tabs .active { background: var(--background-base); color: var(--text-strong); box-shadow: 0 0 0 1px var(--border); }
+  .tabs .session { font-family: var(--font-sans); }
+  .tab-mark { display: grid; place-items: center; font-size: 13px; color: var(--text-strong); }
   .screen { padding: 14px 16px 20px; color: var(--text-base); font: 12px/1.6 var(--font-mono); }
   .screen p { margin: 0; }
   .screen b { color: var(--text-strong); font-weight: 500; }
