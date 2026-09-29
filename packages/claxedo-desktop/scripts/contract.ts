@@ -160,7 +160,6 @@ export function spec(root = ROOT): Spec {
     "scripts/package-structure.ts",
     "scripts/product-boundary-manifests.ts",
     "scripts/package.ts",
-    "scripts/prepare.ts",
     "scripts/prebuild.ts",
     "scripts/predev.ts",
     "scripts/target-platform.ts",
