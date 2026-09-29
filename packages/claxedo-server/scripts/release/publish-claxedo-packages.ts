@@ -24,14 +24,18 @@
  * `workspace:`/`catalog:` specifier in any consumer-facing section — before
  * anything is published. A version already on the registry is skipped.
  */
-import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { readPackageJson, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
-import { publishedVersionDrift, type CommandRunner, type PublishedVersionPackage } from "./check-published-versions"
+import {
+  defaultCommandRunner,
+  publishedVersionDrift,
+  type CommandRunner,
+  type PublishedVersionPackage,
+} from "./check-published-versions"
 
 export type PackageTrack = "helpers" | "runtime" | "apps" | "cli"
 
@@ -188,15 +192,6 @@ function buildWithDependencies(
   }
   run("npm", ["run", "build", "--workspace", item.name], root)
   built.add(item.name)
-}
-
-export function defaultCommandRunner(cmd: string, args: string[], cwd = repoRoot, env?: NodeJS.ProcessEnv) {
-  return execFileSync(cmd, args, {
-    cwd,
-    env: env ? { ...process.env, ...env } : process.env,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim()
 }
 
 /** `npm pack --json` can prefix notices; take the JSON array off the end. */
