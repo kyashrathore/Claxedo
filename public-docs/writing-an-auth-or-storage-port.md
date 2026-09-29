@@ -1,8 +1,7 @@
 # Writing your own auth or storage port
 
 Claxedo ships one certified stack: **Better Auth** for identity and
-**Cloudflare D1** for the control-plane database, with SQLite for the
-self-hosted single binary. This page is for the case where you want a
+**Cloudflare D1** for the control-plane database. This page is for the case where you want a
 different one — Clerk, Convex, Auth0, Postgres, your own service — and want to
 know exactly where your code plugs in and what it has to satisfy.
 
@@ -76,11 +75,10 @@ The Better Auth + D1 adapter that fills this in is
 [`better-auth-d1-compose.ts`](../packages/claxedo-server/src/authority/adapters/worker/better-auth-d1-compose.ts).
 **Read it as your template.** Your port is a sibling of that file.
 
-For the self-hosted Node binary the equivalent seam is
-`ControlPlaneServicesOptions` in
-[`authority/services.ts`](../packages/claxedo-server/src/authority/services.ts),
-whose comment states the rule plainly: *the authority is always injected by the
-composition site; the generic services never construct one.*
+The rule the ports follow is stated on `ControlPlaneServicesOptions` in
+[`authority/services.ts`](../packages/claxedo-server/src/authority/services.ts):
+*the authority is always injected by the composition site; the generic services
+never construct one.*
 
 ## A Clerk identity port, concretely
 

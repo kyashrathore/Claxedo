@@ -102,26 +102,16 @@ exist with sensible defaults — see the package source if you need them.
 
 ## Production Relay Shape
 
-Workspace Relay production v1 is a single-instance deployment for host-tunnel
-traffic. The relay stores host presence and active host-tunnel sockets in
-process memory, so one `hostId` has exactly one active inbound host tunnel in
-one relay process. A new tunnel for the same `hostId` replaces the previous
-tunnel; stale close events from the old socket do not mark the replacement
+The relay deploys as a Cloudflare Worker (`packages/workspace-relay/src/worker.ts`).
+The Worker is a stateless gateway that routes each workspace to its own Durable
+Object room, and that room holds the workspace's host-tunnel socket and serves
+every request for the workspace. A host tunnel therefore registers exactly one
+workspace per connection. A new tunnel for the same host replaces the previous
+one; stale close events from the old socket do not mark the replacement
 offline.
 
-Do not run multiple active relay instances for the same host-tunnel fleet unless
-a separate multi-instance routing milestone has added sticky host routing,
-split-brain prevention, and failover ownership. Private cloud-VM targets can be
-forwarded directly by the relay, but host tunnels are process-local.
-
-Operational tradeoff: the relay process, VM, or region is a single point of
-failure for host-tunnel traffic. Restart, deploy, or crash events drop active
-host tunnels and long-lived HTTP/WebSocket/SSE/PTY sessions until the
-workspace-runtime host reconnects. During planned drain, the relay reports
-`/health` as unhealthy, rejects new workspace requests and tunnel registrations
-with `503 relay_draining`, closes active host tunnels so hosts reconnect
-promptly, waits for pending work up to the drain timeout, then exits. Future
-multi-instance relay support is out of scope for this v1 production shape.
+Private cloud-VM targets are forwarded directly by the room without a host
+tunnel.
 
 ## Auth And Metrics
 
@@ -131,14 +121,14 @@ still decoded into relay-domain claims, bound to the requested workspace id and
 host id, checked for revocation, and role-checked by allowlist. Missing,
 unknown, or malformed roles deny.
 
-Established long-lived relayed sockets are not reauthorized mid-stream in v1.
+Established long-lived relayed sockets are not reauthorized mid-stream.
 Revocation applies to new requests and new connections; existing
 WebSocket/SSE/PTY sessions may continue until they close, reconnect, drain, or
 hit a future max-lifetime/recheck feature.
 
-`/metrics` is ops-only. In production, configure `CLAXEDO_RELAY_METRICS_TOKEN`
-or run through the Bun adapter's trusted remote-address resolver so the endpoint
-is limited to loopback. Without either signal, metrics fail closed.
+`/metrics` is ops-only. Configure `CLAXEDO_RELAY_METRICS_TOKEN` and scrape with
+`Authorization: Bearer <token>`. Without a token the endpoint admits only callers
+the adapter identifies as loopback, and fails closed when it cannot tell.
 
 ## Protocol Package
 
@@ -156,7 +146,7 @@ wire contract:
 
 Keeping this contract package separate means a runtime host, browser-adjacent
 client, or custom relay implementation can depend on the protocol without
-depending on the relay server's Hono/Jose/Bun-specific implementation.
+depending on the relay server's Hono/Jose implementation.
 
 The package exports:
 
@@ -198,3 +188,5 @@ Implemented in:
 - `packages/workspace-relay-protocol/src/index.ts`
 - `packages/workspace-relay-protocol/src/token-verifier.ts`
 - `packages/workspace-relay/src/server.ts`
+- `packages/workspace-relay/src/cloudflare.ts`
+- `packages/workspace-relay/src/worker.ts`

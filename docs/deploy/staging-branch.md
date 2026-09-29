@@ -49,13 +49,11 @@ Clerk/Convex-era app; `deploy-claxedo-app-staging.yml` still deploys it on
 dispatch, and pointing it at this control plane means repointing the `staging`
 environment's `CLAXEDO_CONTROL_PLANE_URL` and `CLAXEDO_APP_URL` first.
 
-### The relay is a Worker, not a Fly machine
+### The relay
 
-Staging's relay is the Worker-safe Durable Object relay
+Staging's relay is the Durable Object Worker
 (`packages/workspace-relay/src/worker.ts`), deployed under the name the control
-plane's `CLAXEDO_WORKSPACE_RELAY_URL` resolves to. `deploy-relay.yml` deploys
-the Fly **process** relay; it dispatches to `production` only, because no Fly
-staging app resolves in DNS.
+plane's `CLAXEDO_WORKSPACE_RELAY_URL` resolves to.
 
 `wrangler deploy` replaces a Worker's whole plain-text var set with what the
 config and `--var` declare, and `wrangler.toml` cannot name one deployment's
