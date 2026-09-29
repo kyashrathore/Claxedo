@@ -200,18 +200,33 @@ describe("native provider delivery", () => {
     })
   })
 
-  test("Cursor exchange credentials stay outside a cloud sandbox", async () => {
+  test("a Cursor account reaches a native-brokering sandbox scoped to its key exchange alone", async () => {
     const credential = await shared({ provider_id: "cursor-sdk", kind: "api_key", secret: "cursor-private-key" })
     setActiveCredentials([credential.id], undefined, "local")
 
     const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "native" })
+    const [secret] = nativeProviderSecrets(deliveries)
+    expect(nativeProviderSecrets(deliveries)).toEqual([{
+      name: secret.name, value: "cursor-private-key", hosts: ["api2.cursor.sh"], header: "Authorization", scheme: "Bearer",
+      methods: ["POST"], pathPrefixes: ["/auth/exchange_user_api_key"],
+    }])
+    expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
+      "cursor-sdk": { baseUrl: "https://api2.cursor.sh", placeholderEnv: secret.name, authMode: "bearer" },
+    })
+    expect(JSON.stringify(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }))).not.toContain("cursor-private-key")
+    expect(credentialReach({ provider_id: "cursor-sdk", kind: "api_key" })).toEqual({ local: true, cloud: true })
+  })
+
+  test("a Cursor account stays out of a sandbox whose driver cannot broker", async () => {
+    const credential = await shared({ provider_id: "cursor-sdk", kind: "api_key", secret: "cursor-private-key" })
+    setActiveCredentials([credential.id], undefined, "local")
+
+    const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "none" })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
     expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
-      "cursor-sdk": { unavailable: true, reason: "native_delivery_needs_token_exchange" },
+      "cursor-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
     })
     expect(JSON.stringify(deliveries)).not.toContain("cursor-private-key")
-    expect(credentialReach({ provider_id: "cursor-sdk", kind: "api_key" }))
-      .toEqual({ local: true, cloud: false, reason: "native_delivery_needs_token_exchange" })
   })
 
   test("a driver that cannot broker refuses the turn instead of the provisioning", async () => {

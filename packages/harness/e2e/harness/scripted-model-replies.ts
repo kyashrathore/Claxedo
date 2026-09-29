@@ -9,9 +9,11 @@ import type {
   ResponseStreamEvent,
 } from "openai/resources/responses/responses"
 
+export type ScriptedToolFormat = "custom" | "tool_search"
+
 export type ScriptedReply =
   | { kind: "text"; text: string; reasoning?: string }
-  | { kind: "tool"; name: string; input: unknown; namespace?: string; format?: "custom" }
+  | { kind: "tool"; name: string; input: unknown; namespace?: string; format?: ScriptedToolFormat }
   | { kind: "error"; status: number; message: string }
 
 export type StreamPacing = { chunks: number; delayMs: number }
@@ -215,7 +217,10 @@ function responsesTextEvents(sequence: number, text: string, pacing?: StreamPaci
   ]
 }
 
-function responsesToolEvents(item: Extract<ResponseOutputItem, { type: "function_call" | "custom_tool_call" }>): ResponseStreamEvent[] {
+type ResponsesToolItem = Extract<ResponseOutputItem, { type: "function_call" | "custom_tool_call" | "tool_search_call" }>
+
+function responsesToolEvents(item: ResponsesToolItem): ResponseStreamEvent[] {
+  if (item.type === "tool_search_call") return [{ type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { ...item, status: "in_progress" } }]
   const itemId = item.id ?? item.call_id
   if (item.type === "custom_tool_call") {
     return [
@@ -240,7 +245,14 @@ export async function respondResponses(
 ) {
   if (reply.kind === "tool" && reply.format === "custom" && typeof reply.input !== "string") throw new Error("Custom tool input must be text")
   const item: ResponseOutputItem = reply.kind === "tool"
-    ? reply.format === "custom" ? {
+    ? reply.format === "tool_search" ? {
+        type: "tool_search_call",
+        id: `ts_${sequence}`,
+        call_id: `call_${sequence}`,
+        execution: "client",
+        arguments: reply.input,
+        status: "completed",
+      } : reply.format === "custom" ? {
         type: "custom_tool_call",
         id: `ct_${sequence}`,
         call_id: `call_${sequence}`,
@@ -266,7 +278,7 @@ export async function respondResponses(
   const reasoning: ResponseOutputItem | undefined = reply.kind === "text" && reply.reasoning
     ? { type: "reasoning", id: `rs_${sequence}`, summary: [{ type: "summary_text", text: reply.reasoning }], status: "completed" }
     : undefined
-  const streamed = item.type === "function_call" || item.type === "custom_tool_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", pacing)
+  const streamed = item.type === "function_call" || item.type === "custom_tool_call" || item.type === "tool_search_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", pacing)
   const events: ResponseStreamEvent[] = [
     { type: "response.created", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "in_progress", []) },
     ...streamed,

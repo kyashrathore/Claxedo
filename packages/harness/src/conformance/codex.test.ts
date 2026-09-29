@@ -11,6 +11,7 @@ import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { listenOnLoopback } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
+import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
 import { CodexRpc, type RpcMessage } from "../transports/codex-app-server/rpc"
@@ -599,39 +600,31 @@ test("brokered Codex discovers a projected plugin skill through its composed hom
   }
 }, 60_000)
 
-test("Codex starts a projected configured MCP server", async () => {
-  const state = await backend()
-  const port = await reservePort()
-  const requests: string[] = []
-  const contacted = Promise.withResolvers<void>()
-  const server = createServer((request, response) => {
-    requests.push(request.url ?? "")
-    contacted.resolve()
-    response.writeHead(404).end()
-  })
-  await listenOnLoopback(server, port)
-  const services = createTestServices()
-  const transport = new CodexAppServerTransport(services, { binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env })
-  const ports = new MemoryPorts()
-  ports.current.set("s1", { ...authority, directory: state.directory })
-  const origin = state.origin!
-  const owner = createRequestBroker(ports)
-  const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin })
-  const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
-    config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
-    projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [
-      { name: "projected", kind: "http", url: `http:${String.fromCharCode(47, 47)}127.0.0.1:${port}/mcp`, origin: "configured" },
-    ] } }
+test("Codex defers a projected configured MCP server's tools behind tool_search, and the loaded tool calls the server", async () => {
+  const mcp = await startScriptedMcpServer()
+  const context = await setupConformance({ name: "codex-projected-mcp",
+    backend: async () => ({ ...(await backend()), model: { providerID: "codex", modelID: "gpt-5.5" },
+      projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [{ name: "projected", kind: "http", url: mcp.url, origin: "configured" }] } }),
+    makeTransport: (services, state) => new CodexAppServerTransport(services, {
+      binary: PINNED_CODEX, homeRoot: path.join((state as CodexBackend).root, "homes"), env: (state as CodexBackend).env,
+    }) })
   try {
-    await transport.start(input, broker)
-    await contacted.promise
-    expect(requests).toContain("/mcp")
+    const server = (context.backend as CodexBackend).server
+    await context.transport.config!.update(context.session, { permissionMode: "full-access" })
+    server.scriptTool({ name: "tool_search", format: "tool_search", input: { query: "proof" }, whenPromptIncludes: "MCPSEARCH" })
+    for await (const _event of context.transport.send(context.session, context.turn("Find the proof tool MCPSEARCH"), context.turnBroker())) {}
+    const [search, loaded] = server.requests.filter((request) => request.prompt.includes("MCPSEARCH") && request.tools.length)
+    expect((search!.body as { tools?: { type: string }[] }).tools?.some((tool) => tool.type === "tool_search")).toBe(true)
+    expect(search!.tools.map((tool) => tool.name).filter((name) => name.includes("proof"))).toEqual([])
+    const proof = loaded?.tools.find((tool) => tool.call.name === "proof")
+    expect(proof?.call).toEqual({ name: "proof", namespace: expect.stringMatching(/^mcp__projected/) })
+    server.scriptTool({ ...proof!.call, input: { marker: "MCPCALL" }, whenPromptIncludes: "MCPCALL" })
+    for await (const _event of context.transport.send(context.session, context.turn("Call the proof tool with marker MCPCALL"), context.turnBroker())) {}
+    expect(mcp.calls).toEqual([{ name: "proof", arguments: { marker: "MCPCALL" } }])
+    expect(server.requests.some((request) => request.prompt.includes("MCP_PROOF:MCPCALL"))).toBe(true)
   } finally {
-    await transport.dispose()
-    server.closeAllConnections()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
-    releasePort(port)
-    await state.close()
+    await context.close()
+    await mcp.close()
   }
 }, 60_000)
 

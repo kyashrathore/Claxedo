@@ -1,7 +1,7 @@
 import { createServer, type Server, type ServerResponse } from "node:http"
 import { sleep } from "@claxedo/helpers"
 import { listenOnLoopback } from "./ports"
-import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type StreamPacing } from "./scripted-model-replies"
+import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type ScriptedToolFormat, type StreamPacing } from "./scripted-model-replies"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   dialectFor,
@@ -33,7 +33,7 @@ export type ScriptedModelRequest = {
   tools: ScriptedModelTool[]
 }
 
-export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: "custom"; whenPromptIncludes?: string; autoModeSeverity?: 0 }
+export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: ScriptedToolFormat; whenPromptIncludes?: string; autoModeSeverity?: 0 }
 export type ScriptedError = { marker: string; status: number; message: string; model?: string }
 
 export type ScriptedModelServer = {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { ClaxedoApi, assistantText } from "../harness/api"
+import { ClaxedoApi } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { applyScriptedPluginProfile } from "../harness/scripted-plugin-profile"
 import { startScriptedMcpServer } from "../harness/scripted-mcp-server"
@@ -27,15 +27,18 @@ export async function run() {
     const session = await step("create native session", () => api.createSession(workspace.directory, {
       harness: { id: "codex", access: "native" }, model, title: "H15 Codex brokered plugin", permissionMode: "full-access",
     }))
+    stack.scripted.scriptTool({ name: "tool_search", format: "tool_search", input: { query: "proof" }, whenPromptIncludes: "H15CODEXINIT" })
     await step("complete the brokered Codex tool-discovery prompt HTTP response", () => api.prompt(workspace.directory, session.id, "Inspect the installed plugin H15CODEXINIT", { model }))
     await step("observe probe session idle", () => stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "brokered Codex plugin probe idle", timeoutMs: 60_000 }))
     await step("read the shared Codex plugin profile", () => sharedCodexProfileConfig(stack.dataDir))
     const tool = stack.scripted.requests.flatMap((request) => request.tools).find((item) => item.name.includes("proof") && item.name.startsWith("mcp__"))
-    assert.ok(tool, "H-4: brokered Codex did not advertise the projected plugin proof tool")
-    stack.scripted.scriptTool({ name: tool.name, input: { marker: "H15CODEX" }, whenPromptIncludes: "H15CODEX" })
+    assert.ok(tool, `H-4: brokered Codex's tool_search loaded no projected plugin proof tool: ${JSON.stringify(stack.scripted.requests.flatMap((request) => request.tools.map((item) => item.name)))}`)
+    stack.scripted.scriptTool({ ...tool.call, input: { marker: "H15CODEX" }, whenPromptIncludes: "H15CODEX" })
     await step("complete the brokered Codex proof-tool prompt HTTP response", () => api.prompt(workspace.directory, session.id, "Use the installed plugin proof tool with marker H15CODEX", { model }))
     assert.ok(mcp.calls.some((call) => call.arguments.marker === "H15CODEX"), "H-4: brokered Codex did not call the projected plugin proof tool")
-    assert.match(assistantText(await step("read session messages", () => api.messages(workspace.directory, session.id))), /MCP_PROOF:H15CODEX/)
+    const toolParts = (await step("read session messages", () => api.messages(workspace.directory, session.id))).flatMap((message) => message.parts).filter((part) => part.type === "tool")
+    assert.ok(toolParts.some((part) => JSON.stringify(part.state).includes("MCP_PROOF:H15CODEX")), `the MCP proof result was not stored: ${JSON.stringify(toolParts)}`)
+    assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("MCP_PROOF:H15CODEX")), "the MCP proof result never reached the model")
     assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id))
     assert.equal((await step("read session state", () => api.session(workspace.directory, session.id))).id, session.id)
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
