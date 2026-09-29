@@ -1,7 +1,6 @@
 import { login } from "./auth/device-code"
 import { whoami } from "./auth/identity"
 import { connect, connectHelp } from "./commands/connect"
-import { deploy } from "./commands/deploy"
 import { documents, documentsUsage } from "./commands/documents"
 import { hostCommand, hostUsage } from "./commands/host"
 import { logout } from "./commands/logout"
@@ -16,7 +15,6 @@ ${connectUsage}
 ${hostUsage}
 claxedo status
 claxedo whoami
-claxedo deploy [--generate-only] [--app <name>] [--region <code>] [--yes]
 ${documentsUsage}
 
 \`claxedo connect --help\` and \`claxedo host --help\` describe the machine and owner sides of remote access.`)
@@ -39,7 +37,6 @@ async function main(argv: string[]) {
     return
   }
   if (command === "host") return hostCommand(args)
-  if (command === "deploy") return deploy(args)
   if (command === "documents") return documents(args)
   if (command === "status") return status()
   if (command === "whoami") return whoami()

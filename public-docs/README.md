@@ -81,8 +81,6 @@ artifacts, and projection are product features, not public runtime-package APIs.
 - [Sandbox Egress Containment](./sandbox-egress.md): which drivers can contain a
   sandbox's outbound network, which production configurations run unrestricted,
   and how to get enforcement.
-- [Self-Host on Fly.io](./self-host-fly.md): the `claxedo deploy` wizard —
-  an unsigned single-user control plane on your own Fly account.
 - [User-deployed Cloudflare](./user-deployed-cloudflare.md): deploy Claxedo to your own Cloudflare account with
   one command, claim it as owner, upgrade by re-running it.
 - [Writing An Auth Or Storage Port](./writing-an-auth-or-storage-port.md): where a

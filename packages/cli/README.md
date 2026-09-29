@@ -79,7 +79,6 @@ claxedo login
 claxedo logout
 claxedo status
 claxedo whoami
-claxedo deploy [--generate-only] [--app <name>] [--region <code>] [--yes]
 claxedo documents ...
 ```
 
