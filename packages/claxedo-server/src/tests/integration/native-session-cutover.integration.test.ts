@@ -11,7 +11,6 @@ const keys = [
   "CLAXEDO_SIGNED_CLOUD_AUTH",
   "CLAXEDO_EMBEDDED_AUTH",
   "CLAXEDO_WORKSPACE_AUTHORITY_URL",
-  "CLAXEDO_WAKES",
 ] as const
 const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
 for (const key of keys) delete process.env[key]

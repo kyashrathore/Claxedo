@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 130 modules / 39 packages, with no headroom.
+   * Measured 129 modules / 38 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -139,7 +139,7 @@ export const serverSelfHosted: Policy = {
    * read through it rather than each keeping a copy. No package edge:
    * `@claxedo/helpers` and `@claxedo/server-core` were already here.
    */
-  ceilings: { modules: 130, packages: 39 },
+  ceilings: { modules: 129, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -174,7 +174,6 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/workspace-relay" },
       { packageDir: "packages/claxedo-connections" },
       { packageDir: "packages/claxedo-channels" },
-      { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
       { packageDir: "packages/claxedo-local-server" },
     ],

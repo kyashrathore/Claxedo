@@ -150,10 +150,8 @@ describe("server deployment entry closures", () => {
 
     const forbiddenFiles = files.filter((file) =>
       [
-        "src/hosts/wakes/",
         "src/documents/",
         "src/billing/",
-        "wake-lane.cf.ts",
       ].some((prefix) => file.includes(prefix)),
     )
     expect(forbiddenFiles).toEqual([])
@@ -161,7 +159,6 @@ describe("server deployment entry closures", () => {
       result.packages.filter((name) =>
         [
           "@claxedo/documents-service",
-          "@claxedo/wakes",
           "@polar-sh/sdk",
         ].includes(name),
       ),
@@ -220,7 +217,6 @@ describe("server deployment entry closures", () => {
       result.packages.filter((name) =>
         [
           "@claxedo/documents-service",
-          "@claxedo/wakes",
           "@claxedo/sandbox-manager",
           "@polar-sh/sdk",
         ].includes(name),
@@ -249,7 +245,6 @@ describe("server deployment entry closures", () => {
       result.packages.filter((name) =>
         [
           "@claxedo/documents-service",
-          "@claxedo/wakes",
           "@polar-sh/sdk",
         ].includes(name),
       ),
@@ -285,7 +280,7 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
     expect(
       feature.packages.filter((name) =>
-        ["@claxedo/local-server", "@claxedo/documents-service", "@claxedo/wakes", "@polar-sh/sdk", "convex"].includes(name),
+        ["@claxedo/local-server", "@claxedo/documents-service", "@polar-sh/sdk", "convex"].includes(name),
       ),
     ).toEqual([])
   })
