@@ -32,7 +32,7 @@ export async function run() {
     await step("observe probe session idle", () => stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "brokered Codex plugin probe idle", timeoutMs: 60_000 }))
     await step("read the shared Codex plugin profile", () => sharedCodexProfileConfig(stack.dataDir))
     const tool = stack.scripted.requests.flatMap((request) => request.tools).find((item) => item.name.includes("proof") && item.name.startsWith("mcp__"))
-    assert.ok(tool, "H-4: brokered Codex's tool_search loaded no projected plugin proof tool")
+    assert.ok(tool, `H-4: brokered Codex's tool_search loaded no projected plugin proof tool: ${JSON.stringify(stack.scripted.requests.flatMap((request) => request.tools.map((item) => item.name)))}`)
     stack.scripted.scriptTool({ ...tool.call, input: { marker: "H15CODEX" }, whenPromptIncludes: "H15CODEX" })
     await step("complete the brokered Codex proof-tool prompt HTTP response", () => api.prompt(workspace.directory, session.id, "Use the installed plugin proof tool with marker H15CODEX", { model }))
     assert.ok(mcp.calls.some((call) => call.arguments.marker === "H15CODEX"), "H-4: brokered Codex did not call the projected plugin proof tool")
