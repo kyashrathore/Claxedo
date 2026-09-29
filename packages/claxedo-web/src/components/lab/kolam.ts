@@ -1,5 +1,11 @@
 export type Point = [number, number]
 
+/** The one kolam the hero ships: grid size, mirror density and seed. */
+export const heroKolam = { columns: 15, rows: 7, share: 0.6, seed: 5, unit: 28 } as const
+
+/** No closed walk is longer than this: every gap point on the grid is visited at most twice. */
+export const maxWalkSteps = (columns: number, rows: number) => 4 * (2 * columns + 1) * (2 * rows + 1)
+
 /**
  * Walks a Gerdes mirror curve on a grid of `columns` × `rows` dots. Dots sit at
  * odd coordinates; the line moves diagonally through the gaps between dots,
@@ -11,7 +17,7 @@ export function mirrorCurve(columns: number, rows: number, mirrors: ReadonlySet<
   const walk: { at: Point; into: Point; out: Point }[] = []
   let [x, y, dx, dy] = [1, 0, 1, 1]
   let into: Point = [1, -1]
-  for (let step = 0; step < 4 * width * height; step++) {
+  for (let step = 0; step < maxWalkSteps(columns, rows); step++) {
     walk.push({ at: [x, y], into, out: [dx, dy] })
     into = [dx, dy]
     x += dx
@@ -27,7 +33,7 @@ export function mirrorCurve(columns: number, rows: number, mirrors: ReadonlySet<
       return walk
     }
   }
-  return walk
+  throw new Error(`Kolam walk on ${columns} × ${rows} did not close within ${maxWalkSteps(columns, rows)} steps`)
 }
 
 export function isSingleLine(columns: number, rows: number, walk: { at: Point }[]) {

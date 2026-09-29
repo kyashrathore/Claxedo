@@ -1,11 +1,9 @@
 ---
-import { kolamPath, symmetricMirrors } from "./kolam"
+import { heroKolam, kolamPath, symmetricMirrors } from "./kolam"
 
-/** A sikku kolam: one closed line around every dot of a 15 × 7 grid, drawn once on load. */
-const columns = 15
-const rows = 7
-const unit = 28
-const line = kolamPath(columns, rows, symmetricMirrors(columns, rows, 0.6, 5), unit)
+/** A sikku kolam: one closed line around every dot of the grid, drawn once on load. */
+const { columns, rows, share, seed, unit } = heroKolam
+const line = kolamPath(columns, rows, symmetricMirrors(columns, rows, share, seed), unit)
 const dots = Array.from({ length: columns * rows }, (_, i) => [2 * (i % columns) + 1, 2 * Math.floor(i / columns) + 1])
 ---
 
