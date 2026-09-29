@@ -108,25 +108,6 @@ function edge(from: string, to: string) {
   return `${slash(from)} -> ${slash(to)}`
 }
 
-/** Normalize Rollup/Vite's `generateBundle` metadata without reading output text. */
-export function normalizeRollupBuildManifest(input: {
-  entry: string
-  bundle: RollupBundleMetadata
-  workspaceRoot: string
-}): BuildManifest {
-  const chunks = Object.values(input.bundle).filter((item): item is RollupChunkMetadata => item.type === "chunk")
-
-  return {
-    entry: normalizeModuleId(input.entry, input.workspaceRoot),
-    modules: sorted(chunks.flatMap((chunk) => Object.keys(chunk.modules).map((id) => normalizeModuleId(id, input.workspaceRoot)))),
-    chunks: sorted(chunks.map((chunk) => slash(chunk.fileName))),
-    edges: {
-      static: sorted(chunks.flatMap((chunk) => chunk.imports.map((target) => edge(chunk.fileName, target)))),
-      dynamic: sorted(chunks.flatMap((chunk) => chunk.dynamicImports.map((target) => edge(chunk.fileName, target)))),
-    },
-  }
-}
-
 function rollupEntryChunkMatches(input: {
   entry: string
   chunks: RollupChunkMetadata[]
@@ -158,11 +139,10 @@ function rollupEntryChunk(input: {
 /**
  * Normalize only the chunks reachable from one runtime entry.
  *
- * Rollup's bundle object contains every emitted entry and lazy chunk. That is
- * the right input for {@link normalizeRollupBuildManifest}, but it is not an
- * honest unsigned-startup trace: a dynamic import's target is present in the
- * artifact without being loaded by the static entry graph. This variant keeps
- * that dynamic edge as evidence while excluding the target's chunks/modules.
+ * Rollup's bundle object contains every emitted entry and lazy chunk, but a
+ * dynamic import's target is present in the artifact without being loaded by
+ * the static entry graph. The dynamic edge is kept as evidence while the
+ * target's chunks/modules are excluded.
  * Callers that describe an activated optional contribution can opt into its
  * dynamic descendants and exclude chunks already owned by the base closure.
  */
