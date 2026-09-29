@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { HTTPException } from "hono/http-exception"
-import type { RecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import type { RecoveryOutcome, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import type { RuntimeDirectory } from "../host/contracts"
 import { errorMessage } from "@claxedo/helpers"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -10,9 +10,8 @@ import {
   isAgentRuntimeMessageIdConflictError,
   isAgentRuntimeTurnAdmissionError,
 } from "../host/runtime"
-import { sessionError, withDir, type CompatEnvelope } from "../compat-events"
 import {
-  compatScope,
+  envelopeDirectory,
   runRuntimePromptTurn,
   type ActiveTurnScope,
   type SessionPromptBody,
@@ -40,6 +39,7 @@ import {
 } from "./session-route-options"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
+import { sessionError, withDir } from "../projection/presentation-events"
 
 /**
  * A headline for a turn/stream failure that keeps the cause: the real message
@@ -53,12 +53,12 @@ function streamTurnErrorMessage(error: unknown): string {
 }
 
 export function publishTurnFailure(
-  publishGlobal: (event: CompatEnvelope) => void,
+  publishGlobal: (event: AgentEventEnvelope) => void,
   directory: RuntimeDirectory,
   sessionId: string,
   error: unknown,
 ) {
-  publishGlobal(withDir(compatScope(directory, sessionId), sessionError(streamTurnErrorMessage(error), sessionId)))
+  publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionError(streamTurnErrorMessage(error), sessionId)))
 }
 
 export async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {

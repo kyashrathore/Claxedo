@@ -1,37 +1,18 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
-import type { TurnOutline } from "@claxedo/agent-sdk-runtime/turn-outline"
+import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
-import {
-  ACP_RECOVER,
-  AgentRuntimeStaleTurnError,
-  recoveryScopeKey,
-  recoveryTargetSessionId,
-  AgentMessagePageError,
-  type AgentMessagePage,
-  type AgentMessagePageInput,
-} from "@claxedo/agent-sdk-runtime/adapters"
-import {
-  AGENT_MESSAGE_PAGE_LIMIT,
-  projectLatestSurfaceMessages,
-  type AgentTurnCoverage,
-  type AgentTurnCoveragePage,
-} from "@claxedo/agent-sdk-runtime/message-page"
-import {
-  acceptsSessionTitle,
-  boundSessionTitleSource,
-  firstTurnErrorData,
-  normalizeHarnessIdentity,
-  parseStoredSessionModelGroup,
-  sessionModelGroupJson,
-} from "@claxedo/agent-sdk-runtime"
+import { recoveryScopeKey, recoveryTargetSessionId, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
+import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
+import { acceptsSessionTitle, boundSessionTitleSource } from "./session/session-title"
+import { firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGroup, sessionModelGroupJson } from "@claxedo/agent-runtime-contract"
 import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
-import { sqliteSessionStarts } from "@claxedo/agent-sdk-runtime/stores/session-start"
-import type { AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-sdk-runtime"
+import { sqliteSessionStarts } from "./session/session-starts"
+import type { AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
@@ -45,24 +26,23 @@ import {
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
-import {
-  type CompatEvent,
-  buildAssistantMessage,
-  buildUserPromptParts,
-  buildUserMessage,
-  messageCompleted,
-  messagePartUpdated,
-  messageUpdated,
-  readRecordedPart,
-  sessionError,
-  sessionIdle,
-  sessionStatus,
-} from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
+import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
+
+export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"
+
+export class AgentRuntimeStaleTurnError extends Error {
+  readonly code = "session_turn_fence_stale"
+
+  constructor(readonly sessionId: string) {
+    super(`Session ${sessionId} rejected a stale turn generation`)
+    this.name = "AgentRuntimeStaleTurnError"
+  }
+}
 
 type Model = {
   providerID: string
@@ -245,10 +225,10 @@ export type RuntimeStoreAppendOutput = {
   seq: number
   createdAt: number
   agentSessionId?: string
-  payload: CompatEvent
+  payload: AgentPresentationEvent
   source?: RuntimeEventSource
   /** The assistant message a committed `session.usage` folded into, for its publisher to stream after the usage. */
-  messageUpdate?: CompatEvent
+  messageUpdate?: AgentPresentationEvent
 }
 
 export type RuntimeStoreTurnStartOutput = {
@@ -256,7 +236,7 @@ export type RuntimeStoreTurnStartOutput = {
   seq: number
   createdAt: number
   agentSessionId?: string
-  events: CompatEvent[]
+  events: AgentPresentationEvent[]
 }
 
 /**
@@ -531,7 +511,7 @@ type Row =
       agentSessionId?: string
       kind: "event"
       source?: RuntimeEventSource
-      payload: CompatEvent
+      payload: AgentPresentationEvent
     }
 
 type TurnStartRow = {
@@ -620,7 +600,7 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
  * Widen a typed message/part envelope to the open record the projection stores.
  *
  * The projection round-trips envelopes through `info_json`/`data_json`, so it
- * works in open records, while the builders in `compat-events` and the engine's
+ * works in open records, while the builders in `presentation-events` and the engine's
  * own event payloads are closed types. A shallow copy is the whole conversion:
  * no assertion, and the caller's value is never mutated (neither `upsertMessage`
  * nor `upsertPart` writes to what it is given).
@@ -633,7 +613,7 @@ const readColumn = {
   sessionCommands: (json: string): AgentSessionCommand[] => JSON.parse(json),
   messageInfo: (json: string): AgentMessage["info"] => JSON.parse(json),
   messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
-  messagePart: (json: string): AgentMessage["parts"][number] => readRecordedPart(JSON.parse(json)),
+  messagePart: (json: string): AgentMessage["parts"][number] => JSON.parse(json),
   partRecord: (json: string): Record<string, unknown> => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.start'` row. */
   turnStart: (json: string): Turn => JSON.parse(json),
@@ -642,7 +622,7 @@ const readColumn = {
   /** `runtime_journal.payload_json` on a `kind='event'` row: an engine envelope. */
   eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='event'`, `type='session.usage'` row. */
-  usagePayload: (json: string): Extract<CompatEvent, { type: "session.usage" }> => JSON.parse(json),
+  usagePayload: (json: string): Extract<AgentPresentationEvent, { type: "session.usage" }> => JSON.parse(json),
   /** `pending_permission.patterns_json`. */
   permissionPatterns: (json: string): string[] => JSON.parse(json),
   /** `pending_permission.options_json`: absent is distinct from no offered options. */
@@ -2532,7 +2512,7 @@ export class RuntimeStore {
         }
       }
       if (row.kind === "event") {
-        const payload: CompatEvent = JSON.parse(row.payload_json)
+        const payload: AgentPresentationEvent = JSON.parse(row.payload_json)
         const source: RuntimeEventSource | undefined = row.source_json ? JSON.parse(row.source_json) : undefined
         return {
           seq: row.seq,
@@ -2619,7 +2599,7 @@ export class RuntimeStore {
     return this.transaction(run, "immediate")
   }
 
-  brokerAppendInside(sessionId: string, payload: CompatEvent): void {
+  brokerAppendInside(sessionId: string, payload: AgentPresentationEvent): void {
     this.commitInside({
       seq: this.next(sessionId), ts: Date.now(), sessionId, kind: "event", payload,
     }, undefined)
@@ -3549,7 +3529,7 @@ export class RuntimeStore {
     this.commit(row)
   }
 
-  private turnStartEvents(row: TurnStartRow): CompatEvent[] {
+  private turnStartEvents(row: TurnStartRow): AgentPresentationEvent[] {
     const control = row.control
     const directory = this.sessionTimes(row.sessionId).directory
     return [
@@ -3772,7 +3752,7 @@ export class RuntimeStore {
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string
-    payload: CompatEvent
+    payload: AgentPresentationEvent
     source?: RuntimeEventSource
     fencingToken?: number
   }) {
@@ -3850,7 +3830,7 @@ export class RuntimeStore {
       if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
       if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
       const agentSession = active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}
-      const terminal = (payload: CompatEvent) =>
+      const terminal = (payload: AgentPresentationEvent) =>
         this.commitInside({
           seq: this.next(input.sessionId),
           ts: Date.now(),
@@ -3859,7 +3839,7 @@ export class RuntimeStore {
           kind: "event",
           payload,
         }, input.fencingToken)
-      const events: CompatEvent[] = []
+      const events: AgentPresentationEvent[] = []
 
       if (input.outcome.status === "failed") {
         const control = readColumn.turnStart(active.payload_json)
@@ -4472,8 +4452,6 @@ export class RuntimeStore {
       current.push(readColumn.messagePart(part.data_json))
       partsByMessage.set(part.message_id, current)
     }
-    // The SQL above selects by the stored type; an attachment recorded as a
-    // synthetic text reads back as a file part and leaves the surface here.
     return projectLatestSurfaceMessages(msgs.map((msg) => ({
       info: readColumn.messageInfo(msg.info_json),
       parts: partsByMessage.get(msg.id) ?? [],
@@ -5293,12 +5271,12 @@ export class RuntimeStore {
     return row?.goal_json ? JSON.parse(row.goal_json) : null
   }
 
-  setGoal(id: string, goal: RuntimeGoalSnapshot | null): CompatEvent[] {
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null): AgentPresentationEvent[] {
     this.assertProjectionCurrent(id)
     this.settleDeltas(id)
     return this.transaction(() => {
       if (!this.getSession(id) || JSON.stringify(this.getGoal(id)) === JSON.stringify(goal)) return []
-      const payload: CompatEvent = goal
+      const payload: AgentPresentationEvent = goal
         ? { type: "goal.updated", properties: { sessionID: id, goal } }
         : { type: "goal.cleared", properties: { sessionID: id } }
       this.commitInside({

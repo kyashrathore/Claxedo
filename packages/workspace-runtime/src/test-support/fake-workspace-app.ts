@@ -1,8 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { HarnessConnectionCapabilities, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { HarnessTransport } from "@claxedo/harness/contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
@@ -38,7 +37,7 @@ export type FakeWorkspaceAppOptions = {
   /** Reopens a store an earlier host wrote instead of a fresh one. */
   root?: string
   eventHub?: RuntimeEventHub
-  onCompatEvent?: (event: CompatEnvelope) => void
+  onPresentationEvent?: (event: AgentEventEnvelope) => void
   afterCreateSession?: WorkspaceHostOptions["afterCreateSession"]
   sessionIdWorkspace?: WorkspaceHostOptions["sessionIdWorkspace"]
   /** Middleware installed ahead of the host's routes. */
@@ -73,7 +72,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
     harnessStateRoot: join(root, "harness"),
     eventHub,
     ...(options.sessionAccessPolicy ? { sessionAccessPolicy: options.sessionAccessPolicy } : {}),
-    ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
+    ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
     storeFactory: ({ storeRoot }) => {

@@ -40,9 +40,7 @@
   },
   "dependencies": {
     "@claxedo/account-contract": "workspace:*",
-    "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
-    "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",
     "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",

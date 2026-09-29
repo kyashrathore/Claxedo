@@ -386,21 +386,21 @@ One previous generation is kept as `server.old.log`.
 
 ## Grounding
 
-- Trusted descriptor and provider-owned public projection:
-  `packages/agent-sdk-runtime/src/connection-provider.ts`
+- Trusted descriptor and the secret lease a connection is resolved with:
+  `packages/agent-runtime-contract/src/connections.ts`
 - Turn quiet countdown and permission hold:
-  `packages/agent-sdk-runtime/src/harnesses/acp/process.ts`
+  `packages/harness/src/transports/acp/events.ts`
 - Remembered "always" answers:
-  `packages/agent-sdk-runtime/src/harnesses/acp/permission-grants.ts`
-- Advertised capability set, session model configuration, and environment restart rule:
-  `packages/agent-sdk-runtime/src/harnesses/acp/capabilities.ts` and
-  `packages/agent-sdk-runtime/src/harnesses/acp/process-manager.ts`
-- Prompt blocks, attachment delivery and the Goal handshake read:
-  `packages/agent-sdk-runtime/src/harnesses/acp/session.ts` and
-  `packages/agent-sdk-runtime/src/harnesses/shared/prompt-attachments.ts`
+  `packages/harness/src/broker/grants.ts`
+- Environment restart rule:
+  `packages/harness/src/transports/acp/lifecycle.ts` and
+  `packages/harness/src/transports/acp/startup.ts`
+- Prompt blocks and attachment delivery:
+  `packages/harness/src/transports/acp/protocol.ts` and
+  `packages/harness/src/translate/attachments.ts`
 - Session-update translation and what the transcript can represent:
-  `packages/agent-event-runtime/src/harnesses/acp/translate-session-update.ts`
-  and `packages/agent-event-runtime/src/projections/client-presentation/projection.ts`
+  `packages/harness/src/transports/acp/translate/translate-session-update.ts`
+  and `packages/workspace-runtime/src/projection/client-presentation/projection.ts`
 - Config file watch:
   `packages/claxedo-server-core/src/agent-config/index.ts`
 - Strict v3 persistence/map validation:
@@ -412,6 +412,3 @@ One previous generation is kept as `server.old.log`.
 - Browser decoder/store:
   `packages/claxedo-app/src/server/agent-connections.ts` (decoder in
   `packages/agent-runtime-contract/src/connections.ts`)
-- External OpenCode descriptor and adapter:
-  `packages/opencode-server-adapter/src/config.ts` and
-  `packages/opencode-server-adapter/src/adapter.ts`

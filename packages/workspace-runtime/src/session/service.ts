@@ -1,18 +1,13 @@
-import type { AgentMessage, PromptDelivery, PromptDeliveryRequest, PromptInput, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage, PromptDelivery, PromptDeliveryRequest, PromptInput, RecoveryTurnTarget, AgentEventEnvelope, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
-import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
-import { firstTurnErrorData, type AgentRuntimeStreamEvent, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import { createClientPresentationProjection } from "../projection/client-presentation/projection"
+import { firstTurnErrorData } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "../host/contracts"
 import type { TurnOrigin } from "@claxedo/harness/contract"
 import { isAgentRuntimeTurnAdmissionError, type AgentRuntime, type AgentRuntimeTurnStartInput } from "../host/runtime"
 import { isTerminalRuntimePayload } from "../host/turn-outcome"
-import {
-  buildAssistantMessage,
-  sessionError,
-  withDir,
-  type CompatEnvelope,
-  type CompatEvent,
-} from "../compat-events"
 import { arr, bool, rec, str } from "../json-value"
+import { buildAssistantMessage, sessionError, withDir } from "../projection/presentation-events"
 
 export type ActiveTurnScope = {
   signal?: AbortSignal
@@ -151,7 +146,7 @@ export type RuntimePromptTurnInput = {
   directory: RuntimeDirectory
   body: SessionPromptBody
   origin: TurnOrigin
-  publishGlobal: (event: CompatEnvelope) => void
+  publishGlobal: (event: AgentEventEnvelope) => void
   activeTurn?: ActiveTurnScope
   createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
@@ -198,7 +193,7 @@ function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal | unde
   return Promise.race([iterator.next(), aborted]).finally(cleanup)
 }
 
-export function compatScope(directory: RuntimeDirectory, sessionId: string) {
+export function envelopeDirectory(directory: RuntimeDirectory, sessionId: string) {
   return directory ?? sessionId
 }
 
@@ -215,7 +210,7 @@ function failure(input: unknown): string {
   return str(rec(rec(input)?.data)?.message) ?? "session error"
 }
 
-function isCompatEvent(event: AgentRuntimeStreamEvent): event is CompatEvent {
+function isPresentationEvent(event: AgentRuntimeStreamEvent): event is AgentPresentationEvent {
   return "properties" in event
 }
 
@@ -243,8 +238,8 @@ function createPromptEventProjection(input: {
     assistantId() {
       return assistantId
     },
-    events(event: AgentRuntimeStreamEvent): CompatEvent[] {
-      if (isCompatEvent(event)) return [event]
+    events(event: AgentRuntimeStreamEvent): AgentPresentationEvent[] {
+      if (isPresentationEvent(event)) return [event]
       if (event.type === "step-start") assistantId = event.newMessageId
       return projection.ingest(event).map((item) => item.payload)
     },
@@ -267,7 +262,7 @@ function reply(messages: unknown[], assistantId: string) {
 export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promise<SessionPromptTurnResult> {
   const subscribe = () => input.runtime.events.subscribe({ sessionId: input.sessionId })[Symbol.asyncIterator]()
   const iterator = subscribe()
-  const scope = compatScope(input.directory, input.sessionId)
+  const scope = envelopeDirectory(input.directory, input.sessionId)
   let turn: Awaited<ReturnType<RuntimePromptTurnInput["runtime"]["turns"]["start"]>> | undefined
   let assistantId = ""
   let assistantMessagePublished = false

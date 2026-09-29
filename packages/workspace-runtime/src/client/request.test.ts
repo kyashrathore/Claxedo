@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { serializeRecoveryOutcome, type RecoveryOperation, type RecoveryOutcome, type RecoveryRequest } from "@claxedo/agent-runtime-contract"
-import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { createWorkspaceRuntimeClient } from "./index"
 import { WorkspaceRuntimeClientError, WorkspaceRuntimeClientPayloadError, WorkspaceRuntimeClientTransportError } from "./request"
 

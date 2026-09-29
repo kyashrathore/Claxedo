@@ -4,6 +4,8 @@ import path from "node:path"
 type Observation = { kind: "http"; method: string; route: string; status: number; body: unknown }
   | { kind: "stream"; route: string; frames: unknown[] }
 
+const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
+
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -232,6 +234,7 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
     return scopedId(ids, value, "repo", scope)
   }
   let result = value.includes("%2F") ? decodeURIComponent(value) : value
+  result = result.split(REPO_ROOT).join("<repo>").split(process.execPath).join("<bun>")
   result = result.replace(/(?:(?:\/private)?\/var\/folders\/[^/]+\/[^/]+\/T|\/tmp)\/(?:claxedo-e2e|claxedo-hosted|h19-product-host)-[^/\s"?]+/g, "<data-dir>")
   result = result.replace(/<data-dir>\/workspaces\/[^/\s"?]+/g, (directory) => {
     return scopedId(ids, directory, "workspace", scope)

@@ -8,8 +8,7 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import { readRecordedPart } from "@claxedo/agent-sdk-runtime/compat-events"
-import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
+import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
@@ -367,10 +366,8 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       for (const part of selectedParts) {
         const parsed = asRecord(JSON.parse(part.part_json))
         if (!parsed) continue
-        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), readRecordedPart(parsed)])
+        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), parsed])
       }
-      // The SQL above selects by the stored type; an attachment recorded as a
-      // synthetic text reads back as a file part and leaves the surface here.
       const messages = projectLatestSurfaceMessages(infoRows.flatMap((row) => {
         const info = asRecord(JSON.parse(row.info_json))
         return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
@@ -516,12 +513,7 @@ export function readSessionMaxEventOrdinal(sessionId: string): number {
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
-  return terminalizeReplayMessages(
-    rows.map((row) => {
-      const message = readStoredMessage(row.data)
-      return { ...message, parts: message.parts.map(readRecordedPart) }
-    }),
-  )
+  return terminalizeReplayMessages(rows.map((row) => readStoredMessage(row.data)))
 }
 
 const FOREIGN = Symbol("foreign message")

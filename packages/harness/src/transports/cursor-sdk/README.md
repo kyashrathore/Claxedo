@@ -10,7 +10,7 @@ The home comes from the Cursor profile, keyed by the session owner, the binding 
 
 The host receives a broker-signed placeholder for a bound account. The egress broker exchanges the real key, keeps the real access token, and returns that signed placeholder in the exchange reply; subsequent Connect calls are substituted inside the broker. With no product binding, only a machine-owner local session can use the machine's explicit `CURSOR_BACKEND_URL` and `CURSOR_API_KEY`.
 
-The native SDK carries run status, usage and tools through `Agent.create` and `Agent.send`. ACP does not expose these SDK calls. The transport uses the existing Cursor translator in `@claxedo/agent-event-runtime`; the SDK owns its own loop and tools.
+The native SDK carries run status, usage and tools through `Agent.create` and `Agent.send`. ACP does not expose these SDK calls. The transport's translator is `translate/adapter.ts`; the SDK owns its own loop and tools.
 
 What this transport carries that ACP does not:
 

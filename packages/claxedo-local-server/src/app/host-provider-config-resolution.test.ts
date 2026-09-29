@@ -8,7 +8,7 @@ import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters
 import { getRuntimeConfigSnapshot, projectRuntimeAuth } from "@claxedo/server-core/agent-config/index"
 import { createTestBackend, setBackendOverride } from "@claxedo/server-core/credentials/backend-registry"
 import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
-import { providerProjection } from "@claxedo/agent-sdk-runtime"
+import { providerProjection } from "@claxedo/agent-runtime-contract"
 import { adoptEnrolledOwner, clearHostProviderConfig } from "../workspace/host-provider-config"
 import { resetHostEnrolledOwner } from "@claxedo/host-serving/serving"
 import { startLocalServer, type LocalServer } from "./start-local-server"

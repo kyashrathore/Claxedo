@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor } from "@claxedo/agent-runtime-contract"
 import {
   ConnectionUnavailableError,
   createLocalConnectionSecretResolver,

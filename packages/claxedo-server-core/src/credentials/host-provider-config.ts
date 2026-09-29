@@ -16,7 +16,7 @@ import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agen
  * account ahead of the machine's.
  */
 
-import { credentialSnapshot } from "@claxedo/agent-sdk-runtime/provider-projection"
+import { credentialSnapshot } from "@claxedo/agent-runtime-contract"
 import type { AccountSources } from "./account-holder"
 
 /** Bumped when the sealed shape changes; a host that cannot read a version refuses the whole revision. */

@@ -3,9 +3,8 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { importPattern } from "../test-support/guards"
 
-// Control-plane central persistence is separate from workspace-runtime and
-// agent-sdk-runtime execution persistence. The
-// control-plane sync code owns `ProjectionStore` + `DurableSessionLog` and must
+// Control-plane central persistence is separate from workspace-runtime
+// execution persistence. The control-plane sync code owns `ProjectionStore` + `DurableSessionLog` and must
 // never import or inspect the runtime execution stores. This guard fails if any
 // of these files reach for a runtime store symbol (by import or by named token).
 
@@ -18,22 +17,16 @@ const centralStoreFiles = [
   "../../../claxedo-server-core/src/platform/auth/durable-session-log.ts",
 ]
 
-// Runtime execution-store symbols the central seam must not touch. These live in
-// `workspace-runtime/src/store.ts` (`RuntimeStore`) and the agent-sdk-runtime
-// adapter stores (`AgentRuntimeStore`, `createMemoryRuntimeStore`,
-// `createSqliteRuntimeStore`, `@claxedo/agent-sdk-runtime/stores/*`).
+// Runtime execution-store symbols the central seam must not touch: the store in
+// `workspace-runtime/src/store.ts` (`RuntimeStore`) and the runtime host's name
+// for it (`AgentRuntimeStore`).
 const forbiddenSymbols = [
   "RuntimeStore",
   "AgentRuntimeStore",
-  "MemoryRuntimeStore",
-  "SqliteRuntimeStore",
 ]
 
 const forbiddenModuleImports = [
-  "@claxedo/agent-sdk-runtime",
   "workspace-runtime/src/store",
-  "/stores/memory",
-  "/stores/sqlite",
 ]
 
 describe("control-plane central-store boundary", () => {

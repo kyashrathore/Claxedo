@@ -1,5 +1,5 @@
 import { asRecord, type SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { ConnectionSecretLease } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretLease } from "@claxedo/agent-runtime-contract"
 import type { createHarnessComposer } from "@claxedo/harness/compose"
 import type { HarnessConnectionDescriptor } from "@claxedo/harness/providers"
 import { harnessRecord } from "@claxedo/harness/registry"

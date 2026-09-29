@@ -1,23 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
+import { translatorRuntime } from "../../../test-support/translator-runtime"
 import {
   codexAppServerAdapter,
   codexCollabAgentCall,
   codexCollabAgentStatus,
   codexStartedSubagent,
   codexSubagentActivity,
-  type CodexAppServerAdapterState,
 } from "./adapter"
 
-function runtime(initialSnapshot?: RuntimeSnapshot<CodexAppServerAdapterState>) {
-  return createAgentEventRuntime({
+function runtime() {
+  return translatorRuntime({
     harness: "codex-app-server",
     threadId: "thread-1",
     adapter: codexAppServerAdapter(),
     clock: () => 0,
     createId: (prefix = "id") => `${prefix}-1`,
-    ...(initialSnapshot ? { initialSnapshot } : {}),
   })
 }
 
@@ -97,7 +94,7 @@ describe("codexAppServerAdapter", () => {
     }).events).toMatchObject([{ type: "text-delta", delta: "lo" }])
   })
 
-  test("restores active assistant item text without duplicating completed snapshots", () => {
+  test("keeps active assistant item text without duplicating completed snapshots", () => {
     const first = runtime()
     first.ingest({
       source: "codex.app-server",
@@ -105,14 +102,12 @@ describe("codexAppServerAdapter", () => {
       payload: { itemId: "msg-1", delta: "hel" },
     })
 
-    const restored = runtime(first.snapshot())
-
-    expect(restored.ingest({
+    expect(first.ingest({
       source: "codex.app-server",
       method: "item/completed",
       payload: { item: { id: "msg-1", type: "agentMessage", text: "hello" } },
     }).events).toMatchObject([{ type: "text-delta", delta: "lo" }])
-    expect(restored.snapshot().adapterState.assistantTextByItemId["msg-1"]).toBe("hello")
+    expect(first.state().assistantTextByItemId["msg-1"]).toBe("hello")
   })
 
   test("maps reasoning and proposed plan streams", () => {
@@ -773,9 +768,9 @@ describe("codexAppServerAdapter", () => {
       payload: { itemId: "cmd-1", delta: "pass" },
     })
 
-    expect(Object.keys(agent.snapshot().adapterState.assistantTextByItemId)).toEqual(["msg-1"])
-    expect(Object.keys(agent.snapshot().adapterState.toolsByItemId)).toEqual(["cmd-1"])
-    expect(Object.keys(agent.snapshot().adapterState.toolOutputByCallId)).toEqual(["cmd-1"])
+    expect(Object.keys(agent.state().assistantTextByItemId)).toEqual(["msg-1"])
+    expect(Object.keys(agent.state().toolsByItemId)).toEqual(["cmd-1"])
+    expect(Object.keys(agent.state().toolOutputByCallId)).toEqual(["cmd-1"])
 
     agent.ingest({
       source: "codex.app-server",
@@ -783,7 +778,7 @@ describe("codexAppServerAdapter", () => {
       payload: { sessionId: "session-1", turn: { status: "completed" } },
     })
 
-    expect(agent.snapshot().adapterState).toEqual({
+    expect(agent.state()).toEqual({
       assistantTextByItemId: {},
       toolOutputByCallId: {},
       toolsByItemId: {},
@@ -876,7 +871,7 @@ describe("codexAppServerAdapter", () => {
       },
     })
 
-    expect(agent.snapshot().adapterState.lastLimitedRateLimitMessage)
+    expect(agent.state().lastLimitedRateLimitMessage)
       .toBe("You've reached your Codex rate limit. It will reset in about 5 hours.")
 
     expect(agent.ingest({
@@ -972,7 +967,7 @@ describe("codexAppServerAdapter", () => {
       payload: { turn: { id: "turn-1", status: "completed" } },
     })
 
-    expect(agent.snapshot().adapterState.lastLimitedRateLimitMessage)
+    expect(agent.state().lastLimitedRateLimitMessage)
       .toBe("You've reached your Codex usage limit. It will reset in about 5 hours.")
 
     expect(agent.ingest({

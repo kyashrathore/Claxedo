@@ -32,7 +32,7 @@ import {
 import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { selectedAccounts, TEAM_ACCOUNT_UNAVAILABLE, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
 import { accountSelections } from "@claxedo/server-core/credentials/account-source"
-import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-sdk-runtime"
+import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-runtime-contract"
 import {
   markCredentialUsed,
   readSecretById,

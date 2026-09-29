@@ -65,10 +65,7 @@ const error = (code: string, message: string) => ({ error: { code, message } })
 
 /**
  * The child-session half of the workspace-runtime session routes, answering
- * exactly what `session-children.routes.test.ts` pins for the real ones. The
- * runtime itself is not reachable from this package: its route module needs an
- * adapter and a store from `@claxedo/agent-sdk-runtime`, which is not a
- * dependency here.
+ * exactly what `session-children.routes.test.ts` pins for the real ones.
  */
 /**
  * What a local Stop can actually establish. `cancel_turn` only closes as

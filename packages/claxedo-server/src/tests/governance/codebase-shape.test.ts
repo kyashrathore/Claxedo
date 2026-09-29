@@ -159,7 +159,7 @@ describe("architecture boundaries", () => {
     // OpenCode only through `@claxedo/harness/opencode-sdk`'s typed ports.
     const sdkOwner = path.join(packageRoot, "harness/src/transports/opencode-sdk") + path.sep
     const sourceRoots = [
-      "agent-sdk-runtime/src",
+      "harness/src",
       "workspace-runtime/src",
       "claxedo-server-core/src",
       "claxedo-server/src",

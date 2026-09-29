@@ -1,11 +1,11 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { LocalRunStreamEvent, SDKMessage } from "@cursor/sdk"
 import type { AgentRuntimeEvent, SubagentMode, SubagentStatus, SubagentToolCallRole } from "@claxedo/agent-runtime-contract"
-import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
+import { runtimeDiagnostic, asText as text } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../../translate/adapter"
 import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../../translate/host-subagent"
-import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own, text } from "@claxedo/agent-event-runtime/value"
+import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
 import { imageAttachment } from "../../../translate/tool-attachments"
 
 export type CursorSdkAdapterState = {

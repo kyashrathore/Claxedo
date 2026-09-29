@@ -135,16 +135,14 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
 /**
  * Roots of the host-bundle package closure.
  *
- * The host registers the external adapter itself; workspace-runtime does not
- * depend on it. Keep runtime first for dependency-pin priority; topological
- * build order places the first-party MCP mount after the runtime it consumes.
+ * Topological build order places the first-party MCP mount after the runtime
+ * it consumes.
  * Pure server-core source helpers are bundled directly, not package build roots.
  * The Agent Plugins image also bundles the local-server module that owns the
  * runtime apply route (`host-entry.agent-plugins.ts`).
  */
 export function hostBundlePackageRoots(agentPlugins = false) {
   return [
-    path.join(packagesRoot(), "opencode-server-adapter"),
     path.join(packagesRoot(), "claxedo-mcp"),
     ...(agentPlugins ? [path.join(packagesRoot(), "claxedo-local-server")] : []),
     workspaceRuntimeRoot(),

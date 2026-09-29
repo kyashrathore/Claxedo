@@ -64,7 +64,7 @@ test("compose is the only production module outside transports that imports tran
 
 test("transport-boundary accepts only its own SDK and shared boundaries", () => {
   const documented = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8")
-  for (const name of ["@claxedo/helpers", "@claxedo/agent-runtime-contract", "@claxedo/agent-event-runtime"]) {
+  for (const name of ["@claxedo/helpers", "@claxedo/agent-runtime-contract"]) {
     expect(documented).toContain(`\`${name}\``)
     passes("transport-boundary", "src/transports/acp/good.ts", `import "${name}"\nimport "${name}/subpath"\n`)
   }

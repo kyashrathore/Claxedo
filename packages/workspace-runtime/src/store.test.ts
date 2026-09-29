@@ -7,24 +7,14 @@ import fs from "fs"
 import { createRequire } from "module"
 import os from "os"
 import path from "path"
-import { AgentMessagePageError, AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeStaleTurnError } from "./store"
 import { createRequestBroker } from "@claxedo/harness/broker"
 import { createStoreBrokerPorts } from "./broker-ports/index"
 import type { RuntimeEventPublishers } from "./projection/runtime-event-hub"
-import {
-  messagePartUpdated,
-  messageUpdated,
-  messageCompleted,
-  messagePartDelta,
-  permissionAsked,
-  questionAsked,
-  sessionIdle,
-  sessionUsage,
-  sessionUpdated,
-  todoUpdated,
-} from "./compat-events"
 import { RuntimeStore as RuntimeStoreImpl } from "./store"
 import { readTurnOutline, type TurnOutlineDatabase } from "./session/turn-outline"
+import { messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionIdle, sessionUpdated, sessionUsage, todoUpdated } from "./projection/presentation-events"
 
 const roots: string[] = []
 const stores: RuntimeStoreImpl[] = []
@@ -1564,39 +1554,6 @@ void describe("RuntimeStore", () => {
     assert.ok(completeAssistant)
     assert.equal(completeAssistant.parts.length, 22)
     assert.equal(completeAssistant.parts[20]?.type, "tool")
-    store.close()
-  })
-
-  void it("an attachment recorded as a synthetic text reads back as its file part, and stays out of the surface", () => {
-    const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    const image = { id: "prt_image", type: "file", mime: "image/png", filename: "image.png", url: `data:image/png;base64,${"A".repeat(2048)}` }
-    for (const info of [
-      { id: "user-image", role: "user" },
-      { id: "assistant-image", role: "assistant", parentID: "user-image" },
-    ]) {
-      store.appendEvent({
-        sessionId: "s1",
-        agentSessionId: "a1",
-        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now(), completed: Date.now() }, ...info } as any),
-      })
-    }
-    for (const part of [
-      { id: "user-text", messageID: "user-image", type: "text", text: "" },
-      { id: "prt_image", messageID: "user-image", type: "text", text: JSON.stringify(image), synthetic: true },
-      { id: "assistant-answer", messageID: "assistant-image", type: "text", text: "Looks fine." },
-    ]) {
-      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", ...part } as any) })
-    }
-
-    const complete = store.getMessagePage("s1", { view: "latest-turn" })
-    assert.ok(complete)
-    assert.deepEqual(complete.messages[0]?.parts.map((part) => part.type), ["text", "file"])
-    assert.deepEqual(complete.messages[0]?.parts[1], { ...image, sessionID: "s1", messageID: "user-image" })
-
-    const surface = store.getMessagePage("s1", { view: "latest-surface" })
-    assert.ok(surface)
-    assert.deepEqual(surface.messages[0]?.parts.map((part) => part.id), ["user-text"])
     store.close()
   })
 
@@ -4221,4 +4178,103 @@ void it("a writer carrying no lease is refused, whether or not the session grant
   assert.equal(journalTypes(store, "s2").includes("turn.finish"), false)
   assert.equal(store.getSession("s2")?.status, "busy")
   store.close()
+})
+
+void describe("session starts", () => {
+  const binding = { sessionId: "starting", workspaceId: "workspace", directory: "/work", connectionId: "connection:agent", operationId: "creation" }
+
+  void it("a pending creation has immutable ownership and no executable or visible session", () => {
+    const store = new RuntimeStore(tmp())
+    const record = store.sessionStarts.begin(binding)
+    assert.equal(record.status, "starting")
+    assert.equal(store.getSession(binding.sessionId), null)
+    assert.equal(store.getExecutionBinding(binding.sessionId), null)
+    assert.deepEqual(store.listSessions(binding.directory), [])
+    for (const key of ["workspaceId", "directory", "connectionId", "operationId"] as const) {
+      assert.throws(() => store.sessionStarts.begin({ ...binding, [key]: "different" }), /another operation/)
+    }
+    record.binding.directory = "/tampered"
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.binding.directory, "/work")
+    assert.throws(() => store.sessionStarts.begin({ ...binding, upstreamSessionId: "fabricated" } as typeof binding), /Invalid pending/)
+  })
+
+  void it("a settled creation cannot be promoted by a stale or competing completion", () => {
+    const store = new RuntimeStore(tmp())
+    store.sessionStarts.begin(binding)
+    assert.throws(() => store.sessionStarts.finish({ ...binding, operationId: "other" }, { status: "created", upstreamSessionId: "agent-session" }), /does not match/)
+    assert.throws(() => store.sessionStarts.finish({ ...binding, connectionId: "other" }, { status: "created", upstreamSessionId: "agent-session" }), /does not match/)
+    store.sessionStarts.finish(binding, { status: "failed", error: "agent disconnected" })
+    assert.throws(() => store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "agent-session" }), /already settled/)
+    assert.equal(store.sessionStarts.finish(binding, { status: "failed", error: "agent disconnected" }).status, "failed")
+  })
+
+  void it("a retired creation frees the id and a stale operation cannot reach its replacement", () => {
+    const store = new RuntimeStore(tmp())
+    store.sessionStarts.begin(binding)
+    store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "agent-session" })
+    for (const key of ["workspaceId", "directory", "connectionId", "operationId"] as const) {
+      assert.equal(store.sessionStarts.retire({ ...binding, [key]: "different" }), false)
+    }
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "created")
+    assert.equal(store.sessionStarts.retire(binding), true)
+    assert.equal(store.sessionStarts.get(binding.sessionId), undefined)
+    assert.equal(store.sessionStarts.retire(binding), false)
+
+    const replacement = { ...binding, operationId: "retry" }
+    assert.equal(store.sessionStarts.begin(replacement).status, "starting")
+    assert.equal(store.sessionStarts.retire(binding), false)
+    assert.throws(() => store.sessionStarts.finish(binding, { status: "failed", error: "late" }), /does not match/)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "starting")
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.binding.operationId, "retry")
+  })
+
+  void it("retirement compares binding fields, not the stored record, and outlives the process", () => {
+    const root = tmp()
+    let store = new RuntimeStore(root)
+    store.sessionStarts.begin(binding)
+    store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "real-upstream" })
+    store.close()
+
+    store = new RuntimeStore(root)
+    // Same five fields, written in the order no serialized record would carry.
+    const reordered = {
+      operationId: binding.operationId,
+      connectionId: binding.connectionId,
+      directory: binding.directory,
+      workspaceId: binding.workspaceId,
+      sessionId: binding.sessionId,
+    }
+    assert.equal(store.sessionStarts.retire({ ...reordered, connectionId: "connection:other" }), false)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "created")
+    assert.equal(store.sessionStarts.retire(reordered), true)
+    store.close()
+
+    store = new RuntimeStore(root)
+    assert.equal(store.sessionStarts.get(binding.sessionId), undefined)
+    assert.equal(store.sessionStarts.begin({ ...binding, operationId: "retry" }).status, "starting")
+    store.close()
+    store = new RuntimeStore(root)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.binding.operationId, "retry")
+    store.close()
+  })
+
+  void it("startup ownership and a pending question survive a reopen before any provider binding, and the binding after it", () => {
+    const root = tmp()
+    let store = new RuntimeStore(root)
+    const starting = store.sessionStarts.begin(binding)
+    store.appendEvent({ sessionId: binding.sessionId, payload: questionAsked({ id: "question", sessionID: binding.sessionId, questions: [{ header: "Agent", question: "Choose", options: [] }] }) })
+    store.close()
+    store = new RuntimeStore(root)
+    assert.deepEqual(store.sessionStarts.get(binding.sessionId), starting)
+    assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
+    assert.equal(store.getSession(binding.sessionId), null)
+    store.bindSession({ ...binding, agentSessionId: "real-upstream", upstreamSessionId: "real-upstream" })
+    store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "real-upstream" })
+    assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
+    store.close()
+    store = new RuntimeStore(root)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "created")
+    assert.equal(store.getExecutionBinding(binding.sessionId)?.upstreamSessionId, "real-upstream")
+    store.close()
+  })
 })

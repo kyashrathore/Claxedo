@@ -14,7 +14,7 @@ import {
   type RecoveryTarget,
   RECOVERY_OPERATION_RETENTION_MS,
 } from "@claxedo/agent-runtime-contract"
-import { recoveryScopeKey, recoveryTargetSessionId } from "@claxedo/agent-sdk-runtime/adapters"
+import { recoveryScopeKey, recoveryTargetSessionId } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStore, RecoveryCaller } from "./contracts"
 import { messageOf, type RecoveryFactsOwner } from "./recovery-facts"
 

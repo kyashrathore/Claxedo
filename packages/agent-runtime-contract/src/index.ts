@@ -50,6 +50,8 @@ export {
   normalizeRecoveryTarget,
   recoveryTargetsMatch,
   parseRecoveryTarget,
+  recoveryScopeKey,
+  recoveryTargetSessionId,
 } from "./recovery/targets"
 export {
   RECOVERY_ACTIONS,
@@ -113,13 +115,18 @@ export {
   RecoveryContractError,
 } from "./recovery/validation"
 export * from "./session-group"
+export * from "./session-handoff"
 export * from "./session-titles"
 export * from "./sessions"
 export * from "./subagents"
 export * from "./tool-header"
+export * from "./turn-outline"
+export * from "./turn-page"
 export * from "./tool-names"
 export * from "./turn-account"
 export * from "./turn-error-classes"
+export * from "./first-turn-error"
+export * from "./message-page"
 export * from "./usage-windows"
 export * from "./values"
 export * from "./agent-runtime-event"

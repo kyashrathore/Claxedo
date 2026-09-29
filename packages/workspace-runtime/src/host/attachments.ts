@@ -2,7 +2,7 @@ import { AgentRuntimeContractError, type AgentExecutionBinding, type SessionHarn
 import { createSessionBroker, type BrokerOwner, type SessionBrokerContext } from "@claxedo/harness/broker"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { HarnessSession, SessionBroker, TurnActor, TurnOrigin } from "@claxedo/harness/contract"
-import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import { createKeyedSerializer } from "@claxedo/helpers"
 import type { AgentRuntimeStore } from "./contracts"
 import { attachInput, type LaunchComposer } from "./launch"

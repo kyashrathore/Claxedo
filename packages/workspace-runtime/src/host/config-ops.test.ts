@@ -1,7 +1,7 @@
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { afterEach, describe, expect, test } from "bun:test"
 import { HARNESS_TABLE, type AgentPermissionMode, type AgentPermissionModeState, type PromptModel, type SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
-import { PermissionModeRefusedError } from "@claxedo/agent-sdk-runtime"
+import { PermissionModeRefusedError } from "../session/permission-ceiling"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 import type { ConfigPreviewTarget, HarnessSession, HarnessTransport, KeptPermissionMode } from "@claxedo/harness/contract"
@@ -72,7 +72,7 @@ describe("a selection write publishes the session's row", () => {
   async function hostWith(harness: SessionHarness, transport: FakeTransport, others: Record<string, FakeTransport> = {}) {
     const fixture = createHostFixture({ transports: { ...others, [harness.id]: transport } })
     fixtures.push(fixture)
-    const published: CompatEnvelope[] = []
+    const published: AgentEventEnvelope[] = []
     fixture.eventHub.subscribeGlobal((event) => {
       if (event.payload.type === "session.updated") published.push(event)
     })
@@ -81,7 +81,7 @@ describe("a selection write publishes the session's row", () => {
     return { fixture, published, sessionId: session.id }
   }
 
-  const rowConfig = (event: CompatEnvelope | undefined) =>
+  const rowConfig = (event: AgentEventEnvelope | undefined) =>
     (event?.payload.properties as { info?: { config?: Record<string, unknown> } } | undefined)?.info?.config
 
   test("a mode write publishes the row once with the kept mode, and the same write again publishes nothing", async () => {

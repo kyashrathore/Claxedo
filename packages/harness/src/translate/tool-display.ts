@@ -1,6 +1,5 @@
-import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
+import { isSubagentSpawnToolName, asText as text } from "@claxedo/agent-runtime-contract"
 import type { ToolDisplay, ToolIntent } from "@claxedo/agent-runtime-contract"
-import { text } from "@claxedo/agent-event-runtime/value"
 import { isHostSubagentTool } from "./host-subagent"
 
 export function canonicalToolIntent(input: { kind?: string; toolName?: string }): ToolIntent {

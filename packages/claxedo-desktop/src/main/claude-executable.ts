@@ -9,8 +9,10 @@ import { delimiter, join, win32 } from "node:path"
  * A GUI-launched app often has a trimmed PATH, so we also probe the standard
  * install locations. Returns `undefined` when Claude Code is not installed.
  *
- * (agent-sdk-runtime has a richer resolver, but claxedo-desktop's main process
- * does not depend on it, so this keeps a minimal copy.)
+ * The runtime's resolver (`resolveClaudeExecutable` in workspace-runtime's
+ * `host/executables/claude.ts`) also reads the configured override; importing
+ * it here would add `@claxedo/workspace-runtime` to the main process's
+ * closure, which the desktop-main ratchet holds at its measured packages.
  */
 export function resolveSystemClaude(): string | undefined {
   const isWin = process.platform === "win32"

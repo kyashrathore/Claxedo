@@ -31,10 +31,7 @@ export type {
   SessionWorkspaceAuthority,
 } from "./session-access-policy"
 export { sessionStatusSnapshot } from "./routes/session-status-snapshot"
-export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
-export { eventSessionId, toCompatEvent, withDir } from "./compat-events"
 export {
-  compatScope,
   sessionPromptReply,
   type ActiveTurnScope,
   type SessionPromptBody,

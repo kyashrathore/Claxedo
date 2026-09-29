@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { isTerminalSubagentStatus, type PromptInput, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
-import type { CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { SubagentUpdatedEvent, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { BrokerPorts } from "@claxedo/harness/broker"
 import type { ChildSessionRef } from "@claxedo/harness/contract"
 import type { ChildProjectionTarget } from "../projection/child-event-routing"
 import type { RuntimeAppendSource } from "../projection/turn-projection"
 import type { AgentRuntimeStore } from "./contracts"
-import { AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentRuntimeStaleTurnError } from "../store"
 import type { LeasedTurnFailure } from "../broker-ports"
 
 type ChildLifecycleEvent =
@@ -59,7 +58,7 @@ function childOutcome(event: Pick<SubagentUpdatedEvent, "status" | "label">) {
  */
 export function createChildTurns(input: {
   store: AgentRuntimeStore
-  publish: (parentSessionId: string, event: CompatEvent) => void
+  publish: (parentSessionId: string, event: AgentPresentationEvent) => void
   /** Retains a child terminal the store refused under the child's lease; `false` when nothing could, and the lease is released. */
   retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean
 }) {

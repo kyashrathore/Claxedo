@@ -1,3 +1,5 @@
+import { isRecord } from "./values"
+
 /**
  * What a harness receives in place of a credential.
  *
@@ -40,6 +42,14 @@ export type ProviderUnavailable = {
   reason: string
 }
 
+/**
+ * Whether a row is the refusal rather than a binding.
+ *
+ * Takes any object rather than a `ProviderProjection`, because the same
+ * refusal travels alongside binding shapes this module does not own — the
+ * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
+ * the predicate beside each of them is how two of them came to disagree.
+ */
 export function isProviderUnavailable(row: object): row is ProviderUnavailable {
   return "unavailable" in row
 }
@@ -72,3 +82,139 @@ export type CredentialSnapshot<T = ProviderProjectionSource> = {
 
 /** The environment a `placeholderEnv` row is resolved against. */
 export type PlaceholderEnvironment = Record<string, string | undefined>
+
+const AUTH_MODES = ["api-key", "bearer"] as const
+const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath", "account"])
+const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
+
+export function providerProjection(
+  input: unknown,
+  env: PlaceholderEnvironment = {},
+): ProviderProjection | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
+  const row: Record<string, unknown> = { ...input }
+  if ("unavailable" in row) {
+    if (Object.keys(row).some((key) => !UNAVAILABLE_KEYS.has(key))) return undefined
+    if (row.unavailable !== true || typeof row.reason !== "string" || !row.reason) return undefined
+    return { unavailable: true, reason: row.reason }
+  }
+  if (Object.keys(row).some((key) => !BINDING_KEYS.has(key))) return undefined
+  const { baseUrl, expiresAt, placeholderEnv } = row
+  // `find` over the literal list yields the union member; a membership test
+  // would leave a bare `string` and force an assertion.
+  const authMode = AUTH_MODES.find((mode) => mode === row.authMode)
+  if (typeof baseUrl !== "string" || !baseUrl || !authMode) return undefined
+  if (expiresAt !== undefined && (typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= 0)) {
+    return undefined
+  }
+  const apiPath = row.apiPath
+  if (apiPath !== undefined && (typeof apiPath !== "string" || (apiPath && !apiPath.startsWith("/")))) return undefined
+  const account = row.account === undefined ? undefined : bindingAccount(row.account)
+  if (row.account !== undefined && !account) return undefined
+  const rest = {
+    baseUrl,
+    authMode,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(apiPath === undefined ? {} : { apiPath }),
+    ...(account ? { account } : {}),
+  }
+  if (placeholderEnv !== undefined) {
+    if (row.placeholder !== undefined || typeof placeholderEnv !== "string" || !placeholderEnv) return undefined
+    const resolved = env[placeholderEnv]
+    // Refused rather than dropped: a sandbox whose provider never filled the
+    // variable has no credential at all, and an absent projection is what sends
+    // the harness to the login its image carries.
+    if (!resolved) return { unavailable: true, reason: `placeholder_env_missing: ${placeholderEnv}` }
+    return { ...rest, placeholder: resolved }
+  }
+  const placeholder = row.placeholder
+  if (typeof placeholder !== "string" || !placeholder) return undefined
+  return { ...rest, placeholder }
+}
+
+function bindingAccount(input: unknown): BindingAccount | undefined {
+  if (!isRecord(input)) return undefined
+  const { credentialId, providerId, label } = input
+  if (typeof credentialId !== "string" || !credentialId || typeof providerId !== "string" || !providerId) return undefined
+  if (label !== undefined && typeof label !== "string") return undefined
+  return { credentialId, providerId, ...(label ? { label } : {}) }
+}
+
+/**
+ * What a row this validator cannot read does to the whole record.
+ *
+ * `reject` is for a map that crossed a process boundary: a producer that sent a
+ * row this runtime cannot read has said nothing trustworthy about the rest, so
+ * the snapshot is refused whole and the one already applied stays. Only a
+ * process projecting its own authority passes `unavailable`, where refusing
+ * everything would disable every working account over one malformed row; that
+ * row alone becomes an unavailable projection, which disables its provider and
+ * refuses a turn on it rather than letting the harness fall back to a login the
+ * operator did not choose.
+ */
+type ProviderProjectionRowPolicy = "reject" | "unavailable"
+
+const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
+
+export function credentialSnapshot(input: unknown, env: PlaceholderEnvironment): CredentialSnapshot<ProviderProjection> | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  if (Object.keys(row).some((key) => key !== "machineOwnerUserId" && key !== "accounts")) return undefined
+  if (typeof row.machineOwnerUserId !== "string" || typeof row.accounts !== "object" || row.accounts === null || Array.isArray(row.accounts)) return undefined
+  const accounts: Record<string, Record<string, ProviderProjection>> = Object.create(null)
+  for (const [userId, value] of Object.entries(row.accounts)) {
+    if (!userId) return undefined
+    const providers = providerProjectionRecord(value, env, { onInvalid: "reject" })
+    if (!providers) return undefined
+    accounts[userId] = providers
+  }
+  return { machineOwnerUserId: row.machineOwnerUserId, accounts }
+}
+
+export function providerProjectionRecord(
+  input: unknown,
+  env: PlaceholderEnvironment,
+  options: { onInvalid: ProviderProjectionRowPolicy },
+): Record<string, ProviderProjection> | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
+  const rows: Record<string, ProviderProjection> = {}
+  for (const [providerId, value] of Object.entries(input)) {
+    const projection = providerProjection(value, env)
+    if (!projection) {
+      if (options.onInvalid !== "unavailable") return undefined
+      rows[providerId] = { unavailable: true, reason: UNRESOLVED_PROJECTION_REASON }
+      continue
+    }
+    rows[providerId] = projection
+  }
+  return rows
+}
+
+/**
+ * Whether a held projection is due for replacement. `all` is the caller saying
+ * the process lost track of time — a laptop resumed from sleep reads a clock
+ * later than any tick the timer saw — so nothing that expires may be trusted.
+ */
+export function projectionRenewalDue(input: { at: number; all?: boolean }, renewAt: number | undefined): boolean {
+  return input.all === true || (renewAt !== undefined && renewAt <= input.at)
+}
+
+/**
+ * When the earliest placeholder in this map has to be replaced: half of its own
+ * lifetime before it expires, so a turn that starts just before renewal still
+ * finishes on a valid one.
+ *
+ * Read from `expiresAt` rather than from a fixed interval, because the lifetime
+ * belongs to the authority that minted the placeholder and can be shorter than
+ * any interval chosen here. A map carrying no row that expires never needs
+ * renewing.
+ */
+export function projectionRenewalDueAt(
+  auth: Record<string, ProviderProjection>,
+  appliedAt: number,
+): number | undefined {
+  const due = Object.values(auth)
+    .flatMap((row) => isProviderUnavailable(row) || row.expiresAt === undefined ? [] : [row.expiresAt])
+    .map((expiresAt) => expiresAt - Math.max(expiresAt - appliedAt, 0) / 2)
+  return due.length ? Math.min(...due) : undefined
+}

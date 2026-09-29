@@ -34,22 +34,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/agent-event-runtime": {
-      "name": "@claxedo/agent-event-runtime",
-      "version": "0.10.0",
-      "dependencies": {
-        "@agentclientprotocol/sdk": "1.3.0",
-        "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/helpers": "workspace:*",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "1.0.9",
-        "@types/bun": "1.3.13",
-        "esbuild": "0.25.12",
-        "tsx": "4.22.3",
-        "typescript": "catalog:",
-      },
-    },
     "packages/agent-runtime-contract": {
       "name": "@claxedo/agent-runtime-contract",
       "version": "0.10.0",
@@ -60,24 +44,6 @@
         "@tsconfig/bun": "1.0.9",
         "@types/bun": "1.3.13",
         "typescript": "catalog:",
-      },
-    },
-    "packages/agent-sdk-runtime": {
-      "name": "@claxedo/agent-sdk-runtime",
-      "version": "0.10.0",
-      "dependencies": {
-        "@claxedo/agent-event-runtime": "workspace:*",
-        "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/helpers": "workspace:*",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "1.0.9",
-        "@types/bun": "1.3.13",
-        "esbuild": "0.25.12",
-        "typescript": "catalog:",
-      },
-      "optionalDependencies": {
-        "better-sqlite3": "13.0.1",
       },
     },
     "packages/claxedo-app": {
@@ -129,7 +95,6 @@
         "@agentclientprotocol/sdk": "1.3.0",
         "@anthropic-ai/sdk": "0.115.0",
         "@axe-core/playwright": "4.12.1",
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@playwright/test": "1.61.1",
         "@tailwindcss/vite": "4.1.11",
@@ -192,7 +157,6 @@
       "dependencies": {
         "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/app": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
@@ -293,9 +257,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/account-contract": "workspace:*",
-        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
@@ -399,9 +361,7 @@
         "@better-auth/kysely-adapter": "1.7.1",
         "@better-auth/oauth-provider": "1.7.1",
         "@claxedo/account-contract": "workspace:*",
-        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/channels": "workspace:*",
         "@claxedo/connections": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",
@@ -454,9 +414,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/account-contract": "workspace:*",
-        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
@@ -538,7 +496,6 @@
         "claxedo": "dist/index.mjs",
       },
       "dependencies": {
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
       },
@@ -577,7 +534,6 @@
       "dependencies": {
         "@agentclientprotocol/sdk": "1.3.0",
         "@anthropic-ai/claude-agent-sdk": "0.3.220",
-        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@cursor/sdk": "1.0.24",
@@ -598,20 +554,6 @@
         "openai": "6.26.0",
         "typescript": "catalog:",
         "typescript-5": "npm:typescript@5.9.3",
-      },
-    },
-    "packages/opencode-server-adapter": {
-      "name": "@claxedo/opencode-server-adapter",
-      "version": "0.1.0",
-      "dependencies": {
-        "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/harness": "workspace:*",
-        "@claxedo/helpers": "workspace:*",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "1.0.9",
-        "@types/bun": "1.3.13",
-        "typescript": "catalog:",
       },
     },
     "packages/process-ownership": {
@@ -779,9 +721,7 @@
         "@agentclientprotocol/sdk": "1.3.0",
         "@anthropic-ai/claude-agent-sdk": "0.3.220",
         "@anthropic-ai/sdk": "0.115.0",
-        "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
-        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
@@ -1224,11 +1164,7 @@
 
     "@claxedo/account-contract": ["@claxedo/account-contract@workspace:packages/account-contract"],
 
-    "@claxedo/agent-event-runtime": ["@claxedo/agent-event-runtime@workspace:packages/agent-event-runtime"],
-
     "@claxedo/agent-runtime-contract": ["@claxedo/agent-runtime-contract@workspace:packages/agent-runtime-contract"],
-
-    "@claxedo/agent-sdk-runtime": ["@claxedo/agent-sdk-runtime@workspace:packages/agent-sdk-runtime"],
 
     "@claxedo/app": ["@claxedo/app@workspace:packages/claxedo-app"],
 
@@ -1255,8 +1191,6 @@
     "@claxedo/local-server": ["@claxedo/local-server@workspace:packages/claxedo-local-server"],
 
     "@claxedo/mcp": ["@claxedo/mcp@workspace:packages/claxedo-mcp"],
-
-    "@claxedo/opencode-server-adapter": ["@claxedo/opencode-server-adapter@workspace:packages/opencode-server-adapter"],
 
     "@claxedo/plugin-api": ["@claxedo/plugin-api@workspace:packages/claxedo-plugin-api"],
 
@@ -3922,7 +3856,7 @@
 
     "node-abi": ["node-abi@4.33.0", "", { "dependencies": { "semver": "^7.6.3" } }, "sha512-vLBWCKb+7LWsX+TbfzWOkw0W81m377tyx3hOweBTjO43CXZnRGS1/JPWs20fr0PgZyDXk6ROYrylsEycK8raDA=="],
 
-    "node-addon-api": ["node-addon-api@8.9.0", "", {}, "sha512-ekZMeaaIzSQTSpr7X2X3iJM7lTzgnx8ahAG9pJfT/7+14mlEM8ZYQ9cgCDvSSRbReFK0oHli3WrZdCiRsgAT9Q=="],
+    "node-addon-api": ["node-addon-api@7.1.0", "", {}, "sha512-mNcltoe1R8o7STTegSOHdnJNN7s5EUvhoS7ShnTHDyOSd+8H+UdWODq6qSv67PjC8Zc5JRT8+oLAMCr0SIXw7g=="],
 
     "node-api-version": ["node-api-version@0.2.1", "", { "dependencies": { "semver": "^7.3.5" } }, "sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q=="],
 
@@ -5124,15 +5058,9 @@
 
     "@better-auth/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.42.0", "", {}, "sha512-icc5xCzndZfhuJMy5oqk5AvloWquR7jtae74qzpkKkhGp8BivK+oCcEXgGnjCdTfp8hA44l+w8gE8yYJbocJJw=="],
 
-    "@claxedo/agent-event-runtime/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
-
     "@claxedo/agent-runtime-contract/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
-    "@claxedo/agent-sdk-runtime/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
-
     "@claxedo/host-serving/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
-
-    "@claxedo/opencode-server-adapter/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
     "@claxedo/process-ownership/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
@@ -5440,8 +5368,6 @@
 
     "@vscode/emmet-helper/vscode-languageserver-types": ["vscode-languageserver-types@3.18.0", "", {}, "sha512-8TsGPNMIMiiBdkORgRSvLjuiEIiAFtO+KssmYWxQ+uSVvlf7RjK8YKCOjPzZ+YA04jXEV7+7LvkSmHkhpNS99g=="],
 
-    "@vscode/windows-process-tree/node-addon-api": ["node-addon-api@7.1.0", "", {}, "sha512-mNcltoe1R8o7STTegSOHdnJNN7s5EUvhoS7ShnTHDyOSd+8H+UdWODq6qSv67PjC8Zc5JRT8+oLAMCr0SIXw7g=="],
-
     "aggregate-error/indent-string": ["indent-string@4.0.0", "", {}, "sha512-EdDDZu4A2OyIK7Lr/2zG+w5jmbuk1DVBnEwREQvBzspBJkCEbRa8GxU1lghYcaGJCnRWibjDXlq779X1/y5xwg=="],
 
     "ai/@opentelemetry/api": ["@opentelemetry/api@1.9.0", "", {}, "sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg=="],
@@ -5483,6 +5409,8 @@
     "babel-plugin-jsx-dom-expressions/@babel/helper-module-imports": ["@babel/helper-module-imports@7.18.6", "", { "dependencies": { "@babel/types": "^7.18.6" } }, "sha512-0NFvs3VkuSYbFi1x2Vd6tKrywq+z/cLeYC/RJNFrIX/30Bf5aiGYbtvGXolEktzJH8o5E5KJ3tT+nkxuuZFVlA=="],
 
     "better-call/@better-auth/utils": ["@better-auth/utils@0.5.0", "", { "dependencies": { "@noble/hashes": "^2.0.1" } }, "sha512-BL8W4EfIZFwlu0r54m3v1ztjDhu6dDe/amLTm0xybmbZaNgYUqhD3SjpAsnq0q8YD6/ki4iwIgxJNLP/N3TxiA=="],
+
+    "better-sqlite3/node-addon-api": ["node-addon-api@8.9.0", "", {}, "sha512-ekZMeaaIzSQTSpr7X2X3iJM7lTzgnx8ahAG9pJfT/7+14mlEM8ZYQ9cgCDvSSRbReFK0oHli3WrZdCiRsgAT9Q=="],
 
     "body-parser/content-type": ["content-type@2.0.0", "", {}, "sha512-j/O/d7GcZCyNl7/hwZAb606rzqkyvaDctLmckbxLzHvFBzTJHuGEdodATcP3yIRoDrLHkIATJuvzbFlp/ki2cQ=="],
 
@@ -5733,6 +5661,8 @@
     "tiny-async-pool/semver": ["semver@5.7.2", "", { "bin": { "semver": "bin/semver" } }, "sha512-cBznnQ9KjJqU67B52RMC65CMarK2600WFnbkcaiwWq3xy/5haFJlshgnpjovMVJ+Hff49d8GEn0b87C5pDQ10g=="],
 
     "tokentracker-cli/undici": ["undici@8.7.0", "", {}, "sha512-N7iQtfyLhIMOFgQubvmLV26svHpO0bqKnAiWotTQCVKCmWrcGbBotPuW1x+xwYZ2VHdSTVUfPQQnlEt1/LouTQ=="],
+
+    "tree-sitter-bash/node-addon-api": ["node-addon-api@8.9.0", "", {}, "sha512-ekZMeaaIzSQTSpr7X2X3iJM7lTzgnx8ahAG9pJfT/7+14mlEM8ZYQ9cgCDvSSRbReFK0oHli3WrZdCiRsgAT9Q=="],
 
     "tree-sitter-powershell/node-addon-api": ["node-addon-api@7.1.1", "", {}, "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="],
 

@@ -1,4 +1,4 @@
-import type { AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
+import type { AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import type { SessionProjectionWorkspace, Workspace } from "../workspace/store/index"
 import type {
   SessionAttachment,

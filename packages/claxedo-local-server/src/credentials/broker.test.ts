@@ -24,7 +24,7 @@ const {
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { createLocalCredentialBroker } = await import("./broker")
-const { providerProjection } = await import("@claxedo/agent-sdk-runtime")
+const { providerProjection } = await import("@claxedo/agent-runtime-contract")
 
 type Projection = Awaited<ReturnType<ReturnType<typeof createLocalCredentialBroker>["projectAuth"]>>["accounts"][string][string]
 

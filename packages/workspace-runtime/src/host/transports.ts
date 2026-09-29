@@ -1,5 +1,5 @@
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { HarnessTransport, Locality, TransportKind, TurnActor } from "@claxedo/harness/contract"
 
 /**

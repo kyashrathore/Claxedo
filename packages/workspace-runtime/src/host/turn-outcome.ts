@@ -1,5 +1,6 @@
 import { FIRST_TURN_ERROR_CLASSES, turnAccount, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeStreamEvent, AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
+import type { AgentRuntimeStreamEvent } from "./contracts"
+import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 
 export function isTerminalRuntimePayload(payload: AgentRuntimeStreamEvent) {
   if ("properties" in payload) return payload.type === "session.idle" || payload.type === "session.error"

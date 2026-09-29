@@ -18,9 +18,7 @@ on:
     branches:
       - dev
     paths:
-      - "packages/agent-event-runtime/**"
       - "packages/agent-runtime-contract/**"
-      - "packages/agent-sdk-runtime/**"
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
@@ -35,9 +33,7 @@ on:
       - ".github/workflows/claxedo-packages-release.yml"
   pull_request:
     paths:
-      - "packages/agent-event-runtime/**"
       - "packages/agent-runtime-contract/**"
-      - "packages/agent-sdk-runtime/**"
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
@@ -60,7 +56,7 @@ on:
         options:
           - all # every public @claxedo/* package
           - helpers # helpers
-          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, agent-event-runtime, sandbox-manager, agent-sdk-runtime, workspace-relay, workspace-runtime
+          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, sandbox-manager, workspace-relay, workspace-runtime
           - apps # channels, connections
           - wakes
           - cli # cli

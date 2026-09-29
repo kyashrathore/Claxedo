@@ -1,6 +1,6 @@
 import { assertTarget } from "@claxedo/workspace-runtime/host"
 import { createVmConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
-import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 
 /**
  * The sandbox half of the connection secret lease: every request carries the

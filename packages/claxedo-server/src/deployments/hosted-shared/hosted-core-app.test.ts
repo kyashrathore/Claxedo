@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, SignJWT } from "jose"
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"

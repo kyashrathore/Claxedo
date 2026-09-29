@@ -1,3 +1,4 @@
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import {
   isRepeatedUsageObservation,
   recordUsageObservation,
@@ -6,8 +7,6 @@ import {
   usageStreamsTotal,
   type RuntimeTokenUsage,
 } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
-import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
 import { jsonRecord } from "../platform/runtime/lib/json"
 import {
   knownTokenCategories,
@@ -18,6 +17,7 @@ import {
   type UsageRevisionWriter,
 } from "./contracts"
 import type { TurnMeterState, TurnMeterStateStore } from "./turn-meter-state"
+import { eventSessionId } from "@claxedo/workspace-runtime/projection"
 
 type TurnContext = {
   sessionRef: string
@@ -77,16 +77,16 @@ function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
     reasoning: numberOrNull(row.reasoning),
     cache: { read: numberOrNull(cache.read), write: numberOrNull(cache.write) },
   }
-  // Legacy compat builders initialized every completed message to zero even
-  // when the harness reported no usage. Treat that indistinguishable all-zero
-  // block as unavailable unless a canonical session.usage observation exists.
+  // `buildAssistantMessage` starts every assistant row at zero tokens, so an
+  // all-zero block is indistinguishable from a harness that reported no usage.
+  // Treat it as unavailable unless a canonical session.usage observation exists.
   const values = [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write]
   return values.some((value) => value !== null && value > 0) ? tokens : undefined
 }
 
 export type TurnMeter = {
   start(): Promise<void>
-  consume(event: CompatEnvelope): Promise<void>
+  consume(event: AgentEventEnvelope): Promise<void>
   settle(input: {
     sessionId: string
     messageId: string
@@ -298,7 +298,7 @@ export function createTurnMeter(input: {
     }
   }
 
-  async function consumeOne(event: CompatEnvelope) {
+  async function consumeOne(event: AgentEventEnvelope) {
     await initialize()
     const sessionId = eventSessionId(event.payload)
     if (!sessionId) return

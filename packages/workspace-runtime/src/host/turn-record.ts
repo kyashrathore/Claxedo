@@ -1,7 +1,7 @@
 import type { SessionConfig } from "@claxedo/agent-runtime-contract"
 import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import type { PromptInput } from "@claxedo/agent-sdk-runtime"
-import { resolveSessionModel, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
+import type { PromptInput } from "@claxedo/agent-runtime-contract"
+import { resolveSessionModel, resolveTurnSystem } from "../session/session-model"
 import type { AgentRuntimeTurnStartInput } from "./contracts"
 
 /** The agent a turn runs when neither it nor the session names one. */

@@ -2,10 +2,11 @@
 
 Dependency-free canonical contracts for Claxedo agent sessions: execution
 bindings, content and message shapes, capabilities, connection descriptors,
-errors, file references, and the runtime event model. Every Claxedo runtime
-package (`@claxedo/agent-event-runtime`, `@claxedo/agent-sdk-runtime`,
-`@claxedo/workspace-runtime`) and every client that speaks to them imports
-these types from here, so the wire contract has exactly one owner.
+errors, file references, the runtime event model, the presentation events a
+client reads, and the turn pages and outlines every session producer serves.
+Every Claxedo runtime package (`@claxedo/harness`, `@claxedo/workspace-runtime`)
+and every client that speaks to them imports these types from here, so the
+wire contract has exactly one owner.
 
 ## Install
 

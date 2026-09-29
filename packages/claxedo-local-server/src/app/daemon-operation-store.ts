@@ -22,7 +22,7 @@ import {
   type RecoveryOperation,
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
-import { recoveryScopeKey } from "@claxedo/agent-sdk-runtime/adapters"
+import { recoveryScopeKey } from "@claxedo/agent-runtime-contract"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { isRecord } from "../platform/json"
 

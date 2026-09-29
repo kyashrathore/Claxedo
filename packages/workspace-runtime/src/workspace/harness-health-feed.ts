@@ -1,6 +1,6 @@
-import type { EventHarnessHealth } from "../compat-events"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 
-export type SessionHarnessHealth = Omit<EventHarnessHealth["properties"], "sessionID">
+export type SessionHarnessHealth = Omit<Extract<AgentPresentationEvent, { type: "harness.health" }>["properties"], "sessionID">
 
 type Watched = { directory: string; turnActive: boolean; reads: number }
 
@@ -16,7 +16,7 @@ const PUBLISHED_LIMIT = 256
  */
 export function createHarnessHealthFeed(input: {
   read: (sessionId: string, directory: string) => Promise<SessionHarnessHealth>
-  publish: (directory: string, event: EventHarnessHealth["properties"]) => void
+  publish: (directory: string, event: Extract<AgentPresentationEvent, { type: "harness.health" }>["properties"]) => void
   onReadFailure: (sessionId: string, error: unknown) => void
 }) {
   const watched = new Map<string, Watched>()

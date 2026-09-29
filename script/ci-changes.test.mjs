@@ -53,6 +53,14 @@ await test("server changes select Windows and the server boundary", () => {
   assert.equal(result.boundary_local_server, false)
 })
 
+await test("contract and helpers changes select the server and local-server boundaries", () => {
+  for (const file of ["packages/agent-runtime-contract/src/turn-page.ts", "packages/claxedo-helpers/src/json.ts"]) {
+    const result = classifyChangedFiles([file])
+    assert.equal(result.boundary_server, true, file)
+    assert.equal(result.boundary_local_server, true, file)
+  }
+})
+
 await test("server-core changes select every boundary that consumes it", () => {
   const result = classifyChangedFiles(["packages/claxedo-server-core/src/projects/store.ts"])
   assert.equal(result.boundary_server, true)
@@ -61,7 +69,7 @@ await test("server-core changes select every boundary that consumes it", () => {
 })
 
 await test("cross-platform process runtime changes retain the Windows unit leg", () => {
-  const result = classifyChangedFiles(["packages/agent-sdk-runtime/src/harnesses/shared/windows-process.ts"])
+  const result = classifyChangedFiles(["packages/process-ownership/src/windows-process.ts"])
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
 })
@@ -116,9 +124,8 @@ await test("the sandbox image is selected by the Worker and every package baked 
     "packages/sandbox-contract/src/index.ts",
     "packages/sandbox-manager/src/daytona.ts",
     "packages/workspace-runtime/src/workspace/runtime.ts",
-    "packages/agent-sdk-runtime/src/harnesses/pi/index.ts",
+    "packages/harness/src/compose.ts",
     "packages/agent-runtime-contract/src/elicitation.ts",
-    "packages/agent-event-runtime/src/index.ts",
     ".github/workflows/deploy-cloudflare-sandbox-worker.yml",
   ]) {
     assert.equal(classifyChangedFiles([file]).sandbox_image, true, file)

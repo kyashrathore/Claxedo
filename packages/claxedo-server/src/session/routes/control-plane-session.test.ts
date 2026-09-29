@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import type { ReaderSettings } from "@claxedo/agent-sdk-runtime/turn-page"
+import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
+import type { ReaderSettings } from "@claxedo/agent-runtime-contract"
 import { exerciseToolHeaderReads, toolHeaderTranscript } from "@claxedo/server-core/platform/auth/turn-page.conformance"
 import type { ControlPlaneServices } from "../../authority/services"
 

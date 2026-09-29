@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { SubagentStatus } from "@claxedo/agent-runtime-contract"
-import { text } from "@claxedo/agent-event-runtime/value"
+import { asText as text } from "@claxedo/agent-runtime-contract"
 
 export const HOST_SUBAGENT_MCP_SERVER = "claxedo"
 export const HOST_SUBAGENT_TOOL = "create_subagent"

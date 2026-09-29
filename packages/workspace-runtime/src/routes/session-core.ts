@@ -22,24 +22,13 @@ import {
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { cancelledAssistantMessageId } from "@claxedo/agent-runtime-contract/turn-fold"
-import {
-  admitSessionInstructions,
-  IMMUTABLE_SESSION_CONFIG_FIELDS,
-  narrowerPermissionLevel,
-  PermissionModeRefusedError,
-  type HarnessCapabilities,
-  type ImmutableSessionConfigField,
-  type RuntimeDirectory,
-} from "@claxedo/agent-sdk-runtime"
-import {
-  AGENT_MESSAGE_PAGE_LIMIT,
-  AgentMessagePageError,
-  type AgentMessagePage,
-  type AgentMessagePageInput,
-  type AgentMessageReadInput,
-  type AgentTurnCoveragePage,
-} from "@claxedo/agent-sdk-runtime/message-page"
-import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { admitSessionInstructions } from "../session/session-instructions"
+import { IMMUTABLE_SESSION_CONFIG_FIELDS, type ImmutableSessionConfigField } from "../session-config"
+import { narrowerPermissionLevel, PermissionModeRefusedError } from "../session/permission-ceiling"
+import type { HarnessCapabilities } from "../host/capabilities"
+import type { RuntimeDirectory } from "../host/contracts"
+import { AgentMessagePageError, parseMessagePageQuery, type AgentMessagePage, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-runtime-contract"
 import { isAgentHarnessEngineError } from "@claxedo/harness/contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { routeParam } from "@claxedo/helpers/route-param"
@@ -53,13 +42,7 @@ import {
 } from "../host/runtime"
 import { PreviewModelInvalidError } from "../host/config-ops"
 import {
-  messageUpdated,
-  sessionUpdated,
-  sessionDeleted,
-  withDir,
-} from "../compat-events"
-import {
-  compatScope,
+  envelopeDirectory,
   runRuntimePromptTurn,
   sessionPromptReply,
   parseSessionPromptBody,
@@ -124,6 +107,7 @@ import type { ActiveSessionTurnLease } from "./session-turn-lease"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 import { toolImageResponse } from "./tool-image"
 import { providerCatalogRefusal } from "./workspace-role"
+import { messageUpdated, sessionDeleted, sessionUpdated, withDir } from "../projection/presentation-events"
 
 type DraftTarget = Extract<HarnessTarget, { harness: SessionHarness }>
 
@@ -160,7 +144,7 @@ async function cascadeToChildren(
         await (await opts.runtime(c)).sessions.delete(childSessionId, directory, requestSecretAuthority(c).secretAuthority)
         await after(opts.afterDeleteSession?.(c, directory, childSessionId))
         if (start) opts.sessionStarts!.retire(start)
-        opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
+        opts.publishGlobal(withDir(envelopeDirectory(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
       })
       continue
     }
@@ -187,7 +171,7 @@ async function updateSessionMeta(
   await after(opts.afterUpdateSession?.(c, directory, session, body))
   const owner = body.time ? opts.resolveRecoveryOwner?.(c, { sessionId }) : undefined
   if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${randomUUID()}`)
-  opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
+  opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionUpdated(session)))
   return session
 }
 
@@ -236,31 +220,11 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
     }
     return { turnId: turn }
   }
-  if (view === undefined && limit === undefined && before === undefined) return undefined
-  if (view === "latest-turn" && limit === undefined) {
-    if (before === undefined) return { view }
-    if (before.length === 0) throw new HTTPException(400, { message: "before must be a non-empty cursor" })
-    return { view, before }
-  }
-  if (view !== undefined) {
-    if (view !== "latest-surface" || limit !== undefined || before !== undefined) {
-      throw new HTTPException(400, { message: "view must be latest-turn or latest-surface, cannot be combined with limit, and only latest-turn takes before" })
-    }
-    return { view }
-  }
-  if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
-    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}` })
-  }
-  const parsedLimit = Number(limit)
-  if (!Number.isSafeInteger(parsedLimit) || parsedLimit > AGENT_MESSAGE_PAGE_LIMIT) {
-    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}` })
-  }
-  if (before !== undefined && before.length === 0) {
-    throw new HTTPException(400, { message: "before must be a non-empty cursor" })
-  }
-  return {
-    limit: parsedLimit,
-    ...(before !== undefined ? { before } : {}),
+  try {
+    return parseMessagePageQuery(limit, before, view)
+  } catch (error) {
+    if (error instanceof AgentMessagePageError) throw new HTTPException(400, { message: error.message })
+    throw error
   }
 }
 
@@ -1566,7 +1530,7 @@ export function createSessionRoutes(opts: Opts) {
             }
           }
           if (body.parentID && children) {
-            opts.publishGlobal(withDir(compatScope(directory, session.id), sessionUpdated(session)))
+            opts.publishGlobal(withDir(envelopeDirectory(directory, session.id), sessionUpdated(session)))
           }
           if (start) {
             if (session.id !== start.sessionId) throw new Error("Agent returned a different local session identity")
@@ -1759,7 +1723,7 @@ export function createSessionRoutes(opts: Opts) {
         // the id goes back. Anything that throws above keeps the owner, which is
         // what lets a caller distinguish a freed id from a half-deleted one.
         if (start) opts.sessionStarts!.retire(start)
-        opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
+        opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
         return c.json({ ok: true })
       })
     })

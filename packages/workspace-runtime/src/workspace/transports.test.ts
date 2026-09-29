@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { ConnectionSecretLease } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretLease } from "@claxedo/agent-runtime-contract"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
 import { FakeTransport } from "../test-support/fake-transport"
 import { MACHINE_OWNER, controlledTurn, createHostFixture, sessionCreate, tick } from "../test-support/host-fixture"

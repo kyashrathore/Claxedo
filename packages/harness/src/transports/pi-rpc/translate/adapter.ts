@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter } from "../../../translate/adapter"
-import { object, text } from "@claxedo/agent-event-runtime/value"
+import { asRecord as object, asText as text } from "@claxedo/agent-runtime-contract"
 import { contentBlockImages } from "../../../translate/tool-attachments"
 
 const row = (value: unknown): Record<string, unknown> => object(value) ?? {}

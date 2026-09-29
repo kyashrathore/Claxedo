@@ -1,5 +1,5 @@
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import { projectTurn, type PageTurn, type ReaderSettings, type TurnPage, type TurnPageRequest } from "@claxedo/agent-sdk-runtime/turn-page"
+import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
+import { projectTurn, type PageTurn, type ReaderSettings, type TurnPage, type TurnPageRequest } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage, AgentToolPart } from "@claxedo/agent-runtime-contract"
 import { registerTranscriptSession, syncTranscript, syncedMessage, type SyncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 

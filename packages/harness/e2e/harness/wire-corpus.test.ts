@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
 import { comparisonShape, difference, frameEntity, latestStatusSubject, normalizeWireCorpus } from "./wire-corpus"
 
 test("wire normalization preserves cross-channel identity, state, phase and order", () => {
@@ -148,4 +149,10 @@ test("run-local values normalize: an actor id, a digest and a timestamp inside a
   expect(result.delta).toBe("<sha256>")
   expect(result.raw).toBe("{\"isError\":false,\"timestamp\":<time>}")
   expect(result.title).toBe("<sha256>…")
+})
+
+test("the checkout root and the runtime executable are environment facts", () => {
+  const agent = path.resolve(import.meta.dirname, "../../../..", "packages/harness/e2e/harness/acp/agent.ts")
+  const result = normalizeWireCorpus({ command: process.execPath, args: [agent] }) as { command: string; args: string[] }
+  expect(result).toEqual({ command: "<bun>", args: ["<repo>/packages/harness/e2e/harness/acp/agent.ts"] })
 })

@@ -17,7 +17,7 @@ import {
 } from "@claxedo/server-core/credentials/backend-registry"
 import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
 import { createLocalCredentialBroker } from "../credentials/broker"
-import { providerProjection } from "@claxedo/agent-sdk-runtime"
+import { providerProjection } from "@claxedo/agent-runtime-contract"
 import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"

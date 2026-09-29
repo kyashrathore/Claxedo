@@ -3,13 +3,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterEach, describe, expect, test } from "bun:test"
-import type { AgentMessage, AgentSession } from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentSession, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope } from "../compat-events"
-import { permissionAsked, permissionReplied, questionAsked, questionRejected } from "../compat-events"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { HOST_CHILD_PROVIDER_KIND, childSummary, createChildSessionHost, hostChildRow, wakeMessageId, type ChildSessionHostInput } from "./session-children"
+import { permissionAsked, questionAsked } from "../projection/presentation-events"
 
 const DIRECTORY = "/workspace"
 
@@ -40,7 +39,7 @@ function harness(input: {
   sessions?: Record<string, Partial<AgentSession>>
   messages?: Record<string, AgentMessage[]>
   startTurn?: ChildSessionHostInput["startTurn"]
-  subscribe?: (fn: (event: CompatEnvelope) => void) => () => void
+  subscribe?: (fn: (event: AgentEventEnvelope) => void) => () => void
   /** Durable state a "restart" keeps: pass both to rebuild a host over them. */
   store?: RuntimeStore
   origins?: Map<string, SessionTurnOrigin>
@@ -340,7 +339,7 @@ describe("host-owned child sessions", () => {
   })
 
   test("permission and question requests on a child raise and lower the parent's attention count", async () => {
-    let deliver: ((event: CompatEnvelope) => void) | undefined
+    let deliver: ((event: AgentEventEnvelope) => void) | undefined
     const item = harness({
       sessions: { parent: { status: "busy" }, child: { parentID: "parent" } },
       subscribe: (fn) => {
@@ -358,9 +357,9 @@ describe("host-owned child sessions", () => {
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey, attention: 2 }])
     expect(item.admitted.at(-1)).toMatchObject({ parentSessionId: "parent", event: { type: "subagent-updated", attention: 2 } })
 
-    deliver!({ directory: DIRECTORY, payload: permissionReplied("child", "perm-1", "once") })
+    deliver!({ directory: DIRECTORY, payload: { id: "permission.replied:perm-1", type: "permission.replied", properties: { sessionID: "child", requestID: "perm-1", reply: "once" } } })
     await settled()
-    deliver!({ directory: DIRECTORY, payload: questionRejected("child", "q-1") })
+    deliver!({ directory: DIRECTORY, payload: { id: "question.rejected:q-1", type: "question.rejected", properties: { sessionID: "child", requestID: "q-1" } } })
     await settled()
     expect(item.store.listSubagents("parent")).toMatchObject([{ attention: 0 }])
 

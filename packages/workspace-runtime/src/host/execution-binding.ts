@@ -4,7 +4,8 @@ import {
   connectionIdForHarness,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import type { RuntimeDirectory, SessionHarness } from "@claxedo/agent-sdk-runtime"
+import type { RuntimeDirectory } from "./contracts"
+import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStore } from "./contracts"
 import type { AgentRuntimeSessionCreateInput } from "./contracts"
 

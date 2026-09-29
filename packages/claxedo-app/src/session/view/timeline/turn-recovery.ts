@@ -3,8 +3,7 @@ import type { TimelineTextKey } from "./model"
 import { asRecord } from "@claxedo/helpers/guards"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import {
-  credentialBrokerErrorCode,
-  CREDENTIAL_BROKER_ERRORS,
+  classifyFirstTurnError,
   FIRST_TURN_ERROR_CLASSES,
   turnAccount,
   type FirstTurnErrorClass,
@@ -46,15 +45,5 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
   const data = asRecord(asRecord(error)?.data)
   const classified = FIRST_TURN_ERROR_CLASSES.find((kind) => kind === data?.firstTurnErrorClass)
   if (classified) return classified
-  const message = typeof data?.message === "string" ? data.message : ""
-  const broker = credentialBrokerErrorCode(message)
-  if (broker) return CREDENTIAL_BROKER_ERRORS[broker].fault
-  if (/(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted|quota/i.test(message)) return "usage_limit"
-  if (/\b429\b|\brate[ _-]?limit|too many requests|try again later/i.test(message)) return "rate_limit"
-  if (/\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment)\b/i.test(message)) return "credential"
-  if (/(thread not found|session not found|conversation not found|no such (thread|session))/i.test(message)) return "session"
-  if (/(harness|adapter|acp|agent process|spawn|executable|binary|capabilit(?:y|ies)|unsupported operation)/i.test(message)) return "harness"
-  if (/(model|provider\/model|model id|deployment)/i.test(message)) return "model"
-  if (/(workspace|worktree|repository|directory|sandbox|provision|filesystem|eacces|enoent|permission denied)/i.test(message)) return "workspace"
-  return "unknown"
+  return classifyFirstTurnError(typeof data?.message === "string" ? data.message : "")
 }

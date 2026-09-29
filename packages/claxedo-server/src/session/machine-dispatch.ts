@@ -2,10 +2,9 @@ import {
   embeddedRelayHostAuthFromActor,
   EMBEDDED_RELAY_HOST_AUTH_HEADER,
 } from "@claxedo/local-server/self-hosted-execution"
-import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
 import { randomUUID } from "node:crypto"
 import type { ChannelMachineIdentity } from "@claxedo/server-core/platform/auth/authority"
-import type { SessionHarness } from "@claxedo/agent-sdk-runtime"
+import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -20,6 +19,7 @@ import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
 import { asRecord, numberField, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
+import { eventSessionId } from "@claxedo/workspace-runtime/projection"
 
 export type MachineSessionCaller =
   SignedControlPlaneAuth | { kind: "channel"; identity: ChannelMachineIdentity } | { kind: "actor"; actorId: string }

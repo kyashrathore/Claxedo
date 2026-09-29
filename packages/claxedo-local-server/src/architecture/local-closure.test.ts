@@ -233,9 +233,8 @@ describe("@claxedo/local-server closure", () => {
     //    its HTTP. Workspace ownership stays in each workspace's RuntimeStore;
     //    what lives here spans every workspace at once, so no single one of
     //    them can hold it. They reach `@claxedo/helpers`,
-    //    `@claxedo/agent-runtime-contract`, the ClaxedoDB engine and the
-    //    scope-key owner in `@claxedo/agent-sdk-runtime/adapters`, all already
-    //    here.
+    //    `@claxedo/agent-runtime-contract` (which owns the recovery scope key)
+    //    and the ClaxedoDB engine, all already here.
     //
     // And the packages: `@claxedo/harness` is the harness contract, registry
     // and provider list the embedded runtimes and the Agent Plugins projection

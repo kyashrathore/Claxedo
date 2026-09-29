@@ -17,8 +17,7 @@ if ($AclAcceptance) {
 $suites = @(
   @{ Package = "packages\workspace-runtime"; Files = @("src/workspace-files/working-tree.test.ts") },
   @{ Package = "packages\claxedo-desktop"; Files = @("./src/main/apps.test.ts", "./src/main/apps.windows.test.ts") },
-  @{ Package = "packages\cli"; Files = @("src/open-url.test.ts", "src/open-url.windows.test.ts") },
-  @{ Package = "packages\agent-sdk-runtime"; Files = @("src/harnesses/acp/transport.windows.test.ts", "src/harnesses/codex/app-server-process.windows.test.ts") }
+  @{ Package = "packages\cli"; Files = @("src/open-url.test.ts", "src/open-url.windows.test.ts") }
 )
 
 $failed = 0

@@ -1,26 +1,23 @@
 import { describe, expect, test } from "bun:test"
-import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
+import { translatorRuntime } from "../../../test-support/translator-runtime"
 import {
   cursorSdkAdapter,
   cursorRuntimeMessage,
   cursorSubagentObservations,
-  type CursorSdkAdapterState,
 } from "./adapter"
 
-function runtime(initialSnapshot?: RuntimeSnapshot<CursorSdkAdapterState>) {
-  return createAgentEventRuntime({
+function runtime() {
+  return translatorRuntime({
     harness: "cursor-sdk",
     threadId: "thread-1",
     adapter: cursorSdkAdapter(),
     clock: () => 0,
     createId: (prefix = "id") => `${prefix}-1`,
-    ...(initialSnapshot ? { initialSnapshot } : {}),
   })
 }
 
 describe("cursorSdkAdapter", () => {
-  test("maps assistant snapshots without duplicating restored text", () => {
+  test("maps assistant snapshots without duplicating streamed text", () => {
     const first = runtime()
 
     expect(first.ingest({
@@ -33,9 +30,7 @@ describe("cursorSdkAdapter", () => {
       },
     }).events).toMatchObject([{ type: "text-delta", delta: "Hel" }])
 
-    const restored = runtime(first.snapshot())
-
-    expect(restored.ingest({
+    expect(first.ingest({
       source: "cursor.sdk.message",
       payload: {
         type: "assistant",
@@ -44,7 +39,7 @@ describe("cursorSdkAdapter", () => {
         message: { role: "assistant", content: [{ type: "text", text: "Hello" }] },
       },
     }).events).toMatchObject([{ type: "text-delta", delta: "lo" }])
-    expect(restored.snapshot().adapterState.assistantTextByRunId["run-1"]).toBe("Hello")
+    expect(first.state().assistantTextByRunId["run-1"]).toBe("Hello")
   })
 
   test("maps thinking snapshots without duplicate deltas", () => {
@@ -391,8 +386,8 @@ describe("cursorSdkAdapter", () => {
         args: { command: "bun test" },
       },
     })
-    expect(Object.keys(agent.snapshot().adapterState.assistantTextByRunId)).toEqual(["run-1"])
-    expect(Object.keys(agent.snapshot().adapterState.toolsByCallId)).toEqual(["tool-shell-1"])
+    expect(Object.keys(agent.state().assistantTextByRunId)).toEqual(["run-1"])
+    expect(Object.keys(agent.state().toolsByCallId)).toEqual(["tool-shell-1"])
 
     expect(agent.ingest({
       source: "cursor.sdk.message",
@@ -406,7 +401,7 @@ describe("cursorSdkAdapter", () => {
       { type: "session-status", status: "idle" },
       { type: "finish", sessionId: "run-1" },
     ])
-    expect(agent.snapshot().adapterState).toEqual({
+    expect(agent.state()).toEqual({
       assistantTextByRunId: {},
       thinkingTextByRunId: {},
       toolsByCallId: {},
@@ -427,7 +422,7 @@ describe("cursorSdkAdapter", () => {
     expect(local.ingest({
       source: "cursor.local-run-stream",
       payload: { schemaVersion: 1, type: "result", agentId: "agent-1", runId: "run-2", status: "error", errorCode: "failed" },
-    }).snapshot.adapterState).toEqual({
+    }).state).toEqual({
       assistantTextByRunId: {},
       thinkingTextByRunId: {},
       toolsByCallId: {},

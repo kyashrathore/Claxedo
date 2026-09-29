@@ -1,4 +1,4 @@
-import { isRecord, object } from "@claxedo/agent-event-runtime/value"
+import { isRecord, asRecord as object } from "@claxedo/agent-runtime-contract"
 import type { ContentBlock, SessionUpdate, ToolCallContent } from "./types"
 import { asRecord } from "@claxedo/helpers/guards"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"

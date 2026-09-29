@@ -1,6 +1,23 @@
-import type { AutoLevel, SessionConfig } from "@claxedo/agent-runtime-contract"
-import { isAutoLevel, normalizeHarnessIdentity, parseSessionModelGroup, type PromptModel, type SessionConfigRequestUpdate, type SessionHarness, type SessionModelGroup, type SessionModelGroupParse } from "@claxedo/agent-sdk-runtime"
+import type { AutoLevel, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
+import { isAutoLevel } from "./session/permission-ceiling"
+import { normalizeHarnessIdentity, parseSessionModelGroup, type PromptModel, type SessionHarness, type SessionModelGroup, type SessionModelGroupParse } from "@claxedo/agent-runtime-contract"
 import { rec as record, str } from "./json-value"
+
+/**
+ * Fixed at create, so a later edit cannot rewrite what an already-running
+ * session was told or delegated under. An update naming one is refused rather
+ * than dropped: a caller editing it has no other way to learn nothing happened.
+ */
+export const IMMUTABLE_SESSION_CONFIG_FIELDS = ["instructions", "group"] as const
+export type ImmutableSessionConfigField = (typeof IMMUTABLE_SESSION_CONFIG_FIELDS)[number]
+
+/** Config fields accepted from public session create/update requests.
+ * Handoff and accepted permission state are runtime-owned; permission changes
+ * must go through the permission-mode or permission-reply operation. */
+export type SessionConfigRequestUpdate = Omit<
+  SessionConfigUpdate,
+  "handoff" | "permissionMode" | "permissionModeLabel" | "permissionState" | "permissionCeiling" | ImmutableSessionConfigField
+>
 
 /**
  * The `POST /session` body beyond its config fields. `parentID` makes the

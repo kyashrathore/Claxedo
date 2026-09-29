@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { workspaceRuntimeBus } from "../bus"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
-import { sessionIdle, withDir } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import {
   createWorkspaceHost,
@@ -13,6 +12,7 @@ import {
   mountWorkspacePty,
 } from "./index"
 import { loopbackMachineLoginPolicy } from "../testing"
+import { sessionIdle, withDir } from "../projection/presentation-events"
 
 function paths(app: Hono) {
   return ((app as { routes?: Array<{ path: string }> }).routes ?? []).map((route) => route.path)

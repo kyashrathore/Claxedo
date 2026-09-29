@@ -1,9 +1,4 @@
-import type {
-  ConnectionSecretAuthority,
-  ConnectionSecretLease,
-  ConnectionSecretOwner,
-  ConnectionSecretResolver,
-} from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretAuthority, ConnectionSecretLease, ConnectionSecretOwner, ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
 import type { HarnessConnectionDescriptor } from "./connections"
 
 export type ConnectionSecretUnavailableReason =

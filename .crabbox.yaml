@@ -138,13 +138,13 @@ jobs:
     command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane opencode-node
     stop: auto
 
-  focus-agent-sdk-runtime-windows:
+  focus-harness-windows:
     provider: aws
     target: windows
     architecture: amd64
     serverType: m7i.2xlarge
     market: on-demand
-    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/agent-sdk-runtime
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/harness
     stop: auto
 
   focus-server-core-windows:

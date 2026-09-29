@@ -29,7 +29,7 @@ const transportVendors: Record<string, string[]> = {
   "pi-rpc": [],
   "opencode-sdk": ["@opencode-ai/sdk", "@opencode-ai/plugin", "@opencode-ai/schema"],
 }
-const transportSharedPackages = ["@claxedo/helpers", "@claxedo/agent-runtime-contract", "@claxedo/agent-event-runtime"]
+const transportSharedPackages = ["@claxedo/helpers", "@claxedo/agent-runtime-contract"]
 const coreParts = new Set(["contract", "broker", "registry", "capabilities", "translate", "rpc"])
 const harnessIds = new Set(["claude", "codex", "cursor", "pi", "opencode"])
 const decisions = new Set(["allow_once", "allow_always", "deny", "reject_always"])

@@ -6,12 +6,12 @@ import type {
   StopReason,
   ToolKind,
 } from "./types"
-import type { AgentRuntimeEvent, RuntimeToolStatus } from "@claxedo/agent-runtime-contract"
+import { type AgentRuntimeEvent, type RuntimeToolStatus, asRecord as object, asText as text } from "@claxedo/agent-runtime-contract"
 import { drainContent, drainSpots, reduceTool, RETAINED_MESSAGE_TEXTS_MAX, viewToolWithDiagnostics, type SessionState } from "./state"
 import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
-import { boundKeyedMap, jsonText, object, text } from "@claxedo/agent-event-runtime/value"
+import { boundKeyedMap, jsonText } from "../../../translate/value"
 import { contentBlockImages } from "../../../translate/tool-attachments"
 
 export type { SessionUpdate }

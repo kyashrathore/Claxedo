@@ -1,21 +1,18 @@
 import { describe, expect, spyOn, test } from "bun:test"
-import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "@claxedo/agent-event-runtime"
-import { createAcpEventTranslator, type AcpEventTranslatorState } from "./event-translator"
+import { translatorRuntime } from "../../../test-support/translator-runtime"
+import { createAcpEventTranslator } from "./event-translator"
 import { RETAINED_MESSAGE_TEXTS_MAX, RETAINED_TOOLS_MAX } from "./state"
 
 function runtime(
   client = "acp:example",
-  initialSnapshot?: RuntimeSnapshot<AcpEventTranslatorState>,
   options?: { preserveUserMessageChunks?: boolean },
 ) {
-  return createAgentEventRuntime({
+  return translatorRuntime({
     harness: client,
     threadId: "thread-1",
     adapter: createAcpEventTranslator({ client, ...options }),
     clock: () => 0,
     createId: () => "id",
-    ...(initialSnapshot ? { initialSnapshot } : {}),
   })
 }
 
@@ -266,7 +263,7 @@ describe("createAcpEventTranslator", () => {
     })
   })
 
-  test("restores active tool state before terminal updates", () => {
+  test("keeps active tool state for a later terminal update", () => {
     const first = runtime()
     first.ingest({
       source: "acp.jsonrpc",
@@ -289,9 +286,7 @@ describe("createAcpEventTranslator", () => {
         rawOutput: { stdout: "hi" },
       },
     })
-
-    const restored = runtime("acp:example", first.snapshot())
-    const events = restored.ingest({
+    const events = first.ingest({
       source: "acp.jsonrpc",
       method: "session/update",
       payload: {
@@ -312,7 +307,7 @@ describe("createAcpEventTranslator", () => {
         },
       },
     })
-    expect(restored.snapshot().adapterState.tools.get("tool-1")?.status).toBe("completed")
+    expect(first.state().tools.get("tool-1")?.status).toBe("completed")
   })
 
   test("does not infer todo semantics from a private tool name", () => {
@@ -468,7 +463,7 @@ describe("createAcpEventTranslator", () => {
         code: "acp.malformed_content",
       },
     }])
-    expect(agent.snapshot().adapterState.lastMessageId).toBeNull()
+    expect(agent.state().lastMessageId).toBeNull()
     expect(agent.ingest({
       source: "acp.jsonrpc",
       method: "session/update",
@@ -566,7 +561,7 @@ describe("createAcpEventTranslator", () => {
   })
 
   test("can preserve user message chunks as runtime events when explicitly requested", () => {
-    const agent = runtime("acp:example", undefined, { preserveUserMessageChunks: true })
+    const agent = runtime("acp:example", { preserveUserMessageChunks: true })
 
     expect(agent.ingest({
       source: "acp.jsonrpc",
@@ -796,9 +791,9 @@ test("ACP publishes images on one authoritative completion after content, includ
   const content = [{ type: "content", content: { type: "image", mimeType: "image/png", data: "YWJj" } }]
   const agent = runtime()
   agent.ingest({ source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "image", title: "Screenshot", status: "in_progress", content } })
-  const restored = runtime("acp:example", agent.snapshot())
+  const first = agent
   const completion = { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call_update", toolCallId: "image", status: "completed", rawOutput: "captured" } }
-  const events = restored.ingest(completion).events
+  const events = first.ingest(completion).events
   expect(events.filter((event) => event.type === "tool-status")).toEqual([])
   expect(events.at(-1)).toMatchObject({ type: "tool-output", output: "captured", attachments: [{ kind: "inline", mime: "image/png", url: "data:image/png;base64,YWJj" }] })
   const initial = runtime().ingest({ source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "image", title: "Screenshot", status: "completed", content } }).events
@@ -822,7 +817,7 @@ describe("ACP retained state hardening", () => {
       })).events
       expect(events.find((event) => event.type === "tool-start")).toMatchObject({ toolCallId })
     }
-    const tools = agent.snapshot().adapterState.tools
+    const tools = agent.state().tools
     expect(tools).toBeInstanceOf(Map)
     expect(tools.size).toBe(3)
     for (const id of ["__proto__", "constructor", "toString"]) {
@@ -840,7 +835,7 @@ describe("ACP retained state hardening", () => {
       })).events
       expect(events.find((event) => event.type === "text-delta")).toMatchObject({ delta: `text for ${messageId}` })
     }
-    const texts = agent.snapshot().adapterState.assistantTextByMessageId
+    const texts = agent.state().assistantTextByMessageId
     expect(texts).toBeInstanceOf(Map)
     for (const id of ["__proto__", "constructor", "toString"]) {
       expect(texts.get(id)).toBe(`text for ${id}`)
@@ -858,7 +853,7 @@ describe("ACP retained state hardening", () => {
         status: "in_progress",
       }))
     }
-    let state = agent.snapshot().adapterState
+    let state = agent.state()
     expect(state.tools.size).toBe(RETAINED_TOOLS_MAX)
     expect(state.tools.has("tool-0")).toBe(false)
     expect(state.tools.has(`tool-${toolCount - 1}`)).toBe(true)
@@ -871,7 +866,7 @@ describe("ACP retained state hardening", () => {
         content: { type: "text", text: `text ${i}` },
       }))
     }
-    state = agent.snapshot().adapterState
+    state = agent.state()
     expect(state.assistantTextByMessageId.size).toBe(RETAINED_MESSAGE_TEXTS_MAX)
     expect(state.assistantTextByMessageId.has("message-0")).toBe(false)
     expect(state.assistantTextByMessageId.has(`message-${messageCount - 1}`)).toBe(true)

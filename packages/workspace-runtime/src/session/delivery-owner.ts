@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { PromptDelivery } from "@claxedo/agent-sdk-runtime"
+import type { PromptDelivery } from "@claxedo/agent-runtime-contract"
 import type { SessionPromptBody } from "./service"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import type { QueuedPromptRecord, QueuedPromptAttempt } from "../store"

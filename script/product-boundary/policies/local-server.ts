@@ -155,9 +155,8 @@ export const localServer: Policy = {
   //    launcher that cannot reach its HTTP. Workspace ownership stays in each
   //    workspace's RuntimeStore; what lives here spans every workspace at once,
   //    so no single one of them can hold it. They reach `@claxedo/helpers`,
-  //    `@claxedo/agent-runtime-contract`, the ClaxedoDB engine and the
-  //    scope-key owner in `@claxedo/agent-sdk-runtime/adapters`, all already
-  //    here.
+  //    `@claxedo/agent-runtime-contract` (which owns the recovery scope key)
+  //    and the ClaxedoDB engine, all already here.
   //  - `app/daemon-admission.ts` now actually reachable: the composition mounts
   //    its capability admission and its machine-recovery fence, so the module
   //    this comment already claimed was in the closure is in it.
@@ -208,8 +207,8 @@ export const localServer: Policy = {
   //    the account vocabulary the app, this daemon and the hosted server
   //    share): whose account a person spends and where a stored account may
   //    be delivered. The subpath is import-free.
-  //    80/30, no headroom.
-  ceilings: { modules: 80, packages: 30 },
+  //    80/29, no headroom.
+  ceilings: { modules: 80, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
@@ -238,9 +237,7 @@ export const localServer: Policy = {
       // driver contract; its published subpath is dist-only.
       { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/agent-runtime-contract" },
-      { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/process-ownership" },
-      { packageDir: "packages/agent-sdk-runtime" },
       // The loopback credential broker the desktop composition mounts; its
       // published entry is dist-only and it bundles against
       // @claxedo/agent-runtime-contract, built above it.

@@ -4,7 +4,7 @@ import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 
 /**
- * `onCompatEvent` carries session metadata; a host that has to keep something a
+ * `onPresentationEvent` carries session metadata; a host that has to keep something a
  * harness said during the turn — a plan's quota windows, which outlive the
  * session that heard about them — has only the SSE stream without this, and
  * nothing in-process to write them from.

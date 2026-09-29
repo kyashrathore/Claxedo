@@ -3,16 +3,16 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
-import type { PromptDelivery } from "@claxedo/agent-sdk-runtime"
+import type { PromptDelivery } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "./session-core"
 import { createSessionDeliveryOwner, type SessionDeliveryOwner } from "../session/delivery-owner"
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
-import { sessionIdle } from "../compat-events"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { FakeTransport } from "../test-support/fake-transport"
 import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
+import { sessionIdle } from "../projection/presentation-events"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []

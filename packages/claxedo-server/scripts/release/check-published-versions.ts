@@ -10,7 +10,7 @@
  * should see.
  *
  * Usage:
- *   bun run scripts/release/check-published-versions.ts   # all 13 packages
+ *   bun run scripts/release/check-published-versions.ts   # all 11 packages
  */
 import { execFileSync } from "node:child_process"
 import path from "node:path"

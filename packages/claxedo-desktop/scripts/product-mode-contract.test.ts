@@ -70,19 +70,19 @@ describe("desktop server launch wiring", () => {
       expect(read(script), script).toContain("buildPublishedPackages(")
     }
     const published = publishedPackageNames(path.resolve(packageRoot, "../.."))
-    expect(published).toContain("@claxedo/agent-sdk-runtime")
+    expect(published).toContain("@claxedo/agent-runtime-contract")
     expect(published).toContain("@claxedo/workspace-runtime")
   })
 
   // `buildPublishedPackages` hands the whole set to `turbo build`, whose
   // `^build` edge orders them by the manifests rather than by the order a
-  // script happens to list them in. Workspace-runtime consumes the SDK
-  // runtime's dist, so that edge has to be declared to exist at all.
-  test("turbo can order the SDK runtime before workspace-runtime", () => {
+  // script happens to list them in. Workspace-runtime consumes the runtime
+  // contract's dist, so that edge has to be declared to exist at all.
+  test("turbo can order the runtime contract before workspace-runtime", () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(packageRoot, "../workspace-runtime/package.json"), "utf8"),
     ) as { dependencies?: Record<string, string> }
-    expect(manifest.dependencies?.["@claxedo/agent-sdk-runtime"]).toBeDefined()
+    expect(manifest.dependencies?.["@claxedo/agent-runtime-contract"]).toBeDefined()
   })
 
   test("the renderer boots the app through the #app alias, not a source-relative path", () => {
