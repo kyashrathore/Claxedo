@@ -23,12 +23,19 @@ export const site = {
 export const home = {
   hero: {
     title: "Every coding agent, in one fast app.",
-    subtitle: "Claude Code, Codex, Cursor, OpenCode and Pi, with your tools, on any machine.",
-    claims: ["harness-coverage", "acp-client", "agent-cli-access", "core-metrics", "agent-plugins", "connected-placement"],
+    subtitle: "Claude Code, Codex, Cursor, OpenCode and Pi. Your tools. Any machine.",
+    claims: ["harness-coverage", "core-metrics", "agent-plugins", "connected-placement"],
   },
+  points: [
+    { title: "Fast. Light. Yours to extend.", text: "Beats T3 Code and OpenCode on every metric. Missing a feature? Prompt it into the app.", claims: ["core-metrics", "app-plugins-by-prompt"] },
+    { title: "Open source. Live in 5 minutes.", text: "MIT licensed. Deploy it for your whole team on your own Cloudflare.", claims: ["mit-platform", "cloudflare-five-minutes"] },
+    { title: "Bring your own sandbox.", text: "Any provider, any machine.", claims: ["bring-your-own-sandbox", "connected-placement"] },
+    { title: "Set up plugins once.", text: "Skills and MCP servers for your whole team, on every machine.", claims: ["agent-plugins", "team-plugin-sharing"] },
+    { title: "Chat or terminal.", text: "GUI or CLI. Sidebar or tabs. Work the way you work.", claims: ["sessions-and-terminals", "agent-cli-access", "sidebar-or-tabs"] },
+  ],
   benchmark: {
-    title: "Fast, light and efficient.",
-    subtitle: "Faster than T3 Code and OpenCode on every core metric, and it idles at 0% CPU. Measured in the open Agent App Benchmark on 28 September 2026.",
+    title: "Faster than T3 Code and OpenCode. On every core metric.",
+    subtitle: "Starts faster, switches faster, uses less memory, and idles at zero.",
     href: `${benchmark}#latest-results`,
     claims: ["core-metrics"],
     metrics: [
@@ -39,41 +46,50 @@ export const home = {
       { lead: "0%", label: "idle CPU", detail: "T3 Code idles at 1.6%, OpenCode at 20.4%." },
     ],
   },
-  rows: [
+  place: {
+    title: "Any machine. Any sandbox.",
+    subtitle: "Your laptop, your servers, your sandbox provider. Every session, from anywhere.",
+    panels: [
+      {
+        title: "Run it where the work is.",
+        text: "Your Mac, the studio machine, or any sandbox provider you choose. Pick the session up on desktop, browser or phone.",
+        claims: ["connected-placement", "bring-your-own-sandbox"],
+      },
+      {
+        title: "Every top agent, one composer.",
+        text: "Claude Code, Codex, Cursor, OpenCode and Pi. Switch agent, model and effort in a click. Any ACP agent joins them.",
+        claims: ["harness-coverage", "acp-client"],
+      },
+    ],
+  },
+  features: [
     {
       id: "prompt",
-      title: "Extend it with a prompt.",
-      text: "Ask an agent for the feature you're missing. It builds an app plugin, and Claxedo runs it once you turn it on.",
+      title: "Missing a feature? Prompt it.",
+      text: "Describe the page you want. Your agent builds it into the app.",
       claims: ["app-plugins-by-prompt"],
     },
     {
-      id: "cloudflare",
-      title: "Open source. On your Cloudflare in minutes.",
-      text: "MIT licensed. Deploy the control plane for your team to your own Cloudflare account.",
+      id: "team",
+      title: "Your cloud. Your team.",
+      text: "Self-host Claxedo on your own Cloudflare in 5 minutes. MIT licensed.",
       href: `${github}/blob/dev/public-docs/user-deployed-cloudflare.md`,
-      claims: ["mit-platform", "user-deployed-cloudflare"],
+      claims: ["cloudflare-five-minutes", "mit-platform"],
     },
     {
-      id: "sandbox",
-      title: "Bring your own sandbox.",
-      text: "Run sessions on this computer, your other machines, or Daytona, Modal, Vercel, Cloudflare, exe.dev, Box and Docker. Every one of them runs behind the same open driver contract.",
-      claims: ["connected-placement", "sandbox-providers"],
-    },
-    {
-      id: "plugins",
-      title: "Configure agent plugins once.",
-      text: "Turn on a skill or MCP server once, and it reaches every machine and sandbox you sign into, for Claude Code, Codex, Cursor and OpenCode.",
-      claims: ["agent-plugins", "agent-plugins-follow-you"],
-    },
-    {
-      id: "terminal",
-      title: "GUI or terminal. Sidebar or tabs.",
-      text: "Talk to agents in Claxedo's chat, or run any agent CLI you've installed in a terminal beside it. Keep sessions in a sidebar or open them as tabs.",
-      claims: ["sessions-and-terminals", "agent-cli-access", "harness-coverage", "sidebar-or-tabs"],
+      id: "tools",
+      title: "Your tools, everywhere.",
+      text: "Skills and MCP servers, set up once for your whole team, on every machine.",
+      claims: ["agent-plugins", "team-plugin-sharing"],
     },
   ],
+  terminal: {
+    title: "Chat or terminal. Your call.",
+    text: "A clean chat for every agent, and a real terminal right beside it. Sidebar or tabs, however you work.",
+    claims: ["sessions-and-terminals", "agent-cli-access", "sidebar-or-tabs"],
+  },
   closing: {
-    text: "Open source under MIT. Works locally without an account.",
+    text: "Open source. Local-first. No account needed.",
     claims: ["mit-platform", "desktop-local-mode"],
   },
 } as const

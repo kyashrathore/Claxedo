@@ -5,7 +5,9 @@ import Footer from "../components/Footer.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
 import IconSprite from "../components/IconSprite.astro"
 import MacDownload from "../components/MacDownload.astro"
+import HeroSky from "../components/HeroSky.astro"
 import Scene, { type SceneName } from "../components/Scene.astro"
+import AgentPicker from "../components/crops/AgentPicker.astro"
 import MachineList from "../components/crops/MachineList.astro"
 import MarketplaceCard from "../components/crops/MarketplaceCard.astro"
 import OrganizationSettings from "../components/crops/OrganizationSettings.astro"
@@ -15,13 +17,12 @@ import { requireClaim } from "../content/claims"
 import { routes } from "../content/routes"
 import { home, site } from "../content/site"
 
-const claimed = [home.hero, home.benchmark, ...home.rows, home.closing]
+const claimed = [home.hero, ...home.points, home.benchmark, ...home.place.panels, ...home.features, home.terminal, home.closing]
 for (const block of claimed) for (const id of block.claims) requireClaim(id)
 
-type RowId = (typeof home.rows)[number]["id"]
-const patches: readonly SceneName[] = ["dusk", "ember", "tide", "moor", "harbor", "amber"]
-const rowCrops = { prompt: StandupPage, cloudflare: OrganizationSettings, sandbox: MachineList, plugins: MarketplaceCard, terminal: TerminalChat }
-const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", sandbox: "harbor", plugins: "lagoon", terminal: "slate" }
+const [machines, agents] = home.place.panels
+const featureCrops = { prompt: StandupPage, team: OrganizationSettings, tools: MarketplaceCard }
+const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = { prompt: "amber", team: "pier", tools: "lagoon" }
 ---
 
 <Layout title={`Claxedo: ${home.hero.title}`} description={site.description} lightOnly>
@@ -29,6 +30,7 @@ const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", 
   <IconSprite />
   <main id="main-content" class="home">
     <section class="hero">
+      <HeroSky />
       <div class="intro">
         <h1>{home.hero.title}</h1>
         <p class="lede">{home.hero.subtitle}</p>
@@ -36,9 +38,17 @@ const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", 
         <a class="quiet-link" href={routes.app}>Open in browser</a>
       </div>
       <div class="stage">
-        {patches.map((scene, index) => <Scene scene={scene} class={`patch patch-${index + 1}`} />)}
         <div class="window"><ClaxedoAppReplica /></div>
       </div>
+    </section>
+
+    <section class="points" aria-label="Why Claxedo">
+      {home.points.map((point) => (
+        <div class="point">
+          <h2>{point.title}</h2>
+          <p>{point.text}</p>
+        </div>
+      ))}
     </section>
 
     <section class="block">
@@ -56,21 +66,49 @@ const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", 
       </dl>
     </section>
 
-    <div class="rows">
-      {home.rows.map((row) => {
-        const Crop = rowCrops[row.id]
-        return (
-          <section class="row">
-            <div class="row-copy">
-              <h2>{row.title}</h2>
-              <p>{row.text}</p>
-              {"href" in row && <a class="quiet-link" href={row.href}>Deployment guide</a>}
-            </div>
-            <Scene scene={rowArt[row.id]} class="panel"><div class="crop"><Crop /></div></Scene>
-          </section>
-        )
-      })}
-    </div>
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.place.title}</h2>
+        <p>{home.place.subtitle}</p>
+      </header>
+      <div class="two-up">
+        <article class="tile">
+          <Scene scene="harbor" class="panel"><div class="crop"><MachineList /></div></Scene>
+          <h3>{machines.title}</h3>
+          <p>{machines.text}</p>
+        </article>
+        <article class="tile">
+          <Scene scene="ash" class="panel"><div class="crop"><AgentPicker /></div></Scene>
+          <h3>{agents.title}</h3>
+          <p>{agents.text}</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="block follows">
+      <div class="three-up">
+        {home.features.map((feature) => {
+          const Crop = featureCrops[feature.id]
+          return (
+            <article class="tile">
+              <Scene scene={featureScenes[feature.id]} class="panel"><div class="crop"><Crop /></div></Scene>
+              <h3>{feature.title}</h3>
+              <p>{feature.text}</p>
+              {"href" in feature && <a class="quiet-link" href={feature.href}>Deployment guide</a>}
+            </article>
+          )
+        })}
+      </div>
+    </section>
+
+    <section class="block split">
+      <Scene scene="slate" class="panel"><div class="crop"><TerminalChat /></div></Scene>
+      <div class="split-copy">
+        <h2>{home.terminal.title}</h2>
+        <p>{home.terminal.text}</p>
+        <MacDownload placement="terminal" />
+      </div>
+    </section>
 
     <section class="closing">
       <p>{home.closing.text}</p>
@@ -109,23 +147,28 @@ const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", 
 
   h1, h2, h3 { font-family: var(--font-display); font-weight: 400; color: var(--ink); text-wrap: balance; }
 
-  .hero { padding-top: clamp(2rem, 3.5vw, 2.5rem); }
+  .hero { --window-h: clamp(30rem, 48vw, 44rem); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
+  .hero :global(.hero-sky) { bottom: calc(var(--window-h) * .55); }
+  .intro { color: #ffffff; text-shadow: 0 1px 28px rgb(8 24 48 / .28); }
+  .intro h1 { color: inherit; }
+  .intro .lede { color: #ffffff; }
+  .intro .quiet-link { color: #ffffff; text-decoration-color: rgb(255 255 255 / .45); }
+  .intro .quiet-link:hover { color: #ffffff; text-decoration-color: currentColor; }
+  .intro :global(.btn-pill) { text-shadow: none; }
   .intro { display: grid; justify-items: center; gap: 0; width: var(--width); margin-inline: auto; text-align: center; }
   h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
   .lede { max-width: 34rem; margin: 1rem 0 1.75rem; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
   .intro .quiet-link { margin-top: .75rem; font-size: .875rem; }
 
   .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: 3rem auto 0; }
-  .window { position: relative; z-index: 1; height: clamp(30rem, 48vw, 44rem); }
-  .stage :global(.patch) { --soften: 2px; position: absolute; z-index: 0; border-radius: 3px; }
-  .stage :global(.patch-1) { right: calc(100% - 3rem); top: 9%; width: min((100vw - 100%) / 2 + 5rem, 14rem); height: 10.5rem; }
-  .stage :global(.patch-2) { left: 7%; top: -4.5rem; width: 7.5rem; height: 6rem; }
-  .stage :global(.patch-3) { left: 71%; top: -3.25rem; width: 4.25rem; height: 4.25rem; }
-  .stage :global(.patch-4) { left: calc(100% - 2.5rem); top: -2rem; width: min((100vw - 100%) / 2 + 4rem, 13rem); height: 13rem; }
-  .stage :global(.patch-5) { left: -5rem; top: 63%; width: 6.5rem; height: 8.5rem; }
-  .stage :global(.patch-6) { left: 34%; top: calc(100% - 2.5rem); width: 8rem; height: 5rem; }
+  .window { position: relative; z-index: 1; height: var(--window-h); }
+
+  .points { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2rem; width: var(--width); margin: clamp(4rem, 7vw, 5.5rem) auto 0; }
+  .point h2 { max-width: none; margin: 0 0 .5rem; font-size: 1.0625rem; line-height: 1.35; letter-spacing: -.01em; }
+  .point p { margin: 0; color: var(--ink-soft); font-size: .9375rem; line-height: 1.5; text-wrap: pretty; }
 
   .block { width: var(--width); margin: clamp(6rem, 11vw, 9.5rem) auto 0; }
+  .block.follows { margin-top: clamp(3.5rem, 6vw, 5rem); }
   .section-head { margin-bottom: 2.5rem; }
   h2 { max-width: 24em; margin: 0; font-size: clamp(2rem, 3.2vw, 2.5rem); line-height: 1.1; letter-spacing: -.025em; }
   .section-head p { max-width: 52rem; margin: .75rem 0 0; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; }
@@ -138,16 +181,21 @@ const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", 
   .label { color: var(--ink); font-size: 1.0625rem; }
   .metric dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.5; }
 
-  .rows { display: grid; gap: clamp(7rem, 12vw, 10rem); width: var(--width); margin: clamp(7rem, 12vw, 10rem) auto 0; }
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; gap: clamp(2.5rem, 6vw, 5rem); }
-  .row:nth-child(even) { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
-  .row:nth-child(even) :global(.panel) { order: -1; }
-  .row :global(.panel) { height: 26rem; }
-  .row-copy { display: grid; justify-items: start; }
-  .row-copy h2 { font-size: clamp(1.75rem, 2.6vw, 2.25rem); line-height: 1.12; }
-  .row-copy p { max-width: 30rem; margin: 1rem 0 0; color: var(--ink-soft); font-size: 1.125rem; line-height: 1.55; text-wrap: pretty; }
-  .row-copy .quiet-link { margin-top: 1rem; }
+  .two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  .three-up { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+  .two-up .tile :global(.panel) { height: 25rem; }
+  .three-up .tile :global(.panel) { height: 20rem; }
   .crop { position: absolute; inset: 2.75rem 0 0 8%; transform-origin: 0 0; }
+  .three-up .crop { scale: .8; }
+  .tile h3 { margin: 1.5rem 0 .5rem; font-size: 1.25rem; line-height: 1.3; letter-spacing: -.015em; }
+  .tile p { max-width: 36rem; margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.5; text-wrap: pretty; }
+  .tile .quiet-link { display: inline-block; margin-top: .75rem; }
+
+  .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: center; gap: clamp(2.5rem, 7vw, 6.5rem); }
+  .split :global(.panel) { height: 30rem; }
+  .split .crop { inset: 3.5rem 0 0 8%; }
+  .split-copy { display: grid; justify-items: start; gap: 1.25rem; }
+  .split-copy p { max-width: 28rem; margin: 0 0 .75rem; color: var(--ink-soft); font-size: 1.125rem; line-height: 1.5; }
 
   .closing { display: grid; justify-items: center; gap: 1.25rem; width: var(--width); margin: clamp(7rem, 13vw, 11rem) auto 0; text-align: center; }
   .closing p { margin: 0 0 .5rem; color: var(--ink); font-size: 1.25rem; }
@@ -160,22 +208,22 @@ const rowArt: Record<RowId, SceneName> = { prompt: "amber", cloudflare: "pier", 
   }
 
   @media (max-width: 75rem) {
-    .stage :global(.patch-1), .stage :global(.patch-4), .stage :global(.patch-5), .stage :global(.patch-6) { display: none; }
+    .points { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
   }
   @media (max-width: 60rem) {
     .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
+    .three-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
+    .three-up .tile :global(.panel) { height: 24rem; }
+    .split { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 47.99rem) {
     .lede { font-size: 1.125rem; }
-    .stage { margin-top: 5.5rem; }
-    .stage :global(.patch-6) { display: none; }
-    .window { height: 32rem; }
-    .stage :global(.patch-2) { left: 4%; }
-    .stage :global(.patch-3) { left: auto; right: 6%; }
+    .hero { --window-h: 32rem; }
+    .points { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; }
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1rem; }
-    .row, .row:nth-child(even) { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
-    .row:nth-child(even) :global(.panel) { order: 0; }
-    .row :global(.panel) { height: auto; aspect-ratio: 1.05; }
-    .crop { inset: 1.75rem 0 0 6%; scale: .78; }
+    .two-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
+    .tile :global(.panel), .three-up .tile :global(.panel), .two-up .tile :global(.panel), .split :global(.panel) { height: auto; aspect-ratio: 1.05; }
+    .crop, .split .crop { inset: 1.75rem 0 0 6%; scale: .78; }
+    .three-up .crop { scale: .7; }
   }
 </style>

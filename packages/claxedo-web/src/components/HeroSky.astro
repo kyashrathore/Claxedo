@@ -1,0 +1,56 @@
+---
+/**
+ * The hero's full-bleed sky, drawn in CSS until a painting replaces it. The
+ * scrim darkens the middle so the white type keeps 4.5:1 on any art behind it.
+ */
+interface Props {
+  class?: string
+}
+
+const { class: className } = Astro.props
+---
+
+<div class:list={["hero-sky", className]} aria-hidden="true"><span class="scrim"></span></div>
+
+<style>
+  .hero-sky {
+    --cloud: 1;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+    mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  }
+  .hero-sky::before {
+    content: "";
+    position: absolute;
+    inset: -8%;
+    background:
+      radial-gradient(22% 11% at 9% 20%, rgb(255 255 255 / calc(.8 * var(--cloud))), transparent 70%),
+      radial-gradient(16% 7% at 17% 31%, rgb(255 255 255 / calc(.55 * var(--cloud))), transparent 70%),
+      radial-gradient(24% 12% at 91% 16%, rgb(255 255 255 / calc(.75 * var(--cloud))), transparent 70%),
+      radial-gradient(15% 7% at 84% 30%, rgb(255 255 255 / calc(.5 * var(--cloud))), transparent 70%),
+      radial-gradient(30% 8% at 6% 66%, rgb(255 250 240 / .6), transparent 75%),
+      radial-gradient(34% 9% at 95% 68%, rgb(255 250 240 / .55), transparent 75%),
+      radial-gradient(60% 10% at 50% 84%, rgb(255 236 206 / .55), transparent 80%),
+      linear-gradient(180deg, #224c7a 0%, #28578a 40%, #3a6c9f 60%, #7aa3c8 75%, #c6d9e7 87%, #f3f1ec 96%);
+    filter: blur(20px);
+  }
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(75% 70% at 50% 36%, rgb(9 26 48 / .4), transparent 78%);
+  }
+  .hero-sky::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+    opacity: .22;
+  }
+  @media (max-width: 47.99rem) {
+    .hero-sky { --cloud: .3; }
+  }
+</style>

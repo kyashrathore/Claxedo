@@ -54,6 +54,43 @@ export const claims = [
     ],
     status: "verified",
     verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29.",
+  },
+  {
+    id: "cloudflare-five-minutes",
+    publicWording: "Deploy Claxedo for your whole team on your own Cloudflare in 5 minutes.",
+    owner: "Claxedo server",
+    evidence: [
+      "public-docs/user-deployed-cloudflare.md",
+      "packages/claxedo-server/scripts/deploy/greenfield-user-deployed.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29.",
+  },
+  {
+    id: "team-plugin-sharing",
+    publicWording: "Share skills and MCP servers with your whole team from one repo, on every machine.",
+    owner: "Agent Plugins module",
+    evidence: [
+      "packages/claxedo-server-core/src/agent-plugins/sources/registry.ts",
+      "packages/claxedo-server-core/src/agent-plugins/activation/store.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29.",
+  },
+  {
+    id: "bring-your-own-sandbox",
+    publicWording: "Bring your own sandbox provider; Claxedo runs sessions in it.",
+    owner: "Sandbox manager",
+    evidence: [
+      "packages/sandbox-contract/src/index.ts",
+      "packages/sandbox-manager/docs/architecture.md",
+    ],
+    status: "verified",
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29: bringing your own provider is the only option; there are no direct provider integrations.",
   },
   {
     id: "agent-cli-access",

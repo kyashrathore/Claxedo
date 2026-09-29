@@ -3,16 +3,14 @@ import Icon from "../Icon.astro"
 import "../../styles/app-theme.css"
 
 const places = [
-  { icon: "monitor", name: "This Mac", detail: "Sessions run in the project's folder", selected: true },
-  { icon: "server", name: "studio-mac", detail: "Connected with the Claxedo CLI" },
-  { icon: "cloud", name: "Daytona", detail: "Cloud sandbox" },
-  { icon: "cloud", name: "Modal", detail: "Cloud sandbox" },
-  { icon: "cloud", name: "Vercel", detail: "Cloud sandbox" },
-  { icon: "cloud", name: "Docker", detail: "Sandbox on your Docker host" },
+  { icon: "monitor", name: "This Mac", detail: "This computer", selected: true },
+  { icon: "server", name: "studio-mac", detail: "Your machine" },
+  { icon: "cloud", name: "team-sandbox", detail: "Your provider" },
+  { icon: "plus-small", name: "Add your provider", detail: "Write an adapter" },
 ] as const
 ---
 
-<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, a connected machine, or a Daytona, Modal, Vercel or Docker sandbox">
+<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, another machine, or a sandbox from your own provider">
   <div class="app-card list">
     <p class="head">Run this session on</p>
     {places.map((place) => (
@@ -25,13 +23,13 @@ const places = [
   </div>
   <div class="app-card reopen">
     <p class="head">Rotate relay tokens</p>
-    <p class="where"><Icon name="cloud" />Running in a Daytona sandbox</p>
+    <p class="where"><Icon name="cloud" />Running in team-sandbox</p>
     <div class="clients">
       <span><Icon name="monitor" />Claxedo Desktop</span>
       <span><Icon name="browser" />app.claxedo.com</span>
       <span><Icon name="phone" />Your phone</span>
     </div>
-    <p class="note"><Icon name="check" />Open it from any of them</p>
+    <p class="note"><Icon name="check" />Pick it up anywhere</p>
   </div>
 </div>
 
