@@ -100,7 +100,8 @@ export class CursorSdkTransport implements HarnessTransport {
       await this.registry.release(host, process)
       throw error
     }
-    this.entries.set(input.sessionId, { session, input, broker, credential, host, process, plugins: composed.local, busy: false, reopen: false })
+    this.entries.set(input.sessionId, { session, input, broker, credential, host, process, plugins: composed.local,
+      busy: false, reopen: false, unsent: resumed === undefined, replace: false })
     return session
   }
 
@@ -121,6 +122,15 @@ export class CursorSdkTransport implements HarnessTransport {
   private async closeAgent(entry: Entry): Promise<void> {
     if (!entry.process.failed) await entry.process.call({ kind: "close", sessionId: entry.session.binding.sessionId })
     entry.reopen = false
+    if (entry.unsent) entry.replace = true
+  }
+
+  private async replaceAgent(entry: Entry, host: CursorHost): Promise<void> {
+    const reply = await host.call({ kind: "open", session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins) })
+    const upstream = reply.kind === "result" ? reply.value?.agentId : undefined
+    if (!upstream) throw new TransportError("cursor", "sdk", "Cursor did not return an agent id")
+    entry.session = { directory: entry.session.directory, locality: entry.session.locality, binding: await entry.broker.rebind(upstream) }
+    entry.replace = false
   }
 
   private current(entry: Entry): Promise<CursorHost> {
@@ -134,8 +144,10 @@ export class CursorSdkTransport implements HarnessTransport {
     try {
       const host = await this.current(entry)
       if (entry.reopen) await this.closeAgent(entry)
+      if (entry.replace) await this.replaceAgent(entry, host)
       if (broker.signal.aborted || entry.starting?.abort.signal.aborted) return
       if (entry.starting) entry.starting.launched = true
+      entry.unsent = false
       yield* streamCursorRun({ host, broker, prompt, services: this.services, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins, entry.session.binding.upstreamSessionId, turn?.model?.modelID) })
     } finally {

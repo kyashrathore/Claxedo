@@ -22,9 +22,8 @@ export async function run() {
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "cursor", modelId: "scripted" }
     const session = await api.createSession(workspace.directory, {
-      harness: { id: "cursor", access: "native" }, model, title: "Cursor scripted turn",
+      harness: { id: "cursor", access: "native" }, model, title: "Cursor scripted turn", permissionMode: "unsandboxed",
     })
-    await api.setPermissionMode(workspace.directory, session.id, "unsandboxed")
     await api.prompt(workspace.directory, session.id, "CURSOR_SCRIPT:proof", { model })
     const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id
       && (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "Cursor turn settlement" })

@@ -376,6 +376,21 @@ test("a session that chose no mode reports auto-review and its first turn runs u
   } finally { await context.close() }
 }, 60_000)
 
+test("a mode chosen before the session's first turn is the one that turn runs under", async () => {
+  const state = await backend()
+  const context = await setupConformance({ name: "mode-before-first-turn", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const { permissionMode: _chosen, ...unchosen } = context.start.config
+    let binding = { ...context.session.binding, sessionId: "s2" }
+    const session = await context.transport.start({ ...context.start, sessionId: "s2", config: unchosen },
+      { rebind: async (upstreamSessionId: string) => (binding = { ...binding, upstreamSessionId }) } as unknown as SessionBroker)
+    expect((await context.transport.config!.setPermissionMode(session, "unsandboxed")).currentModeId).toBe("unsandboxed")
+    const events = await collect(context, context.turn("CURSOR_SCRIPT:conformance"), { ...session, binding })
+    expect(events.some((event) => event.event.type === "finish")).toBe(true)
+    expect(binding.upstreamSessionId).not.toBe(session.binding.upstreamSessionId)
+  } finally { await context.close() }
+}, 60_000)
+
 test("a scripted todo update reaches the stream as todo-update", async () => {
   const state = await backend()
   const todos = [{ id: "one", content: "Write tests", status: "TODO_STATUS_IN_PROGRESS" }, { id: "two", content: "Ship", status: "TODO_STATUS_PENDING" }]

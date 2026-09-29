@@ -16,6 +16,8 @@ export type CursorEntry = {
   busy: boolean
   starting?: { turnId: string; launched: boolean; abort: AbortController }
   reopen: boolean
+  unsent: boolean
+  replace: boolean
   closing?: Promise<void>
 }
 

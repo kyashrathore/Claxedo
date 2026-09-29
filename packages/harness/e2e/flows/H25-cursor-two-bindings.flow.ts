@@ -18,9 +18,8 @@ export async function run() {
     const firstStream = await stack.events(firstWorkspace.directory)
     const model = { providerId: "cursor", modelId: "scripted" }
     const first = await api.createSession(firstWorkspace.directory, {
-      harness: { id: "cursor", access: "native" }, model, title: "First Cursor backend",
+      harness: { id: "cursor", access: "native" }, model, title: "First Cursor backend", permissionMode: "unsandboxed",
     })
-    await api.setPermissionMode(firstWorkspace.directory, first.id, "unsandboxed")
     await api.prompt(firstWorkspace.directory, first.id, "CURSOR_SCRIPT:first", { model })
     await firstStream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === first.id, { label: "first Cursor session idle" })
     assert.match(assistantText(await api.messages(firstWorkspace.directory, first.id)), /CURSOR-FIRST-BACKEND/)
@@ -32,9 +31,8 @@ export async function run() {
     let second: Awaited<ReturnType<typeof api.createSession>>
     try {
       second = await api.createSession(secondWorkspace.directory, {
-        harness: { id: "cursor", access: "native" }, model, title: "Second Cursor backend",
+        harness: { id: "cursor", access: "native" }, model, title: "Second Cursor backend", permissionMode: "unsandboxed",
       })
-      await api.setPermissionMode(secondWorkspace.directory, second.id, "unsandboxed")
     } catch (error) {
       assert.match(String(error), /Cursor SDK froze|CursorBackendUrlFrozenError|credential binding cannot be used/)
       assert.equal(stack.cursor[1].requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE").length,
