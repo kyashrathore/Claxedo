@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, under } from "./lib/files"
 import { readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, literalText, unwrap, walk } from "./lib/tree"
@@ -21,19 +21,18 @@ const ordering = new Set<ts.SyntaxKind>([
 const guidance = "ask can() in src/access, which answers from server facts"
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
-    if (under(root, file, "src/access")) continue
+    if (under(packageRoot, file, "src/access")) continue
     const { sf } = readSource(file)
-    const wire = under(root, file, "src/server/wire")
+    const wire = under(packageRoot, file, "src/server/wire")
     walk(sf, (node) => {
       const message = accessRule(node, wire)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
-  finish("access-boundary", root, violations, files.length)
+  finish("access-boundary", packageRoot, violations, files.length)
 }
 
 function accessRule(node: ts.Node, wire: boolean): string | undefined {

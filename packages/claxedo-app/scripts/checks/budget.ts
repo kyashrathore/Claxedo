@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { codeExtensions, isTranslationFile, listFiles, parseArgs, rel } from "./lib/files"
+import { codeExtensions, isTranslationFile, listFiles, packageRoot, rel } from "./lib/files"
 import { lineCount } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
@@ -34,23 +34,22 @@ const parts: readonly Part[] = [
 const totalBudget = 94000
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const appFiles = listFiles(root, ["src"], codeExtensions).filter((file) => !isTranslationFile(root, file))
+  const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))
   const counted = new Map(parts.map((part) => [part.name, 0]))
   const unmapped = new Set<string>()
   let total = 0
   for (const file of appFiles) {
     const lines = lineCount(readFileSync(file, "utf8"))
     total += lines
-    const part = partOf(rel(root, file))
+    const part = partOf(rel(packageRoot, file))
     if (part) counted.set(part.name, (counted.get(part.name) ?? 0) + lines)
-    else unmapped.add(dirname(rel(root, file)))
+    else unmapped.add(dirname(rel(packageRoot, file)))
   }
-  const rows = parts.map((part) => ({ name: part.name, lines: counted.get(part.name) ?? 0, budget: part.budget, at: join(root, part.folders[0] ?? "src") }))
-  const over = printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: join(root, "src") }])
+  const rows = parts.map((part) => ({ name: part.name, lines: counted.get(part.name) ?? 0, budget: part.budget, at: join(packageRoot, part.folders[0] ?? "src") }))
+  const over = printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: join(packageRoot, "src") }])
   const violations: Violation[] = over.map((row) => ({ file: row.at, line: 1, message: `${row.name} has ${row.lines} lines; the budget is ${row.budget}` }))
-  for (const folder of unmapped) violations.push({ file: join(root, folder), line: 1, message: "not in the budget table; add the part it belongs to" })
-  finish("budget", root, violations, appFiles.length)
+  for (const folder of unmapped) violations.push({ file: join(packageRoot, folder), line: 1, message: "not in the budget table; add the part it belongs to" })
+  finish("budget", packageRoot, violations, appFiles.length)
 }
 
 function partOf(path: string): Part | undefined {

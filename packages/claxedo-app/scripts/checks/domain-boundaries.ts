@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, rel, topFolder, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, topFolder, under } from "./lib/files"
 import { compilerOptions, createResolver, importsOf, readSource, startLine } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
@@ -7,20 +7,19 @@ type Unit = { readonly kind: "domain" | "shared" | "root" | "outside"; readonly 
 const kitHelpers = "src/ui/utils.ts"
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
   const resolve = createResolver(compilerOptions())
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
     const { sf } = readSource(file)
-    const home = unitOf(root, file)
+    const home = unitOf(packageRoot, file)
     for (const { specifier, node } of importsOf(sf)) {
       const target = resolve(file, specifier)
-      const message = target ? crossing(root, home, target) : undefined
+      const message = target ? crossing(packageRoot, home, target) : undefined
       if (message) violations.push({ file, line: startLine(node, sf), message: `${message} (${specifier})` })
     }
   }
-  finish("domain-boundaries", root, violations, files.length)
+  finish("domain-boundaries", packageRoot, violations, files.length)
 }
 
 function unitOf(root: string, file: string): Unit {

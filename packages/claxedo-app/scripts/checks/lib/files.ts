@@ -10,21 +10,6 @@ export type Scope = "src" | "e2e" | "scripts"
 export const codeExtensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] as const
 export const styleExtensions = [".css"] as const
 
-export type Args = { readonly root: string; readonly rest: readonly string[] }
-
-export function parseArgs(argv: readonly string[]): Args {
-  let root = packageRoot
-  const rest: string[] = []
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index]
-    if (argument === "--root") {
-      root = realpathSync(resolve(argv[index + 1] ?? "."))
-      index += 1
-    } else if (argument !== undefined) rest.push(argument)
-  }
-  return { root, rest }
-}
-
 export function listFiles(root: string, scopes: readonly Scope[], extensions: readonly string[]): string[] {
   const out: string[] = []
   for (const scope of scopes) {

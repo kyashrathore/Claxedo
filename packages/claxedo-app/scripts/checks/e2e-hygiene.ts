@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { codeExtensions, listFiles, parseArgs, rel } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel } from "./lib/files"
 import { readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, isFunctionNode, textOf, unwrap, walk, type FunctionNode } from "./lib/tree"
@@ -42,17 +42,16 @@ const steeredRoutes: Readonly<Record<string, string>> = {
 }
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["e2e"], codeExtensions)
+  const files = listFiles(packageRoot, ["e2e"], codeExtensions)
   const violations: Violation[] = []
   const steered = new Set<string>()
   for (const file of files) {
     const spec = file.endsWith(".spec.ts")
-    if (spec && !flowSpec.test(rel(root, file))) {
+    if (spec && !flowSpec.test(rel(packageRoot, file))) {
       violations.push({ file, line: 1, message: "spec without its flow number; flows live in e2e/flows/NN-name.spec.ts" })
     }
     const { sf } = readSource(file)
-    const path = rel(root, file)
+    const path = rel(packageRoot, file)
     walk(sf, (node) => {
       const intercepted = steers(node)
       if (intercepted && steeredRoutes[path]) steered.add(path)
@@ -61,9 +60,9 @@ function main(): never {
     })
   }
   for (const path of Object.keys(steeredRoutes)) {
-    if (!steered.has(path)) violations.push({ file: join(root, path), line: 1, message: "an allowlisted route interception is gone; remove its steeredRoutes entry" })
+    if (!steered.has(path)) violations.push({ file: join(packageRoot, path), line: 1, message: "an allowlisted route interception is gone; remove its steeredRoutes entry" })
   }
-  finish("e2e-hygiene", root, violations, files.length)
+  finish("e2e-hygiene", packageRoot, violations, files.length)
 }
 
 function sleeps(node: ts.Node, spec: boolean): string | undefined {
