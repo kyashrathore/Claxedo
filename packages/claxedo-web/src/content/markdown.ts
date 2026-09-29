@@ -40,22 +40,13 @@ ${site.description}
 
 > ${home.hero.title} ${home.hero.subtitle}
 
-${home.points.map((point) => `- **${point.title}** ${point.text}`).join("\n")}
+## ${home.extend.title}
 
-## ${home.benchmark.title}
-
-${home.benchmark.subtitle} Benchmark of ${home.benchmark.date}: ${home.benchmark.href}
+${home.extend.subtitle} Benchmark of ${home.benchmark.date}: ${home.benchmark.href}
 
 ${home.benchmark.metrics.map((metric) => `- ${metric.lead} ${metric.label}: ${metric.detail}`).join("\n")}
 
-## ${home.place.title}
-
-${home.place.panels.map((panel) => `- **${panel.title}** ${panel.text}`).join("\n")}
-
-## What else it does
-
-${home.features.map((feature) => `- **${feature.title}** ${feature.text}${"href" in feature ? ` Guide: ${feature.href}` : ""}`).join("\n")}
-- **${home.terminal.title}** ${home.terminal.text}
+${[home.openSource, home.sandbox, home.plugins, home.workflow].map((section) => `## ${section.title}\n\n${section.subtitle}${"href" in section ? ` Guide: ${section.href}` : ""}`).join("\n\n")}
 
 ${home.closing.text}
 

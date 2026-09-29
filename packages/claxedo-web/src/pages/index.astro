@@ -6,23 +6,20 @@ import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
 import IconSprite from "../components/IconSprite.astro"
 import MacDownload from "../components/MacDownload.astro"
 import HeroSky from "../components/HeroSky.astro"
-import Scene, { type SceneName } from "../components/Scene.astro"
+import Scene from "../components/Scene.astro"
 import AgentPicker from "../components/crops/AgentPicker.astro"
+import DeployTerminal from "../components/crops/DeployTerminal.astro"
 import MachineList from "../components/crops/MachineList.astro"
 import MarketplaceCard from "../components/crops/MarketplaceCard.astro"
 import OrganizationSettings from "../components/crops/OrganizationSettings.astro"
+import ReopenCard from "../components/crops/ReopenCard.astro"
 import StandupPage from "../components/crops/StandupPage.astro"
 import TerminalChat from "../components/crops/TerminalChat.astro"
 import { requireClaim } from "../content/claims"
 import { routes } from "../content/routes"
-import { home, site } from "../content/site"
+import { home, homeBlocks, site } from "../content/site"
 
-const claimed = [home.hero, ...home.points, home.benchmark, ...home.place.panels, ...home.features, home.terminal, home.closing]
-for (const block of claimed) for (const id of block.claims) requireClaim(id)
-
-const [machines, agents] = home.place.panels
-const featureCrops = { prompt: StandupPage, team: OrganizationSettings, tools: MarketplaceCard }
-const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = { prompt: "amber", team: "pier", tools: "lagoon" }
+for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
 ---
 
 <Layout title={`Claxedo: ${home.hero.title}`} description={site.description} lightOnly>
@@ -42,19 +39,10 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
       </div>
     </section>
 
-    <section class="points" aria-label="Why Claxedo">
-      {home.points.map((point) => (
-        <div class="point">
-          <h2>{point.title}</h2>
-          <p>{point.text}</p>
-        </div>
-      ))}
-    </section>
-
     <section class="block">
       <header class="section-head">
-        <h2>{home.benchmark.title}</h2>
-        <p>{home.benchmark.subtitle} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
+        <h2>{home.extend.title}</h2>
+        <p>{home.extend.subtitle} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
       </header>
       <dl class="metrics">
         {home.benchmark.metrics.map((metric) => (
@@ -64,49 +52,47 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
           </div>
         ))}
       </dl>
+      <Scene scene="amber" class="panel wide after-metrics"><div class="crop centered"><StandupPage /></div></Scene>
     </section>
 
     <section class="block">
       <header class="section-head">
-        <h2>{home.place.title}</h2>
-        <p>{home.place.subtitle}</p>
+        <h2>{home.openSource.title}</h2>
+        <p>{home.openSource.subtitle} <a class="quiet-link" href={home.openSource.href}>Deployment guide</a></p>
       </header>
       <div class="two-up">
-        <article class="tile">
-          <Scene scene="harbor" class="panel"><div class="crop"><MachineList /></div></Scene>
-          <h3>{machines.title}</h3>
-          <p>{machines.text}</p>
-        </article>
-        <article class="tile">
-          <Scene scene="ash" class="panel"><div class="crop"><AgentPicker /></div></Scene>
-          <h3>{agents.title}</h3>
-          <p>{agents.text}</p>
-        </article>
+        <Scene scene="pier" class="panel"><div class="crop centered" style="--crop-w: 30rem"><OrganizationSettings /></div></Scene>
+        <Scene scene="dusk" class="panel"><div class="crop centered" style="--crop-w: 28rem"><DeployTerminal /></div></Scene>
       </div>
     </section>
 
-    <section class="block follows">
-      <div class="three-up">
-        {home.features.map((feature) => {
-          const Crop = featureCrops[feature.id]
-          return (
-            <article class="tile">
-              <Scene scene={featureScenes[feature.id]} class="panel"><div class="crop"><Crop /></div></Scene>
-              <h3>{feature.title}</h3>
-              <p>{feature.text}</p>
-              {"href" in feature && <a class="quiet-link" href={feature.href}>Deployment guide</a>}
-            </article>
-          )
-        })}
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.sandbox.title}</h2>
+        <p>{home.sandbox.subtitle}</p>
+      </header>
+      <div class="two-up">
+        <Scene scene="harbor" class="panel"><div class="crop centered" style="--crop-w: 24rem"><MachineList /></div></Scene>
+        <Scene scene="tide" class="panel"><div class="crop centered" style="--crop-w: 20rem"><ReopenCard /></div></Scene>
       </div>
     </section>
 
-    <section class="block split">
-      <Scene scene="slate" class="panel"><div class="crop"><TerminalChat /></div></Scene>
-      <div class="split-copy">
-        <h2>{home.terminal.title}</h2>
-        <p>{home.terminal.text}</p>
-        <MacDownload placement="terminal" />
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.plugins.title}</h2>
+        <p>{home.plugins.subtitle}</p>
+      </header>
+      <Scene scene="lagoon" class="panel wide"><div class="crop centered" style="--crop-w: 29rem"><MarketplaceCard /></div></Scene>
+    </section>
+
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.workflow.title}</h2>
+        <p>{home.workflow.subtitle}</p>
+      </header>
+      <div class="two-up">
+        <Scene scene="ash" class="panel"><div class="crop"><AgentPicker /></div></Scene>
+        <Scene scene="slate" class="panel"><div class="crop"><TerminalChat /></div></Scene>
       </div>
     </section>
 
@@ -163,12 +149,7 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
   .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: 3rem auto 0; }
   .window { position: relative; z-index: 1; height: var(--window-h); }
 
-  .points { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2rem; width: var(--width); margin: clamp(4rem, 7vw, 5.5rem) auto 0; }
-  .point h2 { max-width: none; margin: 0 0 .5rem; font-size: 1.0625rem; line-height: 1.35; letter-spacing: -.01em; }
-  .point p { margin: 0; color: var(--ink-soft); font-size: .9375rem; line-height: 1.5; text-wrap: pretty; }
-
   .block { width: var(--width); margin: clamp(6rem, 11vw, 9.5rem) auto 0; }
-  .block.follows { margin-top: clamp(3.5rem, 6vw, 5rem); }
   .section-head { margin-bottom: 2.5rem; }
   h2 { max-width: 24em; margin: 0; font-size: clamp(2rem, 3.2vw, 2.5rem); line-height: 1.1; letter-spacing: -.025em; }
   .section-head p { max-width: 52rem; margin: .75rem 0 0; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; }
@@ -182,20 +163,11 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
   .metric dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.5; }
 
   .two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-  .three-up { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
-  .two-up .tile :global(.panel) { height: 25rem; }
-  .three-up .tile :global(.panel) { height: 20rem; }
+  .block :global(.panel) { height: 25rem; }
+  .block :global(.panel.wide) { height: 28rem; }
+  .block :global(.panel.after-metrics) { margin-top: 3.5rem; }
   .crop { position: absolute; inset: 2.75rem 0 0 8%; transform-origin: 0 0; }
-  .three-up .crop { scale: .8; }
-  .tile h3 { margin: 1.5rem 0 .5rem; font-size: 1.25rem; line-height: 1.3; letter-spacing: -.015em; }
-  .tile p { max-width: 36rem; margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.5; text-wrap: pretty; }
-  .tile .quiet-link { display: inline-block; margin-top: .75rem; }
-
-  .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: center; gap: clamp(2.5rem, 7vw, 6.5rem); }
-  .split :global(.panel) { height: 30rem; }
-  .split .crop { inset: 3.5rem 0 0 8%; }
-  .split-copy { display: grid; justify-items: start; gap: 1.25rem; }
-  .split-copy p { max-width: 28rem; margin: 0 0 .75rem; color: var(--ink-soft); font-size: 1.125rem; line-height: 1.5; }
+  .crop.centered { left: 50%; width: var(--crop-w, 44rem); translate: -50% 0; }
 
   .closing { display: grid; justify-items: center; gap: 1.25rem; width: var(--width); margin: clamp(7rem, 13vw, 11rem) auto 0; text-align: center; }
   .closing p { margin: 0 0 .5rem; color: var(--ink); font-size: 1.25rem; }
@@ -207,23 +179,16 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
   }
 
-  @media (max-width: 75rem) {
-    .points { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
-  }
   @media (max-width: 60rem) {
     .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
-    .three-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
-    .three-up .tile :global(.panel) { height: 24rem; }
-    .split { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 47.99rem) {
     .lede { font-size: 1.125rem; }
     .hero { --window-h: 32rem; }
-    .points { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; }
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1rem; }
-    .two-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
-    .tile :global(.panel), .three-up .tile :global(.panel), .two-up .tile :global(.panel), .split :global(.panel) { height: auto; aspect-ratio: 1.05; }
-    .crop, .split .crop { inset: 1.75rem 0 0 6%; scale: .78; }
-    .three-up .crop { scale: .7; }
+    .two-up { grid-template-columns: minmax(0, 1fr); }
+    .block :global(.panel), .block :global(.panel.wide) { height: auto; aspect-ratio: 1.05; }
+    .block :global(.panel.after-metrics) { margin-top: 2.5rem; }
+    .crop, .crop.centered { inset: 1.75rem 0 0 6%; width: auto; translate: none; scale: .78; }
   }
 </style>

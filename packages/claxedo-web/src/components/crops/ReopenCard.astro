@@ -1,0 +1,25 @@
+---
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+---
+
+<div class="app-card reopen app-theme" role="img" aria-label="A session running in your team's sandbox, open on the desktop app, the browser and your phone">
+  <p class="head">Rotate relay tokens</p>
+  <p class="where"><Icon name="cloud" />Running in team-sandbox</p>
+  <div class="clients">
+    <span><Icon name="monitor" />Claxedo Desktop</span>
+    <span><Icon name="browser" />app.claxedo.com</span>
+    <span><Icon name="phone" />Your phone</span>
+  </div>
+  <p class="note"><Icon name="check" />Pick it up anywhere</p>
+</div>
+
+<style>
+  .reopen { position: absolute; top: 0; left: 0; width: 20rem; padding: 16px 18px; }
+  .head { margin: 0; padding: 0 0 2px; color: var(--text-strong); font-size: 16px; }
+  .where, .note { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-weak); font-size: 12.5px; }
+  .clients { display: grid; margin: 14px 0; border-top: 1px solid var(--border); }
+  .clients span { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); color: var(--text-base); }
+  .clients :global(svg) { color: var(--text-weak); }
+  .note { color: var(--success); }
+</style>

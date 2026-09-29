@@ -1,0 +1,32 @@
+---
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+
+const steps = ["Databases created", "Worker deployed", "GitHub sign-in ready", "Team invite link issued"]
+---
+
+<div class="app-card deploy app-theme" role="img" aria-label="One command deploys Claxedo to your Cloudflare account, live in under five minutes">
+  <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span>~/claxedo</span></div>
+  <div class="screen">
+    <p><span class="path">~/claxedo</span> bun run deploy:cloudflare</p>
+    {steps.map((step) => <p><span class="ok">✓</span> {step}</p>)}
+    <p>&nbsp;</p>
+    <p class="live"><Icon name="check" />Live at <b>https://claxedo.yourteam.dev</b></p>
+    <p class="muted">Done in 4m 38s</p>
+  </div>
+</div>
+
+<style>
+  .deploy { position: absolute; top: 0; left: 0; width: 28rem; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--rail-bg); color: var(--text-weak); font: 12px var(--font-mono); }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 10px; height: 10px; border-radius: 50%; background: #e2e2e4; }
+  .screen { padding: 16px 18px 22px; color: var(--text-base); font: 12.5px/1.75 var(--font-mono); }
+  .screen p { margin: 0; }
+  .path { color: var(--term-path); }
+  .ok { color: var(--success); }
+  .live { display: flex; align-items: center; gap: 8px; color: var(--text-strong); font-family: var(--font-sans); font-size: 14px; }
+  .live b { font-weight: 500; }
+  .live :global(svg) { color: var(--success); }
+  .muted { color: var(--text-weaker); }
+</style>
