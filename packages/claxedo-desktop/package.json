@@ -42,8 +42,6 @@
     "package:win:inner": "electron-builder --win --config electron-builder.config.ts",
     "package:linux": "bun ./scripts/package.ts --linux",
     "package:linux:inner": "electron-builder --linux --config electron-builder.config.ts",
-    "verify:u8-package-boundary": "bun ./scripts/verify-u8-package-boundary.ts",
-    "qualify:u8-release": "bun ./scripts/u8-release-qualification.ts",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "main": "./out/main/index.js",
