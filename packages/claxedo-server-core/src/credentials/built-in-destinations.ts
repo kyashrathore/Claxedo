@@ -17,7 +17,7 @@ export type ProviderDestination = {
   methods: readonly string[]
   pathPrefixes: readonly string[]
   exactPaths?: readonly string[]
-  exchange?: Readonly<{ path: string; tokenField: string }>
+  exchange?: Readonly<{ method: string; path: string; tokenField: string }>
   /**
    * Where the vendor's API root sits under the binding path. A harness whose
    * client appends the whole vendor path itself (Claude Code, the Cursor SDK)
@@ -286,7 +286,7 @@ const cursorDestination: ProviderRow = () => ({
     ...cursorServiceMethods.flatMap(([service, methods]) =>
       methods.trim().split(/\s+/).map((method) => `/${service}/${method}`)),
   ],
-  exchange: { path: "/auth/exchange_user_api_key", tokenField: "accessToken" },
+  exchange: { method: "POST", path: "/auth/exchange_user_api_key", tokenField: "accessToken" },
   apiPath: "",
   injection: { header: "Authorization", scheme: "Bearer" },
 })

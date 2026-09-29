@@ -48,7 +48,6 @@ export function credentialReach(row: { provider_id: string; kind: CredentialKind
   if (destination.injection.headers) {
     return { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }
   }
-  if (destination.exchange) return { local: true, cloud: false, reason: "native_delivery_needs_token_exchange" }
   return { local: true, cloud: true }
 }
 

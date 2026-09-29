@@ -735,7 +735,7 @@ describe("credential routes", () => {
     expect(list.credentials.map((row) => [row.id, row.deliverable])).toEqual([
       ["cred_key", { local: true, cloud: true }],
       ["cred_sub", { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }],
-      ["cred_cursor", { local: true, cloud: false, reason: "native_delivery_needs_token_exchange" }],
+      ["cred_cursor", { local: true, cloud: true }],
     ])
   })
 

@@ -96,8 +96,14 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
   // provider edge attaches one header per secret, and a turn that arrives
   // without the companion is refused by the vendor, not by us.
   if (destination.injection.headers) return undeliverable(credential, "native_delivery_needs_companion_header")
-  if (destination.exchange) return undeliverable(credential, "native_delivery_needs_token_exchange")
   const name = accountPlaceholderEnv(credential)
+  // An exchanging vendor takes the stored key only at its exchange route and
+  // answers with a short-lived access token the sandbox then sends itself. The
+  // edge is scoped to that one request line, so every later request carries
+  // the vendor's token untouched and the key never rides on it.
+  const policy = destination.exchange
+    ? { methods: [destination.exchange.method], pathPrefixes: [destination.exchange.path] }
+    : { methods: destination.methods, pathPrefixes: destination.pathPrefixes }
   return {
     providerId,
     credentialId: credential.id,
@@ -108,8 +114,8 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
       value: destination.value,
       hosts: [new URL(destination.origin).host],
       header: destination.injection.header,
-      methods: destination.methods,
-      pathPrefixes: destination.pathPrefixes,
+      methods: policy.methods,
+      pathPrefixes: policy.pathPrefixes,
       ...(destination.injection.scheme ? { scheme: destination.injection.scheme } : {}),
     },
     projection: {
