@@ -29,7 +29,7 @@ function caretState(context: ControllerContext) {
   }
 }
 
-function createKeyDown(context: ControllerContext, blank: () => boolean, setMode: (mode: EditorMode) => void) {
+function createKeyDown(context: ControllerContext, blank: () => boolean, setMode: (mode: EditorMode) => void, recordCursor: () => void) {
   const { input, state } = context
   const popover = (): PopoverKind => (state.popover.kind === "closed" ? null : state.popover.kind)
   return createEditorKeyDown<KeyboardEvent>({
@@ -41,7 +41,10 @@ function createKeyDown(context: ControllerContext, blank: () => boolean, setMode
     pick: () => input.refs.fileInput()?.click(),
     getCaretState: () => caretState(context),
     isImeComposing: (event) => event.isComposing || state.composing,
-    addTextPart: (content) => input.store.addPart(input.key(), { type: "text", content, start: 0, end: 0 }),
+    addTextPart: (content) => {
+      recordCursor()
+      input.store.addPart(input.key(), { type: "text", content, start: 0, end: 0 })
+    },
     selectPopoverActive: () => selectActive(context),
     atOnKeyDown: (event) => popoverKeyDown(context, event),
     slashOnKeyDown: (event) => popoverKeyDown(context, event),
@@ -80,14 +83,11 @@ export function createComposerController(input: ControllerInput) {
     suggestionQuery: createMemo(() => state.popover),
     activeItems: () => activeItems(context),
     onInput: sync.onInput,
-    onKeyDown: createKeyDown(context, blank, setMode),
-    onCursor: sync.onCursor,
+    onKeyDown: createKeyDown(context, blank, setMode, sync.recordCursor),
     setComposing: (composing: boolean) => setState("composing", composing),
     setFocused: (focused: boolean) => {
       setState("focused", focused)
-      if (focused) return
-      sync.onCursor()
-      closePopover(context)
+      if (!focused) closePopover(context)
     },
     setActive: (id: string) => setState("activeId", id),
     selectAt: (item: Parameters<typeof selectAt>[1]) => selectAt(context, item),

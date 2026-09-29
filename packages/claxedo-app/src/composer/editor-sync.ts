@@ -1,4 +1,4 @@
-import { createEffect, on } from "solid-js"
+import { createEffect, on, onCleanup } from "solid-js"
 import type { ControllerContext } from "./controller-context"
 import { emptyPrompt, promptImages, promptText } from "./model"
 import { getCursorPosition, setCursorPosition } from "./editor/dom"
@@ -26,12 +26,18 @@ export function createEditorSync(context: ControllerContext, updatePopover: (val
       },
     ),
   )
+  const recordCursor = () => {
+    const editor = input.refs.editor()
+    const selection = window.getSelection()
+    if (!editor || !selection?.isCollapsed || !selection.anchorNode || !editor.contains(selection.anchorNode)) return
+    const cursor = getCursorPosition(editor)
+    if (cursor !== draft().cursor) input.store.setCursor(input.key(), cursor)
+  }
+  document.addEventListener("selectionchange", recordCursor)
+  onCleanup(() => document.removeEventListener("selectionchange", recordCursor))
   return {
     onInput: () => readEditorInput(context, echo, { updatePopover, reset }),
-    onCursor: () => {
-      const editor = input.refs.editor()
-      if (editor && window.getSelection()?.isCollapsed) input.store.setCursor(input.key(), getCursorPosition(editor))
-    },
+    recordCursor,
   }
 }
 

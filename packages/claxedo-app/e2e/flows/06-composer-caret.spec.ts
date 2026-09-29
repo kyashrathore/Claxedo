@@ -1,0 +1,33 @@
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+
+test("06 Shift+Enter breaks the line at the caret after the caret moves without typing", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("newline")
+  await stack.acp.write("first", { steps: [{ kind: "text", text: "A reply to click on" }] })
+  await stack.acp.write("lines", { steps: [{ kind: "text", text: "Got the lines" }] })
+  const session = await api.createSession(workspace.directory, { title: "Newline", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  const prompt = app.getByRole("textbox", { name: UI.composer })
+  await sendPrompt(app, `Say something ${acpScriptToken("first")}`)
+  const reply = app.getByText("A reply to click on")
+  await expect(reply).toBeVisible()
+
+  await prompt.click()
+  await app.keyboard.type("alpha beta")
+  await app.keyboard.press("ArrowLeft")
+  await app.keyboard.press("ArrowLeft")
+  await app.keyboard.press("ArrowLeft")
+  await app.keyboard.press("ArrowLeft")
+  await app.keyboard.press("Shift+Enter")
+  await reply.click()
+  await prompt.click()
+  await app.keyboard.press("ControlOrMeta+a")
+  await app.keyboard.press("ArrowRight")
+  await app.keyboard.press("Shift+Enter")
+  await app.keyboard.type(`gamma ${acpScriptToken("lines")}`)
+  await app.keyboard.press("Enter")
+
+  await expect(app.getByText("Got the lines")).toBeVisible()
+  const messages = await api.messages(workspace.directory, session.id)
+  const sent = JSON.stringify(messages.filter((message) => message.info.role === "user").at(-1)?.parts ?? [])
+  expect(sent).toContain(String.raw`alpha \nbeta\ngamma`)
+})
