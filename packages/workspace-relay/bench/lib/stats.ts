@@ -61,32 +61,18 @@ export const HTTP_P99_OVERHEAD_GATE_MS = gateFromEnv("CLAXEDO_BENCH_HTTP_P99_GAT
 export const WS_P99_OVERHEAD_GATE_MS = gateFromEnv("CLAXEDO_BENCH_WS_P99_GATE_MS", 100)
 
 /**
- * The canonical shape label: `c<concurrency>/load<connections>/m<msgsPerConn>`.
- *
- * The old format was `c<n>/load<n>`, which printed the connection count twice
- * and the message count not at all — so `c20/load20` labelled BOTH an 80-message
- * smoke row (WS p99 ~2 ms) and a 40,000-message stress row (WS p99 66–81 ms,
- * only ~1.3x under the 100 ms gate). Two runs ~500x apart in message volume were
- * indistinguishable in `bench/reports/`, which is how a latency gate ends up
- * tuned against the wrong baseline.
- *
- * The `m<N>` suffix is the loadgen CLI's own fix for this, landed concurrently;
- * this helper exists so the four OTHER composition sites
- * (`local-dry-run.ts`, `cf-dev-smoke.ts`, `multitunnel-run.ts`, and the CLI
- * default) all emit that one format instead of three hand-rolled variants.
- * `multitunnel-run.ts` previously used a fifth (`c<conns>x<msgs>`).
- *
- * Nothing parses this string — it is written to the report and printed, never
- * read back (verified across the repo) — so this is label-only: existing reports
- * stay exactly as they were written, and only NEW rows carry the suffix.
+ * `c<concurrency>/load<connections>/m<msgsPerConn>`. The message count has to
+ * be in the label: at the same concurrency, an 80-message smoke row measured a
+ * WS p99 of ~2 ms and a 40,000-message stress row 66–81 ms, and a label without
+ * it makes the two rows look like one shape.
  */
 export function shapeLabel(input: {
   concurrency: number
   wsMessagesPerConnection: number
   connections?: number
 }): string {
-  // `connections` defaults to concurrency: the benches drive them equal unless
-  // told otherwise, and `load` is the connection count in the CLI's format.
+  // `load` is the connection count, which runs equal to concurrency unless the
+  // caller paces opens.
   const connections = input.connections ?? input.concurrency
   return `c${input.concurrency}/load${connections}/m${input.wsMessagesPerConnection}`
 }
@@ -146,14 +132,10 @@ export type RowMetrics = {
 
 /**
  * A latency percentile is only meaningful when the traffic it summarizes
- * actually happened. `dialin-100k-msgs` (2026-07-17) reported a p99 overhead of
- * **-8972ms** — relayed minus direct, so a negative value claims the relayed
- * path beat a direct connection by nine seconds. It was computing over 22
- * surviving messages out of 100,000 after all 50 connections closed.
- *
- * Treat that as UNMEASURABLE rather than as a number. The old code did the
- * opposite twice over: a non-finite overhead counted as a PASS, and a finite
- * but impossible one was compared against the gate as if it were real.
+ * actually happened. A run whose 50 connections all closed computed its p99
+ * over 22 surviving messages out of 100,000 and reported -8972 ms: relayed
+ * minus direct, claiming the relay beat a direct connection by nine seconds.
+ * Such a row is unmeasurable, never a number to compare against the gate.
  */
 function latencyIsMeasurable(row: Omit<RowMetrics, "gates">): boolean {
   const { attempted, delivered } = row.relayedWsMessages

@@ -5,13 +5,8 @@
 // private half. This is the same trust shape the real system uses, just with
 // the bench standing in as issuer — no relay code path is bypassed.
 
-import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8 } from "jose"
-import {
-  deriveRelayHostPublicKey,
-  mintHostTunnelToken,
-  mintRuntimeAccessToken,
-  type RelayRole,
-} from "../../src/auth"
+import { exportSPKI, generateKeyPair } from "jose"
+import { mintRuntimeAccessToken, type RelayRole } from "../../src/auth"
 
 export type BenchIdentity = {
   privateKey: CryptoKey
@@ -73,67 +68,4 @@ export async function createBenchIdentity(overrides: Partial<MintRatInput> = {})
   const pair = await generateKeyPair("EdDSA", { extractable: true })
   const publicKeyPem = await exportSPKI(pair.publicKey)
   return identityFromKeys(pair.privateKey, pair.publicKey, publicKeyPem, overrides)
-}
-
-export type MintHttInput = {
-  subject: string
-  hostId: string
-  workspaceIds: string[]
-  ttlSeconds: number
-}
-
-const HTT_DEFAULTS: MintHttInput = {
-  subject: "bench_provisioner",
-  hostId: "host_bench",
-  workspaceIds: ["ws_bench"],
-  ttlSeconds: 5 * 60,
-}
-
-/** Mint a Host Tunnel Token (HTT) from a PKCS8 private-key PEM. This is the
- * dial-in host-side credential: it authorizes a workspace runtime to REGISTER
- * a tunnel into the relay (aud `workspace-relay-host-tunnel`, bound to
- * host_id + workspace_ids), replacing the Daytona preview token the dial-out
- * path used for host auth. Signed with the SAME bench key as the RAT, so the
- * relay trusts it via CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM — no extra
- * relay config. Claims/alg come from src/auth.ts mintHostTunnelToken, matching
- * verifyHostTunnelToken exactly (iss=claxedo-control-plane). */
-export async function benchHostTunnelTokenFromPrivatePem(
-  privateKeyPem: string,
-  overrides: Partial<MintHttInput> = {},
-): Promise<string> {
-  const privateKey = (await importPKCS8(privateKeyPem, "EdDSA", { extractable: true }))
-  const merged = { ...HTT_DEFAULTS, ...overrides }
-  return mintHostTunnelToken(
-    {
-      subject: merged.subject,
-      hostId: merged.hostId,
-      workspaceIds: merged.workspaceIds,
-      ttlSeconds: merged.ttlSeconds,
-    },
-    privateKey,
-    "EdDSA",
-  )
-}
-
-/** Fresh ed25519 keypair as PEM strings — the persisted form the relay
- * (public) and the loadgen/minter (private) exchange across processes. */
-export async function benchKeypairPems(): Promise<{ publicKeyPem: string; privateKeyPem: string }> {
-  const pair = await generateKeyPair("EdDSA", { extractable: true })
-  return {
-    publicKeyPem: await exportSPKI(pair.publicKey),
-    privateKeyPem: await exportPKCS8(pair.privateKey),
-  }
-}
-
-/** Re-hydrate a bench identity from a PKCS8 private-key PEM (e.g. produced by
- * `mint-rat.ts --action keygen`), deriving the public half so the identity is
- * complete. Lets a cloud loadgen mint RATs the deployed relay already trusts. */
-export async function benchIdentityFromPrivatePem(
-  privateKeyPem: string,
-  overrides: Partial<MintRatInput> = {},
-): Promise<BenchIdentity> {
-  const privateKey = await importPKCS8(privateKeyPem, "EdDSA", { extractable: true })
-  const publicKey = await deriveRelayHostPublicKey(privateKey)
-  const publicKeyPem = await exportSPKI(publicKey)
-  return identityFromKeys(privateKey, publicKey, publicKeyPem, overrides)
 }
