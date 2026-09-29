@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession } from "@claxedo/harness/contract"
+import { sessionStatus } from "@claxedo/agent-sdk-runtime/compat-events"
 import { FakeTransport } from "../test-support/fake-transport"
 import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 import { createSessionTitleOwner } from "./session-titles"
@@ -60,37 +61,80 @@ describe("a harness that refuses a title", () => {
   })
 })
 
+function sessionFrames(f: HostFixture, sessionId: string) {
+  const seen: string[] = []
+  f.eventHub.subscribeGlobal(({ payload }) => {
+    if (payload.type === "session.updated" && payload.properties.info.id === sessionId && payload.properties.info.titleSource === "harness") seen.push("title")
+    if (payload.type === "session.idle" && payload.properties.sessionID === sessionId) seen.push("idle")
+    if (payload.type === "session.status" && payload.properties.sessionID === sessionId) seen.push(`status:${payload.properties.status.type}`)
+    if (payload.type === "message.updated" && payload.properties.info.sessionID === sessionId) seen.push(`message:${payload.properties.info.role}`)
+  })
+  return seen
+}
+
+function deferredTitle() {
+  let answer!: (title: string) => void
+  let ask!: () => void
+  const asked = new Promise<void>((resolve) => { ask = resolve })
+  const transport = new FakeTransport({
+    naming: { generateTitle: () => { ask(); return new Promise<string>((done) => { answer = done }) } },
+  })
+  return { transport, asked, answer: (title: string) => answer(title) }
+}
+
 describe("a generated title", () => {
-  test("lands before the turn that asked for it is idle", async () => {
-    const transport = new FakeTransport({
-      naming: { generateTitle: () => new Promise((resolve) => setTimeout(() => resolve("Generated title"), 20)) },
-    })
-    const f = createHostFixture({ transports: { pi: transport } })
+  test("never delays the idle of the turn that asked for it and follows it", async () => {
+    const title = deferredTitle()
+    const f = createHostFixture({ transports: { pi: title.transport } })
     fixtures.push(f)
-    const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_order", harness: PI }))
-    const seen: string[] = []
-    const idle = new Promise<string[]>((resolve) => {
-      f.eventHub.subscribeGlobal(({ payload }) => {
-        if (payload.type === "session.updated" && payload.properties.info.titleSource === "harness") seen.push("title")
-        if (payload.type === "session.idle" && payload.properties.sessionID === id) resolve([...seen, "idle"])
-      })
-    })
+    const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_after_idle", harness: PI }))
+    const seen = sessionFrames(f, id)
     await f.runtime.turns.start({ sessionId: id, parts: [{ type: "text", text: "Plan the release" }], origin: LOOPBACK_ORIGIN })
-    expect(await idle).toEqual(["title", "idle"])
+    await title.asked
+    expect(seen.at(-1)).toBe("idle")
+    expect(seen).not.toContain("title")
+    title.answer("Generated title")
+    for (let attempt = 0; attempt < 200 && seen.at(-1) !== "title"; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(seen.slice(seen.indexOf("idle"))).toEqual(["idle", "title"])
+  })
+
+  test("goes out ahead of every frame of a turn that started while it was pending", async () => {
+    const title = deferredTitle()
+    const f = createHostFixture({ transports: { pi: title.transport } })
+    fixtures.push(f)
+    const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_before_next", harness: PI }))
+    const seen = sessionFrames(f, id)
+    await f.runtime.turns.start({ sessionId: id, parts: [{ type: "text", text: "Plan the release" }], origin: LOOPBACK_ORIGIN })
+    await title.asked
+    const firstIdle = seen.length
+    await f.runtime.turns.start({ sessionId: id, parts: [{ type: "text", text: "Ship it" }], origin: LOOPBACK_ORIGIN })
+    for (let attempt = 0; attempt < 200 && title.transport.turns.length < 2; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    await f.runtime.turns.whenIdle(id)
+    expect(seen.slice(firstIdle)).toEqual([])
+    title.answer("Generated title")
+    for (let attempt = 0; attempt < 200 && seen.slice(firstIdle).at(-1) !== "idle"; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    const next = seen.slice(firstIdle)
+    expect(next[0]).toBe("title")
+    expect(next.slice(1)).toContain("status:busy")
+    expect(next.at(-1)).toBe("idle")
   })
 })
 
 describe("a title side turn that never answers", () => {
-  test("is abandoned at its deadline, so it cannot hold the turn that asked for it", async () => {
+  test("is dropped at its deadline and releases what waited behind it", async () => {
     const f = createHostFixture({ transports: { pi: new FakeTransport() } })
     fixtures.push(f)
     const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_hangs", harness: PI }))
     const titles = createSessionTitleOwner({ store: f.store, eventHub: f.eventHub, deadlineMs: 20 })
     const attached = await f.runtime.transportFor(id)
-    const generated = titles.generate({ sessionId: id, directory: attached.session.directory,
+    const seen = sessionFrames(f, id)
+    const generated = titles.generate({ sessionId: id, directory: attached.session.directory, turnMessageId: "msg_asking",
       transport: { naming: { generateTitle: () => new Promise<string>(() => {}) } }, session: attached.session })
-    expect(await Promise.race([generated.then(() => "abandoned"), new Promise((resolve) => setTimeout(() => resolve("still waiting"), 500))]))
-      .toBe("abandoned")
+    f.eventHub.publishGlobal({ directory: attached.session.directory, payload: sessionStatus(id, { type: "busy" }) })
+    expect(seen).toEqual([])
+    expect(await Promise.race([generated.then(() => "dropped"), new Promise((resolve) => setTimeout(() => resolve("still waiting"), 500))]))
+      .toBe("dropped")
+    expect(seen).toEqual(["status:busy"])
     expect(f.store.getSession(id)?.titleSource).toBeUndefined()
   })
 })

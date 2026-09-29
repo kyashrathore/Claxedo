@@ -1,9 +1,10 @@
-import type { PromptInput } from "@claxedo/agent-runtime-contract"
+import type { PromptInput, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { buildSession, sessionUpdated, withDir, type CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
 import { Log } from "../log"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
+import type { SessionSlot } from "../projection/session-order"
 import type { AgentRuntimeStore } from "./contracts"
 import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "@claxedo/agent-sdk-runtime"
 import { acceptGeneratedTitle, sessionTitleRequest, TITLE_TURN_TIMEOUT_MS } from "./title-generation"
@@ -23,11 +24,8 @@ type NamedSession = Pick<TitleTarget, "transport" | "session">
  * The runtime's title policy, in one place: a first-prompt placeholder the
  * moment a turn starts on an untitled session, then one harness side turn
  * after the first completed turn unless a higher-ranked title (`harness`
- * streamed during the turn, `user` rename) has landed. The turn runner awaits
- * that side turn before it publishes the turn's idle, so the title and the
- * usage the side turn bills land inside the turn that asked for them rather
- * than racing the next one. Child sessions are named by their spawn
- * observation and never titled here.
+ * streamed during the turn, `user` rename) has landed. Child sessions are
+ * named by their spawn observation and never titled here.
  */
 export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub; deadlineMs?: number }) {
   const { store, eventHub } = input
@@ -65,25 +63,38 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
   }
 
   /**
-   * Publishes straight to the hub: by the time the side turn answers, the
-   * turn subscription that fans in-turn events out to the host is closed.
+   * Names the session from its first completed turn. The caller starts this
+   * right after that turn's idle; the session's slot opens before the first
+   * await, so the title's frames land after that idle and ahead of anything
+   * a later turn publishes, which waits behind the slot until the title is
+   * published or dropped at its deadline. The harness is told the title
+   * before the frame goes out, so a harness that echoes a rename (Pi) does it
+   * before a reader that waited for the title can start another turn.
    */
-  async function generate(target: TitleTarget) {
-    const { sessionId, directory } = target
-    const session = store.getSession(sessionId)
-    if (!session || session.parentID || session.titleSource === "user" || session.titleSource === "harness") return
+  function generate(target: TitleTarget & { turnMessageId: string }): Promise<void> {
+    const session = store.getSession(target.sessionId)
+    if (!session || session.parentID || session.titleSource === "user" || session.titleSource === "harness") return Promise.resolve()
     const naming = target.transport.naming
-    if (!naming?.generateTitle || attempted.has(sessionId)) return
-    attempted.add(sessionId)
+    if (!naming?.generateTitle || attempted.has(target.sessionId)) return Promise.resolve()
+    attempted.add(target.sessionId)
+    const slot = eventHub.openSlot(target.sessionId, target.turnMessageId)
+    const ask = (request: SessionTitleRequest) => naming.generateTitle?.(target.session, request) ?? Promise.resolve(null)
+    return nameSession(target, ask, session.title, slot).finally(slot.close)
+  }
+
+  async function nameSession(target: TitleTarget, generateTitle: (request: SessionTitleRequest) => Promise<string | null>,
+    placeholderTitle: Parameters<typeof acceptGeneratedTitle>[1], slot: SessionSlot) {
+    const { sessionId, directory } = target
     const model = store.getSessionConfig(sessionId)?.model
     const deadline = { deadlineAt: Date.now() + deadlineMs, signal: AbortSignal.timeout(deadlineMs) }
+    const expired = (what: string) => new Error(`${what} did not answer within ${deadlineMs} ms`)
     try {
-      const raw = await settleAtRequestDeadline("Session title generation", deadline, naming.generateTitle(target.session, sessionTitleRequest({
+      const raw = await settleAtRequestDeadline("Session title generation", deadline, generateTitle(sessionTitleRequest({
         directory,
         ...(model ? { model } : {}),
         messages: store.getMessages(sessionId),
-      }, deadline)), () => {}, (what) => new Error(`${what} did not answer within ${deadlineMs} ms`))
-      const title = acceptGeneratedTitle(raw, session.title)
+      }, deadline)), () => {}, expired)
+      const title = acceptGeneratedTitle(raw, placeholderTitle)
       if (!title) return
       const current = store.getSession(sessionId)
       const created = current?.time?.created
@@ -102,8 +113,12 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
         })),
         source: { dir: "in", method: "generated-title" },
       }).payload
-      eventHub.publishGlobal(withDir(directory, committed))
-      await push(sessionId, title, async () => target)
+      try {
+        await settleAtRequestDeadline("Session title rename", deadline, push(sessionId, title, async () => target), () => {}, expired)
+      } catch (error) {
+        log.warn("Harness did not take the session title in time", { sessionId, error: error instanceof Error ? error.message : String(error) })
+      }
+      slot.publishGlobal(withDir(directory, committed))
     } catch (error) {
       log.warn("Session title generation failed", { sessionId, harness: target.session.binding.connectionId, error: error instanceof Error ? error.message : String(error) })
     }

@@ -111,6 +111,7 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
   })
   let finalized: TurnFinalization | undefined
   let outcome: AgentTurnOutcome | undefined
+  let titled = false
   try {
     let terminal = false
     const placeholder = titles.placeholder(sessionId, normalizeDirectory(directory), prompt)
@@ -138,7 +139,7 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     recovery.retainFailure(capture, settled, finalized)
     if (finalized.ok && outcome?.status === "completed") {
       if (run.clearsHandoff) store.updateSessionConfig(sessionId, { handoff: null })
-      await titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session })
+      titled = true
     }
   } catch (err) {
     if (!admitted()) return
@@ -172,5 +173,9 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
       try { await run.afterTurn() } catch (error) { recovery.reportSessionFailure(sessionId, error) }
     }
     finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok)
+    if (titled) {
+      void titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session,
+        turnMessageId: prompt.assistantMessageId })
+    }
   }
 }
