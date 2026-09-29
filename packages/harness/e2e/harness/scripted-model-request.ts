@@ -12,7 +12,12 @@ export type ScriptedModelBody =
   | { dialect: "messages"; body: MessageCreateParams }
   | { dialect: "responses"; body: ResponseCreateParams }
 
-export type ScriptedModelTool = { name: string; inputSchema?: unknown }
+export type ScriptedToolTarget = { name: string; namespace?: string }
+
+export type ScriptedModelTool = { name: string; call: ScriptedToolTarget; inputSchema?: unknown }
+
+const LOADED_TOOLS = new Set(["additional_tools", "tool_search_output"])
+const TOOL_RESULTS = new Set(["function_call_output", "custom_tool_call_output", "tool_search_output"])
 
 export const MARKER_PROMPT = /reply with exactly this one token[^:]*:\s*\\?"?([A-Za-z0-9._-]+)/gi
 const TITLE_INSTRUCTION = JSON.stringify(SESSION_TITLE_SYSTEM_PROMPT).slice(1, -1)
@@ -50,7 +55,7 @@ export function promptText(request: ScriptedModelBody) {
 export function hasToolResult(request: ScriptedModelBody) {
   if (request.dialect === "responses") {
     return Array.isArray(request.body.input)
-      && request.body.input.some((item) => ["function_call_output", "custom_tool_call_output"].includes(String(asRecord(item)?.type)))
+      && request.body.input.some((item) => TOOL_RESULTS.has(String(asRecord(item)?.type)))
   }
   if (request.dialect === "messages") {
     return request.body.messages.some((message) =>
@@ -85,7 +90,7 @@ export function modelTools(body: ScriptedModelBody["body"]): ScriptedModelTool[]
   const additional = "input" in body && Array.isArray(body.input)
     ? body.input.flatMap((item) => {
         const row = asRecord(item)
-        return row?.type === "additional_tools" && Array.isArray(row.tools) ? row.tools : []
+        return row && LOADED_TOOLS.has(String(row.type)) && Array.isArray(row.tools) ? row.tools : []
       })
     : []
   const flatten = (tools: unknown[], namespace?: string): ScriptedModelTool[] => tools.flatMap((tool) => {
@@ -95,7 +100,7 @@ export function modelTools(body: ScriptedModelBody["body"]): ScriptedModelTool[]
     const name = typeof row?.name === "string" ? row.name : typeof fn?.name === "string" ? fn.name : undefined
     if (!name) return []
     const inputSchema = row?.input_schema ?? fn?.parameters
-    return [{ name: namespace ? `${namespace}.${name}` : name, ...(inputSchema ? { inputSchema } : {}) }]
+    return [{ name: namespace ? `${namespace}.${name}` : name, call: { name, ...(namespace ? { namespace } : {}) }, ...(inputSchema ? { inputSchema } : {}) }]
   })
   return flatten([...(body.tools ?? []), ...additional])
 }

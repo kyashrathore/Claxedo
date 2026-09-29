@@ -12,6 +12,8 @@ A cancellation during `turn/start` waits for the native turn ID within the calle
 
 Translation constraints: cumulative usage replaces the previous observation in its native scope; overlapping native totals must not be counted twice. Child thread attribution uses the observed parent binding. Completed item snapshots contribute only content not already delivered by streaming deltas. MCP image results preserve the provider's supplied bytes.
 
+Every projected MCP server, and Claxedo's own for a local session, reaches Codex in the thread's `mcp_servers`. Codex decides how the model sees their tools, and this transport doesn't override it: for a model whose catalog entry supports search, such as `gpt-5.5`, Codex 0.156.1 defers every MCP tool behind its client-executed `tool_search` tool, so the model first calls `tool_search`, receives the matching `mcp__<server>` namespaces in a `tool_search_output`, and then calls a tool in that namespace. A model without search support gets the tools directly.
+
 Profile preparation first records the shared home's use through `services.recordHomeUse`, and the app-server is spawned with that home, so the home stays out of collection for as long as the app-server lives, including after the runtime that launched it has gone.
 
 A failed turn's error class comes from Codex's own `codexErrorInfo`: `usageLimitExceeded` is a usage limit, and an HTTP failure variant that answered 429 is a temporary rate limit. A failure that names only Codex's generic session error is explained by the last limited rate-limit window, and that window is a plan limit, so it is a usage limit too. The reset sentence of a limited window comes from the shared `translate/rate-limit-reset.ts`, as Claude's does.

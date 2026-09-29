@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { ClaxedoApi, assistantText } from "../harness/api"
+import { ClaxedoApi } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { applyScriptedPluginProfile } from "../harness/scripted-plugin-profile"
 import { startScriptedMcpServer } from "../harness/scripted-mcp-server"
@@ -24,14 +24,17 @@ export async function run() {
     const session = await api.createSession(workspace.directory, {
       harness: { id: "codex", access: "native" }, title: "H14 MCP Codex", permissionMode: "full-access", model,
     })
+    stack.scripted.scriptTool({ name: "tool_search", format: "tool_search", input: { query: "proof" }, whenPromptIncludes: "H14CODEXINIT" })
     await api.prompt(workspace.directory, session.id, "Inspect the plugin tools H14CODEXINIT", { model })
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "MCP Codex probe idle", timeoutMs: 60_000 })
     const tool = stack.scripted.requests.flatMap((request) => request.tools).find((item) => item.name.includes("proof") && item.name.startsWith("mcp__"))
-    assert.ok(tool, `H-10: Codex never received the plugin's MCP server; advertised tools: ${JSON.stringify(stack.scripted.requests.filter((request) => request.dialect === "responses").map((request) => request.tools.map((item) => item.name)))}`)
-    stack.scripted.scriptTool({ name: tool.name, input: { marker: "H14CODEX" }, whenPromptIncludes: "H14CODEX" })
+    assert.ok(tool, `H-10: Codex's tool_search loaded no MCP proof tool; tools the model saw: ${JSON.stringify(stack.scripted.requests.filter((request) => request.dialect === "responses").map((request) => request.tools.map((item) => item.name)))}`)
+    stack.scripted.scriptTool({ ...tool.call, input: { marker: "H14CODEX" }, whenPromptIncludes: "H14CODEX" })
     await api.prompt(workspace.directory, session.id, "Call the plugin MCP proof tool with marker H14CODEX", { model })
     assert.ok(mcp.calls.some((call) => call.arguments.marker === "H14CODEX"), `H-10: Codex never called the plugin's MCP server; calls: ${JSON.stringify(mcp.calls)}`)
-    assert.match(assistantText(await api.messages(workspace.directory, session.id)), /MCP_PROOF:H14CODEX/)
+    const toolParts = (await api.messages(workspace.directory, session.id)).flatMap((message) => message.parts).filter((part) => part.type === "tool")
+    assert.ok(toolParts.some((part) => JSON.stringify(part.state).includes("MCP_PROOF:H14CODEX")), `the MCP proof result was not stored: ${JSON.stringify(toolParts)}`)
+    assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("MCP_PROOF:H14CODEX")), "the MCP proof result never reached the model")
     assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id))
     assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
