@@ -49,8 +49,7 @@ export const desktopMainComposition: Policy = {
   // daemon discovery and lease owners. The app-exit fix adds the canonical
   // daemon-exit lifecycle owner. Account identity resolution (`account/identity.ts`,
   // reached through the lazy account composition the source walk includes)
-  // publishes display name/email after OAuth. Account IPC and service timing
-  // share `account/account-perf.ts` as the single diagnostics owner. The
+  // publishes display name/email after OAuth. The
   // credential-bound auth descriptor and native refresh owner replace the old
   // userinfo identity module, a reviewed net +1 module with no package growth.
   // Control-plane transport resilience adds two reviewed owners:
@@ -195,7 +194,9 @@ export const desktopMainComposition: Policy = {
   // daemon it started exits. Reviewed owner: Electron main, the only process
   // holding the lease and the child. Type-only import of the restart policy,
   // no package edge. 101/27, no headroom.
-  ceilings: { modules: 101, packages: 27 },
+  // -1 module: `account/account-perf.ts` is gone with the account-port bench,
+  // its only reader. 100/27, no headroom.
+  ceilings: { modules: 100, packages: 27 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -249,14 +250,14 @@ export const desktopAccountComposition: Policy = {
     requiredPackages: ["electron"],
   },
 
-  // 18 modules and 7 packages, no headroom. `account/no-reuse-fetch.ts`, the
+  // 17 modules and 7 packages, no headroom. `account/no-reuse-fetch.ts`, the
   // fresh-connection node http(s) fetch, brings `node:https`.
   // `account/cli-credential-file.ts` mirrors the account's credential into the
   // `claxedo` CLI's credential file; that credential never leaves this
   // composition, and `@claxedo/helpers/claxedo-credentials` is its file shape
   // and path. The `@claxedo/helpers` subpaths (`fs`, `guards`, `readers`,
   // `string`) are leaves over node builtins already in this closure.
-  ceilings: { modules: 18, packages: 7 },
+  ceilings: { modules: 17, packages: 7 },
   // The emitted list names the credential-bearing half only. `hosted-operations.ts`
   // and `account-ipc.ts` are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and

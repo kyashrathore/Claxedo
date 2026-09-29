@@ -31,17 +31,6 @@ import type {
  */
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => ipcRenderer.invoke(channel, ...args)
 
-if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
-  let previous = performance.now()
-  const frame = (now: number) => {
-    const gap = Math.round(now - previous)
-    previous = now
-    if (gap >= 100) console.warn(`[startup-perf] renderer-loop gap=${String(gap)}ms`)
-    requestAnimationFrame(frame)
-  }
-  requestAnimationFrame(frame)
-}
-
 const browserBridge: BrowserBridge = {
   enabled: () => invoke<boolean>("browser:enabled"),
   register: (paneId, webContentsId) =>

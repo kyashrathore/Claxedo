@@ -23,7 +23,6 @@ type Globals = {
   packaged: boolean
   wsl: boolean
   deepLinks?: string[]
-  startupIsolationStage?: string
 }
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -57,17 +56,12 @@ export function setDockIcon() {
 }
 
 export function createMainWindow(globals: Globals, options?: { deferLoad?: boolean }) {
-  const startedAt = performance.now()
-  if (process.env.CLAXEDO_PERF_READY_SELECTOR) log.info("[startup-perf] create-window start")
   const requestedWindowSize = parseWindowSize(app.commandLine.getSwitchValue("claxedo-window-size"))
   const startMaximized = app.commandLine.hasSwitch("claxedo-window-maximized")
   const state = windowState({
     defaultWidth: requestedWindowSize?.width ?? 1280,
     defaultHeight: requestedWindowSize?.height ?? 800,
   })
-  if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
-    log.info(`[startup-perf] window-state ready elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
-  }
 
   const win = new BrowserWindow({
     x: state.x,
@@ -112,9 +106,6 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
   // The default session, shared with the loading window; the agent-browser
   // `<webview>` guests live in `persist:agent-browser` and keep their own.
   installRendererPermissionPolicy(win.webContents.session, isTrustedMainRendererUrl)
-  if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
-    log.info(`[startup-perf] browser-window ready elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
-  }
 
   state.manage(win)
   win.once("ready-to-show", () => {
@@ -125,12 +116,8 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
   if (!options?.deferLoad) loadMainWindow(win)
   wireZoom(win)
   wireDiagnostics(win)
-  watchPerformanceReady(win)
   injectGlobals(win, globals)
   devtools(win)
-  if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
-    log.info(`[startup-perf] create-window complete elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
-  }
 
   return win
 }
@@ -256,7 +243,6 @@ function injectGlobals(win: BrowserWindow, globals: Globals) {
       packaged: globals.packaged,
       wsl: globals.wsl,
       deepLinks: Array.isArray(deepLinks) ? deepLinks.splice(0) : deepLinks,
-      startupIsolationStage: globals.startupIsolationStage,
     }
     void win.webContents.executeJavaScript(
       `window.__CLAXEDO__ = Object.assign(window.__CLAXEDO__ ?? {}, ${JSON.stringify(data)})`,
@@ -298,47 +284,5 @@ function wireDiagnostics(win: BrowserWindow) {
       source: details.sourceId,
       line: details.lineNumber,
     })
-  })
-}
-
-function watchPerformanceReady(win: BrowserWindow) {
-  const selector = process.env.CLAXEDO_PERF_READY_SELECTOR
-  if (!selector) return
-
-  let rendererLoads = 0
-  let readyLogged = false
-  win.webContents.on("did-finish-load", () => {
-    rendererLoads += 1
-    const loadedAt = performance.now()
-    log.info(`[startup-perf] renderer loaded count=${String(rendererLoads)}`)
-    void win.webContents
-      .executeJavaScript(`new Promise((resolve) => {
-        const selector = ${JSON.stringify(selector)}
-        if (document.querySelector(selector)) return resolve(true)
-        const observer = new MutationObserver(() => {
-          if (!document.querySelector(selector)) return
-          observer.disconnect()
-          resolve(true)
-        })
-        observer.observe(document.documentElement, { childList: true, subtree: true })
-      })`)
-      .then(async (ready) => {
-        if (!ready || readyLogged) return undefined
-        readyLogged = true
-        log.info(`[startup-perf] session list ready after-renderer=${String(Math.round(performance.now() - loadedAt))}ms`)
-        return win.webContents.executeJavaScript(`performance.getEntriesByType("resource")
-          .filter((entry) => entry.name.includes("/api/") || entry.name.includes("session-list"))
-          .map((entry) => ({
-            name: entry.name,
-            startTime: Math.round(entry.startTime),
-            duration: Math.round(entry.duration),
-            responseEnd: Math.round(entry.responseEnd),
-          }))`)
-      })
-      .then((resources) => {
-        if (!resources) return
-        log.info(`[startup-perf] renderer resources=${JSON.stringify(resources)}`)
-      })
-      .catch(() => undefined)
   })
 }
