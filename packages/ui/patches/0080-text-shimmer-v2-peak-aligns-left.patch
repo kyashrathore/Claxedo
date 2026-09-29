@@ -1,0 +1,23 @@
+Subject: text-shimmer-v2: the peak copy aligns its glyphs to the left of its box
+
+What: the peak copy sets text-align: left.
+Why: the peak box is as wide as the sweep, so an inherited text-align: center (a button) pushed its glyphs past the swept copy's clip and the band painted nothing.
+
+diff --git a/src/v2/components/text-shimmer-v2.css b/src/v2/components/text-shimmer-v2.css
+index 6063ab8d6e..060b60158b 100644
+--- a/src/v2/components/text-shimmer-v2.css
++++ b/src/v2/components/text-shimmer-v2.css
+@@ -93,9 +93,13 @@
+   animation-name: text-shimmer-v2-sweep;
+ }
+ 
++/* The peak's box is as wide as the sweep, and its offset assumes its glyphs sit at the
++   box's left edge. An inherited text-align (a <button> centres) would move them past the
++   swept copy's clip, and the band would paint nothing. */
+ [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-peak {
+   display: block;
+   white-space: pre;
++  text-align: left;
+   background-image: var(--_peak);
+   -webkit-background-clip: text;
+   background-clip: text;

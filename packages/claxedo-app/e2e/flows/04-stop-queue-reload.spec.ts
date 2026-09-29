@@ -74,6 +74,35 @@ test("04 running tool: its elapsed time counts up in whole seconds while the tur
   await stack.acp.release("running")
 })
 
+test("04 running command group: the shimmer's bright copy sits on the label it sweeps", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("group-shimmer")
+  await stack.acp.write("group-running", {
+    steps: [
+      { kind: "tool", tool: "execute", title: "git status", input: { command: "git status" }, text: "clean" },
+      { kind: "tool", tool: "execute", title: "bun run typecheck", input: { command: "bun run typecheck" }, status: "in_progress" },
+      { kind: "hold", name: "group-running" },
+    ],
+  })
+  const session = await api.createSession(workspace.directory, { title: "Group shimmer", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, `Check it. ${acpScriptToken("group-running")}`)
+  const shimmer = app.locator('[data-component="work-group-trigger"] [data-component="text-shimmer-v2"][data-active="true"]')
+  await expect(shimmer).toContainText("Running bun run typecheck")
+  const offset = await shimmer.evaluate((root) => {
+    for (const animation of root.getAnimations({ subtree: true })) {
+      animation.pause()
+      animation.currentTime = 600
+    }
+    const peak = root.querySelector('[data-slot="text-shimmer-v2-peak"]')
+    if (!peak?.firstChild) throw new Error("the running shimmer has no peak copy")
+    const range = document.createRange()
+    range.selectNodeContents(peak.firstChild)
+    return range.getBoundingClientRect().left - root.getBoundingClientRect().left
+  })
+  expect(Math.abs(offset)).toBeLessThan(1)
+  await stack.acp.release("group-running")
+})
+
 const HARNESS_STATUS_READ = /\/api\/claxedo\/agent-config\/harness\?/
 
 function harnessStatusReads(app: Page) {
