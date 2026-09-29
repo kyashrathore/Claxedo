@@ -138,6 +138,13 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
+      # Forks the bundle prebuild just produced; process ownership is qualified
+      # on macOS only, and the smoke's stray check needs `pgrep`.
+      - name: Run runtime recovery smoke (macOS)
+        if: runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        run: bun run test:runtime-recovery
+
       - name: Run source diagnostics release gate
         if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
         working-directory: packages/claxedo-desktop
