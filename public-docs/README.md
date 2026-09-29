@@ -6,10 +6,9 @@
 >
 > - `deploy-relay.yml` cites [`relay-and-deployment.md`](./relay-and-deployment.md)
 >   by path in its policy and rollback instructions.
-> - `packages/claxedo-server/scripts/deploy/greenfield-user-deployed.ts` generates
->   and staleness-gates [`user-deployed-cloudflare.md`](./user-deployed-cloudflare.md),
->   and `packages/claxedo-web/test/deployment-prompt-drift.test.ts` asserts the
->   site's deployment prompt names it.
+> - The marketing site (`packages/claxedo-web/src/content/site.ts`) links
+>   [`user-deployed-cloudflare.md`](./user-deployed-cloudflare.md) as its
+>   Cloudflare deploy guide.
 > - `packages/workspace-runtime/scripts/verify-publish.ts` gates publishing on the
 >   "Mounted Route Families" table in [`workspace-runtime.md`](./workspace-runtime.md)
 >   matching `docs/api-manifest.json`.
@@ -84,8 +83,8 @@ artifacts, and projection are product features, not public runtime-package APIs.
   and how to get enforcement.
 - [Self-Host on Fly.io](./self-host-fly.md): the `claxedo deploy` wizard —
   an unsigned single-user control plane on your own Fly account.
-- [User-deployed Cloudflare](./user-deployed-cloudflare.md): generated Better Auth + D1 greenfield workflow;
-  currently certifies the fail-closed `locked` release and names the gates still blocking an open deployment.
+- [User-deployed Cloudflare](./user-deployed-cloudflare.md): deploy Claxedo to your own Cloudflare account with
+  one command, claim it as owner, upgrade by re-running it.
 - [Writing An Auth Or Storage Port](./writing-an-auth-or-storage-port.md): where a
   third-party identity provider or database plugs in — the injected ports, the
   conformance suites that prove an implementation, and the static entrypoint
