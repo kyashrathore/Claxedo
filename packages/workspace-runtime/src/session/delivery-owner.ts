@@ -24,9 +24,10 @@ export type SessionDeliveryStore = {
   messageSessionId(messageId: string): string | undefined
 }
 type Submission = { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester
+/** What a reader of the queue may see: the grant is the turn's proof, never a row field. */
+export type QueuedPromptView = Omit<QueuedPromptRecord, "grant"> & { held: boolean }
 export type SessionDeliveryOwner = {
-  /** What a reader of the queue may see: the grant is the turn's proof, never a row field. */
-  list(sessionId: string): Array<Omit<QueuedPromptRecord, "grant"> & { held: boolean }>
+  list(sessionId: string): QueuedPromptView[]
   control(sessionId: string, seq: number, action: QueuedPromptAction): Promise<QueuedControlResult>
   queue(input: Submission): QueuedPromptRecord
   steer(input: Submission): Promise<QueuedControlResult>
@@ -54,6 +55,8 @@ export function createSessionDeliveryOwner(input: {
     onDelivery: (delivery: PromptDelivery) => void
     onSteeringResult?: (result: SteeringResult) => void
   }) => Promise<unknown>
+  /** Called after each write that changed a session's queue, so a reader can learn of it without polling. */
+  changed: (sessionId: string) => void
 }): SessionDeliveryOwner {
   const operations = new Map<string, Promise<QueuedControlResult>>()
   const draining = new Map<string, Promise<void>>()
@@ -64,6 +67,10 @@ export function createSessionDeliveryOwner(input: {
     if (!target) throw new Error("This runtime cannot persist queued input")
     return target
   }
+  const announced = (sessionId: string, changed: boolean) => {
+    if (changed) input.changed(sessionId)
+    return changed
+  }
   const row = (sessionId: string, seq: number) => store().listQueuedPrompts().find((item) => item.sessionId === sessionId && item.seq === seq)
   const eligible = (item: QueuedPromptRecord) => !item.held && (!item.steering || item.steering.state === "rejected")
   const next = (sessionId: string) => store().listQueuedPrompts()
@@ -72,15 +79,17 @@ export function createSessionDeliveryOwner(input: {
   const persist = ({ sessionId, body, actor, author, authority, provenance, grant }: Submission) => {
     if (disposed) throw new Error("Session delivery owner is disposed")
     const { userMessageId } = admitTurnMessageIds(store(), { sessionId, messageId: body.messageID ?? `msg_${randomUUID()}` })
-    return store().queuePrompt({
+    const record = store().queuePrompt({
       sessionId, ...queuedPromptColumns(body), messageId: userMessageId,
       actor, author, authority, provenance, ...(grant ? { grant } : {}),
     })
+    announced(sessionId, true)
+    return record
   }
   function settle(record: QueuedPromptRecord, operationId: string, mode: "start" | "steer", result: SteeringResult): QueuedControlResult {
     const state = result.ok ? "accepted" : result.status === "unknown" ? "unknown" : "rejected"
     const message = result.ok ? undefined : result.message
-    if (!store().settleQueuedPromptDelivery(record.sessionId, record.seq, { operationId, mode, state, message })) {
+    if (!announced(record.sessionId, store().settleQueuedPromptDelivery(record.sessionId, record.seq, { operationId, mode, state, message }))) {
       return { ok: false, status: "conflict", message: "Delivery ownership changed", operationId }
     }
     return result.ok ? { ok: true } : { ok: false, status: state === "unknown" ? "unknown" : "rejected", message: result.message, operationId }
@@ -100,7 +109,7 @@ export function createSessionDeliveryOwner(input: {
       })
       if (mode === "steer") return settle(record, operationId, mode, steering ?? { ok: false, status: "unknown", message: "Runtime did not report a steering outcome" })
       if (delivery === "start") {
-        return store().completeQueuedPrompt(record.sessionId, record.seq, operationId)
+        return announced(record.sessionId, store().completeQueuedPrompt(record.sessionId, record.seq, operationId))
           ? { ok: true } : { ok: false, status: "conflict", message: "Delivery ownership changed", operationId }
       }
       if (steering && !steering.ok) return settle(record, operationId, mode, steering)
@@ -112,7 +121,7 @@ export function createSessionDeliveryOwner(input: {
   }
   function claim(record: QueuedPromptRecord, mode: "start" | "steer") {
     const operationId = randomUUID()
-    if (!store().claimQueuedPromptDelivery(record.sessionId, record.seq, operationId, mode)) return undefined
+    if (!announced(record.sessionId, store().claimQueuedPromptDelivery(record.sessionId, record.seq, operationId, mode))) return undefined
     const claimed = row(record.sessionId, record.seq)
     if (!claimed || claimed.steering?.operationId !== operationId) return undefined
     const promise = dispatch(claimed, operationId, mode)
@@ -133,7 +142,7 @@ export function createSessionDeliveryOwner(input: {
         const candidate = next(sessionId)
         if (!candidate) return
         const directory = store().sessionDirectory(sessionId)
-        if (!directory) { store().deleteQueuedPrompt(sessionId, candidate.seq); continue }
+        if (!directory) { announced(sessionId, store().deleteQueuedPrompt(sessionId, candidate.seq)); continue }
         const handoff = await input.whenIdle(sessionId, directory)
         if (handoff.unavailable) return
         try {
@@ -182,12 +191,12 @@ export function createSessionDeliveryOwner(input: {
       return result
     }
     if (action === "cancel") {
-      if (!store().deleteQueuedPrompt(sessionId, seq)) return { ok: false, status: "conflict", message: "Delivery ownership changed" }
+      if (!announced(sessionId, store().deleteQueuedPrompt(sessionId, seq))) return { ok: false, status: "conflict", message: "Delivery ownership changed" }
     } else {
       const changed = typeof action === "object"
         ? store().replaceQueuedPromptParts(sessionId, seq, action.replace)
         : store().setQueuedPromptHeld(sessionId, seq, action === "hold")
-      if (!changed) return { ok: false, status: "conflict", message: "Delivery ownership changed" }
+      if (!announced(sessionId, changed)) return { ok: false, status: "conflict", message: "Delivery ownership changed" }
     }
     kick(sessionId)
     return { ok: true }

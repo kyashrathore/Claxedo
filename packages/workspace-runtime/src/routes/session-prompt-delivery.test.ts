@@ -173,6 +173,7 @@ function durableQueue() {
     startTurn: ({ origin: _origin, ...turn }) => new Promise<void>((resolve, reject) => {
       void runRuntimePromptTurn({ ...turn, runtime, origin: LOOPBACK_ORIGIN, publishGlobal: () => {}, onAdmissionSettled: (error) => error ? reject(error) : resolve() }).catch(reject)
     }),
+    changed: () => {},
   })
   owners.push(host)
   runtimes.set(host, (value) => { runtime = value })
@@ -706,7 +707,7 @@ test("synchronous queued submission is a durable acknowledgement, not a request-
 
 test("HTTP refuses queue admission when persistence is unavailable", async () => {
   const host = createSessionDeliveryOwner({ store: () => undefined,
-    whenIdle: async () => { throw new Error("must not execute") }, startTurn: async () => { throw new Error("must not execute") } })
+    whenIdle: async () => { throw new Error("must not execute") }, startTurn: async () => { throw new Error("must not execute") }, changed: () => {} })
   const starts: AgentRuntimeTurnStartInput[] = []
   const app = routes(runtimeDouble({ starts, deliveries: ["queue"] }), host)
   const response = await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID: "not-saved", delivery: "queue", parts: [] }))

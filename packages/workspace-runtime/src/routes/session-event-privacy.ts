@@ -160,6 +160,7 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
     case "agent.lifecycle":
       return event.sessionId
     case "session.lifecycle":
+    case "session.queue":
       return event.sessionID
     case "pty.created":
     case "pty.updated":
