@@ -28,10 +28,10 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
+import { readPackageJson, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
-import { publishedVersionDrift, type PublishedVersionPackage } from "./check-published-versions"
+import { publishedVersionDrift, type CommandRunner, type PublishedVersionPackage } from "./check-published-versions"
 
 export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes" | "cli"
 
@@ -79,8 +79,6 @@ export function selectPackages(selector: PackageSelector): readonly ClaxedoPacka
 
 const CONSUMER_SECTIONS = ["dependencies", "peerDependencies", "optionalDependencies"] as const
 const ALL_SECTIONS = [...CONSUMER_SECTIONS, "devDependencies"] as const
-
-export { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
 
