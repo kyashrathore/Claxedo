@@ -1,7 +1,7 @@
 import { chromium, type Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../harness/painted-frames"
 import { prepareHarness } from "../harness/global-setup"
 import { startStack } from "../harness/stack"
 import { sessionRoute, UI } from "../harness/ui-names"

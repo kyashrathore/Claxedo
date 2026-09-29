@@ -1,5 +1,5 @@
 import { apiRequests, expect, expectNothingAnimating, sessionRoute, test, UI, UNTRACED } from "../harness"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../harness/painted-frames"
 import { recordSwitchFrames, switchReport, type SwitchReport } from "./12-switch-paint.frames"
 import { seedTurns } from "./12-switch-paint.seed"
 

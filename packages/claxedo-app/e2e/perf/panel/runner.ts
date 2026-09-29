@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { installRecorder, type Predicate, type Recording } from "./recorder"
-import { traceEventsFrom, type TraceEvent } from "../../../perf-harness/src/trace-events"
+import { traceEventsFrom, type TraceEvent } from "../../harness/trace-events"
 import { createSourceMapper, summarizeProfile, summarizeTrace, type CpuProfile } from "./trace"
 
 export const OUT = process.env.PANEL_OUT ?? path.join(os.tmpdir(), "panel-perf")

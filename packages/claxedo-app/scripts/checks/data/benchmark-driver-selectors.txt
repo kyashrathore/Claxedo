@@ -1,0 +1,6 @@
+[data-component="prompt-input"]
+[data-component="text-part"]
+[data-slot="navigation-row-activate"]
+[data-slot="session-timeline-scroll"]
+[data-slot="text-part-body"]
+[data-slot="user-message-text"]

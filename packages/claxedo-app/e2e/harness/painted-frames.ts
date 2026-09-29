@@ -1,4 +1,15 @@
-import type { PaintedFrames } from "./page-globals"
+type PaintedFrame<T> = {
+  sample: (startedAt: number) => T
+  painted: (value: T, paintedAt: number) => boolean | void
+}
+
+type PaintedFrames = <T>(frame: PaintedFrame<T>) => () => void
+
+declare global {
+  interface Window {
+    __claxedoPaintedFrames?: PaintedFrames
+  }
+}
 
 export function installPaintedFrames() {
   if (window.__claxedoPaintedFrames) return
