@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { projectLatestSurfaceMessage, projectLatestSurfaceMessages } from "./message-page"
+import { AgentMessagePageError, parseMessagePageQuery, projectLatestSurfaceMessage, projectLatestSurfaceMessages } from "./message-page"
 
 describe("latest-surface first-paint projection", () => {
   test("keeps the envelope whole and every text part, and drops every other part", () => {
@@ -52,5 +52,21 @@ describe("latest-surface first-paint projection", () => {
     const projected = projectLatestSurfaceMessages([user, assistant])
     expect(projected[0]).toEqual(user)
     expect(projected[1]?.parts.map((part) => (part as { id: string }).id)).toEqual(assistant.parts.map((part) => part.id))
+  })
+})
+
+describe("message page input", () => {
+  test("accepts the semantic views by themselves, and a whole turn before a cursor", () => {
+    expect(parseMessagePageQuery(undefined, undefined, "latest-turn")).toEqual({ view: "latest-turn" })
+    expect(parseMessagePageQuery(undefined, undefined, "latest-surface")).toEqual({ view: "latest-surface" })
+    expect(parseMessagePageQuery(undefined, "cursor", "latest-turn")).toEqual({ view: "latest-turn", before: "cursor" })
+  })
+
+  test("rejects unknown or mixed semantic views", () => {
+    expect(() => parseMessagePageQuery(undefined, undefined, "latest-message")).toThrow(AgentMessagePageError)
+    expect(() => parseMessagePageQuery("20", undefined, "latest-turn")).toThrow(AgentMessagePageError)
+    expect(() => parseMessagePageQuery(undefined, "", "latest-turn")).toThrow(AgentMessagePageError)
+    expect(() => parseMessagePageQuery(undefined, "cursor", "latest-surface")).toThrow(AgentMessagePageError)
+    expect(() => parseMessagePageQuery("20", undefined, "latest-surface")).toThrow(AgentMessagePageError)
   })
 })

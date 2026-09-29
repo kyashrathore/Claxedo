@@ -600,7 +600,7 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
  * Widen a typed message/part envelope to the open record the projection stores.
  *
  * The projection round-trips envelopes through `info_json`/`data_json`, so it
- * works in open records, while the builders in `compat-events` and the engine's
+ * works in open records, while the builders in `presentation-events` and the engine's
  * own event payloads are closed types. A shallow copy is the whole conversion:
  * no assertion, and the caller's value is never mutated (neither `upsertMessage`
  * nor `upsertPart` writes to what it is given).

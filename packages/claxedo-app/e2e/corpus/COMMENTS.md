@@ -6,7 +6,7 @@ Line numbers are the comment's first line before the strip. A block of consecuti
 
 ## Timeline (`src/session/view/timeline`, at `43466d8ee6`)
 
-No case renders an interrupted turn: the ACP harness finalizes a cancelled prompt as `completed` (`finalizeAuthoredTurn` in `agent-sdk-runtime/src/harnesses/acp/turn-runner.ts`), so the scripted agent cannot produce the interrupted divider in either app. Those comments are carried by the README alone.
+No case renders an interrupted turn: the ACP harness finalizes a cancelled prompt as `completed` (the ACP turn runner at that commit; the stop reason is now mapped by `translateStopReason` in `packages/harness/src/transports/acp/translate/translate-session-update.ts`), so the scripted agent cannot produce the interrupted divider in either app. Those comments are carried by the README alone.
 
 | Where | Lines | Comment | Outcome |
 | --- | --- | --- | --- |

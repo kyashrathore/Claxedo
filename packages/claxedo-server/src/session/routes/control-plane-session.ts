@@ -1,6 +1,6 @@
 import { errorBody as dispatchErrorBody, statusOf } from "@claxedo/server-core/platform/errors/base"
 import { Hono, type Context } from "hono"
-import { AGENT_HARNESS_IDS } from "@claxedo/agent-runtime-contract"
+import { AGENT_HARNESS_IDS, parseMessagePageQuery } from "@claxedo/agent-runtime-contract"
 import type { MachineSessionCreate } from "../machine-dispatch"
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -23,7 +23,7 @@ import {
   sessionInventoryResponse,
   requiredWorkspaceId,
   signedSessionList, sessionListErrorResponse } from "../list"
-import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../message-page"
+import { messagePageCursor, parseSessionPartInput } from "../message-page"
 import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
 import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-runtime-contract"
@@ -261,7 +261,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/messages", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        const page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
+        const page = parseMessagePageQuery(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
         const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
         if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           if (page) {

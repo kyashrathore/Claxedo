@@ -42,6 +42,14 @@ export type ProviderUnavailable = {
   reason: string
 }
 
+/**
+ * Whether a row is the refusal rather than a binding.
+ *
+ * Takes any object rather than a `ProviderProjection`, because the same
+ * refusal travels alongside binding shapes this module does not own — the
+ * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
+ * the predicate beside each of them is how two of them came to disagree.
+ */
 export function isProviderUnavailable(row: object): row is ProviderUnavailable {
   return "unavailable" in row
 }
@@ -79,14 +87,6 @@ const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath", "account"])
 const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
 
-/**
- * Whether a row is the refusal rather than a binding.
- *
- * Takes any object rather than a `ProviderProjection`, because the same
- * refusal travels alongside binding shapes this module does not own — the
- * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
- * the predicate beside each of them is how two of them came to disagree.
- */
 export function providerProjection(
   input: unknown,
   env: PlaceholderEnvironment = {},

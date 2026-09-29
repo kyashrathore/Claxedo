@@ -53,6 +53,14 @@ await test("server changes select Windows and the server boundary", () => {
   assert.equal(result.boundary_local_server, false)
 })
 
+await test("contract and helpers changes select the server and local-server boundaries", () => {
+  for (const file of ["packages/agent-runtime-contract/src/turn-page.ts", "packages/claxedo-helpers/src/json.ts"]) {
+    const result = classifyChangedFiles([file])
+    assert.equal(result.boundary_server, true, file)
+    assert.equal(result.boundary_local_server, true, file)
+  }
+})
+
 await test("server-core changes select every boundary that consumes it", () => {
   const result = classifyChangedFiles(["packages/claxedo-server-core/src/projects/store.ts"])
   assert.equal(result.boundary_server, true)

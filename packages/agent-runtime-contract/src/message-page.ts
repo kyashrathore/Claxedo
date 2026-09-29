@@ -114,3 +114,37 @@ export class AgentMessagePageError extends Error {
     this.name = "AgentMessagePageError"
   }
 }
+
+/** The `limit`/`before`/`view` query of a message page read; every producer refuses a malformed one with a 400. */
+export function parseMessagePageQuery(
+  limit: string | undefined,
+  before: string | undefined,
+  view?: string,
+): AgentMessagePageInput | undefined {
+  if (view === "latest-turn" && limit === undefined) {
+    if (before === undefined) return { view }
+    if (before.length === 0) throw new AgentMessagePageError(400, "before must be a non-empty cursor")
+    return { view, before }
+  }
+  if (view !== undefined) {
+    if (view !== "latest-surface" || limit !== undefined || before !== undefined) {
+      throw new AgentMessagePageError(400, "view must be latest-turn or latest-surface, cannot be combined with limit, and only latest-turn takes before")
+    }
+    return { view }
+  }
+  if (limit === undefined && before === undefined) return undefined
+  if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
+    throw new AgentMessagePageError(400, `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
+  }
+  const parsed = Number(limit)
+  if (!Number.isSafeInteger(parsed) || parsed > AGENT_MESSAGE_PAGE_LIMIT) {
+    throw new AgentMessagePageError(400, `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
+  }
+  if (before !== undefined && before.length === 0) {
+    throw new AgentMessagePageError(400, "before must be a non-empty cursor")
+  }
+  return {
+    limit: parsed,
+    ...(before === undefined ? {} : { before }),
+  }
+}

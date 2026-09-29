@@ -77,9 +77,9 @@ function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
     reasoning: numberOrNull(row.reasoning),
     cache: { read: numberOrNull(cache.read), write: numberOrNull(cache.write) },
   }
-  // Legacy compat builders initialized every completed message to zero even
-  // when the harness reported no usage. Treat that indistinguishable all-zero
-  // block as unavailable unless a canonical session.usage observation exists.
+  // `buildAssistantMessage` starts every assistant row at zero tokens, so an
+  // all-zero block is indistinguishable from a harness that reported no usage.
+  // Treat it as unavailable unless a canonical session.usage observation exists.
   const values = [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write]
   return values.some((value) => value !== null && value > 0) ? tokens : undefined
 }

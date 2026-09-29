@@ -27,7 +27,7 @@ import { IMMUTABLE_SESSION_CONFIG_FIELDS, type ImmutableSessionConfigField } fro
 import { narrowerPermissionLevel, PermissionModeRefusedError } from "../session/permission-ceiling"
 import type { HarnessCapabilities } from "../host/capabilities"
 import type { RuntimeDirectory } from "../host/contracts"
-import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
+import { AgentMessagePageError, parseMessagePageQuery, type AgentMessagePage, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-runtime-contract"
 import { isAgentHarnessEngineError } from "@claxedo/harness/contract"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -220,31 +220,11 @@ function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
     }
     return { turnId: turn }
   }
-  if (view === undefined && limit === undefined && before === undefined) return undefined
-  if (view === "latest-turn" && limit === undefined) {
-    if (before === undefined) return { view }
-    if (before.length === 0) throw new HTTPException(400, { message: "before must be a non-empty cursor" })
-    return { view, before }
-  }
-  if (view !== undefined) {
-    if (view !== "latest-surface" || limit !== undefined || before !== undefined) {
-      throw new HTTPException(400, { message: "view must be latest-turn or latest-surface, cannot be combined with limit, and only latest-turn takes before" })
-    }
-    return { view }
-  }
-  if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
-    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}` })
-  }
-  const parsedLimit = Number(limit)
-  if (!Number.isSafeInteger(parsedLimit) || parsedLimit > AGENT_MESSAGE_PAGE_LIMIT) {
-    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}` })
-  }
-  if (before !== undefined && before.length === 0) {
-    throw new HTTPException(400, { message: "before must be a non-empty cursor" })
-  }
-  return {
-    limit: parsedLimit,
-    ...(before !== undefined ? { before } : {}),
+  try {
+    return parseMessagePageQuery(limit, before, view)
+  } catch (error) {
+    if (error instanceof AgentMessagePageError) throw new HTTPException(400, { message: error.message })
+    throw error
   }
 }
 

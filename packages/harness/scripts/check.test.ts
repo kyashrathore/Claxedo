@@ -72,7 +72,6 @@ test("transport-boundary accepts only its own SDK and shared boundaries", () => 
   fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@cursor/sdk"\n', /Import only this transport/)
   fails("transport-boundary", "src/transports/pi-rpc/bad.ts", 'import "../../broker/x"\n', /Import only this transport/)
   fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@claxedo/workspace-runtime"\n', /Import only this transport/)
-  fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@claxedo/agent-event-runtime"\n', /Import only this transport/)
 })
 
 test("rpc is a shared transport mechanism without reverse dependencies", () => {

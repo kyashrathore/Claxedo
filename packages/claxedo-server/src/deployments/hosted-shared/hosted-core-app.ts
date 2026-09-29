@@ -51,9 +51,9 @@ import {
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
-import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
+import { AgentMessagePageError, parseMessagePageQuery } from "@claxedo/agent-runtime-contract"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-runtime-contract"
-import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../../session/message-page"
+import { messagePageCursor, parseSessionPartInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
@@ -655,7 +655,7 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     }
     let page
     try {
-      page = parseMessagePageInput(context.req.query("limit"), context.req.query("before"), context.req.query("view"))
+      page = parseMessagePageQuery(context.req.query("limit"), context.req.query("before"), context.req.query("view"))
     } catch (error) {
       if (error instanceof AgentMessagePageError) {
         return context.json({ error: { code: "message_page_error", message: error.message } }, 400)

@@ -3,7 +3,6 @@ import { foldTurnOutline, TURN_OUTLINE_LIMIT, TURN_OUTLINE_SNIPPET_LENGTH, type 
 import { asRecord, numberField, stringField } from "../platform/json/index"
 import type { StoredMessageColumn, StoredMessageQuery } from "./stored-messages"
 
-
 function flag(record: Record<string, unknown> | undefined, key: string): number | null {
   const value = record?.[key]
   return value === true ? 1 : value === false ? 0 : (numberField(record, key) ?? null)

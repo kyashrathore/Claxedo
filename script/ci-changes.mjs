@@ -53,8 +53,10 @@ const WINDOWS_PREFIXES = [
 ]
 
 const SERVER_DEPENDENCY_PREFIXES = [
+  "packages/agent-runtime-contract/",
   "packages/claxedo-channels/",
   "packages/claxedo-connections/",
+  "packages/claxedo-helpers/",
   "packages/claxedo-local-server/",
   "packages/claxedo-mcp/",
   "packages/claxedo-server/",
@@ -123,6 +125,8 @@ function resultFor(files, forceFull, reason) {
     boundaryInfrastructure ||
     codeFiles.some((file) =>
       startsWithAny(file, [
+        "packages/agent-runtime-contract/",
+        "packages/claxedo-helpers/",
         "packages/claxedo-local-server/",
         "packages/claxedo-server-core/",
         "packages/workspace-runtime/",

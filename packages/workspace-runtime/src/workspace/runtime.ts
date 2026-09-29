@@ -54,18 +54,17 @@ export type WorkspaceRuntimeStore = RuntimeStore
 
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
-
 export type WorkspaceHostOptions = {
   /** Optional, local-only lifecycle observer supplied by an embedding host. */
   processObserver?: ProcessObserver
   /** Host observer for the durable turn.finish outcome after store commit. */
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
-  /** Direct observer for canonical compatibility events produced by this host. */
+  /** Direct observer for the presentation events produced by this host. */
   onPresentationEvent?: (event: AgentEventEnvelope) => void
   /**
    * Direct observer for the canonical runtime events produced by this host.
    *
-   * The compat bus carries session metadata; this one carries what the harness
+   * The presentation stream carries session metadata; this one carries what the harness
    * said during the turn. A host that has to keep something a harness reports —
    * a plan's quota windows outliving the session that heard about them — reads
    * it here rather than off the SSE stream.

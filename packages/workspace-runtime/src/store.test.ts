@@ -4258,7 +4258,7 @@ void describe("session starts", () => {
     store.close()
   })
 
-  void it("a created session keeps its startup question and its execution binding across a reopen", () => {
+  void it("startup ownership and a pending question survive a reopen before any provider binding, and the binding after it", () => {
     const root = tmp()
     let store = new RuntimeStore(root)
     const starting = store.sessionStarts.begin(binding)
@@ -4267,6 +4267,7 @@ void describe("session starts", () => {
     store = new RuntimeStore(root)
     assert.deepEqual(store.sessionStarts.get(binding.sessionId), starting)
     assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
+    assert.equal(store.getSession(binding.sessionId), null)
     store.bindSession({ ...binding, agentSessionId: "real-upstream", upstreamSessionId: "real-upstream" })
     store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "real-upstream" })
     assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
