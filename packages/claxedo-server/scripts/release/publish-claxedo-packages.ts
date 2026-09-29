@@ -475,10 +475,10 @@ function argValue(argv: readonly string[], name: string) {
 const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "cli"]
 
 export function parseArgs(argv: readonly string[]) {
-  const selectorArg = argValue(argv, "--track") ?? "others"
+  const selectorArg = argValue(argv, "--track")
   const selector = SELECTORS.find((candidate) => candidate === selectorArg)
   if (!selector) {
-    throw new Error(`--track must be one of ${SELECTORS.join(", ")} (got ${selectorArg})`)
+    throw new Error(`--track must be one of ${SELECTORS.join(", ")} (got ${selectorArg ?? "none"})`)
   }
   const onlyArg = argValue(argv, "--packages")
   return {

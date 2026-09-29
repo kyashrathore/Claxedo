@@ -8,6 +8,7 @@ import {
   defaultCommandRunner,
   materializeWorkspacePins,
   missingTarballFiles,
+  parseArgs,
   parsePackJson,
   protocolSpecifiers,
   publishClaxedoPackages,
@@ -59,6 +60,12 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/connections",
     ])
     expect(selectPackages("cli").map((item) => item.name)).toEqual(["@claxedo/cli"])
+  })
+
+  test("requires --track to name a selector the publisher knows", () => {
+    expect(parseArgs(["--track", "all", "--dry-run"])).toMatchObject({ selector: "all", dryRun: true })
+    expect(() => parseArgs(["--dry-run"])).toThrow("(got none)")
+    expect(() => parseArgs(["--track", "wakes"])).toThrow("(got wakes)")
   })
 
   test("is listed in dependency order, so an exact @claxedo pin always resolves on npm", () => {
