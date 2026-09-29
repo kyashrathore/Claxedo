@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { codeExtensions, isTranslationFile, listFiles, parseArgs, under } from "./lib/files"
+import { codeExtensions, isTranslationFile, listFiles, packageRoot, under } from "./lib/files"
 import { compilerOptions, createProgram, isImportSpecifierNode, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
-import { selectorsIn, slotHooks, type SlotHooks } from "./lib/slot-hooks"
+import { benchmarkDriverSelectors, selectorsIn, slotHooks, type SlotHooks } from "./lib/slot-hooks"
 import { textOf, walk } from "./lib/tree"
 
 const retiredIdentifier = /[a-z0-9]IDs?$/
@@ -23,29 +23,37 @@ const exemptPackages = [
 type Lookup = { readonly declarations: readonly ts.Declaration[]; readonly reference: boolean }
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
   const events = new Set(readFileSync(join(import.meta.dir, "data/server-event-names.txt"), "utf8").split("\n").filter(Boolean))
-  const files = listFiles(root, ["src"], codeExtensions).filter(
-    (file) => !under(root, file, "src/server/wire") && !isTranslationFile(root, file),
+  const files = listFiles(packageRoot, ["src"], codeExtensions).filter(
+    (file) => !under(packageRoot, file, "src/server/wire") && !isTranslationFile(packageRoot, file),
   )
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
-  const hooks = slotHooks(root)
+  const hooks = slotHooks()
   for (const file of files) {
     const sf = program.getSourceFile(file)
     if (sf) recordWrites(sf, checker, hooks)
   }
-  const violations: Violation[] = []
+  const violations: Violation[] = benchmarkDriverViolations(hooks)
   for (const file of files) {
     const sf = program.getSourceFile(file)
     if (!sf) continue
-    const inKit = under(root, file, "src/ui")
+    const inKit = under(packageRoot, file, "src/ui")
     walk(sf, (node) => {
-      const message = retiredName(root, node, checker) ?? retiredText(node, events, inKit, hooks, checker)
+      const message = retiredName(packageRoot, node, checker) ?? retiredText(node, events, inKit, hooks, checker)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
-  finish("claxedo-names", root, violations, files.length)
+  finish("claxedo-names", packageRoot, violations, files.length)
+}
+
+function benchmarkDriverViolations(hooks: SlotHooks): Violation[] {
+  return readFileSync(benchmarkDriverSelectors, "utf8").split("\n").flatMap((line, index) => {
+    const dead = selectorsIn(line).filter((selector) => !hooks.written(selector))
+    if (dead.length === 0) return []
+    const named = dead.map((selector) => `${selector.hook}${selector.operator}"${selector.value}"`).join(", ")
+    return [{ file: benchmarkDriverSelectors, line: index + 1, message: `the agent-app-benchmark driver selects ${named}, which nothing writes; update the driver on the agent-app-benchmark branch, then this list` }]
+  })
 }
 
 function retiredName(root: string, node: ts.Node, checker: ts.TypeChecker): string | undefined {

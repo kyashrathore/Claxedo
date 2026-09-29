@@ -1,0 +1,535 @@
+Subject: transcript markdown: the async parse renders math only
+
+What: marked.tsx drops highlightCodeBlocks, ensureOpenCodeTheme and the OpenCode shiki
+theme (marked-theme.tsx is deleted), markdownEnhances is math alone, and the kit no
+longer depends on shiki.
+Why: the app highlights every code block, nested ones included, through its worker; the
+kit's main-thread shiki redrew a prose block holding nested code after its first paint
+and grew it by 24 px.
+
+diff --git a/package.json b/package.json
+index 3dc9921c0b2565a6728a2f29fb41af1eb929179b..1a2893a71e2b291b351e72ada5353e1176f73f69 100644
+--- a/package.json
++++ b/package.json
+@@ -88,7 +88,6 @@
+     "marked": "catalog:",
+     "motion": "12.34.5",
+     "remeda": "catalog:",
+-    "shiki": "catalog:",
+     "solid-list": "catalog:",
+     "solid-sonner": "catalog:"
+   },
+diff --git a/src/context/marked-enhances.test.ts b/src/context/marked-enhances.test.ts
+index 28ab2842dcf9dc1d6d211495073a39fb6221f578..83468f96bfeefb8e5fb01a54221302d46e018019 100644
+--- a/src/context/marked-enhances.test.ts
++++ b/src/context/marked-enhances.test.ts
+@@ -22,5 +22,5 @@ test("the asynchronous parse changes marked's synchronous output exactly when ma
+     }),
+   )
+   expect(seen.map((row) => ({ markdown: row.markdown, changed: row.changed }))).toEqual(seen.map((row) => ({ markdown: row.markdown, changed: row.enhances })))
+-  expect(seen.filter((row) => row.enhances).map((row) => row.markdown)).toEqual([markdowns[2], markdowns[4], markdowns[5], markdowns[6]])
++  expect(seen.filter((row) => row.enhances).map((row) => row.markdown)).toEqual([markdowns[2], markdowns[4]])
+ })
+diff --git a/src/context/marked-theme.tsx b/src/context/marked-theme.tsx
+deleted file mode 100644
+index 5d34c9eb7223c828b3f5947150fff4951fe6953a..0000000000000000000000000000000000000000
+--- a/src/context/marked-theme.tsx
++++ /dev/null
+@@ -1,374 +0,0 @@
+-import type { ThemeRegistration } from "@pierre/diffs"
+-
+-export const OpenCodeTheme = {
+-  name: "OpenCode",
+-  bg: "var(--background-stronger)",
+-  fg: "var(--text-base)",
+-  colors: {
+-    "editor.background": "var(--background-stronger)",
+-    "editor.foreground": "var(--text-base)",
+-    "gitDecoration.addedResourceForeground": "var(--syntax-diff-add)",
+-    "gitDecoration.deletedResourceForeground": "var(--syntax-diff-delete)",
+-    "gitDecoration.modifiedResourceForeground": "var(--syntax-diff-unknown)",
+-    // "gitDecoration.conflictingResourceForeground": "#ffca00",
+-    // "gitDecoration.modifiedResourceForeground": "#1a76d4",
+-    // "gitDecoration.untrackedResourceForeground": "#00cab1",
+-    // "gitDecoration.ignoredResourceForeground": "#84848A",
+-    // "terminal.titleForeground": "#adadb1",
+-    // "terminal.titleInactiveForeground": "#84848A",
+-    // "terminal.background": "#141415",
+-    // "terminal.foreground": "#adadb1",
+-    // "terminal.ansiBlack": "#141415",
+-    // "terminal.ansiRed": "#ff2e3f",
+-    // "terminal.ansiGreen": "#0dbe4e",
+-    // "terminal.ansiYellow": "#ffca00",
+-    // "terminal.ansiBlue": "#008cff",
+-    // "terminal.ansiMagenta": "#c635e4",
+-    // "terminal.ansiCyan": "#08c0ef",
+-    // "terminal.ansiWhite": "#c6c6c8",
+-    // "terminal.ansiBrightBlack": "#141415",
+-    // "terminal.ansiBrightRed": "#ff2e3f",
+-    // "terminal.ansiBrightGreen": "#0dbe4e",
+-    // "terminal.ansiBrightYellow": "#ffca00",
+-    // "terminal.ansiBrightBlue": "#008cff",
+-    // "terminal.ansiBrightMagenta": "#c635e4",
+-    // "terminal.ansiBrightCyan": "#08c0ef",
+-    // "terminal.ansiBrightWhite": "#c6c6c8",
+-  },
+-  tokenColors: [
+-    {
+-      scope: ["comment", "punctuation.definition.comment", "string.comment"],
+-      settings: {
+-        foreground: "var(--syntax-comment)",
+-      },
+-    },
+-    {
+-      scope: ["entity.other.attribute-name"],
+-      settings: {
+-        foreground: "var(--syntax-property)", // maybe attribute
+-      },
+-    },
+-    {
+-      scope: ["constant", "entity.name.constant", "variable.other.constant", "variable.language", "entity"],
+-      settings: {
+-        foreground: "var(--syntax-constant)",
+-      },
+-    },
+-    {
+-      scope: ["entity.name", "meta.export.default", "meta.definition.variable"],
+-      settings: {
+-        foreground: "var(--syntax-type)",
+-      },
+-    },
+-    {
+-      scope: ["meta.object.member"],
+-      settings: {
+-        foreground: "var(--syntax-primitive)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "variable.parameter.function",
+-        "meta.jsx.children",
+-        "meta.block",
+-        "meta.tag.attributes",
+-        "entity.name.constant",
+-        "meta.embedded.expression",
+-        "meta.template.expression",
+-        "string.other.begin.yaml",
+-        "string.other.end.yaml",
+-      ],
+-      settings: {
+-        foreground: "var(--syntax-punctuation)",
+-      },
+-    },
+-    {
+-      scope: ["entity.name.function", "support.type.primitive"],
+-      settings: {
+-        foreground: "var(--syntax-primitive)",
+-      },
+-    },
+-    {
+-      scope: ["support.class.component"],
+-      settings: {
+-        foreground: "var(--syntax-type)",
+-      },
+-    },
+-    {
+-      scope: "keyword",
+-      settings: {
+-        foreground: "var(--syntax-keyword)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "keyword.operator",
+-        "storage.type.function.arrow",
+-        "punctuation.separator.key-value.css",
+-        "entity.name.tag.yaml",
+-        "punctuation.separator.key-value.mapping.yaml",
+-      ],
+-      settings: {
+-        foreground: "var(--syntax-operator)",
+-      },
+-    },
+-    {
+-      scope: ["storage", "storage.type"],
+-      settings: {
+-        foreground: "var(--syntax-keyword)",
+-      },
+-    },
+-    {
+-      scope: ["storage.modifier.package", "storage.modifier.import", "storage.type.java"],
+-      settings: {
+-        foreground: "var(--syntax-primitive)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "string",
+-        "punctuation.definition.string",
+-        "string punctuation.section.embedded source",
+-        "entity.name.tag",
+-      ],
+-      settings: {
+-        foreground: "var(--syntax-string)",
+-      },
+-    },
+-    {
+-      scope: "support",
+-      settings: {
+-        foreground: "var(--syntax-primitive)",
+-      },
+-    },
+-    {
+-      scope: ["support.type.object.module", "variable.other.object", "support.type.property-name.css"],
+-      settings: {
+-        foreground: "var(--syntax-object)",
+-      },
+-    },
+-    {
+-      scope: "meta.property-name",
+-      settings: {
+-        foreground: "var(--syntax-property)",
+-      },
+-    },
+-    {
+-      scope: "variable",
+-      settings: {
+-        foreground: "var(--syntax-variable)",
+-      },
+-    },
+-    {
+-      scope: "variable.other",
+-      settings: {
+-        foreground: "var(--syntax-variable)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "invalid.broken",
+-        "invalid.illegal",
+-        "invalid.unimplemented",
+-        "invalid.deprecated",
+-        "message.error",
+-        "markup.deleted",
+-        "meta.diff.header.from-file",
+-        "punctuation.definition.deleted",
+-        "brackethighlighter.unmatched",
+-        "token.error-token",
+-      ],
+-      settings: {
+-        foreground: "var(--syntax-critical)",
+-      },
+-    },
+-    {
+-      scope: "carriage-return",
+-      settings: {
+-        foreground: "var(--syntax-keyword)",
+-      },
+-    },
+-    {
+-      scope: "string source",
+-      settings: {
+-        foreground: "var(--syntax-variable)",
+-      },
+-    },
+-    {
+-      scope: "string variable",
+-      settings: {
+-        foreground: "var(--syntax-constant)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "source.regexp",
+-        "string.regexp",
+-        "string.regexp.character-class",
+-        "string.regexp constant.character.escape",
+-        "string.regexp source.ruby.embedded",
+-        "string.regexp string.regexp.arbitrary-repitition",
+-        "string.regexp constant.character.escape",
+-      ],
+-      settings: {
+-        foreground: "var(--syntax-regexp)",
+-      },
+-    },
+-    {
+-      scope: "support.constant",
+-      settings: {
+-        foreground: "var(--syntax-primitive)",
+-      },
+-    },
+-    {
+-      scope: "support.variable",
+-      settings: {
+-        foreground: "var(--syntax-variable)",
+-      },
+-    },
+-    {
+-      scope: "meta.module-reference",
+-      settings: {
+-        foreground: "var(--syntax-info)",
+-      },
+-    },
+-    {
+-      scope: "punctuation.definition.list.begin.markdown",
+-      settings: {
+-        foreground: "var(--syntax-punctuation)",
+-      },
+-    },
+-    {
+-      scope: ["markup.heading", "markup.heading entity.name"],
+-      settings: {
+-        fontStyle: "bold",
+-        foreground: "var(--syntax-info)",
+-      },
+-    },
+-    {
+-      scope: "markup.quote",
+-      settings: {
+-        foreground: "var(--syntax-info)",
+-      },
+-    },
+-    {
+-      scope: "markup.italic",
+-      settings: {
+-        fontStyle: "italic",
+-        // foreground: "",
+-      },
+-    },
+-    {
+-      scope: "markup.bold",
+-      settings: {
+-        fontStyle: "bold",
+-        foreground: "var(--text-strong)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "markup.raw",
+-        "markup.inserted",
+-        "meta.diff.header.to-file",
+-        "punctuation.definition.inserted",
+-        "markup.changed",
+-        "punctuation.definition.changed",
+-        "markup.ignored",
+-        "markup.untracked",
+-      ],
+-      settings: {
+-        foreground: "var(--text-base)",
+-      },
+-    },
+-    {
+-      scope: "meta.diff.range",
+-      settings: {
+-        fontStyle: "bold",
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: "meta.diff.header",
+-      settings: {
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: "meta.separator",
+-      settings: {
+-        fontStyle: "bold",
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: "meta.output",
+-      settings: {
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: "meta.export.default",
+-      settings: {
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: [
+-        "brackethighlighter.tag",
+-        "brackethighlighter.curly",
+-        "brackethighlighter.round",
+-        "brackethighlighter.square",
+-        "brackethighlighter.angle",
+-        "brackethighlighter.quote",
+-      ],
+-      settings: {
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: ["constant.other.reference.link", "string.other.link"],
+-      settings: {
+-        fontStyle: "underline",
+-        foreground: "var(--syntax-unknown)",
+-      },
+-    },
+-    {
+-      scope: "token.info-token",
+-      settings: {
+-        foreground: "var(--syntax-info)",
+-      },
+-    },
+-    {
+-      scope: "token.warn-token",
+-      settings: {
+-        foreground: "var(--syntax-warning)",
+-      },
+-    },
+-    {
+-      scope: "token.debug-token",
+-      settings: {
+-        foreground: "var(--syntax-info)",
+-      },
+-    },
+-  ],
+-  semanticTokenColors: {
+-    comment: "var(--syntax-comment)",
+-    string: "var(--syntax-string)",
+-    number: "var(--syntax-constant)",
+-    regexp: "var(--syntax-regexp)",
+-    keyword: "var(--syntax-keyword)",
+-    variable: "var(--syntax-variable)",
+-    parameter: "var(--syntax-variable)",
+-    property: "var(--syntax-property)",
+-    function: "var(--syntax-primitive)",
+-    method: "var(--syntax-primitive)",
+-    type: "var(--syntax-type)",
+-    class: "var(--syntax-type)",
+-    namespace: "var(--syntax-type)",
+-    enumMember: "var(--syntax-primitive)",
+-    "variable.constant": "var(--syntax-constant)",
+-    "variable.defaultLibrary": "var(--syntax-unknown)",
+-  },
+-  // `ThemeRegistration`, not `...Resolved`: this theme carries `tokenColors` rather than
+-  // the resolved `settings`, and shiki resolves the two when it loads the theme.
+-} satisfies ThemeRegistration
+diff --git a/src/context/marked.tsx b/src/context/marked.tsx
+index d775d01c81c3c92cd9a92663e7cd4811d2d2a101..1ab7337262ee690616dc1dc393872916f0010546 100644
+--- a/src/context/marked.tsx
++++ b/src/context/marked.tsx
+@@ -1,89 +1,17 @@
+ import type { MarkedExtension, Tokens } from "marked"
+-import type { BundledLanguage } from "shiki"
+ import { createSimpleContext } from "./helper"
+-import { isKeyOf } from "../utils/record"
+-import { OpenCodeTheme } from "./marked-theme"
+-
+-export { OpenCodeTheme } from "./marked-theme"
+-
+-const codeBlockPattern = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
+-
+-function hasMath(html: string) {
+-  return html.includes("$$") || html.includes("\\(")
+-}
+ 
+ /** False when the asynchronous parse returns marked's synchronous output with the same extensions unchanged. */
+ export function markdownEnhances(html: string) {
+-  return hasMath(html) || html.search(codeBlockPattern) !== -1
++  return html.includes("$$") || html.includes("\\(")
+ }
+ 
+ async function renderMathExpressions(html: string) {
+-  if (!hasMath(html)) return html
++  if (!markdownEnhances(html)) return html
+   const math = await import("./marked-math")
+   return math.renderMathExpressions(html)
+ }
+ 
+-/**
+- * Shiki emits `<pre class="shiki OpenCode"><code>` and drops the
+- * `class="language-X"` that marked's own code renderer puts on the `<code>`.
+- * Consumers read that class back off the DOM to recover a block's language —
+- * session-ui's markdown decorator uses it for code metadata and, critically, it
+- * is how ```mermaid fences are found. Highlighting must not cost the language.
+- *
+- * The name used is the one actually highlighted with (unknown languages having
+- * been folded to `text`), which matches what session-ui stamps on the code
+- * blocks it builds itself.
+- */
+-async function highlightCodeBlocks(html: string): Promise<string> {
+-  const matches = [...html.matchAll(codeBlockPattern)]
+-  if (matches.length === 0) return html
+-
+-  const [{ bundledLanguages, addClassToHast }, { getSharedHighlighter }] = await Promise.all([
+-    import("shiki"),
+-    ensureOpenCodeTheme(),
+-  ])
+-  const highlighter = await getSharedHighlighter({
+-    themes: ["OpenCode"],
+-    langs: [],
+-    preferredHighlighter: "shiki-wasm",
+-  })
+-
+-  let result = html
+-  for (const match of matches) {
+-    const [fullMatch, lang, escapedCode] = match
+-    const code = escapedCode
+-      .replace(/&lt;/g, "<")
+-      .replace(/&gt;/g, ">")
+-      .replace(/&amp;/g, "&")
+-      .replace(/&quot;/g, '"')
+-      .replace(/&#39;/g, "'")
+-
+-    // `text` is shiki's plain-text pseudo-language: it has no grammar in `bundledLanguages`
+-    // and must not be handed to `loadLanguage`, which is why the two are typed apart here.
+-    const requested = lang || "text"
+-    const bundled: BundledLanguage | undefined = isKeyOf(bundledLanguages, requested) ? requested : undefined
+-    const language: BundledLanguage | "text" = bundled ?? "text"
+-    if (bundled && !highlighter.getLoadedLanguages().includes(bundled)) {
+-      await highlighter.loadLanguage(bundledLanguages[bundled])
+-    }
+-
+-    const highlighted = highlighter.codeToHtml(code, {
+-      lang: language,
+-      theme: "OpenCode",
+-      tabindex: false,
+-      transformers: [{
+-        name: "opencode:language-class",
+-        code(node) {
+-          addClassToHast(node, `language-${language}`)
+-        },
+-      }],
+-    })
+-    result = result.replace(fullMatch, () => highlighted)
+-  }
+-
+-  return result
+-}
+-
+ export function escapeRawMarkdownHtml(text: string) {
+   return text
+     .replace(/&/g, "&amp;")
+@@ -229,16 +157,6 @@ export const markedTranscriptAutolink: MarkedExtension = {
+   ],
+ }
+ 
+-let openCodeThemeRegistration: Promise<typeof import("@pierre/diffs")> | undefined
+-
+-export function ensureOpenCodeTheme() {
+-  openCodeThemeRegistration ??= import("@pierre/diffs").then((pierre) => {
+-    pierre.registerCustomTheme("OpenCode", () => Promise.resolve(OpenCodeTheme))
+-    return pierre
+-  })
+-  return openCodeThemeRegistration
+-}
+-
+ let jsParser: Promise<{ parse(markdown: string): string | Promise<string> }> | undefined
+ 
+ /** Shared syntax policy for immediate paint and asynchronous enhancement. */
+@@ -266,8 +184,7 @@ function loadJsParser() {
+     return {
+       async parse(markdown: string) {
+         const html = await parser.parse(markdown)
+-        const withMath = await renderMathExpressions(html)
+-        return highlightCodeBlocks(withMath)
++        return renderMathExpressions(html)
+       },
+     }
+   })

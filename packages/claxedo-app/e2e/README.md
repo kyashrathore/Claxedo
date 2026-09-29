@@ -253,6 +253,8 @@ e2e/
     app.ts               the dist-e2e build
     installed-cli.ts     Claude / Codex CLI detection
     acp/agent-process.ts the scripted ACP agent's PIDs under a stack's daemon
+    painted-frames.ts    installPaintedFrames: samples a value on each frame and reports when that frame painted
+    trace-events.ts      TraceEvent and traceEventsFrom, the Chrome trace events a CDP trace returns
   perf/                  bun run e2e:perf-stream: a streaming turn measured on one or more builds; first-send.ts: pointerdown to the sent message painted and to the first reply text, over fresh drafts
   probes/                one-off probes (P0.7 harness status, harness health after a killed agent), not collected as flows
 ```

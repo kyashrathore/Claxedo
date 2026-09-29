@@ -1,5 +1,5 @@
 import { traceDirectories, type DirectoryValues } from "./lib/directory-flow"
-import { codeExtensions, listFiles, parseArgs, rel, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, under } from "./lib/files"
 import { compilerOptions, createProgram, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, textOf, unwrap, walk } from "./lib/tree"
@@ -24,21 +24,20 @@ const identityProperty = /^(id|key|[a-z]+Id)$/
 const guidance = "key by project id, placement id or SessionRef; only src/server turns a placement into a directory"
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
   const directories = traceDirectories(program, files, identityNames)
   const violations: Violation[] = []
   for (const file of files) {
     const sf = program.getSourceFile(file)
-    if (!sf || under(root, file, "src/server")) continue
+    if (!sf || under(packageRoot, file, "src/server")) continue
     walk(sf, (node) => {
       const message = directoryIdentity(node, directories)
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
-  finish("no-directory-identity", root, violations, files.length)
+  finish("no-directory-identity", packageRoot, violations, files.length)
 
   function directoryIdentity(node: ts.Node, values: DirectoryValues): string | undefined {
     const text = textOf(node)
@@ -47,7 +46,7 @@ function main(): never {
     }
     const key = identityKey(node, checker)
     const origin = key && values.originOf(key.expression)
-    return origin ? `${key.use} holds the folder path ${origin.name} from ${rel(root, origin.file)}:${origin.line}; ${guidance}` : undefined
+    return origin ? `${key.use} holds the folder path ${origin.name} from ${rel(packageRoot, origin.file)}:${origin.line}; ${guidance}` : undefined
   }
 }
 

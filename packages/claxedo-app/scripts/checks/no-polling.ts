@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, rel } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel } from "./lib/files"
 import { readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { enclosingFunction, functionName, unwrap, walk } from "./lib/tree"
@@ -17,12 +17,11 @@ const globals = new Set(["window", "globalThis", "self"])
 const intervalOptions = new Set(["refetchInterval", "refetchIntervalInBackground"])
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
     const { sf } = readSource(file)
-    const path = rel(root, file)
+    const path = rel(packageRoot, file)
     const owner = path in timerOwners
     const paces = owner || path in pacingOwners
     walk(sf, (node) => {
@@ -30,7 +29,7 @@ function main(): never {
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
-  finish("no-polling", root, violations, files.length)
+  finish("no-polling", packageRoot, violations, files.length)
 }
 
 function polling(node: ts.Node, owner: boolean, paces: boolean): string | undefined {

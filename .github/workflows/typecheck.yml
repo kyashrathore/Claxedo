@@ -46,7 +46,7 @@ jobs:
 
       # Typecheck reads sibling source through the `development` export
       # condition each tsconfig declares. Type-aware lint does not: files no
-      # tsconfig includes (desktop scripts and tests, stories) resolve
+      # tsconfig includes (desktop scripts and tests) resolve
       # @claxedo/* through the default condition, which is dist/, and an
       # unresolved import is an `error` type that trips
       # no-redundant-type-constituents and the unsafe-* rules.

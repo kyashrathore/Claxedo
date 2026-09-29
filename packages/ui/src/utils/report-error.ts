@@ -4,7 +4,7 @@ let reporter: UiErrorReporter | undefined
 
 /**
  * The app owns error tracking; this package cannot depend on it. The app
- * installs its reporter once at boot, and until then (storybook, tests, the
+ * installs its reporter once at boot, and until then (tests, the
  * session app) a reported error is dropped rather than written to the console.
  */
 export function setUiErrorReporter(next: UiErrorReporter | undefined) {

@@ -123,9 +123,8 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 
 ## Benchmark driver
 
-- `perf-harness/` is the agent-app-benchmark's Claxedo driver. The benchmark loads it from that path, so it stays there. It has its own manifest, is not a workspace member, and is verified with `bun run test:perf-harness`.
-- Its readiness predicates read the app's hooks. Removing or renaming a `data-testid`, `data-slot` or `data-component` it selects breaks the benchmark; `claxedo-names` counts `perf-harness/` as a reader.
-- The same driver measures the archived v1 app and this app, so its preconditions describe what a user sees, not one app's internals.
+- The agent-app-benchmark's Claxedo driver lives on the `agent-app-benchmark` branch, at `packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts`, not on `dev`. Point `CLAXEDO_BENCHMARK_DRIVER` at that file in a checkout of the branch when benchmarking another build.
+- Its readiness predicates read the app's hooks. The `data-slot` and `data-component` selectors it needs are listed in `scripts/checks/data/benchmark-driver-selectors.txt`: `claxedo-names` counts them as read and fails when nothing writes one. No check sees its `data-testid` selectors. Change the driver on that branch and the list together.
 
 ## End-to-end tests
 
@@ -155,7 +154,7 @@ The suite must be robust, working, honest and fast.
 
 ## Checks
 
-`bun run check` in this package runs:
+`bun run check` in this package (`scripts/checks/run.ts`) typechecks the checks, then runs:
 - no comments;
 - size;
 - v2 only;
@@ -166,9 +165,13 @@ The suite must be robust, working, honest and fast.
 - one home per datum;
 - domain boundaries;
 - one owner;
+- one registration;
 - no directory identity;
 - access boundary;
-- protected areas;
-- e2e hygiene.
+- protected areas, which names the corpus flows a working-tree change must run and never fails;
+- e2e hygiene;
+- budget;
+- freshness;
+- CSS invalidation.
 
-All must be at zero before a change is done.
+All must be at zero before a change is done, with `bun run typecheck` and `bun run test` passing. CI runs the checks in the `app rule checks` job of `.github/workflows/test.yml`, and the root `prepush` runs them too.

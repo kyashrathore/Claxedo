@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, rel } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel } from "./lib/files"
 import { readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, unwrap, walk } from "./lib/tree"
@@ -15,18 +15,17 @@ const silentCatch = "catch swallows the error; make it a machine state or log it
 const silentHandler = ".catch handler ignores the error; make it a machine state or log it with context"
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
     const { sf } = readSource(file)
-    const classifier = rel(root, file) === "src/server/errors.ts"
+    const classifier = rel(packageRoot, file) === "src/server/errors.ts"
     walk(sf, (node) => {
       const message = swallowed(node) ?? (classifier ? undefined : messageMatch(node))
       if (message) violations.push({ file, line: startLine(node, sf), message })
     })
   }
-  finish("no-swallowed-errors", root, violations, files.length)
+  finish("no-swallowed-errors", packageRoot, violations, files.length)
 }
 
 function swallowed(node: ts.Node): string | undefined {
