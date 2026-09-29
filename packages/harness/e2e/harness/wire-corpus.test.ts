@@ -127,3 +127,12 @@ test("generated workspace IDs match across relay routes, queries, and payloads w
   expect(actual[0]?.route).toContain(`workspaceId=${placeholder}`)
   expect(difference(expected, observations(other, "/api/wr/renamed-events"))).toContain("route")
 })
+
+test("a hosted stack's temporary root normalizes like the local stack's data directory", () => {
+  const result = normalizeWireCorpus({
+    hosted: "/var/folders/t2/abc/T/claxedo-hosted-h31-accounts-lyy3Lv/sandbox-workspaces/project",
+    product: "/private/var/folders/t2/abc/T/h19-product-host-niTU0H/workspaces/w1",
+  }) as { hosted: string; product: string }
+  expect(result.hosted).toBe("<data-dir>/sandbox-workspaces/project")
+  expect(result.product).toBe("<workspace:value:1>")
+})
