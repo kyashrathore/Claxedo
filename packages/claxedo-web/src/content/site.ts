@@ -23,7 +23,7 @@ export const site = {
 export const home = {
   hero: {
     title: "Own your coding agent app.",
-    subtitle: "Open source. Host it yourself. Every agent, no lock-in, no team plan.",
+    subtitle: "Open source. Host it yourself. Every agent, no lock-in.",
     claims: ["mit-platform", "cloudflare-five-minutes", "harness-coverage", "free-beta"],
   },
   speed: {

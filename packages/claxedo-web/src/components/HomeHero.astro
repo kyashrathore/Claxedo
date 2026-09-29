@@ -1,6 +1,5 @@
 ---
 import ClaxedoAppReplica from "./ClaxedoAppReplica.astro"
-import MacDownload from "./MacDownload.astro"
 import TajPlate from "./TajPlate.astro"
 import { routes } from "../content/routes"
 
@@ -14,34 +13,27 @@ const { title, subtitle, align = "center" } = Astro.props
 ---
 
 <section class:list={["hero", align]}>
-  <TajPlate dome={align === "left" ? "right" : "center"} />
   <div class="intro">
     <h1>{title}</h1>
     <p class="lede">{subtitle}</p>
-    <div class="cta">
-      <MacDownload placement="hero" />
-      <a class="quiet-link" href={routes.app}>Open in browser</a>
-    </div>
+    <a class="quiet-link" href={routes.app}>Open in browser</a>
   </div>
   <div class="stage">
+    <TajPlate dome={align === "left" ? "right" : "center"} />
     <div class="window"><ClaxedoAppReplica /></div>
   </div>
 </section>
 
 <style>
-  .hero { --window-h: clamp(30rem, 48vw, 44rem); --backdrop-bottom: calc(var(--window-h) * .55); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
-  .hero > :global(.backdrop) { position: absolute; inset: 0 0 var(--backdrop-bottom); z-index: -1; }
+  .hero { --window-h: clamp(30rem, 48vw, 44rem); --band: 3rem; --beside: 24rem; --clear: calc(var(--edge) + 50rem); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
   .intro { display: grid; justify-items: center; gap: 0; width: var(--width); margin-inline: auto; text-align: center; }
   h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
-  .lede { max-width: 34rem; margin: 1rem 0 1.75rem; color: #3a3a3a; font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
-  .cta { display: grid; justify-items: center; }
-  .cta .quiet-link { margin-top: .75rem; color: #3a3a3a; font-size: .875rem; }
+  .lede { max-width: 34rem; margin: 1rem 0 1.25rem; color: #3a3a3a; font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
+  .intro .quiet-link { color: #3a3a3a; font-size: 1rem; }
   .left .intro { justify-items: start; text-align: left; }
   .left .lede { text-wrap: pretty; }
-  .left .cta { display: flex; align-items: center; gap: 1.5rem; }
-  .left .cta .quiet-link { margin-top: 0; }
 
-  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: clamp(8rem, 12vw, 11rem) auto 0; }
+  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: var(--band) auto 0; }
   .window { position: relative; z-index: 1; height: var(--window-h); }
 
   @media (prefers-reduced-motion: no-preference) {
