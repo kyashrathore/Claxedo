@@ -56,7 +56,6 @@ export async function startRelay(input: RelayInput): Promise<Relay> {
       CLAXEDO_RELAY_RESOLVER_TOKEN: input.resolverToken,
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: input.runtimePublicPem,
       CLAXEDO_RELAY_ALLOWED_ORIGINS: input.allowedOrigins.join(","),
-      CLAXEDO_RELAY_SYNTHETIC_PROBE_DISABLED: "1",
       CLAXEDO_TELEMETRY_MODE: "off",
     },
     stdio: ["ignore", "pipe", "pipe"],

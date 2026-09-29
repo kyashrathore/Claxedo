@@ -107,6 +107,7 @@ export type ProjectsApi = {
   readonly create: (input: { readonly name?: string; readonly source: ProjectSource }) => Promise<Project>
   readonly update: (id: ProjectId, input: ProjectUpdate) => Promise<Project>
   readonly remove: (id: ProjectId) => Promise<void>
+  readonly reclone: (id: ProjectId) => Promise<Project>
 }
 
 export type PlacementsApi = {

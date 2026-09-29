@@ -37,6 +37,10 @@ const entries = [
 if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
 fs.mkdirSync(DIST, { recursive: true })
 
+// Not script/bun-build's buildPackage: for a node target, Bun.build prefixes
+// any bundle that dynamically imports an external (the Daytona, Modal and
+// Vercel SDKs) with `createRequire(import.meta.url)`, which throws when the
+// hosted workerd worker loads these drivers.
 execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
   ...entries,
   "--bundle",

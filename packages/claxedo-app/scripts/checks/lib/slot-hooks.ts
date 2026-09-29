@@ -21,6 +21,10 @@ const datasetWrite = /dataset\.(slot|component)\s*=(?!=)\s*["']([^"']+)["']/g
 const setAttributeWrite = /setAttribute\(\s*["']data-(slot|component)["']\s*,\s*["']([^"']+)["']/g
 const stringLiteral = /["'`]([^"'`$]+)["'`]/g
 const skippedFolders = new Set(["node_modules", "dist", ".git", "report", "test-results", "results"])
+const readerFolders = [join(packageRoot, "src"), join(packageRoot, "e2e"), join(repoRoot, "packages/ui/src")]
+const writerFolders = [join(packageRoot, "src"), join(repoRoot, "packages/ui/src")]
+
+export const benchmarkDriverSelectors = join(packageRoot, "scripts/checks/data/benchmark-driver-selectors.txt")
 
 export function selectorsIn(text: string): Selector[] {
   const found: Selector[] = []
@@ -29,16 +33,16 @@ export function selectorsIn(text: string): Selector[] {
   return found
 }
 
-export function slotHooks(root: string): SlotHooks {
+export function slotHooks(): SlotHooks {
   const readers: Selector[] = []
   const writers: Record<SlotHook, Set<string>> = { "data-slot": new Set(), "data-component": new Set() }
   const write = (hook: SlotHook, value: string) => void writers[hook].add(value)
-  for (const file of listed(readerFolders(root), [...codeExtensions, ...styleExtensions])) {
+  for (const file of [...listed(readerFolders, [...codeExtensions, ...styleExtensions]), benchmarkDriverSelectors]) {
     const text = readFileSync(file, "utf8")
     readers.push(...selectorsIn(text))
     for (const match of text.matchAll(attributeCompare)) readers.push({ hook: hookOf(match[1] ?? match[2]), operator: "=", value: match[3] ?? "" })
   }
-  for (const file of listed(writerFolders(root), codeExtensions)) {
+  for (const file of listed(writerFolders, codeExtensions)) {
     const text = readFileSync(file, "utf8")
     for (const pattern of [attributeWrite, datasetWrite, setAttributeWrite]) {
       for (const match of text.matchAll(pattern)) write(hookOf(match[1]), match[2] ?? "")
@@ -73,18 +77,6 @@ function matches(selector: Selector, value: string): boolean {
     default:
       return value === selector.value
   }
-}
-
-function readerFolders(root: string): string[] {
-  const own = [join(root, "src"), join(root, "e2e")]
-  if (root !== packageRoot) return [...own, join(root, "readers")]
-  return [...own, join(root, "perf-harness"), join(repoRoot, "packages/ui/src")]
-}
-
-function writerFolders(root: string): string[] {
-  const own = [join(root, "src")]
-  if (root !== packageRoot) return [...own, join(root, "writers")]
-  return [...own, join(repoRoot, "packages/ui/src")]
 }
 
 function listed(folders: readonly string[], extensions: readonly string[]): string[] {

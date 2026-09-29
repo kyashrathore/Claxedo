@@ -33,7 +33,7 @@ access" disabled. The IPC calls
 (`child-supervisor.ts`, built by `setupElectronHostConnector` in
 `electron-child.ts`). `launch` loads the machine identity from the
 `safeStorage`-encrypted identity file (`identity-store.ts`), spawns the
-connector child (`packages/claxedo-desktop/scripts/host-connector-entry.ts`),
+connector child (`packages/claxedo-desktop/src/host-connector-child/entry.ts`),
 reads the daemon's `GET /api/claxedo/host-serving` for `sessionAuthority`
 (`src/main/index.ts`; an unreachable daemon leaves it undeclared rather than
 guessed), and sends the child one `bootstrap` message with the control-plane

@@ -306,6 +306,75 @@ describe("local project routes", () => {
     expect(listed.projects.find((item) => item.id === project.id)).toMatchObject({ name: "Vanished", available: false })
   })
 
+  test("a project whose folder is gone is recloned from its recorded remote into that same folder, once", async () => {
+    const directory = await gitRepository("reclone-")
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/restore.git"], { cwd: directory, stdio: "ignore" })
+    const { project } = await (await app.request("http://localhost/", json({ source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    expect((await (await app.request(`http://localhost/${project.id}`)).json() as { project: object }).project).not.toHaveProperty("missingCheckout")
+    await fs.rm(directory, { recursive: true, force: true })
+
+    const gone = await (await app.request(`http://localhost/${project.id}`)).json() as { project: object }
+    expect(gone.project).toMatchObject({ available: false, missingCheckout: { directory, remote: "https://github.com/acme/restore.git" } })
+
+    clones.length = 0
+    const res = await app.request(`http://localhost/${project.id}/reclone`, { method: "POST" })
+    expect(res.status).toBe(200)
+    const restored = (await res.json() as { project: object }).project
+    expect(restored).toMatchObject({ id: project.id, directory, available: true })
+    expect(restored).not.toHaveProperty("missingCheckout")
+    expect(clones).toEqual([{ repoUrl: "https://github.com/acme/restore.git", options: {} }])
+    expect((await fs.stat(path.join(directory, ".git"))).isDirectory()).toBe(true)
+
+    const again = await app.request(`http://localhost/${project.id}/reclone`, { method: "POST" })
+    expect(again.status).toBe(409)
+    expect(await again.json()).toMatchObject({ error: { code: "project_checkout_present" } })
+    expect(clones).toHaveLength(1)
+    expect((await app.request("http://localhost/prj_absent/reclone", { method: "POST" })).status).toBe(404)
+  })
+
+  test("reclone refuses a project with no remote and a remote this server cannot clone, creating nothing", async () => {
+    const bare = await gitRepository("reclone-bare-")
+    const local = await gitRepository("reclone-local-")
+    execFileSync("git", ["remote", "add", "origin", path.join(root, "elsewhere")], { cwd: local, stdio: "ignore" })
+    const ids: string[] = []
+    for (const directory of [bare, local]) {
+      const { project } = await (await app.request("http://localhost/", json({ source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+      ids.push(project.id)
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+    clones.length = 0
+
+    const noRemote = await app.request(`http://localhost/${ids[0]}/reclone`, { method: "POST" })
+    expect(noRemote.status).toBe(409)
+    expect(await noRemote.json()).toMatchObject({ error: { code: "project_remote_missing" } })
+    const pathRemote = await app.request(`http://localhost/${ids[1]}/reclone`, { method: "POST" })
+    expect(pathRemote.status).toBe(400)
+    expect(await pathRemote.json()).toMatchObject({ error: { code: "project_repository_invalid" } })
+
+    expect(clones).toEqual([])
+    await expect(fs.stat(bare)).rejects.toThrow()
+    await expect(fs.stat(local)).rejects.toThrow()
+  })
+
+  test("a failed reclone removes the folder it made and leaves the project missing", async () => {
+    const directory = await gitRepository("reclone-fail-")
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/unreachable.git"], { cwd: directory, stdio: "ignore" })
+    const { project } = await (await app.request("http://localhost/", json({ source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    await fs.rm(directory, { recursive: true, force: true })
+    const failing = routes(unsigned, {
+      clone: async (_repoUrl, target) => {
+        await fs.writeFile(path.join(target, "partial"), "x")
+        throw new Error("fatal: repository 'https://github.com/acme/unreachable.git/' not found\nmore detail")
+      },
+    })
+
+    const res = await failing.request(`http://localhost/${project.id}/reclone`, { method: "POST" })
+    expect(res.status).toBe(502)
+    expect(await res.json()).toMatchObject({ error: { code: "project_clone_failed", message: "Cloning failed: fatal: repository 'https://github.com/acme/unreachable.git/' not found" } })
+    await expect(fs.stat(directory)).rejects.toThrow()
+    expect((await (await app.request(`http://localhost/${project.id}`)).json() as { project: object }).project).toMatchObject({ missingCheckout: { directory } })
+  })
+
   test("a project that runs only in a cloud workspace stays available while its sandbox is stopped, and its workspace is reachable only while the sandbox is ready", async () => {
     const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
     const id = cloud?.project_id ?? ""
@@ -623,6 +692,22 @@ describe("local project routes on a signed server", () => {
     expect(resolveRepoAddresses).toHaveBeenCalledWith("private.internal")
   })
 
+  test("a signed caller's reclone holds the recorded remote to the same destination rule", async () => {
+    const clone = vi.fn(fakeClone)
+    const app = routes(authenticate, { ...signedDeps, clone, registerWorkspace: claiming })
+    const directory = await gitRepository("signed-reclone-")
+    execFileSync("git", ["remote", "add", "origin", "http://127.0.0.1:8080/acme/repo.git"], { cwd: directory, stdio: "ignore" })
+    const created = await app.request("http://localhost/", post({ name: "Signed Reclone", source: { kind: "directory", directory } }, bearer))
+    const { project } = await created.json() as { project: { id: string } }
+    await fs.rm(directory, { recursive: true, force: true })
+
+    const res = await app.request(`http://localhost/${project.id}/reclone`, { method: "POST", headers: bearer })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "project_repository_refused" } })
+    expect(clone).not.toHaveBeenCalled()
+    await expect(fs.stat(directory)).rejects.toThrow()
+  })
+
   test("a signed caller may clone a private host the operator explicitly approved", async () => {
     const clone = vi.fn(fakeClone)
     const resolveRepoAddresses = vi.fn(async () => ["10.0.0.5"])
@@ -886,6 +971,24 @@ describe("the clone this server really runs", () => {
     expect(await fs.readFile(path.join(project.directory, "README.md"), "utf8")).toBe("# origin")
     expect(requests.length).toBeGreaterThan(0)
     expect(requests.map((item) => item.authorization)).toEqual(requests.map(() => ""))
+  })
+
+  test("reclones a deleted folder project from its origin into the folder it was registered at", async () => {
+    const app = routes(unsigned, {})
+    const directory = path.join(await gitRepository("served-parent-"), "nested", "checkout")
+    await fs.mkdir(directory, { recursive: true })
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+    execFileSync("git", ["remote", "add", "origin", origin], { cwd: directory, stdio: "ignore" })
+    const created = await app.request("http://localhost/", json({ name: "Served Reclone", source: { kind: "directory", directory } }))
+    expect(created.status).toBe(201)
+    const { project } = await created.json() as { project: { id: string } }
+    await fs.rm(path.dirname(path.dirname(directory)), { recursive: true, force: true })
+
+    const res = await app.request(`http://localhost/${project.id}/reclone`, { method: "POST" })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ project: { id: project.id, directory, available: true } })
+    expect(await fs.readFile(path.join(directory, "README.md"), "utf8")).toBe("# origin")
+    expect(execFileSync("git", ["remote", "get-url", "origin"], { cwd: directory, encoding: "utf8" }).trim()).toBe(origin)
   })
 
   test("reports the git child's own failure when the repository is not there", async () => {

@@ -12,6 +12,7 @@ function record(id: string, name: string): ProjectRecord {
 function memoryStore(input: { folders: boolean; records?: ProjectRecord[] }) {
   const records = new Map((input.records ?? []).map((item) => [item.id, item]))
   const created: ProjectCreateInput[] = []
+  const recloned: string[] = []
   const store: ProjectStore = {
     folders: input.folders,
     list: async () => [...records.values()],
@@ -36,8 +37,12 @@ function memoryStore(input: { folders: boolean; records?: ProjectRecord[] }) {
       return next
     },
     remove: async (id) => records.delete(id),
+    reclone: async (id) => {
+      recloned.push(id)
+      return records.get(id)
+    },
   }
-  return { store, records, created }
+  return { store, records, created, recloned }
 }
 
 const signed: SignedControlPlaneAuth = {
@@ -131,6 +136,21 @@ describe("the projects route for a signed caller", () => {
     const kept = await app.request("http://localhost/prj_1", { method: "DELETE" })
     expect(kept.status).toBe(403)
     expect(authority.authorizeProject).toHaveBeenLastCalledWith(signed, { projectId: "prj_1", action: "owner" })
+  })
+
+  test("recloning takes write rank, and a refused caller never reaches the store", async () => {
+    const authority = authorityGranting({ prj_1: ["read", "write"], prj_2: ["read"] })
+    const { store, recloned } = two()
+    const app = ProjectRoutes({ store, authenticate: asSigned, authority })
+    const denied = await app.request("http://localhost/prj_2/reclone", { method: "POST" })
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: { code: "project_access_denied" } })
+    expect(recloned).toEqual([])
+    const allowed = await app.request("http://localhost/prj_1/reclone", { method: "POST" })
+    expect(allowed.status).toBe(200)
+    expect(await allowed.json()).toMatchObject({ project: { id: "prj_1" } })
+    expect(recloned).toEqual(["prj_1"])
+    expect(authority.authorizeProject).toHaveBeenLastCalledWith(signed, { projectId: "prj_1", action: "write" })
   })
 
   test("a composition serving signed callers without an authority refuses every read and write with 503", async () => {

@@ -1,15 +1,6 @@
 import { asRecord, isRecordArray, parseJson } from "@claxedo/server-core/platform/json/index"
 
-/**
- * The ONE reader for `wrangler d1 execute --json` output.
- *
- * `prove-greenfield-target-absence.ts`, `prepare-better-auth-d1.ts` and
- * `provision-user-deployed-owner-claim.ts` each wrote the same three checks —
- * one-element array, `success === true`, `results` is an array — and then
- * asserted the rows into `Array<Record<string, unknown>>`. They disagreed on
- * which of the three they actually enforced, so the same malformed output was a
- * clear error in one script and an empty pass in another.
- */
+/** The one reader for `wrangler d1 execute --json` output: one result set, `success`, and an array of rows. */
 export function d1Rows(output: string, label: string): Record<string, unknown>[] {
   let parsed: unknown
   try {

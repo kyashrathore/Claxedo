@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import type { Browser, CDPSession, Page } from "@playwright/test"
 import { acpScriptToken, apiRequests, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type AcpStep, type ClaxedoApi, type Stack } from "../harness"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../harness/painted-frames"
 import { readArrivals, recordSwitchFrames, switchReport } from "./12-switch-paint.frames"
 
 type ReturnWork = { readonly revealedMs: number; readonly revealFrame: number; readonly settledMs: number; readonly longestFrameMs: number; readonly addedElements: number; readonly navElements: number; readonly navShown: boolean; readonly fromEnd: number; readonly reads: readonly string[]; readonly latestTurnMs: number; readonly outlineMs: number; readonly metrics: Record<string, number> }

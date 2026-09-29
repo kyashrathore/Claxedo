@@ -30,7 +30,6 @@ import {
   type HostedOperationName,
 } from "./hosted-operations"
 import { fetchHosted } from "./hosted-transport"
-import { accountPerfMark, accountPerfNow } from "./account-perf"
 import type { CliCredentialFilePort } from "./cli-credential-file"
 import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
@@ -670,7 +669,6 @@ export function createAccountService(options: AccountServiceOptions) {
       const held = credential
       if (startedIn !== era || !held) throw new Error("not signed in")
       const request = resolveHostedOperation(name, input)
-      const fetchStarted = accountPerfNow()
       // One bounded attempt per hosted call — see hosted-transport.ts.
       const issue = (token: string) =>
         fetchHosted(
@@ -693,13 +691,7 @@ export function createAccountService(options: AccountServiceOptions) {
             return () => activeRequests.delete(controller)
           },
         )
-      let response = await issue(access.token)
-      accountPerfMark("account.unary_main_fetch_ms", {
-        operation: name,
-        ms: accountPerfNow() - fetchStarted,
-        status: response.status,
-      })
-      response = await recoverAccountResponse(response, held, startedIn, issue)
+      const response = await recoverAccountResponse(await issue(access.token), held, startedIn, issue)
       if (request.response === "http") {
         // Some reviewed operations have expected non-2xx outcomes (OAuth
         // replacement confirmation, optimistic revision conflict). Preserve
@@ -773,9 +765,6 @@ export function createAccountService(options: AccountServiceOptions) {
       activeRequests.add(controller)
       const onAbort = () => controller.abort()
       input.signal?.addEventListener("abort", onAbort, { once: true })
-      const openStarted = accountPerfNow()
-      let firstChunk = true
-      let httpOkAt: number | undefined
       try {
         // Each SSE HTTP attempt is bounded by hosted-transport.ts. The read loop uses
         // `controller`, which stays registered for logout/caller aborts for
@@ -807,41 +796,16 @@ export function createAccountService(options: AccountServiceOptions) {
             })}`,
           )
         }
-        httpOkAt = accountPerfNow()
-        accountPerfMark("account.stream_http_ok_ms", {
-          operation: input.name,
-          ms: httpOkAt - openStarted,
-          status: response.status,
-        })
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
         while (true) {
           if (startedIn !== era) throw new Error("not signed in")
           const next = await reader.read()
           if (next.done) break
-          const text = decoder.decode(next.value, { stream: true })
-          if (firstChunk && text.length > 0) {
-            firstChunk = false
-            accountPerfMark("account.stream_open_to_first_byte_ms", {
-              operation: input.name,
-              ms: accountPerfNow() - openStarted,
-              after_http_ok_ms: httpOkAt === undefined ? undefined : accountPerfNow() - httpOkAt,
-            })
-          }
-          input.onChunk(text)
+          input.onChunk(decoder.decode(next.value, { stream: true }))
         }
         const tail = decoder.decode()
-        if (tail.length > 0) {
-          if (firstChunk) {
-            firstChunk = false
-            accountPerfMark("account.stream_open_to_first_byte_ms", {
-              operation: input.name,
-              ms: accountPerfNow() - openStarted,
-              after_http_ok_ms: httpOkAt === undefined ? undefined : accountPerfNow() - httpOkAt,
-            })
-          }
-          input.onChunk(tail)
-        }
+        if (tail.length > 0) input.onChunk(tail)
       } finally {
         input.signal?.removeEventListener("abort", onAbort)
         activeRequests.delete(controller)

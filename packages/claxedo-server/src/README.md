@@ -5,10 +5,10 @@ become one running product. Three roles, three directories:
 
 | dir | role | contents |
 | --- | --- | --- |
-| `hosts/` | we **host** these packages | `wakes/`, `workspace-runtime/` — one dir per hosted `@claxedo/<pkg>` |
+| `hosts/` | we **host** these packages | `workspace-runtime/` — one dir per hosted `@claxedo/<pkg>` |
 | `adapters/` | we **adapt** these backends | `central-store/` — each adapts exactly one external thing. The Relay adapter moved to `@claxedo/server-core/adapters/relay`, which both products use. |
 | `platform/` | layer-organized shared machinery | `auth/`, `db/`, `http/`, `runtime/`, `telemetry/`, `governance/` |
-| `deployments/` | we **compose** these modes | `self-hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
+| `deployments/` | we **compose** these modes | `hosted-workerd/` (the deployed Workers), `hosted-shared/`, `shared-routes/`, and `self-hosted-node/` (the Node composition the e2e suites and integration tests boot) |
 
 Everything else is a feature domain, flat at `src/` root — `documents/`,
 `billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
@@ -17,11 +17,10 @@ identity/authorization/tenancy layer.
 
 ## Vocabulary that is easy to get wrong
 
-**`local` vs `hosted` is TRUST, not hosting.** `CLAXEDO_DEPLOYMENT_MODE` is
-`local` (unsigned, loopback-only) or `hosted` (signed multi-tenant, fails
-closed at boot). *Self-hosting* — a user running this themselves — is a
-different axis entirely and is **not** a code value: a self-hosted box on a
-public domain with signed auth is `trust=hosted, runtime=node`. See
+**`local` vs `hosted` is TRUST, not who operates it.** `CLAXEDO_DEPLOYMENT_MODE`
+is `local` (unsigned, loopback-only) or `hosted` (signed multi-tenant, fails
+closed at boot). A user running their own Cloudflare deployment is `hosted`
+too; the operator is not a code value. See
 ``@claxedo/server-core/authority/deployment-mode``.
 
 **`.cf.ts` means workerd-only.** A file that cannot run outside the Cloudflare

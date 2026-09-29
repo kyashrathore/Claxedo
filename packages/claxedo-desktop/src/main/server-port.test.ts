@@ -30,11 +30,11 @@ describe("DEFAULT_CLAXEDO_SERVER_PORT", () => {
     expect(DEFAULT_CLAXEDO_SERVER_PORT).not.toBe(3001)
   })
 
-  test("matches claxedo-server's standalone default", () => {
-    // The desktop app cannot import @claxedo/server (the server ships as a
-    // separately bundled utility process, not a dependency), so the constant is
+  test("matches the local server's default", () => {
+    // The desktop main process does not import @claxedo/local-server (the
+    // server ships as a separately bundled utility process), so the constant is
     // declared twice. If the two drift, the development attach probe checks one
-    // port while `claxedo-server dev` listens on another and every `bun dev`
+    // port while the local server listens on another and every `bun dev`
     // quietly gets a second embedded server. Read the source rather than trust
     // the comments to stay honest.
     const source = readFileSync(

@@ -1,16 +1,16 @@
 Subject: Tailwind entry scans only the kit
 
-What: the kit's Tailwind entry sources only the kit's own src (tests, stories and
-storybook excluded); each app declares its own @source.
+What: the kit's Tailwind entry sources only the kit's own src (tests excluded); each
+app declares its own @source.
 Why: the entry scanned claxedo-app and claxedo-desktop from inside the kit, so the
 app's candidate set and its test exclusions lived in a package that does not own
-them, and stories registered utilities no app renders.
+them.
 
 diff --git a/src/styles/tailwind/index.css b/src/styles/tailwind/index.css
-index 8f72ac42dcc1c4a3f86690f6fa6366a6f3a7c064..e1d1ce085c871f0fb789153d8851474a0c9746f9 100644
+index 8f72ac42dcc1c4a3f86690f6fa6366a6f3a7c064..2697d27a4bb46e69bf6a384b7fc61684793983b0 100644
 --- a/src/styles/tailwind/index.css
 +++ b/src/styles/tailwind/index.css
-@@ -3,21 +3,13 @@
+@@ -3,21 +3,11 @@
  @import "tailwindcss/theme.css" layer(theme);
  @import "tailwindcss/utilities.css" layer(utilities) source(none);
  @source "../../";
@@ -22,7 +22,7 @@ index 8f72ac42dcc1c4a3f86690f6fa6366a6f3a7c064..e1d1ce085c871f0fb789153d8851474a
 -   utility into the shipped CSS (the esbuild "file is not a known CSS property"
 -   build warnings). Keep them out of the scan. */
 +/* Only the kit's own source: each app declares its own @source, so the kit entry
-+   never scans a sibling package. Tests and stories never render; their fixture
++   never scans a sibling package. Tests never render; their fixture
 +   strings would register as candidates (a test's "[file:src/a.ts]" once emitted
 +   `.\[file\:src\/a\.ts\]{file:src/a.ts}` into the shipped CSS). */
  @source not "../../**/*.test.*";
@@ -33,8 +33,6 @@ index 8f72ac42dcc1c4a3f86690f6fa6366a6f3a7c064..e1d1ce085c871f0fb789153d8851474a
 -   output format), so a file exclusion cannot catch these two. */
 -@source not inline("[file:<path>]");
 -@source not inline("[image:<filename>]");
-+@source not "../../**/*.stories.*";
-+@source not "../../storybook";
  @import "./utilities.css";
  
  @import "../foundation.css";

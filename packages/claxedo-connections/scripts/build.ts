@@ -1,28 +1,19 @@
-#!/usr/bin/env node
+import fs from "node:fs"
+import path from "node:path"
 
-import { execFileSync } from "child_process"
-import fs from "fs"
-import path from "path"
+import { buildPackage } from "../../../script/bun-build"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
-const DIST = path.join(ROOT, "dist")
-if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
-fs.mkdirSync(DIST, { recursive: true })
 
-execFileSync(process.execPath, [
-  "build",
-  "src/index.ts",
-  "--target=node",
-  "--format=esm",
-  "--outfile=dist/index.mjs",
-  "--packages=external",
-], { stdio: "inherit", cwd: ROOT })
-execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], { stdio: "inherit", cwd: ROOT })
+await buildPackage({
+  root: ROOT,
+  bundles: [{ entrypoints: ["src/index.ts"], target: "node", format: "esm", packages: "external", naming: "[name].mjs" }],
+})
 
 // The bundle inlines the vendored arctic OAuth client (MIT); its license
 // notice must ship with every published copy.
-fs.mkdirSync(path.join(DIST, "vendor/arctic"), { recursive: true })
+fs.mkdirSync(path.join(ROOT, "dist/vendor/arctic"), { recursive: true })
 fs.copyFileSync(
   path.join(ROOT, "src/vendor/arctic/LICENSE-NOTICE.md"),
-  path.join(DIST, "vendor/arctic/LICENSE-NOTICE.md"),
+  path.join(ROOT, "dist/vendor/arctic/LICENSE-NOTICE.md"),
 )

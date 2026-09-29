@@ -7,29 +7,13 @@
     "noEmit": true,
     // No `DOM`: every file here runs under Bun, and `bun-types` yields its own
     // globals to `lib.dom` whenever `lib.dom` is loaded
-    // (`Bun.__internal.UseLibDomIfAvailable`). That handed the bench the
-    // browser's `new WebSocket(url, protocols)` — which cannot send headers —
-    // in place of Bun's `new WebSocket(url, { headers })`, which is the form
-    // `lib/ws.ts` actually calls. Dropping `DOM` gives it the real signature.
+    // (`Bun.__internal.UseLibDomIfAvailable`). That hands the bench the
+    // browser's `new WebSocket(url, protocols)`, which cannot send headers, in
+    // place of Bun's `new WebSocket(url, { headers })`, the form `lib/ws.ts`
+    // calls.
     "lib": ["ESNext"],
     "types": ["bun"]
   },
   "include": ["."],
-  // W7.2: `bench/` was never typechecked by any script or workflow (the package
-  // `typecheck` covers `src` only), so it has drifted. `setup-separate.ts` is
-  // the one file that does not compile — 12 errors, all implicit-`any` and
-  // Daytona SDK signature drift in a densely-written cloud PROVISIONING script
-  // that needs `DAYTONA_API_KEY` and is only ever run by hand.
-  //
-  // Excluded rather than fixed, deliberately: the point of this ticket is to get
-  // the credential-free CI gate typechecked and enforced, and rewriting an
-  // owner-triggered provisioning script is a different change with a different
-  // reviewer. Everything on the gate path — `local-dry-run.ts`, `loadgen.ts`,
-  // `cf-dev-smoke.ts`, `local-dialin.ts`, and all of `lib/` — IS checked, which
-  // is what stops the gate itself from rotting.
-  //
-  // Deleting this line is the fix; it should fail with those 12 errors until
-  // someone does the work.
-  "exclude": ["setup-separate.ts"],
   "references": []
 }

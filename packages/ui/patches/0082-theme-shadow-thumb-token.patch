@@ -1,0 +1,17 @@
+Subject: theme: a --shadow-thumb token
+
+What: theme.css adds --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.18).
+Why: the app's effort picker thumb takes its shadow from a theme token, not a literal.
+
+diff --git a/src/styles/theme.css b/src/styles/theme.css
+index fddba71a38b49574b92dc7290048e39cde744bbd..7b44ac5a2fce63cb112e7bf31273c33c4e05068f 100644
+--- a/src/styles/theme.css
++++ b/src/styles/theme.css
+@@ -140,6 +140,7 @@
+   --radius-5xl: 1.125rem;
+   --radius-pill: 9999px;
+ 
++  --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.18);
+   --shadow-xs:
+     0 1px 2px -0.5px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.06)),
+     0 0.5px 1.5px 0 light-dark(hsl(0 0% 0% / 0.025), hsl(0 0% 0% / 0.08)),

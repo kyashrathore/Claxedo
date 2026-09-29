@@ -557,18 +557,17 @@ describe("resource-closed hosted core app", () => {
     )
   })
 
-  test("has no static wakes, Documents, billing, or Polar implementation edge", () => {
+  test("has no static Documents, billing, or Polar implementation edge", () => {
     const entry = "src/deployments/hosted-shared/hosted-core-app.ts"
     const closure = sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
     expect(closure.opaque).toEqual([])
     const files = closure.modules.map((module) => module.relative.toLowerCase())
-    expect(files.filter((file) => ["hosts/wakes", "documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
+    expect(files.filter((file) => ["documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
     expect(
       closure.packages.filter((name) =>
         [
           "@claxedo/documents-service",
-          "@claxedo/wakes",
           "@polar-sh/sdk",
         ].includes(name),
       ),

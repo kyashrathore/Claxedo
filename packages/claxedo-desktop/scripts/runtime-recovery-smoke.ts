@@ -18,7 +18,7 @@ import { localServerBundleEntry } from "./local-server"
 import { parseClaxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
-export const RUNTIME_RECOVERY_SMOKE_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
+const RUNTIME_RECOVERY_SMOKE_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
 
 /**
  * The daemon has no runtime knob for its idle grace, so the whole script runs
@@ -40,7 +40,7 @@ export type RuntimeRecoverySmokeReport = {
 
 export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeReport> {
   if (!fs.existsSync(RUNTIME_RECOVERY_SMOKE_BUNDLE)) {
-    throw new Error(`${RUNTIME_RECOVERY_SMOKE_BUNDLE} is missing; run \`bun run predev\` in packages/claxedo-desktop first`)
+    throw new Error(`${RUNTIME_RECOVERY_SMOKE_BUNDLE} is missing; run \`bun run prebuild\` (or \`bun run predev\`) in packages/claxedo-desktop first`)
   }
 
   const steps: RuntimeRecoverySmokeStep[] = []

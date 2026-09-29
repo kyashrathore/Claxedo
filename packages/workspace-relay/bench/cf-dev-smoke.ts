@@ -1,11 +1,10 @@
 #!/usr/bin/env bun
-// Local-first gate for the Cloudflare relay: boots the worker under
-// `wrangler dev` (Miniflare/workerd — the real Cloudflare runtime, locally) and
-// round-trips a smoke HTTP request + WS upgrade end-to-end through it. Proves
-// DO bindings resolve, hibernation handlers register, PEM/env boot is correct,
-// and — because it points the worker at a live bench resolver + echo target —
-// that the DO's outbound upstream WebSocket open and the ported relay.trace
-// frame work on workerd. Run this before `wrangler deploy`.
+// The relay gate (`bun run bench:gate`): boots the Worker under `wrangler dev
+// --local` (workerd) against a bench resolver and echo target, then
+// round-trips HTTP requests and WS upgrades through it. Passing proves the
+// Durable Object bindings resolve, hibernation handlers register, the PEM/env
+// boot is correct, and the DO's outbound upstream WebSocket and relay.trace
+// frame work on workerd. Needs no Cloudflare account.
 //
 //   bun bench/cf-dev-smoke.ts --config wrangler.toml      # stock worker
 //   bun bench/cf-dev-smoke.ts --config wrangler-h2.toml   # H2 variant
@@ -89,8 +88,8 @@ async function main() {
   console.error(`[cf-dev] config=${config} echo=${echo.url} resolver=${resolver.url} worker=${workerHttp}`)
 
   const child = spawn(
-    "bunx",
-    ["wrangler", "dev", "-c", config, "--port", String(workerPort), "--ip", "127.0.0.1", "--local"],
+    join(PACKAGE_ROOT, "node_modules/.bin/wrangler"),
+    ["dev", "-c", config, "--port", String(workerPort), "--ip", "127.0.0.1", "--local"],
     { cwd: PACKAGE_ROOT, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] },
   )
   child.stdout.on("data", (chunk) => process.stderr.write(`[wrangler] ${chunk}`))

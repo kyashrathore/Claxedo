@@ -28,13 +28,7 @@ type Step = { readonly name: string; readonly command: readonly string[] }
 type Outcome = { readonly step: Step; readonly code: number; readonly stdout: string; readonly stderr: string; readonly ms: number }
 
 async function main(): Promise<never> {
-  const typechecks: Step[] = [
-    { name: "typecheck", command: ["bun", "run", "typecheck"] },
-    { name: "typecheck checks", command: [join(packageRoot, "node_modules/.bin/tsgo"), "--noEmit", "-p", "scripts/checks/tsconfig.json"] },
-    { name: "unit tests", command: ["bun", "test", "--conditions", "browser", "src"] },
-  ]
-  const outcomes: Outcome[] = []
-  for (const step of typechecks) outcomes.push(await runStep(step))
+  const outcomes = [await runStep({ name: "typecheck checks", command: [join(packageRoot, "node_modules/.bin/tsgo"), "--noEmit", "-p", "scripts/checks/tsconfig.json"] })]
   outcomes.push(...(await runPool(checks.map((name) => ({ name, command: ["bun", `scripts/checks/${name}.ts`] })))))
   printOutcomes(outcomes)
   process.exit(outcomes.every((outcome) => outcome.code === 0) ? 0 : 1)

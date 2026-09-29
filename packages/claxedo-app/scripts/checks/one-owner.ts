@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, rel, topFolder } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, topFolder } from "./lib/files"
 import { readSource, startLine, ts, type Source } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { hasExportModifier } from "./lib/tree"
@@ -10,11 +10,10 @@ type Place = { readonly file: string; readonly row: number; readonly rows: reado
 const windowLines = 25
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const sources = files.map(readSource)
-  const violations = [...duplicateExports(root, sources), ...duplicateBlocks(root, sources)]
-  finish("one-owner", root, violations, files.length)
+  const violations = [...duplicateExports(packageRoot, sources), ...duplicateBlocks(packageRoot, sources)]
+  finish("one-owner", packageRoot, violations, files.length)
 }
 
 function duplicateExports(root: string, sources: readonly Source[]): Violation[] {

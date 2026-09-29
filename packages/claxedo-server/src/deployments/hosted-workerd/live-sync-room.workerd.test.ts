@@ -269,9 +269,9 @@ describe("LiveSyncRoom workerd integration", () => {
    * this one proves `state.getWebSockets()` actually reports what the cap is
    * counting under workerd — the counter the production path uses.
    *
-   * Its own miniflare instance with a tiny cap: the default is 2,000 (measured,
-   * see `scripts/bench/live-sync-capacity.ts`) and the tests above must run
-   * against the real default, not a lowered one.
+   * Its own miniflare instance with a tiny cap: the default is 2,000 (half of
+   * the 4,000 connections one room held under workerd) and the tests above
+   * must run against the real default, not a lowered one.
    */
   test("the room answers 503 once its connection cap is reached", async () => {
     const capped = new Miniflare({

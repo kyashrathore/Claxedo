@@ -1,6 +1,4 @@
 import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
-import { createMachineWakes } from "../../session/machine-wakes"
-import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
 import path from "node:path"
 import type { Duplex } from "node:stream"
@@ -1033,12 +1031,6 @@ export function createSelfHostedApp(
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
     sessionShareChangedSink: (event) => controlBus.publish(event),
   })
-  const wakeStore = process.env.CLAXEDO_WAKES === "1" ? new SqliteWakeStore({ path: process.env.CLAXEDO_WAKE_DB_PATH ?? path.join(dataDir(), "machine-wakes.sqlite") }) : undefined
-  const machineWakes = wakeStore ? createMachineWakes({ services, runtime: machineSessions, store: wakeStore }) : undefined
-  if (machineWakes) {
-    controlPlane.app.route("/api/control", machineWakes.routes)
-    machineWakes.start()
-  }
   const controlPlaneChannels = createControlPlaneChannels({
     services,
     runtime: machineSessions,
@@ -1659,12 +1651,11 @@ export function createSelfHostedApp(
     )
   }
 
-  let disposal: Promise<void> | undefined
   return {
     app,
     injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) => nodeWebSocket.injectWebSocket(server),
     channels: controlPlaneChannels,
-    dispose: () => disposal ??= (async () => { await machineWakes?.stop(); wakeStore?.close() })(),
+    dispose: async () => {},
     /**
      * This composition's route ledger — every prefix it claimed, and under
      * which owner. Exposed for the same reason `createRouteOwnership` records
@@ -2020,12 +2011,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     },
   })
 
-  // Loopback by default (safe for local dev); containers/self-host set
-  // CLAXEDO_SERVER_HOST=0.0.0.0 to accept external traffic.
   const server = serve({
     fetch: built.app.fetch,
     port,
-    hostname: process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1",
+    hostname: "127.0.0.1",
   })
   built.injectWebSocket(server)
   // `closeAllConnections` reaches only the sockets the HTTP parser still owns.

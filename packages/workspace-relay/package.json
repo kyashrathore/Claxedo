@@ -2,7 +2,7 @@
   "name": "@claxedo/workspace-relay",
   "version": "0.10.0",
   "type": "module",
-  "description": "Relay/tunnel server that routes authenticated traffic to workspace runtimes: JWT workspace tokens, header-stripping trust boundary, Bun and Cloudflare adapters",
+  "description": "Relay/tunnel that routes authenticated traffic to workspace runtimes on Cloudflare: JWT workspace tokens and a header-stripping trust boundary",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -33,9 +33,6 @@
       "default": "./dist/bun.mjs"
     }
   },
-  "bin": {
-    "workspace-relay": "dist/main.mjs"
-  },
   "files": [
     "README.md",
     "LICENSE",
@@ -45,26 +42,20 @@
     "access": "public"
   },
   "scripts": {
-    "start": "bun run src/main.ts",
-    "dev": "bun run --hot src/main.ts",
     "build": "tsx scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:bench": "tsc --noEmit -p bench/tsconfig.json",
-    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src bench scripts --path-ignore-patterns='**/relay-workerd-*' --path-ignore-patterns='**/bun.test.ts' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../scripts/test-deadline.mjs bun test src/bun.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-bun-adapter.xml && node ../../scripts/test-deadline.mjs bun test src/relay-workerd-backpressure.test.ts src/relay-workerd-binary.test.ts --timeout 240000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-workerd.xml",
-    "bench:gate": "bun bench/local-dry-run.ts",
-    "bench:gate:cf": "bun bench/cf-dev-smoke.ts"
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src bench scripts --path-ignore-patterns='**/relay-workerd-*' --path-ignore-patterns='**/bun.test.ts' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../script/test-deadline.mjs bun test src/bun.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-bun-adapter.xml && node ../../script/test-deadline.mjs bun test src/relay-workerd-backpressure.test.ts src/relay-workerd-binary.test.ts --timeout 240000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-workerd.xml",
+    "bench:gate": "bun bench/cf-dev-smoke.ts"
   },
   "dependencies": {
     "@claxedo/helpers": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
     "hono": "4.12.34",
-    "jose": "6.0.11",
-    "posthog-node": "4.18.0"
+    "jose": "6.0.11"
   },
   "devDependencies": {
-    "@claxedo/sandbox-manager": "workspace:*",
-    "@daytona/sdk": "0.192.0",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
     "esbuild": "0.25.12",

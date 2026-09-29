@@ -300,12 +300,11 @@ install_app_server_native_dependencies() {
 
 run_packages_dry_run() {
   install_root
+  bun run build:packages
   (
     cd packages/claxedo-server
-    node ./node_modules/vitest/vitest.mjs run \
-      scripts/release/tests/publish-claxedo-packages.test.ts \
-      scripts/release/tests/publish-runtime-packages.test.ts
-    bun run release:packages --track others --dry-run
+    node ./node_modules/vitest/vitest.mjs run scripts/release/tests
+    bun run release:packages --track all --dry-run
   )
 }
 

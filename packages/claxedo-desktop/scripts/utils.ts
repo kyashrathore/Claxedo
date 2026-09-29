@@ -22,18 +22,3 @@ export function copyIcons(channel = resolveChannel()) {
   fs.cpSync(src, dest, { recursive: true })
   return { channel, src, dest }
 }
-
-export function copyWorkspaceRuntimeTemplates(dest: string) {
-  const packageDir = path.resolve(import.meta.dir, "..")
-  const src = path.resolve(packageDir, "../workspace-runtime/src/agent-hooks/templates")
-
-  if (!fs.existsSync(src)) {
-    throw new Error(`Workspace runtime templates dir not found at ${src}`)
-  }
-
-  fs.rmSync(dest, { recursive: true, force: true })
-  fs.cpSync(src, dest, { recursive: true })
-  return { src, dest }
-}
-
-export const RUST_TARGET = Bun.env.RUST_TARGET

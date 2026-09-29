@@ -80,11 +80,27 @@ export function resolvePublishedExport(specifier: string): string | null {
   return resolved
 }
 
+/** Bun's `external` matching: `*` globs, and a bare package name also covers its subpaths. */
+function matchesExternal(specifier: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => {
+    if (pattern.includes("*")) {
+      const glob = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")
+      return new RegExp(`^${glob}$`).test(specifier)
+    }
+    return specifier === pattern || specifier.startsWith(`${pattern}/`)
+  })
+}
+
 export function publishedExportsPlugin(): BunPlugin {
   return {
     name: "claxedo-published-exports",
     setup(build) {
+      // Bun runs onResolve before applying `external`, so a path returned here
+      // would bundle a package the build declared external.
+      const external = build.config.external ?? []
+      const packagesExternal = build.config.packages === "external"
       build.onResolve({ filter: /^@claxedo\// }, (args) => {
+        if (packagesExternal || matchesExternal(args.path, external)) return undefined
         const resolved = resolvePublishedExport(args.path)
         return resolved === null ? undefined : { path: resolved }
       })

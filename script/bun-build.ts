@@ -1,27 +1,18 @@
 /**
- * Running `Bun.build` and reporting what it says.
+ * Running `Bun.build` and reporting what it says, and the dist build a
+ * workspace package script composes from its bundles.
  *
  * `Bun.build` defaults to `throw: true`, so a failed bundle rejects with an
- * `AggregateError` and never returns `success: false`. Six build scripts in
- * this repository were written against the other contract and each grew its
- * own `if (!result.success)` branch — none of which could run. The branches
- * were not merely redundant; three things were lost inside them:
- *
- *   1. `bundle-claxedo-server.ts` removed its `dist.pending-<pid>` staging
- *      directory there, so a failed desktop server bundle leaked one every
- *      time. That is what `onFailure` below exists for.
- *   2. `verify-mermaid-svg-sanitizer.mjs` held the only log formatter in the
- *      repository that reads `position` and names a file, line and column.
- *      Everywhere else a bundling failure identified no source location at
- *      all. That formatter is now `describeBuildLog`, and every caller gets it.
- *   3. `logs` is typed as populated on success as well as failure, and no site
- *      read it outside the unreachable branch. Anything Bun reports on a
- *      successful build is printed here instead of discarded.
- *
- * The config parameter omits `throw` deliberately: with it fixed at the
- * default there is exactly one failure path, and no caller can reintroduce a
- * `success: false` that nothing checks.
+ * `AggregateError` and never returns `success: false`. The config parameter
+ * omits `throw` so that stays the only failure path: no caller can branch on a
+ * `success: false` that never arrives. `logs` is populated on success too, and
+ * is printed rather than discarded.
  */
+import { execFileSync } from "node:child_process"
+import fs from "node:fs"
+import path from "node:path"
+
+import { publishedExportsPlugin } from "./published-exports-plugin"
 
 type BuildLogPosition = {
   file: string
@@ -122,4 +113,40 @@ export async function runBunBuild(
 
   for (const log of result.logs) console.warn(describeBuildLog(log))
   return result
+}
+
+/** Entrypoints and `root` are relative to the package; output always lands in its `dist`. */
+export type PackageBundle = Omit<Bun.BuildConfig, "throw" | "outdir">
+
+/**
+ * Replace a package's `dist` with its bundles and, unless `declarations` is
+ * false, the declaration tree its `tsconfig.build.json` emits beside them.
+ * Sibling `@claxedo/*` packages bundle from their published dist, as an npm
+ * consumer would get them.
+ */
+export async function buildPackage(input: {
+  root: string
+  bundles: readonly PackageBundle[]
+  declarations?: boolean
+}): Promise<Bun.BuildOutput[]> {
+  const dist = path.join(input.root, "dist")
+  const label = `${path.basename(input.root)} bundle failed`
+  fs.rmSync(dist, { recursive: true, force: true })
+  const outputs: Bun.BuildOutput[] = []
+  for (const bundle of input.bundles) {
+    outputs.push(await runBunBuild(label, {
+      ...bundle,
+      entrypoints: bundle.entrypoints.map((entry) => path.resolve(input.root, entry)),
+      root: bundle.root === undefined ? undefined : path.resolve(input.root, bundle.root),
+      outdir: dist,
+      plugins: [publishedExportsPlugin(), ...(bundle.plugins ?? [])],
+    }))
+  }
+  if (input.declarations !== false) {
+    execFileSync(path.join(input.root, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], {
+      cwd: input.root,
+      stdio: "inherit",
+    })
+  }
+  return outputs
 }

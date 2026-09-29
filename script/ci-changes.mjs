@@ -45,7 +45,6 @@ const WINDOWS_PREFIXES = [
   "packages/harness/",
   "packages/process-ownership/",
   "packages/sandbox-manager/",
-  "packages/wakes/",
   "packages/workspace-relay/",
   "packages/workspace-runtime/",
   "script/cbx-prepare-windows.ps1",
@@ -65,7 +64,6 @@ const SERVER_DEPENDENCY_PREFIXES = [
   "packages/process-ownership/",
   "packages/sandbox-contract/",
   "packages/sandbox-manager/",
-  "packages/wakes/",
   "packages/workspace-relay-protocol/",
   "packages/workspace-relay/",
   "packages/workspace-runtime/",
@@ -84,6 +82,10 @@ const SANDBOX_IMAGE_PREFIXES = [
   "packages/workspace-runtime/",
 ]
 const SANDBOX_IMAGE_WORKFLOWS = [".github/workflows/deploy-cloudflare-sandbox-worker.yml"]
+
+// The app's rule checks (packages/claxedo-app/scripts/checks) read the app and,
+// for slot hooks and kit imports, the kit's source.
+const APP_CHECKS_PREFIXES = ["packages/claxedo-app/", "packages/ui/"]
 
 function isDocumentation(file) {
   if (startsWithAny(file, DOC_PREFIXES)) return true
@@ -154,6 +156,7 @@ function resultFor(files, forceFull, reason) {
     boundary_host_connector: boundaryHostConnector,
     boundary_server: boundaryServer,
     sandbox_image: full || codeFiles.some(isSandboxImageRelevant),
+    app_checks: full || codeFiles.some((file) => startsWithAny(file, APP_CHECKS_PREFIXES)),
     reason,
     files,
   }
@@ -190,6 +193,7 @@ function writeGitHubOutputs(result, outputFile) {
     "boundary_host_connector",
     "boundary_server",
     "sandbox_image",
+    "app_checks",
   ]
   const lines = scalarKeys.map((key) => `${key}=${result[key]}`)
   // Keep the matrix structurally valid even when the job-level `if` skips the

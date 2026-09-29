@@ -7,9 +7,9 @@ import { createSelfHostedApp } from "./app"
 
 /**
  * The self-hosted composition serves the same credential proxy the desktop
- * does, and a container binds `0.0.0.0`: without the peer check here the
- * broker answers the whole network, and the runtime token is the only thing
- * between that network and the operator's stored keys.
+ * does. The peer check is what keeps a non-loopback caller off it: past that
+ * check the runtime token is the only thing between the caller and the
+ * operator's stored keys.
  */
 function createTestApp(options: Parameters<typeof createSelfHostedApp>[1] = {}, signed = false) {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })

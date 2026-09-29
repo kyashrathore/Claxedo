@@ -161,6 +161,17 @@ export function ProjectRoutes(options: ProjectRouteOptions) {
     return c.json({ deleted: true })
   })
 
+  app.post("/:id/reclone", async (c) => {
+    const { auth, access } = await caller(c)
+    const id = routeParam(c, "id")
+    if (!(await access.allowed(id, "write"))) {
+      return c.json(apiError("project_access_denied", "Project write access is required"), 403)
+    }
+    const project = await store.reclone(id, (repoUrl) => resolveRepository({ kind: "repository", repoUrl }, auth, options.repositories ?? {}))
+    if (!project) return c.json(apiError("project_not_found", "No such project"), 404)
+    return c.json({ project })
+  })
+
   return app
 }
 

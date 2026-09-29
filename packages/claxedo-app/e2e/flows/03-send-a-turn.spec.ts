@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../harness/painted-frames"
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 type FirstPaintWindow = Window & { __firstTranscriptPaint?: Promise<string> }

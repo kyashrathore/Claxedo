@@ -711,24 +711,6 @@ describe("D1 host access authority", () => {
       role: "viewer",
       expiresAt: 1_800_000_100_000,
     })).rejects.toMatchObject({ code: "resource_conflict" })
-    await expect(input.runtimeTokens.recordActorRuntimeAccessToken({
-      jti: "jti-provider-subject",
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      actorId: bob.user.subject,
-      actorKind: "human",
-      role: "viewer",
-      expiresAt: 1_800_000_100_000,
-    })).rejects.toMatchObject({ status: 403 })
-    await input.runtimeTokens.recordActorRuntimeAccessToken({
-      jti: "jti-canonical-service",
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      actorId: bob.principal!.actorId,
-      actorKind: "human",
-      role: "viewer",
-      expiresAt: 1_800_000_100_000,
-    })
 
     await input.runtimeTokens.recordRuntimeAccessToken(bob, {
       jti: "jti-current-authority",

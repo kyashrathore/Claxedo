@@ -23,7 +23,6 @@ const minted = {
 
 function authority() {
   return {
-    recordActorRuntimeAccessToken: vi.fn(async () => ({})),
     recordChannelRuntimeAccessToken: vi.fn(async () => ({})),
     recordRuntimeAccessToken: vi.fn(async () => ({})),
     recordRuntimeAccessTokenForService: vi.fn(async () => ({})),
@@ -74,11 +73,3 @@ describe("recordRelayRuntimeToken", () => {
   expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()
   await expect(recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", channelIdentity, auth: signed })).rejects.toThrow("two caller identities")
  })
-
-test("a scheduled user's token uses the canonical actor authority and rejects ambiguous identity", async () => {
-  const auth = authority()
-  await recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", delegatedActor: true })
-  expect(auth.recordActorRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ actorId: minted.actorId, workspaceId: minted.workspaceId }))
-  expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()
-  await expect(recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", delegatedActor: true, auth: signed })).rejects.toThrow("two caller identities")
-})

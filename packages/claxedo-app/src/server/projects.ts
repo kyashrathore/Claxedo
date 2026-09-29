@@ -55,5 +55,11 @@ export function createProjectsApi(transport: Transport, queryClient: QueryClient
       queryClient.setQueryData<readonly Project[]>(queryKeys.projects(transport.serverUrl), (current) => current?.filter((item) => item.id !== id))
       await placementsChanged()
     },
+    reclone: async (id) => {
+      const project = oneProjectFromWire(await transport.json<unknown>(`${projectPath(id)}/reclone`, { method: "POST" }))
+      remember(project)
+      await placementsChanged()
+      return project
+    },
   }
 }

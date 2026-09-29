@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url"
 import { readString } from "@claxedo/helpers/readers"
 
 import { claxedoServerExecArgv } from "../src/main/server-runtime-policy"
-import { claxedoServerStartup } from "./claxedo-server-startup"
+import { claxedoServerStartup } from "../src/server/startup"
 import {
   CLAXEDO_COMPILE_CACHE_MANIFEST_NAME,
   compileCacheEntryName,
@@ -350,7 +350,7 @@ export function serverStartupRefusal(): string {
 
 /**
  * The server bundle's own static closure — the 9.11 MB behind
- * `claxedo-server-boot.ts`'s dynamic import.
+ * `src/server/boot.ts`'s dynamic import.
  *
  * Entered at the DEFERRED chunk, not at `index.js`: the boot stub refuses the
  * same empty environment and would throw before its dynamic import, compiling

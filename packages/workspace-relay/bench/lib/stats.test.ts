@@ -36,7 +36,7 @@ describe("bench gate evaluation", () => {
     expect(gates.pass).toBe(true)
   })
 
-  test("the historical dialin-100k collapse is unmeasurable, not merely slow", () => {
+  test("a run whose connections collapsed is unmeasurable, not merely slow", () => {
     const gates = evaluateGates({
       ...base,
       httpP99OverheadMs: Number.NaN,

@@ -117,16 +117,6 @@ type PendingRequest = {
   reject(error: Error): void
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<T>((accept, refuse) => {
-    resolve = accept
-    reject = refuse
-  })
-  return { promise, resolve, reject }
-}
-
 function bounded<T>(promise: Promise<T>, timeoutMs: number, description: string): Promise<T> {
   let handle: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -289,7 +279,7 @@ export function setupHostConnectorChild(input: {
     target: HostConnectorChildProcess,
     message: Extract<HostConnectorParentMessage, { requestId: string }>,
   ) => {
-    const waiting = deferred<HostConnectorChildState>()
+    const waiting = Promise.withResolvers<HostConnectorChildState>()
     pending.set(message.requestId, waiting)
     send(target, message)
     return waiting.promise.finally(() => pending.delete(message.requestId))
@@ -407,7 +397,7 @@ export function setupHostConnectorChild(input: {
     const target = input.spawn()
     child = target
     intentionalExit = false
-    const ready = deferred<void>()
+    const ready = Promise.withResolvers<void>()
     target.on("message", (message) => {
       const parsed = parseHostConnectorChildMessage(message)
       if (parsed?.type === "ready") ready.resolve()
@@ -433,7 +423,7 @@ export function setupHostConnectorChild(input: {
     // Armed BEFORE the bootstrap is sent: a child that enrolls quickly can push
     // its status before this side resumes, and a wait registered afterwards
     // would miss the only announcement it is waiting for.
-    const enrolled = deferred<HostConnectorChildState>()
+    const enrolled = Promise.withResolvers<HostConnectorChildState>()
     // The wait can be rejected by an exit or a terminate before `launch` has
     // reached the race below; keeping a handler attached from the start is what
     // stops that from surfacing as an unhandled rejection in main.
@@ -546,7 +536,7 @@ export function setupHostConnectorChild(input: {
     // launch means a pause or revoke landed mid-flight — and the error below is
     // then that cancellation, which must not overwrite the deliberate stop.
     const startedIn = era
-    const cancellation = deferred<never>()
+    const cancellation = Promise.withResolvers<never>()
     cancelStarting = cancellation.reject
     starting = launch(cancellation.promise)
       .catch((error) => {

@@ -9,7 +9,7 @@ test("certified hosted Worker signs in two GitHub people and refuses unbrokered 
   try {
     const health = await hostedFetch(stack, "/health")
     expect(health.status).toBe(200)
-    expect((await health.json() as { status: string }).status).toBe("open")
+    expect((await health.json() as { status: string }).status).toBe("ok")
 
     const owner = await signInHostedPerson(stack, "hosted-person-a")
     const second = await signInHostedPerson(stack, "hosted-person-b")

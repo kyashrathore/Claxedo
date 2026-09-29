@@ -54,7 +54,7 @@ export const claims = [
     owner: "Claxedo server",
     evidence: [
       "public-docs/user-deployed-cloudflare.md",
-      "packages/claxedo-server/scripts/deploy/greenfield-user-deployed.ts",
+      "packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts",
     ],
     verifiedAt: "2026-09-29",
     note: "Owner ruling 2026-09-29.",

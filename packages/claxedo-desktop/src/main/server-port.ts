@@ -18,11 +18,11 @@ import { createServer } from "node:net"
  * 2593 is "clxd" on a phone keypad (c=2, l=5, x=9, d=3) — memorable, and not a
  * default anything else reaches for.
  *
- * Keep in sync with the standalone server default in
- * `packages/claxedo-server/src/deployments/self-hosted-node/index.ts`. The two must agree or
- * the development attach path breaks: the desktop app probes one port while
- * `claxedo-server dev` listens on another, so every `bun dev` silently gets a
- * second, embedded server instead of attaching to the one already running.
+ * Keep in sync with `DEFAULT_CLAXEDO_SERVER_PORT` in
+ * `packages/claxedo-local-server/src/deployments/local/port.ts`. The two must
+ * agree or the development attach path breaks: the desktop app probes one port
+ * while the local server listens on another, so every `bun dev` silently gets
+ * a second, embedded server instead of attaching to the one already running.
  */
 export const DEFAULT_CLAXEDO_SERVER_PORT = 2593
 

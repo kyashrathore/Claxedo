@@ -20,7 +20,7 @@ const setupServer = entry.slice(
 // "able to serve", so the cold startup wiring this file pins does not fit in
 // one file.
 const childEntry = readFileSync(
-  path.join(import.meta.dir, "../../scripts/claxedo-server-entry.ts"),
+  path.join(import.meta.dir, "../server/entry.ts"),
   "utf8",
 )
 

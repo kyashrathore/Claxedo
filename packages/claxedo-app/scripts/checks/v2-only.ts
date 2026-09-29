@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, resolve as resolvePath } from "node:path"
-import { codeExtensions, listFiles, parseArgs, rel, repoRoot, styleExtensions, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, repoRoot, styleExtensions, under } from "./lib/files"
 import { compilerOptions, createResolver, importsOf, readSource, startLine, type Resolver, type Source } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
@@ -12,14 +12,13 @@ const kitStylesheets: Readonly<Record<string, readonly string[]>> = {
 const styleImport = /@import\s+(?:url\()?["']([^"']+)["']/g
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
   const resolve = createResolver(compilerOptions())
-  const codeFiles = listFiles(root, ["src", "e2e"], codeExtensions)
-  const styleFiles = listFiles(root, ["src"], styleExtensions)
+  const codeFiles = listFiles(packageRoot, ["src", "e2e"], codeExtensions)
+  const styleFiles = listFiles(packageRoot, ["src"], styleExtensions)
   const violations: Violation[] = []
-  for (const file of codeFiles) violations.push(...kitImports(root, readSource(file), resolve))
-  for (const file of styleFiles) violations.push(...kitStyleImports(root, file, readFileSync(file, "utf8"), resolve))
-  finish("v2-only", root, violations, codeFiles.length + styleFiles.length)
+  for (const file of codeFiles) violations.push(...kitImports(packageRoot, readSource(file), resolve))
+  for (const file of styleFiles) violations.push(...kitStyleImports(packageRoot, file, readFileSync(file, "utf8"), resolve))
+  finish("v2-only", packageRoot, violations, codeFiles.length + styleFiles.length)
 }
 
 function kitImports(root: string, { file, sf }: Source, resolve: Resolver): Violation[] {

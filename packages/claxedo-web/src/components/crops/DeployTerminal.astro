@@ -2,13 +2,13 @@
 import Icon from "../Icon.astro"
 import "../../styles/app-theme.css"
 
-const steps = ["Databases created", "Worker deployed", "GitHub sign-in ready", "Team invite link issued"]
+const steps = ["D1 databases created", "Migrations applied", "Worker deployed", "App published"]
 ---
 
 <div class="app-card deploy app-theme" role="img" aria-label="One command deploys Claxedo to your Cloudflare account, live in under five minutes">
-  <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span>~/claxedo</span></div>
+  <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span>~/claxedo/packages/claxedo-server</span></div>
   <div class="screen">
-    <p><span class="path">~/claxedo</span> bun run deploy:cloudflare</p>
+    <p><span class="path">claxedo-server</span> bun run deploy:user-cloudflare</p>
     {steps.map((step) => <p><span class="ok">✓</span> {step}</p>)}
     <p>&nbsp;</p>
     <p class="live"><Icon name="check" />Live at <b>https://claxedo.yourteam.dev</b></p>

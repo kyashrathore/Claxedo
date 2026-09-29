@@ -121,7 +121,7 @@ appearing as data-loss gaps.
 
 Membership removal and role downgrade revoke the affected user's runtime access
 tokens. Open connections are closed by the hosting adapter's revocation check;
-the Bun relay polls every 30 seconds and caches a positive revocation result for
+the relay polls every 30 seconds and caches a positive revocation result for
 at most 10 seconds, with every lifetime capped by token expiry. Revoked sockets
 close with policy code `1008`. WebSocket origins are evaluated against the
 deployment's configured `allowedOrigins` before upgrade.

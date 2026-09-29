@@ -704,8 +704,8 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
  * behaviour under test is "the limit is enforced and reports 503", which does
  * not depend on the number, and opening 2,000 sockets to assert a rejection
  * would trade a fast test for a slow one that proves the same thing. The
- * DEFAULT is measured by `scripts/bench/live-sync-capacity.ts` and asserted
- * separately below.
+ * default, 2,000 (half of the 4,000 connections one room held under workerd),
+ * is asserted separately below.
  */
 describe("LiveSyncRoom — held-connection cap", () => {
   const connectRequest = (subject = "alice") =>

@@ -8,6 +8,7 @@ import { dirname, join, relative } from "node:path"
 const kit = join(import.meta.dir, "..")
 const ours = new Set(["patches", "UPSTREAM", "script/sync-upstream.ts"])
 const untouched = new Set(["node_modules", ".artifacts", ".turbo", "dist"])
+const unvendored = (path: string) => /\.stories\.[^/]+$/.test(path) || path.startsWith("src/storybook/")
 
 function run(command: string, args: string[], options: { cwd?: string; input?: Buffer; env?: NodeJS.ProcessEnv } = {}) {
   const result = spawnSync(command, args, { cwd: options.cwd ?? kit, input: options.input, env: options.env, maxBuffer: 1 << 30 })
@@ -44,6 +45,7 @@ function build(commit: string, url: string): { out: string; tree: string } {
       throw new Error(`patches/${patch} does not apply to ${commit}:\n${result.stderr.toString()}`)
     }
   }
+  for (const path of files(tree)) if (unvendored(path)) rmSync(join(tree, path))
   return { out, tree }
 }
 

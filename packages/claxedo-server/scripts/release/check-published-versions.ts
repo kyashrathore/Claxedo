@@ -10,7 +10,7 @@
  * should see.
  *
  * Usage:
- *   bun run scripts/release/check-published-versions.ts   # all 11 packages
+ *   bun run scripts/release/check-published-versions.ts   # every package in claxedoPackages
  */
 import { execFileSync } from "node:child_process"
 import path from "node:path"
@@ -22,7 +22,7 @@ export type CommandRunner = (cmd: string, args: string[], cwd?: string, env?: No
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
 
-function defaultCommandRunner(cmd: string, args: string[], cwd = repoRoot, env?: NodeJS.ProcessEnv) {
+export function defaultCommandRunner(cmd: string, args: string[], cwd = repoRoot, env?: NodeJS.ProcessEnv) {
   return execFileSync(cmd, args, {
     cwd,
     env: env ? { ...process.env, ...env } : process.env,

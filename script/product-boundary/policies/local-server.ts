@@ -5,7 +5,7 @@ const SRC = "packages/claxedo-local-server/src"
 /**
  * The desktop-local server, from the entry the desktop actually starts.
  *
- * `claxedo-desktop/scripts/claxedo-server-entry.ts` starts the server through
+ * `claxedo-desktop/src/server/entry.ts` starts the server through
  * `@claxedo/local-server/self-hosted-execution` and mounts the feature
  * compositions the same package publishes beside it. That subpath is the entry
  * here, rather than the package's whole `exports` surface: the package-wide
@@ -17,7 +17,7 @@ const SRC = "packages/claxedo-local-server/src"
  * each entry is a hosted capability an unsigned desktop has no way to use and
  * no business carrying. When this measurement started, the desktop-local entry
  * reached 259 first-party modules and 42 packages — better-auth, channels,
- * connections, wakes — from a build that never signs in.
+ * connections — from a build that never signs in.
  */
 export const localServer: Policy = {
   id: "local-server",
@@ -31,7 +31,6 @@ export const localServer: Policy = {
     "@claxedo/server",
     "@claxedo/channels",
     "@claxedo/connections",
-    "@claxedo/wakes",
     "better-auth",
     "posthog-node",
     // Not in the package-wide list, and it belongs here: the desktop server is
@@ -45,7 +44,6 @@ export const localServer: Policy = {
     "packages/sandbox-manager/src",
     "packages/claxedo-channels/src",
     "packages/claxedo-connections/src",
-    "packages/wakes/src",
   ],
 
   control: {

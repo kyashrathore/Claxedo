@@ -12,6 +12,7 @@ import { ProjectSettings } from "./project-settings"
 import "./projects.css"
 
 function ProjectLink(props: { readonly project: Project }): JSX.Element {
+  const t = useProjectsText()
   const detailId = createUniqueId()
   return (
     <A
@@ -24,7 +25,11 @@ function ProjectLink(props: { readonly project: Project }): JSX.Element {
       <ProjectAvatar aria-hidden="true" fallback={props.project.name} src={props.project.icon?.override} variant="outline" />
       <span class="projects-settings-row-text">
         <span class="projects-settings-row-name">{props.project.name}</span>
-        <span id={detailId} class="projects-settings-row-detail">{sourceLabel(props.project.source)}</span>
+        <span id={detailId} class="projects-settings-row-detail">
+          <Show when={props.project.missingCheckout} fallback={sourceLabel(props.project.source)}>
+            {(checkout) => t("projects.checkout.missing.row", { directory: checkout().directory })}
+          </Show>
+        </span>
       </span>
       <Icon name="chevron-right" />
     </A>
