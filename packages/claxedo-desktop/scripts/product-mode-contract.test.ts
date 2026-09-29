@@ -10,7 +10,7 @@ import { publishedPackageNames } from "./published-packages"
  * runs, and the launch wiring that composes the server the desktop boots.
  *
  * The server is resolved by one owner, `scripts/local-server.ts`, for the
- * child entry module, `predev`, `prebuild` and the boot smoke; a second
+ * child entry module, artifact preparation and the boot smoke; a second
  * resolver leaves a repository where development works and the packaged build
  * boots the other composition, or vice versa. `local-server.test.ts` asserts
  * the resolved values; what is here is the composition contract those callers
@@ -38,37 +38,21 @@ describe("desktop server launch wiring", () => {
     )
   })
 
-  test("development and production preparation resolve the same server package", () => {
-    // Both scripts import one resolver, and the assertion is about the resolved
-    // value — what the bundler consumes — not a path string a dead `const` could
-    // satisfy.
-    for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
-      // Comments dropped: both scripts name `@claxedo/local-server` in prose.
-      const code = read(script)
-        .split("\n")
-        .filter((line) => !/^\s*(\/\/|\/?\*)/.test(line))
-        .join("\n")
-      expect(code, script).toContain(`from "./local-server"`)
-      // Each script gates on the resolution, not merely imports the module.
-      expect(code, script).toContain("resolveLocalServerEntry(PACKAGE_DIR)")
-    }
+  test("development and production preparation are one module", () => {
+    // `prebuild` runs the module and `predev` calls it, so the server package,
+    // bundler and published-sibling builds cannot differ between the two.
+    const scripts = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts
+    expect(scripts.prebuild).toBe("bun ./scripts/prepare-artifacts.ts")
+    expect(read("scripts/predev.ts")).toContain('import { prepareDesktopArtifacts } from "./prepare-artifacts"')
+
+    const prepare = read("scripts/prepare-artifacts.ts")
+    expect(prepare).toContain("resolveLocalServerEntry(PACKAGE_DIR)")
+    expect(prepare).toContain('from "./bundle-claxedo-server"')
+    expect(prepare).toContain("buildPublishedPackages(")
     expect(localServerPackageDir(packageRoot)).toBe(path.resolve(packageRoot, DESKTOP_SERVER_PACKAGE_DIR))
     expect(resolveLocalServerEntry(packageRoot).startsWith(localServerPackageDir(packageRoot) + path.sep)).toBe(
       true,
     )
-  })
-
-  test("both preparation paths bundle through the one bundler helper", () => {
-    for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
-      expect(read(script), script).toContain('from "./bundle-claxedo-server"')
-      expect(read(script), script).toContain("src/server/")
-    }
-  })
-
-  test("both preparation paths build every published sibling the bundle consumes", () => {
-    for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
-      expect(read(script), script).toContain("buildPublishedPackages(")
-    }
     const published = publishedPackageNames(path.resolve(packageRoot, "../.."))
     expect(published).toContain("@claxedo/agent-runtime-contract")
     expect(published).toContain("@claxedo/workspace-runtime")

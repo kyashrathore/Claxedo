@@ -13,12 +13,8 @@ import {
 } from "./local-server"
 
 /**
- * The desktop's server, resolved once.
- *
- * These assert on RESOLVED VALUES, never on file text. The guard this replaces
- * checked that `prebuild.ts` contained the string `"../claxedo-local-server"`
- * — which it did, in a `const` nothing read. The path was correct and dead;
- * the test could not tell the difference.
+ * These assert on RESOLVED VALUES, never on file text: a path string in a
+ * `const` nothing reads would satisfy a text check.
  */
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")

@@ -26,7 +26,7 @@
     "typecheck": "tsgo -b tsconfig.json tsconfig.children.json",
     "predev": "bun ./scripts/predev.ts",
     "dev": "GOMAXPROCS=2 electron-vite dev",
-    "prebuild": "bun ./scripts/prebuild.ts",
+    "prebuild": "bun ./scripts/prepare-artifacts.ts",
     "build:mermaid-renderer": "bun ./scripts/build-mermaid-renderer.ts",
     "build": "bun ./scripts/build.ts",
     "build:inner": "electron-vite build",

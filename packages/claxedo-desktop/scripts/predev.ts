@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Pre-dev script for Claxedo Electron desktop app.
+ * Development-only preparation, then the shared artifacts with `staleOnly`.
  *
- * Builds the Claxedo runtime artifacts and copies icons.
+ * Dev runs the generic Electron.app from node_modules, so this renames and
+ * relabels that bundle and makes the native modules loadable by its Electron.
  */
 
 import { $ } from "bun"
@@ -12,60 +13,22 @@ import * as path from "path"
 
 import { readString } from "@claxedo/helpers/readers"
 
-import { buildPublishedPackages, publishedPackageDistDirs } from "./published-packages"
-import { bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"
-import {
-  buildClaxedoServerCompileCache,
-  resolveElectronBinary,
-} from "./build-compile-cache"
-import { bundleHostConnector } from "./bundle-host-connector"
-import {
-  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
-  CLAXEDO_COMPILE_CACHE_MANIFEST_NAME,
-} from "../src/shared/compile-cache"
-import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
-import {
-  LOCAL_SERVER_ENTRY,
-  localServerBundleEntry,
-  localServerPackageDir,
-  resolveLocalServerEntry,
-} from "./local-server"
-import { prepareMermaidRenderer } from "./build-mermaid-renderer"
-import { copyIcons } from "./utils"
+import { deriveDevIdentity, probeDevLabel } from "../src/main/dev-identity-policy"
+import { prepareDesktopArtifacts } from "./prepare-artifacts"
+import { resolveChannel } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-// The desktop server IS `@claxedo/local-server`. `claxedo-server` is the hosted
-// and self-hosted product; nothing the desktop ships comes from it. `prebuild`
-// resolves through the same module, so development and production preparation
-// cannot drift apart.
-const CLAXEDO_SERVER_DIR = localServerPackageDir(PACKAGE_DIR)
 const SERVER_CORE_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server-core")
 const require = createRequire(import.meta.url)
+const log = (message: string) => console.log(`[predev] ${message}`)
 
-try {
-  const copied = copyIcons()
-  console.log(`Copied ${copied.channel} icons from ${copied.src} to ${copied.dest}`)
-} catch (e) {
-  console.warn(`[predev] ${e instanceof Error ? e.message : String(e)}, skipping icon copy`)
-}
-
-// In dev we run the generic Electron.app binary, so macOS reads the app name,
-// identity, and Mission Control icon from that bundle. Packaged builds receive
-// all three from electron-builder; patch the shared dev bundle to match them.
-try {
-  await patchDevBundleMetadata()
-} catch (e) {
-  console.warn(`[predev] ${e instanceof Error ? e.message : String(e)}, skipping dev app metadata patch`)
-}
-
+// macOS reads the app name, identity and Mission Control icon from the bundle
+// being run; packaged builds get all three from electron-builder.
+await patchDevBundleMetadata()
 await ensureElectronNativeModules()
-const [, , hostConnector] = await Promise.all([
-  buildMemoryImpactHelper(),
-  prepareMermaidRenderer(),
-  bundleHostConnector(),
-])
-console.log(`[predev] Host Connector child bundled (${hostConnector.manifest.sha256})`)
+await prepareDesktopArtifacts({ staleOnly: true, log })
+log("Done.")
 
 async function patchDevBundleMetadata() {
   if (process.platform !== "darwin") return
@@ -94,7 +57,7 @@ async function patchDevBundleMetadata() {
     fs.renameSync(sourceExecutable, targetExecutable)
     changes.push(true)
   }
-  const sourceIcon = path.resolve(PACKAGE_DIR, "resources/icons/icon.icns")
+  const sourceIcon = path.resolve(PACKAGE_DIR, `icons/${resolveChannel()}/icon.icns`)
   const targetIcon = path.join(appPath, "Contents", "Resources", icon)
   if (!fs.existsSync(targetIcon) || !fs.readFileSync(sourceIcon).equals(fs.readFileSync(targetIcon))) {
     fs.copyFileSync(sourceIcon, targetIcon)
@@ -114,24 +77,10 @@ async function patchDevBundleMetadata() {
     }
     return true
   }
-  // The menu-bar app name comes from the bundle, not app.setName(): label it
-  // per worktree so simultaneous dev builds are tellable apart. Each worktree
-  // has its own node_modules/electron bundle, so the patches never collide.
-  // Mirrors resolveDevIdentity in src/main/dev-identity.ts: a linked worktree
-  // (.git is a file) is labeled with its directory name.
-  // Mirrors probeDevLabel in src/main/dev-identity-policy.ts: a linked
-  // worktree (.git is a file) is labeled with its directory name; the main
-  // checkout is labeled with its current branch.
-  const repoRoot = path.resolve(PACKAGE_DIR, "../..")
-  const label = process.env.CLAXEDO_DEV_LABEL?.trim() || (() => {
-    try {
-      if (fs.statSync(path.join(repoRoot, ".git")).isFile()) return path.basename(repoRoot)
-      const head = fs.readFileSync(path.join(repoRoot, ".git", "HEAD"), "utf8").trim()
-      if (head.startsWith("ref: ")) return head.slice("ref: ".length).replace(/^refs\/heads\//, "")
-      return /^[0-9a-f]{40}$/.test(head) ? head.slice(0, 8) : null
-    } catch { return null }
-  })()
-  const displayName = label ? `Claxedo Dev (${label})` : "Claxedo Dev"
+  // The menu-bar app name comes from the bundle, not app.setName(). Each
+  // worktree has its own node_modules/electron bundle, so the patches never
+  // collide.
+  const displayName = deriveDevIdentity(probeDevLabel(path.resolve(PACKAGE_DIR, "../.."))).name
   changes.push(
     await setKey("CFBundleName", displayName),
     await setKey("CFBundleDisplayName", displayName),
@@ -146,82 +95,13 @@ async function patchDevBundleMetadata() {
     changes.push(true)
   }
   if (!changes.some(Boolean)) {
-    console.log(`[predev] Dev Electron bundle metadata is current`)
+    log("Dev Electron bundle metadata is current")
     return
   }
   // Bump mtime so LaunchServices re-reads the bundle metadata.
   await $`touch ${appPath}`.quiet().catch(() => {})
-  console.log(`[predev] Patched dev Electron bundle metadata → ${displayName}`)
+  log(`Patched dev Electron bundle metadata → ${displayName}`)
 }
-
-await buildPublishedPackages(path.resolve(PACKAGE_DIR, "../.."), (message) => console.log(`[predev] ${message}`))
-
-// The BOOT stub, not the product entry: it seeds the compile cache and then
-// reaches `src/server/entry.ts` through a dynamic import, so the 9.11 MB
-// closure behind it is compiled after the cache is live.
-const serverSource = path.resolve(PACKAGE_DIR, "src/server/boot.ts")
-const serverEntry = localServerBundleEntry(PACKAGE_DIR)
-const serverDest = path.dirname(serverEntry)
-let serverDeferredEntry: string | undefined
-
-// Same gate `prebuild` applies, for the same reason: an unresolvable
-// `@claxedo/local-server` must stop here naming the package, not silently
-// leave dev running yesterday's bundle.
-console.log(`[predev] Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLocalServerEntry(PACKAGE_DIR)}`)
-
-if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
-  path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),
-  path.resolve(PACKAGE_DIR, "src/server"),
-  path.resolve(PACKAGE_DIR, "src/shared/compile-cache.ts"),
-  path.resolve(PACKAGE_DIR, "src/shared/claxedo-server-lifecycle.ts"),
-  path.resolve(CLAXEDO_SERVER_DIR, "src"),
-  // The shared core beneath it. Without this, editing a core module leaves the
-  // bundle looking current and the desktop runs stale code with nothing said.
-  path.resolve(PACKAGE_DIR, "../claxedo-server-core/src"),
-  // Local product routes live here — same stale risk.
-  path.resolve(PACKAGE_DIR, "../claxedo-local-server/src"),
-  // Every published sibling enters the bundle as its dist, so the dist is what
-  // decides staleness, not the source behind it.
-  ...publishedPackageDistDirs(path.resolve(PACKAGE_DIR, "../..")),
-])) {
-  console.log(`[predev] Compiling standalone claxedo-server...`)
-  const bundled = await bundleClaxedoServer(serverSource, serverDest)
-  console.log(`[predev] claxedo-server compiled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB standalone)`)
-  serverDeferredEntry = bundled.deferredEntry
-} else if (fs.existsSync(serverSource)) {
-  console.log(`[predev] claxedo-server bundle is current`)
-} else {
-  console.warn(`[predev] claxedo-server source not found at ${serverSource}, skipping`)
-}
-
-// The server bundle's own closure. Gated on the BUNDLE, because the bundle is
-// what it caches: a chunk whose content hash moved is a source hash V8 rejects,
-// which is not a wrong answer but is a silently lost 41 ms.
-const serverCompileCacheDir = path.resolve(PACKAGE_DIR, "resources", CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
-if (fs.existsSync(serverEntry)) {
-  serverDeferredEntry ??= resolveDeferredServerEntry(serverEntry)
-  if (outputIsStale(path.join(serverCompileCacheDir, CLAXEDO_COMPILE_CACHE_MANIFEST_NAME), [
-    serverDeferredEntry,
-    path.resolve(PACKAGE_DIR, "src/main/server-runtime-policy.ts"),
-    path.resolve(SCRIPT_DIR, "build-compile-cache.ts"),
-    path.resolve(PACKAGE_DIR, "src/shared/compile-cache.ts"),
-  ])) {
-    console.log(`[predev] Generating the claxedo-server V8 compile cache...`)
-    const serverCache = await buildClaxedoServerCompileCache({
-      deferredEntryPath: serverDeferredEntry,
-      bundleDir: serverDest,
-      outputDir: serverCompileCacheDir,
-      electronPath: resolveElectronBinary(PACKAGE_DIR),
-      log: (message) => console.log(`[predev] server compile cache: ${message}`),
-    })
-    const bytes = serverCache.manifest.entries.reduce((total, entry) => total + entry.bytes, 0)
-    console.log(`[predev] server compile cache: ${serverCache.manifest.entries.length} entr(ies), ${bytes} bytes`)
-  } else {
-    console.log(`[predev] claxedo-server V8 compile cache is current`)
-  }
-}
-
-console.log(`[predev] Done.`)
 
 async function ensureElectronNativeModules() {
   const betterSqliteDir = path.dirname(resolvePackageFile("better-sqlite3/package.json"))
@@ -234,7 +114,7 @@ async function ensureElectronNativeModules() {
   const electronVersion = readPackageVersion("electron")
   if (!electronVersion) throw new Error("Could not resolve electron package version")
 
-  console.log(`[predev] Rebuilding better-sqlite3 for Electron ${electronVersion}...`)
+  log(`Rebuilding better-sqlite3 for Electron ${electronVersion}...`)
   await $`npx node-gyp rebuild --release --target=${electronVersion} --runtime=electron --dist-url=https://electronjs.org/headers`.cwd(
     betterSqliteDir,
   )
@@ -340,19 +220,4 @@ function findNativeFiles(dir: string) {
     }
   }
   return files
-}
-
-function outputIsStale(output: string, inputs: string[]) {
-  if (!fs.existsSync(output)) return true
-  const outputTime = fs.statSync(output).mtimeMs
-  const pending = inputs.filter((input) => fs.existsSync(input))
-  while (pending.length > 0) {
-    const input = pending.pop()
-    if (!input) continue
-    const stat = fs.statSync(input)
-    if (stat.mtimeMs > outputTime) return true
-    if (!stat.isDirectory()) continue
-    pending.push(...fs.readdirSync(input).map((entry) => path.join(input, entry)))
-  }
-  return false
 }

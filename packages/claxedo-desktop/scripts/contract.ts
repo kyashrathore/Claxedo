@@ -157,7 +157,7 @@ export function spec(root = ROOT): Spec {
     "scripts/package-structure.ts",
     "scripts/product-boundary-manifests.ts",
     "scripts/package.ts",
-    "scripts/prebuild.ts",
+    "scripts/prepare-artifacts.ts",
     "scripts/predev.ts",
     "scripts/target-platform.ts",
     "scripts/utils.ts",
