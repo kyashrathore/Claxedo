@@ -12,7 +12,8 @@ const {
   description = "Claxedo is the open cloud workspace around the coding agents you already use. Use Claxedo Cloud or deploy the open control plane to your Cloudflare account.",
   image = "/og.svg",
   noindex = false,
-  canonicalPath = Astro.url.pathname,
+  // build.format "file" makes Astro.url.pathname end in ".html" at build time.
+  canonicalPath = Astro.url.pathname.replace(/\.html$/, ""),
 } = Astro.props
 
 const site = Astro.site ?? new URL("https://claxedo.com")

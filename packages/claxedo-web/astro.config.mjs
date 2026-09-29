@@ -10,6 +10,8 @@ const buildDate = new Date().toISOString().slice(0, 10);
 export default defineConfig({
   site: 'https://claxedo.com',
   trailingSlash: 'never',
+  // Cloudflare Pages 308s /x to /x/ when the page is x/index.html; x.html is served at /x.
+  build: { format: 'file' },
   integrations: [
     sitemap({
       serialize: (item) => ({ ...item, url: item.url === 'https://claxedo.com' ? `${item.url}/` : item.url, lastmod: buildDate }),
