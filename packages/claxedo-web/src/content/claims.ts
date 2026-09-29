@@ -1,13 +1,9 @@
-export type ClaimStatus = "verified" | "withheld"
-
 export type Claim = {
   id: string
   publicWording: string
   owner: string
-  evidence: readonly string[]
-  status: ClaimStatus
-  verifiedAt?: string
-  reason?: string
+  evidence: readonly [string, ...string[]]
+  verifiedAt: string
   note?: string
 }
 
@@ -17,7 +13,6 @@ export const claims = [
     publicWording: "Claxedo is free.",
     owner: "Claxedo product",
     evidence: ["packages/claxedo-server/src/billing/entitlement.ts"],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -29,7 +24,6 @@ export const claims = [
       "packages/claxedo-desktop/src/main/account/lazy-account.ts",
       "packages/claxedo-app/src/server/capabilities.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -40,7 +34,6 @@ export const claims = [
       "packages/claxedo-app/src/session/index.ts",
       "packages/claxedo-app/src/terminal/launchers.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -52,7 +45,6 @@ export const claims = [
       "packages/claxedo-app/src/shell/view/app-shell.tsx",
       "packages/claxedo-app/e2e/flows/12-workbench-shell.spec.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-29",
     note: "Owner ruling 2026-09-29.",
   },
@@ -64,7 +56,6 @@ export const claims = [
       "public-docs/user-deployed-cloudflare.md",
       "packages/claxedo-server/scripts/deploy/greenfield-user-deployed.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-29",
     note: "Owner ruling 2026-09-29.",
   },
@@ -76,7 +67,6 @@ export const claims = [
       "packages/claxedo-server-core/src/agent-plugins/sources/registry.ts",
       "packages/claxedo-server-core/src/agent-plugins/activation/store.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-29",
     note: "Owner ruling 2026-09-29.",
   },
@@ -88,7 +78,6 @@ export const claims = [
       "packages/sandbox-contract/src/index.ts",
       "packages/sandbox-manager/docs/architecture.md",
     ],
-    status: "verified",
     verifiedAt: "2026-09-29",
     note: "Owner ruling 2026-09-29: bringing your own provider is the only option; there are no direct provider integrations.",
   },
@@ -101,7 +90,6 @@ export const claims = [
       "packages/claxedo-app/src/terminal/agents.ts",
       "packages/claxedo-app/src/terminal/launchers.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -116,7 +104,6 @@ export const claims = [
       "packages/harness/src/profiles/pi/index.ts",
       "packages/harness/src/profiles/opencode/index.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -136,7 +123,6 @@ export const claims = [
       "packages/claxedo-app/e2e/flows/33-phone.spec.ts",
       "packages/workspace-relay/src/composition.test.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -152,7 +138,6 @@ export const claims = [
       "packages/claxedo-local-server/src/agent-plugins/runtime/adapters/cursor.ts",
       "packages/claxedo-local-server/src/agent-plugins/runtime/adapters/opencode.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -167,7 +152,6 @@ export const claims = [
       "packages/claxedo-local-server/src/agent-plugins/runtime/materialize.ts",
       "packages/claxedo-app/src/marketplace/i18n.ts",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -186,52 +170,6 @@ export const claims = [
       "packages/claxedo-app/src/plugins/live/controller.ts",
       "packages/claxedo-app/e2e/flows/40-app-plugin-tools.spec.ts",
     ],
-    status: "verified",
-    verifiedAt: "2026-09-28",
-  },
-  {
-    id: "user-deployed-cloudflare",
-    publicWording: "A team can deploy its own Claxedo control plane, for one organization, to its own Cloudflare account.",
-    owner: "Claxedo server",
-    evidence: [
-      "public-docs/user-deployed-cloudflare.md",
-      "packages/claxedo-server/scripts/deploy/greenfield-user-deployed.ts",
-      "packages/claxedo-server/scripts/deploy/greenfield-user-deployed.test.ts",
-      "packages/claxedo-server/src/deployments/hosted-shared/user-deployed-product-app.ts",
-      "packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts",
-    ],
-    status: "verified",
-    verifiedAt: "2026-09-28",
-  },
-  {
-    id: "sandbox-providers",
-    publicWording: "Cloud sandboxes run through open-source drivers for exe.dev, Daytona, Modal, Vercel, Cloudflare, Box and Docker, all behind one SandboxDriver contract.",
-    owner: "Sandbox manager",
-    evidence: [
-      "packages/sandbox-contract/src/index.ts",
-      "packages/sandbox-manager/src/index.ts",
-      "packages/sandbox-manager/src/driver-catalog.ts",
-      "packages/sandbox-manager/src/drivers/daytona.ts",
-      "packages/sandbox-manager/src/drivers/modal.ts",
-      "packages/sandbox-manager/src/drivers/vercel.ts",
-      "packages/sandbox-manager/src/drivers/cloudflare.ts",
-      "packages/sandbox-manager/src/drivers/docker.ts",
-      "packages/sandbox-manager/docs/architecture.md",
-      "packages/sandbox-manager/LICENSE",
-    ],
-    status: "verified",
-    verifiedAt: "2026-09-28",
-  },
-  {
-    id: "acp-client",
-    publicWording: "Claxedo can present ACP-compatible agents in its structured chat UI.",
-    owner: "Agent runtime",
-    evidence: [
-      "packages/harness/src/transports/acp/index.ts",
-      "packages/harness/src/transports/acp/translate/event-translator.ts",
-      "packages/harness/src/conformance/test-support/presentation/acp-golden.ts",
-    ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -244,7 +182,6 @@ export const claims = [
       "https://github.com/kyashrathore/agent-app-benchmark/blob/bfce5981e9ac796a03064850b6d42064315db769/README.md",
     ],
     note: "Numbers from the 29 September Claxedo-only rerun, paired with T3 Code and OpenCode runs from the same day, as reviewed by the team lead on 2026-09-29; no report for that rerun is in the repository yet. \"Beats\" means wins on medians (owner ruling 2026-09-29).",
-    status: "verified",
     verifiedAt: "2026-09-29",
   },
   {
@@ -252,22 +189,6 @@ export const claims = [
     publicWording: "Claxedo is built on the OpenCode engine.",
     owner: "Claxedo maintainers",
     evidence: ["LICENSE", "packages/harness/src/profiles/opencode/index.ts"],
-    status: "verified",
-    verifiedAt: "2026-09-28",
-  },
-  {
-    id: "public-source",
-    publicWording: "Claxedo's clients, server, relay, protocol, and workspace runtime are developed in the public repository.",
-    owner: "Claxedo maintainers",
-    evidence: [
-      "packages/claxedo-app/package.json",
-      "packages/claxedo-desktop/package.json",
-      "packages/claxedo-server/package.json",
-      "packages/workspace-relay/package.json",
-      "packages/workspace-relay-protocol/package.json",
-      "packages/workspace-runtime/package.json",
-    ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -288,7 +209,6 @@ export const claims = [
       "packages/claxedo-server-core/package.json",
       "packages/sandbox-manager/package.json",
     ],
-    status: "verified",
     verifiedAt: "2026-09-28",
   },
   {
@@ -299,36 +219,12 @@ export const claims = [
       "packages/claxedo-web/src/content/2026-08-09-runtime-study.json",
       "packages/claxedo-web/src/pages/how-often-do-coding-agents-need-a-full-machine.astro",
     ],
-    status: "verified",
     verifiedAt: "2026-08-09",
-  },
-  {
-    id: "hosted-source-parity",
-    publicWording: "The hosted and self-hosted products run the same complete source composition.",
-    owner: "Claxedo operations",
-    evidence: [],
-    status: "withheld",
-    reason: "Requires deployed-composition evidence from the production owner.",
-  },
-  {
-    id: "setup-continuity",
-    publicWording: "Credentials and setup automatically follow users across machines and cloud workspaces.",
-    owner: "Claxedo connections",
-    evidence: [],
-    status: "withheld",
-    reason: "Requires a security-reviewed cross-machine acceptance artifact.",
   },
 ] as const satisfies readonly Claim[]
 
-export const publishableClaims = claims.filter(
-  (claim): claim is (typeof claims)[number] & { status: "verified"; verifiedAt: string } =>
-    claim.status === "verified" && claim.evidence.length > 0 && Boolean(claim.verifiedAt),
-)
-
-export const claim = (id: string) => publishableClaims.find((item) => item.id === id)
-
 export const requireClaim = (id: string) => {
-  const item = claim(id)
+  const item = claims.find((claim) => claim.id === id)
   if (!item) throw new Error(`Public page requires a verified claim: ${id}`)
   return item
 }
