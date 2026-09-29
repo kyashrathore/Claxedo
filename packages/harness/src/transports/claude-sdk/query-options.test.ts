@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk"
 import type { HarnessServices, HarnessSession, SessionBroker, StartInput, TurnBroker } from "../../contract"
 import { claudeTranslator } from "./events"
+import { ClaudeMirroredUsage } from "./mirrored-usage"
 import type { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 
@@ -17,9 +18,9 @@ test("turns and native goals share session options while clear forbids tools", a
   const session: HarnessSession = { directory: input.directory, locality: input.locality,
     binding: { sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "claude-sdk", upstreamSessionId: "up1" } }
   const broker = { sessionId: "s1", config: () => input.config, goal: { read: () => null, publish: async () => {} } } as unknown as SessionBroker
-  const { runtime } = claudeTranslator("a1")
+  const mirroredUsage = new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: "/work" })
   const launcher = new ClaudeQueryLauncher(services, { executable: "claude", configRoot: "/tmp/claxedo", userConfigRoot: "/tmp/user", env: {} }, runQuery)
-  const base = { session, input, broker, abort: new AbortController(), processes: new Set<ClaudeProcess>(), runtime, assistantMessageId: "a1" }
+  const base = { session, input, broker, abort: new AbortController(), processes: new Set<ClaudeProcess>(), mirroredUsage }
   await launcher.launch({ ...base, prompt: "turn", turnBroker: { signal: new AbortController().signal } as TurnBroker,
     model: "default", agent: "reviewer", system: "system", partialMessages: true })
   await launcher.launch({ ...base, prompt: "/goal Ship" })

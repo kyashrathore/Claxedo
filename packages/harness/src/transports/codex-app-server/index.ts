@@ -1,4 +1,4 @@
-import { prefixedRandomId, settleAtRequestDeadline } from "@claxedo/helpers"
+import { prefixedRandomId, settleAtRequestDeadline, type AsyncPushQueue } from "@claxedo/helpers"
 import { HARNESS_TABLE, type RuntimeGoalSnapshot, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type {
@@ -44,7 +44,7 @@ export type Entry = {
   goal: RuntimeGoalSnapshot | null
   models?: Promise<CodexModel[]>
   providerTurn?: CodexProviderTurn
-  turn?: { broker: TurnBroker; id?: string; started: Promise<void>; settings: CodexTurnSettings }
+  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void>; settings: CodexTurnSettings }
 }
 
 export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv }
@@ -164,9 +164,11 @@ export class CodexAppServerTransport implements HarnessTransport {
   private async answer(entry: Entry, message: RpcMessage): Promise<unknown> {
     if (!message.method) throw new CodexRequestRefusal(-32600, "Codex request has no method")
     if (message.method === "item/tool/call") {
-      const broker = entry.turn?.broker ?? entry.providerTurn?.turnBroker
-      return answerCodexToolCall(broker && { rpc: entry.rpc, directory: entry.session.directory, threadId: entry.session.binding.upstreamSessionId,
-        brokered: entry.brokered, permissionMode: entry.start.config.permissionMode, settings: entry.turn?.settings ?? {}, children: entry.children }, broker, message)
+      const active = entry.turn ? { broker: entry.turn.broker, queue: entry.turn.queue }
+        : entry.providerTurn?.turnBroker ? { broker: entry.providerTurn.turnBroker, queue: entry.providerTurn.queue } : undefined
+      return answerCodexToolCall(active && { rpc: entry.rpc, directory: entry.session.directory, threadId: entry.session.binding.upstreamSessionId,
+        brokered: entry.brokered, permissionMode: entry.start.config.permissionMode, settings: entry.turn?.settings ?? {}, children: entry.children,
+        drained: () => active.queue.drained() }, active?.broker, message)
     }
     if (!entry.turn && !entry.providerTurn && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
     return answerCodexRequest(message, entry.turn?.broker ?? entry.broker, entry.session.binding.sessionId,

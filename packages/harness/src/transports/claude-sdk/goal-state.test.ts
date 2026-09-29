@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { SessionBroker } from "../../contract"
 import { activeGoal, goalSessionStore, transcriptGoal } from "./goal-state"
 import { claudeTranslator } from "./events"
+import { ClaudeMirroredUsage } from "./mirrored-usage"
 
 test("Claude active_goal carries the SDK objective, iteration and timestamp", () => {
   const goal = activeGoal("s1", { type: "active_goal", value: { condition: "Ship", iterations: 3,
@@ -30,17 +31,21 @@ test("a title mirrored outside a turn publishes through the session broker", asy
   expect(published).toMatchObject([{ type: "session-title", title: "Named by Claude" }])
 })
 
-test("a mirrored subagent request meters its final usage once to the owning session", async () => {
+test("a mirrored subagent request meters its final usage once to the owning session, from its turn's result on", async () => {
   const metered: unknown[] = []
   const broker = { sessionId: "s1", goal: { read: () => null, publish: async () => {} },
     publish: async () => {}, meter: (usage: unknown) => { metered.push(usage) } } as unknown as SessionBroker
   const { runtime } = claudeTranslator("a1")
   const abort = new AbortController()
-  const store = goalSessionStore(broker, abort.signal, { runtime, assistantMessageId: "a1", directory: "/work" })
+  const mirrored = new ClaudeMirroredUsage(runtime, { broker, assistantMessageId: "a1", directory: "/work" })
+  const store = goalSessionStore(broker, abort.signal, mirrored)
   const key = { projectKey: "p", sessionId: "up1", subpath: "agent-1" }
   const entry = { type: "assistant", message: { id: "request-1", model: "claude-sonnet-4-5",
     usage: { input_tokens: 10, output_tokens: 7 } } }
   await store.append(key, [entry])
+  expect(metered).toHaveLength(0)
+  mirrored.release()
+  expect(metered).toHaveLength(1)
   await store.append(key, [entry])
   expect(metered).toHaveLength(1)
   expect(metered[0]).toMatchObject({ sessionId: "s1", directory: "/work", assistantMessageId: "a1", usage: { type: "usage" } })

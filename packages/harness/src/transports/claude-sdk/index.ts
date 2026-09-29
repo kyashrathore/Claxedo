@@ -21,6 +21,7 @@ import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
 import { ClaudeTurnInput } from "./turn-input"
 import { claudeTranslator, translateClaude } from "./events"
+import { ClaudeMirroredUsage } from "./mirrored-usage"
 
 type Entry = {
   input: StartInput
@@ -96,13 +97,13 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   private async launch(entry: Entry, turn: TurnInput, broker: TurnBroker, input: ClaudeTurnInput,
-    runtime: ReturnType<typeof claudeTranslator>["runtime"], abort: AbortController) {
+    mirroredUsage: ClaudeMirroredUsage, abort: AbortController) {
     const model = turn.model?.modelID ?? "default"
     const effort = claudeEffort(requiredClaudeEffort(turn.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, turn.effort))
     if (abort.signal.aborted || !entry.active) return undefined
     entry.active.launched = true
     return this.launcher.launch({ session: entry.session, input: entry.input, broker: entry.broker, turnBroker: broker,
-      prompt: input.stream, abort, processes: entry.processes, runtime, assistantMessageId: turn.assistantMessageId, turnId: turn.turnId,
+      prompt: input.stream, abort, processes: entry.processes, mirroredUsage, turnId: turn.turnId,
       model, effort, system: turn.system, agent: turn.prompt.agent, partialMessages: true })
   }
 
@@ -121,26 +122,11 @@ export class ClaudeSdkTransport implements HarnessTransport {
     else broker.signal.addEventListener("abort", onAbort, { once: true })
     const aborted = () => entry.active?.abort.signal.aborted === true
     let settled = false
-    let result: SDKMessage | undefined
     try {
       if (abort.signal.aborted) return
       const input = new ClaudeTurnInput(await claudePrompt(turn, entry.input.directory))
       active.input = input
-      const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
-      const stream = await this.launch(entry, turn, broker, input, runtime, abort)
-      if (!stream) return
-      for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        const observed = await observeClaudeSessionMessage(message, entry, entry.broker, abort.signal)
-        if (observed.kind === "active-goal") continue
-        if (input.observe(observed.message)) continue
-        if (observed.message.type === "result") { input.close(); result = observed.message; continue }
-        for (const event of await translateClaude(observed.message, runtime, tasks, broker)) yield event
-      }
-      if (result) {
-        for (const event of await translateClaude(result, runtime, tasks, broker)) yield event
-      }
-      if (!result && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
-      settled = true
+      settled = yield* this.translated(entry, turn, broker, input, abort)
     } catch (error) {
       if (!aborted() || !(error instanceof AbortError)) throw error
     } finally {
@@ -149,6 +135,29 @@ export class ClaudeSdkTransport implements HarnessTransport {
       entry.active = undefined
       await Promise.all([...entry.processes].map(async (child) => { await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal }); entry.processes.delete(child) }))
     }
+  }
+
+  private async *translated(entry: Entry, turn: TurnInput, broker: TurnBroker, input: ClaudeTurnInput, abort: AbortController): AsyncGenerator<RoutedEvent, boolean> {
+    const { runtime, tasks } = claudeTranslator(turn.assistantMessageId, turn.todos)
+    const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker: entry.broker, assistantMessageId: turn.assistantMessageId, directory: entry.input.directory })
+    try {
+      const stream = await this.launch(entry, turn, broker, input, mirroredUsage, abort)
+      if (!stream) return false
+      let result: SDKMessage | undefined
+      for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
+        const observed = await observeClaudeSessionMessage(message, entry, entry.broker, abort.signal)
+        if (observed.kind === "active-goal") continue
+        if (input.observe(observed.message)) continue
+        if (observed.message.type === "result") { input.close(); result = observed.message; continue }
+        for (const event of await translateClaude(observed.message, runtime, tasks, broker)) yield event
+      }
+      if (result) {
+        mirroredUsage.release()
+        for (const event of await translateClaude(result, runtime, tasks, broker)) yield event
+      }
+      if (!result && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
+      return true
+    } finally { mirroredUsage.release() }
   }
 
   readonly steer = { steer: async (session: HarnessSession, ref: TurnRef, input: TurnInput) => {

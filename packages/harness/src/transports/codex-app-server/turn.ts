@@ -75,8 +75,8 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
   services: HarnessServices, models: () => Promise<CodexModel[]>, cancel: () => Promise<unknown>): AsyncIterable<RoutedEvent> {
   if (entry.state !== "ready" || entry.providerTurn) throw new CodexTransportError("session", "Codex turn already active")
   entry.state = "busy"
-  entry.turn = { broker, settings: {}, started: startTurn(entry, session, turn, services, models) }
   const queue = new AsyncPushQueue<RoutedEvent>()
+  entry.turn = { broker, queue, settings: {}, started: startTurn(entry, session, turn, services, models) }
   const listener = listenTurn(entry, session, queue, broker)
   const onAbort = () => { void cancel().catch((error: unknown) => entry.broker.reportFailure(error)) }
   broker.signal.addEventListener("abort", onAbort, { once: true })

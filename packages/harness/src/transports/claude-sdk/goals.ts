@@ -7,6 +7,7 @@ import { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
 import { claudeTranslator, translateClaude } from "./events"
+import { ClaudeMirroredUsage } from "./mirrored-usage"
 import { errorMessage } from "@claxedo/helpers"
 
 type Running = { turnId: string; abort: AbortController; settled: Promise<ProviderTurnSettlement> }
@@ -78,12 +79,13 @@ export class ClaudeGoals {
     prompt: string, abort: AbortController, clear = false, confirm?: () => void): AsyncIterable<RoutedEvent> {
     const assistantMessageId = turn?.assistantMessageId ?? entry.session.binding.sessionId
     const { runtime, tasks } = claudeTranslator(assistantMessageId)
+    const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker, assistantMessageId, directory: entry.input.directory })
     const processes = new Set<ClaudeProcess>()
     const onAbort = () => abort.abort()
     if (turnBroker?.signal.aborted) onAbort()
     else turnBroker?.signal.addEventListener("abort", onAbort, { once: true })
-    const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, runtime,
-      assistantMessageId, ...(turn ? { turnId: turn.turnId } : {}), clear })
+    const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, mirroredUsage,
+      ...(turn ? { turnId: turn.turnId } : {}), clear })
     let sawResult = false
     let stopped = false
     try {
@@ -91,7 +93,7 @@ export class ClaudeGoals {
         const observed = await observeClaudeSessionMessage(message, entry, broker, abort.signal)
         if (observed.kind === "active-goal") continue
         const current = observed.message
-        if (current.type === "result") sawResult = true
+        if (current.type === "result") { sawResult = true; mirroredUsage.release() }
         if (clear) {
           if (current.type === "result" && current.subtype === "success" && !current.is_error && current.num_turns === 0) {
             confirm?.()
@@ -106,6 +108,7 @@ export class ClaudeGoals {
       if (!abort.signal.aborted || !(error instanceof AbortError)) throw error
       stopped = true
     } finally {
+      mirroredUsage.release()
       turnBroker?.signal.removeEventListener("abort", onAbort)
       stream.close()
       await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
