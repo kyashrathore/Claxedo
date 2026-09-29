@@ -64,12 +64,6 @@
       "bun": "./src/transports/cursor-sdk/host.ts",
       "types": "./dist/transports/cursor-sdk/host.d.ts",
       "import": "./dist/transports/cursor-sdk/host.js"
-    },
-    "./testing/opencode": {
-      "development": "./src/test-support/opencode.ts",
-      "bun": "./src/test-support/opencode.ts",
-      "types": "./dist/test-support/opencode.d.ts",
-      "import": "./dist/test-support/opencode.js"
     }
   },
   "files": [
