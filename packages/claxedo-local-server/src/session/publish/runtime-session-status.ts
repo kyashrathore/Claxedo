@@ -39,9 +39,9 @@ function rowStatus(entry: Tracked): SessionRowStatus {
 
 /**
  * Every `wr/events` data frame is `{ directory, payload }` and the payloads
- * this reads are presentation events, `{ type, properties }`.
+ * this reads are compat events, `{ type, properties }`.
  */
-function presentationEventOf(frame: unknown): { type: string; properties: Record<string, unknown> } | undefined {
+function compatEventOf(frame: unknown): { type: string; properties: Record<string, unknown> } | undefined {
   const payload = record(record(frame)?.payload)
   const type = raw(payload?.type)
   const properties = record(payload?.properties)
@@ -73,7 +73,7 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
   }
 
   const applyFrame = (workspaceId: string, frame: unknown) => {
-    const event = presentationEventOf(frame)
+    const event = compatEventOf(frame)
     const sessionId = event && raw(event.properties.sessionID)
     if (!event || !sessionId) return
     const entry = entryOf(workspaceId, sessionId)

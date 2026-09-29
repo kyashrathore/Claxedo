@@ -3,7 +3,6 @@ import { Hono } from "hono"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import type { AgentPermissionMode, AgentPermissionModeState, SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { ConfigOperations } from "@claxedo/harness/contract"
 import type { AgentRuntime } from "../host/runtime"
 import type { RuntimeEventEnvelope } from "../projection/runtime-event-hub"
@@ -19,6 +18,7 @@ import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, sessionCreate, testLaunch, type HostFixture } from "../test-support/host-fixture"
 import type { EmbeddedRelayHostIdentity } from "../workspace-host-service-auth"
 import { SessionRoutes } from "./session"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 const DIRECTORY = process.cwd()
 const CODEX: SessionHarness = { id: "codex", access: "native" }
@@ -130,7 +130,7 @@ function fixture(input: {
   const { store, runtime } = host
   const runtimeEvents: RuntimeEventEnvelope[] = []
   host.eventHub.subscribeRuntime((event) => { runtimeEvents.push(event) })
-  const globalEvents: AgentEventEnvelope[] = []
+  const globalEvents: CompatEnvelope[] = []
   host.eventHub.subscribeGlobal((event) => { globalEvents.push(event) })
   const routes = SessionRoutes(async () => runtime, {
     eventHub: host.eventHub,

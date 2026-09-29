@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { HarnessTransport } from "@claxedo/harness/contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
@@ -14,6 +13,7 @@ import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "../workspace/runtime"
 import { FakeTransport, fakeConnectionProvider, type FakeTransportOptions } from "./fake-transport"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 export const FAKE_CONNECTION_ID = "fake"
 
@@ -38,7 +38,7 @@ export type FakeWorkspaceAppOptions = {
   /** Reopens a store an earlier host wrote instead of a fresh one. */
   root?: string
   eventHub?: RuntimeEventHub
-  onPresentationEvent?: (event: AgentEventEnvelope) => void
+  onCompatEvent?: (event: CompatEnvelope) => void
   afterCreateSession?: WorkspaceHostOptions["afterCreateSession"]
   sessionIdWorkspace?: WorkspaceHostOptions["sessionIdWorkspace"]
   /** Middleware installed ahead of the host's routes. */
@@ -73,7 +73,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
     harnessStateRoot: join(root, "harness"),
     eventHub,
     ...(options.sessionAccessPolicy ? { sessionAccessPolicy: options.sessionAccessPolicy } : {}),
-    ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
+    ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
     storeFactory: ({ storeRoot }) => {

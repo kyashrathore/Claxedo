@@ -3,12 +3,12 @@ import { Hono } from "hono"
 import type { AgentGoalMutationResult, GoalCapabilities, SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { NativeGoalOperations } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, testLaunch, type HostFixture } from "../test-support/host-fixture"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent } from "./session-route-options"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 type Journal = string[]
 
@@ -68,7 +68,7 @@ function routes(journal: Journal, host: HostFixture, input: {
   policy?: SessionAccessPolicy
   relayed?: boolean
   announced?: SessionLifecycleEvent[]
-  published?: AgentEventEnvelope[]
+  published?: CompatEnvelope[]
 } = {}) {
   const lifecycle = (event: SessionLifecycleEvent) => {
     const admitted = event.phase === "created" && event.sessionID
@@ -215,7 +215,7 @@ describe("a create that carries the session's first prompt", () => {
 
   test("a runtime that fails to start the turn leaves no session, after the turn's own cleanup ran, and publishes no failure for it", async () => {
     const journal: Journal = []
-    const published: AgentEventEnvelope[] = []
+    const published: CompatEnvelope[] = []
     const host = harness(journal, { failTurnStart: new Error("harness failed to boot") })
     const response = await create(routes(journal, host, { published }), { id: "ses_1", prompt: FIRST })
 

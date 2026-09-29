@@ -41,9 +41,8 @@ import {
   type HarnessTarget,
 } from "../host/runtime"
 import { PreviewModelInvalidError } from "../host/config-ops"
-import { messageUpdated, sessionUpdated, sessionDeleted, withDir } from "@claxedo/agent-runtime-contract"
 import {
-  envelopeDirectory,
+  compatScope,
   runRuntimePromptTurn,
   sessionPromptReply,
   parseSessionPromptBody,
@@ -108,6 +107,7 @@ import type { ActiveSessionTurnLease } from "./session-turn-lease"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 import { toolImageResponse } from "./tool-image"
 import { providerCatalogRefusal } from "./workspace-role"
+import { messageUpdated, sessionDeleted, sessionUpdated, withDir } from "../projection/compat-events"
 
 type DraftTarget = Extract<HarnessTarget, { harness: SessionHarness }>
 
@@ -144,7 +144,7 @@ async function cascadeToChildren(
         await (await opts.runtime(c)).sessions.delete(childSessionId, directory, requestSecretAuthority(c).secretAuthority)
         await after(opts.afterDeleteSession?.(c, directory, childSessionId))
         if (start) opts.sessionStarts!.retire(start)
-        opts.publishGlobal(withDir(envelopeDirectory(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
+        opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
       })
       continue
     }
@@ -171,7 +171,7 @@ async function updateSessionMeta(
   await after(opts.afterUpdateSession?.(c, directory, session, body))
   const owner = body.time ? opts.resolveRecoveryOwner?.(c, { sessionId }) : undefined
   if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${randomUUID()}`)
-  opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionUpdated(session)))
+  opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
   return session
 }
 
@@ -1550,7 +1550,7 @@ export function createSessionRoutes(opts: Opts) {
             }
           }
           if (body.parentID && children) {
-            opts.publishGlobal(withDir(envelopeDirectory(directory, session.id), sessionUpdated(session)))
+            opts.publishGlobal(withDir(compatScope(directory, session.id), sessionUpdated(session)))
           }
           if (start) {
             if (session.id !== start.sessionId) throw new Error("Agent returned a different local session identity")
@@ -1743,7 +1743,7 @@ export function createSessionRoutes(opts: Opts) {
         // the id goes back. Anything that throws above keeps the owner, which is
         // what lets a caller distinguish a freed id from a half-deleted one.
         if (start) opts.sessionStarts!.retire(start)
-        opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
+        opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
         return c.json({ ok: true })
       })
     })

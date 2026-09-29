@@ -1,4 +1,4 @@
-import { cloneSnapshotValue } from "@claxedo/helpers"
+import { cloneSnapshotValue } from "@claxedo/harness/translate"
 import type { RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
 
 export const RETAINED_TOOL_CALLS_MAX = 256

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { AgentMessageInfo } from "./content"
-import { withClaxedoMessageAuthor } from "./message-author"
+import type { EventMessageUpdated } from "./types"
+import { withClaxedoMessageAuthor } from "./author"
 
 const unsigned = {
   id: "msg_1",
@@ -9,7 +9,7 @@ const unsigned = {
   time: { created: 1 },
   agent: "build",
   model: { providerID: "openai", modelID: "gpt-4o" },
-} as AgentMessageInfo
+} as EventMessageUpdated["properties"]["info"]
 
 describe("Claxedo client-presentation message attribution", () => {
   test("adds a namespaced display-safe author without changing standard fields", () => {
@@ -60,7 +60,7 @@ describe("Claxedo client-presentation message attribution", () => {
       path: { cwd: "/repo", root: "/repo" },
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    } as AgentMessageInfo
+    } as EventMessageUpdated["properties"]["info"]
     expect(withClaxedoMessageAuthor(assistant, {
       id: "user_public_123",
       name: "Yash",

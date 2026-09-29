@@ -3,15 +3,13 @@ import { drizzle } from "drizzle-orm/better-sqlite3"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
-import { messageCompleted, messageUpdated, sessionError, sessionUsage } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import { buildAssistantMessage } from "@claxedo/agent-runtime-contract"
 import type { TurnUsageRevision, UsageRevisionWriteResult } from "@claxedo/server-core/usage/contracts"
 import { CLAXEDO_MIGRATION_JOURNAL } from "@claxedo/server-core/platform/db/journal"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
+import { type CompatEnvelope, buildAssistantMessage, messageCompleted, messageUpdated, sessionError, sessionUsage } from "@claxedo/workspace-runtime/projection"
 
 function harness() {
   const facts: TurnUsageRevision[] = []
@@ -33,7 +31,7 @@ function harness() {
   return { meter, facts, writeRevision }
 }
 
-function envelope(payload: AgentEventEnvelope["payload"]): AgentEventEnvelope {
+function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
   return { directory: "/private/path-must-not-persist", payload }
 }
 

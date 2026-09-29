@@ -5,8 +5,7 @@ import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../../translate/adapter"
 import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../../translate/host-subagent"
-import { RETAINED_WIRE_KEYS_MAX, own, text } from "../../../translate/value"
-import { boundKeyedRecord } from "@claxedo/helpers"
+import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own, text } from "../../../translate/value"
 import { imageAttachment } from "../../../translate/tool-attachments"
 
 export type CursorSdkAdapterState = {

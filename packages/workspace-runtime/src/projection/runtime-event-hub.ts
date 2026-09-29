@@ -1,7 +1,7 @@
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { CompatEnvelope } from "./compat-events"
 
-type Subscriber = (event: AgentEventEnvelope) => void
+type Subscriber = (event: CompatEnvelope) => void
 type RuntimeSubscriber = (event: RuntimeEventEnvelope) => void
 
 export type RuntimeEventEnvelope = {
@@ -23,7 +23,7 @@ export type RuntimeEventEnvelopeInput = Omit<RuntimeEventEnvelope, "contractVers
  * member ever reads `this`.
  */
 export type RuntimeEventHub = {
-  publishGlobal: (event: AgentEventEnvelope) => void
+  publishGlobal: (event: CompatEnvelope) => void
   subscribeGlobal: (fn: Subscriber) => () => void
   publishRuntime: (event: RuntimeEventEnvelopeInput) => void
   subscribeRuntime: (fn: RuntimeSubscriber) => () => void

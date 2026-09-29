@@ -14,7 +14,6 @@ import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } f
 import type { TurnActor, TurnOrigin } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { AgentRuntime, AgentRuntimeRecovery, HarnessTarget } from "../host/runtime"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { ActiveTurnScope, SessionPromptBody } from "../session/service"
 import type { SessionDeliveryOwner } from "../session/delivery-owner"
 import type { TurnOutline } from "@claxedo/agent-runtime-contract"
@@ -27,6 +26,7 @@ import {
 } from "../session-access-policy"
 import type { ChildSessionHost } from "./session-children"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
@@ -131,7 +131,7 @@ export type SessionRouteOptions = {
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
   exposeCommandRoute?: boolean
-  publishGlobal: (event: AgentEventEnvelope) => void
+  publishGlobal: (event: CompatEnvelope) => void
   publishSessionLifecycle?: (event: SessionLifecycleEvent) => void
   resolveWorkspaceId?: (c: Ctx, directory: RuntimeDirectory) => Promise<string | undefined> | string | undefined
   beforeSessionOperation?: (

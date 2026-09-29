@@ -1,11 +1,11 @@
-import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { createTurnEventProjector } from "../projection/turn-projection"
+import type { CompatEvent } from "../projection/compat-events"
 
 type ProjectorInput = Parameters<typeof createTurnEventProjector>[0]
 
 /** A turn projector over a journal the test owns, with the defaults every projection test shares. */
 export function testTurnProjector(input: Partial<Omit<ProjectorInput, "store">> & {
-  appendEvent?: (event: { sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }) => { payload: AgentPresentationEvent }
+  appendEvent?: (event: { sessionId: string; agentSessionId?: string; payload: CompatEvent }) => { payload: CompatEvent }
 }) {
   const { appendEvent, ...options } = input
   return createTurnEventProjector({

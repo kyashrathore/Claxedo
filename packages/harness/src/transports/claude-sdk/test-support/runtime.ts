@@ -1,5 +1,5 @@
 import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "../../../translate/snapshot"
+import type { RuntimeSnapshot } from "../../../translate/state"
 import { claudeSdkAdapter, type ClaudeSdkAdapterState } from "../translate/adapter"
 
 export function claudeRuntime(initialSnapshot?: RuntimeSnapshot<ClaudeSdkAdapterState>) {

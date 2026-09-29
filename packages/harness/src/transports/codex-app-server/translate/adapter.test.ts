@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "../../../translate/snapshot"
+import type { RuntimeSnapshot } from "../../../translate/state"
 import {
   codexAppServerAdapter,
   codexCollabAgentCall,

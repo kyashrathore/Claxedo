@@ -10,3 +10,7 @@ export {
   isHostSubagentTool,
 } from "./host-subagent"
 export type { HostSubagentBinding, HostSubagentObservation } from "./host-subagent"
+export { boundKeyedMap, object, text } from "./value"
+export { cloneSnapshotValue, projectionSnapshot } from "./state"
+export type { ProjectionSnapshot } from "./state"
+export type { RuntimeProjection } from "./projection"

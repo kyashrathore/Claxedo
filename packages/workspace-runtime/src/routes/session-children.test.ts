@@ -5,11 +5,10 @@ import { randomUUID } from "node:crypto"
 import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentMessage, AgentSession } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import { permissionAsked, permissionReplied, questionAsked, questionRejected } from "@claxedo/agent-runtime-contract"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { HOST_CHILD_PROVIDER_KIND, childSummary, createChildSessionHost, hostChildRow, wakeMessageId, type ChildSessionHostInput } from "./session-children"
+import { type CompatEnvelope, permissionAsked, permissionReplied, questionAsked, questionRejected } from "../projection/compat-events"
 
 const DIRECTORY = "/workspace"
 
@@ -40,7 +39,7 @@ function harness(input: {
   sessions?: Record<string, Partial<AgentSession>>
   messages?: Record<string, AgentMessage[]>
   startTurn?: ChildSessionHostInput["startTurn"]
-  subscribe?: (fn: (event: AgentEventEnvelope) => void) => () => void
+  subscribe?: (fn: (event: CompatEnvelope) => void) => () => void
   /** Durable state a "restart" keeps: pass both to rebuild a host over them. */
   store?: RuntimeStore
   origins?: Map<string, SessionTurnOrigin>
@@ -340,7 +339,7 @@ describe("host-owned child sessions", () => {
   })
 
   test("permission and question requests on a child raise and lower the parent's attention count", async () => {
-    let deliver: ((event: AgentEventEnvelope) => void) | undefined
+    let deliver: ((event: CompatEnvelope) => void) | undefined
     const item = harness({
       sessions: { parent: { status: "busy" }, child: { parentID: "parent" } },
       subscribe: (fn) => {

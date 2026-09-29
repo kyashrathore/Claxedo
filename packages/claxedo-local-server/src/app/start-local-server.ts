@@ -30,7 +30,6 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -69,6 +68,7 @@ import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
 import { localHostRelayActor, localHostSessionAccessPolicy } from "../deployments/local/host-session-authority"
+import type { CompatEnvelope } from "@claxedo/workspace-runtime/projection"
 
 const log = Log.create({ service: "local-server" })
 
@@ -161,7 +161,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
 
   type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
   let settleTurnOutcome: TurnOutcomeHandler = () => undefined
-  let consumeRuntimeEvent = (event: AgentEventEnvelope) => {
+  let consumeRuntimeEvent = (event: CompatEnvelope) => {
     if (event.payload.type === "session.updated") {
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }

@@ -1,7 +1,7 @@
-import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
 import type { RuntimeStore, RuntimeEventSource } from "../store"
+import type { CompatEvent } from "../projection/compat-events"
 
 export class BrokerEventDelivery {
   constructor(private readonly store: RuntimeStore, private readonly publishers: RuntimeEventPublishers) {}
@@ -14,11 +14,11 @@ export class BrokerEventDelivery {
     throw new Error(`Session ${sessionId} has no directory`)
   }
 
-  broadcast(sessionId: string, payload: AgentPresentationEvent): void {
+  broadcast(sessionId: string, payload: CompatEvent): void {
     this.publishers.publishGlobal({ directory: this.directory(sessionId), payload })
   }
 
-  append(sessionId: string, payload: AgentPresentationEvent, source?: RuntimeEventSource): void {
+  append(sessionId: string, payload: CompatEvent, source?: RuntimeEventSource): void {
     const committed = this.store.appendEvent({
       sessionId, payload, ...(source ? { source } : {}),
     })

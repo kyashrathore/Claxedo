@@ -8,11 +8,11 @@ import { createSessionRoutes } from "./session-core"
 import { createSessionDeliveryOwner, type SessionDeliveryOwner } from "../session/delivery-owner"
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
-import { sessionIdle } from "@claxedo/agent-runtime-contract"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { FakeTransport } from "../test-support/fake-transport"
 import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
+import { sessionIdle } from "../projection/compat-events"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []

@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/agent-runtime-contract"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
@@ -11,6 +10,7 @@ import type * as EmbeddedRuntime from "../deployments/local/embedded-workspace-r
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { testDaemon } from "./test-support/daemon"
+import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
 
 type RuntimeHooks = Parameters<typeof EmbeddedRuntime.configureEmbeddedWorkspaceRuntime>[0]
 

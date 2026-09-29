@@ -3,12 +3,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "bun:test"
 import { SessionRoutes } from "../routes/session"
-import { sessionIdle } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "./delivery-owner"
+import { sessionIdle } from "../projection/compat-events"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []

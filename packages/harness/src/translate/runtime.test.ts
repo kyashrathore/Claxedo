@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { HarnessEventAdapter } from "./adapter"
 import { createAgentEventRuntime, translateRawHarnessEvent } from "./runtime"
-import { cloneSnapshotValue } from "@claxedo/helpers"
-import { type RuntimeSnapshot } from "./snapshot"
+import { cloneSnapshotValue, type RuntimeSnapshot } from "./state"
 
 type State = { count: number }
 

@@ -66,7 +66,7 @@ export type WorkspaceRuntimeServerOptions = {
   /** Optional local owner observer. Remote/relay compositions omit it. */
   processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
-  onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
+  onCompatEvent?: WorkspaceHostOptions["onCompatEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
   sessionParents?: WorkspaceEventParents
   transcripts?: WorkspaceTranscriptRoutesOptions
@@ -466,7 +466,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
-    ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
+    ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),

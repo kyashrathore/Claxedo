@@ -1,7 +1,4 @@
-
-import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
-
-type EventHarnessHealth = Extract<AgentPresentationEvent, { type: "harness.health" }>
+import type { EventHarnessHealth } from "../projection/compat-events"
 
 export type SessionHarnessHealth = Omit<EventHarnessHealth["properties"], "sessionID">
 

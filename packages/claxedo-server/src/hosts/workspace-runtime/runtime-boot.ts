@@ -189,7 +189,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     ...(usage
       ? {
           sessionAccessPolicy: usage.sessionAccessPolicy,
-          onPresentationEvent: usage.onPresentationEvent,
+          onCompatEvent: usage.onCompatEvent,
           onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
           bindSessionParents: usage.bindSessionParents,

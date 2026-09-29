@@ -10,9 +10,8 @@ import {
   isAgentRuntimeMessageIdConflictError,
   isAgentRuntimeTurnAdmissionError,
 } from "../host/runtime"
-import { sessionError, withDir, type AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import {
-  envelopeDirectory,
+  compatScope,
   runRuntimePromptTurn,
   type ActiveTurnScope,
   type SessionPromptBody,
@@ -40,6 +39,7 @@ import {
 } from "./session-route-options"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
+import { type CompatEnvelope, sessionError, withDir } from "../projection/compat-events"
 
 /**
  * A headline for a turn/stream failure that keeps the cause: the real message
@@ -53,12 +53,12 @@ function streamTurnErrorMessage(error: unknown): string {
 }
 
 export function publishTurnFailure(
-  publishGlobal: (event: AgentEventEnvelope) => void,
+  publishGlobal: (event: CompatEnvelope) => void,
   directory: RuntimeDirectory,
   sessionId: string,
   error: unknown,
 ) {
-  publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionError(streamTurnErrorMessage(error), sessionId)))
+  publishGlobal(withDir(compatScope(directory, sessionId), sessionError(streamTurnErrorMessage(error), sessionId)))
 }
 
 export async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {

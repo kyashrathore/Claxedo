@@ -22,9 +22,9 @@ import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runti
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
 import type { SessionPromptBody } from "../session/service"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -262,7 +262,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       throw error
     }
     const started = runtime
-    const publishGlobal = (event: AgentEventEnvelope) => eventHub.publishGlobal(event)
+    const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
     const scope = () => {
       const active = options.createActiveTurnScope?.({ directory: input.directory, sessionId: input.sessionId })
       if (!lease) return active

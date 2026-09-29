@@ -2,6 +2,7 @@ import type {
   AgentConfigOption,
   AgentContentPart,
   AgentEventEnvelope,
+  AgentMessageAuthor,
   AgentPresentationEvent,
   AgentPresentationSession,
   AgentRuntimeStatus,
@@ -13,6 +14,9 @@ import type {
 export type ClientPresentationStatus = AgentRuntimeStatus
 export type ClientPresentationPart = AgentContentPart
 export type ClientPresentationEvent = Exclude<AgentPresentationEvent, { type: "server.heartbeat" }>
+
+export type ClaxedoMessageAuthor = AgentMessageAuthor
+export type ClaxedoMessageInfoExtension = { claxedo?: { author: ClaxedoMessageAuthor } }
 
 export type EventMessageUpdated = Extract<ClientPresentationEvent, { type: "message.updated" }>
 export type EventMessagePartUpdated = Extract<ClientPresentationEvent, { type: "message.part.updated" }>

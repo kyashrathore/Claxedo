@@ -7,8 +7,6 @@ import path from "node:path"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRuntimeBootEnv } from "@claxedo/sandbox-manager/runtime-env"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/agent-runtime-contract"
 import { mintOwnerGrant } from "../../session/owner-grant"
 import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
@@ -18,6 +16,7 @@ import {
   claxedoWorkspaceRuntimeBootFromEnv,
   claxedoWorkspaceRuntimeLaunch,
 } from "./runtime-boot"
+import { type CompatEnvelope, buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
 
 describe("claxedo workspace-runtime boot policy", () => {
   test("installs the clone placeholder as a GitHub-only authorization header before boot returns", async () => {
@@ -244,10 +243,10 @@ describe("claxedo workspace-runtime boot policy", () => {
         })),
         envelope(messageCompleted("ses_boot", "msg_reply")),
         assistant("msg_tail"),
-      ]) options.onPresentationEvent!(event)
+      ]) options.onCompatEvent!(event)
       await policy.endTurn?.(turn)
       expect(await policy.releaseTurn!(turn)).toEqual({ released: true })
-      options.onPresentationEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
+      options.onCompatEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
 
       await options.onDrain!()
 
@@ -260,7 +259,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       expect(existsSync(path.join(store, "usage.sqlite"))).toBe(true)
 
       const unmetered = await claxedoWorkspaceRuntimeBootFromEnv(relay)
-      expect(unmetered.options.onPresentationEvent).toBeUndefined()
+      expect(unmetered.options.onCompatEvent).toBeUndefined()
       expect(unmetered.options.onDrain).toBeUndefined()
       expect(unmetered.options.sessionAccessPolicy).toBeUndefined()
     } finally {
@@ -341,6 +340,6 @@ describe("claxedo cors policy", () => {
   })
 })
 
-function envelope(payload: AgentEventEnvelope["payload"]): AgentEventEnvelope {
+function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
   return { directory: "/workspace", payload }
 }

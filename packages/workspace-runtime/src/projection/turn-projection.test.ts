@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
 import type { RuntimeAppendSource } from "./turn-projection"
 import { testTurnProjector } from "../test-support/turn-projector"
+import type { CompatEvent } from "./compat-events"
 
 const source: RuntimeAppendSource = {
   dir: "in",
@@ -11,16 +11,16 @@ const source: RuntimeAppendSource = {
 }
 
 function projector(input: {
-  appendEvent?: (event: AgentPresentationEvent) => { payload: AgentPresentationEvent } | void
-  onAppend?: (event: { sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }) => void
-  onEvent?: (event: AgentPresentationEvent) => void
+  appendEvent?: (event: CompatEvent) => { payload: CompatEvent } | void
+  onAppend?: (event: { sessionId: string; agentSessionId?: string; payload: CompatEvent }) => void
+  onEvent?: (event: CompatEvent) => void
   onRuntimeEvent?: (event: RuntimeEventEnvelopeInput) => void
   owner?: { sessionId: string; agentSessionId: string }
 } = {}) {
   return testTurnProjector({
     appendEvent(event) {
       input.onAppend?.(event)
-      if (input.appendEvent) return input.appendEvent(event.payload) as { payload: AgentPresentationEvent }
+      if (input.appendEvent) return input.appendEvent(event.payload) as { payload: CompatEvent }
       return { payload: event.payload }
     },
     ...(input.owner ? { owner: { sessionId: input.owner.sessionId, getAgentSessionId: () => input.owner!.agentSessionId } } : {}),
@@ -32,7 +32,7 @@ function projector(input: {
 
 describe("createTurnEventProjector", () => {
   test("uses its explicit owner for compat storage, projection, and runtime publication", () => {
-    const appended: Array<{ sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }> = []
+    const appended: Array<{ sessionId: string; agentSessionId?: string; payload: CompatEvent }> = []
     const runtime: RuntimeEventEnvelopeInput[] = []
     const item = projector({
       owner: { sessionId: "child-1", agentSessionId: "provider-child-1" },
@@ -61,7 +61,7 @@ describe("createTurnEventProjector", () => {
 
   test("does not publish runtime events when compat append fails", () => {
     const runtime: RuntimeEventEnvelopeInput[] = []
-    const compat: AgentPresentationEvent[] = []
+    const compat: CompatEvent[] = []
     const item = projector({
       appendEvent() {
         throw new Error("append failed")
@@ -77,7 +77,7 @@ describe("createTurnEventProjector", () => {
 
   test("does not publish live events when compat append does not return committed output", () => {
     const runtime: RuntimeEventEnvelopeInput[] = []
-    const compat: AgentPresentationEvent[] = []
+    const compat: CompatEvent[] = []
     const item = projector({
       appendEvent() {
         return undefined
@@ -114,7 +114,7 @@ describe("createTurnEventProjector", () => {
   })
 
   test("publishes compatibility output from committed append results", () => {
-    const compat: AgentPresentationEvent[] = []
+    const compat: CompatEvent[] = []
     const committed = {
       type: "message.part.delta",
       properties: {
@@ -124,7 +124,7 @@ describe("createTurnEventProjector", () => {
         field: "text",
         delta: "committed",
       },
-    } as AgentPresentationEvent
+    } as CompatEvent
     const item = projector({
       appendEvent: (event) => event.type === "message.part.delta" ? { payload: committed } : { payload: event },
       onEvent: (event) => compat.push(event),
@@ -194,7 +194,7 @@ describe("createTurnEventProjector", () => {
                 },
               },
             },
-          } as AgentPresentationEvent,
+          } as CompatEvent,
         }
       },
       onRuntimeEvent: (event) => runtime.push(event.payload),

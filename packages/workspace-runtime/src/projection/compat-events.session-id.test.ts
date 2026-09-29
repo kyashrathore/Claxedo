@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { eventSessionId } from "./presentation-events"
+import { eventSessionId } from "./compat-events"
 
 describe("eventSessionId", () => {
   it("extracts the session id from canonical frames", () => {

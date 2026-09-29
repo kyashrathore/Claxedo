@@ -1,11 +1,11 @@
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
-import { buildSession, sessionUpdated, withDir, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { Log } from "../log"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { AgentRuntimeStore } from "./contracts"
 import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "../session/session-title"
 import { acceptGeneratedTitle, sessionTitleRequest } from "./title-generation"
+import { type CompatEvent, buildSession, sessionUpdated, withDir } from "../projection/compat-events"
 
 const log = Log.create({ service: "agent-runtime" })
 
@@ -43,7 +43,7 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
     }
   }
 
-  function placeholder(sessionId: string, directory: string, prompt: PromptInput): AgentPresentationEvent | null {
+  function placeholder(sessionId: string, directory: string, prompt: PromptInput): CompatEvent | null {
     const session = store.getSession(sessionId)
     const created = session?.time?.created
     if (!session || created === undefined || session.parentID || session.titleSource || !isPlaceholderTitle(session.title)) return null

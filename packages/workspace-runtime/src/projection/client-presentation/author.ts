@@ -1,10 +1,13 @@
-import type { AgentMessageInfo } from "./content"
-import type { AgentMessageAuthor } from "./sessions"
+import type {
+  ClaxedoMessageAuthor,
+  ClaxedoMessageInfoExtension,
+} from "./types"
+import type { AgentMessageInfo } from "@claxedo/agent-runtime-contract"
 
 export function withClaxedoMessageAuthor<Info extends AgentMessageInfo>(
   info: Info,
-  author?: AgentMessageAuthor,
-): Info & { claxedo?: { author: AgentMessageAuthor } } {
+  author?: ClaxedoMessageAuthor,
+): Info & ClaxedoMessageInfoExtension {
   if (!author || info.role !== "user") return info
   return {
     ...info,

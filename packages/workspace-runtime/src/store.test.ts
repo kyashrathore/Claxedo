@@ -12,9 +12,9 @@ import { AgentRuntimeStaleTurnError } from "./store"
 import { createRequestBroker } from "@claxedo/harness/broker"
 import { createStoreBrokerPorts } from "./broker-ports/index"
 import type { RuntimeEventPublishers } from "./projection/runtime-event-hub"
-import { messagePartUpdated, messageUpdated, messageCompleted, messagePartDelta, permissionAsked, questionAsked, sessionIdle, sessionUsage, sessionUpdated, todoUpdated } from "@claxedo/agent-runtime-contract"
 import { RuntimeStore as RuntimeStoreImpl } from "./store"
 import { readTurnOutline, type TurnOutlineDatabase } from "./session/turn-outline"
+import { messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionIdle, sessionUpdated, sessionUsage, todoUpdated } from "./projection/compat-events"
 
 const roots: string[] = []
 const stores: RuntimeStoreImpl[] = []
@@ -1554,6 +1554,39 @@ void describe("RuntimeStore", () => {
     assert.ok(completeAssistant)
     assert.equal(completeAssistant.parts.length, 22)
     assert.equal(completeAssistant.parts[20]?.type, "tool")
+    store.close()
+  })
+
+  void it("an attachment recorded as a synthetic text reads back as its file part, and stays out of the surface", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const image = { id: "prt_image", type: "file", mime: "image/png", filename: "image.png", url: `data:image/png;base64,${"A".repeat(2048)}` }
+    for (const info of [
+      { id: "user-image", role: "user" },
+      { id: "assistant-image", role: "assistant", parentID: "user-image" },
+    ]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now(), completed: Date.now() }, ...info } as any),
+      })
+    }
+    for (const part of [
+      { id: "user-text", messageID: "user-image", type: "text", text: "" },
+      { id: "prt_image", messageID: "user-image", type: "text", text: JSON.stringify(image), synthetic: true },
+      { id: "assistant-answer", messageID: "assistant-image", type: "text", text: "Looks fine." },
+    ]) {
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", ...part } as any) })
+    }
+
+    const complete = store.getMessagePage("s1", { view: "latest-turn" })
+    assert.ok(complete)
+    assert.deepEqual(complete.messages[0]?.parts.map((part) => part.type), ["text", "file"])
+    assert.deepEqual(complete.messages[0]?.parts[1], { ...image, sessionID: "s1", messageID: "user-image" })
+
+    const surface = store.getMessagePage("s1", { view: "latest-surface" })
+    assert.ok(surface)
+    assert.deepEqual(surface.messages[0]?.parts.map((part) => part.id), ["user-text"])
     store.close()
   })
 

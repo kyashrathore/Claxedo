@@ -29,6 +29,12 @@
       "types": "./dist/capabilities/index.d.ts",
       "import": "./dist/capabilities/index.js"
     },
+    "./translate": {
+      "development": "./src/translate/index.ts",
+      "bun": "./src/translate/index.ts",
+      "types": "./dist/translate/index.d.ts",
+      "import": "./dist/translate/index.js"
+    },
     "./broker": {
       "development": "./src/broker/index.ts",
       "bun": "./src/broker/index.ts",

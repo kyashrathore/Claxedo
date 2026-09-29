@@ -4,7 +4,6 @@ import os from "node:os"
 import path from "node:path"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { TurnOrigin } from "@claxedo/harness/contract"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { createStoreBrokerPorts } from "../broker-ports/index"
 import { createAgentRuntime, type AgentRuntime, type HarnessHandle, type LaunchComposer } from "../host/runtime"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
@@ -15,6 +14,7 @@ import {
   runRuntimePromptTurn,
   sessionPromptReply,
 } from "./service"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 const WORKSPACE = "workspace-test"
 const DIRECTORY = "/work"
@@ -84,7 +84,7 @@ describe("session service", () => {
       sessionId: "s1", workspaceId: WORKSPACE, directory: DIRECTORY, connectionId: "connection:fake",
       upstreamSessionId: "s1", agentSessionId: "s1", createdAt: 1,
     })
-    const events: AgentEventEnvelope[] = []
+    const events: CompatEnvelope[] = []
 
     await expect(runRuntimePromptTurn({
       runtime: fixture.runtime,
@@ -108,9 +108,9 @@ describe("session service", () => {
       },
     })
     await createSession(fixture, "s1")
-    const stream: AgentEventEnvelope[] = []
+    const stream: CompatEnvelope[] = []
     const unsubscribe = fixture.eventHub.subscribeGlobal((event) => stream.push(event))
-    const events: AgentEventEnvelope[] = []
+    const events: CompatEnvelope[] = []
     try {
       const turn = await runRuntimePromptTurn({
         runtime: fixture.runtime,
@@ -224,7 +224,7 @@ describe("session service", () => {
   })
 
   it("observes the reply without republishing the runtime-owned event stream", async () => {
-    const events: AgentEventEnvelope[] = []
+    const events: CompatEnvelope[] = []
     const turn = await runRuntimePromptTurn({
       runtime: {
         turns: {
@@ -332,7 +332,7 @@ describe("session service", () => {
   it("fails without synthesizing prompt events when the transport yields none", async () => {
     const fixture = host({ async *turn() {} })
     await createSession(fixture, "s1")
-    const events: AgentEventEnvelope[] = []
+    const events: CompatEnvelope[] = []
 
     const turn = await runRuntimePromptTurn({
       runtime: fixture.runtime,
@@ -351,7 +351,7 @@ describe("session service", () => {
 
   it("throws a turn that fails to start without publishing it, and closes its event stream", async () => {
     let returned = false
-    const events: AgentEventEnvelope[] = []
+    const events: CompatEnvelope[] = []
 
     await expect(runRuntimePromptTurn({
       runtime: {

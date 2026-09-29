@@ -8,7 +8,6 @@ import type {
   AgentTodo,
 } from "./content"
 import type { AgentRuntimeStatus } from "./availability"
-import type { AgentRuntimeHealth, ConnectionRuntimeStatus } from "./connections"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 
 /**
@@ -92,10 +91,6 @@ export type AgentPresentationEvent =
   | { id?: string; type: "runtime.diagnostic"; properties: { sessionID: string; harness?: string; threadId?: string; projection?: string; phase?: "ingest" | "terminalize"; code: string; message: string; severity: "debug" | "info" | "warn" | "error"; eventType?: string; issues?: string[]; details?: unknown; auth?: unknown; rateLimit?: unknown; mcp?: unknown; diagnostic?: unknown; raw?: unknown } }
   | { id: string; type: "server.connected"; properties: Record<string, unknown> }
   | { type: "server.heartbeat"; properties: Record<string, unknown> }
-  /** `parentID` names a subsession, whose deletion leaves the visible session count alone. */
-  | { type: "session.deleted"; properties: { info: { id: string; directory: string; parentID?: string } } }
-  /** What `readRuntimeHealth` and `readConnectionState` answer for one session, pushed when either changes. */
-  | { type: "harness.health"; properties: { sessionID: string; harnessHealth: AgentRuntimeHealth; connectionState?: ConnectionRuntimeStatus & { connectionId: string } } }
 
 export type AgentPresentationEventType = AgentPresentationEvent["type"]
 
@@ -130,8 +125,6 @@ export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "runtime.diagnostic": true,
   "server.connected": true,
   "server.heartbeat": true,
-  "session.deleted": true,
-  "harness.health": true,
 } satisfies Record<AgentPresentationEventType, true>
 
 /** Sound because the registry is `satisfies Record<AgentPresentationEventType, true>`: its keys are exactly the union. */

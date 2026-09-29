@@ -1,7 +1,6 @@
 import type { AgentMessage, AgentSession, SavedCommand, SessionConfigUpdate, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "./contracts"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
-import { eventSessionId, sessionIdle, toPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
@@ -32,6 +31,7 @@ import { admitTurnMessageIds, createTurnAdmissions, deliverToBusySession } from 
 import { turnInputFor } from "./turn-input"
 import { turnPrompt, turnStartRecord } from "./turn-record"
 import { runTurn, type TurnRunnerHost } from "./turn-runner"
+import { eventSessionId, sessionIdle, toCompatEvent } from "../projection/compat-events"
 
 export {
   AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
@@ -72,8 +72,8 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const workspaceId = input.identity?.workspaceId ?? input.launch.workspaceId
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
-    const presentation = toPresentationEvent(event.payload)
-    if (presentation) eventHub.publishGlobal({ directory: runtimeDirectory(event.directory), payload: presentation })
+    const compat = toCompatEvent(event.payload)
+    if (compat) eventHub.publishGlobal({ directory: runtimeDirectory(event.directory), payload: compat })
     for (const subscriber of subscribers) {
       if (subscriber.input.sessionId && subscriber.input.sessionId !== event.sessionId) continue
       if (subscriber.input.directory !== undefined && subscriber.input.directory !== event.directory) continue
@@ -113,8 +113,8 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
 
   const commitAndPublish: TurnRunnerHost["commit"] = (sessionId, directory, payload, source, fence, emit) => {
     if (fence && !fence.valid()) throw new Error("Durable session turn admission is no longer valid")
-    const presentation = toPresentationEvent(payload)
-    if (!presentation) {
+    const compat = toCompatEvent(payload)
+    if (!compat) {
       emit({ sessionId, directory, payload })
       return payload
     }
@@ -122,7 +122,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     const appended = store.appendEvent({
       sessionId,
       ...(agentSessionId ? { agentSessionId } : {}),
-      payload: presentation,
+      payload: compat,
       source,
       ...(fence ? { fencingToken: fence.fencingToken() } : {}),
     })
@@ -369,6 +369,6 @@ function turnSecretAuthority(turn: AgentRuntimeTurnStartInput): ConnectionSecret
 }
 
 export function streamEventSessionId(payload: AgentRuntimeStreamEvent): string | undefined {
-  const presentation = toPresentationEvent(payload)
-  return presentation ? eventSessionId(presentation) : undefined
+  const compat = toCompatEvent(payload)
+  return compat ? eventSessionId(compat) : undefined
 }

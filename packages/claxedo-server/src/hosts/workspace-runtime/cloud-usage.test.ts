@@ -3,12 +3,11 @@ import os from "node:os"
 import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/agent-runtime-contract"
 import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { USAGE_REPORT_MAX_FACTS } from "@claxedo/server-core/usage/usage-report"
 import { cloudWorkspaceUsage, createSandboxUsageLedger, type SandboxUsageLedger } from "./cloud-usage"
 import { usageReportPlane, USAGE_REPORT_URL, type UsageReportPlane } from "../../test-support/usage-report-plane"
+import { type CompatEnvelope, buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
 
 const cleanups: Array<() => void> = []
 
@@ -54,7 +53,7 @@ function sandbox(ledger: SandboxUsageLedger, fetch: Fetch, parents: Record<strin
   return usage
 }
 
-function envelope(payload: AgentEventEnvelope["payload"]): AgentEventEnvelope {
+function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
   return { directory: "/workspace", payload }
 }
 
@@ -123,10 +122,10 @@ async function finishTurn(usage: Usage, turn: Awaited<ReturnType<typeof startTur
 async function runTurn(
   plane: UsageReportPlane,
   usage: Usage,
-  input: { by: Account; sessionId: string; turnId: string; events: AgentEventEnvelope[] },
+  input: { by: Account; sessionId: string; turnId: string; events: CompatEnvelope[] },
 ) {
   const turn = await startTurn(plane, usage, input)
-  for (const event of input.events) usage.onPresentationEvent(event)
+  for (const event of input.events) usage.onCompatEvent(event)
   const released = await finishTurn(usage, turn)
   await usage.drain()
   return released
@@ -151,7 +150,7 @@ describe("cloud workspace usage metering", () => {
     const ledger = openLedger(ledgerPath())
     const usage = sandbox(ledger, plane.fetch)
 
-    for (const event of turnEvents("ses_metered", "msg_assistant_1", { completed: true })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_metered", "msg_assistant_1", { completed: true })) usage.onCompatEvent(event)
     await usage.drain()
 
     expect(await ledger.current({ sessionId: "ses_metered" })).toEqual([expect.objectContaining({
@@ -320,7 +319,7 @@ describe("cloud workspace usage metering", () => {
       ...turnEvents("ses_unleased_root", "msg_root_unleased", { completed: true }),
       ...turnEvents("ses_unleased_child", "msg_child_unleased", { completed: true }),
       ...turnEvents("ses_unrelated", "msg_unrelated_unleased", { completed: true }),
-    ]) idle.onPresentationEvent(event)
+    ]) idle.onCompatEvent(event)
     await idle.drain()
     beforeRestart.close()
 
@@ -436,10 +435,10 @@ describe("cloud workspace usage delivery", () => {
     const usage = sandbox(ledger, plane.fetch)
 
     const turn = await startTurn(plane, usage, { by: plane.member, sessionId: "ses_lost", turnId: "msg_user_1" })
-    for (const event of turnEvents("ses_lost", "msg_before_loss", { completed: true })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_lost", "msg_before_loss", { completed: true })) usage.onCompatEvent(event)
     expect(await finishTurn(usage, turn, { lost: true })).toEqual({ released: false })
     await until(async () => (await filedFor(plane, "member")).includes("msg_before_loss"), "the lost turn's report")
-    for (const event of turnEvents("ses_lost", "msg_after_loss", { completed: true })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_lost", "msg_after_loss", { completed: true })) usage.onCompatEvent(event)
     await usage.drain()
 
     expect(await filedFor(plane, "member")).toEqual(["msg_before_loss", "msg_after_loss"])
@@ -461,7 +460,7 @@ describe("cloud workspace usage delivery", () => {
 
     const ledger = openLedger(file)
     const usage = sandbox(ledger, plane.fetch)
-    for (const event of turnEvents("ses_between", "msg_owner_tail", { completed: true })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_between", "msg_owner_tail", { completed: true })) usage.onCompatEvent(event)
     await runTurn(plane, usage, {
       by: plane.member,
       sessionId: "ses_between",
@@ -481,10 +480,10 @@ describe("cloud workspace usage delivery", () => {
     const usage = sandbox(ledger, plane.fetch, {}, 10)
 
     const turn = await startTurn(plane, usage, { by: plane.owner, sessionId: "ses_tail", turnId: "msg_user_1" })
-    for (const event of turnEvents("ses_tail", "msg_assistant_1", { completed: false })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_tail", "msg_assistant_1", { completed: false })) usage.onCompatEvent(event)
     await finishTurn(usage, turn)
     await until(async () => (await plane.ledger.current({ sessionId: "ses_tail" }))[0]?.settlement === "provisional", "the turn's revision")
-    usage.onPresentationEvent(envelope(messageCompleted("ses_tail", "msg_assistant_1")))
+    usage.onCompatEvent(envelope(messageCompleted("ses_tail", "msg_assistant_1")))
 
     await until(async () => (await plane.ledger.current({ sessionId: "ses_tail" }))[0]?.settlement === "final", "the tail revision")
     await usage.drain()
@@ -535,7 +534,7 @@ describe("cloud workspace usage delivery", () => {
     const usage = sandbox(failing, plane.fetch)
 
     const turn = await startTurn(plane, usage, { by: plane.owner, sessionId: "ses_full", turnId: "msg_user_1" })
-    for (const event of turnEvents("ses_full", "msg_assistant_1", { completed: true })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_full", "msg_assistant_1", { completed: true })) usage.onCompatEvent(event)
     expect(await finishTurn(usage, turn)).toEqual({ released: true })
     await usage.drain()
 
@@ -555,14 +554,14 @@ describe("cloud workspace usage delivery", () => {
     const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
     const first = sandbox(beforeRestart, plane.fetch)
     for (const event of [usageEvent("ses_scoped", "msg_scoped", "a", scopeA), usageEvent("ses_scoped", "msg_scoped", "b", scopeB)]) {
-      first.onPresentationEvent(event)
+      first.onCompatEvent(event)
     }
     await first.drain()
     beforeRestart.close()
 
     const ledger = openLedger(file)
     const usage = sandbox(ledger, plane.fetch)
-    usage.onPresentationEvent(usageEvent("ses_scoped", "msg_scoped", "a", scopeALater))
+    usage.onCompatEvent(usageEvent("ses_scoped", "msg_scoped", "a", scopeALater))
     await usage.drain()
 
     expect((await ledger.current({ sessionId: "ses_scoped" }))[0]?.tokens)
@@ -601,7 +600,7 @@ describe("cloud workspace usage delivery", () => {
     cleanups.push(() => spy.mockRestore())
     const ledger = openLedger(file)
     const usage = sandbox(ledger, plane.fetch, { ses_planned_child: "ses_planned" })
-    for (const event of turnEvents("ses_planned", "msg_unleased", { completed: true })) usage.onPresentationEvent(event)
+    for (const event of turnEvents("ses_planned", "msg_unleased", { completed: true })) usage.onCompatEvent(event)
     await usage.drain()
     await runTurn(plane, usage, {
       by: plane.owner,

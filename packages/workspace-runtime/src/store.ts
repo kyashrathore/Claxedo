@@ -26,12 +26,12 @@ import {
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
-import { type AgentPresentationEvent, buildAssistantMessage, buildUserPromptParts, buildUserMessage, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "@claxedo/agent-runtime-contract"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
+import { type CompatEvent, buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, readRecordedPart, sessionError, sessionIdle, sessionStatus } from "./projection/compat-events"
 
 export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"
 
@@ -225,10 +225,10 @@ export type RuntimeStoreAppendOutput = {
   seq: number
   createdAt: number
   agentSessionId?: string
-  payload: AgentPresentationEvent
+  payload: CompatEvent
   source?: RuntimeEventSource
   /** The assistant message a committed `session.usage` folded into, for its publisher to stream after the usage. */
-  messageUpdate?: AgentPresentationEvent
+  messageUpdate?: CompatEvent
 }
 
 export type RuntimeStoreTurnStartOutput = {
@@ -236,7 +236,7 @@ export type RuntimeStoreTurnStartOutput = {
   seq: number
   createdAt: number
   agentSessionId?: string
-  events: AgentPresentationEvent[]
+  events: CompatEvent[]
 }
 
 /**
@@ -511,7 +511,7 @@ type Row =
       agentSessionId?: string
       kind: "event"
       source?: RuntimeEventSource
-      payload: AgentPresentationEvent
+      payload: CompatEvent
     }
 
 type TurnStartRow = {
@@ -613,7 +613,7 @@ const readColumn = {
   sessionCommands: (json: string): AgentSessionCommand[] => JSON.parse(json),
   messageInfo: (json: string): AgentMessage["info"] => JSON.parse(json),
   messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
-  messagePart: (json: string): AgentMessage["parts"][number] => JSON.parse(json),
+  messagePart: (json: string): AgentMessage["parts"][number] => readRecordedPart(JSON.parse(json)),
   partRecord: (json: string): Record<string, unknown> => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.start'` row. */
   turnStart: (json: string): Turn => JSON.parse(json),
@@ -622,7 +622,7 @@ const readColumn = {
   /** `runtime_journal.payload_json` on a `kind='event'` row: an engine envelope. */
   eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='event'`, `type='session.usage'` row. */
-  usagePayload: (json: string): Extract<AgentPresentationEvent, { type: "session.usage" }> => JSON.parse(json),
+  usagePayload: (json: string): Extract<CompatEvent, { type: "session.usage" }> => JSON.parse(json),
   /** `pending_permission.patterns_json`. */
   permissionPatterns: (json: string): string[] => JSON.parse(json),
   /** `pending_permission.options_json`: absent is distinct from no offered options. */
@@ -2512,7 +2512,7 @@ export class RuntimeStore {
         }
       }
       if (row.kind === "event") {
-        const payload: AgentPresentationEvent = JSON.parse(row.payload_json)
+        const payload: CompatEvent = JSON.parse(row.payload_json)
         const source: RuntimeEventSource | undefined = row.source_json ? JSON.parse(row.source_json) : undefined
         return {
           seq: row.seq,
@@ -2599,7 +2599,7 @@ export class RuntimeStore {
     return this.transaction(run, "immediate")
   }
 
-  brokerAppendInside(sessionId: string, payload: AgentPresentationEvent): void {
+  brokerAppendInside(sessionId: string, payload: CompatEvent): void {
     this.commitInside({
       seq: this.next(sessionId), ts: Date.now(), sessionId, kind: "event", payload,
     }, undefined)
@@ -3529,7 +3529,7 @@ export class RuntimeStore {
     this.commit(row)
   }
 
-  private turnStartEvents(row: TurnStartRow): AgentPresentationEvent[] {
+  private turnStartEvents(row: TurnStartRow): CompatEvent[] {
     const control = row.control
     const directory = this.sessionTimes(row.sessionId).directory
     return [
@@ -3752,7 +3752,7 @@ export class RuntimeStore {
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string
-    payload: AgentPresentationEvent
+    payload: CompatEvent
     source?: RuntimeEventSource
     fencingToken?: number
   }) {
@@ -3830,7 +3830,7 @@ export class RuntimeStore {
       if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
       if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
       const agentSession = active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}
-      const terminal = (payload: AgentPresentationEvent) =>
+      const terminal = (payload: CompatEvent) =>
         this.commitInside({
           seq: this.next(input.sessionId),
           ts: Date.now(),
@@ -3839,7 +3839,7 @@ export class RuntimeStore {
           kind: "event",
           payload,
         }, input.fencingToken)
-      const events: AgentPresentationEvent[] = []
+      const events: CompatEvent[] = []
 
       if (input.outcome.status === "failed") {
         const control = readColumn.turnStart(active.payload_json)
@@ -4452,6 +4452,8 @@ export class RuntimeStore {
       current.push(readColumn.messagePart(part.data_json))
       partsByMessage.set(part.message_id, current)
     }
+    // The SQL above selects by the stored type; an attachment recorded as a
+    // synthetic text reads back as a file part and leaves the surface here.
     return projectLatestSurfaceMessages(msgs.map((msg) => ({
       info: readColumn.messageInfo(msg.info_json),
       parts: partsByMessage.get(msg.id) ?? [],
@@ -5271,12 +5273,12 @@ export class RuntimeStore {
     return row?.goal_json ? JSON.parse(row.goal_json) : null
   }
 
-  setGoal(id: string, goal: RuntimeGoalSnapshot | null): AgentPresentationEvent[] {
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null): CompatEvent[] {
     this.assertProjectionCurrent(id)
     this.settleDeltas(id)
     return this.transaction(() => {
       if (!this.getSession(id) || JSON.stringify(this.getGoal(id)) === JSON.stringify(goal)) return []
-      const payload: AgentPresentationEvent = goal
+      const payload: CompatEvent = goal
         ? { type: "goal.updated", properties: { sessionID: id, goal } }
         : { type: "goal.cleared", properties: { sessionID: id } }
       this.commitInside({

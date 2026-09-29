@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { HARNESS_TABLE, type AgentPermissionMode, type AgentPermissionModeState, type PromptModel, type SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { PermissionModeRefusedError } from "../session/permission-ceiling"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, type HostFixture } from "../test-support/host-fixture"
@@ -9,6 +8,7 @@ import type { SessionAttachments } from "./attachments"
 import type { AgentRuntimeStore } from "./contracts"
 import type { HarnessHandle } from "./transports"
 import { createHarnessReads } from "./config-ops"
+import type { CompatEnvelope } from "../projection/compat-events"
 
 test("runtime-owned previews read the current saved model on every request", async () => {
   let model: PromptModel | undefined = { providerID: "proof", modelID: "first" }
@@ -72,7 +72,7 @@ describe("a selection write publishes the session's row", () => {
   async function hostWith(harness: SessionHarness, transport: FakeTransport, others: Record<string, FakeTransport> = {}) {
     const fixture = createHostFixture({ transports: { ...others, [harness.id]: transport } })
     fixtures.push(fixture)
-    const published: AgentEventEnvelope[] = []
+    const published: CompatEnvelope[] = []
     fixture.eventHub.subscribeGlobal((event) => {
       if (event.payload.type === "session.updated") published.push(event)
     })
@@ -81,7 +81,7 @@ describe("a selection write publishes the session's row", () => {
     return { fixture, published, sessionId: session.id }
   }
 
-  const rowConfig = (event: AgentEventEnvelope | undefined) =>
+  const rowConfig = (event: CompatEnvelope | undefined) =>
     (event?.payload.properties as { info?: { config?: Record<string, unknown> } } | undefined)?.info?.config
 
   test("a mode write publishes the row once with the kept mode, and the same write again publishes nothing", async () => {

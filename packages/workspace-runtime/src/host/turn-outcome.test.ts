@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeStreamEvent } from "./contracts"
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import { sessionIdle } from "@claxedo/agent-runtime-contract"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./turn-outcome"
+import { sessionIdle } from "../projection/compat-events"
 
 function settle(payloads: AgentRuntimeStreamEvent[]) {
   return payloads.reduce<AgentTurnOutcome | undefined>((outcome, payload) => mergeOutcome(outcome, outcomeFromPayload(payload)), undefined)

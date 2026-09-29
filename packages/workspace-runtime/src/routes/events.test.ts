@@ -5,14 +5,14 @@ import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler, type WorkspaceEventStreamFrame } from "./events"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
 import type { AgentSessionStart, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import { questionAsked, messagePartUpdated, sessionDeleted, withDir, type AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
+import { type CompatEnvelope, messagePartUpdated, questionAsked, sessionDeleted, withDir } from "../projection/compat-events"
 
 const DIRECTORY = "/workspace"
 const WORKSPACE_ID = "ws-events-test"
 
-function part(sessionID: string, id: string, state: { status: "running" } | { status: "completed" }): AgentEventEnvelope {
+function part(sessionID: string, id: string, state: { status: "running" } | { status: "completed" }): CompatEnvelope {
   const tool = {
     id,
     sessionID,
