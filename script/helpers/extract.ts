@@ -33,7 +33,7 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..")
 const PACKAGES = path.join(REPO_ROOT, "packages")
 
 /** Directories that never contain reviewed source. */
-export const SKIP_DIR = new Set(["node_modules", "dist", "out", "build", "coverage", ".git", "storybook-static", ".artifacts", ".turbo"])
+const SKIP_DIR = new Set(["node_modules", "dist", "out", "build", "coverage", ".git", "storybook-static", ".artifacts", ".turbo"])
 const SKIP_FILE = /\.(test|vitest|spec|bench)\.(ts|tsx)$|\.d\.ts$/
 
 /**
@@ -68,15 +68,11 @@ export type Helper = {
 }
 
 /**
- * Every shipped/support `.ts`/`.tsx` under `packages/`.
- *
- * Test, spec and bench files are excluded by default: a helper declared inside
- * one is fixture scaffolding, not a candidate for sharing. Pass `tests: true`
- * when the question is who *imports* a name rather than who declares it —
- * deleting an exported helper breaks a test importer exactly as hard as a
- * source importer, and the default walk cannot see it.
+ * Every shipped/support `.ts`/`.tsx` under `packages/`. Test, spec and bench
+ * files are excluded: a helper declared inside one is fixture scaffolding, not
+ * a candidate for sharing.
  */
-export function* sourceFiles(options: { tests?: boolean } = {}): Generator<{ pkg: string; abs: string }> {
+function* sourceFiles(): Generator<{ pkg: string; abs: string }> {
   for (const pkg of fs.readdirSync(PACKAGES).sort()) {
     const base = path.join(PACKAGES, pkg)
     if (!fs.statSync(base).isDirectory()) continue
@@ -95,8 +91,7 @@ export function* sourceFiles(options: { tests?: boolean } = {}): Generator<{ pkg
           continue
         }
         if (!/\.(ts|tsx)$/.test(entry.name)) continue
-        if (entry.name.endsWith(".d.ts")) continue
-        if (!options.tests && SKIP_FILE.test(entry.name)) continue
+        if (SKIP_FILE.test(entry.name)) continue
         yield { pkg, abs: path.join(dir, entry.name) }
       }
     }
@@ -108,7 +103,7 @@ export function* sourceFiles(options: { tests?: boolean } = {}): Generator<{ pkg
  * every offset so a declaration's extent can be found by scanning to the point
  * where depth returns to where it began.
  */
-export type Scan = {
+type Scan = {
   topLevelStarts: number[]
   /**
    * Statement starts at depth > 0 whose first character could begin a
@@ -125,7 +120,7 @@ export type Scan = {
   isCode: Uint8Array
 }
 
-export function scan(text: string): Scan {
+function scan(text: string): Scan {
   const depthAt = new Int32Array(text.length + 1)
   const lineAt = new Int32Array(text.length + 1)
   // Which characters are comment text. The scanner already knows this exactly;
