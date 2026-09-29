@@ -1,21 +1,10 @@
-#!/usr/bin/env node
-
-import { execFileSync } from "node:child_process"
-import fs from "node:fs"
 import path from "node:path"
 
-const ROOT = path.resolve(import.meta.dirname, "..")
-const DIST = path.join(ROOT, "dist")
+import { buildPackage } from "../../../script/bun-build"
 
-if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
-fs.mkdirSync(DIST, { recursive: true })
-
-execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
-  "src/index.ts",
-  "--bundle",
-  "--platform=neutral",
-  "--format=esm",
-  `--outfile=${DIST}/index.mjs`,
-  "--target=es2022",
-], { stdio: "inherit", cwd: ROOT })
-execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], { stdio: "inherit", cwd: ROOT })
+// The contract is imported by browser, Node and workerd consumers alike, so it
+// builds for `browser`: a Node builtin reaching it fails the build.
+await buildPackage({
+  root: path.resolve(import.meta.dirname, ".."),
+  bundles: [{ entrypoints: ["src/index.ts"], target: "browser", format: "esm", naming: "[name].mjs" }],
+})

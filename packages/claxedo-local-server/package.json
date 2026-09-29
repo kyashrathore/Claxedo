@@ -58,7 +58,7 @@
     }
   },
   "scripts": {
-    "build": "bun ./scripts/build.ts",
+    "build": "bun scripts/build.ts",
     "smoke:build": "node ./scripts/smoke-build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",

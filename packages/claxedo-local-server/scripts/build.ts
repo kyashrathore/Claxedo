@@ -4,13 +4,12 @@ import path from "node:path"
 import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
 
-import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
 import {
   normalizeSourceMapBuildManifest,
   readSourceMapMetadata,
   serializeBuildManifest,
 } from "../../../script/product-boundary/normalize-build-manifest"
-import { runBunBuild } from "../../../script/bun-build"
+import { buildPackage } from "../../../script/bun-build"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
@@ -19,27 +18,28 @@ const ENTRY = path.join(ROOT, "src/self-hosted-execution.ts")
 const require = createRequire(import.meta.url)
 const runtimeRequire = createRequire(path.join(ROOT, "../workspace-runtime/package.json"))
 
-fs.rmSync(DIST, { recursive: true, force: true })
-
-const result = await runBunBuild("Local Server bundle failed", {
-  entrypoints: [ENTRY],
-  outdir: DIST,
-  naming: { entry: "self-hosted-execution.[ext]" },
-  target: "node",
-  format: "esm",
-  splitting: false,
-  sourcemap: "external",
-  // Native modules and the public embedded OpenCode SDK are resources supplied
-  // by the composition host; the SDK's asset-relative graph is staged beside
-  // the bundle rather than folded into it.
-  external: ["@lydell/node-pty", "better-sqlite3", "@opencode-ai/sdk"],
-  plugins: [publishedExportsPlugin(), {
-    name: "jsonc-parser-esm",
-    setup(build) {
-      build.onResolve({ filter: /^jsonc-parser$/ }, () => ({
-        path: runtimeRequire.resolve("jsonc-parser/lib/esm/main.js"),
-      }))
-    },
+const builds = await buildPackage({
+  root: ROOT,
+  declarations: false,
+  bundles: [{
+    entrypoints: [ENTRY],
+    naming: { entry: "self-hosted-execution.[ext]" },
+    target: "node",
+    format: "esm",
+    splitting: false,
+    sourcemap: "external",
+    // Native modules and the public embedded OpenCode SDK are resources supplied
+    // by the composition host; the SDK's asset-relative graph is staged beside
+    // the bundle rather than folded into it.
+    external: ["@lydell/node-pty", "better-sqlite3", "@opencode-ai/sdk"],
+    plugins: [{
+      name: "jsonc-parser-esm",
+      setup(build) {
+        build.onResolve({ filter: /^jsonc-parser$/ }, () => ({
+          path: runtimeRequire.resolve("jsonc-parser/lib/esm/main.js"),
+        }))
+      },
+    }],
   }],
 })
 const cursorWorker = await bundleCursorWorker(DIST)
@@ -56,7 +56,7 @@ const manifest = normalizeSourceMapBuildManifest({
   entry: ENTRY,
   sourceMap,
   sourceMapDirectory: DIST,
-  chunks: result.outputs
+  chunks: builds.flatMap((build) => build.outputs)
     .filter((output) => output.kind === "entry-point")
     .map((output) => path.relative(ROOT, output.path)),
   workspaceRoot: REPO_ROOT,

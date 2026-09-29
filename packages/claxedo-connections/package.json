@@ -36,7 +36,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun run scripts/build.ts",
+    "build": "bun scripts/build.ts",
     "prepublishOnly": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
