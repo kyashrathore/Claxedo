@@ -44,7 +44,7 @@ export type Preferences = {
 }
 
 export const TRANSCRIPT_DEFAULTS: TranscriptPreferences = {
-  showReasoningSummaries: false,
+  showReasoningSummaries: true,
   shellToolPartsExpanded: false,
   editToolPartsExpanded: false,
 }

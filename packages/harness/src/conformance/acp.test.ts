@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, type SuiteBackend } from "./test-support/run"
 import { filterMcpServers } from "../capabilities/mcp-filter"
 import { AcpTransport } from "../transports/acp"
 import { acpUpdate } from "../transports/acp/events"
@@ -41,7 +41,7 @@ test("ACP launches the projected servers and reports the ones the projection cou
 })
 
 async function backend(kind: "process" | "websocket" | "streamable-http", restoreMode: "resume" | "load" = "resume", supportsMcpServers = true,
-  holdMethod?: string, red = false, startupQuestion = false, groups?: readonly string[]): Promise<AcpBackend> {
+  holdMethod?: string, red = false, startupQuestion = false, groups?: readonly string[]): Promise<AcpBackend & SuiteBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "acp-conformance-"))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
@@ -106,6 +106,10 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
       },
     } : {}),
     expectedMcp: supportsMcpServers ? "session" : "none", textCommand: acpScriptToken("text"), permissionCommand: acpScriptToken("permission"),
+    scriptThinking: async ({ text, reasoning }) => {
+      await writeAcpScript(directory, "thinking", { steps: [{ kind: "reasoning", text: reasoning }, { kind: "text", text }] })
+      return acpScriptToken("thinking")
+    },
     unrunnableTurn: (turn) => ({ ...turn, prompt: { ...turn.prompt, parts: [{ type: "text", text: acpScriptToken("refused") }] } }),
     close: async () => { await server?.close(); await fs.rm(root, { recursive: true, force: true }) },
   }

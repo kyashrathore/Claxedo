@@ -711,6 +711,7 @@ function deltaText(
   const key = partKey()
   const fresh = !seen(ctx, key)
   const id = seqId(ctx, key)
+  const eventTime = now()
   const base: AgentContentPart =
     type === "text"
       ? {
@@ -726,9 +727,8 @@ function deltaText(
           messageID: ctx.assistantMsgId,
           type: "reasoning",
           text: fresh ? "" : ctx.accumulatedThinkingText,
-          time: { start: now() },
+          time: { start: eventTime },
         }
-  const eventTime = now()
   const events = fresh ? [partEvent(ctx.directory, base, eventTime)] : []
   events.push(
     withDir(
@@ -742,9 +742,49 @@ function deltaText(
       }),
     ),
   )
-  if (type === "text") ctx.accumulatedText += delta
-  else ctx.accumulatedThinkingText += delta
+  if (type === "text") {
+    ctx.accumulatedText += delta
+    return events
+  }
+  ctx.accumulatedThinkingText += delta
+  const open = ctx.openReasoning?.partId === id ? ctx.openReasoning : undefined
+  ctx.openReasoning = open
+    ? { ...open, text: open.text + delta }
+    : { partId: id, messageId: ctx.assistantMsgId, start: eventTime, text: delta }
   return events
+}
+
+const REASONING_ENDS_ON = new Set<AgentRuntimeEvent["type"]>([
+  "text-delta",
+  "proposed-plan-delta",
+  "proposed-plan-complete",
+  "tool-start",
+  "file-diff",
+  "image-delta",
+  "audio-delta",
+  "resource-link-delta",
+  "permission-request",
+  "question",
+  "step-start",
+  "finish",
+  "cancelled",
+  "error",
+])
+
+function endReasoning(ctx: CompatContext, now: () => number): AgentEventEnvelope[] {
+  const open = ctx.openReasoning
+  if (!open) return []
+  ctx.openReasoning = undefined
+  ctx.splitReasoning = true
+  const end = now()
+  return [partEvent(ctx.directory, {
+    id: open.partId,
+    sessionID: ctx.sessionId,
+    messageID: open.messageId,
+    type: "reasoning",
+    text: open.text,
+    time: { start: open.start, end },
+  }, end)]
 }
 
 function normalizeLocationInput(
@@ -1425,6 +1465,7 @@ function syncState(ctx: CompatContext, state: ClientPresentationProjectionState)
   state.reasoningPartSeq = ctx.reasoningPartSeq
   state.splitText = ctx.splitText
   state.splitReasoning = ctx.splitReasoning
+  state.openReasoning = ctx.openReasoning
 }
 
 function createContext(
@@ -1514,10 +1555,13 @@ export function createClientPresentationProjection(options: ClientPresentationPr
   return {
     name: "client-presentation",
     ingest(event) {
-      return run("ingest", event.type, (ctx) => translateRuntimeEventToCompat(event, ctx, now))
+      return run("ingest", event.type, (ctx) => [
+        ...(REASONING_ENDS_ON.has(event.type) ? endReasoning(ctx, now) : []),
+        ...translateRuntimeEventToCompat(event, ctx, now),
+      ])
     },
     terminalizeOpenTools(error) {
-      return run("terminalize", undefined, (ctx) => terminalizeOpenTools(ctx, error, now))
+      return run("terminalize", undefined, (ctx) => [...endReasoning(ctx, now), ...terminalizeOpenTools(ctx, error, now)])
     },
     state: () => state,
   } satisfies ClientPresentationProjection

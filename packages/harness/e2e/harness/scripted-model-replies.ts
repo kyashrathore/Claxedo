@@ -73,7 +73,7 @@ function chatChunks(sequence: number, reply: StreamedReply, pacing?: StreamPacin
   })
   if (reply.kind === "text") {
     return [
-      chunk([{ delta: { role: "assistant" }, finish_reason: null, index: 0 }]),
+      chunk([{ delta: { role: "assistant", ...(reply.reasoning ? { reasoning_content: reply.reasoning } : {}) }, finish_reason: null, index: 0 }]),
       ...deltas(reply.text, pacing).map((content) => chunk([{ delta: { content }, finish_reason: null, index: 0 }])),
       chunk([{ delta: {}, finish_reason: "stop", index: 0 }], true),
     ]
@@ -205,15 +205,29 @@ function responsesEnvelope(sequence: number, body: ResponseCreateParams, reply: 
   }
 }
 
-function responsesTextEvents(sequence: number, text: string, pacing?: StreamPacing): ResponseStreamEvent[] {
+function responsesTextEvents(sequence: number, text: string, outputIndex: number, pacing?: StreamPacing): ResponseStreamEvent[] {
   const itemId = `msg_${sequence}`
   const part = (value: string) => ({ type: "output_text" as const, text: value, annotations: [], logprobs: [] })
   return [
-    { type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { type: "message", id: itemId, role: "assistant", status: "in_progress", content: [] } },
-    { type: "response.content_part.added", sequence_number: 0, item_id: itemId, output_index: 0, content_index: 0, part: part("") },
-    ...deltas(text, pacing).map((delta) => ({ type: "response.output_text.delta" as const, sequence_number: 0, item_id: itemId, output_index: 0, content_index: 0, delta, logprobs: [] })),
-    { type: "response.output_text.done", sequence_number: 0, item_id: itemId, output_index: 0, content_index: 0, text, logprobs: [] },
-    { type: "response.content_part.done", sequence_number: 0, item_id: itemId, output_index: 0, content_index: 0, part: part(text) },
+    { type: "response.output_item.added", sequence_number: 0, output_index: outputIndex, item: { type: "message", id: itemId, role: "assistant", status: "in_progress", content: [] } },
+    { type: "response.content_part.added", sequence_number: 0, item_id: itemId, output_index: outputIndex, content_index: 0, part: part("") },
+    ...deltas(text, pacing).map((delta) => ({ type: "response.output_text.delta" as const, sequence_number: 0, item_id: itemId, output_index: outputIndex, content_index: 0, delta, logprobs: [] })),
+    { type: "response.output_text.done", sequence_number: 0, item_id: itemId, output_index: outputIndex, content_index: 0, text, logprobs: [] },
+    { type: "response.content_part.done", sequence_number: 0, item_id: itemId, output_index: outputIndex, content_index: 0, part: part(text) },
+  ]
+}
+
+type ResponsesReasoningItem = Extract<ResponseOutputItem, { type: "reasoning" }>
+
+function responsesReasoningEvents(reasoning: ResponsesReasoningItem, text: string): ResponseStreamEvent[] {
+  const summary = { type: "summary_text" as const, text: "" }
+  return [
+    { type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { ...reasoning, summary: [], status: "in_progress" } },
+    { type: "response.reasoning_summary_part.added", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, part: summary },
+    { type: "response.reasoning_summary_text.delta", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, delta: text },
+    { type: "response.reasoning_summary_text.done", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, text },
+    { type: "response.reasoning_summary_part.done", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, part: { ...summary, text } },
+    { type: "response.output_item.done", sequence_number: 0, output_index: 0, item: reasoning },
   ]
 }
 
@@ -275,20 +289,18 @@ export async function respondResponses(
         status: "completed",
         content: [{ type: "output_text", text: reply.text, annotations: [], logprobs: [] }],
       }
-  const reasoning: ResponseOutputItem | undefined = reply.kind === "text" && reply.reasoning
-    ? { type: "reasoning", id: `rs_${sequence}`, summary: [{ type: "summary_text", text: reply.reasoning }], status: "completed" }
+  const thought = reply.kind === "text" ? reply.reasoning : undefined
+  const reasoning: ResponsesReasoningItem | undefined = thought
+    ? { type: "reasoning", id: `rs_${sequence}`, summary: [{ type: "summary_text", text: thought }], status: "completed" }
     : undefined
-  const streamed = item.type === "function_call" || item.type === "custom_tool_call" || item.type === "tool_search_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", pacing)
+  const itemIndex = reasoning ? 1 : 0
+  const streamed = item.type === "function_call" || item.type === "custom_tool_call" || item.type === "tool_search_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", itemIndex, pacing)
   const events: ResponseStreamEvent[] = [
     { type: "response.created", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "in_progress", []) },
+    ...(reasoning && thought ? responsesReasoningEvents(reasoning, thought) : []),
     ...streamed,
-    { type: "response.output_item.done", sequence_number: 0, output_index: 0, item },
-    ...(reasoning ? [
-      { type: "response.output_item.added" as const, sequence_number: 0, output_index: 1, item: { ...reasoning, summary: [], status: "in_progress" as const } },
-      { type: "response.reasoning_summary_text.delta" as const, sequence_number: 0, output_index: 1, item_id: reasoning.id, summary_index: 0, delta: reply.kind === "text" ? reply.reasoning! : "" },
-      { type: "response.output_item.done" as const, sequence_number: 0, output_index: 1, item: reasoning },
-    ] : []),
-    { type: "response.completed", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "completed", reasoning ? [item, reasoning] : [item]) },
+    { type: "response.output_item.done", sequence_number: 0, output_index: itemIndex, item },
+    { type: "response.completed", sequence_number: 0, response: responsesEnvelope(sequence, body, reply, "completed", reasoning ? [reasoning, item] : [item]) },
   ]
   events.forEach((event, index) => {
     event.sequence_number = index

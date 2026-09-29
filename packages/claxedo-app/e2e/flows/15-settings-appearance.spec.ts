@@ -25,6 +25,28 @@ test("15 settings: Expand shell tool parts opens a turn's shell output in the tr
   await expect(app.getByText("shell-output-clean")).toBeVisible()
 })
 
+test("15 settings: Show reasoning summaries is on for a fresh profile, and turning it off hides the model's thinking", async ({ stack, api, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("reasoning-settings")
+  await stack.acp.write("reasoning", {
+    steps: [{ kind: "reasoning", text: "thinking-to-hide" }, { kind: "text", text: "The reply is visible" }],
+  })
+  const session = await api.createSession(workspace.directory, { title: "Reasoning", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, session.id, `Answer. ${acpScriptToken("reasoning")}`)
+  const route = `${stack.url}${sessionRoute(workspace.id, session.id)}`
+  await app.goto(route)
+  await expect(app.getByText("The reply is visible")).toBeVisible()
+  await expect(app.locator('[data-component="reasoning-part"]')).toHaveCount(1)
+  await openSettings(app, isMobile)
+  const toggle = app.locator('[data-action="settings-feed-reasoning-summaries"]')
+  await expect(toggle.getByRole("switch")).toBeChecked()
+  await toggle.click()
+  await expect(toggle.getByRole("switch")).not.toBeChecked()
+  await app.goto(route)
+  await expect(app.getByText("The reply is visible")).toBeVisible()
+  await expect(app.locator('[data-component="reasoning-part"]')).toHaveCount(0)
+  await expect(app.getByText("thinking-to-hide")).toHaveCount(0)
+})
+
 test("15 settings: a fresh profile wears Codex at light contrast 80 and dark contrast 40, and a moved slider is kept", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("appearance-defaults")
   const draft = `${stack.url}${sessionRoute(workspace.id)}`

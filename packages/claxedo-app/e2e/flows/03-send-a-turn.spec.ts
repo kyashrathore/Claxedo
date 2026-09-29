@@ -103,6 +103,35 @@ test("03 send a turn: the reply streams in with its tool groups, diff, todo list
   expect(assistantText(messages)).toContain("Done. The sum is")
 })
 
+test("03 thinking streams open while the model thinks, then folds to how long it took", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("thinking")
+  await stack.acp.write("thinking", {
+    steps: [
+      { kind: "reasoning", text: "**Planning**\n\nRead the config before touching the types." },
+      { kind: "hold", name: "thinking" },
+      { kind: "text", text: "The config is fine." },
+    ],
+  })
+  const session = await api.createSession(workspace.directory, { title: "Thinking", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, `Check the config. ${acpScriptToken("thinking")}`)
+
+  const thought = app.locator('[data-component="reasoning-part"]')
+  await expect(thought).toHaveAttribute("data-streaming", "true")
+  await expect(thought.getByText("Read the config before touching the types.")).toBeVisible()
+  await expect(thought.locator('[data-slot="collapsible-trigger"]')).toContainText("Thinking…")
+
+  await stack.acp.release("thinking")
+  await expect(app.getByText("The config is fine.")).toBeVisible()
+  await expect(thought).not.toHaveAttribute("data-streaming", "true")
+  await expect(thought.locator('[data-slot="collapsible-trigger"]')).toContainText(/Thought for \d/)
+  await expect(thought.getByText("Read the config before touching the types.")).toBeHidden()
+
+  const stored = (await api.messages(workspace.directory, session.id)).flatMap((message) => message.parts)
+    .find((part) => part.type === "reasoning")
+  expect(stored).toMatchObject({ text: "**Planning**\n\nRead the config before touching the types.", time: { end: expect.any(Number) } })
+})
+
 test("03 a new session's first send creates the session and its draft pane becomes that session", async ({ stack, api, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("draft")
   const existing = await api.createSession(workspace.directory, { title: "Existing", harness: SCRIPTED_ACP_HARNESS })
@@ -125,9 +154,13 @@ test("03 a new session's first send creates the session and its draft pane becom
   expect(JSON.stringify(sent)).toContain("Start the draft session")
 })
 
-test("03 a draft's first send is one request: its message shows before the session answers and stays on screen through the swap", async ({ stack, api, app }) => {
+test("03 a draft's first send is one request: its message shows in the session layout before the session answers and stays on screen through the swap", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("one-request")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const composer = app.getByRole("textbox", { name: UI.composer })
+  const workspaceChip = app.getByRole("button", { name: "Workspace", exact: true })
+  await expect(workspaceChip).toBeVisible()
+  const centered = await composer.boundingBox()
   const writes = sessionWrites(app)
   let answer!: () => void
   const answered = new Promise<void>((resolve) => { answer = resolve })
@@ -140,8 +173,16 @@ test("03 a draft's first send is one request: its message shows before the sessi
   const frames = await recordSentMessage(app, text)
   await sendPrompt(app, text)
 
-  await expect(app.locator('[data-component="user-message"]').getByText(text, { exact: true })).toBeVisible()
-  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("")
+  const message = app.locator('[data-component="user-message"]').getByText(text, { exact: true })
+  await expect(message).toBeVisible()
+  await expect(composer).toHaveText("")
+  await expect(app.getByLabel("Thinking", { exact: true })).toBeVisible()
+  await expect(workspaceChip).toHaveCount(0)
+  const docked = await composer.boundingBox()
+  const sentAt = await message.boundingBox()
+  if (!centered || !docked || !sentAt) throw new Error("the composer or the sent message has no box")
+  expect(docked.y).toBeGreaterThan(centered.y)
+  expect(sentAt.y + sentAt.height).toBeLessThan(docked.y)
   expect(writes).toEqual(["/session"])
   answer()
 
@@ -177,6 +218,7 @@ test("03 a draft's first send the runtime refuses leaves no session, and its tex
   await expect(app.getByText(`Connection "${SCRIPTED_ACP_CONNECTION_ID}" is not configured on this runtime`).filter({ visible: true }).first()).toBeVisible()
   await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText(text)
   await expect(app.locator('[data-component="user-message"]')).toHaveCount(0)
+  await expect(app.getByRole("button", { name: "Workspace", exact: true })).toBeVisible()
   expect(await api.sessions(workspace.directory)).toEqual([])
   await app.reload()
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()

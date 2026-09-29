@@ -357,6 +357,58 @@ describe("createClientPresentationProjection", () => {
     }])
   })
 
+  test("a thought ends with its duration when the reply starts, and a later thought is its own part", () => {
+    let clock = 1_000
+    const projection = createClientPresentationProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "msg_turn_1_r",
+      clock: () => clock,
+    })
+    const parts = (events: ReturnType<typeof projection.ingest>) => events.flatMap((event) =>
+      event.payload.type === "message.part.updated" ? [event.payload.properties.part] : [])
+
+    const opened = parts(projection.ingest({ type: "thinking-delta", delta: "Reading " }))
+    expect(opened).toMatchObject([{ type: "reasoning", text: "", time: { start: 1_000 } }])
+    expect(opened[0]?.type === "reasoning" && opened[0].time?.end).toBeUndefined()
+    clock = 2_500
+    expect(parts(projection.ingest({ type: "thinking-delta", delta: "the config" }))).toEqual([])
+    clock = 4_000
+    const replied = parts(projection.ingest({ type: "text-delta", delta: "Done" }))
+    expect(replied).toMatchObject([
+      { id: opened[0]?.id, type: "reasoning", text: "Reading the config", time: { start: 1_000, end: 4_000 } },
+      { type: "text", text: "" },
+    ])
+
+    clock = 5_000
+    const second = parts(projection.ingest({ type: "thinking-delta", delta: "One more check" }))
+    expect(second).toMatchObject([{ type: "reasoning", text: "", time: { start: 5_000 } }])
+    expect(second[0]?.id).not.toBe(opened[0]?.id)
+    clock = 6_000
+    expect(parts(projection.ingest({ type: "finish", sessionId: "session-1" }))).toMatchObject([
+      { id: second[0]?.id, text: "One more check", time: { start: 5_000, end: 6_000 } },
+    ])
+  })
+
+  test("a diagnostic leaves a thought open, and a turn torn down mid-thought still ends it", () => {
+    let clock = 10
+    const projection = createClientPresentationProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "msg_turn_1_r",
+      clock: () => clock,
+    })
+    projection.ingest({ type: "thinking-delta", delta: "Weighing options" })
+    clock = 20
+    projection.ingest({ type: "diagnostic", diagnostic: { code: "probe", message: "still working", severity: "info" } })
+    expect(projection.state().openReasoning?.text).toBe("Weighing options")
+    clock = 30
+    const ended = projection.terminalizeOpenTools("the harness exited").flatMap((event) =>
+      event.payload.type === "message.part.updated" ? [event.payload.properties.part] : [])
+    expect(ended).toMatchObject([{ type: "reasoning", text: "Weighing options", time: { start: 10, end: 30 } }])
+    expect(projection.state().openReasoning).toBeUndefined()
+  })
+
   test("a step-start moves later parts onto the new assistant message", () => {
     const next = makeProjection()
     next.ingest({ type: "step-start", newMessageId: "assistant-2" })

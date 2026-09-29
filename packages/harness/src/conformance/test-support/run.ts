@@ -32,6 +32,8 @@ export type ConformanceBackend = {
   hold?(marker: string): () => void
   held?(marker: string): Promise<void>
   scriptTool?(name: string, input: unknown): void
+  scriptThinking?(input: { marker: string; text: string; reasoning: string }): void | Promise<string>
+  thinkingRequested?(marker: string): boolean
   uiCommand?: string
   rotate?(): Promise<{ credentials: ResolvedCredentials; observed(): boolean }>
   close(): Promise<void>
@@ -120,7 +122,11 @@ async function collect(transport: HarnessTransport, session: HarnessSession, inp
   return events
 }
 
-export function runConformance(input: ConformanceInput): void {
+export type SuiteBackend = ConformanceBackend & Required<Pick<ConformanceBackend, "scriptThinking">>
+
+type SuiteInput = ConformanceInput & { backend(): Promise<SuiteBackend> }
+
+export function runConformance(input: SuiteInput): void {
   describe(`${input.name} transport conformance`, () => {
     test("starts a real harness, streams text and usage, and closes it", async () => {
       const context = await setup(input)
@@ -136,6 +142,24 @@ export function runConformance(input: ConformanceInput): void {
         await context.transport.close(context.session)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else expect((await Promise.all(context.services.processes.map((process) => process.exited))).every((exit) => exit.code !== null || exit.signal !== null)).toBe(true)
+      } finally { await context.close() }
+    }, 60_000)
+
+    test("streams the model's thinking once, before the reply", async () => {
+      const context = await setup(input)
+      try {
+        const reasoning = "Checking THINKCONFORM before replying"
+        if (!context.backend.scriptThinking) throw new Error(`${input.name} scripts no thinking`)
+        const prompt = await context.backend.scriptThinking({ marker: "THINKCONFORM", text: "THOUGHTCONFORM", reasoning })
+        const events = (await collect(context.transport, context.session, context.turn(prompt ?? "Think, then reply: THINKCONFORM"), context.turnBroker()))
+          .map((item) => item.event)
+        const thinking = events.flatMap((event) => event.type === "thinking-delta" ? [event.delta] : []).join("")
+        expect(thinking.trim()).toBe(reasoning)
+        const firstThought = events.findIndex((event) => event.type === "thinking-delta")
+        const firstText = events.findIndex((event) => event.type === "text-delta" && event.delta.length > 0)
+        expect(firstThought).toBeGreaterThanOrEqual(0)
+        expect(firstThought).toBeLessThan(firstText)
+        if (context.backend.thinkingRequested) expect(context.backend.thinkingRequested("THINKCONFORM")).toBe(true)
       } finally { await context.close() }
     }, 60_000)
 

@@ -10,7 +10,7 @@ Stop, pause, and cancel interrupt the turn, wait for its completion event within
 
 A cancellation during `turn/start` waits for the native turn ID within the caller's deadline and interrupts that same captured turn. Old completions cannot settle a new turn.
 
-Translation constraints: cumulative usage replaces the previous observation in its native scope; overlapping native totals must not be counted twice. Child thread attribution uses the observed parent binding. Completed item snapshots contribute only content not already delivered by streaming deltas. MCP image results preserve the provider's supplied bytes.
+Translation constraints: cumulative usage replaces the previous observation in its native scope; overlapping native totals must not be counted twice. Child thread attribution uses the observed parent binding. Completed item snapshots contribute only content not already delivered by streaming deltas. A reasoning item that streamed contributes nothing at completion, and each later summary section (`summaryPartAdded`) opens after a blank line. MCP image results preserve the provider's supplied bytes.
 
 Every projected MCP server, and Claxedo's own for a local session, reaches Codex in the thread's `mcp_servers`. Codex decides how the model sees their tools, and this transport doesn't override it: for a model whose catalog entry supports search, such as `gpt-5.5`, Codex 0.156.1 defers every MCP tool behind its client-executed `tool_search` tool, so the model first calls `tool_search`, receives the matching `mcp__<server>` namespaces in a `tool_search_output`, and then calls a tool in that namespace. A model without search support gets the tools directly.
 

@@ -4,7 +4,7 @@ import path from "node:path"
 import { expect, test } from "bun:test"
 import { createTestServices } from "./test-support/services"
 import { processAlive } from "../../e2e/harness/process-alive"
-import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
 import { assertListedCommandsRun } from "./test-support/commands"
 import { PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
@@ -12,7 +12,7 @@ import { startScriptedModelServer } from "../../e2e/harness/scripted-model-serve
 import { PiRpcTransport } from "../transports/pi-rpc"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 
-type PiBackend = ConformanceBackend & { root: string; agentDir: string; server: Awaited<ReturnType<typeof startScriptedModelServer>> }
+type PiBackend = SuiteBackend & { root: string; agentDir: string; server: Awaited<ReturnType<typeof startScriptedModelServer>> }
 
 const extension = `export default function (pi) {
   pi.registerCommand("conformance-ui", {
@@ -61,6 +61,7 @@ async function backend(): Promise<PiBackend> {
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
+    scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: withUndeliverableFile,
     close: async () => { await server.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) },
   }

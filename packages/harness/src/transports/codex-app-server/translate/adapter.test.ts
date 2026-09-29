@@ -110,6 +110,23 @@ describe("codexAppServerAdapter", () => {
     expect(first.state().assistantTextByItemId["msg-1"]).toBe("hello")
   })
 
+  test("streams reasoning summary sections once, separated, and adds nothing when the item completes", () => {
+    const agent = runtime()
+    const thinking = (method: string, payload: Record<string, unknown>) =>
+      agent.ingest({ source: "codex.app-server", method, payload }).events.map((event) => event.type === "thinking-delta" ? event.delta : event.type)
+    expect(thinking("item/reasoning/summaryPartAdded", { itemId: "rs-1", summaryIndex: 0 })).toEqual([])
+    expect(thinking("item/reasoning/summaryTextDelta", { itemId: "rs-1", delta: "**Reading**", summaryIndex: 0 }))
+      .toEqual(["**Reading**"])
+    expect(thinking("item/reasoning/summaryPartAdded", { itemId: "rs-1", summaryIndex: 1 }))
+      .toEqual(["\n\n"])
+    expect(thinking("item/reasoning/summaryTextDelta", { itemId: "rs-1", delta: "**Checking**", summaryIndex: 1 }))
+      .toEqual(["**Checking**"])
+    expect(thinking("item/completed", { item: { id: "rs-1", type: "reasoning", summary: ["**Reading**", "**Checking**"], content: [] } }))
+      .toEqual([])
+    expect(thinking("item/completed", { item: { id: "rs-2", type: "reasoning", summary: ["Only at completion"], content: [] } }))
+      .toEqual(["Only at completion"])
+  })
+
   test("maps reasoning and proposed plan streams", () => {
     const agent = runtime()
 

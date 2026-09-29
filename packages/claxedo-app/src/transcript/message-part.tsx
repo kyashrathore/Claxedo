@@ -1527,10 +1527,12 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   }
   const streaming = createMemo(
     () =>
+      typeof part().time?.end !== "number" &&
       props.message.role === "assistant" &&
       typeof props.message.time.completed !== "number" &&
       props.turnInterrupted !== true,
   )
+  const [chosenOpen, setChosenOpen] = createSignal<boolean>()
   const text = () => readPartText(part())
   const durationMs = createMemo(() => {
     const time = part().time
@@ -1545,8 +1547,15 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div data-component="reasoning-part" class="ui-reasoning-part" data-timeline-part-id={part().id}>
-        <BasicTool icon="brain" status={streaming() ? "running" : undefined} trigger={{ title: title() }}>
+      <div data-component="reasoning-part" class="ui-reasoning-part" data-timeline-part-id={part().id} data-streaming={streaming() ? "true" : undefined}>
+        <BasicTool
+          icon="brain"
+          status={streaming() ? "running" : undefined}
+          startedAt={part().time?.start}
+          open={chosenOpen() ?? streaming()}
+          onOpenChange={setChosenOpen}
+          trigger={{ title: title() }}
+        >
           <div data-component="reasoning-content">
             <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
           </div>

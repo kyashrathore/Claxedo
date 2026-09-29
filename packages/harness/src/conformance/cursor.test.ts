@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedCursorBackend } from "../../e2e/harness/cursor/backend"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -18,7 +18,7 @@ import type { RoutedEvent, SessionBroker, TurnInput } from "../contract"
 
 const CURSOR_WORKER = { file: process.execPath, args: [path.join(import.meta.dirname, "../transports/cursor-sdk/host.ts")] }
 
-type CursorBackend = ConformanceBackend & { root: string; env: NodeJS.ProcessEnv; server: Awaited<ReturnType<typeof startScriptedCursorBackend>> }
+type CursorBackend = SuiteBackend & { root: string; env: NodeJS.ProcessEnv; server: Awaited<ReturnType<typeof startScriptedCursorBackend>> }
 
 type Context = Awaited<ReturnType<typeof setupConformance>>
 
@@ -38,6 +38,10 @@ async function backend(): Promise<CursorBackend> {
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
     owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance",
+    scriptThinking: ({ marker, text, reasoning }) => {
+      server.script(marker, { steps: [{ kind: "thinking", text: reasoning, durationMs: 1200 }, { kind: "text", text }] })
+      server.defaultScript(marker)
+    },
     unrunnableTurn: withUndeliverableFile,
     close: async () => {
       console.log(`Cursor outbound attempts: ${JSON.stringify(guard.attempts)}`)

@@ -12,11 +12,11 @@ import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
 import { WorkspaceScope } from "../transports/opencode-sdk/scope"
 import { terminal } from "../transports/opencode-sdk/translate/event"
 import type { RoutedEvent, TurnInput } from "../contract"
-import { runConformance, setupConformance, type ConformanceBackend } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, type SuiteBackend } from "./test-support/run"
 import { createTestServices } from "./test-support/services"
 
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
-type OpenCodeBackend = ConformanceBackend & { root: string; server: ScriptedServer; rotated: ScriptedServer[] }
+type OpenCodeBackend = SuiteBackend & { root: string; server: ScriptedServer; rotated: ScriptedServer[] }
 
 async function backend(): Promise<OpenCodeBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-conformance-"))
@@ -52,6 +52,7 @@ async function backend(): Promise<OpenCodeBackend> {
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name, input }),
+    scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: (turn) => ({ ...turn, model: undefined }),
     rotate: async () => {
       const port = await reservePort()

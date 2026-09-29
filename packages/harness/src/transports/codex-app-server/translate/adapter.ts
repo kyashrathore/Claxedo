@@ -35,6 +35,7 @@ export type CodexAppServerAdapterState = {
     itemType?: string
   }>
   turnUsageByThread?: Record<string, CodexTurnUsageState>
+  reasoningTextByItemId?: Record<string, string>
   reportedModels?: Record<string, string>
   lastLimitedRateLimitMessage?: string
 }
@@ -75,6 +76,14 @@ function eventText(event: { payload: unknown }) {
   const row = payload(event)
   const fields = eventFields(event)
   return text(fields.textDelta) ?? text(row.delta) ?? text(row.text) ?? text(fields.message)
+}
+
+function streamedReasoning(state: CodexAppServerAdapterState, id: string, delta: string) {
+  const reasoningTextByItemId = boundKeyedRecord({
+    ...state.reasoningTextByItemId,
+    [id]: `${own(state.reasoningTextByItemId ?? {}, id) ?? ""}${delta}`,
+  }, RETAINED_WIRE_KEYS_MAX)
+  return { state: { ...state, reasoningTextByItemId }, events: [{ type: "thinking-delta" as const, delta }] }
 }
 
 function item(event: { payload: unknown }) {
@@ -800,7 +809,12 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
         case "item/reasoning/textDelta":
         case "item/reasoning/summaryTextDelta": {
           const delta = eventText(event)
-          return delta ? [{ type: "thinking-delta", delta }] : []
+          return delta ? streamedReasoning(state, itemId(event, "reasoning"), delta) : []
+        }
+
+        case "item/reasoning/summaryPartAdded": {
+          const streamed = own(state.reasoningTextByItemId ?? {}, itemId(event, "reasoning")) ?? ""
+          return streamed && !streamed.endsWith("\n\n") ? streamedReasoning(state, itemId(event, "reasoning"), "\n\n") : []
         }
 
         case "item/plan/delta": {
@@ -836,6 +850,7 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
             }
           }
           if (itemType === "reasoning") {
+            if (own(state.reasoningTextByItemId ?? {}, id)) return []
             const content = [
               text(completedItem.text),
               text(completedItem.summary),
@@ -1276,7 +1291,6 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
           })
         }
 
-        case "item/reasoning/summaryPartAdded":
         case "rawResponseItem/completed":
         case "serverRequest/resolved":
           return unmappedCodexAppServerEvent(event)

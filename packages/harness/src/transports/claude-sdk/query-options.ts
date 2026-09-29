@@ -54,7 +54,8 @@ export class ClaudeQueryLauncher {
       ...(spec.effort ? { effort: spec.effort } : {}),
       ...(spec.system ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } } : {}),
       ...(spec.agent ? { agent: spec.agent } : {}),
-      ...(spec.partialMessages ? { includePartialMessages: true, extraArgs: { "replay-user-messages": null } } : {}),
+      extraArgs: { "thinking-display": "summarized", ...(spec.partialMessages ? { "replay-user-messages": null } : {}) },
+      ...(spec.partialMessages ? { includePartialMessages: true } : {}),
       canUseTool: (name, payload, options) => spec.clear || !turnBroker
         ? Promise.resolve({ behavior: protocolClaudePermissionMap.deny, message: "Clearing the native Goal cannot run tools" })
         : askClaudePermission(current, turnBroker, name, payload, options, spec.turnId),

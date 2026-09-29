@@ -3,6 +3,13 @@ import type { RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-
 export const RETAINED_TOOL_CALLS_MAX = 256
 export const RETAINED_PART_IDS_MAX = 1024
 
+export type OpenReasoningPart = {
+  readonly partId: string
+  readonly messageId: string
+  readonly start: number
+  readonly text: string
+}
+
 export type ClientPresentationProjectionState = {
   assistantMsgId?: string
   /**
@@ -41,6 +48,8 @@ export type ClientPresentationProjectionState = {
   reasoningPartSeq: number
   splitText: boolean
   splitReasoning: boolean
+  /** The reasoning part still streaming; the next content event ends it with `time.end`. */
+  openReasoning?: OpenReasoningPart
 }
 
 function keyedMap<V>(value: Map<string, V> | undefined): Map<string, V> {
@@ -71,5 +80,6 @@ export function createClientPresentationProjectionState(
     reasoningPartSeq: initial?.reasoningPartSeq ?? 0,
     splitText: initial?.splitText ?? false,
     splitReasoning: initial?.splitReasoning ?? false,
+    openReasoning: initial?.openReasoning,
   }
 }

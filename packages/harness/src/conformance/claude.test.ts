@@ -8,7 +8,7 @@ import os from "node:os"
 import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { runConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
+import { runConformance, type ConformanceBackend, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
@@ -26,7 +26,7 @@ import { askClaudePermission } from "../transports/claude-sdk/requests"
 import { sdkModes } from "../transports/claude-sdk/permissions"
 import { pollUntil } from "./test-support/poll"
 
-type ClaudeBackend = ConformanceBackend & {
+type ClaudeBackend = SuiteBackend & {
   root: string
   config: { harness: ConformanceBackend["harness"]; model: ConformanceBackend["model"]; permissionMode?: string }
   configRoot: string
@@ -178,6 +178,9 @@ async function backend(): Promise<ClaudeBackend> {
     },
     held: (marker) => server.textGateReached(marker),
     scriptTool: (name, input) => server.scriptTool({ name: name === "read" ? "Read" : name, input: name === "read" ? { file_path: path.join(directory, "conformance.txt") } : input }),
+    scriptThinking: (input) => server.scriptText(input),
+    thinkingRequested: (marker) => server.requests.some((request) => request.prompt.includes(marker)
+      && (request.body as { thinking?: { display?: string } }).thinking?.display === "summarized"),
     close: async () => {
       try {
         await Promise.all(samples)

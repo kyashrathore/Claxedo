@@ -5,7 +5,7 @@ import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile } from "./test-support/run"
+import { runConformance, setupConformance, type ConformanceBackend, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
@@ -23,7 +23,7 @@ import { createTestServices } from "./test-support/services"
 import type { PermissionDecision } from "@claxedo/agent-runtime-contract"
 import type { HarnessTransport, PendingRequest, RequestAnswer, ResolvedCredentials, RoutedEvent, StartInput, TurnBroker, TurnInput } from "../contract"
 
-type CodexBackend = ConformanceBackend & {
+type CodexBackend = SuiteBackend & {
   root: string
   env: NodeJS.ProcessEnv
   server: Awaited<ReturnType<typeof startScriptedModelServer>>
@@ -48,6 +48,7 @@ async function backend(): Promise<CodexBackend> {
     origin: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
+    scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: withUndeliverableFile,
     cleanupWithoutCommands: "verified_clear",
     close: async () => {
