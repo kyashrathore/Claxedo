@@ -45,6 +45,7 @@ jobs:
       boundary_local_server: ${{ steps.changed.outputs.boundary_local_server }}
       boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
       boundary_server: ${{ steps.changed.outputs.boundary_server }}
+      app_checks: ${{ steps.changed.outputs.app_checks }}
     steps:
       - name: Checkout repository history
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -73,6 +74,21 @@ jobs:
 
       - name: Check repository documentation links
         run: bun run docs:check-links
+
+  app-checks:
+    name: app rule checks
+    needs: changes
+    if: needs.changes.outputs.app_checks == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run the app's rule checks
+        run: bun run --cwd packages/claxedo-app check
 
   unit:
     name: unit (${{ matrix.settings.name }}, ${{ matrix.lane }})
@@ -229,7 +245,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, docs, unit]
+    needs: [changes, docs, app-checks, unit]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate to pass
@@ -237,8 +253,10 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
+          APP_CHECKS_RESULT: ${{ needs.app-checks.result }}
           DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
           UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
+          APP_CHECKS_SELECTED: ${{ needs.changes.outputs.app_checks }}
         run: |
           require_gate() {
             label="$1"
@@ -260,3 +278,4 @@ jobs:
           }
           require_gate "Documentation" "$DOCS_SELECTED" "$DOCS_RESULT"
           require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
+          require_gate "App rule checks" "$APP_CHECKS_SELECTED" "$APP_CHECKS_RESULT"

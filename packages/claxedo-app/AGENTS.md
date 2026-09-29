@@ -154,7 +154,7 @@ The suite must be robust, working, honest and fast.
 
 ## Checks
 
-`bun run check` in this package runs:
+`bun run check` in this package (`scripts/checks/run.ts`) typechecks the checks, then runs:
 - no comments;
 - size;
 - v2 only;
@@ -165,9 +165,13 @@ The suite must be robust, working, honest and fast.
 - one home per datum;
 - domain boundaries;
 - one owner;
+- one registration;
 - no directory identity;
 - access boundary;
-- protected areas;
-- e2e hygiene.
+- protected areas, which names the corpus flows a working-tree change must run and never fails;
+- e2e hygiene;
+- budget;
+- freshness;
+- CSS invalidation.
 
-All must be at zero before a change is done.
+All must be at zero before a change is done, with `bun run typecheck` and `bun run test` passing. CI runs the checks in the `app rule checks` job of `.github/workflows/test.yml`, and the root `prepush` runs them too.
