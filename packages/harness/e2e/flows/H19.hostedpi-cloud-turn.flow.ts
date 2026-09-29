@@ -6,6 +6,7 @@ import { hostedFetch } from "../harness/hosted-auth"
 import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startHostedStack("h19-hosted-pi")
@@ -41,7 +42,7 @@ export async function run() {
     try {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
       const session = await hostedSession(stack, owner, workspace, { id: "pi", access: "native" }, model)
-      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: HOSTEDPITURN", { model })
+      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: HOSTEDPITURN", { model, title: true })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "hosted Pi settlement", timeoutMs: 60_000 })
       const messages = await api.messages(workspace.directory, session.id)
@@ -51,6 +52,7 @@ export async function run() {
         }
         throw new Error(`hosted Pi turn failed after credential delivery: secrets=${JSON.stringify(target.secretNames)} modelRequests=${stack.model.requests.length} settlement=${JSON.stringify(settled)}`)
       }
+      await waitForTitle(stream, session.id)
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"))
       assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
       assert.ok(stack.model.requests.some((request) => request.prompt.includes("HOSTEDPITURN")))

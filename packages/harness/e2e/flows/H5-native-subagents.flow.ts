@@ -3,6 +3,7 @@ import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "Agent", mode: "bypassPermissions",
@@ -31,6 +32,7 @@ export async function run() {
       assert.equal((await api.session(directory, child.id)).parentID, parent.id)
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id,
         { label: `${harness.id} parent idle`, timeoutMs: 90_000 })
+      if (harness.id === "codex") await waitForTitle(stream, parent.id)
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
         { label: `${harness.id} child idle`, timeoutMs: 90_000 })
       const childText = assistantText(await api.messages(directory, child.id))

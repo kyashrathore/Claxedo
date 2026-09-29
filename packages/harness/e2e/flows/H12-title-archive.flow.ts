@@ -8,7 +8,7 @@ import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport } from "../harness/transport"
-import { waitForIdle } from "../harness/turn-observations"
+import { waitForIdle, waitForTitle } from "../harness/turn-observations"
 
 export async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "claude" | "codex") {
   const directory = (await stack.daemon.makeWorkspace(`h12-${name}`)).directory
@@ -17,14 +17,12 @@ export async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp"
   const model = name === "pi" ? { providerId: "pi", modelId: "openai/gpt-4.1" } : undefined
   const session = await api.createSession(directory, { harness, ...(model ? { model } : {}) })
   const first = `H12_${name.toUpperCase()}_FIRST`
-  await api.prompt(directory, session.id, `Reply with exactly this one token: ${first}`, model ? { model } : {})
+  await api.prompt(directory, session.id, `Reply with exactly this one token: ${first}`, { ...(model ? { model } : {}), title: name !== "claude" })
   await waitForIdle(stream, session.id)
   const firstMessages = await api.messages(directory, session.id)
   assert.match(assistantText(firstMessages), new RegExp(first))
   const firstAssistantId = firstMessages.filter((message) => message.info.role === "assistant").at(-1)?.info.id
-  if (name === "pi") await stream.waitFor((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id
-    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } }).properties?.info?.titleSource === "harness",
-  { label: `${name} first title` })
+  if (name !== "claude") await waitForTitle(stream, session.id)
   const titled = await api.session(directory, session.id)
   assert.ok(titled.title, `${name} first turn produced no title`)
   assert.ok(stream.frames.some((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id), `${name} title was not streamed`)
@@ -53,21 +51,22 @@ export async function titleAndArchive(stack: Stack, api: ClaxedoApi, name: "acp"
       label: `${name} running turn`, timeoutMs: 20_000,
     })
     if (name === "acp") {
-      await eventually("ACP held turn emitted text", async () => assistantText(await api.messages(directory, session.id)).includes("H12 held turn began") || undefined)
+      await stream.waitFor((frame) => frameSessionId(frame) === session.id && !!frameType(frame)?.startsWith("message.part")
+        && JSON.stringify(frame.data.payload).includes("H12 held turn began"), { label: "ACP held turn text" })
     } else {
       await eventually(`${name} held model request`, async () => stack.scripted.requests.some((request) => request.prompt.includes(marker)) || undefined)
     }
     const archivedAt = Date.now()
+    const beforeArchive = stream.frames.length
     const archived = await api.updateSession(directory, session.id, { time: { archived: archivedAt } })
     assert.equal(archived.time.archived, archivedAt)
     assert.equal((await api.session(directory, session.id)).time.archived, archivedAt)
     assert.ok((await api.archivedSessions(directory)).some((row) => row.id === session.id && row.time.archived === archivedAt))
     assert.ok(!(await api.visibleSessions(directory)).some((row) => row.id === session.id), `${name} archived session remained active`)
-    const last = await eventually(`${name} archived turn outcome`, async () => {
-      const messages = await api.messages(directory, session.id)
-      const assistant = messages.filter((message) => message.info.role === "assistant").at(-1)
-      return assistant?.info.id !== firstAssistantId && (assistant?.info.time as { completed?: number } | undefined)?.completed ? assistant : undefined
-    })
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id && stream.frames.indexOf(frame) >= beforeArchive,
+      { label: `${name} archived turn outcome` })
+    const last = (await api.messages(directory, session.id)).filter((message) => message.info.role === "assistant").at(-1)
+    assert.ok(last && last.info.id !== firstAssistantId, `${name} archived turn stored no assistant message`)
     assert.ok((last.info.time as { completed?: number }).completed)
     assert.ok(!JSON.stringify(last.parts).includes(marker), `${name} held reply completed after archive`)
     assert.equal((await api.session(directory, session.id)).title, renamed)

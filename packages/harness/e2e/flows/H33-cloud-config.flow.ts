@@ -8,6 +8,7 @@ import { applyScriptedPluginProfile, scriptedPluginServerName } from "../harness
 import { startScriptedMcpServer } from "../harness/scripted-mcp-server"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 import { sendJson } from "../harness/transport"
 
 type Command = { name: string; content?: string; origin: "saved" | "transport" }
@@ -48,10 +49,11 @@ export async function run() {
       })
       try {
         const session = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
-        await api.prompt(workspace.directory, session.id, saved.content)
+        await api.prompt(workspace.directory, session.id, saved.content, { title: true })
         const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
           (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "H33 plugin turn" })
         assert.equal(frameType(settled), "session.idle", `C-7: cloud plugin turn failed: ${JSON.stringify(settled)}`)
+        await waitForTitle(stream, session.id)
         assert.deepEqual(mcp.calls, [{ name: "proof", arguments: { marker: "H33CLOUD" } }], "C-7: installed plugin never reached the cloud session")
         const history = assistantText(await api.messages(workspace.directory, session.id))
         assert.match(history, /Saved command delivered to cloud/)
@@ -70,8 +72,9 @@ export async function run() {
         await sendJson(control, "PUT", `${stack.url}/api/claxedo/plugins/signed-runtime`, null, "H33 remove plugin")
         await stack.acp.write("h33-removed", { steps: [{ kind: "text", text: "H33_REMOVED" }] })
         const after = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
-        await api.prompt(workspace.directory, after.id, acpScriptToken("h33-removed"))
+        await api.prompt(workspace.directory, after.id, acpScriptToken("h33-removed"), { title: true })
         await stream.waitFor((frame) => frameSessionId(frame) === after.id && frameType(frame) === "session.idle", { label: "H33 removal turn" })
+        await waitForTitle(stream, after.id)
         const restarted = (await readAcpRequests(stack.acp.scriptDir)).filter((request) => request.method === "session/new").at(-1)
         assert.ok(restarted, "plugin removal session never reached ACP session/new")
         assert.ok(!(restarted.params.mcpServers as McpServer[]).some((server) => scriptedPluginServerName("scripted").test(server.name)),

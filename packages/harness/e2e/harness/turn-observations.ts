@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import type { MessageRow } from "./api"
-import { frameSessionId, frameType, type EventStream } from "./stream"
+import { frameSessionId, frameType, isGeneratedTitle, type EventStream } from "./stream"
 
 type Delta = { sessionID?: string; partID?: string; field?: string; delta?: string }
 
@@ -43,6 +43,11 @@ export function waitForIdle(stream: EventStream, sessionId: string) {
     label: `${sessionId} session.idle`,
     timeoutMs: 60_000,
   })
+}
+
+/** The title a session's first completed turn asks for, published after that turn's idle and before any later turn's frames. */
+export function waitForTitle(stream: EventStream, sessionId: string) {
+  return stream.waitFor((frame) => isGeneratedTitle(frame, sessionId), { label: `${sessionId} generated title`, timeoutMs: 60_000 })
 }
 
 export function assertTurnFinished(messages: MessageRow[], stream: EventStream, sessionId: string) {

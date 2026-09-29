@@ -3,6 +3,7 @@ import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startStack({ label: "h35-native" })
@@ -14,8 +15,9 @@ export async function run() {
       const marker = target.toUpperCase()
       const source = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model: { providerId: "pi", modelId: "openai/gpt-4.1" } })
       stack.scripted.scriptText({ marker: `H35${marker}SOURCE`, text: `H35 ${target} transcript proof` })
-      await api.prompt(workspace.directory, source.id, `Say H35${marker}SOURCE`, { model: { providerId: "pi", modelId: "openai/gpt-4.1" } })
+      await api.prompt(workspace.directory, source.id, `Say H35${marker}SOURCE`, { model: { providerId: "pi", modelId: "openai/gpt-4.1" }, title: true })
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === source.id, { label: `${target} source turn`, timeoutMs: 60_000 })
+      await waitForTitle(stream, source.id)
       assert.match(assistantText(await api.messages(workspace.directory, source.id)), new RegExp(`H35 ${target} transcript proof`))
       const switched = await api.updateSessionConfig(workspace.directory, source.id, { harness: { id: target, access: "native" } })
       assert.equal((switched.handoff as { pending?: boolean })?.pending, true)

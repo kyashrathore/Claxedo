@@ -9,7 +9,7 @@ import { eventually } from "../harness/eventually"
 import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { directTransport } from "../harness/transport"
-import { assertStoredPartsMatchLive, assertTurnFinished, waitForIdle } from "../harness/turn-observations"
+import { assertStoredPartsMatchLive, assertTurnFinished, waitForIdle, waitForTitle } from "../harness/turn-observations"
 import { frameSessionId, frameType } from "../harness/stream"
 
 async function acpParts(stack: Stack, api: ClaxedoApi) {
@@ -24,8 +24,9 @@ async function acpParts(stack: Stack, api: ClaxedoApi) {
   ] })
   const stream = await stack.events(directory)
   const session = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS })
-  await api.prompt(directory, session.id, `Exercise all ACP parts. ${acpScriptToken("h1-parts")}`)
+  await api.prompt(directory, session.id, `Exercise all ACP parts. ${acpScriptToken("h1-parts")}`, { title: true })
   await waitForIdle(stream, session.id)
+  await waitForTitle(stream, session.id)
   const messages = await api.messages(directory, session.id)
   const { live, stored } = assertStoredPartsMatchLive(messages, stream, session.id)
   assertTurnFinished(messages, stream, session.id)
@@ -67,8 +68,9 @@ async function modelParts(stack: Stack, api: ClaxedoApi, harness: "pi" | "claude
     { name: "exec_command", input: { cmd: "false", workdir: directory } },
     { name: "update_plan", input: { plan: [{ step: "H1 Codex todo", status: "completed" }] } },
   ])
-  await api.prompt(directory, session.id, `Reply with exactly this one token: ${marker}`, model ? { model } : {})
+  await api.prompt(directory, session.id, `Reply with exactly this one token: ${marker}`, { ...(model ? { model } : {}), title: harness !== "claude" })
   await waitForIdle(stream, session.id)
+  if (harness !== "claude") await waitForTitle(stream, session.id)
   const messages = await eventually(`${harness} completed native tools`, async () => {
     const current = await api.messages(directory, session.id)
     return current.flatMap((message) => message.parts).filter((part) => part.type === "tool").length >= (harness === "claude" ? 3 : 2)

@@ -5,6 +5,7 @@ import { acpScriptToken } from "../harness/acp/script"
 import { readAcpRequests } from "../harness/acp/requests"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 import { directTransport } from "../harness/transport"
 import { unexpectedEgress } from "../harness/egress-guard"
 
@@ -22,6 +23,7 @@ export async function run() {
     const reply = await directTransport({ method: "POST", url: url.toString(), headers: { "content-type": "application/json" }, body: JSON.stringify({ parts: [{ type: "text", text: `H37 options ${acpScriptToken("h37-options")}` }], permissionMode: "review" }) })
     assert.equal(reply.status, 200, reply.body)
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === acp.id, { label: "ACP option turn", timeoutMs: 60_000 })
+    await waitForTitle(stream, acp.id)
     const requests = await readAcpRequests(stack.acp.scriptDir)
     assert.ok(requests.some((row) => row.method === "session/set_config_option" && row.params.value === "review"), "turn permission mode never reached ACP")
     assert.ok(requests.some((row) => row.method === "session/prompt" && JSON.stringify(row.params).includes("h37-options")))
@@ -35,6 +37,7 @@ export async function run() {
     const codexReply = await directTransport({ method: "POST", url: codexUrl.toString(), headers: { "content-type": "application/json" }, body: JSON.stringify({ parts: [{ type: "text", text: "H37CODEXOPTIONS" }], variant: "low", serviceTier: "priority" }) })
     assert.equal(codexReply.status, 200, codexReply.body)
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === codex.id, { label: "Codex option turn", timeoutMs: 60_000 })
+    await waitForTitle(stream, codex.id)
     const modelRequest = stack.scripted.requests.find((row) => row.dialect === "responses" && row.prompt.includes("H37CODEXOPTIONS"))
     assert.ok(modelRequest, "Codex turn never reached the scripted model")
     assert.equal((modelRequest.body as { reasoning?: { effort?: string } }).reasoning?.effort, "low")

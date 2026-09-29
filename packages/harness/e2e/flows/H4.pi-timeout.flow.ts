@@ -6,6 +6,7 @@ import { writePiDialogExtension } from "../harness/pi-dialog-extension"
 import { forgetStoredAccounts, ownerPiAgentDir, writeOwnerPiModels } from "../harness/pi-owner"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startStack({ label: "h4-pi-timeout" })
@@ -47,6 +48,7 @@ export async function run() {
     })
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id,
       { label: "Pi timeout turn idle" })
+    await waitForTitle(stream, session.id)
     assert.match(assistantText(await api.messages(directory, session.id)), /PI_TIMEOUT/)
     assert.equal((await api.session(directory, session.id)).id, session.id)
     assert.deepEqual(stack.egress.attempts, [])

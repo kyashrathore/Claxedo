@@ -5,6 +5,7 @@ import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 const CASES = [
   { name: "pi", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
@@ -39,6 +40,7 @@ async function unknownCase(item: typeof CASES[number]) {
       assert.equal(answer.status, 202, `${item.name} unknown steer HTTP: ${JSON.stringify(body)}`)
       assert.ok(body.status === "pending" || body.status === "unknown", `${item.name} steer receipt: ${JSON.stringify(body)}`)
       await stream.waitFor((frame) => (frameType(frame) === "session.idle" || frameType(frame) === "session.error") && frameSessionId(frame) === session.id, { label: `${item.name} unknown steer settled` })
+      if (item.name !== "claude") await waitForTitle(stream, session.id)
       const queue = async () => {
         const response = await fetch(new URL(`/session/${encodeURIComponent(session.id)}/queue?directory=${encodeURIComponent(workspace.directory)}`, stack.url))
         assert.equal(response.status, 200)

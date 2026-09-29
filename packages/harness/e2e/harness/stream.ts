@@ -58,6 +58,12 @@ export function frameSessionId(frame: StreamFrame): string | undefined {
   return typeof value === "string" ? value : undefined
 }
 
+/** The `session.updated` that carries the title a session's first completed turn asked the harness for. */
+export function isGeneratedTitle(frame: StreamFrame, sessionId: string): boolean {
+  return frameType(frame) === "session.updated" && frameSessionId(frame) === sessionId
+    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } } | undefined)?.properties?.info?.titleSource === "harness"
+}
+
 export async function openEventStream(url: string, directory: string, options: EventStreamOptions = {}): Promise<EventStream> {
   const target = new URL(options.relayWorkspaceId
     ? `/workspaces/${encodeURIComponent(options.relayWorkspaceId)}/api/wr/events`

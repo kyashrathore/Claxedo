@@ -10,7 +10,7 @@ import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport } from "../harness/transport"
-import { waitForIdle } from "../harness/turn-observations"
+import { waitForIdle, waitForTitle } from "../harness/turn-observations"
 
 export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" | "claude" | "codex") {
   const directory = (await stack.daemon.makeWorkspace(`h13-${name}`)).directory
@@ -24,8 +24,9 @@ export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi
     usage: { inputTokens: 11, outputTokens: 5, totalTokens: 16, thoughtTokens: 2, cachedReadTokens: 1, cachedWriteTokens: 0 },
   })
   const prompt = name === "acp" ? `Report usage. ${acpScriptToken("h13-usage")}` : `Reply with exactly this one token: ${marker}`
-  await api.prompt(directory, session.id, prompt, model ? { model } : {})
+  await api.prompt(directory, session.id, prompt, { ...(model ? { model } : {}), title: name !== "claude" })
   await waitForIdle(stream, session.id)
+  if (name !== "claude") await waitForTitle(stream, session.id)
   const sources = await runtimeSources(stack.dataDir, session.id)
   if (name !== "acp") {
     const dialect = name === "claude" ? "messages" : name === "codex" ? "responses" : "chat"

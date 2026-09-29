@@ -5,6 +5,7 @@ import { ApiError, ClaxedoApi, type PermissionRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "Bash", mode: "default" },
@@ -73,6 +74,10 @@ export async function run() {
       const onceSince = stream.frames.length
       await api.replyPermission(directory, session.id, once.id, "once")
       await idle(stream, session.id, `${harness.id} once idle`, onceSince)
+      if (harness.id === "codex") {
+        await waitForTitle(stream, session.id)
+        await waitForTitle(stream, other.id)
+      }
       assert.equal(await fs.readFile(output, "utf8"), "approved")
       const replied = stream.frames.filter((frame) => frameType(frame) === "permission.replied" && frameSessionId(frame) === session.id).length
       const onceMessages = await api.messages(directory, session.id)
