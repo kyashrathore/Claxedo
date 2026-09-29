@@ -1,4 +1,4 @@
-/* The home page's light theme and shared type, used by the home page and its hero lab routes. */
+/* The home page's light theme and shared type. */
 html:root {
   color-scheme: light;
   --bg: #fcfcfc;
@@ -10,14 +10,13 @@ html:root {
   --line-strong: #e8e8e8;
   --accent-hover: #000000;
   --surface-raised: #ffffff;
-}
-
-.home {
   --edge: clamp(1rem, 5.5vw, 5rem);
   --width: min(100% - 2 * var(--edge), 80rem);
-  overflow-x: clip;
 }
-.nav { background: var(--bg); backdrop-filter: none; }
+
+.home { overflow-x: clip; }
+.nav { padding-inline: 0; background: var(--bg); backdrop-filter: none; }
+.nav-inner { width: var(--width); margin-inline: auto; }
 .nav-links a, .nav-app { font-size: .9375rem; font-weight: 400; }
 .nav .btn-pill { font-weight: 400; font-size: .875rem; }
 .home .btn-pill { min-height: 2.75rem; padding: 0 1.4rem; font: 400 1rem/1 var(--font-sans); letter-spacing: -.01em; }

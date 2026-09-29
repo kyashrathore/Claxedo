@@ -55,9 +55,10 @@ import dither from "../assets/home/daniell-taj-dither.webp"
   /*
    * The plate hangs from the demo window's top edge: `--cut` is the image row
    * that lands on that edge (row 376 is the terrace; the dome's finial is row
-   * 288), and `--rise` how far the plate reaches above it. Over the text column
-   * it keeps to the band between the text and the window; right of `--clear`
-   * the whole Taj stands up beside the headline.
+   * 288, so the Taj stands 88 rows tall), and `--rise` how far the plate
+   * reaches above it. Over the text column it keeps to the band between the
+   * text and the window; right of `--clear` the whole Taj stands beside the
+   * text, its sky fading out before the top of the plate.
    */
   .daniell {
     --dot: 2px;
@@ -65,6 +66,7 @@ import dither from "../assets/home/daniell-taj-dither.webp"
     --rise: var(--beside);
     --cut: 376;
     --shift: 36rem;
+    --band-top: calc(100% - var(--tuck) - var(--band));
     position: absolute;
     left: 50%;
     bottom: calc(100% - var(--tuck));
@@ -72,8 +74,10 @@ import dither from "../assets/home/daniell-taj-dither.webp"
     height: calc(var(--rise) + var(--tuck));
     translate: -50% 0;
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to bottom, transparent calc(100% - var(--tuck) - var(--band)), #000 calc(100% - var(--tuck) - var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem));
-    mask-image: linear-gradient(to bottom, transparent calc(100% - var(--tuck) - var(--band)), #000 calc(100% - var(--tuck) - var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem));
+    -webkit-mask-image: linear-gradient(to bottom, transparent var(--band-top), #000 calc(var(--band-top) + var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem)), linear-gradient(to bottom, transparent, #000 30%);
+    -webkit-mask-composite: source-over, source-in;
+    mask-image: linear-gradient(to bottom, transparent var(--band-top), #000 calc(var(--band-top) + var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem)), linear-gradient(to bottom, transparent, #000 30%);
+    mask-composite: add, intersect;
   }
   .daniell img, .daniell :global(.field) {
     position: absolute;
@@ -95,7 +99,9 @@ import dither from "../assets/home/daniell-taj-dither.webp"
       --cut: 372;
       --shift: 4.8rem;
       -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%);
+      -webkit-mask-composite: source-over;
       mask-image: linear-gradient(to bottom, transparent, #000 45%);
+      mask-composite: add;
     }
   }
 </style>

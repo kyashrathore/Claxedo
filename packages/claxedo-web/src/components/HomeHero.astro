@@ -22,10 +22,10 @@ const { title, subtitle } = Astro.props
 </section>
 
 <style>
-  .hero { --window-h: clamp(30rem, 48vw, 44rem); --band: 3rem; --beside: 24rem; --clear: calc(var(--edge) + 50rem); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
+  .hero { --window-h: clamp(30rem, 48vw, 44rem); --band: 5rem; --beside: 14rem; --clear: calc(var(--edge) + min(50rem, 58vw)); position: relative; isolation: isolate; padding-top: clamp(4rem, 20vh, 12rem); }
   .intro { display: grid; justify-items: start; width: var(--width); margin-inline: auto; }
   h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
-  .lede { max-width: 34rem; margin: 1rem 0 0; color: #3a3a3a; font-size: 1.25rem; line-height: 1.45; text-wrap: pretty; }
+  .lede { max-width: 34rem; margin: 1.5rem 0 0; color: #3a3a3a; font-size: 1.25rem; line-height: 1.45; text-wrap: pretty; }
 
   .stage { position: relative; width: var(--width); margin: var(--band) auto 0; }
   .window { position: relative; z-index: 1; height: var(--window-h); }
@@ -37,6 +37,6 @@ const { title, subtitle } = Astro.props
   }
   @media (max-width: 47.99rem) {
     .lede { font-size: 1.125rem; }
-    .hero { --window-h: 32rem; }
+    .hero { --window-h: 32rem; --band: 3rem; padding-top: 3rem; }
   }
 </style>
