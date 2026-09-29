@@ -1,6 +1,6 @@
 import { downloads, github, contact, version } from "../config"
 import { canonicalUrl, routes } from "./routes"
-import { home, site } from "./site"
+import { comparePage, downloadPage, home, pricing, site } from "./site"
 import { currentComparisons } from "./competitors"
 
 /** Pages that serve a markdown twin at `${path}.md` (the homepage twin is /index.md). */
@@ -70,55 +70,44 @@ ${home.closing.text}
 
 ${whenToUse}`
 
-export const pricingMarkdown = `# Claxedo pricing
+export const pricingMarkdown = `# ${pricing.title}
 
-> ${site.freeBeta}.
+${pricing.subtitle}
 
-Use Claxedo Cloud without a subscription charge during beta, deploy the open control plane to your own Cloudflare account, or start entirely locally. The paid offer will be explained before billing begins.
+## Included today (${pricing.price})
 
-## Included today ($0)
-
-- Claxedo Desktop with account-free local mode
-- Connected Claxedo product during beta
-- MIT-licensed client, control plane, and workspace runtime
-- macOS, Windows, and Linux downloads
+${pricing.included.map((item) => `- ${item}`).join("\n")}
 
 ## What you bring
 
-- **Models:** your provider subscriptions or API credentials. Claxedo does not bundle token credits.
-- **Compute:** your local machine, remote infrastructure, or a supported sandbox provider.
-- **Operations:** if you self-host, you operate that deployment and its security boundary.
+${pricing.bring.map((item) => `- **${item.title}:** ${item.text}`).join("\n")}
 
-Paid-offer terms and future subscription prices will be published when billing is active.
+${pricing.note}
 
 - Download: ${canonicalUrl(routes.download)}
 - Pricing page (HTML): ${canonicalUrl(routes.pricing)}
 `
 
-export const downloadMarkdown = `# Download Claxedo Desktop
+export const downloadMarkdown = `# ${downloadPage.title}
 
-> Claxedo Desktop v${version}. Local mode works without an account.
-
-Claxedo Desktop works locally without an account or subscription. Sign in when you want the connected Claxedo experience across browser, desktop, and remote workspaces.
+> Claxedo Desktop v${version}. ${downloadPage.subtitle}
 
 ## Builds
 
 ${downloads.map((d) => `- ${d.label} (${d.format}): ${d.href}`).join("\n")}
 
-Artifacts are served from the GitHub release: ${github}/releases/tag/claxedo-v${version}. Code signing and checksums are shown only when the release publishes them.
+Builds are served from the GitHub release: ${github}/releases/tag/claxedo-v${version}.
 
-## After installing
+## ${downloadPage.stepsTitle}
 
-1. Open a workspace and run sessions or terminals without a Claxedo account.
-2. Sign in when you want connected capabilities across supported clients and machines.
-3. Bring your own model credentials, compute, and sandboxes. Claxedo does not include usage credits.
+${downloadPage.steps.map((step) => `- **${step.title}.** ${step.text}`).join("\n")}
 
 - Download page (HTML): ${canonicalUrl(routes.download)}
 `
 
 export const compareMarkdown = `# Claxedo compared
 
-> Most tools in this field are single-operator apps or closed clouds. Claxedo is the harness-neutral, open-source, multi-user workspace your team self-hosts. Every claim on the comparison pages links to a first-party source.
+> ${comparePage.lead}
 
 ## Published comparisons
 

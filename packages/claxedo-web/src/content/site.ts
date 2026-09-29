@@ -6,8 +6,6 @@ export const site = {
   category: "The coding agent workspace",
   description:
     "One open-source app for Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent. Set up skills, plugins and MCP servers once, and run sessions on your laptop, your other machines or a cloud sandbox.",
-  freeBeta: "Free during beta",
-  localMode: "Local mode works without an account",
   product: {
     name: "Claxedo",
     destination: routes.home,
@@ -83,6 +81,43 @@ export const homeBlocks = [home.hero, home.speed, home.benchmark, home.prompt, h
 
 /** The pill that downloads the Apple Silicon build directly; every other build is one click away on the download page. */
 export const macDownload = downloads.find((download) => download.platform === "macos-arm64")!
+
+export const pricing = {
+  title: "Free while in beta.",
+  subtitle: "Every agent and every feature, with no subscription. Bring your own models and machines.",
+  price: "$0",
+  plan: "Claxedo, in beta",
+  included: [
+    "Claxedo Desktop, local-first with no account",
+    "Claxedo Cloud, free during beta",
+    "MIT-licensed app, control plane and runtime",
+    "macOS, Windows and Linux",
+  ],
+  bring: [
+    { title: "Models", text: "Your own subscriptions or API keys. No credits to buy." },
+    { title: "Compute", text: "Your laptop, your servers or your own sandbox provider." },
+    { title: "Your deployment", text: "Self-host it and it's yours to run." },
+  ],
+  note: "Paid plans and prices will be published before billing starts.",
+  claims: ["free-beta", "desktop-local-mode", "mit-platform", "bring-your-own-sandbox"],
+} as const
+
+export const downloadPage = {
+  title: "Download Claxedo.",
+  subtitle: "Works locally with no account. Sign in when you want your machines, sandboxes and team.",
+  stepsTitle: "Start local. Grow when you need to.",
+  steps: [
+    { title: "Start local", text: "Open a folder and run sessions or terminals. No account needed." },
+    { title: "Connect when you want", text: "Sign in to reach your machines, sandboxes and teammates from desktop, browser or phone." },
+    { title: "Keep your providers", text: "Use your own model accounts and compute. No credits to buy." },
+  ],
+  claims: ["desktop-local-mode", "connected-placement"],
+} as const
+
+export const comparePage = {
+  title: "The whole field, side by side.",
+  lead: "Most tools here are single-operator apps or closed clouds. Claxedo is the open-source, multi-user workspace for every agent, and your team can host it. Every claim links to a first-party source.",
+} as const
 
 export const commercialNavigation = [
   { label: "Pricing", href: routes.pricing, key: "pricing" },

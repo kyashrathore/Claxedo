@@ -25,8 +25,7 @@ const { title, subtitle } = Astro.props
   .hero { --window-h: clamp(30rem, 48vw, 44rem); --scene: 17rem; --clear: calc(var(--edge) + min(50rem, 58vw)); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
   .scene { position: relative; z-index: -1; height: var(--scene); }
   .intro { display: grid; justify-items: start; width: var(--width); margin-inline: auto; }
-  h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
-  .lede { max-width: 34rem; margin: 1rem 0 0; color: #3a3a3a; font-size: 1.25rem; line-height: 1.45; text-wrap: pretty; }
+  .lede { max-width: 34rem; margin: 1rem 0 0; color: var(--ink-body); font-size: 1.25rem; line-height: 1.45; text-wrap: pretty; }
 
   .stage { position: relative; width: var(--width); margin: 2rem auto 0; }
   .window { position: relative; z-index: 1; height: var(--window-h); }

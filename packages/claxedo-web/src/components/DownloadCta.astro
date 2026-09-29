@@ -1,0 +1,21 @@
+---
+import MacDownload from "./MacDownload.astro"
+import TrackedLink from "./TrackedLink.astro"
+import { marketingActions } from "../content/routes"
+
+interface Props {
+  placement: string
+}
+
+const { placement } = Astro.props
+---
+
+<div class="download-cta">
+  <MacDownload placement={placement} />
+  <TrackedLink class="quiet-link" href={marketingActions.download.href} event={marketingActions.download.event} placement={`${placement}-all`}>{marketingActions.download.label}</TrackedLink>
+</div>
+
+<style>
+  .download-cta { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.5rem; }
+  .download-cta :global(.quiet-link) { font-size: .875rem; }
+</style>

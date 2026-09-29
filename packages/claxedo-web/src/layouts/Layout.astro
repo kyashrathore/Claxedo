@@ -5,8 +5,6 @@ interface Props {
   image?: string
   noindex?: boolean
   canonicalPath?: string
-  bodyClass?: string
-  lightOnly?: boolean
 }
 
 const {
@@ -15,8 +13,6 @@ const {
   image = "/og.svg",
   noindex = false,
   canonicalPath = Astro.url.pathname,
-  bodyClass = "",
-  lightOnly = false,
 } = Astro.props
 
 const site = Astro.site ?? new URL("https://claxedo.com")
@@ -35,18 +31,8 @@ import { markdownTwins } from "../content/markdown"
     <meta charset="UTF-8" />
     <meta name="description" content={description} />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    {lightOnly ? (
-      <>
-        <meta name="theme-color" content="#fcfcfc" />
-        <meta name="color-scheme" content="light" />
-      </>
-    ) : (
-      <>
-        <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-        <meta name="color-scheme" content="dark light" />
-      </>
-    )}
+    <meta name="theme-color" content="#fcfcfc" />
+    <meta name="color-scheme" content="light" />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
     {markdownTwin && <link rel="alternate" type="text/markdown" href={new URL(markdownTwin, site)} />}
@@ -70,7 +56,7 @@ import { markdownTwins } from "../content/markdown"
     <StructuredData pathname={canonicalPath} />
     <slot name="head" />
   </head>
-  <body class={bodyClass}>
+  <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <slot />
     <script>
