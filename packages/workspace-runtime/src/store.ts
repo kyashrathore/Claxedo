@@ -2915,7 +2915,7 @@ export class RuntimeStore {
     updatedAt: number
     /**
      * When a *human* last started a turn here. `updated_at` moves for any turn, so a
-     * wake, a subagent or a channel message advances it too; this only moves when the
+     * subagent's completion or a channel message advances it too; this only moves when the
      * reader speaks, which is what the sidebar needs to tell a live session from one
      * the agents are working through on their own.
      */
@@ -3197,8 +3197,8 @@ export class RuntimeStore {
         directory,
         createdAt: row.ts,
         updatedAt: row.ts,
-        // A wake, a subagent or a channel message starts a turn the same way the
-        // reader does, so `updated_at` alone cannot tell them apart. `actorKind`
+        // A subagent's completion or a channel message starts a turn the same way
+        // the reader does, so `updated_at` alone cannot tell them apart. `actorKind`
         // comes from the request's auth claims and a client cannot forge it.
         ...(control.actorKind === "human" ? { lastHumanTurnAt: row.ts } : {}),
         status: "busy",
