@@ -18,7 +18,7 @@ html:root {
   overflow-x: clip;
 }
 .nav { background: var(--bg); backdrop-filter: none; }
-.nav-links a { font-size: .9375rem; font-weight: 400; }
+.nav-links a, .nav-app { font-size: .9375rem; font-weight: 400; }
 .nav .btn-pill { font-weight: 400; font-size: .875rem; }
 .home .btn-pill { min-height: 2.75rem; padding: 0 1.4rem; font: 400 1rem/1 var(--font-sans); letter-spacing: -.01em; }
 .quiet-link { color: var(--ink-soft); font-size: .9375rem; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: .25em; }

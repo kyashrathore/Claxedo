@@ -2,6 +2,7 @@
 import MacDownload from "./MacDownload.astro"
 import { commercialNavigation } from "../content/site"
 import { github } from "../config"
+import { routes } from "../content/routes"
 
 interface Props {
   active?: "home" | "pricing" | "download" | "compare"
@@ -28,6 +29,7 @@ const { active } = Astro.props
       </div>
 
       <div class="nav-actions">
+        <a class="nav-app" href={routes.app}>Open in browser</a>
         <MacDownload placement="nav" />
       </div>
     </div>

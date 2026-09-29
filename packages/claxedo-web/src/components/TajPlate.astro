@@ -1,15 +1,8 @@
 ---
 import dither from "../assets/home/daniell-taj-dither.webp"
-
-interface Props {
-  /** Where the dome sits: centred under a centred headline, or right of a left-aligned one. */
-  dome?: "center" | "right"
-}
-
-const { dome = "center" } = Astro.props
 ---
 
-<div class:list={["backdrop", "daniell", { "dome-right": dome === "right" }]} aria-hidden="true">
+<div class="backdrop daniell" aria-hidden="true">
   <img src={dither.src} width={dither.width} height={dither.height} alt="" decoding="async" data-daniell />
   <noscript><style>.daniell img { opacity: 1; }</style></noscript>
 </div>
@@ -61,16 +54,17 @@ const { dome = "center" } = Astro.props
 <style>
   /*
    * The plate hangs from the demo window's top edge: `--cut` is the image row
-   * that lands on that edge, `--rise` how far the plate reaches above it. The
-   * dome's finial is row 288, its bulb starts near row 336 and the terrace is
-   * row 376, so a cut near 358 lets the top of the bulb peek over the window.
+   * that lands on that edge (row 376 is the terrace; the dome's finial is row
+   * 288), and `--rise` how far the plate reaches above it. Over the text column
+   * it keeps to the band between the text and the window; right of `--clear`
+   * the whole Taj stands up beside the headline.
    */
   .daniell {
     --dot: 2px;
     --tuck: 2rem;
-    --rise: var(--band);
-    --cut: 358;
-    --shift: 11.5rem;
+    --rise: var(--beside);
+    --cut: 376;
+    --shift: 36rem;
     position: absolute;
     left: 50%;
     bottom: calc(100% - var(--tuck));
@@ -78,8 +72,8 @@ const { dome = "center" } = Astro.props
     height: calc(var(--rise) + var(--tuck));
     translate: -50% 0;
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%);
-    mask-image: linear-gradient(to bottom, transparent, #000 45%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent calc(100% - var(--tuck) - var(--band)), #000 calc(100% - var(--tuck) - var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem));
+    mask-image: linear-gradient(to bottom, transparent calc(100% - var(--tuck) - var(--band)), #000 calc(100% - var(--tuck) - var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem));
   }
   .daniell img, .daniell :global(.field) {
     position: absolute;
@@ -93,16 +87,9 @@ const { dome = "center" } = Astro.props
     image-rendering: pixelated;
   }
   .daniell img { opacity: 0; }
-  /* Beside a left-aligned headline the whole Taj can stand up the right side; over the text column it keeps to the band. */
-  .dome-right {
-    --rise: var(--beside);
-    --cut: 376;
-    --shift: 36rem;
-    -webkit-mask-image: linear-gradient(to bottom, transparent calc(100% - var(--tuck) - var(--band)), #000 calc(100% - var(--tuck) - var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem));
-    mask-image: linear-gradient(to bottom, transparent calc(100% - var(--tuck) - var(--band)), #000 calc(100% - var(--tuck) - var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem));
-  }
+  /* On a phone the text spans the width, so the plate keeps to the band and centres the dome. */
   @media (max-width: 47.99rem) {
-    .daniell, .dome-right {
+    .daniell {
       --dot: 1px;
       --rise: var(--band);
       --cut: 372;
