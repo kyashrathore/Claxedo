@@ -2,10 +2,10 @@ import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/ada
 import { createHostedAgentPluginsComposition } from "../../agent-plugins/hosted-composition"
 import type { AgentPluginR2Bucket } from "../../agent-plugins/artifacts/r2-artifact-adapter"
 import {
-  betterAuthD1CandidateCompositionInput,
-  createBetterAuthD1CandidateWorker,
-  type BetterAuthD1CandidateWorkerEnv,
-} from "./better-auth-d1-candidate-worker.cf"
+  betterAuthD1CompositionInput,
+  createBetterAuthD1Worker,
+  type BetterAuthD1WorkerEnv,
+} from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
@@ -19,13 +19,13 @@ import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../..
 
 export { LiveSyncRoom }
 
-export type BetterAuthD1AgentPluginsCandidateWorkerEnv = BetterAuthD1CandidateWorkerEnv & {
+export type BetterAuthD1AgentPluginsWorkerEnv = BetterAuthD1WorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
 }
 
 /** The string-valued half of a Worker env, for the composers that read configuration rather than bindings. */
 export function stringEnvironment(
-  env: BetterAuthD1AgentPluginsCandidateWorkerEnv,
+  env: BetterAuthD1AgentPluginsWorkerEnv,
 ): Record<string, string | undefined> {
   return Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -33,18 +33,18 @@ export function stringEnvironment(
 }
 
 /**
- * The Agent Plugins composition over the plain candidate.
+ * The Agent Plugins composition over the plain Worker.
  *
  * `extra` is what a further feature entry adds to the base composition input —
  * the full-hosted entry passes its sandbox driver and D1 lease store — so every
  * feature entry shares this one wiring instead of re-declaring it.
  */
-export function composeBetterAuthD1AgentPluginsCandidate(
-  env: BetterAuthD1AgentPluginsCandidateWorkerEnv,
+export function composeBetterAuthD1AgentPlugins(
+  env: BetterAuthD1AgentPluginsWorkerEnv,
   extra: Pick<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0], "sandbox"> = {},
 ) {
   const base = composeBetterAuthD1UserDeployedControlPlane({
-    ...betterAuthD1CandidateCompositionInput(env),
+    ...betterAuthD1CompositionInput(env),
     ...extra,
   })
   // One signing key decides both halves: the deployment that mints a root's
@@ -141,13 +141,13 @@ export function composeBetterAuthD1AgentPluginsCandidate(
   }
 }
 
-// Same settled-composition rule as the plain candidate: the feature is built
+// Same settled-composition rule as the plain Worker: the feature is built
 // on top of the base composition inside the one cached constructor, so a
 // wedged auth init can never leave a half-featured app behind.
 const composition = settledCompositionCache(
-  (env: BetterAuthD1AgentPluginsCandidateWorkerEnv) => composeBetterAuthD1AgentPluginsCandidate(env),
+  (env: BetterAuthD1AgentPluginsWorkerEnv) => composeBetterAuthD1AgentPlugins(env),
   (created) => created.authReady,
 )
 
-const handler = createBetterAuthD1CandidateWorker({ composition })
+const handler = createBetterAuthD1Worker({ composition })
 export default handler

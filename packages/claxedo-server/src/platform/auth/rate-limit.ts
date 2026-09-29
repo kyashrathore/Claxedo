@@ -22,8 +22,8 @@
  *     `worker.ts` passes the matching `periodSeconds` to
  *     `cloudflareRateLimitStore`, which is also why
  *     `defaultRequestRateLimitWindowMs` must stay 60_000: both layers have to
- *     mean the same minute. `scripts/deploy/render-hosted-core-config.test.ts`
- *     asserts the pin.
+ *     mean the same minute. `scripts/deploy/wrangler-config.test.ts` asserts
+ *     the pin.
  *
  * Why the binding beats a counter Durable Object here:
  *   - This is an ABUSE limiter, not accounting. Cloudflare documents the

@@ -1,5 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
-import { constantTimeEqual, symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto"
+import { symmetricEncrypt } from "better-auth/crypto"
 
 import { BETTER_AUTH_NATIVE_SCOPES } from "./better-auth-d1-foundation"
 
@@ -160,85 +160,6 @@ const BETTER_AUTH_REQUIRED_SCHEMA = {
     "oauthClientId",
   ],
   authenticationEvidence: ["sessionId", "subject", "authenticatedAt", "methods", "assurance", "createdAt"],
-  deploymentRelease: [
-    "deploymentId",
-    "releaseSequence",
-    "releaseId",
-    "workerBuildId",
-    "platformVersionId",
-    "browserBuildId",
-    "relayBuildId",
-    "authConfigurationId",
-    "requestLimiterNamespaceId",
-    "adapterProfile",
-    "productPosture",
-    "sandboxPosture",
-    "serviceManifestId",
-    "createdAt",
-  ],
-  deploymentReleaseStateHistory: [
-    "deploymentId",
-    "stateRevision",
-    "operationId",
-    "releaseId",
-    "previousStateRevision",
-    "restoredStateRevision",
-    "transitionKind",
-    "phase",
-    "phaseRevision",
-    "firstTargetWriteAt",
-    "createdAt",
-  ],
-  deploymentReleaseActive: ["singleton", "deploymentId", "stateRevision", "updatedAt"],
-  deploymentRecoveryEpoch: ["deploymentId", "releaseId", "recoveryEpoch", "createdAt"],
-  deploymentCutoverCanaryAdmission: [
-    "deploymentId",
-    "releaseId",
-    "workerBuildId",
-    "platformVersionId",
-    "browserBuildId",
-    "relayBuildId",
-    "authConfigurationId",
-    "adapterProfile",
-    "productPosture",
-    "sandboxPosture",
-    "serviceManifestId",
-    "sourceStateRevision",
-    "sourcePhaseRevision",
-    "receiptId",
-    "operationId",
-    "operatorSubjectHash",
-    "canaryIdentityHash",
-    "journeyId",
-    "createdAt",
-  ],
-  deploymentCutoverEvidenceReceipt: [
-    "deploymentId",
-    "releaseId",
-    "workerBuildId",
-    "platformVersionId",
-    "browserBuildId",
-    "relayBuildId",
-    "authConfigurationId",
-    "adapterProfile",
-    "productPosture",
-    "sandboxPosture",
-    "serviceManifestId",
-    "sourceStateRevision",
-    "sourcePhaseRevision",
-    "receiptId",
-    "operationId",
-    "evidenceKind",
-    "evidenceSlot",
-    "primarySubjectHash",
-    "secondarySubjectHash",
-    "observedCount",
-    "evidenceReference",
-    "recoveryEpoch",
-    "artifactSha256",
-    "secondaryArtifactSha256",
-    "createdAt",
-  ],
 } as const
 
 const BETTER_AUTH_REQUIRED_INDEXES = [
@@ -265,13 +186,6 @@ const BETTER_AUTH_REQUIRED_INDEXES = [
   ["oauthRefreshToken_familyId_generation_uidx", "oauthRefreshToken", 1, "familyId,generation"],
   ["deviceCode_deviceCode_uidx", "deviceCode", 1, "deviceCode"],
   ["deviceCode_userCode_uidx", "deviceCode", 1, "userCode"],
-  [
-    "deploymentCutoverEvidence_distinct_multiplayer_identity",
-    "deploymentCutoverEvidenceReceipt",
-    1,
-    "deploymentId,releaseId,primarySubjectHash",
-  ],
-  ["deploymentCutoverEvidence_one_source_boundary", "deploymentCutoverEvidenceReceipt", 1, "deploymentId,releaseId"],
 ] as const
 
 const BETTER_AUTH_REQUIRED_UNIQUE_DDL = [
@@ -283,12 +197,6 @@ const BETTER_AUTH_REQUIRED_UNIQUE_DDL = [
   ["oauthRefreshToken", `"parentId"textunique`],
   ["oauthRefreshToken", `"rotationNonce"textunique`],
   ["oauthAccessToken", `"token"textnotnullunique`],
-  ["deploymentRelease", `primarykey("deploymentId","releaseId")`],
-  ["deploymentRelease", `unique("deploymentId","releaseSequence")`],
-  ["deploymentReleaseStateHistory", `primarykey("deploymentId","stateRevision")`],
-  ["deploymentReleaseStateHistory", `unique("deploymentId","operationId")`],
-  ["deploymentRecoveryEpoch", `primarykey("deploymentId","releaseId")`],
-  ["deploymentRecoveryEpoch", `"recoveryEpoch"textnotnullunique`],
   ["authenticationEvidence", `"sessionId"textnotnullprimarykey`],
   [
     "authenticationEvidence",
@@ -298,19 +206,9 @@ const BETTER_AUTH_REQUIRED_UNIQUE_DDL = [
 ] as const
 
 const BETTER_AUTH_APPEND_ONLY_TRIGGERS = [
-  "deploymentRelease_no_update",
-  "deploymentRelease_no_delete",
-  "deploymentReleaseStateHistory_no_update",
-  "deploymentReleaseStateHistory_no_delete",
   "authenticationEvidence_session_binding_insert",
   "authenticationEvidence_no_update",
   "authenticationEvidence_no_direct_delete",
-  "deploymentCutoverCanaryAdmission_no_update",
-  "deploymentCutoverCanaryAdmission_no_delete",
-  "deploymentCutoverEvidenceReceipt_no_update",
-  "deploymentCutoverEvidenceReceipt_no_delete",
-  "deploymentRecoveryEpoch_no_update",
-  "deploymentRecoveryEpoch_no_delete",
 ] as const
 
 export function betterAuthNativeResource(apiOrigin: string) {
@@ -557,18 +455,7 @@ export function betterAuthDatabaseSchemaInspectionSql() {
     (select count(*) from pragma_foreign_key_list('authenticationEvidence')
       where ("from" = 'sessionId' and "table" = 'session' and "to" = 'id' and lower("on_delete") = 'cascade')
          or ("from" = 'subject' and "table" = 'user' and "to" = 'id' and lower("on_delete") = 'cascade'))
-      as "authenticationEvidenceForeignKeyCount",
-    ((select count(*) from pragma_foreign_key_list('deploymentCutoverCanaryAdmission')
-      where "table" = 'deploymentRelease' and (("from" = 'deploymentId' and "to" = 'deploymentId')
-        or ("from" = 'releaseId' and "to" = 'releaseId'))) +
-     (select count(*) from pragma_foreign_key_list('deploymentCutoverEvidenceReceipt')
-      where "table" = 'deploymentRelease' and (("from" = 'deploymentId' and "to" = 'deploymentId')
-        or ("from" = 'releaseId' and "to" = 'releaseId'))))
-      as "cutoverReleaseForeignKeyCount",
-    (select count(*) from pragma_foreign_key_list('deploymentRecoveryEpoch')
-      where "table" = 'deploymentRelease' and (("from" = 'deploymentId' and "to" = 'deploymentId')
-        or ("from" = 'releaseId' and "to" = 'releaseId')))
-      as "recoveryReleaseForeignKeyCount";`
+      as "authenticationEvidenceForeignKeyCount";`
 }
 
 type BetterAuthSchemaInspection = {
@@ -577,8 +464,6 @@ type BetterAuthSchemaInspection = {
   appendOnlyTriggerCount?: unknown
   refreshAccessCascadeCount?: unknown
   authenticationEvidenceForeignKeyCount?: unknown
-  cutoverReleaseForeignKeyCount?: unknown
-  recoveryReleaseForeignKeyCount?: unknown
 }
 
 export function verifyBetterAuthDatabaseSchemaInspection(result: BetterAuthSchemaInspection | null) {
@@ -587,111 +472,10 @@ export function verifyBetterAuthDatabaseSchemaInspection(result: BetterAuthSchem
     result.requiredUniqueConstraintCount !== BETTER_AUTH_REQUIRED_UNIQUE_DDL.length ||
     result.appendOnlyTriggerCount !== BETTER_AUTH_APPEND_ONLY_TRIGGERS.length ||
     result.refreshAccessCascadeCount !== 1 ||
-    result.authenticationEvidenceForeignKeyCount !== 2 ||
-    result.cutoverReleaseForeignKeyCount !== 4 ||
-    result.recoveryReleaseForeignKeyCount !== 2
+    result.authenticationEvidenceForeignKeyCount !== 2
   ) {
     throw new Error(
       `Better Auth database schema does not match the required structural contract: ${JSON.stringify(result)}`,
     )
   }
-}
-
-/** Fail readiness if the generated schema's tables, columns, indexes, cascade, or append-only triggers drift. */
-export async function requireBetterAuthDatabaseSchema(database: D1Database) {
-  const result = await database.prepare(betterAuthDatabaseSchemaInspectionSql()).first()
-  verifyBetterAuthDatabaseSchemaInspection(result)
-}
-
-export async function requireBetterAuthNativeClientClosure(
-  database: D1Database,
-  apiOrigin: string,
-  betterAuthSecret: string,
-  introspectionClientSecret: string,
-) {
-  const resource = betterAuthNativeResource(apiOrigin)
-  const scopes = JSON.stringify(BETTER_AUTH_NATIVE_SCOPES)
-  const checks = await Promise.all([
-    database
-      .prepare(
-        `select count(*) as "count" from "oauthResource"
-      where "id" = 'resource_control_plane' and "identifier" = ? and "name" = 'Claxedo control plane'
-        and "accessTokenTtl" = 300 and "refreshTokenTtl" = 2592000 and "allowedScopes" = ?
-        and "disabled" = 0 and "policyVersion" = 1`,
-      )
-      .bind(resource, scopes)
-      .first<{ count: number }>(),
-    database
-      .prepare(
-        `select count(*) as "count" from "oauthClient"
-      where "id" = 'client_cli' and "clientId" = ? and "disabled" = 0 and "skipConsent" = 0
-        and "subjectType" = 'public' and "scopes" = ? and "redirectUris" = '[]'
-        and "tokenEndpointAuthMethod" = 'none' and "applicationType" = 'native'
-        and "grantTypes" = ? and "responseTypes" = '["code"]' and "requirePKCE" = 1`,
-      )
-      .bind(
-        BETTER_AUTH_CLI_CLIENT_ID,
-        scopes,
-        JSON.stringify(["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"]),
-      )
-      .first<{ count: number }>(),
-    database
-      .prepare(
-        `select count(*) as "count" from "oauthClient"
-      where "id" = 'client_desktop' and "clientId" = ? and "disabled" = 0 and "skipConsent" = 0
-        and "subjectType" = 'public' and "scopes" = ? and "redirectUris" = ?
-        and "tokenEndpointAuthMethod" = 'none' and "applicationType" = 'native'
-        and "grantTypes" = '["authorization_code","refresh_token"]'
-        and "responseTypes" = '["code"]' and "requirePKCE" = 1`,
-      )
-      .bind(BETTER_AUTH_DESKTOP_CLIENT_ID, scopes, JSON.stringify([BETTER_AUTH_DESKTOP_REDIRECT_URI]))
-      .first<{ count: number }>(),
-    database
-      .prepare(
-        `select "clientSecret" from "oauthClient"
-      where "id" = 'client_control_plane' and "clientId" = ? and "disabled" = 0
-        and "skipConsent" = 1 and "tokenEndpointAuthMethod" = 'client_secret_post'
-        and "applicationType" = 'web' and "grantTypes" = '[]' and "responseTypes" = '[]' and "requirePKCE" = 0`,
-      )
-      .bind(BETTER_AUTH_INTROSPECTION_CLIENT_ID)
-      .first<{ clientSecret: string }>(),
-    database
-      .prepare(
-        `select count(*) as "count" from "oauthClientResource"
-      where ("id" = 'client_resource_cli' and "clientId" = ? and "resourceId" = ?)
-        or ("id" = 'client_resource_desktop' and "clientId" = ? and "resourceId" = ?)`,
-      )
-      .bind(BETTER_AUTH_CLI_CLIENT_ID, resource, BETTER_AUTH_DESKTOP_CLIENT_ID, resource)
-      .first<{ count: number }>(),
-    database
-      .prepare(
-        `select count(*) as "count" from "oauthClientResource"
-      where "id" = 'client_resource_control_plane' and "clientId" = ? and "resourceId" = ?`,
-      )
-      .bind(BETTER_AUTH_INTROSPECTION_CLIENT_ID, resource)
-      .first<{ count: number }>(),
-  ])
-  const confidentialClient = checks[3]
-  let confidentialClientSecretMatches = false
-  if (
-    confidentialClient &&
-    "clientSecret" in confidentialClient &&
-    typeof confidentialClient.clientSecret === "string"
-  ) {
-    try {
-      confidentialClientSecretMatches = constantTimeEqual(
-        await symmetricDecrypt({ key: betterAuthSecret, data: confidentialClient.clientSecret }),
-        introspectionClientSecret,
-      )
-    } catch {
-      confidentialClientSecretMatches = false
-    }
-  }
-  if (
-    !confidentialClientSecretMatches ||
-    checks.some((row, index) => index !== 3 && (!(row && "count" in row) || row.count !== (index === 4 ? 2 : 1)))
-  ) {
-    throw new Error("Better Auth native-client closure is incomplete or does not match the certified policy")
-  }
-  return resource
 }
