@@ -5,12 +5,15 @@ not in source-text audits or evidence manifests.
 
 ## `release/`
 
-Publishes the pinned runtime npm package graph. Sandbox images consume these npm
-artifacts; they must never copy workspace `src` into Docker.
+Publishes the public `@claxedo` npm packages and refuses a publish when a
+package already on npm changed without a version bump. Sandbox images do not
+consume these artifacts.
 
 ## `sandbox/`
 
-Builds sandbox images from already-published runtime packages.
+Builds sandbox images from the repository: `build-sandbox-image.ts` esbuilds
+the in-repo workspace-runtime host into `.build/`, which the Dockerfiles copy.
+`cloudflare-worker/` is the Cloudflare Sandbox Worker that runs that image.
 
 ## `deploy/`
 
@@ -19,11 +22,9 @@ dry-run deploy targets; they do not run smoke tests or browser tests.
 
 ## `smoke/`
 
-Small live probes for deployed central/runtime contracts.
+Self-hosted restart and upgrade probes.
 
 ## `maintenance/`
 
-Package boundary guards. These prevent secrets, generated files, dependency
-directories, nested deploy packages, and source-tree Dockerfiles from entering a
-package archive.
-
+Operator jobs against a deployed control plane, such as draining a retired
+credential KEK from the hosted credential store.

@@ -42,7 +42,6 @@
   "scripts": {
     "dev": "CLAXEDO_WAKES=${CLAXEDO_WAKES:-1} CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS=${CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS:-http://localhost:4444,http://127.0.0.1:4444} node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx --watch src/deployments/self-hosted-node/index.ts",
     "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/self-hosted-node/index.ts",
-    "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
     "deploy:user-cloudflare:preflight": "bun run scripts/deploy/greenfield-user-deployed.ts --preflight",
     "deploy:user-cloudflare:cutover": "bun run scripts/deploy/cutover-better-auth-d1.ts",
