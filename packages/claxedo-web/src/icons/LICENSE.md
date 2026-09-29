@@ -10,3 +10,6 @@ use no third-party icon paths.
 The harness marks in `../components/HarnessMark.astro` are separate: vendor brand
 marks from LobeHub's icon set (MIT) and OpenCode's own geometry, published on this
 site since the component was added.
+
+The GitHub mark in `../components/crops/AddSource.astro` is GitHub's own logo, from
+Primer Octicons (`mark-github`, MIT), used only to name GitHub.
