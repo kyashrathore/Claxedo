@@ -1,0 +1,123 @@
+{
+  "generated_at": "2026-06-08T08:59:55.687Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Switch between three live terminals",
+      "started_at": "2026-06-08T08:59:55.607Z",
+      "duration_ms": 65779.237625,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "live-terminal-switch",
+        "worstFrameMs": 85.6,
+        "p95FrameMs": 17.8,
+        "framesOver833": 1145,
+        "framesOver1667": 1144,
+        "sampleCount": 1145,
+        "completionMs": 20039.42,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "terminal_switch_ms",
+          "value": 5000,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5000
+          ],
+          "p50": 5000,
+          "p95": 5000,
+          "min": 5000,
+          "max": 5000,
+          "mean": 5000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_ms",
+          "value": 1015.9000000003725,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1015.9000000003725
+          ],
+          "p50": 1015.9000000003725,
+          "p95": 1015.9000000003725,
+          "min": 1015.9000000003725,
+          "max": 1015.9000000003725,
+          "mean": 1015.9000000003725,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [
+        "error boundary rendered for live-terminal-switch",
+        "session messages were not requested for live-terminal-switch",
+        "terminal surface did not visibly open",
+        "terminal switch did not settle before timeout",
+        "transcript text was not visible for live-terminal-switch: live-terminal-switch session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-live-terminal-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "ae609dc6cb0e0618f85d7aad47b6f09752308120",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts run --scenario live-terminal-switch --debug --output prod-live-terminal-switch.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:49160",
+          "mock_port": 32123,
+          "dev_command": "bun run serve -- --host 127.0.0.1 --port 49160"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:ae609dc6cb0e0618f85d7aad47b6f09752308120"
+      },
+      "budget": {
+        "scenario": "live-terminal-switch",
+        "worst_frame_ms": 120
+      },
+      "status": "fail",
+      "failures": [
+        "p95 frame 17.80ms > 16.67ms — sustained below 60hz",
+        "1144 frames dropped below 60hz (allowance 2)",
+        "error boundary rendered for live-terminal-switch",
+        "session messages were not requested for live-terminal-switch",
+        "terminal surface did not visibly open",
+        "terminal switch did not settle before timeout",
+        "transcript text was not visible for live-terminal-switch: live-terminal-switch session 1"
+      ],
+      "warnings": []
+    }
+  ]
+}

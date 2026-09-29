@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-05-23T08:34:29.440Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "launch-empty-home",
+      "name": "Launch Empty Home",
+      "started_at": "2026-05-23T08:34:29.391Z",
+      "duration_ms": 7951.820167000001,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 2445.4500829999997,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2445.4500829999997
+          ],
+          "p50": 2445.4500829999997,
+          "p95": 2445.4500829999997,
+          "min": 2445.4500829999997,
+          "max": 2445.4500829999997,
+          "mean": 2445.4500829999997,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 2602.2451659999997,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2602.2451659999997
+          ],
+          "p50": 2602.2451659999997,
+          "p95": 2602.2451659999997,
+          "min": 2602.2451659999997,
+          "max": 2602.2451659999997,
+          "mean": 2602.2451659999997,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 7604.222833000001,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            7604.222833000001
+          ],
+          "p50": 7604.222833000001,
+          "p95": 7604.222833000001,
+          "min": 7604.222833000001,
+          "max": 7604.222833000001,
+          "mean": 7604.222833000001,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 22.00329199999942,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            22.00329199999942
+          ],
+          "p50": 22.00329199999942,
+          "p95": 22.00329199999942,
+          "min": 22.00329199999942,
+          "max": 22.00329199999942,
+          "mean": 22.00329199999942,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 33.473968505859375,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            33.473968505859375
+          ],
+          "p50": 33.473968505859375,
+          "p95": 33.473968505859375,
+          "min": 33.473968505859375,
+          "max": 33.473968505859375,
+          "mean": 33.473968505859375,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 662.434,
+        "memory_rss_mb": 33.473968505859375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "artifacts": {
+        "video": "reports/videos/upstream-launch-empty-home-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 3057,
+          "launch_first_useful_screen_ms": 3253,
+          "launch_workspace_ready_ms": 9506,
+          "launch_first_input_ms": 28,
+          "memory_rss_mb": 42
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

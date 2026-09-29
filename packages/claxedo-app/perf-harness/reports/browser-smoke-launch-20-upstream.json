@@ -1,0 +1,127 @@
+{
+  "generated_at": "2026-05-23T09:40:02.079Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "launch-project-20-sessions",
+      "name": "Launch Project 20 Sessions",
+      "started_at": "2026-05-23T09:40:02.042Z",
+      "duration_ms": 10978.570582999999,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 2326.9398340000002,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2326.9398340000002
+          ],
+          "p50": 2326.9398340000002,
+          "p95": 2326.9398340000002,
+          "min": 2326.9398340000002,
+          "max": 2326.9398340000002,
+          "mean": 2326.9398340000002,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 8456.398417,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8456.398417
+          ],
+          "p50": 8456.398417,
+          "p95": 8456.398417,
+          "min": 8456.398417,
+          "max": 8456.398417,
+          "mean": 8456.398417,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 628.4985830000005,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            628.4985830000005
+          ],
+          "p50": 628.4985830000005,
+          "p95": 628.4985830000005,
+          "min": 628.4985830000005,
+          "max": 628.4985830000005,
+          "mean": 628.4985830000005,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 51.021575927734375,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            51.021575927734375
+          ],
+          "p50": 51.021575927734375,
+          "p95": 51.021575927734375,
+          "min": 51.021575927734375,
+          "max": 51.021575927734375,
+          "mean": 51.021575927734375,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1074.874,
+        "memory_rss_mb": 51.021575927734375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-launch-project-20-sessions-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 331,
+          "launch_workspace_ready_ms": 10419,
+          "transcript_render_ms": 17516,
+          "memory_rss_mb": 68
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "launch_first_window_ms p95 2326.9398340000002 > 331"
+      ]
+    }
+  ],
+  "comparisons": []
+}

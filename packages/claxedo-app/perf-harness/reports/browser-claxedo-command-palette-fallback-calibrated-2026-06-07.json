@@ -1,0 +1,154 @@
+{
+  "generated_at": "2026-06-07T09:58:31.649Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "command-palette-large-project",
+      "name": "Command Palette Large Project",
+      "started_at": "2026-06-07T09:58:29.613Z",
+      "duration_ms": 6669.2408749999995,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 21.847000000000662,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            14.73108400000001,
+            20.76391700000022,
+            21.847000000000662
+          ],
+          "p50": 20.76391700000022,
+          "p95": 21.847000000000662,
+          "min": 14.73108400000001,
+          "max": 21.847000000000662,
+          "mean": 19.11400033333363,
+          "relative_stddev": 0.16378430765834098
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 19.700000000186265,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            19.700000000186265,
+            16,
+            16.40000000037253
+          ],
+          "p50": 16.40000000037253,
+          "p95": 19.700000000186265,
+          "min": 16,
+          "max": 19.700000000186265,
+          "mean": 17.366666666852932,
+          "relative_stddev": 0.09546894522399127
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 46.90000000037253,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            46.90000000037253,
+            42.700000000186265,
+            38.299999999813735
+          ],
+          "p50": 42.700000000186265,
+          "p95": 46.90000000037253,
+          "min": 38.299999999813735,
+          "max": 46.90000000037253,
+          "mean": 42.63333333345751,
+          "relative_stddev": 0.08235930622725848
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 109.19999999925494,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            109.19999999925494,
+            108.8999999994412,
+            106.09999999962747
+          ],
+          "p50": 108.8999999994412,
+          "p95": 109.19999999925494,
+          "min": 106.09999999962747,
+          "max": 109.19999999925494,
+          "mean": 108.06666666610788,
+          "relative_stddev": 0.012918193454294954
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 895.543,
+        "memory_rss_mb": 92.88787841796875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-command-palette-large-project-3.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --target claxedo --scenario command-palette-large-project --iterations 3 --output browser-claxedo-command-palette-fallback-calibrated-2026-06-07.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54135",
+          "mock_port": 54136,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 32,
+          "command_palette_open_ms": 48,
+          "command_palette_search_ms": 80,
+          "command_execution_overhead_ms": 150
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

@@ -1,0 +1,141 @@
+{
+  "generated_at": "2026-05-27T02:43:13.373Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "three-pane-resize",
+      "name": "Three Pane Resize",
+      "started_at": "2026-05-27T02:43:13.339Z",
+      "duration_ms": 9690.505791,
+      "seed": {
+        "repos": 1,
+        "sessions": 1,
+        "messages": 10000,
+        "terminals": 1,
+        "changed_files": 120,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "frame_time_ms",
+          "value": 8.399999999999636,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8.399999999999636
+          ],
+          "p50": 8.399999999999636,
+          "p95": 8.399999999999636,
+          "min": 8.399999999999636,
+          "max": 8.399999999999636,
+          "mean": 8.399999999999636,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 0,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 26.405416999999943,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            26.405416999999943
+          ],
+          "p50": 26.405416999999943,
+          "p95": 26.405416999999943,
+          "min": 26.405416999999943,
+          "max": 26.405416999999943,
+          "mean": 26.405416999999943,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 42.800000071525574,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            42.800000071525574
+          ],
+          "p50": 42.800000071525574,
+          "p95": 42.800000071525574,
+          "min": 42.800000071525574,
+          "max": 42.800000071525574,
+          "mean": 42.800000071525574,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 1.531791000001249,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.531791000001249
+          ],
+          "p50": 1.531791000001249,
+          "p95": 1.531791000001249,
+          "min": 1.531791000001249,
+          "max": 1.531791000001249,
+          "mean": 1.531791000001249,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1045.701,
+        "memory_rss_mb": 92.88787841796875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 1,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-three-pane-resize-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "three-pane-resize",
+        "metrics": {
+          "frame_time_ms": 9,
+          "dropped_frames": 2,
+          "scroll_latency_ms": 49,
+          "terminal_resize_latency_ms": 45,
+          "diff_toggle_latency_ms": 10
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

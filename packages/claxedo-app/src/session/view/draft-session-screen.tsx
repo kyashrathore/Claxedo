@@ -8,7 +8,7 @@ import { ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { pendingMessage } from "../transcript/send"
 import { draftSessionPaneKind } from "./draft-pane"
-import { SentMessage } from "./sent-message"
+import { DraftTranscript } from "./draft-transcript"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import { WorkspaceSleepCard } from "./workspace-sleep"
@@ -54,14 +54,22 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
       <ComposerNoticeProvider channel={notice}>
-        <div ref={pane} class="relative size-full overflow-hidden bg-background-base">
-          <div class="absolute inset-x-0 top-[34%] flex justify-center px-6">
-            <div data-component="session-new-design-content" class="w-full max-w-[720px]">
-              <div class="mb-5 flex justify-center">
-                <ClaxedoLogo class="w-12 opacity-14" />
-              </div>
-              <div>
-                <ComposerNoticeRow notice={notice.current()} />
+        <div ref={pane} class="relative flex size-full flex-col overflow-hidden bg-background-base">
+          <Show when={sentMessage()} fallback={<div aria-hidden="true" class="h-[34%] shrink-0" />}>
+            {(message) => <DraftTranscript message={message()} placementId={props.state.placementId} />}
+          </Show>
+          <div classList={{ "flex shrink-0 justify-center": true, "px-6": !sent(), "pointer-events-none pb-3": !!sent() }}>
+            <div
+              data-component="session-new-design-content"
+              classList={{ "w-full": true, "max-w-[720px]": !sent(), "pointer-events-auto px-3 md:max-w-192 md:mx-auto 2xl:max-w-[880px]": !!sent() }}
+            >
+              <Show when={!sent()}>
+                <div class="mb-5 flex justify-center">
+                  <ClaxedoLogo class="w-12 opacity-14" />
+                </div>
+              </Show>
+              <ComposerNoticeRow notice={notice.current()} />
+              <Show when={!sent()}>
                 <div class="relative" classList={{ "z-10 -mt-2": !!notice.current() }}>
                   <NewSessionContextRow
                     projectId={props.state.projectId}
@@ -70,18 +78,17 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                     onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
                   />
                 </div>
-                <Show when={sentMessage()}>{(message) => <SentMessage message={message()} placementId={props.state.placementId} />}</Show>
-                <div class="relative z-10 -mt-2">
-                  <WorkspaceSleepCard placementId={props.state.placementId} />
-                  <Composer
-                    composerKey={key()}
-                    placementId={props.state.placementId}
-                    attachmentWorkspace={true}
-                    startSession={startSession}
-                    afterAccepted={setStarted}
-                    dropZone={() => pane}
-                  />
-                </div>
+              </Show>
+              <div class="relative z-10" classList={{ "-mt-2": !sent() || !!notice.current() }}>
+                <WorkspaceSleepCard placementId={props.state.placementId} />
+                <Composer
+                  composerKey={key()}
+                  placementId={props.state.placementId}
+                  attachmentWorkspace={true}
+                  startSession={startSession}
+                  afterAccepted={setStarted}
+                  dropZone={() => pane}
+                />
               </div>
             </div>
           </div>

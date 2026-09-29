@@ -1,0 +1,78 @@
+{
+  "generated_at": "2026-06-05T19:40:25.913Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "launch-empty-home",
+      "name": "launch-empty-home",
+      "started_at": "2026-06-05T19:40:25.811Z",
+      "duration_ms": 0,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [],
+      "resources": {
+        "cpu_user_ms": 499.034,
+        "memory_rss_mb": 122.03125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "launch-empty-home",
+        "metrics": {}
+      },
+      "status": "fail",
+      "failures": [
+        "browser scenario crashed: forFunction: Timeout 30000ms exceeded."
+      ],
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target upstream --scenario launch-empty-home --output browser-upstream-launch-current-2026-06-06.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:53923",
+          "mock_port": 53924,
+          "dev_command": "bun --cwd packages/app dev"
+        },
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      }
+    }
+  ],
+  "comparisons": []
+}

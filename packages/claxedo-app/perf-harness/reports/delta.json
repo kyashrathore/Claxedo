@@ -1,0 +1,765 @@
+{
+  "generated_at": "2026-06-06T22:24:10.526Z",
+  "input": "latest.json",
+  "status": "fail",
+  "scenario_failures": [],
+  "rows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "agent-control-navigation",
+      "metric": "agent_action_dispatch_ms",
+      "direction": "lower",
+      "after": 21.62670800000342,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "agent-control-navigation",
+      "metric": "agent_state_verify_ms",
+      "direction": "lower",
+      "after": 0.6142079999990528,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "agent-control-navigation",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "after": 0.7662920000002487,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "agent-control-navigation",
+      "metric": "event_backlog",
+      "direction": "lower",
+      "after": 250,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "agent-control-navigation",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "after": 0.5560409999961848,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "bootstrap-pending-storm",
+      "metric": "bootstrap_drain_ms",
+      "direction": "lower",
+      "after": 11,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "bootstrap-pending-storm",
+      "metric": "bootstrap_pending_requests",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "bootstrap-pending-storm",
+      "metric": "bootstrap_throttle_inflight_after",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "bootstrap-pending-storm",
+      "metric": "bootstrap_throttle_queued_after",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "burst-authed-fetches",
+      "metric": "burst_failures",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "burst-authed-fetches",
+      "metric": "burst_per_request_p95_ms",
+      "direction": "lower",
+      "after": 11,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "burst-authed-fetches",
+      "metric": "burst_throttle_queued_peak",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "burst-authed-fetches",
+      "metric": "burst_total_drain_ms",
+      "direction": "lower",
+      "after": 11,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "command-palette-large-project",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "after": 112.39999997615814,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "command-palette-large-project",
+      "metric": "command_palette_index_ms",
+      "direction": "lower",
+      "after": 14.777582999995502,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "command-palette-large-project",
+      "metric": "command_palette_open_ms",
+      "direction": "lower",
+      "after": 8.799999952316284,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "command-palette-large-project",
+      "metric": "command_palette_search_ms",
+      "direction": "lower",
+      "after": 7,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "changed_file_navigation_ms",
+      "direction": "lower",
+      "after": 3.400000035762787,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "after": 23.80000001192093,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "hunk_render_ms",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "line_comment_latency_ms",
+      "direction": "lower",
+      "after": 15.5,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "review_panel_open_ms",
+      "direction": "lower",
+      "after": 8.400000035762787,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "review_panel_reopen_baseline_frame_ms",
+      "direction": "lower",
+      "after": 7.400000035762787,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "review_panel_reopen_click_ms",
+      "direction": "lower",
+      "after": 0.5,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "review_panel_reopen_frame_ms",
+      "direction": "lower",
+      "after": 4.800000011920929,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "review_panel_reopen_ms",
+      "direction": "lower",
+      "after": 8.300000011920929,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "review_panel_reopen_state_ms",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "large-diff-toggle",
+      "metric": "vcs_load_ms",
+      "direction": "lower",
+      "after": 50.799999952316284,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-empty-home",
+      "metric": "launch_first_input_ms",
+      "direction": "lower",
+      "after": 2.2379170000003796,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-empty-home",
+      "metric": "launch_first_useful_screen_ms",
+      "direction": "lower",
+      "after": 4510.459041,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-empty-home",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "after": 4429.912833,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-empty-home",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "after": 4532.557333000001,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-empty-home",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "after": 68.85528564453125,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-project-20-sessions",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "after": 361.14529200000015,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-project-20-sessions",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "after": 494.13237500000014,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-project-20-sessions",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "after": 98.22845458984375,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "launch-project-20-sessions",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "after": 92.19999998807907,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "live-terminal-switch",
+      "metric": "ansi_render_latency_ms",
+      "direction": "lower",
+      "after": 0.7695409999978438,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "live-terminal-switch",
+      "metric": "pty_attach_ms",
+      "direction": "lower",
+      "after": 1.0242089999992459,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "live-terminal-switch",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "after": 6.300000011920929,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "live-terminal-switch",
+      "metric": "terminal_reconnect_latency_ms",
+      "direction": "lower",
+      "after": 30.218166000002384,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "live-terminal-switch",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "after": 38.19999998807907,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "live-terminal-switch",
+      "metric": "terminal_throughput_lines_per_s",
+      "direction": "higher",
+      "after": 300000,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "long-session-switch",
+      "metric": "incremental_append_latency_ms",
+      "direction": "lower",
+      "after": 0.4398330000003625,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "long-session-switch",
+      "metric": "memory_growth_mb",
+      "direction": "lower",
+      "after": 7.4310302734375,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "long-session-switch",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "after": 23.374291000000085,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "long-session-switch",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "after": 120.54233299999942,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "long-session-switch",
+      "metric": "tool_block_toggle_latency_ms",
+      "direction": "lower",
+      "after": 4.444041000000652,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "long-session-switch",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "after": 56.641709000001356,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "memory_growth_mb",
+      "direction": "lower",
+      "after": 9.822845458984375,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "session_switch_first_fold_ms",
+      "direction": "lower",
+      "after": 2.199999988079071,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "session_switch_hot_path_api_100ms",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "session_switch_hot_path_api_30ms",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "session_switch_loader_fraction",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "session_switch_max_call_stack",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "after": 40.5,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "session-switch-stress",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "after": 13,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "theme-switch",
+      "metric": "animation_jank",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "theme-switch",
+      "metric": "dropped_frames",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "theme-switch",
+      "metric": "frame_time_ms",
+      "direction": "lower",
+      "after": 5.0778339999960735,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "theme-switch",
+      "metric": "refresh_rate_stability",
+      "direction": "higher",
+      "after": 0.99,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "theme-switch",
+      "metric": "theme_switch_latency_ms",
+      "direction": "lower",
+      "after": 3.9233339999991586,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "three-pane-resize",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "after": 4.865291000001889,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "three-pane-resize",
+      "metric": "dropped_frames",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "three-pane-resize",
+      "metric": "frame_time_ms",
+      "direction": "lower",
+      "after": 8.200000000000045,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "three-pane-resize",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "after": 24.945457999994687,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "three-pane-resize",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "after": 125,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "file_tree_control_ms",
+      "direction": "lower",
+      "after": 8.399999976158142,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "file_tree_data_ms",
+      "direction": "lower",
+      "after": 9.399999976158142,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "file_tree_first_frame_ms",
+      "direction": "lower",
+      "after": 15.400000035762787,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "file_tree_load_ms",
+      "direction": "lower",
+      "after": 15.400000035762787,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "file_tree_state_ms",
+      "direction": "lower",
+      "after": 6.900000035762787,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "after": 0,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "workspace_bootstrap_ms",
+      "direction": "lower",
+      "after": 9.14100000000326,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "scenario": "workspace-switch",
+      "metric": "workspace_switch_ms",
+      "direction": "lower",
+      "after": 598.778459000001,
+      "relative_stddev": 0,
+      "status": "missing-baseline"
+    }
+  ],
+  "summary": {
+    "improved": 0,
+    "same": 0,
+    "regressed": 0,
+    "missing_baseline": 75,
+    "scenario_failures": 0
+  }
+}

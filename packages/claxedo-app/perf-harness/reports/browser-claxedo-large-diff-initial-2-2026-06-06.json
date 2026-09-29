@@ -1,0 +1,284 @@
+{
+  "generated_at": "2026-06-06T09:21:15.783Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-06-06T09:21:02.658Z",
+      "duration_ms": 23436.436665999998,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "review_panel_open_ms",
+          "value": 6.199999988079071,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            6.199999988079071,
+            3.300000011920929,
+            4
+          ],
+          "p50": 4,
+          "p95": 6.199999988079071,
+          "min": 3.300000011920929,
+          "max": 6.199999988079071,
+          "mean": 4.5,
+          "relative_stddev": 0.2745741163400654
+        },
+        {
+          "metric": "vcs_load_ms",
+          "value": 50.55141700000058,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            50.55141700000058,
+            9.696124999998574,
+            48.69916700000249
+          ],
+          "p50": 48.69916700000249,
+          "p95": 50.55141700000058,
+          "min": 9.696124999998574,
+          "max": 50.55141700000058,
+          "mean": 36.315569666667216,
+          "relative_stddev": 0.5187299291170884
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 66.56504099999802,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            53.28837500000009,
+            66.56504099999802,
+            43.68250000000262
+          ],
+          "p50": 53.28837500000009,
+          "p95": 66.56504099999802,
+          "min": 43.68250000000262,
+          "max": 66.56504099999802,
+          "mean": 54.51197200000024,
+          "relative_stddev": 0.17210420882651822
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 24.5,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            24.5,
+            22.80000001192093,
+            24.5
+          ],
+          "p50": 24.5,
+          "p95": 24.5,
+          "min": 22.80000001192093,
+          "max": 24.5,
+          "mean": 23.933333337306976,
+          "relative_stddev": 0.03348416488546462
+        },
+        {
+          "metric": "review_panel_reopen_ms",
+          "value": 4.5,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4.5,
+            4.100000023841858,
+            4.300000011920929
+          ],
+          "p50": 4.300000011920929,
+          "p95": 4.5,
+          "min": 4.100000023841858,
+          "max": 4.5,
+          "mean": 4.300000011920929,
+          "relative_stddev": 0.03797658279056542
+        },
+        {
+          "metric": "review_panel_reopen_baseline_frame_ms",
+          "value": 7.699999988079071,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            7.699999988079071,
+            5.099999964237213,
+            7.599999964237213
+          ],
+          "p50": 7.599999964237213,
+          "p95": 7.699999988079071,
+          "min": 5.099999964237213,
+          "max": 7.699999988079071,
+          "mean": 6.799999972184499,
+          "relative_stddev": 0.17687861485949952
+        },
+        {
+          "metric": "review_panel_reopen_click_ms",
+          "value": 0.40000003576278687,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.40000003576278687,
+            0.40000003576278687,
+            0.3999999761581421
+          ],
+          "p50": 0.40000003576278687,
+          "p95": 0.40000003576278687,
+          "min": 0.3999999761581421,
+          "max": 0.40000003576278687,
+          "mean": 0.40000001589457196,
+          "relative_stddev": 7.024474472688134e-8
+        },
+        {
+          "metric": "review_panel_reopen_state_ms",
+          "value": 0,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "review_panel_reopen_frame_ms",
+          "value": 1.2000000476837158,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.199999988079071,
+            1.199999988079071,
+            1.2000000476837158
+          ],
+          "p50": 1.199999988079071,
+          "p95": 1.2000000476837158,
+          "min": 1.199999988079071,
+          "max": 1.2000000476837158,
+          "mean": 1.200000007947286,
+          "relative_stddev": 2.3414915684314716e-8
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 15.399999976158142,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            15.399999976158142,
+            15.299999952316284,
+            14
+          ],
+          "p50": 15.299999952316284,
+          "p95": 15.399999976158142,
+          "min": 14,
+          "max": 15.399999976158142,
+          "mean": 14.899999976158142,
+          "relative_stddev": 0.04279893962928404
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 26.120333000000755,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            26.120333000000755,
+            23.073082999999315,
+            21.882291000001715
+          ],
+          "p50": 23.073082999999315,
+          "p95": 26.120333000000755,
+          "min": 21.882291000001715,
+          "max": 26.120333000000755,
+          "mean": 23.69190233333393,
+          "relative_stddev": 0.07532734309650561
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1224.557,
+        "memory_rss_mb": 82.3974609375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-large-diff-toggle-3.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target claxedo --scenario large-diff-toggle --iterations 3 --output browser-claxedo-large-diff-initial-2-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:56002",
+          "mock_port": 56003,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 36,
+          "hunk_render_ms": 41,
+          "diff_toggle_latency_ms": 37,
+          "line_comment_latency_ms": 33,
+          "changed_file_navigation_ms": 7,
+          "review_panel_reopen_ms": 1688,
+          "review_panel_open_ms": 205,
+          "review_panel_reopen_click_ms": 9,
+          "review_panel_reopen_state_ms": 721,
+          "review_panel_reopen_frame_ms": 411,
+          "review_panel_reopen_baseline_frame_ms": 39
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "vcs_load_ms p95 50.55141700000058 > 36",
+        "hunk_render_ms p95 66.56504099999802 > 41",
+        "changed_file_navigation_ms p95 26.120333000000755 > 7"
+      ]
+    }
+  ],
+  "comparisons": []
+}

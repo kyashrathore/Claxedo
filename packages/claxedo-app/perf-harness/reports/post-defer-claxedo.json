@@ -1,0 +1,153 @@
+{
+  "generated_at": "2026-05-25T05:47:08.627Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-empty-home",
+      "name": "Launch Empty Home",
+      "started_at": "2026-05-25T05:46:57.255Z",
+      "duration_ms": 20301.448583,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 3488.834417,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3488.834417,
+            299.173417,
+            313.6811660000003
+          ],
+          "p50": 313.6811660000003,
+          "p95": 3488.834417,
+          "min": 299.173417,
+          "max": 3488.834417,
+          "mean": 1367.2296666666668,
+          "relative_stddev": 1.097264661500647
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 3563.7125000000005,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3563.7125000000005,
+            342.0511669999996,
+            354.99191599999904
+          ],
+          "p50": 354.99191599999904,
+          "p95": 3563.7125000000005,
+          "min": 342.0511669999996,
+          "max": 3563.7125000000005,
+          "mean": 1420.2518609999997,
+          "relative_stddev": 1.0671802671319026
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 8566.563375,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8566.563375,
+            5343.7303329999995,
+            5356.098999999998
+          ],
+          "p50": 5356.098999999998,
+          "p95": 8566.563375,
+          "min": 5343.7303329999995,
+          "max": 8566.563375,
+          "mean": 6422.130902666667,
+          "relative_stddev": 0.2361133980991117
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 68.08816600000137,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            68.08816600000137,
+            11.146542000000409,
+            15.48412499999904
+          ],
+          "p50": 15.48412499999904,
+          "p95": 68.08816600000137,
+          "min": 11.146542000000409,
+          "max": 68.08816600000137,
+          "mean": 31.572944333333606,
+          "relative_stddev": 0.8197149006166347
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 61.03515625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            61.03515625,
+            61.03515625,
+            61.03515625
+          ],
+          "p50": 61.03515625,
+          "p95": 61.03515625,
+          "min": 61.03515625,
+          "max": 61.03515625,
+          "mean": 61.03515625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 813.079,
+        "memory_rss_mb": 61.03515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-empty-home-3.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 5664,
+          "launch_first_useful_screen_ms": 5720,
+          "launch_workspace_ready_ms": 14390,
+          "launch_first_input_ms": 62,
+          "memory_rss_mb": 92
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "launch_first_input_ms p95 68.08816600000137 > 62"
+      ]
+    }
+  ],
+  "comparisons": []
+}

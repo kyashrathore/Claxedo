@@ -1,0 +1,80 @@
+{
+  "outDir": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/reports/tab-close-cdp",
+  "initialUrl": "http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+  "afterClearUrl": "http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+  "browserUseFallback": true,
+  "rangeErrors": 0,
+  "pageErrors": [],
+  "failedResponses": [],
+  "closeCandidates": [
+    {
+      "i": 0,
+      "text": "X",
+      "aria": "New Codex terminal in main",
+      "title": null,
+      "testid": null,
+      "x": 200,
+      "y": 49,
+      "w": 24,
+      "h": 24
+    },
+    {
+      "i": 1,
+      "text": "X",
+      "aria": "New Codex terminal in wt-475c3b35",
+      "title": null,
+      "testid": null,
+      "x": 200,
+      "y": 263.5,
+      "w": 24,
+      "h": 24
+    },
+    {
+      "i": 2,
+      "text": "X",
+      "aria": "New Codex terminal in main",
+      "title": null,
+      "testid": null,
+      "x": 200,
+      "y": 316.5,
+      "w": 24,
+      "h": 24
+    },
+    {
+      "i": 3,
+      "text": "X",
+      "aria": "New Codex Terminal",
+      "title": null,
+      "testid": null,
+      "x": 1335,
+      "y": 2.5,
+      "w": 32,
+      "h": 32
+    },
+    {
+      "i": 4,
+      "text": "‪.agent-extensions/‬materialized.json+1-1",
+      "aria": null,
+      "title": null,
+      "testid": null,
+      "x": 470,
+      "y": 234.3984375,
+      "w": 760,
+      "h": 32
+    }
+  ],
+  "storageKeysAfterClearReload": [
+    "claxedo:runner-map",
+    "claxedo.session-view.v1",
+    "claxedo.state.v5",
+    "opencode.global.dat:notification",
+    "opencode.global.dat:globalSync.project",
+    "__clerk_environment",
+    "highlights.v1",
+    "opencode.workspace.-Users-yashv.1r3b23u.dat:workspace:model-selection",
+    "claxedo:acp-model-map",
+    "claxedo-query-v1",
+    "opencode.global.dat:command.catalog.v1"
+  ],
+  "indexedDBAfterClearReload": []
+}

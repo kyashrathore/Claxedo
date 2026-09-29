@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-06-06T19:13:55.841Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "agent-control-navigation",
+      "name": "Agent Control Navigation",
+      "started_at": "2026-06-06T19:13:55.731Z",
+      "duration_ms": 20805.95175,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 20.479583000000275,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            20.479583000000275
+          ],
+          "p50": 20.479583000000275,
+          "p95": 20.479583000000275,
+          "min": 20.479583000000275,
+          "max": 20.479583000000275,
+          "mean": 20.479583000000275,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 0.5767500000001746,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.5767500000001746
+          ],
+          "p50": 0.5767500000001746,
+          "p95": 0.5767500000001746,
+          "min": 0.5767500000001746,
+          "max": 0.5767500000001746,
+          "mean": 0.5767500000001746,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 0.7577090000013413,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.7577090000013413
+          ],
+          "p50": 0.7577090000013413,
+          "p95": 0.7577090000013413,
+          "min": 0.7577090000013413,
+          "max": 0.7577090000013413,
+          "mean": 0.7577090000013413,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 0.3776670000006561,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.3776670000006561
+          ],
+          "p50": 0.3776670000006561,
+          "p95": 0.3776670000006561,
+          "min": 0.3776670000006561,
+          "max": 0.3776670000006561,
+          "mean": 0.3776670000006561,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "event_backlog",
+          "value": 250,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            250
+          ],
+          "p50": 250,
+          "p95": 250,
+          "min": 250,
+          "max": 250,
+          "mean": 250,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1728.175,
+        "memory_rss_mb": 87.45193481445312,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 4
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-agent-control-navigation-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --target claxedo --scenario agent-control-navigation --output browser-claxedo-agent-control-navigation-workspace-entry-2026-06-07.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54031",
+          "mock_port": 54032,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 54,
+          "agent_state_verify_ms": 8,
+          "surface_switch_latency_ms": 6,
+          "command_execution_overhead_ms": 6,
+          "event_backlog": 385
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

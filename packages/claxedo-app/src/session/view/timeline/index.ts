@@ -10,6 +10,6 @@ export type {
 } from "./model"
 export { queuedMessageText, turnActive } from "./model"
 export { useTranscriptTypography } from "./transcript-typography"
-export { PreviousMessagesRow } from "./message-timeline-turn-rows"
+export { PreviousMessagesRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 export type { SessionErrorClass } from "./turn-recovery"
 export { createScrollGestureWindow } from "./message-gesture"

@@ -1,0 +1,206 @@
+{
+  "generated_at": "2026-06-05T20:41:28.478Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-06-05T20:41:28.337Z",
+      "duration_ms": 29194.657958999996,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "review_panel_open_ms",
+          "value": 5006.299999952316,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5006.299999952316
+          ],
+          "p50": 5006.299999952316,
+          "p95": 5006.299999952316,
+          "min": 5006.299999952316,
+          "max": 5006.299999952316,
+          "mean": 5006.299999952316,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "vcs_load_ms",
+          "value": 10024.698250000001,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10024.698250000001
+          ],
+          "p50": 10024.698250000001,
+          "p95": 10024.698250000001,
+          "min": 10024.698250000001,
+          "max": 10024.698250000001,
+          "mean": 10024.698250000001,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 23.289042000000336,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.289042000000336
+          ],
+          "p50": 23.289042000000336,
+          "p95": 23.289042000000336,
+          "min": 23.289042000000336,
+          "max": 23.289042000000336,
+          "mean": 23.289042000000336,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 1003.7000000476837,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1003.7000000476837
+          ],
+          "p50": 1003.7000000476837,
+          "p95": 1003.7000000476837,
+          "min": 1003.7000000476837,
+          "max": 1003.7000000476837,
+          "mean": 1003.7000000476837,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "review_panel_reopen_ms",
+          "value": 5000,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5000
+          ],
+          "p50": 5000,
+          "p95": 5000,
+          "min": 5000,
+          "max": 5000,
+          "mean": 5000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 5000,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5000
+          ],
+          "p50": 5000,
+          "p95": 5000,
+          "min": 5000,
+          "max": 5000,
+          "mean": 5000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 30.982749999999214,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            30.982749999999214
+          ],
+          "p50": 30.982749999999214,
+          "p95": 30.982749999999214,
+          "min": 30.982749999999214,
+          "max": 30.982749999999214,
+          "mean": 30.982749999999214,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2120.577,
+        "memory_rss_mb": 73.05145263671875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "diff/review surface did not visibly open",
+        "diff/review surface did not visibly open with changed files"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-large-diff-toggle-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target claxedo --scenario large-diff-toggle --output browser-claxedo-large-diff-in-page-shell-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:57741",
+          "mock_port": 57742,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 36,
+          "hunk_render_ms": 41,
+          "diff_toggle_latency_ms": 37,
+          "line_comment_latency_ms": 33,
+          "changed_file_navigation_ms": 7,
+          "review_panel_reopen_ms": 1688,
+          "review_panel_open_ms": 205
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "review_panel_open_ms p95 5006.299999952316 > 205",
+        "vcs_load_ms p95 10024.698250000001 > 36",
+        "diff_toggle_latency_ms p95 1003.7000000476837 > 37",
+        "review_panel_reopen_ms p95 5000 > 1688",
+        "line_comment_latency_ms p95 5000 > 33",
+        "changed_file_navigation_ms p95 30.982749999999214 > 7",
+        "diff/review surface did not visibly open",
+        "diff/review surface did not visibly open with changed files"
+      ]
+    }
+  ],
+  "comparisons": []
+}

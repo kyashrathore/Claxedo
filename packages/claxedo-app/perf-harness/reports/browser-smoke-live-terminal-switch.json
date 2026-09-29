@@ -1,0 +1,369 @@
+{
+  "generated_at": "2026-05-23T09:55:46.512Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Live Terminal Switch",
+      "started_at": "2026-05-23T09:55:36.987Z",
+      "duration_ms": 10372.898541,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 1170.510166,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1170.510166
+          ],
+          "p50": 1170.510166,
+          "p95": 1170.510166,
+          "min": 1170.510166,
+          "max": 1170.510166,
+          "mean": 1170.510166,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 2.1056250000001455,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.1056250000001455
+          ],
+          "p50": 2.1056250000001455,
+          "p95": 2.1056250000001455,
+          "min": 2.1056250000001455,
+          "max": 2.1056250000001455,
+          "mean": 2.1056250000001455,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 300000,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            300000
+          ],
+          "p50": 300000,
+          "p95": 300000,
+          "min": 300000,
+          "max": 300000,
+          "mean": 300000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 1.7333749999997963,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.7333749999997963
+          ],
+          "p50": 1.7333749999997963,
+          "p95": 1.7333749999997963,
+          "min": 1.7333749999997963,
+          "max": 1.7333749999997963,
+          "mean": 1.7333749999997963,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 51.530290999999124,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            51.530290999999124
+          ],
+          "p50": 51.530290999999124,
+          "p95": 51.530290999999124,
+          "min": 51.530290999999124,
+          "max": 51.530290999999124,
+          "mean": 51.530290999999124,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 273.6251250000005,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            273.6251250000005
+          ],
+          "p50": 273.6251250000005,
+          "p95": 273.6251250000005,
+          "min": 273.6251250000005,
+          "max": 273.6251250000005,
+          "mean": 273.6251250000005,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1008.966,
+        "memory_rss_mb": 82.3974609375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-live-terminal-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 32,
+          "pty_attach_ms": 36,
+          "terminal_throughput_lines_per_s": 195000,
+          "terminal_resize_latency_ms": 9,
+          "terminal_reconnect_latency_ms": 59,
+          "ansi_render_latency_ms": 6
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "surface_switch_latency_ms p95 1170.510166 > 32",
+        "ansi_render_latency_ms p95 273.6251250000005 > 6"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "live-terminal-switch",
+      "name": "Live Terminal Switch",
+      "started_at": "2026-05-23T09:55:46.440Z",
+      "duration_ms": 8859.136375000002,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 310.5505830000002,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            310.5505830000002
+          ],
+          "p50": 310.5505830000002,
+          "p95": 310.5505830000002,
+          "min": 310.5505830000002,
+          "max": 310.5505830000002,
+          "mean": 310.5505830000002,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 2.019749999999476,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.019749999999476
+          ],
+          "p50": 2.019749999999476,
+          "p95": 2.019749999999476,
+          "min": 2.019749999999476,
+          "max": 2.019749999999476,
+          "mean": 2.019749999999476,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 300000,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            300000
+          ],
+          "p50": 300000,
+          "p95": 300000,
+          "min": 300000,
+          "max": 300000,
+          "mean": 300000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 1.646166999998968,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.646166999998968
+          ],
+          "p50": 1.646166999998968,
+          "p95": 1.646166999998968,
+          "min": 1.646166999998968,
+          "max": 1.646166999998968,
+          "mean": 1.646166999998968,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 29.898624999997992,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            29.898624999997992
+          ],
+          "p50": 29.898624999997992,
+          "p95": 29.898624999997992,
+          "min": 29.898624999997992,
+          "max": 29.898624999997992,
+          "mean": 29.898624999997992,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 268.29575000000114,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            268.29575000000114
+          ],
+          "p50": 268.29575000000114,
+          "p95": 268.29575000000114,
+          "min": 268.29575000000114,
+          "max": 268.29575000000114,
+          "mean": 268.29575000000114,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1638.197,
+        "memory_rss_mb": 48.065185546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-live-terminal-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 31,
+          "pty_attach_ms": 41,
+          "terminal_throughput_lines_per_s": 195000,
+          "terminal_resize_latency_ms": 9,
+          "terminal_reconnect_latency_ms": 46,
+          "ansi_render_latency_ms": 6
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "surface_switch_latency_ms p95 310.5505830000002 > 31",
+        "ansi_render_latency_ms p95 268.29575000000114 > 6"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1170.510166,
+      "upstream_p95": 310.5505830000002,
+      "winner_delta_percent": 73.468783781584
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "pty_attach_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 2.1056250000001455,
+      "upstream_p95": 2.019749999999476,
+      "winner_delta_percent": 4.078361531643263
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "terminal_throughput_lines_per_s",
+      "direction": "higher",
+      "winner": "tie",
+      "claxedo_p95": 300000,
+      "upstream_p95": 300000,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1.7333749999997963,
+      "upstream_p95": 1.646166999998968,
+      "winner_delta_percent": 5.031109829139017
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "terminal_reconnect_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 51.530290999999124,
+      "upstream_p95": 29.898624999997992,
+      "winner_delta_percent": 41.978544231394885
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "ansi_render_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 273.6251250000005,
+      "upstream_p95": 268.29575000000114,
+      "winner_delta_percent": 1.9476921207434206
+    }
+  ]
+}

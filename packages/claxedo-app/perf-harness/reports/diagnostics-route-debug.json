@@ -1,0 +1,161 @@
+{
+  "generated_at": "2026-07-23T23:38:58.216Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project",
+      "name": "Launch into a project with 20 sessions",
+      "started_at": "2026-07-23T23:38:55.774Z",
+      "duration_ms": 32996.796417000005,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "launch-project",
+        "worstFrameMs": 81.1,
+        "p95FrameMs": 81.1,
+        "framesOver833": 19,
+        "framesOver1667": 19,
+        "sampleCount": 19,
+        "completionMs": 202.01,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 158.99483299999702,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            158.99483299999702
+          ],
+          "p50": 158.99483299999702,
+          "p95": 158.99483299999702,
+          "min": 158.99483299999702,
+          "max": 158.99483299999702,
+          "mean": 158.99483299999702,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 202.0089999999982,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            202.0089999999982
+          ],
+          "p50": 202.0089999999982,
+          "p95": 202.0089999999982,
+          "min": 202.0089999999982,
+          "max": 202.0089999999982,
+          "mean": 202.0089999999982,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 10007.40000000596,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10007.40000000596
+          ],
+          "p50": 10007.40000000596,
+          "p95": 10007.40000000596,
+          "min": 10007.40000000596,
+          "max": 10007.40000000596,
+          "mean": 10007.40000000596,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [
+        "session messages were not requested for launch-project",
+        "transcript text was not visible for launch-project: launch-project session 1"
+      ],
+      "diagnostics": {
+        "retainedBytes": 60974,
+        "retainedProcesses": 4,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 3,
+        "maxReconciliationDurationMs": 42.350292,
+        "collections": 72,
+        "sampleCount": 280,
+        "controlHeadline": {
+          "label": "launch-project",
+          "worstFrameMs": 80.2,
+          "p95FrameMs": 80.2,
+          "framesOver833": 18,
+          "framesOver1667": 18,
+          "sampleCount": 18,
+          "completionMs": 208.12,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "launch-project",
+          "worstFrameMs": 81.1,
+          "p95FrameMs": 81.1,
+          "framesOver833": 19,
+          "framesOver1667": 19,
+          "sampleCount": 19,
+          "completionMs": 202.01,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "9eaf26280438f1d8020b95dd864100695a5e34b4",
+        "git_branch": "codex/fix-codex-acp-live-models",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --scenario launch-project --iterations 1 --no-trend --output diagnostics-route-debug.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:55139",
+          "mock_port": 55140,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 55139"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/fix-codex-acp-live-models:9eaf26280438f1d8020b95dd864100695a5e34b4"
+      },
+      "budget": {
+        "scenario": "launch-project",
+        "worst_frame_ms": 142
+      },
+      "status": "fail",
+      "failures": [
+        "session messages were not requested for launch-project",
+        "transcript text was not visible for launch-project: launch-project session 1",
+        "disabled control: session messages were not requested for launch-project",
+        "disabled control: transcript text was not visible for launch-project: launch-project session 1"
+      ],
+      "warnings": [
+        "p95 frame 81.10ms > 16.67ms — sustained below 60hz",
+        "19 frames dropped below 60hz (allowance 2)"
+      ]
+    }
+  ]
+}

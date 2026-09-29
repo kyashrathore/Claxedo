@@ -1,0 +1,639 @@
+[
+  {
+    "t": 15,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connecting...",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 732,
+      "columnNumber": 8
+    }
+  },
+  {
+    "t": 22,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connected.",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 826,
+      "columnNumber": 11
+    }
+  },
+  {
+    "t": 298,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 67,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 298,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] before-render {hasRoot: true}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 249,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 306,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] after-render {rootChildren: 2}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 272,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 355,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817756042-z0v5ddm}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 91,
+      "columnNumber": 14
+    }
+  },
+  {
+    "t": 380,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+    "location": {
+      "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+      "lineNumber": 228,
+      "columnNumber": 10
+    }
+  },
+  {
+    "t": 426,
+    "type": "console",
+    "level": "warning",
+    "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+    "location": {
+      "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+      "lineNumber": 45136,
+      "columnNumber": 39
+    }
+  },
+  {
+    "t": 3212,
+    "type": "state",
+    "label": "01-before-close",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+    "closeButtons": [
+      {
+        "i": 25,
+        "text": "",
+        "aria": "Close New Session",
+        "title": null,
+        "testid": null,
+        "x": 155,
+        "y": 10,
+        "w": 18,
+        "h": 18,
+        "visible": true
+      }
+    ],
+    "titleButtons": [
+      "New Session"
+    ],
+    "localStorageKeys": [
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  {
+    "t": 3218,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:header-close] before {contentId: session-1780817756042-z0v5ddm, meta: Proxy(Object), wasFocused: true, nextItem: undefined, alive: Proxy(Array)}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 366,
+      "columnNumber": 14
+    }
+  },
+  {
+    "t": 3225,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:empty-draft] {shouldOpen: true, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(0), focused: undefined}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 91,
+      "columnNumber": 14
+    }
+  },
+  {
+    "t": 3226,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+    "location": {
+      "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+      "lineNumber": 228,
+      "columnNumber": 10
+    }
+  },
+  {
+    "t": 3229,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:empty-draft] microtask {shouldOpen: true, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(0), focused: undefined}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 108,
+      "columnNumber": 16
+    }
+  },
+  {
+    "t": 3241,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817758922-iqswynb}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 91,
+      "columnNumber": 14
+    }
+  },
+  {
+    "t": 3242,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+    "location": {
+      "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+      "lineNumber": 228,
+      "columnNumber": 10
+    }
+  },
+  {
+    "t": 3244,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:header-close] after {contentId: session-1780817756042-z0v5ddm, meta: undefined, alive: Proxy(Array), visible: Array(1), focused: session-1780817758922-iqswynb}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 378,
+      "columnNumber": 16
+    }
+  },
+  {
+    "t": 3248,
+    "type": "action",
+    "name": "clicked-close-new-session"
+  },
+  {
+    "t": 4485,
+    "type": "state",
+    "label": "02-after-close",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nOpenCode\nSelect model\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+    "closeButtons": [
+      {
+        "i": 25,
+        "text": "",
+        "aria": "Close New Session",
+        "title": null,
+        "testid": null,
+        "x": 155,
+        "y": 10,
+        "w": 18,
+        "h": 18,
+        "visible": true
+      }
+    ],
+    "titleButtons": [
+      "New Session"
+    ],
+    "localStorageKeys": [
+      "opencode.global.dat:server",
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/provider?runner=codex-acp",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/global/event",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner/options?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/events",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=opencode",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4492,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/vcs?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 4506,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connecting...",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 732,
+      "columnNumber": 8
+    }
+  },
+  {
+    "t": 4509,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connected.",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 826,
+      "columnNumber": 11
+    }
+  },
+  {
+    "t": 4651,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 67,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 4651,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] before-render {hasRoot: true}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 249,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 4656,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] after-render {rootChildren: 2}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 272,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 4685,
+    "type": "console",
+    "level": "warning",
+    "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+    "location": {
+      "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+      "lineNumber": 45136,
+      "columnNumber": 39
+    }
+  },
+  {
+    "t": 4709,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: true, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817758922-iqswynb}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 91,
+      "columnNumber": 14
+    }
+  },
+  {
+    "t": 4716,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+    "location": {
+      "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+      "lineNumber": 228,
+      "columnNumber": 10
+    }
+  },
+  {
+    "t": 6720,
+    "type": "state",
+    "label": "03-after-reload",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n409\n+23156\n-35791\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19",
+    "closeButtons": [
+      {
+        "i": 25,
+        "text": "",
+        "aria": "Close New Session",
+        "title": null,
+        "testid": null,
+        "x": 155,
+        "y": 10,
+        "w": 18,
+        "h": 18,
+        "visible": true
+      },
+      {
+        "i": 42,
+        "text": "",
+        "aria": "Close workspace panel",
+        "title": "Close workspace panel",
+        "testid": "workspace-panel-toggle",
+        "x": 1567,
+        "y": 5,
+        "w": 28,
+        "h": 28,
+        "visible": true
+      }
+    ],
+    "titleButtons": [
+      "New Session"
+    ],
+    "localStorageKeys": [
+      "opencode.global.dat:server",
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "claxedo:review-mode-map",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  {
+    "t": 6727,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/provider?runner=codex-acp",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6727,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner/options?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6727,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6727,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/events",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6728,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/global/event",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6728,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6728,
+    "type": "requestfailed",
+    "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=opencode",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6728,
+    "type": "requestfailed",
+    "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-icons/sprite.svg",
+    "method": "GET",
+    "failure": "net::ERR_ABORTED"
+  },
+  {
+    "t": 6736,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connecting...",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 732,
+      "columnNumber": 8
+    }
+  },
+  {
+    "t": 6742,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connected.",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 826,
+      "columnNumber": 11
+    }
+  },
+  {
+    "t": 6883,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 67,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 6883,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] before-render {hasRoot: true}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 249,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 6885,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] after-render {rootChildren: 2}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 272,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 6892,
+    "type": "console",
+    "level": "warning",
+    "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+    "location": {
+      "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+      "lineNumber": 45136,
+      "columnNumber": 39
+    }
+  },
+  {
+    "t": 6912,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: true, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817758922-iqswynb}",
+    "location": {
+      "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+      "lineNumber": 91,
+      "columnNumber": 14
+    }
+  },
+  {
+    "t": 6919,
+    "type": "console",
+    "level": "debug",
+    "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+    "location": {
+      "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+      "lineNumber": 228,
+      "columnNumber": 10
+    }
+  },
+  {
+    "t": 10283,
+    "type": "state",
+    "label": "04-after-storage-clear-reload",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n409\n+23156\n-35791\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n+\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19",
+    "closeButtons": [
+      {
+        "i": 25,
+        "text": "",
+        "aria": "Close New Session",
+        "title": null,
+        "testid": null,
+        "x": 155,
+        "y": 10,
+        "w": 18,
+        "h": 18,
+        "visible": true
+      },
+      {
+        "i": 42,
+        "text": "",
+        "aria": "Close workspace panel",
+        "title": "Close workspace panel",
+        "testid": "workspace-panel-toggle",
+        "x": 1567,
+        "y": 5,
+        "w": 28,
+        "h": 28,
+        "visible": true
+      }
+    ],
+    "titleButtons": [
+      "New Session"
+    ],
+    "localStorageKeys": [
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "claxedo:review-mode-map",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  }
+]

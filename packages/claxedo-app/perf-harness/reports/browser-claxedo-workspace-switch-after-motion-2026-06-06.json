@@ -1,0 +1,215 @@
+{
+  "generated_at": "2026-06-06T05:18:28.101Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "workspace-switch",
+      "name": "Workspace Switch",
+      "started_at": "2026-06-06T05:18:27.914Z",
+      "duration_ms": 16160.950167,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 44.89758299999994,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            44.89758299999994
+          ],
+          "p50": 44.89758299999994,
+          "p95": 44.89758299999994,
+          "min": 44.89758299999994,
+          "max": 44.89758299999994,
+          "mean": 44.89758299999994,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 290.37345899999855,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            290.37345899999855
+          ],
+          "p50": 290.37345899999855,
+          "p95": 290.37345899999855,
+          "min": 290.37345899999855,
+          "max": 290.37345899999855,
+          "mean": 290.37345899999855,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 437.80000001192093,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            437.80000001192093
+          ],
+          "p50": 437.80000001192093,
+          "p95": 437.80000001192093,
+          "min": 437.80000001192093,
+          "max": 437.80000001192093,
+          "mean": 437.80000001192093,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_control_ms",
+          "value": 434.19999998807907,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            434.19999998807907
+          ],
+          "p50": 434.19999998807907,
+          "p95": 434.19999998807907,
+          "min": 434.19999998807907,
+          "max": 434.19999998807907,
+          "mean": 434.19999998807907,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_state_ms",
+          "value": 2.300000011920929,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.300000011920929
+          ],
+          "p50": 2.300000011920929,
+          "p95": 2.300000011920929,
+          "min": 2.300000011920929,
+          "max": 2.300000011920929,
+          "mean": 2.300000011920929,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_first_frame_ms",
+          "value": 1.199999988079071,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.199999988079071
+          ],
+          "p50": 1.199999988079071,
+          "p95": 1.199999988079071,
+          "min": 1.199999988079071,
+          "max": 1.199999988079071,
+          "mean": 1.199999988079071,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_data_ms",
+          "value": null,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            null
+          ],
+          "p50": null,
+          "p95": null,
+          "min": null,
+          "max": null,
+          "mean": null,
+          "relative_stddev": null
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 2.2809999999990396,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.2809999999990396
+          ],
+          "p50": 2.2809999999990396,
+          "p95": 2.2809999999990396,
+          "min": 2.2809999999990396,
+          "max": 2.2809999999990396,
+          "mean": 2.2809999999990396,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1311.101,
+        "memory_rss_mb": 92.88787841796875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-workspace-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target claxedo --scenario workspace-switch --output browser-claxedo-workspace-switch-after-motion-2026-06-06.json --video",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:60052",
+          "mock_port": 60053,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 32,
+          "workspace_switch_ms": 709,
+          "file_tree_load_ms": 31,
+          "surface_switch_latency_ms": 7,
+          "file_tree_control_ms": 304,
+          "file_tree_state_ms": 236,
+          "file_tree_first_frame_ms": 7,
+          "file_tree_data_ms": 201
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "workspace_bootstrap_ms p95 44.89758299999994 > 32",
+        "file_tree_load_ms p95 437.80000001192093 > 31",
+        "file_tree_control_ms p95 434.19999998807907 > 304",
+        "file_tree_data_ms p95 NaN > 201"
+      ]
+    }
+  ],
+  "comparisons": []
+}

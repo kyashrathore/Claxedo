@@ -1,0 +1,161 @@
+{
+  "generated_at": "2026-05-23T09:08:52.251Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "long-session-switch",
+      "name": "Long Session Switch",
+      "started_at": "2026-05-23T09:08:52.178Z",
+      "duration_ms": 9678.897208,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 201.78412500000013,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            201.78412500000013
+          ],
+          "p50": 201.78412500000013,
+          "p95": 201.78412500000013,
+          "min": 201.78412500000013,
+          "max": 201.78412500000013,
+          "mean": 201.78412500000013,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 28.76066600000013,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            28.76066600000013
+          ],
+          "p50": 28.76066600000013,
+          "p95": 28.76066600000013,
+          "min": 28.76066600000013,
+          "max": 28.76066600000013,
+          "mean": 28.76066600000013,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 25.729583000000275,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            25.729583000000275
+          ],
+          "p50": 25.729583000000275,
+          "p95": 25.729583000000275,
+          "min": 25.729583000000275,
+          "max": 25.729583000000275,
+          "mean": 25.729583000000275,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 0.5840420000004087,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.5840420000004087
+          ],
+          "p50": 0.5840420000004087,
+          "p95": 0.5840420000004087,
+          "min": 0.5840420000004087,
+          "max": 0.5840420000004087,
+          "mean": 0.5840420000004087,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 5.573167000000467,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5.573167000000467
+          ],
+          "p50": 5.573167000000467,
+          "p95": 5.573167000000467,
+          "min": 5.573167000000467,
+          "max": 5.573167000000467,
+          "mean": 5.573167000000467,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 3.6163330078125,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            3.6163330078125
+          ],
+          "p50": 3.6163330078125,
+          "p95": 3.6163330078125,
+          "min": 3.6163330078125,
+          "max": 3.6163330078125,
+          "mean": 3.6163330078125,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1085.884,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "blank page rendered for long-session-switch"
+      ],
+      "artifacts": {
+        "video": "reports/videos/upstream-long-session-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 300,
+          "transcript_render_ms": 60,
+          "scroll_latency_ms": 49,
+          "incremental_append_latency_ms": 31,
+          "tool_block_toggle_latency_ms": 9,
+          "memory_growth_mb": 20
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "blank page rendered for long-session-switch"
+      ]
+    }
+  ],
+  "comparisons": []
+}

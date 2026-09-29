@@ -1,0 +1,78 @@
+{
+  "generated_at": "2026-06-08T08:58:41.747Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "session-switch",
+      "name": "Switch between two 10,000-message sessions (with rapid stress)",
+      "started_at": "2026-06-08T08:58:41.598Z",
+      "duration_ms": 0,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "session-switch",
+        "worstFrameMs": 0,
+        "p95FrameMs": 0,
+        "framesOver833": 0,
+        "framesOver1667": 0,
+        "sampleCount": 0,
+        "completionMs": 0,
+        "verdict": "red"
+      },
+      "metrics": [],
+      "budget": {
+        "scenario": "session-switch"
+      },
+      "status": "fail",
+      "failures": [
+        "browser scenario crashed: for: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('session-switch session 2').first() to be visible\u001b[22m\n; url=http://127.0.0.1:65206/s/ses_perf_session_switch_1; title=Claxedo; body=Something went wrong An error occurred while loading the application. Error Details Restart Please report this error to the OpenCode team on Discord Version: cloud"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-session-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "ae609dc6cb0e0618f85d7aad47b6f09752308120",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts run --scenario session-switch --debug --output prod-session-switch.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:65206",
+          "mock_port": 32123,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:ae609dc6cb0e0618f85d7aad47b6f09752308120"
+      }
+    }
+  ]
+}

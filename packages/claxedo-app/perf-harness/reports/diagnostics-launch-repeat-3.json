@@ -1,0 +1,150 @@
+{
+  "generated_at": "2026-07-24T00:36:31.198Z",
+  "status": "pass",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project",
+      "name": "Launch into a project with 20 sessions",
+      "started_at": "2026-07-24T00:36:28.785Z",
+      "duration_ms": 13448.022209,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "launch-project",
+        "worstFrameMs": 5,
+        "p95FrameMs": 0.2,
+        "framesOver833": 0,
+        "framesOver1667": 0,
+        "sampleCount": 2292,
+        "completionMs": 203.07,
+        "verdict": "green"
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 161.59029200000077,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            161.59029200000077
+          ],
+          "p50": 161.59029200000077,
+          "p95": 161.59029200000077,
+          "min": 161.59029200000077,
+          "max": 161.59029200000077,
+          "mean": 161.59029200000077,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 203.06995800000004,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            203.06995800000004
+          ],
+          "p50": 203.06995800000004,
+          "p95": 203.06995800000004,
+          "min": 203.06995800000004,
+          "max": 203.06995800000004,
+          "mean": 203.06995800000004,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 10009.70000000298,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10009.70000000298
+          ],
+          "p50": 10009.70000000298,
+          "p95": 10009.70000000298,
+          "min": 10009.70000000298,
+          "max": 10009.70000000298,
+          "mean": 10009.70000000298,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 30367,
+        "retainedProcesses": 4,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 2,
+        "maxReconciliationDurationMs": 41.557334,
+        "collections": 33,
+        "sampleCount": 124,
+        "controlHeadline": {
+          "label": "launch-project",
+          "worstFrameMs": 7.4,
+          "p95FrameMs": 0.2,
+          "framesOver833": 0,
+          "framesOver1667": 0,
+          "sampleCount": 2332,
+          "completionMs": 209.93,
+          "verdict": "green"
+        },
+        "enabledHeadline": {
+          "label": "launch-project",
+          "worstFrameMs": 5,
+          "p95FrameMs": 0.2,
+          "framesOver833": 0,
+          "framesOver1667": 0,
+          "sampleCount": 2292,
+          "completionMs": 203.07,
+          "verdict": "green"
+        }
+      },
+      "attribution": {
+        "git_sha": "9eaf26280438f1d8020b95dd864100695a5e34b4",
+        "git_branch": "codex/fix-codex-acp-live-models",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --scenario launch-project --iterations 1 --no-trend --output diagnostics-launch-repeat-3.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:56208",
+          "mock_port": 56209,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 56208"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/fix-codex-acp-live-models:9eaf26280438f1d8020b95dd864100695a5e34b4"
+      },
+      "budget": {
+        "scenario": "launch-project",
+        "worst_frame_ms": 142
+      },
+      "status": "pass",
+      "failures": [],
+      "warnings": []
+    }
+  ]
+}

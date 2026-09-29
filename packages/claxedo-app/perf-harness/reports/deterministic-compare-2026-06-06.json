@@ -1,0 +1,5043 @@
+{
+  "generated_at": "2026-06-05T18:36:11.794Z",
+  "status": "pass",
+  "adapters": [
+    "deterministic"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "launch-empty-home",
+      "name": "Launch to empty home",
+      "started_at": "2026-06-05T18:36:10.091Z",
+      "duration_ms": 0.1700840000000028,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 462.17425602818145,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            433.8058832773195,
+            450.213239077728,
+            462.17425602818145,
+            453.34647775534717,
+            453.74872485132056,
+            449.0801617013437,
+            425.9356078158378,
+            416.8626499665764,
+            409.23405408563474
+          ],
+          "p50": 449.0801617013437,
+          "p95": 462.17425602818145,
+          "min": 409.23405408563474,
+          "max": 462.17425602818145,
+          "mean": 439.3778949510322,
+          "relative_stddev": 0.03985745874708314
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 671.2530861361683,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            630.0514019027736,
+            653.881132946224,
+            671.2530861361683,
+            658.4317891208614,
+            659.0160051412037,
+            652.2354729471896,
+            618.6207637325264,
+            605.4433725705038,
+            594.3637452196124
+          ],
+          "p50": 652.2354729471896,
+          "p95": 671.2530861361683,
+          "min": 594.3637452196124,
+          "max": 671.2530861361683,
+          "mean": 638.1440855241182,
+          "relative_stddev": 0.03985745874708313
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 781.2945756666877,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            733.338516968802,
+            761.074761298064,
+            781.2945756666877,
+            766.3714266816584,
+            767.0514158200895,
+            759.1593209713191,
+            720.0340036886782,
+            704.6963844673077,
+            691.8004247638112
+          ],
+          "p50": 759.1593209713191,
+          "p95": 781.2945756666877,
+          "min": 691.8004247638112,
+          "max": 781.2945756666877,
+          "mean": 742.7578700362685,
+          "relative_stddev": 0.03985745874708312
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 836.3153204319474,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            784.9820745018162,
+            814.671575473984,
+            836.3153204319474,
+            820.3412454620568,
+            821.0691211595324,
+            812.6212449833838,
+            770.7406236667541,
+            754.3228904157096,
+            740.5187645359106
+          ],
+          "p50": 812.6212449833838,
+          "p95": 836.3153204319474,
+          "min": 740.5187645359106,
+          "max": 836.3153204319474,
+          "mean": 795.0647622923439,
+          "relative_stddev": 0.03985745874708313
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 253.09542592019463,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            237.56036465186543,
+            246.54534520923198,
+            253.09542592019463,
+            248.26116638983297,
+            248.48144456143743,
+            245.92485045549773,
+            233.25045189914928,
+            228.28192736264896,
+            224.10436295165715
+          ],
+          "p50": 245.92485045549773,
+          "p95": 253.09542592019463,
+          "min": 224.10436295165715,
+          "max": 253.09542592019463,
+          "mean": 240.6117043779462,
+          "relative_stddev": 0.039857458747083116
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 136.321,
+        "memory_rss_mb": 81.1875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 578,
+          "launch_first_useful_screen_ms": 840,
+          "launch_workspace_ready_ms": 977,
+          "launch_first_input_ms": 1046,
+          "memory_rss_mb": 317
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "launch-empty-home",
+      "name": "Launch to empty home",
+      "started_at": "2026-06-05T18:36:10.157Z",
+      "duration_ms": 0.08608300000003055,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 406.7133453047997,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            381.7491772840412,
+            396.18765038840064,
+            406.7133453047997,
+            398.94490042470557,
+            399.2988778691621,
+            395.1905422971825,
+            374.82333487793727,
+            366.83913197058723,
+            360.12596759535865
+          ],
+          "p50": 395.1905422971825,
+          "p95": 406.7133453047997,
+          "min": 360.12596759535865,
+          "max": 406.7133453047997,
+          "mean": 386.65254755690836,
+          "relative_stddev": 0.039857458747083116
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 590.7027157998281,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            554.4452336744407,
+            575.4153969926771,
+            590.7027157998281,
+            579.419974426358,
+            579.9340845242591,
+            573.9672161935268,
+            544.3862720846231,
+            532.7901678620433,
+            523.0400957932588
+          ],
+          "p50": 573.9672161935268,
+          "p95": 590.7027157998281,
+          "min": 523.0400957932588,
+          "max": 590.7027157998281,
+          "mean": 561.5667952612239,
+          "relative_stddev": 0.03985745874708313
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 687.5392265866851,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            645.3378949325457,
+            669.7457899422963,
+            687.5392265866851,
+            674.4068554798592,
+            675.0052459216787,
+            668.0602024547607,
+            633.6299232460368,
+            620.1328183312307,
+            608.7843737921537
+          ],
+          "p50": 668.0602024547607,
+          "p95": 687.5392265866851,
+          "min": 608.7843737921537,
+          "max": 687.5392265866851,
+          "mean": 653.6269256319163,
+          "relative_stddev": 0.03985745874708312
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 735.9574819801137,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            690.7842255615982,
+            716.9109864171058,
+            735.9574819801137,
+            721.9002960066099,
+            722.5408266203885,
+            715.1066955853777,
+            678.2517488267436,
+            663.8041435658245,
+            651.6565127916012
+          ],
+          "p50": 715.1066955853777,
+          "p95": 735.9574819801137,
+          "min": 651.6565127916012,
+          "max": 735.9574819801137,
+          "mean": 699.6569908172626,
+          "relative_stddev": 0.03985745874708313
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 207.53824925455956,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            194.79949901452966,
+            202.16718307157024,
+            207.53824925455956,
+            203.57415643966303,
+            203.7547845403787,
+            201.65837737350813,
+            191.2653705573024,
+            187.19118043737217,
+            183.76557762035884
+          ],
+          "p50": 201.65837737350813,
+          "p95": 207.53824925455956,
+          "min": 183.76557762035884,
+          "max": 207.53824925455956,
+          "mean": 197.30159758991581,
+          "relative_stddev": 0.039857458747083116
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 141.824,
+        "memory_rss_mb": 82.78125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 509,
+          "launch_first_useful_screen_ms": 739,
+          "launch_workspace_ready_ms": 860,
+          "launch_first_input_ms": 920,
+          "memory_rss_mb": 260
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "launch-project-20-sessions",
+      "name": "Launch to project with 20 sessions",
+      "started_at": "2026-06-05T18:36:10.221Z",
+      "duration_ms": 0.08741699999995944,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 540.7621695353164,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            512.8858553858761,
+            529.8215537939958,
+            540.7621695353164,
+            527.1738481358126,
+            524.6595252512307,
+            517.0618866752237,
+            489.1214821583072,
+            478.9762498859252,
+            471.8167200338822
+          ],
+          "p50": 517.0618866752237,
+          "p95": 540.7621695353164,
+          "min": 471.8167200338822,
+          "max": 540.7621695353164,
+          "mean": 510.2532545395077,
+          "relative_stddev": 0.04508520480161788
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 1379.4953304472356,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1308.382284147643,
+            1351.5855964132547,
+            1379.4953304472356,
+            1344.8312452444197,
+            1338.4171562531396,
+            1319.0354251918973,
+            1247.758883056906,
+            1221.8781884845032,
+            1203.6140817190872
+          ],
+          "p50": 1319.0354251918973,
+          "p95": 1379.4953304472356,
+          "min": 1203.6140817190872,
+          "max": 1379.4953304472356,
+          "mean": 1301.6664656620096,
+          "relative_stddev": 0.045085204801617866
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 353.15080459449234,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            334.94586474179664,
+            346.0059126817932,
+            353.15080459449234,
+            344.27679878257146,
+            342.6347920008037,
+            337.6730688491257,
+            319.4262740625679,
+            312.80081625203275,
+            308.12520492008633
+          ],
+          "p50": 337.6730688491257,
+          "p95": 353.15080459449234,
+          "min": 308.12520492008633,
+          "max": 353.15080459449234,
+          "mean": 333.22661520947446,
+          "relative_stddev": 0.04508520480161788
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 342.1148419509144,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            324.47880646861546,
+            335.1932279104872,
+            342.1148419509144,
+            333.51814882061615,
+            331.9274547507786,
+            327.1207854475905,
+            309.4442029981127,
+            303.0257907441568,
+            298.4962922663336
+          ],
+          "p50": 327.1207854475905,
+          "p95": 342.1148419509144,
+          "min": 298.4962922663336,
+          "max": 342.1148419509144,
+          "mean": 322.8132834841784,
+          "relative_stddev": 0.04508520480161787
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 146.505,
+        "memory_rss_mb": 83.046875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 676,
+          "launch_workspace_ready_ms": 1725,
+          "transcript_render_ms": 442,
+          "memory_rss_mb": 428
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "launch-project-20-sessions",
+      "name": "Launch to project with 20 sessions",
+      "started_at": "2026-06-05T18:36:10.282Z",
+      "duration_ms": 0.02633400000001984,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 475.8707091910784,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            451.33955273957093,
+            466.2429673387163,
+            475.8707091910784,
+            463.91298635951506,
+            461.70038222108303,
+            455.01446027419684,
+            430.4269042993103,
+            421.4990998996142,
+            415.1987136298163
+          ],
+          "p50": 455.01446027419684,
+          "p95": 475.8707091910784,
+          "min": 415.1987136298163,
+          "max": 475.8707091910784,
+          "mean": 449.02286399476674,
+          "relative_stddev": 0.045085204801617866
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 1213.9558907935675,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1151.3764100499259,
+            1189.3953248436642,
+            1213.9558907935675,
+            1183.4514958150894,
+            1177.8070975027629,
+            1160.7511741688697,
+            1098.0278170900774,
+            1075.2528058663627,
+            1059.180391912797
+          ],
+          "p50": 1160.7511741688697,
+          "p95": 1213.9558907935675,
+          "min": 1059.180391912797,
+          "max": 1213.9558907935675,
+          "mean": 1145.4664897825687,
+          "relative_stddev": 0.045085204801617845
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 324.898740226933,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            308.15019556245295,
+            318.3254396672498,
+            324.898740226933,
+            316.7346548799658,
+            315.2240086407395,
+            310.6592233411957,
+            293.87217213756253,
+            287.7767509518702,
+            283.4751885264795
+          ],
+          "p50": 310.6592233411957,
+          "p95": 324.898740226933,
+          "min": 283.4751885264795,
+          "max": 324.898740226933,
+          "mean": 306.56848599271655,
+          "relative_stddev": 0.04508520480161786
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 280.5341703997498,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            266.07262130426466,
+            274.8584468865995,
+            280.5341703997498,
+            273.4848820329052,
+            272.18051289563846,
+            268.2390440670242,
+            253.7442464584524,
+            248.48114841020853,
+            244.76695965839357
+          ],
+          "p50": 268.2390440670242,
+          "p95": 280.5341703997498,
+          "min": 244.76695965839357,
+          "max": 280.5341703997498,
+          "mean": 264.7068924570263,
+          "relative_stddev": 0.04508520480161786
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 147.679,
+        "memory_rss_mb": 83.078125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 595,
+          "launch_workspace_ready_ms": 1518,
+          "transcript_render_ms": 407,
+          "memory_rss_mb": 351
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "long-session-switch",
+      "name": "Switch between two 10,000-message sessions",
+      "started_at": "2026-06-05T18:36:10.343Z",
+      "duration_ms": 0.12870800000001736,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 152.6328312599623,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            152.6328312599623,
+            150.1096285271072,
+            146.99124969539042,
+            138.91582821679094,
+            137.1350514943134,
+            137.05079287031265,
+            133.76527039417115,
+            137.6841335809511,
+            143.20253072340083
+          ],
+          "p50": 138.91582821679094,
+          "p95": 152.6328312599623,
+          "min": 133.76527039417115,
+          "max": 152.6328312599623,
+          "mean": 141.94303519582223,
+          "relative_stddev": 0.04388761050799736
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 410.52968407851927,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            410.52968407851927,
+            403.74313879704687,
+            395.35577504277427,
+            373.63567589343774,
+            368.8460005709118,
+            368.61937392704783,
+            359.78245140501207,
+            370.32284204531675,
+            385.1654274629402
+          ],
+          "p50": 373.63567589343774,
+          "p95": 410.52968407851927,
+          "min": 359.78245140501207,
+          "max": 410.52968407851927,
+          "mean": 381.7778188025563,
+          "relative_stddev": 0.043887610507997346
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 35.78976732992219,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            35.78976732992219,
+            35.19811979256306,
+            34.46691372167776,
+            32.57336661635098,
+            32.15580517797693,
+            32.136047983383655,
+            31.36564960966772,
+            32.28455546036095,
+            33.5785244454871
+          ],
+          "p50": 32.57336661635098,
+          "p95": 35.78976732992219,
+          "min": 31.36564960966772,
+          "max": 35.78976732992219,
+          "mean": 33.28319445971004,
+          "relative_stddev": 0.04388761050799736
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 18.947523880547045,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.947523880547045,
+            18.634298713709857,
+            18.24718961735881,
+            17.244723502774047,
+            17.023661564811317,
+            17.013201873556053,
+            16.605343911000556,
+            17.09182347901462,
+            17.776865882904932
+          ],
+          "p50": 17.244723502774047,
+          "p95": 18.947523880547045,
+          "min": 16.605343911000556,
+          "max": 18.947523880547045,
+          "mean": 17.62051471396414,
+          "relative_stddev": 0.04388761050799736
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 44.210889054609765,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            44.210889054609765,
+            43.48003033198966,
+            42.576775773837234,
+            40.237688173139446,
+            39.721876984559735,
+            39.69747103829746,
+            38.745802459001304,
+            39.880921451034105,
+            41.47935372677818
+          ],
+          "p50": 40.237688173139446,
+          "p95": 44.210889054609765,
+          "min": 38.745802459001304,
+          "max": 44.210889054609765,
+          "mean": 41.11453433258299,
+          "relative_stddev": 0.04388761050799734
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 29.473926036406514,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            29.473926036406514,
+            28.98668688799311,
+            28.384517182558152,
+            26.82512544875963,
+            26.48125132303982,
+            26.464980692198306,
+            25.830534972667536,
+            26.587280967356072,
+            27.652902484518783
+          ],
+          "p50": 26.82512544875963,
+          "p95": 29.473926036406514,
+          "min": 25.830534972667536,
+          "max": 29.473926036406514,
+          "mean": 27.409689555055323,
+          "relative_stddev": 0.04388761050799737
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 148.856,
+        "memory_rss_mb": 83.140625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 191,
+          "transcript_render_ms": 514,
+          "scroll_latency_ms": 45,
+          "incremental_append_latency_ms": 24,
+          "tool_block_toggle_latency_ms": 56,
+          "memory_growth_mb": 37
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "long-session-switch",
+      "name": "Switch between two 10,000-message sessions",
+      "started_at": "2026-06-05T18:36:10.405Z",
+      "duration_ms": 0.04425000000003365,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 177.05408426155626,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            177.05408426155626,
+            174.12716909144433,
+            170.5098496466529,
+            161.14236073147748,
+            159.07665973340352,
+            158.97891972956268,
+            155.16771365723852,
+            159.71359495390328,
+            166.11493563914496
+          ],
+          "p50": 161.14236073147748,
+          "p95": 177.05408426155626,
+          "min": 155.16771365723852,
+          "max": 177.05408426155626,
+          "mean": 164.65392082715377,
+          "relative_stddev": 0.04388761050799736
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 377.6873093522378,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            377.6873093522378,
+            371.44368769328315,
+            363.72731303935234,
+            343.7448218219627,
+            339.33832052523894,
+            339.129824012884,
+            330.99985529261113,
+            340.6970146816914,
+            354.352193265905
+          ],
+          "p50": 343.7448218219627,
+          "p95": 377.6873093522378,
+          "min": 330.99985529261113,
+          "max": 377.6873093522378,
+          "mean": 351.2355932983519,
+          "relative_stddev": 0.043887610507997346
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 32.92658594352842,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            32.92658594352842,
+            32.382270209158015,
+            31.70956062394354,
+            29.967497287042903,
+            29.583340763738775,
+            29.565164144712966,
+            28.856397640894304,
+            29.70179102353207,
+            30.89224248984813
+          ],
+          "p50": 29.967497287042903,
+          "p95": 32.92658594352842,
+          "min": 28.856397640894304,
+          "max": 32.92658594352842,
+          "mean": 30.620538902933237,
+          "relative_stddev": 0.043887610507997374
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 18.947523880547045,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.947523880547045,
+            18.634298713709857,
+            18.24718961735881,
+            17.244723502774047,
+            17.023661564811317,
+            17.013201873556053,
+            16.605343911000556,
+            17.09182347901462,
+            17.776865882904932
+          ],
+          "p50": 17.244723502774047,
+          "p95": 18.947523880547045,
+          "min": 16.605343911000556,
+          "max": 18.947523880547045,
+          "mean": 17.62051471396414,
+          "relative_stddev": 0.04388761050799736
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 40.674017930240986,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            40.674017930240986,
+            40.00162790543049,
+            39.17063371193025,
+            37.01867311928829,
+            36.544126825794955,
+            36.52167335523366,
+            35.6461382622812,
+            36.69044773495138,
+            38.161005428635924
+          ],
+          "p50": 37.01867311928829,
+          "p95": 40.674017930240986,
+          "min": 35.6461382622812,
+          "max": 40.674017930240986,
+          "mean": 37.82537158597635,
+          "relative_stddev": 0.04388761050799737
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 24.168619349853337,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            24.168619349853337,
+            23.769083248154345,
+            23.275304089697684,
+            21.996602867982894,
+            21.714626084892654,
+            21.70128416760261,
+            21.181038677587374,
+            21.801570393231977,
+            22.675380037305402
+          ],
+          "p50": 21.996602867982894,
+          "p95": 24.168619349853337,
+          "min": 21.181038677587374,
+          "max": 24.168619349853337,
+          "mean": 22.475945435145363,
+          "relative_stddev": 0.04388761050799737
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 150.566,
+        "memory_rss_mb": 83.234375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 222,
+          "transcript_render_ms": 473,
+          "scroll_latency_ms": 42,
+          "incremental_append_latency_ms": 24,
+          "tool_block_toggle_latency_ms": 51,
+          "memory_growth_mb": 31
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "bootstrap-pending-storm",
+      "name": "Cold-boot the app and verify no requests stall in the browser's pending queue",
+      "started_at": "2026-06-05T18:36:10.467Z",
+      "duration_ms": 0.078125,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "bootstrap_pending_requests",
+          "value": 0,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "bootstrap_drain_ms",
+          "value": 1624.6567587709483,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1619.8338240345656,
+            1624.6567587709483,
+            1610.6409541353642,
+            1529.4413485139376,
+            1497.0415296307856,
+            1468.3435967365813,
+            1397.5957864845013,
+            1398.9355902874554,
+            1421.305691737733
+          ],
+          "p50": 1497.0415296307856,
+          "p95": 1624.6567587709483,
+          "min": 1397.5957864845013,
+          "max": 1624.6567587709483,
+          "mean": 1507.5327867035412,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "bootstrap_throttle_inflight_after",
+          "value": 0,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "bootstrap_throttle_queued_after",
+          "value": 0,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 152.127,
+        "memory_rss_mb": 83.28125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "claxedo",
+        "scenario": "bootstrap-pending-storm",
+        "metrics": {
+          "bootstrap_pending_requests": 0,
+          "bootstrap_drain_ms": 2031,
+          "bootstrap_throttle_inflight_after": 0,
+          "bootstrap_throttle_queued_after": 0
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "bootstrap-pending-storm",
+      "name": "Cold-boot the app and verify no requests stall in the browser's pending queue",
+      "started_at": "2026-06-05T18:36:10.529Z",
+      "duration_ms": 0.03579200000001492,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "bootstrap_pending_requests",
+          "value": 0,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "bootstrap_drain_ms",
+          "value": 1624.6567587709483,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1619.8338240345656,
+            1624.6567587709483,
+            1610.6409541353642,
+            1529.4413485139376,
+            1497.0415296307856,
+            1468.3435967365813,
+            1397.5957864845013,
+            1398.9355902874554,
+            1421.305691737733
+          ],
+          "p50": 1497.0415296307856,
+          "p95": 1624.6567587709483,
+          "min": 1397.5957864845013,
+          "max": 1624.6567587709483,
+          "mean": 1507.5327867035412,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "bootstrap_throttle_inflight_after",
+          "value": 0,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "bootstrap_throttle_queued_after",
+          "value": 0,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 153.547,
+        "memory_rss_mb": 83.28125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "upstream",
+        "scenario": "bootstrap-pending-storm",
+        "metrics": {
+          "bootstrap_pending_requests": 0,
+          "bootstrap_drain_ms": 2031,
+          "bootstrap_throttle_inflight_after": 0,
+          "bootstrap_throttle_queued_after": 0
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "burst-authed-fetches",
+      "name": "Fire N parallel authed-style fetches and verify the throttle drains them without stalls",
+      "started_at": "2026-06-05T18:36:10.588Z",
+      "duration_ms": 0.07383299999992232,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "burst_total_drain_ms",
+          "value": 1624.6567587709483,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1619.8338240345656,
+            1624.6567587709483,
+            1610.6409541353642,
+            1529.4413485139376,
+            1497.0415296307856,
+            1468.3435967365813,
+            1397.5957864845013,
+            1398.9355902874554,
+            1421.305691737733
+          ],
+          "p50": 1497.0415296307856,
+          "p95": 1624.6567587709483,
+          "min": 1397.5957864845013,
+          "max": 1624.6567587709483,
+          "mean": 1507.5327867035412,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "burst_per_request_p95_ms",
+          "value": 270.77612646182473,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            269.9723040057609,
+            270.77612646182473,
+            268.4401590225607,
+            254.9068914189896,
+            249.50692160513094,
+            244.72393278943022,
+            232.9326310807502,
+            233.1559317145759,
+            236.88428195628885
+          ],
+          "p50": 249.50692160513094,
+          "p95": 270.77612646182473,
+          "min": 232.9326310807502,
+          "max": 270.77612646182473,
+          "mean": 251.2554644505902,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "burst_failures",
+          "value": 0,
+          "unit": "errors",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "burst_throttle_queued_peak",
+          "value": 32.49313517541896,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            32.39667648069131,
+            32.49313517541896,
+            32.212819082707284,
+            30.588826970278753,
+            29.94083059261571,
+            29.366871934731627,
+            27.951915729690025,
+            27.978711805749107,
+            28.42611383475466
+          ],
+          "p50": 29.94083059261571,
+          "p95": 32.49313517541896,
+          "min": 27.951915729690025,
+          "max": 32.49313517541896,
+          "mean": 30.150655734070824,
+          "relative_stddev": 0.05866813698584517
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 154.641,
+        "memory_rss_mb": 83.28125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "claxedo",
+        "scenario": "burst-authed-fetches",
+        "metrics": {
+          "burst_total_drain_ms": 2031,
+          "burst_per_request_p95_ms": 339,
+          "burst_failures": 0,
+          "burst_throttle_queued_peak": 41
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "burst-authed-fetches",
+      "name": "Fire N parallel authed-style fetches and verify the throttle drains them without stalls",
+      "started_at": "2026-06-05T18:36:10.649Z",
+      "duration_ms": 0.026333000000022366,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "burst_total_drain_ms",
+          "value": 1624.6567587709483,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1619.8338240345656,
+            1624.6567587709483,
+            1610.6409541353642,
+            1529.4413485139376,
+            1497.0415296307856,
+            1468.3435967365813,
+            1397.5957864845013,
+            1398.9355902874554,
+            1421.305691737733
+          ],
+          "p50": 1497.0415296307856,
+          "p95": 1624.6567587709483,
+          "min": 1397.5957864845013,
+          "max": 1624.6567587709483,
+          "mean": 1507.5327867035412,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "burst_per_request_p95_ms",
+          "value": 270.77612646182473,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            269.9723040057609,
+            270.77612646182473,
+            268.4401590225607,
+            254.9068914189896,
+            249.50692160513094,
+            244.72393278943022,
+            232.9326310807502,
+            233.1559317145759,
+            236.88428195628885
+          ],
+          "p50": 249.50692160513094,
+          "p95": 270.77612646182473,
+          "min": 232.9326310807502,
+          "max": 270.77612646182473,
+          "mean": 251.2554644505902,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "burst_failures",
+          "value": 0,
+          "unit": "errors",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "burst_throttle_queued_peak",
+          "value": 32.49313517541896,
+          "unit": "requests",
+          "direction": "lower",
+          "samples": [
+            32.39667648069131,
+            32.49313517541896,
+            32.212819082707284,
+            30.588826970278753,
+            29.94083059261571,
+            29.366871934731627,
+            27.951915729690025,
+            27.978711805749107,
+            28.42611383475466
+          ],
+          "p50": 29.94083059261571,
+          "p95": 32.49313517541896,
+          "min": 27.951915729690025,
+          "max": 32.49313517541896,
+          "mean": 30.150655734070824,
+          "relative_stddev": 0.05866813698584517
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 156.116,
+        "memory_rss_mb": 83.28125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "upstream",
+        "scenario": "burst-authed-fetches",
+        "metrics": {
+          "burst_total_drain_ms": 2031,
+          "burst_per_request_p95_ms": 339,
+          "burst_failures": 0,
+          "burst_throttle_queued_peak": 41
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "session-switch-stress",
+      "name": "Rapid-switch across many sessions, watching for call-stack overflows and loader blink",
+      "started_at": "2026-06-05T18:36:10.707Z",
+      "duration_ms": 0.0837500000000091,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 129.97254070167585,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            129.58670592276525,
+            129.97254070167585,
+            128.85127633082914,
+            122.35530788111501,
+            119.76332237046284,
+            117.46748773892651,
+            111.8076629187601,
+            111.91484722299643,
+            113.70445533901864
+          ],
+          "p50": 119.76332237046284,
+          "p95": 129.97254070167585,
+          "min": 111.8076629187601,
+          "max": 129.97254070167585,
+          "mean": 120.6026229362833,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 422.41075728044655,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            421.156794248987,
+            422.41075728044655,
+            418.76664807519467,
+            397.6547506136238,
+            389.23079770400426,
+            381.76933515151114,
+            363.3749044859703,
+            363.72325347473844,
+            369.5394798518106
+          ],
+          "p50": 389.23079770400426,
+          "p95": 422.41075728044655,
+          "min": 363.3749044859703,
+          "max": 422.41075728044655,
+          "mean": 391.9585245429208,
+          "relative_stddev": 0.05866813698584512
+        },
+        {
+          "metric": "session_switch_max_call_stack",
+          "value": 0,
+          "unit": "errors",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "session_switch_loader_fraction",
+          "value": 0.4332418023389196,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0.4319556864092175,
+            0.4332418023389196,
+            0.4295042544360971,
+            0.4078510262703834,
+            0.39921107456820953,
+            0.3915582924630884,
+            0.37269220972920036,
+            0.3730494907433215,
+            0.37901485113006217
+          ],
+          "p50": 0.39921107456820953,
+          "p95": 0.4332418023389196,
+          "min": 0.37269220972920036,
+          "max": 0.4332418023389196,
+          "mean": 0.40200874312094437,
+          "relative_stddev": 0.05866813698584516
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 86.6483604677839,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            86.3911372818435,
+            86.6483604677839,
+            85.90085088721942,
+            81.57020525407667,
+            79.8422149136419,
+            78.31165849261767,
+            74.53844194584006,
+            74.60989814866429,
+            75.80297022601243
+          ],
+          "p50": 79.8422149136419,
+          "p95": 86.6483604677839,
+          "min": 74.53844194584006,
+          "max": 86.6483604677839,
+          "mean": 80.40174862418888,
+          "relative_stddev": 0.05866813698584515
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 158.217,
+        "memory_rss_mb": 85,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "claxedo",
+        "scenario": "session-switch-stress",
+        "metrics": {
+          "surface_switch_latency_ms": 163,
+          "transcript_render_ms": 529,
+          "session_switch_max_call_stack": 0,
+          "session_switch_loader_fraction": 1,
+          "memory_growth_mb": 109
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "session-switch-stress",
+      "name": "Rapid-switch across many sessions, watching for call-stack overflows and loader blink",
+      "started_at": "2026-06-05T18:36:10.807Z",
+      "duration_ms": 0.019333000000074207,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 150.768147213944,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            150.32057887040767,
+            150.768147213944,
+            149.46748054376178,
+            141.9321571420934,
+            138.9254539497369,
+            136.26228577715474,
+            129.6968889857617,
+            129.82122277867586,
+            131.89716819326162
+          ],
+          "p50": 138.9254539497369,
+          "p95": 150.768147213944,
+          "min": 129.6968889857617,
+          "max": 150.768147213944,
+          "mean": 139.89904260608864,
+          "relative_stddev": 0.05866813698584516
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 388.6178966980109,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            387.4642507090681,
+            388.6178966980109,
+            385.26531622917906,
+            365.8423705645339,
+            358.092333887684,
+            351.22778833939026,
+            334.30491212709273,
+            334.6253931967594,
+            339.9763214636657
+          ],
+          "p50": 358.092333887684,
+          "p95": 388.6178966980109,
+          "min": 334.30491212709273,
+          "max": 388.6178966980109,
+          "mean": 360.6018425794871,
+          "relative_stddev": 0.05866813698584516
+        },
+        {
+          "metric": "session_switch_max_call_stack",
+          "value": 0,
+          "unit": "errors",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "session_switch_loader_fraction",
+          "value": 0.4332418023389196,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0.4319556864092175,
+            0.4332418023389196,
+            0.4295042544360971,
+            0.4078510262703834,
+            0.39921107456820953,
+            0.3915582924630884,
+            0.37269220972920036,
+            0.3730494907433215,
+            0.37901485113006217
+          ],
+          "p50": 0.39921107456820953,
+          "p95": 0.4332418023389196,
+          "min": 0.37269220972920036,
+          "max": 0.4332418023389196,
+          "mean": 0.40200874312094437,
+          "relative_stddev": 0.05866813698584516
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 71.0516555835828,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            70.84073257111166,
+            71.0516555835828,
+            70.43869772751991,
+            66.88756830834286,
+            65.47061622918635,
+            64.21555996394649,
+            61.12152239558885,
+            61.18011648190471,
+            62.15843558533018
+          ],
+          "p50": 65.47061622918635,
+          "p95": 71.0516555835828,
+          "min": 61.12152239558885,
+          "max": 71.0516555835828,
+          "mean": 65.92943387183487,
+          "relative_stddev": 0.058668136985845144
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 159.826,
+        "memory_rss_mb": 85.109375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "upstream",
+        "scenario": "session-switch-stress",
+        "metrics": {
+          "surface_switch_latency_ms": 189,
+          "transcript_render_ms": 486,
+          "session_switch_max_call_stack": 0,
+          "session_switch_loader_fraction": 1,
+          "memory_growth_mb": 89
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Switch between three live terminals with active output",
+      "started_at": "2026-06-05T18:36:10.872Z",
+      "duration_ms": 0.12220800000000054,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 132.37147209901585,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            125.20815430052687,
+            129.5017883803377,
+            132.37147209901585,
+            129.2446810101887,
+            128.8050057222276,
+            127.06445250704517,
+            120.26480116903406,
+            117.73837810960265,
+            115.86577100004952
+          ],
+          "p50": 127.06445250704517,
+          "p95": 132.37147209901585,
+          "min": 115.86577100004952,
+          "max": 132.37147209901585,
+          "mean": 125.11827825533646,
+          "relative_stddev": 0.04376558837497656
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 82.7321700618849,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            78.2550964378293,
+            80.93861773771107,
+            82.7321700618849,
+            80.77792563136794,
+            80.50312857639226,
+            79.41528281690323,
+            75.16550073064629,
+            73.58648631850167,
+            72.41610687503095
+          ],
+          "p50": 79.41528281690323,
+          "p95": 82.7321700618849,
+          "min": 72.41610687503095,
+          "max": 82.7321700618849,
+          "mean": 78.19892390958529,
+          "relative_stddev": 0.04376558837497653
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 19391.79061113928,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            18585.917358809274,
+            19068.951192787994,
+            19391.79061113928,
+            19040.02661364623,
+            18990.563143750605,
+            18794.750907042584,
+            18029.790131516333,
+            17745.5675373303,
+            17534.89923750557
+          ],
+          "p50": 18794.750907042584,
+          "p95": 19391.79061113928,
+          "min": 17534.89923750557,
+          "max": 19391.79061113928,
+          "mean": 18575.806303725352,
+          "relative_stddev": 0.033163348856151596
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 44.123824033005285,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            41.736051433508955,
+            43.1672627934459,
+            44.123824033005285,
+            43.08156033672957,
+            42.9350019074092,
+            42.354817502348396,
+            40.088267056344684,
+            39.246126036534214,
+            38.62192366668317
+          ],
+          "p50": 42.354817502348396,
+          "p95": 44.123824033005285,
+          "min": 38.62192366668317,
+          "max": 44.123824033005285,
+          "mean": 41.70609275177882,
+          "relative_stddev": 0.043765588374976586
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 104.79408207838755,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            99.12312215458377,
+            102.52224913443402,
+            104.79408207838755,
+            102.31870579973273,
+            101.97062953009686,
+            100.59269156807744,
+            95.20963425881862,
+            93.20954933676877,
+            91.72706870837254
+          ],
+          "p50": 100.59269156807744,
+          "p95": 104.79408207838755,
+          "min": 91.72706870837254,
+          "max": 104.79408207838755,
+          "mean": 99.05197028547471,
+          "relative_stddev": 0.04376558837497655
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 60.67025804538226,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            57.387070721074814,
+            59.35498634098811,
+            60.67025804538226,
+            59.23714546300316,
+            59.03562762268765,
+            58.23787406572904,
+            55.12136720247394,
+            53.963423300234545,
+            53.10514504168937
+          ],
+          "p50": 58.23787406572904,
+          "p95": 60.67025804538226,
+          "min": 53.10514504168937,
+          "max": 60.67025804538226,
+          "mean": 57.34587753369587,
+          "relative_stddev": 0.043765588374976544
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 161.168,
+        "memory_rss_mb": 85.125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 166,
+          "pty_attach_ms": 104,
+          "terminal_throughput_lines_per_s": 15513.43,
+          "terminal_resize_latency_ms": 56,
+          "terminal_reconnect_latency_ms": 131,
+          "ansi_render_latency_ms": 76
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "live-terminal-switch",
+      "name": "Switch between three live terminals with active output",
+      "started_at": "2026-06-05T18:36:10.927Z",
+      "duration_ms": 0.025416999999833934,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 153.55090763485836,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            145.24145898861116,
+            150.22207452119173,
+            153.55090763485836,
+            149.9238299718189,
+            149.413806637784,
+            147.3947649081724,
+            139.5071693560795,
+            136.57651860713906,
+            134.40429436005743
+          ],
+          "p50": 147.3947649081724,
+          "p95": 153.55090763485836,
+          "min": 134.40429436005743,
+          "max": 153.55090763485836,
+          "mean": 145.1372027761903,
+          "relative_stddev": 0.04376558837497655
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 100.93324747549957,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            95.47121765415174,
+            98.7451136400075,
+            100.93324747549957,
+            98.54906927026889,
+            98.21381686319855,
+            96.88664503662194,
+            91.70191089138847,
+            89.77551330857202,
+            88.34765038753775
+          ],
+          "p50": 96.88664503662194,
+          "p95": 100.93324747549957,
+          "min": 88.34765038753775,
+          "max": 100.93324747549957,
+          "mean": 95.40268716969405,
+          "relative_stddev": 0.04376558837497655
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 15125.59667668864,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            14497.015539871232,
+            14873.781930374635,
+            15125.59667668864,
+            14851.220758644058,
+            14812.639252125473,
+            14659.905707493213,
+            14063.236302582738,
+            13841.542679117634,
+            13677.221405254346
+          ],
+          "p50": 14659.905707493213,
+          "p95": 15125.59667668864,
+          "min": 13677.221405254346,
+          "max": 15125.59667668864,
+          "mean": 14489.128916905775,
+          "relative_stddev": 0.03316334885615158
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 53.83106532026644,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            50.917982748880924,
+            52.664060608004,
+            53.83106532026644,
+            52.55950361081007,
+            52.380702327039224,
+            51.67287735286504,
+            48.90768580874052,
+            47.88027376457174,
+            47.11874687335347
+          ],
+          "p50": 51.67287735286504,
+          "p95": 53.83106532026644,
+          "min": 47.11874687335347,
+          "max": 53.83106532026644,
+          "mean": 50.88143315717016,
+          "relative_stddev": 0.04376558837497654
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 127.8487801356328,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            120.93020902859219,
+            125.0771439440095,
+            127.8487801356328,
+            124.82882107567391,
+            124.40416802671815,
+            122.72308371305446,
+            116.15575379575871,
+            113.71565019085789,
+            111.90702382421449
+          ],
+          "p50": 122.72308371305446,
+          "p95": 127.8487801356328,
+          "min": 111.90702382421449,
+          "max": 127.8487801356328,
+          "mean": 120.84340374827914,
+          "relative_stddev": 0.04376558837497656
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 71.59090449355105,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            67.71674345086828,
+            70.03888388236598,
+            71.59090449355105,
+            69.89983164634371,
+            69.66204059477143,
+            68.72069139756026,
+            65.04321329891924,
+            63.676839494276756,
+            62.66407114919345
+          ],
+          "p50": 68.72069139756026,
+          "p95": 71.59090449355105,
+          "min": 62.66407114919345,
+          "max": 71.59090449355105,
+          "mean": 67.66813548976113,
+          "relative_stddev": 0.04376558837497655
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 162.316,
+        "memory_rss_mb": 85.125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 192,
+          "pty_attach_ms": 127,
+          "terminal_throughput_lines_per_s": 12100.47,
+          "terminal_resize_latency_ms": 68,
+          "terminal_reconnect_latency_ms": 160,
+          "ansi_render_latency_ms": 90
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Open a 500-file changed diff and toggle split/unified",
+      "started_at": "2026-06-05T18:36:10.989Z",
+      "duration_ms": 0.10220800000001873,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 858.9677575455843,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            734.8149830685567,
+            765.8484139898075,
+            801.034686664095,
+            807.7321171862761,
+            837.6112352721387,
+            858.9677575455843,
+            841.6027432185765,
+            841.4368617297858,
+            832.072665603061
+          ],
+          "p50": 832.072665603061,
+          "p95": 858.9677575455843,
+          "min": 734.8149830685567,
+          "max": 858.9677575455843,
+          "mean": 813.4579404753201,
+          "relative_stddev": 0.04710519414147076
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 286.3225858485281,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            244.9383276895189,
+            255.28280466326913,
+            267.011562221365,
+            269.24403906209204,
+            279.2037450907129,
+            286.3225858485281,
+            280.5342477395255,
+            280.4789539099286,
+            277.3575552010203
+          ],
+          "p50": 277.3575552010203,
+          "p95": 286.3225858485281,
+          "min": 244.9383276895189,
+          "max": 286.3225858485281,
+          "mean": 271.1526468251067,
+          "relative_stddev": 0.047105194141470755
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 126.64268220223359,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            108.33810647805643,
+            112.91354821644596,
+            118.10126790560375,
+            119.0887095851561,
+            123.49396417473841,
+            126.64268220223359,
+            124.08245573094398,
+            124.05799884477611,
+            122.67738018506668
+          ],
+          "p50": 122.67738018506668,
+          "p95": 126.64268220223359,
+          "min": 108.33810647805643,
+          "max": 126.64268220223359,
+          "mean": 119.93290148033566,
+          "relative_stddev": 0.04710519414147079
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 44.04962859208125,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            37.68281964454137,
+            39.27427764050294,
+            41.07870188021,
+            41.42215985570647,
+            42.95442232164814,
+            44.04962859208125,
+            43.159115036850075,
+            43.15060829383517,
+            42.67039310784928
+          ],
+          "p50": 42.67039310784928,
+          "p95": 44.04962859208125,
+          "min": 37.68281964454137,
+          "max": 44.04962859208125,
+          "mean": 41.71579181924719,
+          "relative_stddev": 0.04710519414147079
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 71.58064646213202,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            61.234581922379725,
+            63.82070116581728,
+            66.75289055534125,
+            67.31100976552301,
+            69.80093627267823,
+            71.58064646213202,
+            70.13356193488137,
+            70.11973847748214,
+            69.33938880025508
+          ],
+          "p50": 69.33938880025508,
+          "p95": 71.58064646213202,
+          "min": 61.234581922379725,
+          "max": 71.58064646213202,
+          "mean": 67.78816170627667,
+          "relative_stddev": 0.047105194141470755
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 163.6,
+        "memory_rss_mb": 85.203125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 1074,
+          "hunk_render_ms": 358,
+          "diff_toggle_latency_ms": 159,
+          "line_comment_latency_ms": 56,
+          "changed_file_navigation_ms": 90
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "large-diff-toggle",
+      "name": "Open a 500-file changed diff and toggle split/unified",
+      "started_at": "2026-06-05T18:36:11.045Z",
+      "duration_ms": 0.03012499999999818,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 858.9677575455843,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            734.8149830685567,
+            765.8484139898075,
+            801.034686664095,
+            807.7321171862761,
+            837.6112352721387,
+            858.9677575455843,
+            841.6027432185765,
+            841.4368617297858,
+            832.072665603061
+          ],
+          "p50": 832.072665603061,
+          "p95": 858.9677575455843,
+          "min": 734.8149830685567,
+          "max": 858.9677575455843,
+          "mean": 813.4579404753201,
+          "relative_stddev": 0.04710519414147076
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 286.3225858485281,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            244.9383276895189,
+            255.28280466326913,
+            267.011562221365,
+            269.24403906209204,
+            279.2037450907129,
+            286.3225858485281,
+            280.5342477395255,
+            280.4789539099286,
+            277.3575552010203
+          ],
+          "p50": 277.3575552010203,
+          "p95": 286.3225858485281,
+          "min": 244.9383276895189,
+          "max": 286.3225858485281,
+          "mean": 271.1526468251067,
+          "relative_stddev": 0.047105194141470755
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 126.64268220223359,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            108.33810647805643,
+            112.91354821644596,
+            118.10126790560375,
+            119.0887095851561,
+            123.49396417473841,
+            126.64268220223359,
+            124.08245573094398,
+            124.05799884477611,
+            122.67738018506668
+          ],
+          "p50": 122.67738018506668,
+          "p95": 126.64268220223359,
+          "min": 108.33810647805643,
+          "max": 126.64268220223359,
+          "mean": 119.93290148033566,
+          "relative_stddev": 0.04710519414147079
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 44.04962859208125,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            37.68281964454137,
+            39.27427764050294,
+            41.07870188021,
+            41.42215985570647,
+            42.95442232164814,
+            44.04962859208125,
+            43.159115036850075,
+            43.15060829383517,
+            42.67039310784928
+          ],
+          "p50": 42.67039310784928,
+          "p95": 44.04962859208125,
+          "min": 37.68281964454137,
+          "max": 44.04962859208125,
+          "mean": 41.71579181924719,
+          "relative_stddev": 0.04710519414147079
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 71.58064646213202,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            61.234581922379725,
+            63.82070116581728,
+            66.75289055534125,
+            67.31100976552301,
+            69.80093627267823,
+            71.58064646213202,
+            70.13356193488137,
+            70.11973847748214,
+            69.33938880025508
+          ],
+          "p50": 69.33938880025508,
+          "p95": 71.58064646213202,
+          "min": 61.234581922379725,
+          "max": 71.58064646213202,
+          "mean": 67.78816170627667,
+          "relative_stddev": 0.047105194141470755
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 164.853,
+        "memory_rss_mb": 85.21875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 1074,
+          "hunk_render_ms": 358,
+          "diff_toggle_latency_ms": 159,
+          "line_comment_latency_ms": 56,
+          "changed_file_navigation_ms": 90
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "workspace-switch",
+      "name": "Switch between five projects/workspaces",
+      "started_at": "2026-06-05T18:36:11.106Z",
+      "duration_ms": 0.07370800000012423,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 1212.636963430866,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1143.9870901202607,
+            1184.6194179650452,
+            1212.636963430866,
+            1185.8225095651405,
+            1183.4492611834673,
+            1168.667914733197,
+            1106.8208039128942,
+            1083.3689373068073,
+            1065.1861190174125
+          ],
+          "p50": 1168.667914733197,
+          "p95": 1212.636963430866,
+          "min": 1065.1861190174125,
+          "max": 1212.636963430866,
+          "mean": 1148.2843352483435,
+          "relative_stddev": 0.042445338068840946
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 209.45547550169502,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            197.59777011168143,
+            204.61608128487143,
+            209.45547550169502,
+            204.823888015797,
+            204.41396329532617,
+            201.860821635734,
+            191.17813885768174,
+            187.12736189844856,
+            183.98669328482578
+          ],
+          "p50": 201.860821635734,
+          "p95": 209.45547550169502,
+          "min": 183.98669328482578,
+          "max": 209.45547550169502,
+          "mean": 198.34002154289567,
+          "relative_stddev": 0.04244533806884091
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 231.5034202913471,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            218.39753538659525,
+            226.15461615696316,
+            231.5034202913471,
+            226.38429728061772,
+            225.93122258957104,
+            223.10932917633758,
+            211.30215347427983,
+            206.8249789403905,
+            203.3537136305969
+          ],
+          "p50": 223.10932917633758,
+          "p95": 231.5034202913471,
+          "min": 203.3537136305969,
+          "max": 231.5034202913471,
+          "mean": 219.21791854741102,
+          "relative_stddev": 0.042445338068840904
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 165.3595859223908,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            155.99823956185375,
+            161.539011540688,
+            165.3595859223908,
+            161.70306948615553,
+            161.37944470683647,
+            159.36380655452683,
+            150.9301096244856,
+            147.73212781456465,
+            145.2526525932835
+          ],
+          "p50": 159.36380655452683,
+          "p95": 165.3595859223908,
+          "min": 145.2526525932835,
+          "max": 165.3595859223908,
+          "mean": 156.584227533865,
+          "relative_stddev": 0.04244533806884094
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 165.935,
+        "memory_rss_mb": 85.21875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 1516,
+          "workspace_switch_ms": 262,
+          "file_tree_load_ms": 290,
+          "surface_switch_latency_ms": 207
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "workspace-switch",
+      "name": "Switch between five projects/workspaces",
+      "started_at": "2026-06-05T18:36:11.178Z",
+      "duration_ms": 0.04458299999987503,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 1152.0051152593226,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1086.7877356142478,
+            1125.3884470667929,
+            1152.0051152593226,
+            1126.5313840868835,
+            1124.276798124294,
+            1110.234518996537,
+            1051.4797637172496,
+            1029.200490441467,
+            1011.9268130665417
+          ],
+          "p50": 1110.234518996537,
+          "p95": 1152.0051152593226,
+          "min": 1011.9268130665417,
+          "max": 1152.0051152593226,
+          "mean": 1090.8701184859265,
+          "relative_stddev": 0.04244533806884089
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 198.98270172661026,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            187.71788160609734,
+            194.38527722062784,
+            198.98270172661026,
+            194.58269361500714,
+            194.19326513055987,
+            191.7677805539473,
+            181.61923191479767,
+            177.77099380352612,
+            174.78735862058448
+          ],
+          "p50": 191.7677805539473,
+          "p95": 198.98270172661026,
+          "min": 174.78735862058448,
+          "max": 198.98270172661026,
+          "mean": 188.42302046575088,
+          "relative_stddev": 0.042445338068840904
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 219.92824927677978,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            207.4776586172655,
+            214.846885349115,
+            219.92824927677978,
+            215.06508241658685,
+            214.6346614600925,
+            211.9538627175207,
+            200.73704580056582,
+            196.48372999337099,
+            193.18602794906707
+          ],
+          "p50": 211.9538627175207,
+          "p95": 219.92824927677978,
+          "min": 193.18602794906707,
+          "max": 219.92824927677978,
+          "mean": 208.25702262004046,
+          "relative_stddev": 0.04244533806884093
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 191.81711966997332,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            180.95795789175034,
+            187.38525338719805,
+            191.81711966997332,
+            187.5755606039404,
+            187.20015585993028,
+            184.8620156032511,
+            175.07892716440327,
+            171.36926826489497,
+            168.49307700820884
+          ],
+          "p50": 184.8620156032511,
+          "p95": 191.81711966997332,
+          "min": 168.49307700820884,
+          "max": 191.81711966997332,
+          "mean": 181.6377039392834,
+          "relative_stddev": 0.042445338068840946
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 167.663,
+        "memory_rss_mb": 85.28125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 1441,
+          "workspace_switch_ms": 249,
+          "file_tree_load_ms": 275,
+          "surface_switch_latency_ms": 240
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "command-palette-large-project",
+      "name": "Open command palette over a large project and search",
+      "started_at": "2026-06-05T18:36:11.253Z",
+      "duration_ms": 0.06829100000004473,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 568.9975648524003,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            559.115328743969,
+            567.7197197012774,
+            568.9975648524003,
+            545.1053275644842,
+            535.4987466092265,
+            524.2567970538696,
+            495.7473084479182,
+            490.2415627616217,
+            491.09420621771744
+          ],
+          "p50": 535.4987466092265,
+          "p95": 568.9975648524003,
+          "min": 490.2415627616217,
+          "max": 568.9975648524003,
+          "mean": 530.864062439165,
+          "relative_stddev": 0.057355124764468704
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 52.522852140221566,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            51.61064573021253,
+            52.404897203194835,
+            52.522852140221566,
+            50.31741485210624,
+            49.430653533159365,
+            48.392935112664894,
+            45.76129001057707,
+            45.253067331842004,
+            45.33177288163545
+          ],
+          "p50": 49.430653533159365,
+          "p95": 52.522852140221566,
+          "min": 45.253067331842004,
+          "max": 52.522852140221566,
+          "mean": 49.002836532846,
+          "relative_stddev": 0.057355124764468704
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 24.07297389760155,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.654879293014076,
+            24.018911218130967,
+            24.07297389760155,
+            23.06214847388203,
+            22.65571620269804,
+            22.18009525997141,
+            20.973924588181156,
+            20.740989193760917,
+            20.77706257074958
+          ],
+          "p50": 22.65571620269804,
+          "p95": 24.07297389760155,
+          "min": 20.740989193760917,
+          "max": 24.07297389760155,
+          "mean": 22.459633410887747,
+          "relative_stddev": 0.05735512476446873
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 19.696069552583086,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            19.353992148829697,
+            19.651836451198065,
+            19.696069552583086,
+            18.86903056953984,
+            18.536495074934763,
+            18.147350667249334,
+            17.1604837539664,
+            16.96990024944075,
+            16.999414830613294
+          ],
+          "p50": 18.536495074934763,
+          "p95": 19.696069552583086,
+          "min": 16.96990024944075,
+          "max": 19.696069552583086,
+          "mean": 18.376063699817244,
+          "relative_stddev": 0.057355124764468746
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 169.097,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 712,
+          "command_palette_open_ms": 66,
+          "command_palette_search_ms": 31,
+          "command_execution_overhead_ms": 25
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "command-palette-large-project",
+      "name": "Open command palette over a large project and search",
+      "started_at": "2026-06-05T18:36:11.320Z",
+      "duration_ms": 0.027041999999937616,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 512.0978083671603,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            503.20379586957216,
+            510.94774773114966,
+            512.0978083671603,
+            490.5947948080359,
+            481.9488719483038,
+            471.83111734848273,
+            446.1725776031264,
+            441.2174064854595,
+            441.9847855959457
+          ],
+          "p50": 481.9488719483038,
+          "p95": 512.0978083671603,
+          "min": 441.2174064854595,
+          "max": 512.0978083671603,
+          "mean": 477.7776561952484,
+          "relative_stddev": 0.05735512476446873
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 47.27056692619941,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            46.44958115719128,
+            47.164407482875355,
+            47.27056692619941,
+            45.28567336689562,
+            44.48758817984343,
+            43.553641601398404,
+            41.18516100951936,
+            40.7277605986578,
+            40.79859559347191
+          ],
+          "p50": 44.48758817984343,
+          "p95": 47.27056692619941,
+          "min": 40.7277605986578,
+          "max": 47.27056692619941,
+          "mean": 44.1025528795614,
+          "relative_stddev": 0.05735512476446872
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 21.665676507841397,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            21.28939136371267,
+            21.61702009631787,
+            21.665676507841397,
+            20.755933626493825,
+            20.39014458242824,
+            19.96208573397427,
+            18.876532129363042,
+            18.666890274384826,
+            18.699356313674627
+          ],
+          "p50": 20.39014458242824,
+          "p95": 21.665676507841397,
+          "min": 18.666890274384826,
+          "max": 21.665676507841397,
+          "mean": 20.213670069798976,
+          "relative_stddev": 0.05735512476446869
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 19.696069552583086,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            19.353992148829697,
+            19.651836451198065,
+            19.696069552583086,
+            18.86903056953984,
+            18.536495074934763,
+            18.147350667249334,
+            17.1604837539664,
+            16.96990024944075,
+            16.999414830613294
+          ],
+          "p50": 18.536495074934763,
+          "p95": 19.696069552583086,
+          "min": 16.96990024944075,
+          "max": 19.696069552583086,
+          "mean": 18.376063699817244,
+          "relative_stddev": 0.057355124764468746
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 170.43,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 641,
+          "command_palette_open_ms": 60,
+          "command_palette_search_ms": 28,
+          "command_execution_overhead_ms": 25
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "theme-switch",
+      "name": "Switch between Claxedo and imported themes",
+      "started_at": "2026-06-05T18:36:11.385Z",
+      "duration_ms": 0.19737499999996544,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark",
+          "claxedo-light",
+          "nord",
+          "github-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "theme_switch_latency_ms",
+          "value": 97.01095707446926,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            91.51896720962087,
+            94.76955343720361,
+            97.01095707446926,
+            94.86580076521123,
+            94.67594089467738,
+            93.49343317865574,
+            88.54566431303155,
+            86.66951498454459,
+            85.21488952139299
+          ],
+          "p50": 93.49343317865574,
+          "p95": 97.01095707446926,
+          "min": 85.21488952139299,
+          "max": 97.01095707446926,
+          "mean": 91.86274681986748,
+          "relative_stddev": 0.04244533806884087
+        },
+        {
+          "metric": "frame_time_ms",
+          "value": 19.03595859223908,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.099823956185375,
+            18.653901154068798,
+            19.03595859223908,
+            18.67030694861555,
+            18.637944470683646,
+            18.436380655452684,
+            17.59301096244856,
+            17.273212781456465,
+            17.02526525932835
+          ],
+          "p50": 18.436380655452684,
+          "p95": 19.03595859223908,
+          "min": 17.02526525932835,
+          "max": 19.03595859223908,
+          "mean": 18.158422753386496,
+          "relative_stddev": 0.03660158464304779
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 3.0239723948260533,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            2.3998826374569164,
+            2.769267436045865,
+            3.0239723948260533,
+            2.780204632410368,
+            2.7586296471224303,
+            2.62425377030179,
+            2.062007308299039,
+            1.8488085209709761,
+            1.683510172885567
+          ],
+          "p50": 2.62425377030179,
+          "p95": 3.0239723948260533,
+          "min": 1.683510172885567,
+          "max": 3.0239723948260533,
+          "mean": 2.438948502257667,
+          "relative_stddev": 0.18167037879290854
+        },
+        {
+          "metric": "refresh_rate_stability",
+          "value": 0.9927996549353256,
+          "unit": "ratio",
+          "direction": "higher",
+          "samples": [
+            0.9849985329682115,
+            0.9896158429505733,
+            0.9927996549353256,
+            0.9897525579051296,
+            0.9894828705890303,
+            0.9878031721287723,
+            0.980775091353738,
+            0.9781101065121371,
+            0.9760438771610696
+          ],
+          "p50": 0.9878031721287723,
+          "p95": 0.9927996549353256,
+          "min": 0.9760438771610696,
+          "max": 0.9927996549353256,
+          "mean": 0.9854868562782207,
+          "relative_stddev": 0.005620124401441742
+        },
+        {
+          "metric": "animation_jank",
+          "value": 0.05279965493532567,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0.044998532968211456,
+            0.04961584295057331,
+            0.05279965493532567,
+            0.0497525579051296,
+            0.04948287058903038,
+            0.04780317212877237,
+            0.04077509135373799,
+            0.038110106512137205,
+            0.03604387716106959
+          ],
+          "p50": 0.04780317212877237,
+          "p95": 0.05279965493532567,
+          "min": 0.03604387716106959,
+          "max": 0.05279965493532567,
+          "mean": 0.04548685627822084,
+          "relative_stddev": 0.12176173913608553
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 171.957,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "theme-switch",
+        "metrics": {
+          "theme_switch_latency_ms": 122,
+          "frame_time_ms": 24,
+          "dropped_frames": 4,
+          "refresh_rate_stability": 0.79,
+          "animation_jank": 1
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "theme-switch",
+      "name": "Switch between Claxedo and imported themes",
+      "started_at": "2026-06-05T18:36:11.465Z",
+      "duration_ms": 0.04349999999999454,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark",
+          "claxedo-light",
+          "nord",
+          "github-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "theme_switch_latency_ms",
+          "value": 93.13051879149049,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            87.85820852123602,
+            90.97877129971546,
+            93.13051879149049,
+            91.07116873460278,
+            90.88890325889028,
+            89.7536958515095,
+            85.00383774051028,
+            83.2027343851628,
+            81.80629394053726
+          ],
+          "p50": 89.7536958515095,
+          "p95": 93.13051879149049,
+          "min": 81.80629394053726,
+          "max": 93.13051879149049,
+          "mean": 88.18823694707277,
+          "relative_stddev": 0.04244533806884092
+        },
+        {
+          "metric": "frame_time_ms",
+          "value": 18.274520248549518,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            17.37583099793796,
+            17.907745107906045,
+            18.274520248549518,
+            17.92349467067093,
+            17.8924266918563,
+            17.698925429234578,
+            16.889290523950617,
+            16.582284270198205,
+            16.344254648955218
+          ],
+          "p50": 17.698925429234578,
+          "p95": 18.274520248549518,
+          "min": 16.344254648955218,
+          "max": 18.274520248549518,
+          "mean": 17.432085843251045,
+          "relative_stddev": 0.03660158464304779
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 2.9030134990330114,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            2.3038873319586397,
+            2.6584967386040304,
+            2.9030134990330114,
+            2.668996447113953,
+            2.6482844612375334,
+            2.519283619489718,
+            1.9795270159670775,
+            1.7748561801321368,
+            1.6161697659701442
+          ],
+          "p50": 2.519283619489718,
+          "p95": 2.9030134990330114,
+          "min": 1.6161697659701442,
+          "max": 2.9030134990330114,
+          "mean": 2.3413905621673603,
+          "relative_stddev": 0.18167037879290857
+        },
+        {
+          "metric": "refresh_rate_stability",
+          "value": 0.9927996549353256,
+          "unit": "ratio",
+          "direction": "higher",
+          "samples": [
+            0.9849985329682115,
+            0.9896158429505733,
+            0.9927996549353256,
+            0.9897525579051296,
+            0.9894828705890303,
+            0.9878031721287723,
+            0.980775091353738,
+            0.9781101065121371,
+            0.9760438771610696
+          ],
+          "p50": 0.9878031721287723,
+          "p95": 0.9927996549353256,
+          "min": 0.9760438771610696,
+          "max": 0.9927996549353256,
+          "mean": 0.9854868562782207,
+          "relative_stddev": 0.005620124401441742
+        },
+        {
+          "metric": "animation_jank",
+          "value": 0.05279965493532567,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0.044998532968211456,
+            0.04961584295057331,
+            0.05279965493532567,
+            0.0497525579051296,
+            0.04948287058903038,
+            0.04780317212877237,
+            0.04077509135373799,
+            0.038110106512137205,
+            0.03604387716106959
+          ],
+          "p50": 0.04780317212877237,
+          "p95": 0.05279965493532567,
+          "min": 0.03604387716106959,
+          "max": 0.05279965493532567,
+          "mean": 0.04548685627822084,
+          "relative_stddev": 0.12176173913608553
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 173.357,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "theme-switch",
+        "metrics": {
+          "theme_switch_latency_ms": 117,
+          "frame_time_ms": 23,
+          "dropped_frames": 4,
+          "refresh_rate_stability": 0.79,
+          "animation_jank": 1
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "three-pane-resize",
+      "name": "Resize three-pane workbench with terminal, session, and diff",
+      "started_at": "2026-06-05T18:36:11.539Z",
+      "duration_ms": 0.0784160000000611,
+      "seed": {
+        "repos": 1,
+        "sessions": 1,
+        "messages": 10000,
+        "terminals": 1,
+        "changed_files": 120,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "frame_time_ms",
+          "value": 18.89339948902669,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.89339948902669,
+            18.54242914655629,
+            18.168067898474515,
+            17.243531231343564,
+            17.117935248870417,
+            17.220556131214146,
+            16.94036020769911,
+            17.512653941878234,
+            18.24344554070485
+          ],
+          "p50": 17.512653941878234,
+          "p95": 18.89339948902669,
+          "min": 16.94036020769911,
+          "max": 18.89339948902669,
+          "mean": 17.764708759529757,
+          "relative_stddev": 0.037526675353363355
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 4.495285349304781,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            4.495285349304781,
+            4.244592247540208,
+            3.977191356053225,
+            3.316808022388261,
+            3.2270966063360107,
+            3.3003972365815306,
+            3.1002572912136515,
+            3.509038529913023,
+            4.031032529074893
+          ],
+          "p50": 3.509038529913023,
+          "p95": 4.495285349304781,
+          "min": 3.1002572912136515,
+          "max": 4.495285349304781,
+          "mean": 3.6890776853783986,
+          "relative_stddev": 0.12907803506554777
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 39.50566746188653,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            39.50566746188653,
+            38.74356043252224,
+            37.9306617224018,
+            35.923096388060316,
+            35.65037368326148,
+            35.87320759920785,
+            35.2647821652895,
+            36.50747713093559,
+            38.094338888387675
+          ],
+          "p50": 36.50747713093559,
+          "p95": 39.50566746188653,
+          "min": 35.2647821652895,
+          "max": 39.50566746188653,
+          "mean": 37.05479616355032,
+          "relative_stddev": 0.03906603199387355
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 54.06038705310789,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            54.06038705310789,
+            53.017503749767265,
+            51.905116041181415,
+            49.15792137313517,
+            48.78472188235781,
+            49.08965250417916,
+            48.25707033144879,
+            49.95760028443818,
+            52.129095320951556
+          ],
+          "p50": 49.95760028443818,
+          "p95": 54.06038705310789,
+          "min": 48.25707033144879,
+          "max": 54.06038705310789,
+          "mean": 50.70656317117413,
+          "relative_stddev": 0.03906603199387357
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 109.16039693416016,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            109.16039693416016,
+            107.05457487933775,
+            104.8084073908471,
+            99.26118738806139,
+            98.5076114932225,
+            99.12333678728486,
+            97.44216124619467,
+            100.8759236512694,
+            105.2606732442291
+          ],
+          "p50": 100.8759236512694,
+          "p95": 109.16039693416016,
+          "min": 97.44216124619467,
+          "max": 109.16039693416016,
+          "mean": 102.38825255717855,
+          "relative_stddev": 0.03906603199387356
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 175.328,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 1,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "three-pane-resize",
+        "metrics": {
+          "frame_time_ms": 24,
+          "dropped_frames": 6,
+          "scroll_latency_ms": 50,
+          "terminal_resize_latency_ms": 68,
+          "diff_toggle_latency_ms": 137
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "three-pane-resize",
+      "name": "Resize three-pane workbench with terminal, session, and diff",
+      "started_at": "2026-06-05T18:36:11.602Z",
+      "duration_ms": 0.017959000000018932,
+      "seed": {
+        "repos": 1,
+        "sessions": 1,
+        "messages": 10000,
+        "terminals": 1,
+        "changed_files": 120,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "frame_time_ms",
+          "value": 18.13766350946562,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.13766350946562,
+            17.800731980694035,
+            17.44134518253553,
+            16.55378998208982,
+            16.433217838915596,
+            16.531733885965572,
+            16.262745799391144,
+            16.8121477842031,
+            17.513707719076653
+          ],
+          "p50": 16.8121477842031,
+          "p95": 18.13766350946562,
+          "min": 16.262745799391144,
+          "max": 18.13766350946562,
+          "mean": 17.054120409148563,
+          "relative_stddev": 0.037526675353363376
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 4.315473935332589,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            4.315473935332589,
+            4.074808557638599,
+            3.8181037018110957,
+            3.18413570149273,
+            3.0980127420825707,
+            3.168381347118269,
+            2.976246999565105,
+            3.3686769887165022,
+            3.869791227911897
+          ],
+          "p50": 3.3686769887165022,
+          "p95": 4.315473935332589,
+          "min": 2.976246999565105,
+          "max": 4.315473935332589,
+          "mean": 3.541514577963262,
+          "relative_stddev": 0.12907803506554777
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 36.34521406493561,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            36.34521406493561,
+            35.644075597920455,
+            34.896208784609655,
+            33.04924867701549,
+            32.798343788600555,
+            33.00335099127122,
+            32.44359959206634,
+            33.586878960460744,
+            35.046791777316656
+          ],
+          "p50": 33.586878960460744,
+          "p95": 36.34521406493561,
+          "min": 32.44359959206634,
+          "max": 36.34521406493561,
+          "mean": 34.090412470466305,
+          "relative_stddev": 0.03906603199387355
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 65.95367220479162,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            65.95367220479162,
+            64.68135457471607,
+            63.32424157024133,
+            59.9726640752249,
+            59.51736069647652,
+            59.88937605509858,
+            58.87362580436752,
+            60.94827234701457,
+            63.597496291560894
+          ],
+          "p50": 60.94827234701457,
+          "p95": 65.95367220479162,
+          "min": 58.87362580436752,
+          "max": 65.95367220479162,
+          "mean": 61.86200706883244,
+          "relative_stddev": 0.03906603199387356
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 109.16039693416016,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            109.16039693416016,
+            107.05457487933775,
+            104.8084073908471,
+            99.26118738806139,
+            98.5076114932225,
+            99.12333678728486,
+            97.44216124619467,
+            100.8759236512694,
+            105.2606732442291
+          ],
+          "p50": 100.8759236512694,
+          "p95": 109.16039693416016,
+          "min": 97.44216124619467,
+          "max": 109.16039693416016,
+          "mean": 102.38825255717855,
+          "relative_stddev": 0.03906603199387356
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 176.969,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 1,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "three-pane-resize",
+        "metrics": {
+          "frame_time_ms": 23,
+          "dropped_frames": 6,
+          "scroll_latency_ms": 46,
+          "terminal_resize_latency_ms": 83,
+          "diff_toggle_latency_ms": 137
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "agent-control-navigation",
+      "name": "Dispatch 100 mixed navigation actions and verify UI state",
+      "started_at": "2026-06-05T18:36:11.665Z",
+      "duration_ms": 0.08312500000010914,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 18.077612646182473,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            17.997230400576093,
+            18.077612646182473,
+            17.844015902256068,
+            16.490689141898958,
+            15.950692160513094,
+            15.472393278943022,
+            14.29326310807502,
+            14.315593171457593,
+            14.688428195628884
+          ],
+          "p50": 15.950692160513094,
+          "p95": 18.077612646182473,
+          "min": 14.29326310807502,
+          "max": 18.077612646182473,
+          "mean": 16.125546445059022,
+          "relative_stddev": 0.09141203404828507
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 31.116418969273706,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            30.995845600864136,
+            31.116418969273706,
+            30.766023853384098,
+            28.73603371284844,
+            27.926038240769643,
+            27.208589918414532,
+            25.43989466211253,
+            25.473389757186386,
+            26.032642293443324
+          ],
+          "p50": 27.926038240769643,
+          "p95": 31.116418969273706,
+          "min": 25.43989466211253,
+          "max": 31.116418969273706,
+          "mean": 28.188319667588534,
+          "relative_stddev": 0.07844041528898847
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 99.64561453795149,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            99.34980787412002,
+            99.64561453795149,
+            98.78597852030232,
+            93.80573604218817,
+            91.81854715068819,
+            90.05840726651032,
+            85.71920823771607,
+            85.80138287096393,
+            87.17341575991429
+          ],
+          "p50": 91.81854715068819,
+          "p95": 99.64561453795149,
+          "min": 85.71920823771607,
+          "max": 99.64561453795149,
+          "mean": 92.4620109178172,
+          "relative_stddev": 0.058668136985845144
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 21.662090116945976,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            21.597784320460875,
+            21.662090116945976,
+            21.475212721804855,
+            20.392551313519167,
+            19.960553728410474,
+            19.577914623154417,
+            18.634610486460016,
+            18.65247453716607,
+            18.95074255650311
+          ],
+          "p50": 19.960553728410474,
+          "p95": 21.662090116945976,
+          "min": 18.634610486460016,
+          "max": 21.662090116945976,
+          "mean": 20.10043715604722,
+          "relative_stddev": 0.05866813698584515
+        },
+        {
+          "metric": "event_backlog",
+          "value": 4.038806323091236,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            3.998615200288046,
+            4.038806323091236,
+            3.9220079511280335,
+            3.24534457094948,
+            2.9753460802565472,
+            2.736196639471511,
+            2.1466315540375103,
+            2.1577965857287955,
+            2.344214097814442
+          ],
+          "p50": 2.9753460802565472,
+          "p95": 4.038806323091236,
+          "min": 2.1466315540375103,
+          "max": 4.038806323091236,
+          "mean": 3.0627732225295117,
+          "relative_stddev": 0.24064285756447873
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 178.031,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 23,
+          "agent_state_verify_ms": 39,
+          "surface_switch_latency_ms": 125,
+          "command_execution_overhead_ms": 28,
+          "event_backlog": 6
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "deterministic",
+      "target": "upstream",
+      "id": "agent-control-navigation",
+      "name": "Dispatch 100 mixed navigation actions and verify UI state",
+      "started_at": "2026-06-05T18:36:11.728Z",
+      "duration_ms": 0.029958999999962543,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 21.693135175418966,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            21.59667648069131,
+            21.693135175418966,
+            21.41281908270728,
+            19.788826970278752,
+            19.14083059261571,
+            18.566871934731626,
+            17.151915729690025,
+            17.17871180574911,
+            17.62611383475466
+          ],
+          "p50": 19.14083059261571,
+          "p95": 21.693135175418966,
+          "min": 17.151915729690025,
+          "max": 21.693135175418966,
+          "mean": 19.350655734070827,
+          "relative_stddev": 0.09141203404828507
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 37.33970276312845,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            37.19501472103697,
+            37.33970276312845,
+            36.91922862406092,
+            34.48324045541813,
+            33.51124588892357,
+            32.650307902097445,
+            30.527873594535038,
+            30.568067708623666,
+            31.23917075213199
+          ],
+          "p50": 33.51124588892357,
+          "p95": 37.33970276312845,
+          "min": 30.527873594535038,
+          "max": 37.33970276312845,
+          "mean": 33.82598360110624,
+          "relative_stddev": 0.07844041528898849
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 115.58891286402374,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            115.24577713397922,
+            115.58891286402374,
+            114.59173508355069,
+            108.81465380893827,
+            106.5095146947983,
+            104.46775242915197,
+            99.43428155575064,
+            99.52960413031818,
+            101.12116228150057
+          ],
+          "p50": 106.5095146947983,
+          "p95": 115.58891286402374,
+          "min": 99.43428155575064,
+          "max": 115.58891286402374,
+          "mean": 107.25593266466795,
+          "relative_stddev": 0.05866813698584514
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 21.662090116945976,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            21.597784320460875,
+            21.662090116945976,
+            21.475212721804855,
+            20.392551313519167,
+            19.960553728410474,
+            19.577914623154417,
+            18.634610486460016,
+            18.65247453716607,
+            18.95074255650311
+          ],
+          "p50": 19.960553728410474,
+          "p95": 21.662090116945976,
+          "min": 18.634610486460016,
+          "max": 21.662090116945976,
+          "mean": 20.10043715604722,
+          "relative_stddev": 0.05866813698584515
+        },
+        {
+          "metric": "event_backlog",
+          "value": 4.846567587709482,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            4.798338240345655,
+            4.846567587709482,
+            4.70640954135364,
+            3.8944134851393755,
+            3.5704152963078566,
+            3.283435967365813,
+            2.5759578648450123,
+            2.5893559028745545,
+            2.8130569173773297
+          ],
+          "p50": 3.5704152963078566,
+          "p95": 4.846567587709482,
+          "min": 2.5759578648450123,
+          "max": 4.846567587709482,
+          "mean": 3.6753278670354135,
+          "relative_stddev": 0.24064285756447867
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 179.336,
+        "memory_rss_mb": 85.375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts compare --all --output deterministic-compare-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "deterministic",
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "target": "upstream",
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 28,
+          "agent_state_verify_ms": 47,
+          "surface_switch_latency_ms": 145,
+          "command_execution_overhead_ms": 28,
+          "event_backlog": 7
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "deterministic",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 462.17425602818145,
+      "upstream_p95": 406.7133453047997,
+      "winner_delta_percent": 11.999999999999995
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "deterministic",
+      "metric": "launch_first_useful_screen_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 671.2530861361683,
+      "upstream_p95": 590.7027157998281,
+      "winner_delta_percent": 12.000000000000012
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "deterministic",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 781.2945756666877,
+      "upstream_p95": 687.5392265866851,
+      "winner_delta_percent": 12.000000000000007
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "deterministic",
+      "metric": "launch_first_input_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 836.3153204319474,
+      "upstream_p95": 735.9574819801137,
+      "winner_delta_percent": 12
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "deterministic",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 253.09542592019463,
+      "upstream_p95": 207.53824925455956,
+      "winner_delta_percent": 18.000000000000014
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "deterministic",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 540.7621695353164,
+      "upstream_p95": 475.8707091910784,
+      "winner_delta_percent": 12.000000000000007
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "deterministic",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1379.4953304472356,
+      "upstream_p95": 1213.9558907935675,
+      "winner_delta_percent": 11.999999999999986
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "deterministic",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 353.15080459449234,
+      "upstream_p95": 324.898740226933,
+      "winner_delta_percent": 7.999999999999988
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "deterministic",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 342.1148419509144,
+      "upstream_p95": 280.5341703997498,
+      "winner_delta_percent": 17.999999999999996
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "deterministic",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 152.6328312599623,
+      "upstream_p95": 177.05408426155626,
+      "winner_delta_percent": 13.793103448275854
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "deterministic",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 410.52968407851927,
+      "upstream_p95": 377.6873093522378,
+      "winner_delta_percent": 7.999999999999988
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "deterministic",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 35.78976732992219,
+      "upstream_p95": 32.92658594352842,
+      "winner_delta_percent": 7.999999999999983
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "deterministic",
+      "metric": "incremental_append_latency_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 18.947523880547045,
+      "upstream_p95": 18.947523880547045,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "deterministic",
+      "metric": "tool_block_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 44.210889054609765,
+      "upstream_p95": 40.674017930240986,
+      "winner_delta_percent": 7.999999999999997
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "deterministic",
+      "metric": "memory_growth_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 29.473926036406514,
+      "upstream_p95": 24.168619349853337,
+      "winner_delta_percent": 18.000000000000014
+    },
+    {
+      "scenario": "bootstrap-pending-storm",
+      "adapter": "deterministic",
+      "metric": "bootstrap_pending_requests",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "bootstrap-pending-storm",
+      "adapter": "deterministic",
+      "metric": "bootstrap_drain_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 1624.6567587709483,
+      "upstream_p95": 1624.6567587709483,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "bootstrap-pending-storm",
+      "adapter": "deterministic",
+      "metric": "bootstrap_throttle_inflight_after",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "bootstrap-pending-storm",
+      "adapter": "deterministic",
+      "metric": "bootstrap_throttle_queued_after",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "burst-authed-fetches",
+      "adapter": "deterministic",
+      "metric": "burst_total_drain_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 1624.6567587709483,
+      "upstream_p95": 1624.6567587709483,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "burst-authed-fetches",
+      "adapter": "deterministic",
+      "metric": "burst_per_request_p95_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 270.77612646182473,
+      "upstream_p95": 270.77612646182473,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "burst-authed-fetches",
+      "adapter": "deterministic",
+      "metric": "burst_failures",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "burst-authed-fetches",
+      "adapter": "deterministic",
+      "metric": "burst_throttle_queued_peak",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 32.49313517541896,
+      "upstream_p95": 32.49313517541896,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "session-switch-stress",
+      "adapter": "deterministic",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 129.97254070167585,
+      "upstream_p95": 150.768147213944,
+      "winner_delta_percent": 13.793103448275861
+    },
+    {
+      "scenario": "session-switch-stress",
+      "adapter": "deterministic",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 422.41075728044655,
+      "upstream_p95": 388.6178966980109,
+      "winner_delta_percent": 7.999999999999982
+    },
+    {
+      "scenario": "session-switch-stress",
+      "adapter": "deterministic",
+      "metric": "session_switch_max_call_stack",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "session-switch-stress",
+      "adapter": "deterministic",
+      "metric": "session_switch_loader_fraction",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0.4332418023389196,
+      "upstream_p95": 0.4332418023389196,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "session-switch-stress",
+      "adapter": "deterministic",
+      "metric": "memory_growth_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 86.6483604677839,
+      "upstream_p95": 71.0516555835828,
+      "winner_delta_percent": 18
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "deterministic",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 132.37147209901585,
+      "upstream_p95": 153.55090763485836,
+      "winner_delta_percent": 13.79310344827585
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "deterministic",
+      "metric": "pty_attach_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 82.7321700618849,
+      "upstream_p95": 100.93324747549957,
+      "winner_delta_percent": 18.032786885245894
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "deterministic",
+      "metric": "terminal_throughput_lines_per_s",
+      "direction": "higher",
+      "winner": "claxedo",
+      "claxedo_p95": 19391.79061113928,
+      "upstream_p95": 15125.59667668864,
+      "winner_delta_percent": 28.2051282051282
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "deterministic",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 44.123824033005285,
+      "upstream_p95": 53.83106532026644,
+      "winner_delta_percent": 18.03278688524589
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "deterministic",
+      "metric": "terminal_reconnect_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 104.79408207838755,
+      "upstream_p95": 127.8487801356328,
+      "winner_delta_percent": 18.032786885245894
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "deterministic",
+      "metric": "ansi_render_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 60.67025804538226,
+      "upstream_p95": 71.59090449355105,
+      "winner_delta_percent": 15.254237288135572
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "deterministic",
+      "metric": "vcs_load_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 858.9677575455843,
+      "upstream_p95": 858.9677575455843,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "deterministic",
+      "metric": "hunk_render_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 286.3225858485281,
+      "upstream_p95": 286.3225858485281,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "deterministic",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 126.64268220223359,
+      "upstream_p95": 126.64268220223359,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "deterministic",
+      "metric": "line_comment_latency_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 44.04962859208125,
+      "upstream_p95": 44.04962859208125,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "deterministic",
+      "metric": "changed_file_navigation_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 71.58064646213202,
+      "upstream_p95": 71.58064646213202,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "deterministic",
+      "metric": "workspace_bootstrap_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1212.636963430866,
+      "upstream_p95": 1152.0051152593226,
+      "winner_delta_percent": 5.00000000000001
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "deterministic",
+      "metric": "workspace_switch_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 209.45547550169502,
+      "upstream_p95": 198.98270172661026,
+      "winner_delta_percent": 5.000000000000004
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "deterministic",
+      "metric": "file_tree_load_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 231.5034202913471,
+      "upstream_p95": 219.92824927677978,
+      "winner_delta_percent": 4.99999999999999
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "deterministic",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 165.3595859223908,
+      "upstream_p95": 191.81711966997332,
+      "winner_delta_percent": 13.793103448275856
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "deterministic",
+      "metric": "command_palette_index_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 568.9975648524003,
+      "upstream_p95": 512.0978083671603,
+      "winner_delta_percent": 9.999999999999996
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "deterministic",
+      "metric": "command_palette_open_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 52.522852140221566,
+      "upstream_p95": 47.27056692619941,
+      "winner_delta_percent": 10.000000000000005
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "deterministic",
+      "metric": "command_palette_search_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 24.07297389760155,
+      "upstream_p95": 21.665676507841397,
+      "winner_delta_percent": 9.999999999999991
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "deterministic",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 19.696069552583086,
+      "upstream_p95": 19.696069552583086,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "deterministic",
+      "metric": "theme_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 97.01095707446926,
+      "upstream_p95": 93.13051879149049,
+      "winner_delta_percent": 4.000000000000002
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "deterministic",
+      "metric": "frame_time_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 19.03595859223908,
+      "upstream_p95": 18.274520248549518,
+      "winner_delta_percent": 3.9999999999999947
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "deterministic",
+      "metric": "dropped_frames",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3.0239723948260533,
+      "upstream_p95": 2.9030134990330114,
+      "winner_delta_percent": 3.999999999999991
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "deterministic",
+      "metric": "refresh_rate_stability",
+      "direction": "higher",
+      "winner": "tie",
+      "claxedo_p95": 0.9927996549353256,
+      "upstream_p95": 0.9927996549353256,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "deterministic",
+      "metric": "animation_jank",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0.05279965493532567,
+      "upstream_p95": 0.05279965493532567,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "deterministic",
+      "metric": "frame_time_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 18.89339948902669,
+      "upstream_p95": 18.13766350946562,
+      "winner_delta_percent": 4.000000000000012
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "deterministic",
+      "metric": "dropped_frames",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 4.495285349304781,
+      "upstream_p95": 4.315473935332589,
+      "winner_delta_percent": 4.000000000000008
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "deterministic",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 39.50566746188653,
+      "upstream_p95": 36.34521406493561,
+      "winner_delta_percent": 7.999999999999995
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "deterministic",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 54.06038705310789,
+      "upstream_p95": 65.95367220479162,
+      "winner_delta_percent": 18.03278688524589
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "deterministic",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 109.16039693416016,
+      "upstream_p95": 109.16039693416016,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "deterministic",
+      "metric": "agent_action_dispatch_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 18.077612646182473,
+      "upstream_p95": 21.693135175418966,
+      "winner_delta_percent": 16.66666666666666
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "deterministic",
+      "metric": "agent_state_verify_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 31.116418969273706,
+      "upstream_p95": 37.33970276312845,
+      "winner_delta_percent": 16.666666666666675
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "deterministic",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 99.64561453795149,
+      "upstream_p95": 115.58891286402374,
+      "winner_delta_percent": 13.793103448275874
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "deterministic",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 21.662090116945976,
+      "upstream_p95": 21.662090116945976,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "deterministic",
+      "metric": "event_backlog",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 4.038806323091236,
+      "upstream_p95": 4.846567587709482,
+      "winner_delta_percent": 16.666666666666657
+    }
+  ]
+}

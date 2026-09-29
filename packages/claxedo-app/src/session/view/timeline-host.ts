@@ -23,6 +23,10 @@ export type TimelineHostInput = {
   readonly panel: Pick<Panel, "show" | "sessionId">
 }
 
+export function timelineText(t: SessionScreenText): TimelineHost["t"] {
+  return (key, params) => t(`sessionScreen.timeline.${key}`, params)
+}
+
 function timelineSettings(preferences: Preferences): TimelineSettings {
   return {
     showReasoningSummaries: () => preferences.transcript.showReasoningSummaries,
@@ -85,7 +89,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     turnSettlePending: view.turnSettlePending,
     settings,
     transcriptTypography,
-    t: (key, params) => input.t(`sessionScreen.timeline.${key}`, params),
+    t: timelineText(input.t),
     platform: { openLink: openExternal, renderMermaid: desktopBridge()?.renderMermaid },
     openFocus: (focus) => openFocus(input, focus),
     openSessionInPane: (id) => void input.workbench.openRoute({ kind: "session", ...refFor(view, id) }),

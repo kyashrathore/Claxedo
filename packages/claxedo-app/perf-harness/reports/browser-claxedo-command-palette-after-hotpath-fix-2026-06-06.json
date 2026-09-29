@@ -1,0 +1,161 @@
+{
+  "generated_at": "2026-06-06T18:28:02.447Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "command-palette-large-project",
+      "name": "Command Palette Large Project",
+      "started_at": "2026-06-06T18:28:02.291Z",
+      "duration_ms": 30167.504249999998,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 2.4273749999993015,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.4273749999993015
+          ],
+          "p50": 2.4273749999993015,
+          "p95": 2.4273749999993015,
+          "min": 2.4273749999993015,
+          "max": 2.4273749999993015,
+          "mean": 2.4273749999993015,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 5037.406708999999,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5037.406708999999
+          ],
+          "p50": 5037.406708999999,
+          "p95": 5037.406708999999,
+          "min": 5037.406708999999,
+          "max": 5037.406708999999,
+          "mean": 5037.406708999999,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 5025.6963749999995,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5025.6963749999995
+          ],
+          "p50": 5025.6963749999995,
+          "p95": 5025.6963749999995,
+          "min": 5025.6963749999995,
+          "max": 5025.6963749999995,
+          "mean": 5025.6963749999995,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 17.131375000000844,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            17.131375000000844
+          ],
+          "p50": 17.131375000000844,
+          "p95": 17.131375000000844,
+          "min": 17.131375000000844,
+          "max": 17.131375000000844,
+          "mean": 17.131375000000844,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1498.971,
+        "memory_rss_mb": 82.3974609375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "error boundary rendered for command-palette-large-project",
+        "session messages were not requested for command-palette-large-project",
+        "command palette search input did not visibly open",
+        "command palette did not visibly show search results for: theme",
+        "transcript text was not visible for command-palette-large-project: command-palette-large-project session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-command-palette-large-project-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --target claxedo --scenario command-palette-large-project --output browser-claxedo-command-palette-after-hotpath-fix-2026-06-06.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:55620",
+          "mock_port": 55621,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 32,
+          "command_palette_open_ms": 8,
+          "command_palette_search_ms": 43,
+          "command_execution_overhead_ms": 7
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "command_palette_open_ms p95 5037.406708999999 > 8",
+        "command_palette_search_ms p95 5025.6963749999995 > 43",
+        "command_execution_overhead_ms p95 17.131375000000844 > 7",
+        "error boundary rendered for command-palette-large-project",
+        "session messages were not requested for command-palette-large-project",
+        "command palette search input did not visibly open",
+        "command palette did not visibly show search results for: theme",
+        "transcript text was not visible for command-palette-large-project: command-palette-large-project session 1"
+      ]
+    }
+  ],
+  "comparisons": []
+}

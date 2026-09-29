@@ -1,0 +1,367 @@
+{
+  "generated_at": "2026-05-23T09:40:53.283Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "long-session-switch",
+      "name": "Long Session Switch",
+      "started_at": "2026-05-23T09:40:42.988Z",
+      "duration_ms": 10846.64775,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 658.3878750000003,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            658.3878750000003
+          ],
+          "p50": 658.3878750000003,
+          "p95": 658.3878750000003,
+          "min": 658.3878750000003,
+          "max": 658.3878750000003,
+          "mean": 658.3878750000003,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 3.2208340000015596,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.2208340000015596
+          ],
+          "p50": 3.2208340000015596,
+          "p95": 3.2208340000015596,
+          "min": 3.2208340000015596,
+          "max": 3.2208340000015596,
+          "mean": 3.2208340000015596,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 18.98083300000144,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.98083300000144
+          ],
+          "p50": 18.98083300000144,
+          "p95": 18.98083300000144,
+          "min": 18.98083300000144,
+          "max": 18.98083300000144,
+          "mean": 18.98083300000144,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 1.1160839999993186,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.1160839999993186
+          ],
+          "p50": 1.1160839999993186,
+          "p95": 1.1160839999993186,
+          "min": 1.1160839999993186,
+          "max": 1.1160839999993186,
+          "mean": 1.1160839999993186,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 3.1917089999988093,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.1917089999988093
+          ],
+          "p50": 3.1917089999988093,
+          "p95": 3.1917089999988093,
+          "min": 3.1917089999988093,
+          "max": 3.1917089999988093,
+          "mean": 3.1917089999988093,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 5.8441162109375,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            5.8441162109375
+          ],
+          "p50": 5.8441162109375,
+          "p95": 5.8441162109375,
+          "min": 5.8441162109375,
+          "max": 5.8441162109375,
+          "mean": 5.8441162109375,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1034.101,
+        "memory_rss_mb": 73.05145263671875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-long-session-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 523,
+          "transcript_render_ms": 268,
+          "scroll_latency_ms": 55,
+          "incremental_append_latency_ms": 6,
+          "tool_block_toggle_latency_ms": 9,
+          "memory_growth_mb": 22
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "surface_switch_latency_ms p95 658.3878750000003 > 523"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "long-session-switch",
+      "name": "Long Session Switch",
+      "started_at": "2026-05-23T09:40:53.235Z",
+      "duration_ms": 9646.968792000001,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 665.302083999999,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            665.302083999999
+          ],
+          "p50": 665.302083999999,
+          "p95": 665.302083999999,
+          "min": 665.302083999999,
+          "max": 665.302083999999,
+          "mean": 665.302083999999,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 2.391790999998193,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.391790999998193
+          ],
+          "p50": 2.391790999998193,
+          "p95": 2.391790999998193,
+          "min": 2.391790999998193,
+          "max": 2.391790999998193,
+          "mean": 2.391790999998193,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 23.2901669999992,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.2901669999992
+          ],
+          "p50": 23.2901669999992,
+          "p95": 23.2901669999992,
+          "min": 23.2901669999992,
+          "max": 23.2901669999992,
+          "mean": 23.2901669999992,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 0.5472499999996217,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.5472499999996217
+          ],
+          "p50": 0.5472499999996217,
+          "p95": 0.5472499999996217,
+          "min": 0.5472499999996217,
+          "max": 0.5472499999996217,
+          "mean": 0.5472499999996217,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 1.082209000000148,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.082209000000148
+          ],
+          "p50": 1.082209000000148,
+          "p95": 1.082209000000148,
+          "min": 1.082209000000148,
+          "max": 1.082209000000148,
+          "mean": 1.082209000000148,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 3.84521484375,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            3.84521484375
+          ],
+          "p50": 3.84521484375,
+          "p95": 3.84521484375,
+          "min": 3.84521484375,
+          "max": 3.84521484375,
+          "mean": 3.84521484375,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1738.007,
+        "memory_rss_mb": 48.065185546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-long-session-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 300,
+          "transcript_render_ms": 277,
+          "scroll_latency_ms": 58,
+          "incremental_append_latency_ms": 6,
+          "tool_block_toggle_latency_ms": 6,
+          "memory_growth_mb": 20
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "surface_switch_latency_ms p95 665.302083999999 > 300"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 658.3878750000003,
+      "upstream_p95": 665.302083999999,
+      "winner_delta_percent": 1.0392585813692827
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3.2208340000015596,
+      "upstream_p95": 2.391790999998193,
+      "winner_delta_percent": 25.740010196208967
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 18.98083300000144,
+      "upstream_p95": 23.2901669999992,
+      "winner_delta_percent": 18.50280420916651
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "incremental_append_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1.1160839999993186,
+      "upstream_p95": 0.5472499999996217,
+      "winner_delta_percent": 50.96695230825317
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "tool_block_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3.1917089999988093,
+      "upstream_p95": 1.082209000000148,
+      "winner_delta_percent": 66.0931181382591
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "memory_growth_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 5.8441162109375,
+      "upstream_p95": 3.84521484375,
+      "winner_delta_percent": 34.20365535248042
+    }
+  ]
+}

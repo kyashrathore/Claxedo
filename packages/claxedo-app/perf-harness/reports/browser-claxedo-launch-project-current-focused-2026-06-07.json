@@ -1,0 +1,153 @@
+{
+  "generated_at": "2026-06-06T20:04:42.671Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project-20-sessions",
+      "name": "Launch Project 20 Sessions",
+      "started_at": "2026-06-06T20:04:42.574Z",
+      "duration_ms": 44271.981458,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 5744.2845,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5744.2845
+          ],
+          "p50": 5744.2845,
+          "p95": 5744.2845,
+          "min": 5744.2845,
+          "max": 5744.2845,
+          "mean": 5744.2845,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 10844.806333999999,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10844.806333999999
+          ],
+          "p50": 10844.806333999999,
+          "p95": 10844.806333999999,
+          "min": 10844.806333999999,
+          "max": 10844.806333999999,
+          "mean": 10844.806333999999,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 10005.699999988079,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10005.699999988079
+          ],
+          "p50": 10005.699999988079,
+          "p95": 10005.699999988079,
+          "min": 10005.699999988079,
+          "max": 10005.699999988079,
+          "mean": 10005.699999988079,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 82.3974609375,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            82.3974609375
+          ],
+          "p50": 82.3974609375,
+          "p95": 82.3974609375,
+          "min": 82.3974609375,
+          "max": 82.3974609375,
+          "mean": 82.3974609375,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2671.048,
+        "memory_rss_mb": 82.3974609375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "transcript text was not visible for launch-project-20-sessions: launch-project-20-sessions session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-project-20-sessions-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --target claxedo --scenario launch-project-20-sessions --output browser-claxedo-launch-project-current-focused-2026-06-07.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:65448",
+          "mock_port": 65449,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 5200,
+          "launch_workspace_ready_ms": 9403,
+          "transcript_render_ms": 90,
+          "memory_rss_mb": 110
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "launch_first_window_ms p95 5744.2845 > 5200",
+        "launch_workspace_ready_ms p95 10844.806333999999 > 9403",
+        "transcript_render_ms p95 10005.699999988079 > 90",
+        "transcript text was not visible for launch-project-20-sessions: launch-project-20-sessions session 1"
+      ]
+    }
+  ],
+  "comparisons": []
+}

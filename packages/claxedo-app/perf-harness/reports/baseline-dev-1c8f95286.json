@@ -1,0 +1,824 @@
+{
+  "generated_at": "2026-08-07T11:18:48.612Z",
+  "status": "warn",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project",
+      "name": "Launch into a project with 20 sessions",
+      "started_at": "2026-08-07T11:15:07.575Z",
+      "duration_ms": 20726.381290999998,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "launch-project",
+        "worstFrameMs": 171.9,
+        "p95FrameMs": 0.6,
+        "framesOver833": 11,
+        "framesOver1667": 9,
+        "sampleCount": 6395,
+        "completionMs": 379.88,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 430.92120799999975,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            392.5764999999992,
+            276.1228749999973,
+            358.3664580000004,
+            253.64787499999875,
+            430.92120799999975,
+            271.85120800000004
+          ],
+          "p50": 276.1228749999973,
+          "p95": 430.92120799999975,
+          "min": 253.64787499999875,
+          "max": 430.92120799999975,
+          "mean": 330.5810206666659,
+          "relative_stddev": 0.20298630065340792
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 472.7207500000004,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            472.7207500000004,
+            335.3206659999996,
+            384.1569159999999,
+            301.6765000000014,
+            455.79529099999854,
+            329.604499999994
+          ],
+          "p50": 335.3206659999996,
+          "p95": 472.7207500000004,
+          "min": 301.6765000000014,
+          "max": 472.7207500000004,
+          "mean": 379.8791038333323,
+          "relative_stddev": 0.1700229119759621
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 155.69999992847443,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            109.5,
+            132.79999995231628,
+            126.09999990463257,
+            155.69999992847443,
+            116.79999995231628,
+            106
+          ],
+          "p50": 116.79999995231628,
+          "p95": 155.69999992847443,
+          "min": 106,
+          "max": 155.69999992847443,
+          "mean": 124.48333328962326,
+          "relative_stddev": 0.13407785246380843
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 0,
+        "retainedProcesses": 6,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 1,
+        "maxReconciliationDurationMs": 0,
+        "collections": 54,
+        "sampleCount": 206,
+        "controlHeadline": {
+          "label": "launch-project",
+          "worstFrameMs": 1619.1,
+          "p95FrameMs": 0.4,
+          "framesOver833": 11,
+          "framesOver1667": 8,
+          "sampleCount": 6891,
+          "completionMs": 546.64,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "launch-project",
+          "worstFrameMs": 171.9,
+          "p95FrameMs": 0.6,
+          "framesOver833": 11,
+          "framesOver1667": 9,
+          "sampleCount": 6395,
+          "completionMs": 379.88,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "1c8f95286116a526a3f7f4708e6326d94ee5b973",
+        "git_branch": "dev",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --all --iterations 3 --no-trend --output baseline-dev-1c8f95286.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54901",
+          "mock_port": 54902,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 54901"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:dev:1c8f95286116a526a3f7f4708e6326d94ee5b973"
+      },
+      "budget": {
+        "scenario": "launch-project",
+        "worst_frame_ms": 142
+      },
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "disabled control already exceeds stored worst-frame budget 142ms (control 1619.10ms; enabled 171.90ms)",
+        "disabled control base-app gate: 8 frames dropped below 60hz (allowance 2)"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "session-switch",
+      "name": "Switch between two 10,000-message sessions (with rapid stress)",
+      "started_at": "2026-08-07T11:15:51.813Z",
+      "duration_ms": 14657.840124999995,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "session-switch",
+        "worstFrameMs": 167.3,
+        "p95FrameMs": 11,
+        "framesOver833": 14,
+        "framesOver1667": 7,
+        "sampleCount": 2007,
+        "completionMs": 393.24,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "single_switch_ms",
+          "value": 166.05,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            146.7,
+            145.43,
+            166.05,
+            157.98,
+            156.12,
+            135.6
+          ],
+          "p50": 146.7,
+          "p95": 166.05,
+          "min": 135.6,
+          "max": 166.05,
+          "mean": 151.31333333333333,
+          "relative_stddev": 0.06539727643581705
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 0,
+        "retainedProcesses": 6,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 0,
+        "maxReconciliationDurationMs": 0,
+        "collections": 16,
+        "sampleCount": 52,
+        "controlHeadline": {
+          "label": "session-switch",
+          "worstFrameMs": 153.4,
+          "p95FrameMs": 7.2,
+          "framesOver833": 14,
+          "framesOver1667": 8,
+          "sampleCount": 2063,
+          "completionMs": 407.77,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "session-switch",
+          "worstFrameMs": 167.3,
+          "p95FrameMs": 11,
+          "framesOver833": 14,
+          "framesOver1667": 7,
+          "sampleCount": 2007,
+          "completionMs": 393.24,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "1c8f95286116a526a3f7f4708e6326d94ee5b973",
+        "git_branch": "dev",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --all --iterations 3 --no-trend --output baseline-dev-1c8f95286.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54901",
+          "mock_port": 54902,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 54901"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:dev:1c8f95286116a526a3f7f4708e6326d94ee5b973"
+      },
+      "budget": {
+        "scenario": "session-switch",
+        "worst_frame_ms": 117
+      },
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "paired delta unmeasurable (control fails base-app gate): diagnostics moved p95 frame from 7.20ms to 11ms",
+        "disabled control already exceeds stored worst-frame budget 117ms (control 153.40ms; enabled 167.30ms)",
+        "disabled control base-app gate: 8 frames dropped below 60hz (allowance 2)"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Switch between three live terminals",
+      "started_at": "2026-08-07T11:16:37.091Z",
+      "duration_ms": 28627.765583000015,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "live-terminal-switch",
+        "worstFrameMs": 819.1,
+        "p95FrameMs": 49.4,
+        "framesOver833": 31,
+        "framesOver1667": 24,
+        "sampleCount": 562,
+        "completionMs": 736.93,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "terminal_switch_ms",
+          "value": 42.7,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            13.5,
+            42.7,
+            32.3,
+            13.6,
+            12.7,
+            11.7
+          ],
+          "p50": 13.5,
+          "p95": 42.7,
+          "min": 11.7,
+          "max": 42.7,
+          "mean": 21.083333333333332,
+          "relative_stddev": 0.5694756535253557
+        },
+        {
+          "metric": "terminal_resize_ms",
+          "value": 123.10000002384186,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            51.39999997615814,
+            123.10000002384186,
+            45.5,
+            34.800000071525574,
+            31.699999928474426,
+            30.5
+          ],
+          "p50": 34.800000071525574,
+          "p95": 123.10000002384186,
+          "min": 30.5,
+          "max": 123.10000002384186,
+          "mean": 52.833333333333336,
+          "relative_stddev": 0.6115563217587913
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 0,
+        "retainedProcesses": 6,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 2,
+        "maxReconciliationDurationMs": 0,
+        "collections": 24,
+        "sampleCount": 84,
+        "controlHeadline": {
+          "label": "live-terminal-switch",
+          "worstFrameMs": 207.7,
+          "p95FrameMs": 17.7,
+          "framesOver833": 15,
+          "framesOver1667": 7,
+          "sampleCount": 444,
+          "completionMs": 396.18,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "live-terminal-switch",
+          "worstFrameMs": 819.1,
+          "p95FrameMs": 49.4,
+          "framesOver833": 31,
+          "framesOver1667": 24,
+          "sampleCount": 562,
+          "completionMs": 736.93,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "1c8f95286116a526a3f7f4708e6326d94ee5b973",
+        "git_branch": "dev",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --all --iterations 3 --no-trend --output baseline-dev-1c8f95286.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54901",
+          "mock_port": 54902,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 54901"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:dev:1c8f95286116a526a3f7f4708e6326d94ee5b973"
+      },
+      "budget": {
+        "scenario": "live-terminal-switch",
+        "worst_frame_ms": 120
+      },
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "paired delta unmeasurable (control fails base-app gate): diagnostics moved p95 frame from 17.70ms to 49.40ms",
+        "paired delta unmeasurable (control fails base-app gate): diagnostics moved worst frame from 207.70ms to 819.10ms",
+        "disabled control already exceeds stored worst-frame budget 120ms (control 207.70ms; enabled 819.10ms)",
+        "disabled control base-app gate: p95 frame 17.70ms > 16.67ms — sustained below 60hz",
+        "disabled control base-app gate: 7 frames dropped below 60hz (allowance 2)"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Open a 500-file diff and toggle split/unified",
+      "started_at": "2026-08-07T11:17:39.426Z",
+      "duration_ms": 19550.047583000007,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "large-diff-toggle",
+        "worstFrameMs": 497.9,
+        "p95FrameMs": 0.8,
+        "framesOver833": 5,
+        "framesOver1667": 4,
+        "sampleCount": 8255,
+        "completionMs": 557.71,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "review_panel_open_ms",
+          "value": 18.40000009536743,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            18.40000009536743,
+            15.399999976158142,
+            16.600000023841858,
+            17.5,
+            17.899999976158142,
+            17.5
+          ],
+          "p50": 17.5,
+          "p95": 18.40000009536743,
+          "min": 15.399999976158142,
+          "max": 18.40000009536743,
+          "mean": 17.216666678587597,
+          "relative_stddev": 0.05665392139046754
+        },
+        {
+          "metric": "vcs_load_ms",
+          "value": 674.7999999523163,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            674.7999999523163,
+            624.6000000238419,
+            625.1000000238419,
+            533.3999999761581,
+            550.5999999046326,
+            544.2999999523163
+          ],
+          "p50": 550.5999999046326,
+          "p95": 674.7999999523163,
+          "min": 533.3999999761581,
+          "max": 674.7999999523163,
+          "mean": 592.1333333055178,
+          "relative_stddev": 0.08839349017163026
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 13.200000047683716,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            13.200000047683716,
+            10.800000071525574,
+            12.399999976158142,
+            11.700000047683716,
+            11.699999928474426,
+            11.600000023841858
+          ],
+          "p50": 11.699999928474426,
+          "p95": 13.200000047683716,
+          "min": 10.800000071525574,
+          "max": 13.200000047683716,
+          "mean": 11.900000015894571,
+          "relative_stddev": 0.06250956125008578
+        },
+        {
+          "metric": "line_comment_ms",
+          "value": 27.699999928474426,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            27.600000023841858,
+            25.5,
+            24.700000047683716,
+            27.699999928474426,
+            25.800000071525574,
+            26.5
+          ],
+          "p50": 25.800000071525574,
+          "p95": 27.699999928474426,
+          "min": 24.700000047683716,
+          "max": 27.699999928474426,
+          "mean": 26.30000001192093,
+          "relative_stddev": 0.04147799175989005
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 5000,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5000,
+            5000,
+            5000,
+            5000,
+            5000,
+            5000
+          ],
+          "p50": 5000,
+          "p95": 5000,
+          "min": 5000,
+          "max": 5000,
+          "mean": 5000,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 0,
+        "retainedProcesses": 6,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 0,
+        "maxReconciliationDurationMs": 0,
+        "collections": 19,
+        "sampleCount": 64,
+        "controlHeadline": {
+          "label": "large-diff-toggle",
+          "worstFrameMs": 1039.1,
+          "p95FrameMs": 7.4,
+          "framesOver833": 36,
+          "framesOver1667": 32,
+          "sampleCount": 6606,
+          "completionMs": 629.31,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "large-diff-toggle",
+          "worstFrameMs": 497.9,
+          "p95FrameMs": 0.8,
+          "framesOver833": 5,
+          "framesOver1667": 4,
+          "sampleCount": 8255,
+          "completionMs": 557.71,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "1c8f95286116a526a3f7f4708e6326d94ee5b973",
+        "git_branch": "dev",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --all --iterations 3 --no-trend --output baseline-dev-1c8f95286.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54901",
+          "mock_port": 54902,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 54901"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:dev:1c8f95286116a526a3f7f4708e6326d94ee5b973"
+      },
+      "budget": {
+        "scenario": "large-diff-toggle",
+        "worst_frame_ms": 165
+      },
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "disabled control already exceeds stored worst-frame budget 165ms (control 1039.10ms; enabled 497.90ms)",
+        "disabled control base-app gate: 32 frames dropped below 60hz (allowance 2)"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "workspace-switch",
+      "name": "Switch across five workspaces",
+      "started_at": "2026-08-07T11:18:23.567Z",
+      "duration_ms": 14498.931833000039,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "workspace-switch",
+        "worstFrameMs": 94,
+        "p95FrameMs": 33.2,
+        "framesOver833": 8,
+        "framesOver1667": 5,
+        "sampleCount": 464,
+        "completionMs": 166.35,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "file_tree_load_ms",
+          "value": 18,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            16.399999976158142,
+            16.399999976158142,
+            15.100000023841858,
+            18,
+            16.5,
+            15.199999928474426
+          ],
+          "p50": 16.399999976158142,
+          "p95": 18,
+          "min": 15.100000023841858,
+          "max": 18,
+          "mean": 16.266666650772095,
+          "relative_stddev": 0.0593555265621889
+        },
+        {
+          "metric": "file_tree_control_ms",
+          "value": 14.300000071525574,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            13.5,
+            14.300000071525574,
+            13,
+            13.600000023841858,
+            13.900000095367432,
+            12.899999976158142
+          ],
+          "p50": 13.5,
+          "p95": 14.300000071525574,
+          "min": 12.899999976158142,
+          "max": 14.300000071525574,
+          "mean": 13.533333361148834,
+          "relative_stddev": 0.03586261292053412
+        },
+        {
+          "metric": "file_tree_state_ms",
+          "value": 4.399999976158142,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.899999976158142,
+            2.0999999046325684,
+            2,
+            4.399999976158142,
+            2.5999999046325684,
+            2.299999952316284
+          ],
+          "p50": 2.299999952316284,
+          "p95": 4.399999976158142,
+          "min": 2,
+          "max": 4.399999976158142,
+          "mean": 2.7166666189829507,
+          "relative_stddev": 0.2986035307195417
+        },
+        {
+          "metric": "file_tree_first_frame_ms",
+          "value": 18,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            16.399999976158142,
+            16.399999976158142,
+            15.100000023841858,
+            18,
+            16.5,
+            15.199999928474426
+          ],
+          "p50": 16.399999976158142,
+          "p95": 18,
+          "min": 15.100000023841858,
+          "max": 18,
+          "mean": 16.266666650772095,
+          "relative_stddev": 0.0593555265621889
+        },
+        {
+          "metric": "file_tree_data_ms",
+          "value": 29.800000071525574,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            29.700000047683716,
+            25,
+            26,
+            28.600000023841858,
+            29.800000071525574,
+            29.100000023841858
+          ],
+          "p50": 28.600000023841858,
+          "p95": 29.800000071525574,
+          "min": 25,
+          "max": 29.800000071525574,
+          "mean": 28.033333361148834,
+          "relative_stddev": 0.06624679395062773
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 0,
+        "retainedProcesses": 6,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 1,
+        "maxReconciliationDurationMs": 0,
+        "collections": 16,
+        "sampleCount": 52,
+        "controlHeadline": {
+          "label": "workspace-switch",
+          "worstFrameMs": 93.8,
+          "p95FrameMs": 33.6,
+          "framesOver833": 8,
+          "framesOver1667": 5,
+          "sampleCount": 471,
+          "completionMs": 168.61,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "workspace-switch",
+          "worstFrameMs": 94,
+          "p95FrameMs": 33.2,
+          "framesOver833": 8,
+          "framesOver1667": 5,
+          "sampleCount": 464,
+          "completionMs": 166.35,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "1c8f95286116a526a3f7f4708e6326d94ee5b973",
+        "git_branch": "dev",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --all --iterations 3 --no-trend --output baseline-dev-1c8f95286.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:54901",
+          "mock_port": 54902,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 54901"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:dev:1c8f95286116a526a3f7f4708e6326d94ee5b973"
+      },
+      "budget": {
+        "scenario": "workspace-switch",
+        "worst_frame_ms": 137
+      },
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "disabled control base-app gate: p95 frame 33.60ms > 16.67ms — sustained below 60hz",
+        "disabled control base-app gate: 5 frames dropped below 60hz (allowance 2)"
+      ]
+    }
+  ]
+}
