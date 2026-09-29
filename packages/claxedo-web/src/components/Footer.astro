@@ -16,7 +16,7 @@ const columns = [
       {columns.map((column) => (
         <div class="footer-col">
           <h2>{column.title}</h2>
-          {column.links.map(([label, href]) => <a href={href}>{label}</a>)}
+          {column.links.map(([label, href]) => href === benchmark ? <a href={href} target="_blank" rel="noopener noreferrer">{label}</a> : <a href={href}>{label}</a>)}
         </div>
       ))}
     </div>

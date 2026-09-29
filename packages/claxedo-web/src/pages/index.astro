@@ -40,7 +40,7 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
     <section class="block">
       <header class="section-head">
         <h2>{home.speed.title}</h2>
-        <p>{rivals(home.speed.subtitle).map((part) => part.rival ? <strong class="rival">{part.text}</strong> : part.text)} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
+        <p>{rivals(home.speed.subtitle).map((part) => part.rival ? <strong class="rival">{part.text}</strong> : part.text)} <a class="quiet-link" href={home.benchmark.href} target="_blank" rel="noopener noreferrer">See the {home.benchmark.date} benchmark</a></p>
       </header>
       <PlatePanel plate="comorin" x={0.5} y={0.62} class="panel metrics-panel">
         <div class="cards metrics" tabindex="0" role="region" aria-label="Benchmark results"><dl>
