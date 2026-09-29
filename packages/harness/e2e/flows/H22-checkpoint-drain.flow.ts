@@ -39,7 +39,7 @@ export async function run() {
     assert.notEqual((await detail.json() as { state: string }).state, "frozen")
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "checkpoint cancellation idle" })
     assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H22 held turn reached the agent/)
-    assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "completed")
+    assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "cancelled")
     console.log("H22: interrupt drain returned 409 with cancel_needs_action operation; checkpoint stayed unfrozen; foreign operation read refused 403; frames and stored outcome passed")
   } finally {
     await stack.acp.release("h22-held")

@@ -13,7 +13,7 @@ import type { AdmittedTurnCapture, RuntimeRecovery, TurnFinalization } from "./r
 import type { createSessionTitleOwner } from "./session-titles"
 import type { TurnAdmissions } from "./turn-admission"
 import { turnInputFor } from "./turn-input"
-import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./turn-outcome"
+import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload, stoppedOutcome } from "./turn-outcome"
 import { createTurnPublication } from "./turn-publication"
 
 type Fence = AgentRuntimeTurnStartInput["admission"]
@@ -133,10 +133,10 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     }
     if (!terminal || !outcome) throw new TransportError("provider", "missing_terminal_event",
       "Harness stream ended without a terminal event", { detail: { code: "missing_terminal_event", transport: run.attached.handle.transport.kind } })
-    const settled = outcome
+    const settled = stoppedOutcome(outcome, recovery.stops.sent(capture))
     finalized = recovery.finalizeTurn(capture, settled, { emit: publishTurn })
     recovery.retainFailure(capture, settled, finalized)
-    if (finalized.ok && outcome?.status === "completed") {
+    if (finalized.ok && settled.status === "completed") {
       if (run.clearsHandoff) store.updateSessionConfig(sessionId, { handoff: null })
       void titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session })
     }

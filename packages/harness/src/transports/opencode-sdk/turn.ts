@@ -10,6 +10,7 @@ import { assertProviderAvailable } from "./credentials.js"
 import { abortedSessionOutcome, eventAssistantMessageID, eventSessionID, projectTurnEvent, sessionOutcome, terminal } from "./translate/event.js"
 import { createTurnUsage, readSessionTotal } from "./translate/turn-usage.js"
 import { answerOpenCodeRequest } from "./requests.js"
+import { declaredCommand } from "./command-invocation.js"
 import { flattenTurnPrompt } from "../../translate/prompt"
 
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
@@ -63,8 +64,16 @@ async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnSt
   await runtime.sessions.switchModel(state.scope, state.upstream, { providerID: model.providerID, modelID: model.modelID,
     ...(turn.effort ? { variant: turn.effort } : {}) })
   if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
-  const admitted = await runtime.sessions.prompt(state.scope, state.upstream, promptRequest(turn))
-  return { usage, admittedAt: admitted.createdAt }
+  return { usage, admittedAt: await submitOpenCodeTurn(runtime, state, turn) }
+}
+
+async function submitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput): Promise<number> {
+  const request = promptRequest(turn)
+  const invocation = await declaredCommand(runtime, state.scope, turn)
+  if (!invocation) return (await runtime.sessions.prompt(state.scope, state.upstream, request)).createdAt
+  const submittedAt = Date.now()
+  await runtime.sessions.command(state.scope, state.upstream, { ...invocation, delivery: request.delivery })
+  return submittedAt
 }
 
 async function settledSnapshot(runtime: OpenCodeRuntime, state: OpenCodeTurnState, cause: StreamLost | TurnAborted,

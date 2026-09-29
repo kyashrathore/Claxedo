@@ -250,7 +250,7 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
   result = result.replace(/\b1[7-9]\d{11}\b/g, (timestamp) => special(specials, "time-id", timestamp, scope))
   result = result.replace(/(goal\.updated:.*:)(1[7-9]\d{8,11})$/, (_match, prefix: string, timestamp: string) =>
     `${prefix}${special(specials, "time-id", timestamp, scope)}`)
-  result = result.replace(/(?:ses|msg|prt|per|que|op|turn|tool|call|req|workspace|project|goal|act)_[a-zA-Z0-9_-]+|ws_[a-z0-9]+_[a-z0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => {
+  result = result.replace(/(?:ses|msg|prt|per|que|frm|op|turn|tool|call|req|workspace|project|goal|act)_[a-zA-Z0-9_-]+|ws_[a-z0-9]+_[a-z0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => {
     return scopedId(ids, id, "id", scope)
   })
   if (/(?:^id$|id$)/i.test(key) && result === value && (/^[a-f0-9]{12,}$/i.test(value) || (value.length >= 18 && /[A-Z]/.test(value) && /\d/.test(value))) && !/\s|\//.test(value)) {

@@ -18,6 +18,12 @@ async function until<T>(read: () => Promise<T | undefined>, label: string): Prom
   throw new Error(`H17 timed out waiting for ${label}`)
 }
 
+async function asked(stream: EventStream, sessionId: string, since: number, type: "permission.asked" | "question.asked") {
+  const frame = await stream.waitFor((item) => (frameType(item) === type || frameType(item) === "session.idle")
+    && frameSessionId(item) === sessionId && stream.frames.indexOf(item) >= since, { label: `H17 OpenCode ${type}`, timeoutMs: 60_000 })
+  return frameType(frame) === type
+}
+
 async function idle(stream: EventStream, sessionId: string, since: number) {
   await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionId
     && stream.frames.indexOf(frame) >= since, { label: "H17 OpenCode idle", timeoutMs: 60_000 })
@@ -29,7 +35,8 @@ export async function run() {
   try {
     const configDirectory = path.join(stack.dataDir, ".config", "opencode")
     await fs.mkdir(configDirectory, { recursive: true })
-    await fs.writeFile(path.join(configDirectory, "opencode.json"), JSON.stringify({ permission: { shell: "ask", question: "allow" } }))
+    await fs.writeFile(path.join(configDirectory, "opencode.json"), JSON.stringify({ permission: { shell: "ask", question: "allow" },
+      command: { h17: { description: "H17 proof", template: "Reply with exactly this one token: H17COMMAND $ARGUMENTS" } } }))
     await stack.daemon.restart()
     const { directory } = await stack.daemon.makeWorkspace("h17-opencode")
     await connectScriptedProviders(directTransport, stack.url, stack.scripted)
@@ -44,20 +51,15 @@ export async function run() {
         input: { command: `printf approved > '${file}'` } })
       const permissionSince = stream.frames.length
       await api.promptAsync(directory, session.id, "Use shell to write H17PERMISSION, then reply H17PERMISSION")
-      const permission = await until(async () => {
-        const row = (await api.permissions(directory)).find((item) => item.sessionID === session.id)
-        if (row) return row
+      if (!await asked(stream, session.id, permissionSince, "permission.asked")) {
         const current = await api.session(directory, session.id)
         if (current.lastTurn?.status === "failed") {
           throw new Error(`C-11: OpenCode permission turn failed before asking: ${current.lastTurn.error}; model requests: ${stack.scripted.requests.length}`)
         }
-        if (stream.frames.some((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
-          && stream.frames.indexOf(frame) >= permissionSince)) {
-          throw new Error(`H-23: OpenCode permission mode shell=ask, question=allow; shell tool call ${JSON.stringify(stack.scripted.requests.filter((request) => request.prompt.includes("H17PERMISSION")).map((request) => request.reply))} ended without a permission request; last turn: ${JSON.stringify(current.lastTurn)}`)
-        }
-        return undefined
-      }, "permission")
-      assert.ok(stream.frames.some((frame) => frameType(frame) === "permission.asked" && frameSessionId(frame) === session.id))
+        throw new Error(`H-23: OpenCode permission mode shell=ask, question=allow; shell tool call ${JSON.stringify(stack.scripted.requests.filter((request) => request.prompt.includes("H17PERMISSION")).map((request) => request.reply))} ended without a permission request; last turn: ${JSON.stringify(current.lastTurn)}`)
+      }
+      const permission = (await api.permissions(directory)).find((item) => item.sessionID === session.id)
+      assert.ok(permission, "H-23: OpenCode published permission.asked without a pending permission row")
       await api.replyPermission(directory, session.id, permission.id, "once")
       await idle(stream, session.id, 0)
       assert.equal(await fs.readFile(file, "utf8"), "approved")
@@ -71,13 +73,9 @@ export async function run() {
       ] } })
       const questionSince = stream.frames.length
       await api.promptAsync(directory, session.id, "Ask H17QUESTION, then reply H17QUESTION")
-      const question = await until(async () => {
-        const row = (await api.questions(directory)).find((item) => item.sessionID === session.id)
-        if (row) return row
-        if (stream.frames.some((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id
-          && stream.frames.indexOf(frame) >= questionSince)) throw new Error("question turn ended without asking")
-        return undefined
-      }, "question")
+      if (!await asked(stream, session.id, questionSince, "question.asked")) throw new Error("question turn ended without asking")
+      const question = (await api.questions(directory)).find((item) => item.sessionID === session.id)
+      assert.ok(question, "OpenCode published question.asked without a pending question row")
       await api.replyQuestion(directory, question.id, [["Yes"]])
       await idle(stream, session.id, questionSince)
       if (!stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id)) {
@@ -85,6 +83,17 @@ export async function run() {
       }
       assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("Yes") && request.dialect === "chat"))
     } catch (error) { failures.push(`H-23: today's OpenCode question path: ${error instanceof Error ? error.message : String(error)}`) }
+
+    try {
+      const declared = await fetch(`${stack.url}/command?directory=${encodeURIComponent(directory)}&nativeHarness=opencode`)
+      assert.ok((await declared.json() as { name: string }[]).some((command) => command.name === "h17"), "OpenCode did not declare the configured command")
+      const commandSince = stream.frames.length
+      await api.promptAsync(directory, session.id, "/h17 RUN")
+      await idle(stream, session.id, commandSince)
+      const prompts = stack.scripted.requests.map((request) => request.prompt)
+      assert.ok(prompts.some((prompt) => prompt.includes("H17COMMAND RUN")) && !prompts.some((prompt) => prompt.includes("/h17 RUN")),
+        `H-NEW-def-acp-oc-1: OpenCode sent its declared command as literal text: ${JSON.stringify(prompts.filter((prompt) => prompt.includes("h17") || prompt.includes("H17COMMAND")))}`)
+    } catch (error) { failures.push(error instanceof Error ? error.message : String(error)) }
 
     try {
       release = stack.scripted.holdTextReplies("H17INFLIGHT")

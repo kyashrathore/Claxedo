@@ -97,3 +97,44 @@ test("ACP answering inside publication releases the quiet hold and sends exactly
     expect(f.ports.saved).toHaveLength(1)
   } finally { await f.transport.dispose() }
 })
+
+test("ACP child sessions hold no request authority, and stopping the turn settles only its own request", async () => {
+  const subagents = { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } } }
+  const f = wireFixture((peer, message) => {
+    if (message.method === "initialize") {
+      peer.reply(message, { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } }, _meta: subagents })
+      return true
+    }
+    const prompt = peer.messages.find((row) => row.method === "session/prompt")
+    if (message.method === "session/cancel" && prompt) peer.reply(prompt, { stopReason: "cancelled" })
+    return message.method === "session/prompt"
+  })
+  const stop = new AbortController()
+  let running: Promise<unknown> | undefined
+  try {
+    const session = await f.start()
+    running = collect(f.transport.send(session, f.turn, f.turnBroker(stop.signal))).then(() => "completed", (error: unknown) => error)
+    const peer = f.peers[0]!
+    const parent = session.binding.upstreamSessionId
+    await reached(() => peer.messages.find((row) => row.method === "session/prompt"))
+    for (const [child, owner] of [["intermediate", parent], ["descendant", "intermediate"]] as const) {
+      peer.send({ jsonrpc: "2.0", method: "session/update", params: { sessionId: owner,
+        update: { sessionUpdate: "subagent_spawned", subagentSessionId: child, name: child, task: `${child} task` } } })
+    }
+    await reached(() => f.ports.subagents.length >= 2 || undefined)
+    for (const child of ["intermediate", "descendant"]) peer.send(permission(child, child))
+    for (const child of ["intermediate", "descendant"]) {
+      expect(await reached(() => peer.messages.find((row) => row.id === child))).toMatchObject({ result: { outcome: { outcome: "cancelled" } } })
+    }
+    expect(f.owner.broker.list({ sessionId: "s1" })).toEqual([])
+    peer.send(permission("own", parent))
+    const own = await reached(() => f.owner.broker.list({ sessionId: "s1" })[0])
+    expect(own.request.kind).toBe("permission")
+    stop.abort()
+    expect(await reached(() => peer.messages.find((row) => row.id === "own"))).toMatchObject({ result: { outcome: { outcome: "cancelled" } } })
+    expect(await running).toBe("completed")
+    expect(f.owner.broker.list({ sessionId: "s1" })).toEqual([])
+    expect(f.ports.published.filter((event) => event.type === "permission.asked")).toHaveLength(1)
+    expect(f.ports.saved.map((row) => row.answer)).toEqual([{ kind: "cancelled" }])
+  } finally { await f.transport.dispose(); await running }
+})
