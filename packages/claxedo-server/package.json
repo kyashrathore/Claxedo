@@ -44,8 +44,6 @@
     "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/self-hosted-node/index.ts",
     "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
-    "deploy:hosted": "bun run scripts/deploy/deploy-hosted.ts",
-    "deploy:hosted-agent-plugins": "bun run scripts/deploy/deploy-hosted.ts --agent-plugins",
     "deploy:user-cloudflare:preflight": "bun run scripts/deploy/greenfield-user-deployed.ts --preflight",
     "deploy:user-cloudflare:cutover": "bun run scripts/deploy/cutover-better-auth-d1.ts",
     "deploy:user-cloudflare:prove-greenfield": "bun run scripts/deploy/prove-greenfield-target-absence.ts",
