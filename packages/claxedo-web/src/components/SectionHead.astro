@@ -1,0 +1,14 @@
+---
+interface Props {
+  title: string
+  /** `h1` for a page's opening headline, at hero size; `h2` for a section. */
+  as?: "h1" | "h2"
+}
+
+const { title, as: Heading = "h2" } = Astro.props
+---
+
+<header class="section-head">
+  <Heading>{title}</Heading>
+  {Astro.slots.has("default") && <p><slot /></p>}
+</header>

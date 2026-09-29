@@ -1,0 +1,26 @@
+/* The Claxedo app's Codex light theme, shared by the app demo and the product crops. */
+.app-theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --fg: 0 0 0; --shadow-k: .3;
+  --background-base: #ffffff; --background-stronger: #ffffff; --rail-bg: #f9f9f9; --panel-bg: #ffffff;
+  --surface-base: rgb(0 0 0 / .02); --surface-base-hover: rgb(0 0 0 / .04); --surface-raised: rgb(26 28 31 / .06); --surface-overlay: #ffffff;
+  --popover-bg: #ffffff; --composer-bg: #ffffff; --bubble-bg: #ededed;
+  --brand: #2f92df; --blue: #147cc1; --info: #247cc0; --success: #168447; --danger: #d43d37; --term-path: #147c83;
+  --text-strong: #1a1c1f; --text-base: #4f4f4f; --text-weak: #696a6c; --text-weaker: #8c8d8f;
+  --border: #ededed; --border-weak: #f2f2f2; --edge: rgb(0 0 0 / .1);
+  --send-bg: #1a1c1f; --send-ink: #ffffff;
+  --window-line: #e6e6e8;
+  --window-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 24px 64px -16px rgb(15 20 30 / .18), 0 60px 120px -40px rgb(15 20 30 / .22);
+  color-scheme: light;
+}
+
+.app-card {
+  border-radius: 12px;
+  background: var(--popover-bg);
+  box-shadow: 0 0 0 1px #e8e8e8, 0 2px 4px rgb(15 20 30 / .04), 0 18px 48px -14px rgb(15 20 30 / .3);
+  color: var(--text-strong);
+  font: 13px/1.4 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+.app-card svg { width: 16px; height: 16px; flex: none; }

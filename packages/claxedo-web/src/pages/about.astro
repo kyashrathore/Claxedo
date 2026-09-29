@@ -2,28 +2,33 @@
 import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
+import SectionHead from "../components/SectionHead.astro"
 import { github, contact } from "../config"
+import { requireClaim } from "../content/claims"
 import { routes } from "../content/routes"
+
+for (const id of ["harness-coverage", "agent-plugins", "connected-placement", "bring-your-own-sandbox", "mit-platform", "opencode-lineage", "cloudflare-five-minutes"]) requireClaim(id)
 ---
 
-<Layout title="About Claxedo" description="Claxedo is an open-source workspace for coding agents: Claude Code, Codex, Cursor, and OpenCode in one place, set up once, run locally, in a cloud sandbox, or with your team." canonicalPath={routes.about}>
-  <div class="shell">
-    <Nav />
-    <main id="main-content" class="prose">
-      <h1>About Claxedo</h1>
-      <p>Claxedo is an open-source workspace for the coding agents developers already use. Claude Code, Codex, Cursor, and OpenCode run side by side in one application, and the plugins, skills, MCP servers, and credentials you configure once are written into each agent's own configuration before a session starts.</p>
-      <h2>What we build</h2>
-      <p>A desktop app for macOS, Windows, and Linux that works locally without an account, a control plane you can deploy to your own Cloudflare account in one command, and a workspace runtime that can run a session on your laptop or on a cloud VM from a sandbox provider you already pay for. Sessions can be shared with teammates through the control plane you host.</p>
-      <h2>How it is licensed</h2>
-      <p>The client, control plane, and workspace runtime are MIT licensed. Claxedo is built on the OpenCode engine; the fork point and full history are published in the repository. Claxedo bundles no model tokens or credits. You bring your own provider subscriptions or API credentials and your own compute.</p>
+<Layout title="About Claxedo" description="One open-source app for every coding agent: Claude Code, Codex, Cursor, OpenCode and Pi, set up once, on any machine, for your whole team." canonicalPath={routes.about}>
+  <Nav />
+  <main id="main-content" class="page">
+    <div class="page-head"><SectionHead as="h1" title="About Claxedo.">One open-source app for every coding agent you use.</SectionHead></div>
+    <article class="prose">
+      <h2>What you get</h2>
+      <p>Claude Code, Codex, Cursor, OpenCode and Pi, side by side in one app. Set up your skills, plugins and MCP servers once, and every agent gets them. Run sessions on your laptop, your own machines or your own sandbox provider, and pick them up on desktop, browser or phone.</p>
+      <h2>Built in the open</h2>
+      <p>The app, the control plane and the workspace runtime are MIT licensed. Claxedo is built on the OpenCode engine, and its full history is public. Deploy it for your whole team on your own Cloudflare.</p>
+      <h2>Bring your own</h2>
+      <p>Claxedo sells no tokens. Use the model subscriptions and API keys you already have, on the compute you already run.</p>
       <h2>Where to find us</h2>
       <ul>
-        <li>Source code, issues, and releases: <a href={github}>{github}</a></li>
+        <li>Source, issues and releases: <a href={github}>{github}</a></li>
         <li>Community: <a href={contact}>Discord</a></li>
         <li>Downloads: <a href={routes.download}>claxedo.com/download</a></li>
-        <li>Current terms: <a href={routes.pricing}>Pricing</a>, <a href={routes.privacy}>Privacy</a>, <a href={routes.terms}>Terms</a></li>
+        <li>The fine print: <a href={routes.pricing}>Pricing</a>, <a href={routes.privacy}>Privacy</a>, <a href={routes.terms}>Terms</a></li>
       </ul>
-    </main>
-    <Footer />
-  </div>
+    </article>
+  </main>
+  <Footer />
 </Layout>

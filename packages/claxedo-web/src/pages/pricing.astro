@@ -2,79 +2,48 @@
 import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
-import DownloadMenu from "../components/DownloadMenu.astro"
+import DownloadCta from "../components/DownloadCta.astro"
+import PlatePanel from "../components/PlatePanel.astro"
+import SectionHead from "../components/SectionHead.astro"
+import { requireClaim } from "../content/claims"
+import { pricing } from "../content/site"
+
+for (const id of pricing.claims) requireClaim(id)
 ---
 
-<Layout title="Pricing — Claxedo" description="Claxedo Cloud is free during beta. Bring your own models, compute, and sandboxes.">
-  <div class="shell">
-    <Nav active="pricing" />
-    <main id="main-content">
-      <section class="section pricing-section">
-        <div class="section-inner">
-          <div class="pricing-head">
-            <p class="eyebrow">Current offer</p>
-            <h1>Free during beta.</h1>
-            <p>Use Claxedo Cloud without a subscription charge during beta, deploy the open control plane to your own Cloudflare account, or start entirely locally. We'll explain the paid offer before billing begins.</p>
-          </div>
+<Layout title="Pricing — Claxedo" description={`${pricing.title} ${pricing.subtitle}`}>
+  <Nav active="pricing" />
+  <main id="main-content" class="page">
+    <div class="page-head"><SectionHead as="h1" title={pricing.title}>{pricing.subtitle}</SectionHead></div>
 
-          <div class="price-grid">
-            <article class="price-card">
-              <div class="price-top"><span>CLAXEDO · BETA</span><strong>$0</strong><small>today</small></div>
-              <h2>One product. Your models and infrastructure.</h2>
-              <ul>
-                <li>Claxedo Desktop with account-free local mode</li>
-                <li>Connected Claxedo product during beta</li>
-                <li>MIT-licensed client, control plane, and workspace runtime</li>
-                <li>macOS, Windows, and Linux downloads</li>
-              </ul>
-              <div class="actions">
-                <DownloadMenu placement="pricing" />
-                <DownloadMenu label="Download desktop" variant="secondary" placement="pricing" />
-              </div>
-            </article>
+    <section class="section pricing">
+      <PlatePanel plate="comorin" x={0.5} y={0.6} class="price-panel">
+        <article class="card price-card">
+          <p class="plan">{pricing.plan}</p>
+          <p class="price">{pricing.price}</p>
+          <ul class="list">{pricing.included.map((item) => <li>{item}</li>)}</ul>
+          <DownloadCta placement="pricing" />
+        </article>
+      </PlatePanel>
 
-            <aside class="price-bring">
-              <h2>What you bring</h2>
-              <dl>
-                <div><dt>Models</dt><dd>Your provider subscriptions or API credentials. Claxedo does not bundle token credits.</dd></div>
-                <div><dt>Compute</dt><dd>Your local machine, remote infrastructure, or a supported sandbox provider.</dd></div>
-                <div><dt>Operations</dt><dd>If you self-host, you operate that deployment and its security boundary.</dd></div>
-              </dl>
-              <p>Paid-offer terms and future subscription prices will be published when billing is active.</p>
-            </aside>
-          </div>
-        </div>
-      </section>
-    </main>
-    <Footer />
-  </div>
+      <div class="bring">
+        <h2>What you bring</h2>
+        <dl class="list">{pricing.bring.map((item) => <div><dt>{item.title}</dt><dd>{item.text}</dd></div>)}</dl>
+      </div>
+    </section>
+  </main>
+  <Footer />
 </Layout>
 
 <style>
-  .pricing-section { padding-block: clamp(2.25rem, 5vw, 4rem); }
-  .pricing-head { max-width: 44rem; margin-bottom: clamp(1.75rem, 4vw, 2.75rem); }
-  .pricing-head h1 { margin: .6rem 0 1rem; font: 500 clamp(2.2rem, 5vw, 3.4rem)/1.04 var(--font-display); letter-spacing: -.035em; }
-  .pricing-head p { margin: 0; color: var(--ink-soft); font-size: clamp(1rem, 1.3vw, 1.1rem); line-height: 1.6; text-wrap: pretty; }
-
-  .price-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(1.5rem, 4vw, 3.5rem); align-items: start; }
-  .price-card { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: clamp(1.35rem, 2.5vw, 1.9rem); }
-  .price-top { display: flex; align-items: baseline; gap: .7rem; margin-bottom: 1.5rem; }
-  .price-top span, .price-top small { color: var(--ink-faint); font: .66rem var(--font-mono); letter-spacing: .05em; }
-  .price-top strong { margin-left: auto; font: 500 clamp(2.4rem, 4vw, 3.2rem)/1 var(--font-sans); letter-spacing: -.04em; }
-  .price-card h2, .price-bring h2 { margin: 0; font: 500 1.3rem/1.25 var(--font-sans); letter-spacing: -.025em; }
-  .price-card ul { margin: 1.25rem 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-  .price-card li { padding: .62rem 0; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: .88rem; }
-  .price-card .actions { margin-top: 1.25rem; }
-
-  .price-bring dl { margin: 1.1rem 0; }
-  .price-bring dl div { padding: .85rem 0; border-top: 1px solid var(--line); }
-  .price-bring dt { margin-bottom: .3rem; color: var(--ink); font: 500 .68rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
-  .price-bring dd { margin: 0; color: var(--ink-soft); font-size: .88rem; line-height: 1.5; }
-  .price-bring > p { margin: 0; color: var(--ink-faint); font-size: .82rem; line-height: 1.5; }
-  .price-bring .text-link { display: inline-block; margin-top: 1.1rem; }
-
+  .pricing { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: clamp(2rem, 5vw, 4.5rem); align-items: start; }
+  .pricing :global(.price-panel) { display: grid; place-items: center; padding: clamp(1.5rem, 5vw, 4rem); }
+  .price-card { width: min(100%, 26rem); padding: 1.75rem; }
+  .plan { margin: 0; color: var(--ink-soft); }
+  .price-card .price { margin: .25rem 0 1.5rem; color: var(--ink); font: 400 clamp(4rem, 7vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; }
+  .price-card .list { margin-bottom: 1.75rem; }
+  .bring h2 { margin: 0 0 1.25rem; font-size: 1.5rem; letter-spacing: -.015em; }
   @media (max-width: 52rem) {
-    .price-grid { grid-template-columns: 1fr; gap: 1.5rem; }
-    .pricing-section { padding-block: clamp(2rem, 8vw, 3rem); }
+    .pricing { grid-template-columns: minmax(0, 1fr); }
   }
 </style>

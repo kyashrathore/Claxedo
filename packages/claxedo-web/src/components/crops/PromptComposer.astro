@@ -1,0 +1,55 @@
+---
+import HarnessMark from "../HarnessMark.astro"
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+
+interface Props {
+  ask: string
+}
+
+const { ask } = Astro.props
+---
+
+<div class="app-card composer app-theme" data-typing>
+  <p class="field"><span data-typing-text>{ask}</span><i class="caret" aria-hidden="true"></i></p>
+  <div class="controls" aria-hidden="true">
+    <span class="round"><Icon name="plus" /></span>
+    <span class="agent"><span class="mark"><HarnessMark name="claude" /></span>Claude Code</span>
+    <span class="send"><Icon name="send" /></span>
+  </div>
+</div>
+
+<script>
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  for (const card of document.querySelectorAll<HTMLElement>("[data-typing]")) {
+    const target = card.querySelector<HTMLElement>("[data-typing-text]")!
+    const text = target.textContent ?? ""
+    if (still) continue
+    target.textContent = ""
+    card.dataset.typing = "waiting"
+    const type = (index: number) => {
+      target.textContent = text.slice(0, index)
+      if (index < text.length) window.setTimeout(() => type(index + 1), 28 + Math.random() * 40)
+      else window.setTimeout(() => { card.dataset.typing = "done" }, 900)
+    }
+    const watch = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return
+      watch.disconnect()
+      card.dataset.typing = "typing"
+      type(1)
+    }, { threshold: 0.6 })
+    watch.observe(card)
+  }
+</script>
+
+<style>
+  .composer { width: 100%; padding: 14px 14px 10px; }
+  .field { min-height: 4.6em; margin: 0; color: var(--text-strong); font-size: 15px; line-height: 1.5; }
+  .caret { display: none; width: 2px; height: 1.1em; margin-left: 1px; vertical-align: -3px; background: var(--text-strong); }
+  .composer[data-typing="waiting"] .caret, .composer[data-typing="typing"] .caret { display: inline-block; }
+  .controls { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--text-weak); }
+  .round { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; box-shadow: 0 0 0 1px var(--border); }
+  .agent { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12.5px; color: var(--text-base); }
+  .mark { display: grid; place-items: center; font-size: 14px; color: var(--text-strong); }
+  .send { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--send-bg); color: var(--send-ink); }
+</style>

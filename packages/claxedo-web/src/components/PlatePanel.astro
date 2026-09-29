@@ -1,0 +1,53 @@
+---
+import comorin from "../assets/home/plate-comorin.webp"
+import humayun from "../assets/home/plate-humayun.webp"
+import jama from "../assets/home/plate-jama.webp"
+import qutb from "../assets/home/plate-qutb.webp"
+import ramnagar from "../assets/home/plate-ramnagar.webp"
+import trichinopoly from "../assets/home/plate-trichinopoly.webp"
+
+/** Daniell plates dithered like the hero's Taj; see src/assets/home/LICENSE.md. */
+const plates = { comorin, humayun, jama, qutb, ramnagar, trichinopoly }
+
+interface Props {
+  plate: keyof typeof plates
+  /** Which part of the plate the panel shows, as fractions of the overflow, like background-position. */
+  x?: number
+  y?: number
+  class?: string
+}
+
+const { plate, x = 0.5, y = 0.7, class: className } = Astro.props
+const image = plates[plate]
+---
+
+<div class:list={["plate-panel", className]} style={`--plate-w: ${image.width}; --plate-h: ${image.height}; --x: ${x}; --y: ${y}`}>
+  <img src={image.src} width={image.width} height={image.height} alt="" loading="lazy" decoding="async" />
+  <slot />
+</div>
+
+<style>
+  .plate-panel {
+    --dot: 2px;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #f7f7f7;
+  }
+  img {
+    position: absolute;
+    z-index: -1;
+    left: calc((100% - var(--plate-w) * var(--dot)) * var(--x));
+    top: calc((100% - var(--plate-h) * var(--dot)) * var(--y));
+    width: calc(var(--plate-w) * var(--dot));
+    max-width: none;
+    height: auto;
+    image-rendering: pixelated;
+    -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 38%, rgb(0 0 0 / .35), #000 90%);
+    mask-image: radial-gradient(ellipse 60% 55% at 50% 38%, rgb(0 0 0 / .35), #000 90%);
+  }
+  @media (max-width: 47.99rem) {
+    .plate-panel { --dot: 1px; }
+  }
+</style>

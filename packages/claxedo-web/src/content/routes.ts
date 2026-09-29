@@ -23,7 +23,7 @@ export const routes = {
  */
 export const marketingActions = {
   download: {
-    label: "Download app",
+    label: "Windows, Linux and Intel Macs",
     href: `${routes.download}#releases`,
     event: "download_app",
   },

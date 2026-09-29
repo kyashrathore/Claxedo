@@ -1,6 +1,6 @@
 import { downloads, github, contact, version } from "../config"
 import { canonicalUrl, routes } from "./routes"
-import { site } from "./site"
+import { comparePage, downloadPage, home, pricing, site } from "./site"
 import { currentComparisons } from "./competitors"
 
 /** Pages that serve a markdown twin at `${path}.md` (the homepage twin is /index.md). */
@@ -15,9 +15,9 @@ export const whenToUse = `## When to use Claxedo
 
 Reach for Claxedo when someone wants to:
 
-- Run Claude Code, Codex, Cursor, or OpenCode from one workspace instead of separate terminals.
-- Configure plugins, skills, MCP servers, and credentials once and have every agent read the same setup.
-- Move a coding session between a laptop and a cloud VM on a sandbox provider they already pay for.
+- Run Claude Code, Codex, Cursor, OpenCode, Pi, or an ACP agent from one app instead of separate terminals.
+- Configure skills, plugins, and MCP servers once and have Claude Code, Codex, Cursor, and OpenCode read the same setup.
+- Run a coding session on their laptop, another machine they own, or a cloud sandbox, and reopen it from the desktop app or a browser.
 - Share a coding session with teammates through a control plane they self-host on a Cloudflare Worker.
 - Compare coding-agent workspaces on open source, self-hosting, multiplayer, and sandbox support.
 
@@ -36,25 +36,29 @@ export const markdownResponse = (body: string) =>
 
 export const homeMarkdown = `# ${site.name}
 
-> ${site.headline}
-
 ${site.description}
 
-- Open source, MIT licensed, built on the OpenCode engine.
-- Desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}
-- Hosted product: ${site.clients.web.destination}
+> ${home.hero.title} ${home.hero.subtitle}
+
+## ${home.speed.title}
+
+${home.speed.subtitle} Benchmark of ${home.benchmark.date}: ${home.benchmark.href}
+
+${home.benchmark.metrics.map((metric) => `- ${metric.lead} ${metric.label}: ${metric.detail}`).join("\n")}
+
+${[home.prompt, home.openSource, home.sandbox, home.plugins, home.workflow].map((section) => [
+  `## ${section.title}`,
+  "",
+  `${section.subtitle}${"href" in section ? ` Guide: ${section.href}` : ""}`,
+  ...("cards" in section ? ["", ...section.cards.map((card) => `- ${card}`)] : []),
+].join("\n")).join("\n\n")}
+
+${home.closing.text}
+
+- Download the desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}
+- Open in a browser: ${site.clients.web.destination}
 - Source: ${github}
 - Community: ${contact}
-
-## What it does
-
-1. **Set up once.** Add agent plugins, skills, MCP servers, or AI provider credentials once. Claxedo syncs them to every agent on every device and shares them with your team.
-2. **Access from anywhere.** Open the same session from any browser, and move it to a cloud VM on any supported provider with your setup already there.
-3. **Share with anyone.** Invite your team into a session on a Cloudflare Worker you deploy in one command. They see every turn and approve from a phone.
-4. **Sidebar or tabs.** Hide the sidebar and sessions turn into tabs. The chat view and the real CLI live in the same workbench.
-5. **Orchestrate over MCP.** Any agent can consult a second model, open a session in another harness, or file a task through the Claxedo MCP.
-6. **Tasks board.** The work in flight as cards; each card starts a session from a preset, and agents file cards over MCP.
-7. **Fast.** A published, repeatable benchmark against T3 Code; see the comparison pages for the current figures.
 
 ## Pages
 
@@ -66,55 +70,42 @@ ${site.description}
 
 ${whenToUse}`
 
-export const pricingMarkdown = `# Claxedo pricing
+export const pricingMarkdown = `# ${pricing.title}
 
-> ${site.freeBeta}.
+${pricing.subtitle}
 
-Use Claxedo Cloud without a subscription charge during beta, deploy the open control plane to your own Cloudflare account, or start entirely locally. The paid offer will be explained before billing begins.
+## Included today (${pricing.price})
 
-## Included today ($0)
-
-- Claxedo Desktop with account-free local mode
-- Connected Claxedo product during beta
-- MIT-licensed client, control plane, and workspace runtime
-- macOS, Windows, and Linux downloads
+${pricing.included.map((item) => `- ${item}`).join("\n")}
 
 ## What you bring
 
-- **Models:** your provider subscriptions or API credentials. Claxedo does not bundle token credits.
-- **Compute:** your local machine, remote infrastructure, or a supported sandbox provider.
-- **Operations:** if you self-host, you operate that deployment and its security boundary.
-
-Paid-offer terms and future subscription prices will be published when billing is active.
+${pricing.bring.map((item) => `- **${item.title}:** ${item.text}`).join("\n")}
 
 - Download: ${canonicalUrl(routes.download)}
 - Pricing page (HTML): ${canonicalUrl(routes.pricing)}
 `
 
-export const downloadMarkdown = `# Download Claxedo Desktop
+export const downloadMarkdown = `# ${downloadPage.title}
 
-> Claxedo Desktop v${version}. Local mode works without an account.
-
-Claxedo Desktop works locally without an account or subscription. Sign in when you want the connected Claxedo experience across browser, desktop, and remote workspaces.
+> Claxedo Desktop v${version}. ${downloadPage.subtitle}
 
 ## Builds
 
 ${downloads.map((d) => `- ${d.label} (${d.format}): ${d.href}`).join("\n")}
 
-Artifacts are served from the GitHub release: ${github}/releases/tag/claxedo-v${version}. Code signing and checksums are shown only when the release publishes them.
+Builds are served from the GitHub release: ${github}/releases/tag/claxedo-v${version}.
 
-## After installing
+## ${downloadPage.stepsTitle}
 
-1. Open a workspace and run sessions or terminals without a Claxedo account.
-2. Sign in when you want connected capabilities across supported clients and machines.
-3. Bring your own model credentials, compute, and sandboxes. Claxedo does not include usage credits.
+${downloadPage.steps.map((step) => `- **${step.title}.** ${step.text}`).join("\n")}
 
 - Download page (HTML): ${canonicalUrl(routes.download)}
 `
 
 export const compareMarkdown = `# Claxedo compared
 
-> Most tools in this field are single-operator apps or closed clouds. Claxedo is the harness-neutral, open-source, multi-user workspace your team self-hosts. Every claim on the comparison pages links to a first-party source.
+> ${comparePage.lead}
 
 ## Published comparisons
 

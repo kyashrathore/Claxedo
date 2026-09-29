@@ -5,7 +5,6 @@ interface Props {
   image?: string
   noindex?: boolean
   canonicalPath?: string
-  bodyClass?: string
 }
 
 const {
@@ -14,7 +13,6 @@ const {
   image = "/og.svg",
   noindex = false,
   canonicalPath = Astro.url.pathname,
-  bodyClass = "",
 } = Astro.props
 
 const site = Astro.site ?? new URL("https://claxedo.com")
@@ -23,7 +21,6 @@ const ogImage = new URL(image, site)
 const markdownTwin = markdownTwins[canonicalPath.replace(/\/$/, "") || "/"]
 
 import "../styles/site.css"
-import "../styles/transitions.css"
 import StructuredData from "../components/StructuredData.astro"
 import { markdownTwins } from "../content/markdown"
 ---
@@ -34,14 +31,11 @@ import { markdownTwins } from "../content/markdown"
     <meta charset="UTF-8" />
     <meta name="description" content={description} />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#08090a" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#fcfcfc" />
+    <meta name="color-scheme" content="light" />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
     {markdownTwin && <link rel="alternate" type="text/markdown" href={new URL(markdownTwin, site)} />}
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&display=swap" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Claxedo" />
@@ -62,7 +56,7 @@ import { markdownTwins } from "../content/markdown"
     <StructuredData pathname={canonicalPath} />
     <slot name="head" />
   </head>
-  <body class={bodyClass}>
+  <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <slot />
     <script>

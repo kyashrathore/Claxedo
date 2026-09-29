@@ -1,0 +1,42 @@
+---
+import ClaxedoAppReplica from "./ClaxedoAppReplica.astro"
+import TajPlate from "./TajPlate.astro"
+
+interface Props {
+  title: string
+  subtitle: string
+}
+
+const { title, subtitle } = Astro.props
+---
+
+<section class="hero">
+  <div class="scene"><TajPlate /></div>
+  <div class="intro">
+    <h1>{title}</h1>
+    <p class="lede">{subtitle}</p>
+  </div>
+  <div class="stage">
+    <div class="window"><ClaxedoAppReplica /></div>
+  </div>
+</section>
+
+<style>
+  .hero { --window-h: clamp(30rem, 48vw, 44rem); --scene: 17rem; --clear: calc(var(--edge) + min(50rem, 58vw)); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
+  .scene { position: relative; z-index: -1; height: var(--scene); }
+  .intro { display: grid; justify-items: start; width: var(--width); margin-inline: auto; }
+  .lede { max-width: 34rem; margin: 1rem 0 0; color: var(--ink-body); font-size: 1.25rem; line-height: 1.45; text-wrap: pretty; }
+
+  .stage { position: relative; width: var(--width); margin: 2rem auto 0; }
+  .window { position: relative; z-index: 1; height: var(--window-h); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .intro, .stage { animation: rise .8s cubic-bezier(.2, .7, .2, 1) both; }
+    .stage { animation-delay: .12s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+  }
+  @media (max-width: 47.99rem) {
+    .lede { font-size: 1.125rem; }
+    .hero { --window-h: 32rem; --scene: 8rem; --clear: 100vw; }
+  }
+</style>
