@@ -1,7 +1,8 @@
 import { A, useNavigate } from "@solidjs/router"
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { CloudWorkspacesSection } from "@/cloud"
-import type { Project, ProjectId } from "@/server"
+import { createFlow, runFlow } from "@/lib/flow"
+import { toAppError, type MissingCheckout, type Project, type ProjectId } from "@/server"
 import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog, Button, Avatar } from "@/ui"
 import { useProjectsText } from "../i18n"
@@ -9,10 +10,47 @@ import { usePlacementOpener } from "../open"
 import { sourceLabel } from "../project-source"
 import { getAvatarColors } from "../project-avatar"
 import { projectSettingsPath } from "../routes"
-import { useProject } from "../store"
+import { useProject, useProjectCommands } from "../store"
 import { DialogEditProject } from "./edit-project-dialog"
 import { PlacementList } from "./placement-list"
 import { RemoveProjectDialog } from "./remove-project-dialog"
+
+function MissingCheckoutSection(props: { readonly id: ProjectId; readonly checkout: MissingCheckout }): JSX.Element {
+  const t = useProjectsText()
+  const commands = useProjectCommands()
+  const reclone = createFlow<"cloning", Project>()
+  const cloning = () => reclone.state().kind === "running"
+  const failure = () => {
+    const state = reclone.state()
+    return state.kind === "failed" ? state.error.message : undefined
+  }
+  const start = () => {
+    if (cloning()) return
+    void runFlow(reclone, "cloning", () => commands.reclone(props.id), toAppError)
+  }
+  return (
+    <SettingsGroup
+      title={t("projects.checkout.missing")}
+      description={t("projects.checkout.missing.description", { directory: props.checkout.directory })}
+    >
+      <SettingsList>
+        <Show
+          when={props.checkout.remote}
+          fallback={<SettingsRow title={t("projects.checkout.remote")} description={t("projects.checkout.remote.none")} />}
+        >
+          {(remote) => (
+            <SettingsRow title={t("projects.checkout.remote")} description={remote()}>
+              <Button variant="contrast" size="small" disabled={cloning()} onClick={start} data-testid="project-reclone">
+                {cloning() ? t("projects.checkout.cloning") : t("projects.checkout.clone")}
+              </Button>
+            </SettingsRow>
+          )}
+        </Show>
+      </SettingsList>
+      <Show when={failure()}>{(message) => <SettingsNote tone="danger">{message()}</SettingsNote>}</Show>
+    </SettingsGroup>
+  )
+}
 
 function ProjectFields(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
@@ -116,6 +154,7 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
           {(row) => (
             <>
               <ProjectSettingsHeader project={row()} />
+              <Show when={row().missingCheckout}>{(checkout) => <MissingCheckoutSection id={props.id} checkout={checkout()} />}</Show>
               <ProjectFields project={row()} />
               <ProjectPlacements project={row()} />
               <ProjectRemoval id={props.id} name={row().name} />

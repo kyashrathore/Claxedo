@@ -141,6 +141,8 @@ async function projectView(id: string, catalog: CatalogProject | undefined, reco
   const known = record ?? (catalog && { name: catalog.name, created_at: catalog.time.created, updated_at: catalog.time.updated })
   if (!known) return undefined
   const workspace = await getProjectWorkspace(id)
+  const placements = Object.values(catalog?.workspaces ?? {})
+  const checkoutGone = workspace?.kind === "local" && placements.find((placement) => placement.id === workspace.id)?.available === false
   return {
     id,
     name: catalog?.name ?? known.name,
@@ -149,7 +151,10 @@ async function projectView(id: string, catalog: CatalogProject | undefined, reco
     repoUrl: workspace?.repo_url ?? null,
     ...(catalog?.icon ? { icon: catalog.icon } : {}),
     ...(catalog?.commands ? { commands: catalog.commands } : {}),
-    available: Object.values(catalog?.workspaces ?? {}).some((placement) => placement.available),
+    available: placements.some((placement) => placement.available),
+    ...(checkoutGone && workspace
+      ? { missingCheckout: { directory: workspace.directory, remote: workspace.repo_url ?? workspace.git_remote ?? null } }
+      : {}),
     created_at: known.created_at,
     updated_at: Math.max(known.updated_at, catalog?.time.updated ?? 0),
   }
@@ -202,6 +207,17 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
     return { directory, repoUrl: repository.repoUrl, name, ...(repository.credential ? { credential: repository.credential } : {}) }
   }
 
+  /** Clones into a `directory` this call owns, removing it again when the clone fails. */
+  async function cloneInto(repoUrl: string, directory: string, credential: GitHttpCredential | undefined) {
+    try {
+      await clone(repoUrl, directory, credential ?? {})
+    } catch (cause) {
+      await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)
+      const message = cause instanceof Error ? cause.message : String(cause)
+      throw new ProjectStoreError(502, "project_clone_failed", `Cloning failed: ${message.split("\n").find((line) => line.trim()) ?? message}`)
+    }
+  }
+
   return {
     folders: true,
 
@@ -224,15 +240,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
         throw new ProjectStoreError(409, "project_name_taken", `A project named "${input.name}" already exists`)
       }
       const { directory, repoUrl, name, credential } = await checkout(input)
-      if (repoUrl) {
-        try {
-          await clone(repoUrl, directory, credential ?? {})
-        } catch (cause) {
-          await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)
-          const message = cause instanceof Error ? cause.message : String(cause)
-          throw new ProjectStoreError(502, "project_clone_failed", `Cloning failed: ${message.split("\n").find((line) => line.trim()) ?? message}`)
-        }
-      }
+      if (repoUrl) await cloneInto(repoUrl, directory, credential)
       const workspace = await ensureWorkspace({ directory, kind: "local", project_name: name, ...(repoUrl ? { repo_url: repoUrl } : {}) })
       if (!workspace?.project_id) {
         throw new ProjectStoreError(400, "project_not_git", "Only git repositories can be projects; that folder is not one")
@@ -300,6 +308,26 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
       for (const workspace of placements) await deleteWorkspace(workspace.id)
       if (record) await deleteProjectRecord(id)
       return true
+    },
+
+    async reclone(id, resolve) {
+      const project = await findProject(id)
+      if (!project) return undefined
+      const checkout = project.missingCheckout
+      if (!checkout) throw new ProjectStoreError(409, "project_checkout_present", "The project's folder is already on this server")
+      if (!checkout.remote) {
+        throw new ProjectStoreError(409, "project_remote_missing", "No remote was recorded for this project, so there is nothing to clone")
+      }
+      const { repoUrl, credential } = await resolve(checkout.remote)
+      await fs.mkdir(path.dirname(checkout.directory), { recursive: true })
+      // Creating the folder without `recursive` fails on anything already at the path, so a
+      // concurrent reclone or a file written there meanwhile is refused and never removed on failure.
+      await fs.mkdir(checkout.directory).catch((cause: NodeJS.ErrnoException) => {
+        if (cause.code === "EEXIST") throw new ProjectStoreError(409, "project_checkout_present", `${checkout.directory} already exists on this server`)
+        throw cause
+      })
+      await cloneInto(repoUrl, checkout.directory, credential)
+      return findProject(id)
     },
   }
 }

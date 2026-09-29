@@ -3,7 +3,7 @@ import path from "node:path"
 import type { Page } from "@playwright/test"
 import { expect, gitFolder, sendPrompt, sessionRoute, test, UI, type Stack } from "../harness"
 
-type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null }
+type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean }
 
 async function serverProjects(url: string): Promise<ProjectRecord[]> {
   const response = await fetch(new URL("/api/claxedo/projects", url))
@@ -129,6 +129,32 @@ test("02 projects, local: create a folder and a clone from the Project chip, edi
 
   await removeProject(stack, app, alphaId, "Alpha renamed")
   expect(await fs.readFile(path.join(alphaFolder, "README.md"), "utf8")).toBe("alpha\n")
+})
+
+test("02 a project whose folder is gone is cloned back at that folder from Settings → Projects", async ({ stack, page: app }) => {
+  const remote = await stack.gitRemote("gamma")
+  const created = await fetch(new URL("/api/claxedo/projects", stack.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: { kind: "repository", repoUrl: remote.url } }),
+  })
+  expect(created.status).toBe(201)
+  const { project } = (await created.json()) as { project: { id: string; directory: string } }
+  await fs.rm(project.directory, { recursive: true, force: true })
+
+  await app.goto(`${stack.url}/settings/projects`)
+  const row = app.getByRole("region", { name: "Projects" }).getByRole("link", { name: "gamma", exact: true })
+  await expect(row).toContainText(`Folder missing: ${project.directory}`)
+  await row.click()
+  const missing = app.getByRole("group", { name: "Folder missing" })
+  await expect(missing).toContainText(remote.url)
+  await missing.getByRole("button", { name: "Clone at this location" }).click()
+  await expect(missing).toHaveCount(0)
+
+  expect(await fs.readFile(path.join(project.directory, "README.md"), "utf8")).toBe("gamma-source\n")
+  expect((await serverProject(stack.url, project.id)).project).toMatchObject({ directory: project.directory, available: true })
+  await app.goto(`${stack.url}/settings/projects`)
+  await expect(row).not.toContainText("Folder missing")
 })
 
 async function chooseScriptedHarness(app: Page) {

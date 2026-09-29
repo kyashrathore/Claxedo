@@ -13,7 +13,9 @@ export type ProjectCommands = { start?: string }
  * created from; either is null where the deployment has no such thing.
  * `available` is false when none of its placements exists any more: its
  * folder is gone, or its cloud workspace failed. A stopped sandbox leaves it
- * available.
+ * available. `missingCheckout` is set when the project's own folder on this
+ * server is gone, even while a worktree of it survives: the folder, and the
+ * remote `reclone` fetches it from, null when none was recorded.
  */
 export type ProjectRecord = {
   id: string
@@ -24,9 +26,12 @@ export type ProjectRecord = {
   icon?: ProjectIcon
   commands?: ProjectCommands
   available: boolean
+  missingCheckout?: MissingCheckout
   created_at: number
   updated_at: number
 }
+
+export type MissingCheckout = { directory: string; remote: string | null }
 
 /** The body shape a caller sends: a folder on the host, or a repository by URL or by connected account. */
 export type ProjectSource =
@@ -84,6 +89,15 @@ export type ProjectStore = {
    * separately and must be deleted by its own route first.
    */
   remove(id: string, caller: SignedControlPlaneAuth | undefined): Promise<boolean>
+  /**
+   * Clones the project's recorded remote into its recorded folder, the only
+   * place it goes, and answers the project with that folder back. `resolve`
+   * is the route's admission of the remote for this caller. Refuses with
+   * `project_checkout_present` while anything is at that path and
+   * `project_remote_missing` when no remote was recorded, so a second call
+   * while one runs is refused as present.
+   */
+  reclone(id: string, resolve: (repoUrl: string) => Promise<RepositoryResolution>): Promise<ProjectRecord | undefined>
 }
 
 export type ProjectErrorStatus = 400 | 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503

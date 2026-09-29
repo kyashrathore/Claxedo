@@ -1,6 +1,6 @@
 import { ServerError } from "../errors"
 import { projectId } from "../ids"
-import type { Project, ProjectCommands, ProjectIcon, ProjectSource } from "../types"
+import type { MissingCheckout, Project, ProjectCommands, ProjectIcon, ProjectSource } from "../types"
 
 type WireProject = {
   readonly id: string
@@ -11,6 +11,7 @@ type WireProject = {
   readonly icon?: { readonly override?: unknown; readonly color?: unknown }
   readonly commands?: { readonly start?: unknown }
   readonly available: boolean
+  readonly missingCheckout?: { readonly directory?: unknown; readonly remote?: unknown }
   readonly created_at: number
   readonly updated_at: number
 }
@@ -37,10 +38,17 @@ function commandsOf(project: WireProject): ProjectCommands | undefined {
   return typeof project.commands?.start === "string" ? { start: project.commands.start } : undefined
 }
 
+function missingCheckoutOf(project: WireProject): MissingCheckout | undefined {
+  const checkout = project.missingCheckout
+  if (typeof checkout?.directory !== "string") return undefined
+  return { directory: checkout.directory, ...(typeof checkout.remote === "string" ? { remote: checkout.remote } : {}) }
+}
+
 function projectFromWire(project: WireProject): Project {
   const source = sourceOf(project)
   const icon = iconOf(project)
   const commands = commandsOf(project)
+  const missingCheckout = missingCheckoutOf(project)
   return {
     id: projectId(project.id),
     name: project.name,
@@ -49,6 +57,7 @@ function projectFromWire(project: WireProject): Project {
     ...(icon ? { icon } : {}),
     ...(commands ? { commands } : {}),
     available: project.available,
+    ...(missingCheckout ? { missingCheckout } : {}),
     env: project.env ?? {},
     createdAt: project.created_at,
     updatedAt: project.updated_at,

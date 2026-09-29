@@ -48,5 +48,6 @@ export function useProjectCommands() {
   const server = useServer()
   return {
     remove: (id: ProjectId) => server.projects.remove(id),
+    reclone: (id: ProjectId) => server.projects.reclone(id),
   }
 }
