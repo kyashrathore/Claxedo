@@ -11,6 +11,7 @@ import type { AgentRuntimeEventEnvelope, AgentRuntimeStore, AgentRuntimeTurnStar
 import { normalizeDirectory } from "./execution-binding"
 import type { AdmittedTurnCapture, RuntimeRecovery, TurnFinalization } from "./recovery"
 import type { createSessionTitleOwner } from "./session-titles"
+import type { SteeredInputs } from "./steered-inputs"
 import type { TurnAdmissions } from "./turn-admission"
 import { turnInputFor } from "./turn-input"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload, stoppedOutcome } from "./turn-outcome"
@@ -24,6 +25,7 @@ export type TurnRunnerHost = {
   recovery: RuntimeRecovery
   titles: ReturnType<typeof createSessionTitleOwner>
   broker: BrokerOwner
+  steers: SteeredInputs
   ownerGeneration: string
   publish: (event: AgentRuntimeEventEnvelope) => void
   commit: (sessionId: string, directory: RuntimeDirectory, payload: AgentRuntimeStreamEvent, source: RuntimeAppendSource,
@@ -62,6 +64,7 @@ function projectors(host: TurnRunnerHost, run: TurnRun, publishTurn: (event: Age
     assistantMessageId: run.prompt.assistantMessageId,
     created: Date.now(),
     ...fenced,
+    takeSteeredInput: (messageId) => host.steers.take(run.capture.admission, messageId),
     onEvent: (payload) => publishTurn({ sessionId, directory, payload }),
     onRuntimeEvent,
   })

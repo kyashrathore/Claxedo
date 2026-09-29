@@ -402,7 +402,7 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
     { action: "write", authorization: bearer(token), grant: false, status: 200 },
     { action: "turn_grant", authorization: bearer(token), grant: false, turnId: "msg_queued_1", status: 200 },
   ])
-  const [row] = store.listQueuedPrompts()
+  const [row] = store.deliveryQueue.listQueuedPrompts()
   expect(row).toMatchObject({ sessionId: PARENT, messageId: "msg_queued_1", provenance: "relay-replayed", actor: { actorId: bob.user.tokenIdentifier, actorKind: "human" } })
   const grant = row.grant
   if (!grant) throw new Error("The queue recorded no grant beside the row")
@@ -413,9 +413,9 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   store.close()
 
   const { store: recovered, host, calls, attempts, prompts } = restarted({ storeRoot, plane })
-  expect(recovered.listQueuedPrompts()).toMatchObject([{ messageId: "msg_queued_1", grant }])
+  expect(recovered.deliveryQueue.listQueuedPrompts()).toMatchObject([{ messageId: "msg_queued_1", grant }])
   await host.recoverQueuedPrompts()
-  await until(() => recovered.listQueuedPrompts().length === 0 && calls.some((call) => call.action === "turn_release"), "the recovered prompt to be delivered and its lease released")
+  await until(() => recovered.deliveryQueue.listQueuedPrompts().length === 0 && calls.some((call) => call.action === "turn_release"), "the recovered prompt to be delivered and its lease released")
 
   expect(attempts).toEqual([{ actorId: bob.user.tokenIdentifier, turnId: "msg_queued_1", grant: true }])
   expect(calls).toEqual([

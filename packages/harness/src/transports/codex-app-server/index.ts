@@ -44,7 +44,8 @@ export type Entry = {
   goal: RuntimeGoalSnapshot | null
   models?: Promise<CodexModel[]>
   providerTurn?: CodexProviderTurn
-  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void>; settings: CodexTurnSettings }
+  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void>; settings: CodexTurnSettings
+    steers: Set<string> }
 }
 
 export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv }
@@ -205,7 +206,9 @@ export class CodexAppServerTransport implements HarnessTransport {
   readonly steer = { steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {
     const entry = this.entry(session)
     if (!entry.turn?.id) return { ok: false as const, status: "no_active_turn" as const, message: "No active Codex turn" }
-    await entry.rpc.request("turn/steer", { threadId: session.binding.upstreamSessionId, expectedTurnId: entry.turn.id, input: await codexTurnInput(input, session.directory) })
+    entry.turn.steers.add(input.userMessageId)
+    await entry.rpc.request("turn/steer", { threadId: session.binding.upstreamSessionId, expectedTurnId: entry.turn.id,
+      clientUserMessageId: input.userMessageId, input: await codexTurnInput(input, session.directory) })
     return { ok: true as const }
   } }
 

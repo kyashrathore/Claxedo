@@ -60,6 +60,7 @@ async function backend(): Promise<PiBackend> {
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
+    steerIncorporationUnreported: true,
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: withUndeliverableFile,

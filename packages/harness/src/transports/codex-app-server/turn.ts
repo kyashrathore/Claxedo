@@ -46,6 +46,8 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
         if (id !== entry.turn.id) return
       }
       subagents.observe(message)
+      const steered = startedSteer(message, entry)
+      if (steered) queue.push({ event: { type: "input-incorporated", messageId: steered } })
       for (const event of events.ingest(message)) queue.push(event)
       if (message.method === "turn/completed") subagents.end()
     } catch (error) { queue.fail(error) }
@@ -53,6 +55,14 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
   const removeMessage = entry.rpc.onMessage(ingest)
   const removeFailure = entry.rpc.onFailure((error) => queue.fail(error))
   return { remove: () => { removeMessage(); removeFailure() }, accept: () => { for (const message of early) ingest(message) } }
+}
+
+function startedSteer(message: RpcMessage, entry: Entry): string | undefined {
+  if (message.method !== "item/started") return undefined
+  const item = asRecordOrEmpty(asRecordOrEmpty(message.params).item)
+  const clientId = asString(item.clientId)
+  if (item.type !== "userMessage" || !clientId || !entry.turn?.steers.delete(clientId)) return undefined
+  return clientId
 }
 
 async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput, services: HarnessServices,
@@ -76,7 +86,7 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
   if (entry.state !== "ready" || entry.providerTurn) throw new CodexTransportError("session", "Codex turn already active")
   entry.state = "busy"
   const queue = new AsyncPushQueue<RoutedEvent>()
-  entry.turn = { broker, queue, settings: {}, started: startTurn(entry, session, turn, services, models) }
+  entry.turn = { broker, queue, settings: {}, steers: new Set(), started: startTurn(entry, session, turn, services, models) }
   const listener = listenTurn(entry, session, queue, broker)
   const onAbort = () => { void cancel().catch((error: unknown) => entry.broker.reportFailure(error)) }
   broker.signal.addEventListener("abort", onAbort, { once: true })

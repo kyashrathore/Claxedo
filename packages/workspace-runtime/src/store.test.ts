@@ -135,7 +135,7 @@ void describe("RuntimeStore", () => {
   void it("queued prompts survive a runtime restart with their payload and requester", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    const queued = first.queuePrompt({
+    const queued = first.deliveryQueue.queuePrompt({
       sessionId: "ses_queue",
       messageId: "msg_queued",
       parts: [{ type: "text", text: "then run the tests" }],
@@ -150,7 +150,7 @@ void describe("RuntimeStore", () => {
       actor: { actorId: "actor_1", actorKind: "human" },
       author: { id: "pub_1", name: "Yash", avatarUrl: "https://avatars.example/y.png", kind: "human" },
     })
-    const second = first.queuePrompt({
+    const second = first.deliveryQueue.queuePrompt({
       sessionId: "ses_queue",
       parts: [{ type: "text", text: "and open a PR" }],
       delivery: "queue",
@@ -159,7 +159,7 @@ void describe("RuntimeStore", () => {
 
     const restarted = new RuntimeStore(root)
     restarted.recoverBusySessions()
-    const rows = restarted.listQueuedPrompts()
+    const rows = restarted.deliveryQueue.listQueuedPrompts()
     assert.deepEqual(rows.map((row) => row.seq), [1, 2])
     assert.deepEqual(rows[0], {
       sessionId: "ses_queue",
@@ -186,29 +186,29 @@ void describe("RuntimeStore", () => {
       queuedAt: rows[1].queuedAt,
     })
 
-    assert.equal(restarted.replaceQueuedPromptParts("ses_queue", 2, [{ type: "text", text: "and open a draft PR" }]), true)
-    assert.equal(restarted.replaceQueuedPromptParts("ses_queue", 3, [{ type: "text", text: "nothing to edit" }]), false)
-    assert.deepEqual(new RuntimeStore(root).listQueuedPrompts()[1]?.parts, [{ type: "text", text: "and open a draft PR" }])
+    assert.equal(restarted.deliveryQueue.replaceQueuedPromptParts("ses_queue", 2, [{ type: "text", text: "and open a draft PR" }]), true)
+    assert.equal(restarted.deliveryQueue.replaceQueuedPromptParts("ses_queue", 3, [{ type: "text", text: "nothing to edit" }]), false)
+    assert.deepEqual(new RuntimeStore(root).deliveryQueue.listQueuedPrompts()[1]?.parts, [{ type: "text", text: "and open a draft PR" }])
 
-    restarted.deleteQueuedPrompt("ses_queue", 1)
-    assert.deepEqual(restarted.listQueuedPrompts().map((row) => row.seq), [2])
-    assert.deepEqual(new RuntimeStore(root).listQueuedPrompts().map((row) => row.seq), [2])
+    restarted.deliveryQueue.deleteQueuedPrompt("ses_queue", 1)
+    assert.deepEqual(restarted.deliveryQueue.listQueuedPrompts().map((row) => row.seq), [2])
+    assert.deepEqual(new RuntimeStore(root).deliveryQueue.listQueuedPrompts().map((row) => row.seq), [2])
   })
 
   void it("queue identities are not reused after deletion and restart", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     const input = { sessionId: "ses_queue", parts: [{ type: "text" as const, text: "S" }], delivery: "queue" as const }
-    const old = first.queuePrompt(input)
-    first.deleteQueuedPrompt(old.sessionId, old.seq)
+    const old = first.deliveryQueue.queuePrompt(input)
+    first.deliveryQueue.deleteQueuedPrompt(old.sessionId, old.seq)
     first.close()
     const restarted = new RuntimeStore(root)
-    const next = restarted.queuePrompt(input)
+    const next = restarted.deliveryQueue.queuePrompt(input)
     assert.equal(next.seq, old.seq + 1)
-    restarted.deleteQueuedPrompt(old.sessionId, old.seq)
-    assert.equal(restarted.replaceQueuedPromptParts(old.sessionId, old.seq, []), false)
-    assert.equal(restarted.claimQueuedPromptDelivery(old.sessionId, old.seq, "stale", "steer"), false)
-    assert.deepEqual(restarted.listQueuedPrompts(), [next])
+    restarted.deliveryQueue.deleteQueuedPrompt(old.sessionId, old.seq)
+    assert.equal(restarted.deliveryQueue.replaceQueuedPromptParts(old.sessionId, old.seq, []), false)
+    assert.equal(restarted.deliveryQueue.claimQueuedPromptDelivery(old.sessionId, old.seq, "stale", "steer"), false)
+    assert.deepEqual(restarted.deliveryQueue.listQueuedPrompts(), [next])
   })
 
   void it("queue persistence deduplicates by session and message identity across store handles", () => {
@@ -216,32 +216,32 @@ void describe("RuntimeStore", () => {
     const first = new RuntimeStore(root)
     const second = new RuntimeStore(root)
     const input = { sessionId: "ses_queue", messageId: "same-id", parts: [{ type: "text" as const, text: "same text" }], delivery: "queue" as const }
-    const original = first.queuePrompt(input)
-    assert.deepEqual(second.queuePrompt({ ...input, parts: [] }), original)
-    assert.equal(first.listQueuedPrompts().length, 1)
+    const original = first.deliveryQueue.queuePrompt(input)
+    assert.deepEqual(second.deliveryQueue.queuePrompt({ ...input, parts: [] }), original)
+    assert.equal(first.deliveryQueue.listQueuedPrompts().length, 1)
     // Identical text with another id is a distinct input; another session is isolated.
-    assert.equal(second.queuePrompt({ ...input, messageId: "other-id" }).seq, original.seq + 1)
-    assert.equal(second.queuePrompt({ ...input, sessionId: "other-session" }).seq, 1)
-    assert.equal(first.listQueuedPrompts().length, 3)
+    assert.equal(second.deliveryQueue.queuePrompt({ ...input, messageId: "other-id" }).seq, original.seq + 1)
+    assert.equal(second.deliveryQueue.queuePrompt({ ...input, sessionId: "other-session" }).seq, 1)
+    assert.equal(first.deliveryQueue.listQueuedPrompts().length, 3)
   })
 
   void it("deleting a session forgets the prompts queued for it", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "ses_gone", directory: "/workspace", agentSessionId: "agent_gone" })
-    store.queuePrompt({
+    store.deliveryQueue.queuePrompt({
       sessionId: "ses_gone",
       parts: [{ type: "text", text: "never runs" }],
       delivery: "queue",
     })
-    store.queuePrompt({
+    store.deliveryQueue.queuePrompt({
       sessionId: "ses_kept",
       parts: [{ type: "text", text: "still runs" }],
       delivery: "queue",
     })
 
     store.deleteSession("ses_gone")
-    assert.deepEqual(store.listQueuedPrompts().map((row) => row.sessionId), ["ses_kept"])
+    assert.deepEqual(store.deliveryQueue.listQueuedPrompts().map((row) => row.sessionId), ["ses_kept"])
   })
 
   void it("creates new session storage with harness columns instead of runner columns", () => {
@@ -258,7 +258,7 @@ void describe("RuntimeStore", () => {
     const first = new RuntimeStore(root)
     const grant = "eyJ.queued-grant-token.sig"
     const authority = { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const }
-    const queued = first.queuePrompt({
+    const queued = first.deliveryQueue.queuePrompt({
       sessionId: "ses_queue",
       messageId: "msg_queued",
       parts: [{ type: "text", text: "then run the tests" }],
@@ -269,13 +269,13 @@ void describe("RuntimeStore", () => {
       grant,
     })
     assert.equal(queued.grant, grant)
-    assert.equal(first.queuePrompt({ sessionId: "ses_queue", messageId: "msg_queued", parts: [], delivery: "queue" }).grant, grant)
-    const ungranted = first.queuePrompt({ sessionId: "ses_queue", parts: [], delivery: "queue", provenance: "relay-replayed", actor: { actorId: "actor_1", actorKind: "human" }, authority })
+    assert.equal(first.deliveryQueue.queuePrompt({ sessionId: "ses_queue", messageId: "msg_queued", parts: [], delivery: "queue" }).grant, grant)
+    const ungranted = first.deliveryQueue.queuePrompt({ sessionId: "ses_queue", parts: [], delivery: "queue", provenance: "relay-replayed", actor: { actorId: "actor_1", actorKind: "human" }, authority })
     assert.equal("grant" in ungranted, false)
     first.close()
 
     const restarted = new RuntimeStore(root)
-    const rows = restarted.listQueuedPrompts()
+    const rows = restarted.deliveryQueue.listQueuedPrompts()
     assert.deepEqual(rows.map((row) => row.grant), [grant, undefined])
     assert.equal("grant" in (rows[1] ?? {}), false)
     restarted.close()
@@ -323,10 +323,10 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "steered", directory: "/work", agentSessionId: "agent", createdAt: 1 })
-    const queued = store.queuePrompt({ sessionId: "steered", parts: [{ type: "text", text: "make a plugin" }], delivery: "steer",
+    const queued = store.deliveryQueue.queuePrompt({ sessionId: "steered", parts: [{ type: "text", text: "make a plugin" }], delivery: "steer",
       actor: { actorId: "member", actorKind: "human" } })
     assert.equal(store.relayedTurnInLineage("steered", "owner"), true)
-    store.deleteQueuedPrompt("steered", queued.seq)
+    store.deliveryQueue.deleteQueuedPrompt("steered", queued.seq)
     store.close()
     const reopened = new RuntimeStore(root)
     assert.equal(reopened.relayedTurnInLineage("steered", "owner"), true)
@@ -670,13 +670,13 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
-    store.queuePrompt({ sessionId: "s1", messageId: "local", parts: [], delivery: "queue", provenance: "loopback-direct" })
-    store.queuePrompt({ sessionId: "s1", messageId: "legacy", parts: [], delivery: "queue" })
+    store.deliveryQueue.queuePrompt({ sessionId: "s1", messageId: "local", parts: [], delivery: "queue", provenance: "loopback-direct" })
+    store.deliveryQueue.queuePrompt({ sessionId: "s1", messageId: "legacy", parts: [], delivery: "queue" })
     store.close()
 
     const reopened = new RuntimeStore(root)
     assert.deepEqual(
-      reopened.listQueuedPrompts().map((row) => [row.messageId, row.provenance]),
+      reopened.deliveryQueue.listQueuedPrompts().map((row) => [row.messageId, row.provenance]),
       [["local", "loopback-direct"], ["legacy", undefined]],
     )
     reopened.close()
@@ -690,13 +690,13 @@ void describe("RuntimeStore", () => {
     store.close()
 
     const upgraded = new RuntimeStore(root)
-    upgraded.queuePrompt({ sessionId: "s1", messageId: "fast", parts: [], delivery: "queue", serviceTier: "priority" })
-    upgraded.queuePrompt({ sessionId: "s1", messageId: "standard", parts: [], delivery: "queue" })
+    upgraded.deliveryQueue.queuePrompt({ sessionId: "s1", messageId: "fast", parts: [], delivery: "queue", serviceTier: "priority" })
+    upgraded.deliveryQueue.queuePrompt({ sessionId: "s1", messageId: "standard", parts: [], delivery: "queue" })
     upgraded.close()
 
     const reopened = new RuntimeStore(root)
     assert.deepEqual(
-      reopened.listQueuedPrompts().map((row) => [row.messageId, row.serviceTier]),
+      reopened.deliveryQueue.listQueuedPrompts().map((row) => [row.messageId, row.serviceTier]),
       [["fast", "priority"], ["standard", undefined]],
     )
     reopened.close()

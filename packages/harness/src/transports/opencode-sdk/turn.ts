@@ -14,7 +14,7 @@ import { declaredCommand } from "./command-invocation.js"
 import { flattenTurnPrompt } from "../../translate/prompt"
 
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
-  active: boolean; assistantMessageID?: string }
+  active: boolean; assistantMessageID?: string; steers: Set<string> }
 
 const STREAM_LOSS_WAIT_MS = 60_000
 const INTERRUPT_WAIT_MS = 5_000
@@ -123,9 +123,18 @@ async function* streamOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurn
       yield route(ended)
       return
     }
+    const delivered = deliveredSteer(event, state)
+    if (delivered) { yield route({ type: "input-incorporated", messageId: delivered }); continue }
     const projected = projectTurnEvent(event) ?? usage.observe(event)
     if (projected) yield route(projected)
   }
+}
+
+function deliveredSteer(event: ProjectedEvent, state: OpenCodeTurnState): string | undefined {
+  if (event.type !== "session.inbox.delivered") return undefined
+  const inboxID = asRecordOrEmpty(event.data).inboxID
+  if (typeof inboxID !== "string" || !state.steers.delete(inboxID)) return undefined
+  return inboxID
 }
 
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
@@ -153,5 +162,6 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
     broker.signal.removeEventListener("abort", abort)
     state.active = false
     state.assistantMessageID = undefined
+    state.steers.clear()
   }
 }

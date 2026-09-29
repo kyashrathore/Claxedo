@@ -12,7 +12,8 @@ import { acceptsSessionTitle, boundSessionTitleSource } from "./session/session-
 import { firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGroup, sessionModelGroupJson } from "@claxedo/agent-runtime-contract"
 import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "./session/session-starts"
-import type { AgentMessage, AgentMessageAuthor, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
+import { DeliveryQueue } from "./session/delivery-queue"
+import type { AgentMessage, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
 import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
@@ -29,8 +30,8 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
-import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
-import { isRecord, num, rec, str } from "./json-value"
+import type { SessionTurnOrigin } from "./session-access-policy"
+import { actorKind, isRecord, num, rec, str } from "./json-value"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
 export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"
@@ -240,84 +241,6 @@ export type RuntimeStoreTurnStartOutput = {
 }
 
 /**
- * A prompt admitted for a session that was already running a turn, waiting for
- * that turn to end.
- *
- * The session delivery owner reads these rows across request completion and
- * restart. `seq` is a durable control identity; actor and authority travel with
- * the payload so recovery reacquires the original requester's turn authority.
- */
-export type QueuedPromptAttempt = {
-  mode: "start" | "steer"
-  operationId: string
-  state: "dispatching" | "accepted" | "unknown" | "rejected"
-  message?: string
-}
-
-export type QueuedPromptRecord = {
-  authority?: SessionWorkspaceAuthority
-  held?: boolean
-  steering?: QueuedPromptAttempt
-  sessionId: string
-  seq: number
-  messageId?: string
-  parts: PromptInput["parts"]
-  agent?: string
-  model?: { providerID?: string; modelID?: string }
-  tools?: Record<string, boolean>
-  format?: PromptFormat
-  system?: string
-  variant?: string
-  serviceTier?: string
-  permissionMode?: string
-  delivery: "steer" | "queue"
-  actor?: { actorId: string; actorKind: "human" | "agent" }
-  author?: AgentMessageAuthor
-  /**
-   * How the request that queued this reached the runtime. Read back with
-   * `actor`/`authority` as the origin the delayed turn runs under; a row
-   * written before it was recorded has none and is never re-issued.
-   */
-  provenance?: SessionRequestProvenance
-  /** The deferred turn grant a relayed requester queued this under; see `SessionTurnOrigin`. */
-  grant?: string
-  queuedAt: number
-}
-
-type QueuedPromptRow = {
-  authority_json: string | null
-  origin_provenance: string | null
-  turn_grant: string | null
-  service_tier: string | null
-  held: number
-  steering_json: string | null
-  session_id: string
-  seq: number
-  message_id: string | null
-  parts_json: string
-  agent: string | null
-  model_provider_id: string | null
-  model_id: string | null
-  tools_json: string | null
-  format_json: string | null
-  system: string | null
-  variant: string | null
-  permission_mode: string | null
-  delivery: string
-  actor_id: string | null
-  actor_kind: string | null
-  author_id: string | null
-  author_name: string | null
-  author_avatar_url: string | null
-  author_kind: string | null
-  queued_at: number
-}
-
-function actorKind(input: string | null): "human" | "agent" | undefined {
-  return input === "human" || input === "agent" ? input : undefined
-}
-
-/**
  * A stored origin, or nothing — which is what refuses the turn.
  *
  * Nothing covers three rows that all mean "nobody can be re-asked about this":
@@ -349,51 +272,6 @@ function storedTurnOrigin(row: {
     actor: { actorId: row.origin_actor_id, actorKind: kind, ...(row.origin_user_id ? { userId: row.origin_user_id } : {}) },
     authority: JSON.parse(row.origin_authority_json),
     ...(row.wake_grant ? { grant: row.wake_grant } : {}),
-  }
-}
-
-function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
-  const parts: QueuedPromptRecord["parts"] = JSON.parse(row.parts_json)
-  const tools: Record<string, boolean> | undefined = row.tools_json === null ? undefined : JSON.parse(row.tools_json)
-  const format: PromptFormat | undefined = row.format_json === null ? undefined : JSON.parse(row.format_json)
-  const kind = actorKind(row.actor_kind)
-  const authorKind = actorKind(row.author_kind)
-  return {
-    sessionId: row.session_id,
-    seq: row.seq,
-    ...(row.authority_json ? { authority: JSON.parse(row.authority_json) } : {}),
-    ...(row.origin_provenance === "loopback-direct" || row.origin_provenance === "relay-replayed"
-      ? { provenance: row.origin_provenance }
-      : {}),
-    ...(row.turn_grant === null ? {} : { grant: row.turn_grant }),
-    ...(row.held ? { held: true } : {}),
-    ...(row.steering_json ? { steering: JSON.parse(row.steering_json) } : {}),
-    ...(row.message_id === null ? {} : { messageId: row.message_id }),
-    parts,
-    ...(row.agent === null ? {} : { agent: row.agent }),
-    ...(row.model_provider_id === null && row.model_id === null ? {} : {
-      model: {
-        ...(row.model_provider_id === null ? {} : { providerID: row.model_provider_id }),
-        ...(row.model_id === null ? {} : { modelID: row.model_id }),
-      },
-    }),
-    ...(tools === undefined ? {} : { tools }),
-    ...(format === undefined ? {} : { format }),
-    ...(row.system === null ? {} : { system: row.system }),
-    ...(row.variant === null ? {} : { variant: row.variant }),
-    ...(row.service_tier === null ? {} : { serviceTier: row.service_tier }),
-    ...(row.permission_mode === null ? {} : { permissionMode: row.permission_mode }),
-    delivery: row.delivery === "steer" ? "steer" : "queue",
-    ...(row.actor_id === null || kind === undefined ? {} : { actor: { actorId: row.actor_id, actorKind: kind } }),
-    ...(row.author_id === null || row.author_name === null || authorKind === undefined ? {} : {
-      author: {
-        id: row.author_id,
-        name: row.author_name,
-        ...(row.author_avatar_url === null ? {} : { avatarUrl: row.author_avatar_url }),
-        kind: authorKind,
-      },
-    }),
-    queuedAt: row.queued_at,
   }
 }
 
@@ -831,6 +709,7 @@ export class RuntimeStoreMigrationBlockedError extends Error {
 
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
+  readonly deliveryQueue: DeliveryQueue
   private root: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
@@ -872,6 +751,8 @@ export class RuntimeStore {
     this.migrate()
     this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
+    this.deliveryQueue = new DeliveryQueue(this.db, (run) => this.transaction(run, "immediate"),
+      (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
     this.hydrateSubagentAdmission()
     this.replay()
     this.reconcileOrphanedSubagents()
@@ -2249,173 +2130,6 @@ export class RuntimeStore {
     this.normalizeRecoveringTools()
   }
 
-  /**
-   * Persist a prompt waiting for this session's running turn to end.
-   *
-   * The lease and busy-session recovery above deliberately do not touch these
-   * rows: a turn from the previous runtime cannot be resumed, but a prompt that
-   * never reached one still has to run.
-   */
-  queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt" | "held" | "steering">): QueuedPromptRecord {
-    return this.transaction(() => {
-      if (input.messageId) {
-        const existing = this.db.prepare<QueuedPromptRow>(
-          "SELECT * FROM runtime_delivery WHERE session_id = ? AND message_id = ? ORDER BY seq LIMIT 1",
-        ).get(input.sessionId, input.messageId)
-        if (existing) return queuedPrompt(existing)
-      }
-      const seq = requireRow(this.db.prepare<{ seq: number }>(`
-        INSERT INTO runtime_delivery_sequence (session_id, seq) VALUES (?, 1)
-        ON CONFLICT(session_id) DO UPDATE SET seq = seq + 1
-        RETURNING seq
-      `).get(input.sessionId), "queued prompt seq").seq
-      const record: QueuedPromptRecord = { ...input, seq, queuedAt: Date.now() }
-      this.db
-        .prepare(
-          `
-        INSERT INTO runtime_delivery (
-          session_id,
-          seq,
-          message_id,
-          parts_json,
-          agent,
-          model_provider_id,
-          model_id,
-          tools_json,
-          format_json,
-          system,
-          variant,
-          permission_mode,
-          delivery,
-          actor_id,
-          actor_kind,
-          author_id,
-          author_name,
-          author_avatar_url,
-          author_kind,
-          queued_at,
-          authority_json,
-          origin_provenance,
-          turn_grant,
-          service_tier
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        )
-        .run(
-          record.sessionId,
-          record.seq,
-          record.messageId ?? null,
-          JSON.stringify(record.parts),
-          record.agent ?? null,
-          record.model?.providerID ?? null,
-          record.model?.modelID ?? null,
-          record.tools === undefined ? null : JSON.stringify(record.tools),
-          record.format === undefined ? null : JSON.stringify(record.format),
-          record.system ?? null,
-          record.variant ?? null,
-          record.permissionMode ?? null,
-          record.delivery,
-          record.actor?.actorId ?? null,
-          record.actor?.actorKind ?? null,
-          record.author?.id ?? null,
-          record.author?.name ?? null,
-          record.author?.avatarUrl ?? null,
-          record.author?.kind ?? null,
-          record.queuedAt,
-          record.authority ? JSON.stringify(record.authority) : null,
-          record.provenance ?? null,
-          record.grant ?? null,
-          record.serviceTier ?? null,
-        )
-      this.authoringOwnership.record(record.sessionId, record.actor?.actorId)
-      return record
-    }, "immediate")
-  }
-
-  claimQueuedPromptDelivery(sessionId: string, seq: number, operationId: string, mode: "start" | "steer"): boolean {
-    return this.db.prepare(`UPDATE runtime_delivery SET steering_json = ?, message_id = COALESCE(message_id, ?)
-      WHERE session_id = ? AND seq = ?
-      AND (? != 'start' OR (held = 0 AND NOT EXISTS (
-        SELECT 1 FROM runtime_delivery earlier
-        WHERE earlier.session_id = runtime_delivery.session_id AND earlier.seq < runtime_delivery.seq
-        AND ((earlier.held = 0 AND (earlier.steering_json IS NULL OR json_extract(earlier.steering_json, '$.state') = 'rejected'))
-          OR (json_extract(earlier.steering_json, '$.mode') = 'start'
-            AND json_extract(earlier.steering_json, '$.state') IN ('dispatching', 'unknown')))
-      )))
-      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`)
-      .run(JSON.stringify({ operationId, state: "dispatching", mode }), `msg_${crypto.randomUUID()}`, sessionId, seq, mode).changes === 1
-  }
-
-  settleQueuedPromptDelivery(sessionId: string, seq: number, steering: QueuedPromptAttempt): boolean {
-    return this.db.prepare(`UPDATE runtime_delivery SET steering_json = ?
-      WHERE session_id = ? AND seq = ? AND
-      json_extract(steering_json, '$.operationId') = ? AND json_extract(steering_json, '$.state') = 'dispatching'`)
-      .run(JSON.stringify(steering), sessionId, seq, steering.operationId).changes === 1
-  }
-
-  deleteQueuedPrompt(sessionId: string, seq: number) {
-    return this.db.prepare(`DELETE FROM runtime_delivery WHERE session_id = ? AND seq = ?
-      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`).run(sessionId, seq).changes === 1
-  }
-
-  replaceQueuedPromptParts(sessionId: string, seq: number, parts: QueuedPromptRecord["parts"]): boolean {
-    return this.db
-      .prepare(`UPDATE runtime_delivery SET parts_json = ?, held = 0 WHERE session_id = ? AND seq = ?
-        AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`)
-      .run(JSON.stringify(parts), sessionId, seq).changes === 1
-  }
-
-  setQueuedPromptHeld(sessionId: string, seq: number, held: boolean): boolean {
-    return this.db.prepare(`UPDATE runtime_delivery SET held = ? WHERE session_id = ? AND seq = ?
-      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`)
-      .run(held ? 1 : 0, sessionId, seq).changes === 1
-  }
-
-  completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean {
-    return this.db.prepare(`DELETE FROM runtime_delivery WHERE session_id = ? AND seq = ?
-      AND json_extract(steering_json, '$.operationId') = ?
-      AND json_extract(steering_json, '$.mode') = 'start'
-      AND json_extract(steering_json, '$.state') = 'dispatching'`)
-      .run(sessionId, seq, operationId).changes === 1
-  }
-
-  listQueuedPrompts(): QueuedPromptRecord[] {
-    return this.db
-      .prepare<QueuedPromptRow>(`
-      SELECT
-        session_id,
-        seq,
-        message_id,
-        parts_json,
-        agent,
-        model_provider_id,
-        model_id,
-        tools_json,
-        format_json,
-        system,
-        variant,
-        permission_mode,
-        delivery,
-        actor_id,
-        actor_kind,
-        author_id,
-        author_name,
-        author_avatar_url,
-        author_kind,
-        queued_at,
-        steering_json,
-        authority_json,
-        origin_provenance,
-        turn_grant,
-        service_tier,
-        held
-      FROM runtime_delivery
-      ORDER BY queued_at, session_id, seq
-    `)
-      .all()
-      .map(queuedPrompt)
-  }
-
   putWorktree(record: WorkspaceWorktreeRecord) {
     this.db
       .prepare(
@@ -3070,7 +2784,7 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM session_subagent_correlation WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent_tool_call WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent WHERE parent_session_id = ?").run(id)
-    this.db.prepare("DELETE FROM runtime_delivery WHERE session_id = ?").run(id)
+    this.deliveryQueue.forgetSession(id)
     this.db.prepare("DELETE FROM journal_checkpoint WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_question WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_permission WHERE session_id = ?").run(id)
@@ -3811,6 +3525,7 @@ export class RuntimeStore {
       this.assertFencingToken(input.sessionId, input.fencingToken)
       const active = this.db
         .prepare<{
+        seq: number
         provider_session_id: string | null
         user_message_id: string | null
         assistant_message_id: string | null
@@ -3818,7 +3533,7 @@ export class RuntimeStore {
         created_at: number
       }>(
           `
-        SELECT provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
+        SELECT seq, provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
         FROM runtime_journal
         WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
         ORDER BY seq DESC
@@ -3829,6 +3544,7 @@ export class RuntimeStore {
       if (!active?.assistant_message_id) return { events: [] }
       if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
       if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
+      const segment = this.latestReplySegment(input.sessionId, active.seq)
       const agentSession = active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}
       const terminal = (payload: AgentPresentationEvent) =>
         this.commitInside({
@@ -3847,13 +3563,13 @@ export class RuntimeStore {
         events.push(
           messageUpdated(
             buildAssistantMessage({
-              id: active.assistant_message_id,
+              id: segment?.id ?? active.assistant_message_id,
               sessionID: input.sessionId,
-              parentID: active.user_message_id ?? control.parentMessageId ?? input.sessionId,
+              parentID: segment?.parentID ?? active.user_message_id ?? control.parentMessageId ?? input.sessionId,
               agent: control.agent ?? "build",
               model: control.model,
               directory: session?.directory ?? "",
-              created: active.created_at,
+              created: segment?.time?.created ?? active.created_at,
               completed: input.outcome.completedAt,
               error: { name: "UnknownError", data: { ...firstTurnErrorData(input.outcome.error ?? "turn failed", input.outcome), ...input.outcome.detail } },
               ...(control.variant ? { variant: control.variant } : {}),
@@ -3861,8 +3577,8 @@ export class RuntimeStore {
           ),
         )
         events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome))
-      } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
-        terminal(messageCompleted(input.sessionId, active.assistant_message_id))
+      } else if (!this.hasMessageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id)) {
+        terminal(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id))
         terminal(sessionIdle(input.sessionId))
       }
       for (const payload of events) terminal(payload)
@@ -3881,6 +3597,23 @@ export class RuntimeStore {
       }, input.fencingToken)
       return { events }
     }, "immediate")
+  }
+
+  /**
+   * The reply a turn is writing now, when the turn has opened one after its
+   * first: a harness step or a steered prompt continues the turn in a new
+   * reply, and the turn's outcome belongs on the reply it ended in.
+   */
+  private latestReplySegment(sessionId: string, turnStartSeq: number) {
+    const row = this.db.prepare<{ info_json: string }>(`
+      SELECT json_extract(payload_json, '$.properties.info') AS info_json FROM runtime_journal
+      WHERE session_id = ? AND seq > ? AND kind = 'event' AND type = 'message.updated'
+        AND json_extract(payload_json, '$.properties.info.role') = 'assistant'
+      ORDER BY seq DESC
+      LIMIT 1
+    `).get(sessionId, turnStartSeq)
+    const info = row ? readColumn.messageInfo(row.info_json) : undefined
+    return info?.role === "assistant" ? info : undefined
   }
 
   private hasMessageCompleted(sessionId: string, messageId: string) {

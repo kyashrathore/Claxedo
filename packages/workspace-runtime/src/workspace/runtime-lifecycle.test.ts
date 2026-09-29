@@ -610,7 +610,7 @@ describe("workspace runtime public lifecycle", () => {
     expect(created.status, await created.clone().text()).toBe(201)
     await previous.host.dispose()
     const died = new RuntimeStore(storeRoot)
-    died.queuePrompt({ sessionId: "local", messageId: "msg_queued", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue" })
+    died.deliveryQueue.queuePrompt({ sessionId: "local", messageId: "msg_queued", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue" })
     died.close()
 
     const restarted = boot((input) => outcomes.push(input))
@@ -622,7 +622,7 @@ describe("workspace runtime public lifecycle", () => {
     await restarted.host.dispose()
     const drained = new RuntimeStore(storeRoot)
     cleanups.push(() => drained.close())
-    expect(drained.listQueuedPrompts()).toEqual([])
+    expect(drained.deliveryQueue.listQueuedPrompts()).toEqual([])
   })
 
   test("a runtime that learns its harness from a config snapshot re-issues the queue when it applies", async () => {
@@ -844,7 +844,7 @@ function queuedPromptLeftBehind(storeRoot: string) {
   died.updateSessionConfig("local", {
     harness: { id: "primary", access: "connection" }, model: null, variant: null, agent: null,
   }, { directory })
-  died.queuePrompt({
+  died.deliveryQueue.queuePrompt({
     sessionId: "local",
     messageId: "msg_queued",
     parts: [{ type: "text", text: "then run the tests" }],

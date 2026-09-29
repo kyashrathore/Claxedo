@@ -31,6 +31,7 @@ export type ConformanceBackend = {
   authFile?: string
   hold?(marker: string): () => void
   held?(marker: string): Promise<void>
+  steerIncorporationUnreported?: true
   scriptTool?(name: string, input: unknown): void
   scriptThinking?(input: { marker: string; text: string; reasoning: string }): void | Promise<string>
   thinkingRequested?(marker: string): boolean
@@ -80,7 +81,7 @@ async function setup(input: ConformanceInput) {
   const close = async () => { await transport.dispose(); await backend.close() }
   return { backend, services, ports, owner, transport, start, started, sessionBroker, turnBroker,
     get session(): HarnessSession { return { ...started, binding: binding() } },
-    turn: (message: string) => turn(backend.model, backend.agent ?? "build", message, turnOrigin), close }
+    turn: (message: string, userMessageId?: string) => turn(backend.model, backend.agent ?? "build", message, turnOrigin, userMessageId), close }
 }
 
 export { setup as setupConformance }
@@ -109,9 +110,9 @@ async function heldRequest(backend: ConformanceBackend, marker: string): Promise
   await backend.held(marker)
 }
 
-function turn(model: PromptModel, agent: string, message: string, turnOrigin: TurnOrigin): TurnInput {
+function turn(model: PromptModel, agent: string, message: string, turnOrigin: TurnOrigin, userMessageId = "u1"): TurnInput {
   return {
-    turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: turnOrigin, model,
+    turnId: "t1", userMessageId, assistantMessageId: "a1", origin: turnOrigin, model,
     prompt: { agent, assistantMessageId: "a1", parts: [{ type: "text", text: message }] }, todos: [],
   }
 }
@@ -246,7 +247,7 @@ export function runConformance(input: SuiteInput): void {
         const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PISTEER"), context.turnBroker())
         await heldRequest(context.backend, "PISTEER")
         const steer = () => context.transport.steer?.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
-          context.turn("Reply with exactly this one token: PISTEERFOLLOW"))
+          context.turn("Reply with exactly this one token: PISTEERFOLLOW", "msg_steer"))
         const result = await pollUntil(async () => {
           const result = await steer()
           return result && !result.ok && result.status === "no_active_turn" ? undefined : result
@@ -255,6 +256,8 @@ export function runConformance(input: SuiteInput): void {
         release()
         const events = await running
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
+        const incorporated = events.filter((item) => item.event.type === "input-incorporated").map((item) => item.event)
+        expect(incorporated).toEqual(context.backend.steerIncorporationUnreported ? [] : [{ type: "input-incorporated", messageId: "msg_steer" }])
       } finally { await context.close() }
     }, 60_000)
 
