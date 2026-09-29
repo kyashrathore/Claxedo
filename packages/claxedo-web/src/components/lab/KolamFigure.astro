@@ -1,0 +1,40 @@
+---
+import { kolamPath, symmetricMirrors } from "./kolam"
+
+/** A sikku kolam: one closed line around every dot of a 15 × 7 grid, drawn once on load. */
+const columns = 15
+const rows = 7
+const unit = 28
+const line = kolamPath(columns, rows, symmetricMirrors(columns, rows, 0.6, 5), unit)
+const dots = Array.from({ length: columns * rows }, (_, i) => [2 * (i % columns) + 1, 2 * Math.floor(i / columns) + 1])
+---
+
+<div class="backdrop kolam" aria-hidden="true">
+  <svg viewBox={`${-unit} ${-unit} ${(2 * columns + 2) * unit} ${(2 * rows + 2) * unit}`} class="figure">
+    <g class="dots">{dots.map(([cx, cy]) => <circle cx={cx * unit} cy={cy * unit} r="3.2" />)}</g>
+    <path class="line" d={line} pathLength="1" />
+  </svg>
+</div>
+
+<style>
+  .kolam { overflow: hidden; }
+  .figure {
+    position: absolute;
+    top: var(--kolam-top, 1.25rem);
+    left: 50%;
+    width: var(--kolam-width, min(1100px, 92vw));
+    max-width: none;
+    translate: -50% 0;
+  }
+  .dots { fill: #c4c4c4; }
+  .line { fill: none; stroke: #d6d6d6; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  @media (prefers-reduced-motion: no-preference) {
+    .line { stroke-dasharray: 1; animation: draw 2.2s .15s cubic-bezier(.55, .1, .35, 1) both; }
+    .dots { animation: dots .5s ease-out both; }
+    @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+    @keyframes dots { from { opacity: 0; } }
+  }
+  @media (max-width: 47.99rem) {
+    .kolam { --kolam-width: 190vw; --kolam-top: 1rem; }
+  }
+</style>

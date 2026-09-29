@@ -2,8 +2,8 @@
 import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
-import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
 import IconSprite from "../components/IconSprite.astro"
+import HomeHero from "../components/HomeHero.astro"
 import MacDownload from "../components/MacDownload.astro"
 import HeroSky from "../components/HeroSky.astro"
 import Scene from "../components/Scene.astro"
@@ -20,6 +20,7 @@ import SidebarNew from "../components/crops/SidebarNew.astro"
 import StandupPage from "../components/crops/StandupPage.astro"
 import TerminalChat from "../components/crops/TerminalChat.astro"
 import { requireClaim } from "../content/claims"
+import "../styles/home.css"
 import { routes } from "../content/routes"
 import { home, homeBlocks, site } from "../content/site"
 
@@ -35,18 +36,9 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
   <Nav />
   <IconSprite />
   <main id="main-content" class="home">
-    <section class="hero">
-      <HeroSky />
-      <div class="intro">
-        <h1>{home.hero.title}</h1>
-        <p class="lede">{home.hero.subtitle}</p>
-        <MacDownload placement="hero" />
-        <a class="quiet-link" href={routes.app}>Open in browser</a>
-      </div>
-      <div class="stage">
-        <div class="window"><ClaxedoAppReplica /></div>
-      </div>
-    </section>
+    <HomeHero title={home.hero.title} subtitle={home.hero.subtitle} tone="sky">
+      <HeroSky slot="backdrop" class="backdrop" />
+    </HomeHero>
 
     <section class="block">
       <header class="section-head">
@@ -156,49 +148,6 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
 </Layout>
 
 <style>
-  :global(html:root) {
-    color-scheme: light;
-    --bg: #fcfcfc;
-    --ink: #0f0f0f;
-    --ink-soft: #6b6b6b;
-    --ink-faint: #6b6b6b;
-    --ink-weakest: #8a8a8a;
-    --line: #e8e8e8;
-    --line-strong: #e8e8e8;
-    --accent-hover: #000000;
-    --surface-raised: #ffffff;
-  }
-
-  .home {
-    --edge: clamp(1rem, 5.5vw, 5rem);
-    --width: min(100% - 2 * var(--edge), 80rem);
-    overflow-x: clip;
-  }
-  :global(.nav) { background: var(--bg); backdrop-filter: none; }
-  :global(.nav-links a) { font-size: .9375rem; font-weight: 400; }
-  :global(.nav .btn-pill) { font-weight: 400; font-size: .875rem; }
-  .home :global(.btn-pill) { min-height: 2.75rem; padding: 0 1.4rem; font: 400 1rem/1 var(--font-sans); letter-spacing: -.01em; }
-  .quiet-link { color: var(--ink-soft); font-size: .9375rem; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: .25em; }
-  .quiet-link:hover { color: var(--ink); text-decoration-color: currentColor; }
-
-  h1, h2, h3 { font-family: var(--font-display); font-weight: 400; color: var(--ink); text-wrap: balance; }
-
-  .hero { --window-h: clamp(30rem, 48vw, 44rem); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
-  .hero :global(.hero-sky) { bottom: calc(var(--window-h) * .55); }
-  .intro { color: #ffffff; text-shadow: 0 1px 28px rgb(8 24 48 / .28); }
-  .intro h1 { color: inherit; }
-  .intro .lede { color: #ffffff; }
-  .intro .quiet-link { color: #ffffff; text-decoration-color: rgb(255 255 255 / .45); }
-  .intro .quiet-link:hover { color: #ffffff; text-decoration-color: currentColor; }
-  .intro :global(.btn-pill) { text-shadow: none; }
-  .intro { display: grid; justify-items: center; gap: 0; width: var(--width); margin-inline: auto; text-align: center; }
-  h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
-  .lede { max-width: 34rem; margin: 1rem 0 1.75rem; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
-  .intro .quiet-link { margin-top: .75rem; font-size: .875rem; }
-
-  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: 3rem auto 0; }
-  .window { position: relative; z-index: 1; height: var(--window-h); }
-
   .block { width: var(--width); margin: clamp(6rem, 11vw, 9.5rem) auto 0; }
   .section-head { margin-bottom: 2.5rem; }
   h2 { max-width: 24em; margin: 0; font-size: clamp(2rem, 3.2vw, 2.5rem); line-height: 1.1; letter-spacing: -.025em; }
@@ -231,15 +180,8 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
   .closing h2 { max-width: none; margin: 0 0 .75rem; }
   .closing .quiet-link { font-size: .875rem; }
 
-  @media (prefers-reduced-motion: no-preference) {
-    .intro, .stage { animation: rise .8s cubic-bezier(.2, .7, .2, 1) both; }
-    .stage { animation-delay: .12s; }
-    @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
-  }
 
   @media (max-width: 47.99rem) {
-    .lede { font-size: 1.125rem; }
-    .hero { --window-h: 32rem; }
     .cards, .cards.two, .cards.three { grid-auto-columns: 85%; margin-inline: calc(-1 * var(--edge)); padding-inline: var(--edge); scroll-padding-inline: var(--edge); }
     .slide :global(.panel), .cards.three .slide :global(.panel) { height: 22rem; }
     .crop, .crop.from-left { top: calc(var(--crop-top, 2.75rem) * .8); left: 6%; width: var(--crop-w-phone, var(--crop-w)); translate: none; scale: calc(var(--crop-scale, 1) * var(--phone-scale, .8)); transform-origin: 0 0; }

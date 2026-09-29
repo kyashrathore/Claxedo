@@ -79,6 +79,13 @@ export const home = {
   },
 } as const
 
+/** The owner's chosen hero copy, tried against three backgrounds on the /lab/hero-* routes before it replaces `home.hero`. */
+export const heroCandidate = {
+  title: "Own your coding agent app.",
+  subtitle: "Open source. Host it yourself. Every agent, no lock-in, no team plan.",
+  claims: ["mit-platform", "cloudflare-five-minutes", "harness-coverage", "free-beta"],
+} as const
+
 export const homeBlocks = [home.hero, home.speed, home.benchmark, home.prompt, home.openSource, home.sandbox, home.plugins, home.workflow, home.closing]
 
 /** The pill that downloads the Apple Silicon build directly; every other build is one click away on the download page. */

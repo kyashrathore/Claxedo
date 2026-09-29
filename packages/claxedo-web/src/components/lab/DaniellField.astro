@@ -1,0 +1,75 @@
+---
+import dither from "../../assets/home/daniell-taj-dither.webp"
+---
+
+<div class="backdrop daniell" aria-hidden="true">
+  <img src={dither.src} width={dither.width} height={dither.height} alt="" decoding="async" data-daniell />
+  <noscript><style>.daniell img { opacity: 1; }</style></noscript>
+</div>
+
+<script>
+  const field = document.querySelector<HTMLImageElement>("[data-daniell]")
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const reveal = (image: HTMLImageElement) => {
+    const { naturalWidth: width, naturalHeight: height } = image
+    const source = document.createElement("canvas")
+    source.width = width
+    source.height = height
+    const read = source.getContext("2d")!
+    read.drawImage(image, 0, 0)
+    const bits = read.getImageData(0, 0, width, height).data
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+    canvas.className = "field"
+    image.after(canvas)
+    const draw = canvas.getContext("2d")!
+    const frame = draw.createImageData(width, height)
+    const order = new Float32Array(width * height).map(() => Math.random())
+    const start = performance.now()
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - start) / 1200)
+      const settled = 1 - (1 - progress) ** 3
+      for (let i = 0; i < order.length; i++) {
+        const on = order[i] < settled ? bits[i * 4 + 3] > 0 : Math.random() < 0.34
+        frame.data[i * 4] = frame.data[i * 4 + 1] = frame.data[i * 4 + 2] = 170
+        frame.data[i * 4 + 3] = on ? 255 : 0
+      }
+      draw.putImageData(frame, 0, 0)
+      if (progress < 1) requestAnimationFrame(step)
+      else {
+        image.style.opacity = "1"
+        canvas.remove()
+      }
+    }
+    requestAnimationFrame(step)
+  }
+  if (field) {
+    if (still) field.style.opacity = "1"
+    else if (field.complete) reveal(field)
+    else field.addEventListener("load", () => reveal(field), { once: true })
+  }
+</script>
+
+<style>
+  .daniell {
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 26%, #000 46%, #000 86%, transparent);
+    mask-image: linear-gradient(to bottom, transparent 26%, #000 46%, #000 86%, transparent);
+  }
+  .daniell img, .daniell :global(.field) {
+    position: absolute;
+    left: calc(50% + var(--daniell-shift, 9.625rem));
+    top: var(--daniell-top, -17.5rem);
+    width: calc(var(--daniell-dot, 2px) * 960);
+    max-width: none;
+    height: auto;
+    aspect-ratio: 960 / 609;
+    translate: -50% 0;
+    image-rendering: pixelated;
+  }
+  .daniell img { opacity: 0; }
+  @media (max-width: 47.99rem) {
+    .daniell { --daniell-dot: 1px; --daniell-top: 10.5rem; --daniell-shift: 4.8rem; }
+  }
+</style>

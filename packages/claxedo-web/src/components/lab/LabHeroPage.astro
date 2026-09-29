@@ -1,0 +1,28 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import Nav from "../Nav.astro"
+import IconSprite from "../IconSprite.astro"
+import HomeHero from "../HomeHero.astro"
+import { requireClaim } from "../../content/claims"
+import { heroCandidate } from "../../content/site"
+import "../../styles/home.css"
+
+interface Props {
+  name: string
+  tone: "night" | "paper"
+  stageGap?: string
+}
+
+const { name, tone, stageGap } = Astro.props
+for (const id of heroCandidate.claims) requireClaim(id)
+---
+
+<Layout title={`Hero lab ${name}: ${heroCandidate.title}`} noindex lightOnly>
+  <Nav />
+  <IconSprite />
+  <main id="main-content" class="home">
+    <HomeHero title={heroCandidate.title} subtitle={heroCandidate.subtitle} tone={tone} stageGap={stageGap}>
+      <slot name="backdrop" slot="backdrop" />
+    </HomeHero>
+  </main>
+</Layout>

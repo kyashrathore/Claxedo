@@ -1,0 +1,59 @@
+---
+import ClaxedoAppReplica from "./ClaxedoAppReplica.astro"
+import MacDownload from "./MacDownload.astro"
+import { routes } from "../content/routes"
+
+interface Props {
+  title: string
+  subtitle: string
+  /** `sky`: white type over a bright backdrop that carries its own scrim. `night`: white type on ink. `paper`: ink type on the page. */
+  tone: "sky" | "night" | "paper"
+  /** Room between the call to action and the demo window, for a backdrop that needs a band of its own. */
+  stageGap?: string
+}
+
+const { title, subtitle, tone, stageGap } = Astro.props
+---
+
+<section class:list={["hero", tone]} style={stageGap && `--stage-gap: ${stageGap}`}>
+  <slot name="backdrop" />
+  <div class="intro">
+    <h1>{title}</h1>
+    <p class="lede">{subtitle}</p>
+    <MacDownload placement="hero" />
+    <a class="quiet-link" href={routes.app}>Open in browser</a>
+  </div>
+  <div class="stage">
+    <div class="window"><ClaxedoAppReplica /></div>
+  </div>
+</section>
+
+<style>
+  .hero { --window-h: clamp(30rem, 48vw, 44rem); --backdrop-bottom: calc(var(--window-h) * .55); position: relative; isolation: isolate; padding-top: clamp(2rem, 3.5vw, 2.5rem); }
+  .hero > :global(.backdrop) { position: absolute; inset: 0 0 var(--backdrop-bottom); z-index: -1; }
+  .intro { display: grid; justify-items: center; gap: 0; width: var(--width); margin-inline: auto; text-align: center; }
+  h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
+  .lede { max-width: 34rem; margin: 1rem 0 1.75rem; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
+  .intro .quiet-link { margin-top: .75rem; font-size: .875rem; }
+  .sky .intro, .night .intro { color: #ffffff; }
+  .sky .intro { text-shadow: 0 1px 28px rgb(8 24 48 / .28); }
+  .sky h1, .night h1, .sky .lede, .night .lede, .sky .quiet-link, .night .quiet-link { color: #ffffff; }
+  .sky .quiet-link, .night .quiet-link { text-decoration-color: rgb(255 255 255 / .45); }
+  .sky .quiet-link:hover, .night .quiet-link:hover { text-decoration-color: currentColor; }
+  .sky .intro :global(.btn-pill) { text-shadow: none; }
+  .night .intro :global(.btn-pill) { background: #ffffff; color: #0f0f0f; }
+  .paper .lede, .paper .quiet-link { color: #3a3a3a; }
+
+  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: var(--stage-gap, 3rem) auto 0; }
+  .window { position: relative; z-index: 1; height: var(--window-h); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .intro, .stage { animation: rise .8s cubic-bezier(.2, .7, .2, 1) both; }
+    .stage { animation-delay: .12s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+  }
+  @media (max-width: 47.99rem) {
+    .lede { font-size: 1.125rem; }
+    .hero { --window-h: 32rem; }
+  }
+</style>
