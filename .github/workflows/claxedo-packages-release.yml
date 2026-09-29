@@ -25,7 +25,6 @@ on:
       - "packages/cli/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
-      - "packages/wakes/**"
       - "packages/workspace-relay-protocol/**"
       - "packages/workspace-relay/**"
       - "packages/workspace-runtime/**"
@@ -40,7 +39,6 @@ on:
       - "packages/cli/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
-      - "packages/wakes/**"
       - "packages/workspace-relay-protocol/**"
       - "packages/workspace-relay/**"
       - "packages/workspace-runtime/**"
@@ -58,7 +56,6 @@ on:
           - helpers # helpers
           - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, sandbox-manager, workspace-relay, workspace-runtime
           - apps # channels, connections
-          - wakes
           - cli # cli
       npm_tag:
         description: "npm dist-tag"

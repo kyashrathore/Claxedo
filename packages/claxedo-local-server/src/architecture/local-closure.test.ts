@@ -87,7 +87,6 @@ const FORBIDDEN_PACKAGES = [
   "@claxedo/server",
   "@claxedo/channels",
   "@claxedo/connections",
-  "@claxedo/wakes",
   "better-auth",
   "posthog-node",
 ]

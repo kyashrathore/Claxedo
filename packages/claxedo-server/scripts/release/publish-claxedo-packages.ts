@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 11 public `@claxedo/*` packages.
+ * The one publisher for the 10 public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
 import { publishedVersionDrift, type PublishedVersionPackage } from "./check-published-versions"
 
-export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes" | "cli"
+export type PackageTrack = "helpers" | "runtime" | "apps" | "cli"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -47,7 +47,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 11 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 10 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -57,7 +57,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/helpers", dir: "packages/claxedo-helpers", track: "helpers" },
   { name: "@claxedo/agent-runtime-contract", dir: "packages/agent-runtime-contract", track: "runtime" },
   { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime" },
-  { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes" },
   // Tier 1
   { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime" },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps" },
@@ -473,7 +472,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes", "cli"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "cli"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track") ?? "others"

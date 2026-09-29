@@ -165,12 +165,11 @@ jobs:
       # Linux runs two package tasks to match the runner's core count. Windows
       # runs one package task at a time: its OpenCode suite contains wall-clock
       # and child-process contracts that become unreliable when the 5,700-test
-      # app suite runs beside it. Turbo defaults to 10 parallel tasks; several
-      # newly-wired suites assert on wall-clock behaviour (wakes' timer coalescing and
-      # workspace-runtime's PTY byte forwarding) and fail their 5s timeouts
-      # when starved of CPU.
-      # Measured: at 21-way parallelism on a fast many-core dev machine those
-      # three went red; serialized on the same machine, all three pass. A
+      # app suite runs beside it. Turbo defaults to 10 parallel tasks;
+      # workspace-runtime's PTY byte forwarding asserts on wall-clock behaviour
+      # and fails its 5s timeouts when starved of CPU.
+      # At 21-way parallelism on a fast many-core dev machine the wall-clock
+      # suites went red; serialized on the same machine, they pass. A
       # 2-core runner at concurrency 10 is strictly worse. Serial Windows adds
       # only the app suite's roughly two-minute tail and keeps every test intact.
       - name: Run unit tests
