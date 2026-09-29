@@ -567,6 +567,8 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       tools: () => setSurface("marketplace"),
       terminal: () => selectSession("terminal-claude"),
     }
+    root.addEventListener("pointerdown", () => { root.dataset.engaged = "true" })
+    root.addEventListener("pointerleave", () => { delete root.dataset.engaged })
     root.addEventListener("demo:spot", (event) => {
       const { spot, open } = (event as CustomEvent<{ spot?: string; open?: boolean }>).detail
       if (spot) root.dataset.spot = spot
@@ -702,6 +704,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
   }
   @media(max-width:47.99rem){.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{--composer-left:8px;--composer-right:8px;padding-left:var(--composer-left);padding-right:var(--composer-right)}.workspace-l1{display:flex}.app-window[data-panel=open] .workbench-l1{display:none}.app-window[data-panel=open] .workspace-l1{width:100%;border-left:0}.app-window[data-panel=open][data-panel-width=full] .workspace-l1{width:100%}}
 
+  .app-window:not([data-engaged]) :is(.timeline-scroll, .market-scroll, .panel-view, .repo-tree, .board, .standup-surface) { overflow: hidden; }
   :global(.account-chevron) { scale: 1 -1; }
   .app-window em > :global(svg), .app-window i > :global(svg), .tool-summary span > :global(svg), .tree-row > span > :global(svg) { width: 13px; height: 13px; }
   .app-window em[hidden] { display: none; }

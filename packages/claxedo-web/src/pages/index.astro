@@ -25,8 +25,7 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   <main id="main-content" class="home">
     <h1 class="sr-only">Claxedo</h1>
     <section class="story" aria-label="What Claxedo does" data-story style={`--steps:${home.lines.length}`}>
-      {home.lines.map((line, index) => <div class="sentinel" data-sentinel={index} style={`--k:${index}`} aria-hidden="true"></div>)}
-      <div class="pin">
+      <div class="pin" data-pin>
         <ol class="stage" data-stage>
           {home.lines.map((line, index) => (
             <li class:list={["stage-line", { "is-in": index === 0 }]} data-stage-line={line.id}>
@@ -100,14 +99,34 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   const still = window.matchMedia("(prefers-reduced-motion: reduce)")
   if (story && demo && !still.matches) {
     const lines = Array.from(story.querySelectorAll<HTMLElement>("[data-stage-line]"))
-    const sentinels = Array.from(story.querySelectorAll<HTMLElement>("[data-sentinel]"))
+    const pin = story.querySelector<HTMLElement>("[data-pin]")!
     const frame = story.querySelector<HTMLElement>("[data-zoom]")!
     const metrics = story.querySelector<HTMLElement>("[data-metrics]")!
-    const ratios = sentinels.map(() => 0)
+    const ENTER_AT = 0.55
+    const LEAVE_AT = 0.45
+    const HOLD_MS = 120
+    const SETTLED_SPEED = 1.2
+    // Below LEAVE_AT, so the metrics are fully gone before any later step can be showing.
+    const METRICS_GONE_AT = 0.35
+    let storyTop = 0
+    let view = 1
+    let zoomFrom = 1
     let current = -1
-    let settle = 0
+    let candidate = 0
+    let idle = 0
+    let slowSince = -1
+    let request = 0
+    let recent: [number, number][] = []
+
+    const measure = () => {
+      storyTop = story.offsetTop
+      view = pin.offsetHeight
+      zoomFrom = Number(getComputedStyle(frame).getPropertyValue("--zoom-from")) || 1
+    }
 
     const enter = (step: number) => {
+      clearTimeout(idle)
+      slowSince = -1
       if (step === current) return
       current = step
       lines.forEach((line, i) => {
@@ -117,111 +136,49 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
         if (leaving) window.setTimeout(() => line.classList.remove("is-out"), 200)
         line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === step ? 0 : -1 })
       })
-      metrics.classList.toggle("is-gone", step !== 0)
       story.dataset.step = String(step)
       demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: lines[step].dataset.stageLine, open: true } }))
     }
-    const decide = () => {
-      clearTimeout(settle)
-      settle = window.setTimeout(() => {
-        const best = ratios.indexOf(Math.max(...ratios))
-        if (ratios[best] >= 0.6) enter(best)
-      }, 90)
-    }
 
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) ratios[Number((entry.target as HTMLElement).dataset.sentinel)] = entry.intersectionRatio
-      decide()
-    }, { threshold: [0, 0.6, 1] })
-    sentinels.forEach((sentinel) => observer.observe(sentinel))
-    new IntersectionObserver(([entry]) => frame.classList.toggle("is-growing", entry.isIntersecting), { threshold: 0 }).observe(sentinels[0])
+    const update = () => {
+      const y = scrollY
+      const grow = Math.min(1, Math.max(0, y / (storyTop + view)))
+      frame.style.scale = String(zoomFrom + (1 - zoomFrom) * grow)
+      frame.classList.toggle("is-growing", grow > 0 && grow < 1)
+      const fade = Math.min(1, y / (storyTop + METRICS_GONE_AT * view))
+      metrics.style.setProperty("--fade", String(fade))
+      metrics.classList.toggle("is-gone", fade >= 0.5)
 
-    if (!CSS.supports("animation-timeline: scroll()")) {
-      let growEnd = 1
-      let request = 0
-      const measure = () => { growEnd = story.offsetTop + sentinels[1].offsetTop }
-      const grow = () => {
-        const t = Math.min(1, Math.max(0, scrollY / growEnd))
-        const from = Number(getComputedStyle(frame).getPropertyValue("--zoom-from")) || 1
-        frame.style.scale = String(from + (1 - from) * (1 - (1 - t) ** 3))
-        metrics.style.opacity = String(Math.max(0, 1 - t / 0.6))
-      }
-      measure()
-      addEventListener("resize", measure, { passive: true })
-      addEventListener("scroll", () => { cancelAnimationFrame(request); request = requestAnimationFrame(grow) }, { passive: true })
-      grow()
-    }
-
-    let stops: number[] = []
-    const measureStops = () => {
-      const last = document.documentElement.scrollHeight - innerHeight
-      stops = [0, ...sentinels.slice(1).map((sentinel) => story.offsetTop + sentinel.offsetTop), last].map((y) => Math.min(y, last))
-    }
-    const nearest = () => stops.reduce((best, y, i) => (Math.abs(y - scrollY) < Math.abs(stops[best] - scrollY) ? i : best), 0)
-    let moving = false
-    let quietUntil = 0
-    const glide = (index: number) => {
-      const target = stops[Math.min(stops.length - 1, Math.max(0, index))]
-      const start = scrollY
-      if (Math.abs(target - start) < 2) return
-      moving = true
-      const began = performance.now()
-      const duration = 700
-      const frame = (now: number) => {
-        const t = Math.min(1, (now - began) / duration)
-        scrollTo({ top: start + (target - start) * (1 - (1 - t) ** 4), behavior: "instant" })
-        if (t < 1) requestAnimationFrame(frame)
-        else moving = false
-      }
-      requestAnimationFrame(frame)
-    }
-    const step = (direction: 1 | -1) => glide(nearest() + direction)
-    const inStory = () => scrollY <= stops[stops.length - 1] + 2
-    let wheelTotal = 0
-    let gestureUsed = false
-    addEventListener("wheel", (event: WheelEvent) => {
-      if (!inStory() || event.ctrlKey) return
-      event.preventDefault()
       const now = performance.now()
-      if (now > quietUntil) {
-        wheelTotal = 0
-        gestureUsed = moving
-      }
-      quietUntil = now + 180
-      if (gestureUsed || moving) return
-      wheelTotal += event.deltaY
-      if (Math.abs(wheelTotal) < 8) return
-      gestureUsed = true
-      step(wheelTotal > 0 ? 1 : -1)
-    }, { passive: false })
-    let touchStart = 0
-    addEventListener("touchstart", (event: TouchEvent) => { touchStart = event.touches[0].clientY }, { passive: true })
-    addEventListener("touchmove", (event: TouchEvent) => { if (inStory()) event.preventDefault() }, { passive: false })
-    addEventListener("touchend", (event: TouchEvent) => {
-      const moved = touchStart - event.changedTouches[0].clientY
-      if (!inStory() || moving || Math.abs(moved) < 40) return
-      step(moved > 0 ? 1 : -1)
-    }, { passive: true })
-    const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-    addEventListener("keydown", (event: KeyboardEvent) => {
-      if (!inStory() || editable(event.target) || event.metaKey || event.altKey || event.ctrlKey) return
-      if (event.key === " " && event.target instanceof Element && event.target.closest("button, a, summary, [role=button]")) return
-      const down = event.key === "PageDown" || event.key === "ArrowDown" || (event.key === " " && !event.shiftKey)
-      const up = event.key === "PageUp" || event.key === "ArrowUp" || (event.key === " " && event.shiftKey)
-      const edge = event.key === "Home" ? 0 : event.key === "End" ? stops.length - 1 : -1
-      if (!down && !up && edge < 0) return
-      event.preventDefault()
-      if (moving) return
-      if (edge >= 0) glide(edge)
-      else step(down ? 1 : -1)
-    })
-    addEventListener("scrollend", () => { if (!moving && inStory()) glide(nearest()) })
-    addEventListener("resize", measureStops, { passive: true })
-    measureStops()
+      recent.push([now, y])
+      recent = recent.filter(([t]) => now - t <= 120)
+      const [firstT, firstY] = recent[0]
+      const speed = now - firstT >= 32 ? Math.abs(y - firstY) / (now - firstT) : 0
 
+      const position = (y - storyTop) / view
+      while (candidate < lines.length - 1 && position >= candidate + ENTER_AT) candidate++
+      while (candidate > 0 && position < candidate - 1 + LEAVE_AT) candidate--
+      clearTimeout(idle)
+      if (candidate === current) {
+        slowSince = -1
+        return
+      }
+      idle = window.setTimeout(() => enter(candidate), HOLD_MS)
+      if (speed > SETTLED_SPEED) slowSince = -1
+      else if (slowSince < 0) slowSince = now
+      else if (now - slowSince >= HOLD_MS) enter(candidate)
+    }
+
+    addEventListener("scroll", () => {
+      cancelAnimationFrame(request)
+      request = requestAnimationFrame(update)
+    }, { passive: true })
+    addEventListener("resize", () => { measure(); update() }, { passive: true })
     lines.forEach((line, i) => line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === 0 ? 0 : -1 }))
     story.dataset.playing = "true"
-    enter(0)
+    measure()
+    update()
+    enter(candidate)
   }
 </script>
 
@@ -260,8 +217,7 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
   }
 
   @supports (height: 100svh) { .home { --view: 100svh; } }
-  .story { position: relative; height: calc(var(--steps) * var(--view)); }
-  .sentinel { position: absolute; inset: calc(var(--k) * var(--view)) 0 auto; height: var(--view); pointer-events: none; }
+  .story { position: relative; height: calc(var(--steps) * var(--view)); overflow-anchor: none; }
   .pin { position: sticky; top: 0; display: grid; grid-template-rows: var(--head) minmax(0, 1fr); height: var(--view); overflow: clip; }
 
   .stage { position: relative; width: var(--column); margin: 0 auto; padding: 0; list-style: none; }
@@ -294,12 +250,6 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
     transform-origin: 50% 0;
     scale: var(--zoom-from);
   }
-  @keyframes demo-grow { from { scale: var(--zoom-from); } to { scale: 1; } }
-  @keyframes metrics-out { to { opacity: 0; } }
-  @supports (animation-timeline: scroll()) {
-    .demo-frame { animation: demo-grow cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 var(--view); }
-    .scrim { animation: metrics-out cubic-bezier(0.2, 0, 0, 1) both; animation-timeline: scroll(root); animation-range: 0 calc(var(--view) * .6); }
-  }
 
   .scrim {
     position: absolute;
@@ -312,7 +262,10 @@ const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.p
     border-radius: 0 0 13px 13px;
     background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(8px);
+    opacity: calc(1 - var(--fade, 0));
   }
+  /* Numerals half-faded over a sharp transcript read as ghosts; they clear by mid-fade while the blur carries the rest. */
+  .scrim > * { opacity: calc(1 - 2 * var(--fade, 0)); }
   .scrim.is-gone { pointer-events: none; }
   .metrics { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(1.25rem, 3.5vh, 2.25rem) clamp(2.5rem, 5vw, 4.5rem); max-width: 64rem; margin: 0; }
   .metric { display: grid; justify-items: start; gap: .5rem; }
