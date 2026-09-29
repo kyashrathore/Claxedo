@@ -6,6 +6,7 @@ interface Props {
   noindex?: boolean
   canonicalPath?: string
   bodyClass?: string
+  lightOnly?: boolean
 }
 
 const {
@@ -15,6 +16,7 @@ const {
   noindex = false,
   canonicalPath = Astro.url.pathname,
   bodyClass = "",
+  lightOnly = false,
 } = Astro.props
 
 const site = Astro.site ?? new URL("https://claxedo.com")
@@ -33,14 +35,21 @@ import { markdownTwins } from "../content/markdown"
     <meta charset="UTF-8" />
     <meta name="description" content={description} />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="color-scheme" content="dark light" />
+    {lightOnly ? (
+      <>
+        <meta name="theme-color" content="#fcfcfc" />
+        <meta name="color-scheme" content="light" />
+      </>
+    ) : (
+      <>
+        <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="color-scheme" content="dark light" />
+      </>
+    )}
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
     {markdownTwin && <link rel="alternate" type="text/markdown" href={new URL(markdownTwin, site)} />}
-    <link rel="preload" href="/fonts/funnel/funnel-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/funnel/funnel-display-latin.woff2" as="font" type="font/woff2" crossorigin />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Claxedo" />

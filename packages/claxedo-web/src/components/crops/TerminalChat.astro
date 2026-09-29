@@ -1,0 +1,51 @@
+---
+import HarnessMark from "../HarnessMark.astro"
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+---
+
+<div class="split app-theme" role="img" aria-label="Claude Code running in a Claxedo terminal, beside a Codex chat session">
+  <div class="app-card terminal">
+    <div class="tabs"><span class="active"><Icon name="terminal" />claude</span><span><Icon name="terminal" />codex</span></div>
+    <div class="screen">
+      <p><b>✦ Claude Code</b> <span class="muted">v2.1.247</span></p>
+      <p>Opus 5 (1M context) · high effort</p>
+      <p class="path">~/claxedo</p>
+      <p>&nbsp;</p>
+      <p>❯ trace why the session list flickers on reconnect</p>
+      <p class="muted">● Reading src/rail/session-list.tsx</p>
+      <p class="muted">● Reading src/server/placement-streams.ts</p>
+      <p>The list re-sorts before the snapshot lands. Holding the order until it does.</p>
+      <p>&nbsp;</p>
+      <p>❯ <i class="cursor"></i></p>
+    </div>
+  </div>
+  <div class="app-card chat">
+    <div class="who"><span class="mark"><HarnessMark name="codex" /></span><b>Codex</b><small>Chat</small></div>
+    <p class="bubble">Add a regression test for the reconnect flicker.</p>
+    <p class="reply">Added one: it drops the stream mid-snapshot and checks the order never changes. It passes.</p>
+    <p class="tool"><Icon name="check" />Ran 1 test</p>
+  </div>
+</div>
+
+<style>
+  .split { position: relative; width: 100%; height: 100%; }
+  .terminal { position: absolute; top: 0; left: 0; width: 32rem; overflow: hidden; }
+  .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--border); background: var(--rail-bg); }
+  .tabs span { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; color: var(--text-weak); font: 12px var(--font-mono); }
+  .tabs .active { background: var(--background-base); color: var(--text-strong); box-shadow: 0 0 0 1px var(--border); }
+  .screen { padding: 14px 16px 20px; color: var(--text-base); font: 12px/1.6 var(--font-mono); }
+  .screen p { margin: 0; }
+  .screen b { color: var(--text-strong); font-weight: 500; }
+  .muted { color: var(--text-weaker); }
+  .path { color: var(--term-path); }
+  .cursor { display: inline-block; width: 7px; height: 14px; vertical-align: -2px; background: var(--text-strong); }
+  .chat { position: absolute; top: 40%; left: min(48%, 20rem); width: 17rem; padding: 14px 16px; }
+  .who { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .who b { font-weight: 400; }
+  .who small { color: var(--text-weaker); font-size: 12px; }
+  .mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--surface-base-hover); font-size: 14px; }
+  .bubble { margin: 0 0 10px auto; width: fit-content; max-width: 90%; padding: 8px 12px; border-radius: 12px; background: var(--bubble-bg); color: var(--text-strong); }
+  .reply { margin: 0 0 8px; color: var(--text-base); line-height: 1.5; }
+  .tool { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--success); font-size: 12px; }
+</style>

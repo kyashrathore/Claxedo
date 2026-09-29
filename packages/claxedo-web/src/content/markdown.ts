@@ -38,10 +38,24 @@ export const homeMarkdown = `# ${site.name}
 
 ${site.description}
 
-${home.lines.map((line) => [
-  `- **${/[.!?]$/.test(line.text) ? line.text : `${line.text}.`}**${line.proof ? ` ${line.proof.label}: ${line.proof.href}` : ""}`,
-  ...(line.id === home.benchmark.line ? home.benchmark.metrics.map((metric) => `  - ${metric.lead} ${metric.label} (${"value" in metric ? `${metric.vs}; ${metric.value}` : metric.vs})`) : []),
-].join("\n")).join("\n")}
+> ${home.hero.title} ${home.hero.subtitle}
+
+## ${home.benchmark.title}
+
+${home.benchmark.subtitle} Results: ${home.benchmark.href}
+
+${home.benchmark.metrics.map((metric) => `- ${metric.lead} ${metric.label}: ${metric.detail}`).join("\n")}
+
+## ${home.place.title}
+
+${home.place.panels.map((panel) => `- **${panel.title}** ${panel.text}`).join("\n")}
+
+## What else it does
+
+${home.features.map((feature) => `- **${feature.title}.** ${feature.text}${"href" in feature ? ` Guide: ${feature.href}` : ""}`).join("\n")}
+- **${home.terminal.title}** ${home.terminal.text}
+
+${home.closing.text}
 
 - Download the desktop app for macOS, Windows, and Linux: ${canonicalUrl(routes.download)}
 - Open in a browser: ${site.clients.web.destination}

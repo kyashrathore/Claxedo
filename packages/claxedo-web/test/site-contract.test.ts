@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { claims, publishableClaims } from "../src/content/claims"
 import { marketingActions, publicOrigin, routes } from "../src/content/routes"
-import { approvedMarketingActions, home, site } from "../src/content/site"
+import { approvedMarketingActions, home, macDownload, site } from "../src/content/site"
 import { downloads } from "../src/config"
 
 describe("public site contract", () => {
@@ -17,18 +17,21 @@ describe("public site contract", () => {
     expect(new URL(publicOrigin).origin).toBe(publicOrigin)
   })
 
-  test("carries six evidenced one-liners and the core-metrics strip", () => {
+  test("binds every home page block to publishable claims", () => {
     expect(site.description).toContain("Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent")
-    expect(home.lines).toHaveLength(6)
     expect(home.benchmark.metrics.map((metric) => metric.label)).toEqual(["faster start", "faster session open", "faster return", "less memory", "idle CPU"])
+    expect(home.features.map((feature) => feature.id)).toEqual(["prompt", "team", "tools"])
     const publishable = new Set<string>(publishableClaims.map((item) => item.id))
-    for (const id of home.benchmark.claims) expect(publishable.has(id)).toBe(true)
-    for (const line of home.lines) {
-      expect(line.text).toContain(line.loud)
-      expect(line.text.split(/\s+/).length).toBeLessThanOrEqual(9)
-      expect(line.claims.length).toBeGreaterThan(0)
-      for (const id of line.claims) expect(publishable.has(id)).toBe(true)
+    const blocks = [home.hero, home.benchmark, ...home.place.panels, ...home.features, home.terminal, home.closing]
+    for (const block of blocks) {
+      expect(block.claims.length).toBeGreaterThan(0)
+      for (const id of block.claims) expect(publishable.has(id)).toBe(true)
     }
+  })
+
+  test("downloads the Apple Silicon build from the macOS pill", () => {
+    expect(macDownload.platform).toBe("macos-arm64")
+    expect(macDownload.href).toEndWith("claxedo-desktop-mac-arm64.dmg")
   })
 
   test("cites evidence that exists in the repository", async () => {

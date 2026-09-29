@@ -1,0 +1,41 @@
+---
+import "../../styles/app-theme.css"
+
+const account = ["Usage", "Organization", "Connections", "Machines"]
+const app = ["Language", "Appearance", "Notifications", "Keybindings"]
+---
+
+<div class="org app-theme" role="img" aria-label="Organization settings on a self-hosted Claxedo: your name, your role, and who manages the organization's provider accounts">
+  <div class="app-card settings">
+    <nav>
+      {account.map((item) => <span class:list={{ active: item === "Organization" }}>{item}</span>)}
+      <i></i>
+      {app.map((item) => <span>{item}</span>)}
+    </nav>
+    <div class="pane">
+      <b class="title">Organization</b>
+      <p>The people you work with. An organization grants nothing on any machine, folder or project.</p>
+      <div class="member"><span class="avatar">M</span><b>Maya Chen</b><small>You</small><em>Owner</em></div>
+      <b class="sub">Organization accounts</b>
+      <p>Provider accounts every member's agents may run on are managed under Accounts by an owner or admin.</p>
+    </div>
+  </div>
+</div>
+
+<style>
+  .org { position: relative; width: 100%; height: 100%; }
+  .settings { position: absolute; top: 0; left: 0; width: 30rem; display: grid; grid-template-columns: 8.5rem 1fr; overflow: hidden; }
+  nav { display: grid; align-content: start; gap: 2px; padding: 12px 8px; background: var(--rail-bg); border-right: 1px solid var(--border); }
+  nav span { padding: 6px 10px; border-radius: 6px; color: var(--text-base); }
+  nav .active { background: var(--surface-raised); color: var(--text-strong); }
+  nav i { height: 1px; margin: 6px 10px; background: var(--border); }
+  .pane { padding: 18px 20px 24px; }
+  .title { display: block; margin-bottom: 4px; font-size: 18px; font-weight: 500; }
+  .pane p { margin: 0; color: var(--text-weak); font-size: 12.5px; line-height: 1.5; }
+  .member { display: flex; align-items: center; gap: 10px; margin: 16px 0 18px; padding: 10px 12px; border-radius: 10px; box-shadow: 0 0 0 1px var(--border); }
+  .avatar { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #d9e4ec; color: #35526a; font-size: 12px; }
+  .member b { font-weight: 400; }
+  .member small { flex: 1; color: var(--text-weaker); font-size: 12px; }
+  .member em { padding: 2px 8px; border-radius: 999px; background: var(--surface-base-hover); color: var(--text-base); font-size: 11.5px; font-style: normal; }
+  .sub { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; }
+</style>

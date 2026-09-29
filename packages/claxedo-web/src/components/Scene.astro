@@ -1,0 +1,68 @@
+---
+/**
+ * An atmospheric panel: a procedural dusk-landscape "photograph" drawn from
+ * gradients, a soft blur and film grain, so the site ships no photographs.
+ */
+const scenes = {
+  dusk: { sky: ["#5d6f86", "#9aa7b4"], horizon: "#e8b27a", glow: "#f4c58e", ground: ["#3e4e5c", "#1f2a33"], line: 58, sun: 40 },
+  harbor: { sky: ["#6f8ea3", "#b7c5cc"], horizon: "#d9cdbb", glow: "#efe2cf", ground: ["#50707a", "#27404a"], line: 52, sun: 70 },
+  ember: { sky: ["#3d4a63", "#8a7f8c"], horizon: "#e2875a", glow: "#f09a62", ground: ["#3b3340", "#1b1a22"], line: 62, sun: 30 },
+  fog: { sky: ["#a9b3ba", "#d6dadb"], horizon: "#e6e1d8", glow: "#f2eee6", ground: ["#8c989c", "#5f6d72"], line: 55, sun: 55 },
+  tide: { sky: ["#4f6b7d", "#8fb0b8"], horizon: "#b8d0cc", glow: "#d6e6e0", ground: ["#2f5a63", "#173239"], line: 48, sun: 60 },
+  slate: { sky: ["#2c3848", "#5c6b7d"], horizon: "#a88e7a", glow: "#c9a07e", ground: ["#27313c", "#11161c"], line: 64, sun: 75 },
+  amber: { sky: ["#7e8aa0", "#c7b8a8"], horizon: "#f0b56f", glow: "#f7c47e", ground: ["#6a5a52", "#2e2724"], line: 60, sun: 50 },
+  lagoon: { sky: ["#5b7f8a", "#a3c0bf"], horizon: "#cfd9c9", glow: "#e3ead9", ground: ["#3c6b6a", "#1d3b3d"], line: 50, sun: 35 },
+  ash: { sky: ["#8a9097", "#bfc3c4"], horizon: "#d8cdc0", glow: "#e8dccb", ground: ["#6b7075", "#3a3e43"], line: 57, sun: 65 },
+  moor: { sky: ["#55627a", "#9b93a0"], horizon: "#d69a7c", glow: "#e8ad8a", ground: ["#4a4a52", "#24252b"], line: 60, sun: 20 },
+  glacier: { sky: ["#7d98b3", "#cbd8e2"], horizon: "#eef0ec", glow: "#ffffff", ground: ["#93aebf", "#56758a"], line: 54, sun: 50 },
+  pier: { sky: ["#394b5e", "#7f96a6"], horizon: "#d8b98f", glow: "#eccb9a", ground: ["#2d4452", "#13222b"], line: 56, sun: 82 },
+} as const
+
+export type SceneName = keyof typeof scenes
+
+interface Props {
+  scene: SceneName
+  class?: string
+}
+
+const { scene, class: className } = Astro.props
+const { sky, horizon, glow, ground, line, sun } = scenes[scene]
+const style = `--sky-0:${sky[0]};--sky-1:${sky[1]};--horizon:${horizon};--glow:${glow};--ground-0:${ground[0]};--ground-1:${ground[1]};--line:${line}%;--sun:${sun}%`
+---
+
+<div class:list={["scene", className]} style={style}>
+  <slot />
+</div>
+
+<style>
+  .scene {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--sky-1);
+  }
+  .scene::before {
+    content: "";
+    position: absolute;
+    inset: -12%;
+    z-index: -2;
+    background:
+      radial-gradient(38% 9% at var(--sun) var(--line), var(--glow), transparent 100%),
+      radial-gradient(70% 16% at calc(var(--sun) + 8%) calc(var(--line) - 2%), color-mix(in srgb, var(--horizon) 70%, transparent), transparent 100%),
+      radial-gradient(55% 22% at calc(100% - var(--sun)) calc(var(--line) - 26%), rgb(255 255 255 / .22), transparent 100%),
+      repeating-linear-gradient(180deg, rgb(255 255 255 / .05) 0 3px, transparent 3px 11px),
+      linear-gradient(180deg, var(--sky-0) 0%, var(--sky-1) calc(var(--line) - 16%), var(--horizon) var(--line), var(--ground-0) calc(var(--line) + 5%), var(--ground-1) 100%);
+    filter: blur(14px) saturate(.92);
+  }
+  .scene::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+    opacity: .28;
+    pointer-events: none;
+  }
+</style>

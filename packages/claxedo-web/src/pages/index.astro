@@ -3,302 +3,221 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
-import DownloadMenu from "../components/DownloadMenu.astro"
+import IconSprite from "../components/IconSprite.astro"
+import MacDownload from "../components/MacDownload.astro"
+import Scene, { type SceneName } from "../components/Scene.astro"
+import AgentPicker from "../components/crops/AgentPicker.astro"
+import MachineList from "../components/crops/MachineList.astro"
+import MarketplaceCard from "../components/crops/MarketplaceCard.astro"
+import OrganizationSettings from "../components/crops/OrganizationSettings.astro"
+import StandupCard from "../components/crops/StandupCard.astro"
+import StandupPage from "../components/crops/StandupPage.astro"
+import TerminalChat from "../components/crops/TerminalChat.astro"
 import { requireClaim } from "../content/claims"
-import { home, site, type HomeLine } from "../content/site"
+import { routes } from "../content/routes"
+import { home, site } from "../content/site"
 
-for (const id of [...home.benchmark.claims, ...home.closing.claims, ...home.lines.flatMap((line) => line.claims)]) requireClaim(id)
+const claimed = [home.hero, home.benchmark, ...home.place.panels, ...home.features, home.terminal, home.closing]
+for (const block of claimed) for (const id of block.claims) requireClaim(id)
 
-const parts = (line: HomeLine) => {
-  const at = line.text.indexOf(line.loud)
-  return [
-    { text: line.text.slice(0, at), loud: false },
-    { text: line.loud, loud: true },
-    { text: line.text.slice(at + line.loud.length), loud: false },
-  ].filter((part) => part.text.trim().length > 0)
-}
-const speedProof = home.lines.find((line) => line.id === home.benchmark.line)?.proof
+const patches: readonly SceneName[] = ["dusk", "ember", "tide", "moor", "harbor", "amber"]
+const [machines, agents] = home.place.panels
+const featureCrops = { prompt: StandupPage, team: OrganizationSettings, tools: MarketplaceCard }
+const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = { prompt: "amber", team: "pier", tools: "lagoon" }
 ---
 
-<Layout title={`Claxedo — ${site.headline}`} description={site.description}>
+<Layout title={`Claxedo: ${home.hero.title}`} description={site.description} lightOnly>
   <Nav />
+  <IconSprite />
   <main id="main-content" class="home">
-    <h1 class="sr-only">Claxedo</h1>
-    <section class="story" aria-label="What Claxedo does" data-story style={`--steps:${home.lines.length}`}>
-      <div class="pin" data-pin>
-        <ol class="stage" data-stage>
-          {home.lines.map((line, index) => (
-            <li class:list={["stage-line", { "is-in": index === 0 }]} data-stage-line={line.id}>
-              <p class="sentence">
-                {parts(line).map((part) => <span class:list={[part.loud ? "loud" : "muted"]}>{part.text}</span>)}
-              </p>
-              <span class="proof-slot">
-                {line.proof && line.id !== home.benchmark.line && <a class="quiet-link" href={line.proof.href} data-proof>{line.proof.label}</a>}
-              </span>
-            </li>
-          ))}
-        </ol>
-        <div class="demo-area">
-          <div class="demo-frame" data-zoom>
-            <ClaxedoAppReplica />
-            <div class="scrim" data-metrics>
-              <dl class="metrics">
-                {home.benchmark.metrics.map((metric) => (
-                  <div class="metric">
-                    <dt><b>{metric.lead}</b><span>{metric.label}</span></dt>
-                    <dd>{"value" in metric ? `${metric.vs} · ${metric.value}` : metric.vs}</dd>
-                  </div>
-                ))}
-              </dl>
-              {speedProof && <a class="quiet-link" href={speedProof.href}>See the benchmark</a>}
-            </div>
+    <section class="hero">
+      <div class="intro">
+        <h1>{home.hero.title}</h1>
+        <p class="lede">{home.hero.subtitle}</p>
+        <MacDownload placement="hero" />
+        <a class="quiet-link" href={routes.app}>Open in browser</a>
+      </div>
+      <div class="stage">
+        {patches.map((scene, index) => <Scene scene={scene} class={`patch patch-${index + 1}`} />)}
+        <div class="window"><ClaxedoAppReplica /></div>
+        <div class="float"><StandupCard /></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.benchmark.title}</h2>
+        <p>{home.benchmark.subtitle} <a class="quiet-link" href={home.benchmark.href}>See the benchmark</a></p>
+      </header>
+      <dl class="metrics">
+        {home.benchmark.metrics.map((metric) => (
+          <div class="metric">
+            <dt><span class="lead">{metric.lead}</span><span class="label">{metric.label}</span></dt>
+            <dd>{metric.detail}</dd>
           </div>
-        </div>
-      </div>
+        ))}
+      </dl>
     </section>
 
-    <section class="stills" aria-label="What Claxedo does">
-      {home.lines.map((line) => (
-        <article class="still">
-          <p class="sentence">
-            {parts(line).map((part) => <span class:list={[part.loud ? "loud" : "muted"]}>{part.text}</span>)}
-          </p>
-          <span class="proof-slot">{line.proof && <a class="quiet-link" href={line.proof.href}>{line.id === home.benchmark.line ? "See the benchmark" : line.proof.label}</a>}</span>
-          {home.benchmark.line === line.id && (
-            <dl class="metrics still-metrics">
-              {home.benchmark.metrics.map((metric) => (
-                <div class="metric">
-                  <dt><b>{metric.lead}</b><span>{metric.label}</span></dt>
-                  <dd>{"value" in metric ? `${metric.vs} · ${metric.value}` : metric.vs}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          <picture class="still-image">
-            <source media="(prefers-color-scheme: dark)" srcset={`/home/demo-${line.id}-dark.jpg`} />
-            <img src={`/home/demo-${line.id}-light.jpg`} alt={`The Claxedo app for “${line.text}”`} width="1330" height="675" loading="lazy" decoding="async" />
-          </picture>
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.place.title}</h2>
+        <p>{home.place.subtitle}</p>
+      </header>
+      <div class="two-up">
+        <article class="tile">
+          <Scene scene="harbor" class="panel"><div class="crop"><MachineList /></div></Scene>
+          <h3>{machines.title}</h3>
+          <p>{machines.text}</p>
         </article>
-      ))}
+        <article class="tile">
+          <Scene scene="ash" class="panel"><div class="crop"><AgentPicker /></div></Scene>
+          <h3>{agents.title}</h3>
+          <p>{agents.text}</p>
+        </article>
+      </div>
     </section>
 
-    <section class="closing" aria-labelledby="closing-title">
-      <div class="closing-row">
-        <h2 id="closing-title">{home.closing.title}</h2>
-        <DownloadMenu placement="closing" />
+    <section class="block follows">
+      <div class="three-up">
+        {home.features.map((feature) => {
+          const Crop = featureCrops[feature.id]
+          return (
+            <article class="tile">
+              <Scene scene={featureScenes[feature.id]} class="panel"><div class="crop"><Crop /></div></Scene>
+              <h3>{feature.title}</h3>
+              <p>{feature.text}</p>
+              {"href" in feature && <a class="quiet-link" href={feature.href}>Deployment guide</a>}
+            </article>
+          )
+        })}
       </div>
-      <p>{home.closing.note}</p>
+    </section>
+
+    <section class="block split">
+      <Scene scene="slate" class="panel"><div class="crop"><TerminalChat /></div></Scene>
+      <div class="split-copy">
+        <h2>{home.terminal.title}</h2>
+        <p>{home.terminal.text}</p>
+        <MacDownload placement="terminal" />
+      </div>
+    </section>
+
+    <section class="closing">
+      <p>{home.closing.text}</p>
+      <MacDownload placement="closing" />
+      <a class="quiet-link" href={routes.download}>Windows, Linux and Intel Macs</a>
     </section>
   </main>
   <Footer />
 </Layout>
 
-<script>
-  const story = document.querySelector<HTMLElement>("[data-story]")
-  const demo = document.querySelector<HTMLElement>("[data-demo]")
-  const still = window.matchMedia("(prefers-reduced-motion: reduce)")
-  if (story && demo && !still.matches) {
-    const lines = Array.from(story.querySelectorAll<HTMLElement>("[data-stage-line]"))
-    const pin = story.querySelector<HTMLElement>("[data-pin]")!
-    const frame = story.querySelector<HTMLElement>("[data-zoom]")!
-    const metrics = story.querySelector<HTMLElement>("[data-metrics]")!
-    const ENTER_AT = 0.55
-    const LEAVE_AT = 0.45
-    const HOLD_MS = 120
-    const SETTLED_SPEED = 1.2
-    // Below LEAVE_AT, so the metrics are fully gone before any later step can be showing.
-    const METRICS_GONE_AT = 0.35
-    let storyTop = 0
-    let view = 1
-    let zoomFrom = 1
-    let current = -1
-    let candidate = 0
-    let idle = 0
-    let slowSince = -1
-    let request = 0
-    let recent: [number, number][] = []
-
-    const measure = () => {
-      storyTop = story.offsetTop
-      view = pin.offsetHeight
-      zoomFrom = Number(getComputedStyle(frame).getPropertyValue("--zoom-from")) || 1
-    }
-
-    const enter = (step: number) => {
-      clearTimeout(idle)
-      slowSince = -1
-      if (step === current) return
-      current = step
-      lines.forEach((line, i) => {
-        const leaving = line.classList.contains("is-in") && i !== step
-        line.classList.toggle("is-in", i === step)
-        line.classList.toggle("is-out", leaving)
-        if (leaving) window.setTimeout(() => line.classList.remove("is-out"), 200)
-        line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === step ? 0 : -1 })
-      })
-      story.dataset.step = String(step)
-      demo.dispatchEvent(new CustomEvent("demo:spot", { detail: { spot: lines[step].dataset.stageLine, open: true } }))
-    }
-
-    const update = () => {
-      const y = scrollY
-      const grow = Math.min(1, Math.max(0, y / (storyTop + view)))
-      frame.style.scale = String(zoomFrom + (1 - zoomFrom) * grow)
-      frame.classList.toggle("is-growing", grow > 0 && grow < 1)
-      const fade = Math.min(1, y / (storyTop + METRICS_GONE_AT * view))
-      metrics.style.setProperty("--fade", String(fade))
-      metrics.classList.toggle("is-gone", fade >= 0.5)
-
-      const now = performance.now()
-      recent.push([now, y])
-      recent = recent.filter(([t]) => now - t <= 120)
-      const [firstT, firstY] = recent[0]
-      const speed = now - firstT >= 32 ? Math.abs(y - firstY) / (now - firstT) : 0
-
-      const position = (y - storyTop) / view
-      while (candidate < lines.length - 1 && position >= candidate + ENTER_AT) candidate++
-      while (candidate > 0 && position < candidate - 1 + LEAVE_AT) candidate--
-      clearTimeout(idle)
-      if (candidate === current) {
-        slowSince = -1
-        return
-      }
-      idle = window.setTimeout(() => enter(candidate), HOLD_MS)
-      if (speed > SETTLED_SPEED) slowSince = -1
-      else if (slowSince < 0) slowSince = now
-      else if (now - slowSince >= HOLD_MS) enter(candidate)
-    }
-
-    addEventListener("scroll", () => {
-      cancelAnimationFrame(request)
-      request = requestAnimationFrame(update)
-    }, { passive: true })
-    addEventListener("resize", () => { measure(); update() }, { passive: true })
-    lines.forEach((line, i) => line.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => { link.tabIndex = i === 0 ? 0 : -1 }))
-    story.dataset.playing = "true"
-    measure()
-    update()
-    enter(candidate)
-  }
-</script>
-
 <style>
   :global(html:root) {
-    --bg: #141517;
-    --ink: #f2f2f3;
-    --ink-soft: #8e9198;
-    --ink-faint: #8e9198;
-    --line: #26282b;
-    --line-strong: #26282b;
-    --quiet: #7d8087;
-    --quiet-text: #8e9198;
+    color-scheme: light;
+    --bg: #fcfcfc;
+    --ink: #0f0f0f;
+    --ink-soft: #6b6b6b;
+    --ink-faint: #6b6b6b;
+    --ink-weakest: #8a8a8a;
+    --line: #e8e8e8;
+    --line-strong: #e8e8e8;
+    --accent-hover: #000000;
+    --surface-raised: #ffffff;
   }
-  @media (prefers-color-scheme: light) {
-    :global(html:root) {
-      --bg: #f6f6f7;
-      --ink: #121316;
-      --ink-soft: #6e7178;
-      --ink-faint: #6e7178;
-      --line: #e3e4e7;
-      --line-strong: #e3e4e7;
-      --quiet: #8b8e95;
-      --quiet-text: #6e7178;
-    }
-  }
-  :global(html) { scroll-behavior: auto; }
-  :global(.nav) { position: relative; }
 
   .home {
-    --column: min(100% - 4rem, 75rem);
-    --view: 100vh;
-    --stage-size: clamp(2.5rem, 5vw, 4.5rem);
-    --line-box: calc(var(--stage-size) * 1.05 * 2);
-    --head: calc(clamp(1rem, 3vh, 2rem) + var(--line-box) + 2.75rem);
+    --edge: clamp(1rem, 5.5vw, 5rem);
+    --width: min(100% - 2 * var(--edge), 80rem);
+    overflow-x: clip;
   }
+  :global(.nav-links a) { font-size: .9375rem; font-weight: 400; }
+  :global(.nav .btn-pill) { font-weight: 400; font-size: .875rem; }
+  .home :global(.btn-pill) { min-height: 2.75rem; padding: 0 1.4rem; font: 400 1rem/1 var(--font-sans); letter-spacing: -.01em; }
+  .quiet-link { color: var(--ink-soft); font-size: .9375rem; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: .25em; }
+  .quiet-link:hover { color: var(--ink); text-decoration-color: currentColor; }
 
-  @supports (height: 100svh) { .home { --view: 100svh; } }
-  .story { position: relative; height: calc(var(--steps) * var(--view)); overflow-anchor: none; }
-  .pin { position: sticky; top: 0; display: grid; grid-template-rows: var(--head) minmax(0, 1fr); height: var(--view); overflow: clip; }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 400; color: var(--ink); text-wrap: balance; }
 
-  .stage { position: relative; width: var(--column); margin: 0 auto; padding: 0; list-style: none; }
-  .stage-line {
-    position: absolute;
-    inset: clamp(1rem, 3vh, 2rem) 0 0;
-    display: grid;
-    grid-template-rows: var(--line-box) 2.75rem;
-    opacity: 0;
-    transform: translateY(6px);
-    pointer-events: none;
-  }
-  .stage-line.is-in { opacity: 1; transform: none; pointer-events: auto; transition: opacity 380ms cubic-bezier(0.2, 0, 0, 1) 120ms, transform 380ms cubic-bezier(0.2, 0, 0, 1) 120ms; }
-  .stage-line.is-out { opacity: 0; transform: translateY(-3px); transition: opacity 160ms ease-out, transform 160ms ease-out; }
-  .sentence { align-self: end; max-width: 30ch; margin: 0; font: 600 var(--stage-size)/1.05 var(--font-display); letter-spacing: -.02em; text-wrap: balance; }
-  .loud { color: var(--ink); }
-  .muted { color: var(--quiet); font-weight: 400; }
-  .proof-slot { display: flex; align-items: center; }
+  .hero { padding-top: clamp(3.5rem, 7vw, 5.5rem); }
+  .intro { display: grid; justify-items: center; gap: 0; width: var(--width); margin-inline: auto; text-align: center; }
+  h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
+  .lede { max-width: 34rem; margin: 1.25rem 0 2rem; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
+  .intro .quiet-link { margin-top: 1rem; font-size: .875rem; }
 
-  .quiet-link { color: var(--quiet-text); font: 400 .875rem/1.4 var(--font-sans); text-decoration: none; }
-  .quiet-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: .2em; }
+  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: clamp(3rem, 6vw, 4.5rem) auto 0; }
+  .window { position: relative; z-index: 1; height: clamp(30rem, 48vw, 44rem); }
+  .float { position: absolute; top: 53%; right: -3.5rem; z-index: 2; }
+  .stage :global(.patch) { position: absolute; z-index: 0; border-radius: 3px; }
+  .stage :global(.patch-1) { left: -9.5rem; top: 12%; width: 9rem; height: 11rem; }
+  .stage :global(.patch-2) { left: 16%; top: -3.25rem; width: 6rem; height: 5.25rem; }
+  .stage :global(.patch-3) { left: 47%; top: -2.75rem; width: 5rem; height: 4.5rem; }
+  .stage :global(.patch-4) { right: -8.5rem; top: -1.5rem; width: 8.5rem; height: 9rem; }
+  .stage :global(.patch-5) { right: -7rem; top: 62%; width: 7.5rem; height: 7rem; }
+  .stage :global(.patch-6) { left: -6.5rem; top: 70%; width: 7.5rem; height: 7.5rem; }
 
-  .demo-area { display: grid; justify-items: center; align-content: start; min-height: 0; }
-  .demo-frame.is-growing { will-change: scale; }
-  .demo-frame {
-    --zoom-from: .88;
-    position: relative;
-    width: min(var(--column), (var(--view) - var(--head) - 2rem) * 1.9);
-    height: min(75vh, var(--view) - var(--head) - 2rem);
-    transform-origin: 50% 0;
-    scale: var(--zoom-from);
-  }
+  .block { width: var(--width); margin: clamp(6rem, 11vw, 9.5rem) auto 0; }
+  .block.follows { margin-top: clamp(3.5rem, 6vw, 5rem); }
+  .section-head { margin-bottom: 2.5rem; }
+  h2 { max-width: 24em; margin: 0; font-size: clamp(2rem, 3.2vw, 2.5rem); line-height: 1.1; letter-spacing: -.025em; }
+  .section-head p { max-width: 52rem; margin: .75rem 0 0; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; }
+  .section-head .quiet-link { font-size: inherit; white-space: nowrap; }
 
-  .scrim {
-    position: absolute;
-    inset: 37px 1px 1px;
-    z-index: 30;
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: clamp(1.5rem, 4vh, 2.5rem);
-    border-radius: 0 0 13px 13px;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(8px);
-    opacity: calc(1 - var(--fade, 0));
-  }
-  /* Numerals half-faded over a sharp transcript read as ghosts; they clear by mid-fade while the blur carries the rest. */
-  .scrim > * { opacity: calc(1 - 2 * var(--fade, 0)); }
-  .scrim.is-gone { pointer-events: none; }
-  .metrics { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(1.25rem, 3.5vh, 2.25rem) clamp(2.5rem, 5vw, 4.5rem); max-width: 64rem; margin: 0; }
-  .metric { display: grid; justify-items: start; gap: .5rem; }
+  .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2rem; margin: 0; }
+  .metric { display: grid; align-content: start; gap: .75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
   .metric dt { display: grid; gap: .5rem; }
-  .metric b { color: var(--ink); font: 600 clamp(4rem, min(8.5vw, 11vh), 8.5rem)/.9 var(--font-display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-  .metric dt span { color: var(--ink); font: 500 1.125rem/1.3 var(--font-sans); }
-  .metric dd { margin: 0; color: var(--quiet-text); font: 400 .8125rem/1.45 var(--font-sans); }
+  .lead { font: 400 clamp(3rem, 5.4vw, 5rem)/.95 var(--font-display); letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+  .label { color: var(--ink); font-size: 1.0625rem; }
+  .metric dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.5; }
 
-  .stills { display: none; }
+  .two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  .three-up { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+  .tile :global(.panel) { aspect-ratio: 1.6; }
+  .three-up .tile :global(.panel) { aspect-ratio: 1.25; }
+  .crop { position: absolute; inset: 11% 0 0 8%; transform-origin: 0 0; }
+  .three-up .crop { scale: .8; }
+  .tile h3 { margin: 1.5rem 0 .5rem; font-size: 1.25rem; line-height: 1.3; letter-spacing: -.015em; }
+  .tile p { max-width: 36rem; margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.5; text-wrap: pretty; }
+  .tile .quiet-link { display: inline-block; margin-top: .75rem; }
 
-  .closing { width: var(--column); margin: 0 auto; padding: clamp(4rem, 10vh, 7rem) 0 clamp(4rem, 9vw, 6.5rem); }
-  .closing-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; }
-  .closing h2 { margin: 0; font: 600 clamp(2rem, 3.6vw, 3.25rem)/1.05 var(--font-display); letter-spacing: -.02em; }
-  .closing p { margin: .75rem 0 0; color: var(--quiet-text); font: 400 .9375rem/1.5 var(--font-sans); }
+  .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: center; gap: clamp(2.5rem, 7vw, 6.5rem); }
+  .split :global(.panel) { aspect-ratio: 1.45; }
+  .split .crop { inset: 13% 0 0 8%; }
+  .split-copy { display: grid; justify-items: start; gap: 1.25rem; }
+  .split-copy p { max-width: 28rem; margin: 0 0 .75rem; color: var(--ink-soft); font-size: 1.125rem; line-height: 1.5; }
 
-  @media (max-width: 47.99rem) {
-    .home { --column: calc(100% - 2rem); --stage-size: min(2.5rem, 10vw); --line-box: calc(var(--stage-size) * 1.05 * 3); }
-    .demo-frame { --zoom-from: 1; width: var(--column); }
-    .scrim { place-content: center stretch; padding: 1rem; gap: 1.25rem; }
-    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; }
-    .metric b { font-size: 3.5rem; }
-    .metric dt span { font-size: 1rem; }
-    .metric dd { display: none; }
+  .closing { display: grid; justify-items: center; gap: 1.25rem; width: var(--width); margin: clamp(7rem, 13vw, 11rem) auto 0; text-align: center; }
+  .closing p { margin: 0 0 .5rem; color: var(--ink); font-size: 1.25rem; }
+  .closing .quiet-link { font-size: .875rem; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .intro, .stage { animation: rise .8s cubic-bezier(.2, .7, .2, 1) both; }
+    .stage { animation-delay: .12s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .story { display: none; }
-    .stills { display: grid; gap: clamp(3.5rem, 8vw, 6rem); width: var(--column); margin: 0 auto; padding: clamp(2rem, 5vh, 3.5rem) 0 0; }
-    .still { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.25rem 2rem; align-items: end; }
-    .still .sentence { max-width: none; }
-    .still-metrics { grid-column: 1 / -1; justify-content: start; }
-    .still-metrics .metric b { font-size: clamp(3rem, 6vw, 5.5rem); }
-    .still-image { grid-column: 1 / -1; }
-    .still-image img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); }
+  @media (max-width: 75rem) {
+    .float { right: -1rem; }
+    .stage :global(.patch-1), .stage :global(.patch-4), .stage :global(.patch-5), .stage :global(.patch-6) { display: none; }
+  }
+  @media (max-width: 60rem) {
+    .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
+    .three-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
+    .three-up .tile :global(.panel) { aspect-ratio: 1.6; }
+    .split { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 47.99rem) {
+    .lede { font-size: 1.125rem; }
+    .stage { margin-top: 5rem; }
+    .window { height: 32rem; }
+    .float { position: relative; top: auto; right: auto; margin: -4.5rem -.25rem 0 auto; width: fit-content; }
+    .float :global(.standup-card) { width: min(17.5rem, 100vw - 3rem); }
+    .stage :global(.patch-2) { left: 4%; }
+    .stage :global(.patch-3) { left: auto; right: 6%; }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1rem; }
+    .two-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
+    .tile :global(.panel), .three-up .tile :global(.panel), .split :global(.panel) { aspect-ratio: 1.05; }
+    .crop { inset: 9% 0 0 6%; scale: .78; }
+    .three-up .crop { scale: .7; }
   }
 </style>

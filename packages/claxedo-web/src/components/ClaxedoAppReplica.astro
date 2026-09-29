@@ -1,7 +1,8 @@
 ---
 import HarnessMark from "./HarnessMark.astro"
 import Icon from "./Icon.astro"
-import IconSprite from "./IconSprite.astro"
+import { standup } from "./demo-content"
+import "../styles/app-theme.css"
 
 export interface ReplicaSession { id: string; title: string; user: string; responses: readonly string[]; tools: readonly string[]; context: string; branch: string; place?: string; surface?: "chat" | "terminal"; harness?: "codex" | "claude" | "cursor" | "pi" | "opencode"; project?: "formlink" }
 const demoSessions = [
@@ -15,23 +16,6 @@ const demoSessions = [
 const terminalSessions = [
   { id: "terminal-codex", title: "Codex", surface: "terminal", harness: "codex", user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" },
   { id: "terminal-claude", title: "Claude", surface: "terminal", harness: "claude", user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" },
-] as const
-const standup = [
-  {
-    project: "Claxedo",
-    yesterday: [
-      { text: "Fixed the usage meter: it keeps the latest total, 118,204 tokens against the dashboard's 118k", from: "Fix usage meter · Codex" },
-      { text: "Rotated relay tokens to EdDSA; the old verifier stays for one release", from: "Rotate relay tokens · Codex · Daytona sandbox" },
-    ],
-    today: [{ text: "Drafting this week's release notes from 14 merged pull requests", from: "Draft release notes · Cursor · studio-mac" }],
-    blocked: [{ text: "Permission bump for box-1 needs your approval", from: "Tasks · #13" }],
-  },
-  {
-    project: "formlink",
-    yesterday: [{ text: "Mapped the three validators that disagree on required fields", from: "What is this project? · OpenCode" }],
-    today: [{ text: "Make the shared schema the only validator", from: "What is this project? · OpenCode" }],
-    blocked: [],
-  },
 ] as const
 const canvasSessions: readonly ReplicaSession[] = [...demoSessions, ...terminalSessions]
 const claxedoSessions = canvasSessions.filter((session) => !session.project && session.surface !== "terminal")
@@ -60,9 +44,8 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
 ]
 ---
 
-<section class="hero canvas-only" aria-label="Interactive preview of the Claxedo app">
-  <div class="app-window" data-app-replica data-demo data-sidebar="open" data-surface="chat" data-panel="closed" data-panel-width="split" data-panel-view-active="changes" data-environment="expanded" data-account="closed" data-composer-menu="closed" data-active-session={canvasSessions[0].id} data-demo-sessions={JSON.stringify(canvasSessions)}>
-    <IconSprite />
+<section class="hero canvas-only app-theme" aria-label="Interactive preview of the Claxedo app">
+  <div class="app-window" data-app-replica data-sidebar="open" data-surface="chat" data-panel="closed" data-panel-width="split" data-panel-view-active="changes" data-environment="expanded" data-account="closed" data-composer-menu="closed" data-active-session={canvasSessions[0].id} data-demo-sessions={JSON.stringify(canvasSessions)}>
     <header class="shell-header">
       <div class="rail-titlebar">
         <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -91,7 +74,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
           <div class="header-drag"></div>
           <div class="scope-actions">
             <button type="button" class="icon-button" data-surface-button="new" aria-label="New Session"><Icon name="plus-small" /></button>
-            <button type="button" class="icon-button" data-surface-button="terminal" data-spot-target="terminal" aria-label="New Terminal"><Icon name="terminal" /></button>
+            <button type="button" class="icon-button" data-surface-button="terminal" aria-label="New Terminal"><Icon name="terminal" /></button>
             <button type="button" class="icon-button" aria-label="More actions"><Icon name="chevron-down" /></button>
           </div>
           <button type="button" class="icon-button workspace-toggle" data-workspace-toggle aria-label="Open workspace panel" aria-pressed="false">
@@ -115,9 +98,9 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       <aside class="project-rail" aria-label="Projects and sessions">
         <div class="rail-global">
           <button type="button"><Icon name="folder-add" /><span>New Project</span></button>
-          <button type="button" data-surface-button="marketplace" data-spot-target="tools"><Icon name="marketplace" /><span>Marketplace</span></button>
+          <button type="button" data-surface-button="marketplace"><Icon name="marketplace" /><span>Marketplace</span></button>
           <button type="button" data-surface-button="tasks"><Icon name="checklist" /><span>Tasks</span></button>
-          <button type="button" class="plugin-item" data-surface-button="standup" data-plugin-item data-spot-target="prompt"><Icon name="document-text" /><span>Standup</span></button>
+          <button type="button" data-surface-button="standup"><Icon name="document-text" /><span>Standup</span></button>
         </div>
         <div class="rail-divider"></div>
         <div class="rail-scroll">
@@ -141,7 +124,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
             <button type="button"><Icon name="settings-gear" /><span>Settings</span></button>
             <button type="button"><Icon name="help" /><span>Help</span></button>
           </div>
-          <button type="button" class="workspace-account" data-account-toggle data-spot-target="team" aria-expanded="false"><span class="account-device"><Icon name="monitor" /></span><span>Acme</span><Icon name="chevron-down" class="account-chevron" /></button>
+          <button type="button" class="workspace-account" data-account-toggle aria-expanded="false"><span class="account-device"><Icon name="monitor" /></span><span>Acme</span><Icon name="chevron-down" class="account-chevron" /></button>
         </div>
       </aside>
 
@@ -165,7 +148,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
 
               <aside class="environment-card" aria-label="Session environment">
                 <div class="environment-expanded">
-                  <header><b data-session-place data-spot-target="place">{canvasSessions[0].place ?? "Environment"}</b><button type="button" data-environment-toggle aria-label="Collapse Environment"><Icon name="chevron-double-right" /></button></header>
+                  <header><b data-session-place>{canvasSessions[0].place ?? "Environment"}</b><button type="button" data-environment-toggle aria-label="Collapse Environment"><Icon name="chevron-double-right" /></button></header>
                   <div class="env-facts">
                     <div><Icon name="folder" /><span data-session-context>{canvasSessions[0].context}</span></div>
                     <div><Icon name="branch" /><span data-session-branch>{canvasSessions[0].branch}</span></div>
@@ -268,7 +251,7 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
             </div>
           </section>
           <section class="session-surface standup-surface" aria-label="Standup">
-            <header class="standup-head" data-spot-target="prompt">
+            <header class="standup-head">
               <div><b>Standup</b><span>Yesterday, today and what's blocked, from this workspace's sessions</span></div>
               <small>App plugin · built by Claude Code · turned on by you</small>
             </header>
@@ -290,11 +273,6 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
               ))}
             </div>
           </section>
-          <div class="plugin-approval" data-plugin-approval hidden>
-            <b>Turn on Standup?</b>
-            <p>An app plugin your agent built. It adds a page and a sidebar item, and reads this workspace's sessions.</p>
-            <div><button type="button" data-plugin-decline>Not now</button><button type="button" class="primary" data-plugin-approve>Turn on</button></div>
-          </div>
         </main>
 
         <aside class="workspace-panel" aria-label="Workspace panel">
@@ -529,95 +507,14 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
       root.querySelector<HTMLElement>("[data-hero-effort-trigger]")!.textContent = effort
     }))
     root.querySelector<HTMLButtonElement>("[data-account-toggle]")?.addEventListener("click", (event) => { const open = root.dataset.account === "open"; root.dataset.account = open ? "closed" : "open"; (event.currentTarget as HTMLButtonElement).setAttribute("aria-expanded", String(!open)) })
-    root.querySelectorAll<HTMLButtonElement>("[data-demo-open]").forEach((button) => button.addEventListener("click", () => selectSession(button.dataset.demoOpen ?? "")))
-    const pluginItem = root.querySelector<HTMLElement>("[data-plugin-item]")!
-    const approval = root.querySelector<HTMLElement>("[data-plugin-approval]")!
-    const approveButton = approval.querySelector<HTMLButtonElement>("[data-plugin-approve]")!
-    const showPlugin = (shown: boolean) => {
-      if (pluginItem.hidden !== shown) return
-      pluginItem.hidden = !shown
-      pluginItem.classList.remove("is-new")
-      if (!shown) return
-      void pluginItem.offsetWidth
-      pluginItem.classList.add("is-new")
-    }
-    const install = () => {
-      approval.hidden = true
-      approveButton.classList.remove("is-pressed")
-      showPlugin(true)
-    }
-    approveButton.addEventListener("click", install)
-    approval.querySelector("[data-plugin-decline]")!.addEventListener("click", () => { approval.hidden = true })
-    let sequence: number[] = []
-    const stopSequence = () => { sequence.forEach(clearTimeout); sequence = [] }
-    const at = (ms: number, step: () => void) => { sequence.push(window.setTimeout(step, ms)) }
-    const playPluginBuild = () => {
-      showPlugin(false)
-      selectSession("standup")
-      at(450, () => { approval.hidden = false })
-      at(1000, () => approveButton.classList.add("is-pressed"))
-      at(1250, install)
-      at(1800, () => setSurface("standup"))
-    }
-    const storyStates: Record<string, () => void> = {
-      speed: () => selectSession("usage-meter"),
-      prompt: playPluginBuild,
-      team: () => { selectSession("usage-meter"); root.dataset.account = "open"; root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "true") },
-      place: () => { selectSession("relay-tokens"); if (window.innerWidth > 920) root.dataset.environment = "expanded" },
-      tools: () => setSurface("marketplace"),
-      terminal: () => selectSession("terminal-claude"),
-    }
-    root.addEventListener("pointerdown", () => { root.dataset.engaged = "true" })
-    root.addEventListener("pointerleave", () => { delete root.dataset.engaged })
-    root.addEventListener("demo:spot", (event) => {
-      const { spot, open } = (event as CustomEvent<{ spot?: string; open?: boolean }>).detail
-      if (spot) root.dataset.spot = spot
-      else delete root.dataset.spot
-      if (!spot || !open) return
-      stopSequence()
-      approval.hidden = true
-      approveButton.classList.remove("is-pressed")
-      showPlugin(true)
-      root.dataset.account = "closed"
-      root.querySelector("[data-account-toggle]")?.setAttribute("aria-expanded", "false")
-      setComposerMenu("closed")
-      closePanel()
-      storyStates[spot]?.()
-    })
   }
 </script>
 
 <style>
-  .hero {
-    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    --fg: 255 255 255; --shadow-k: 1;
-    --background-base: #0d0d0d; --background-stronger: #0d0d0d; --rail-bg: var(--background-base); --panel-bg: #0d0d0d;
-    --surface-base: rgb(255 255 255 / .03); --surface-base-hover: #282828; --surface-raised: #303030; --surface-overlay: #212121;
-    --popover-bg: #212121; --composer-bg: #212121; --bubble-bg: #2b2b2b;
-    --brand: #369ce8; --blue: #58a6e7; --info: #58a6e7; --success: #35bd70; --danger: #ef5350; --term-path: #69c8cf;
-    --text-strong: #f2f2f2; --text-base: #dcdcdc; --text-weak: #a3a3a3; --text-weaker: #747474;
-    --border: #303030; --border-weak: #282828; --edge: rgb(255 255 255 / .12);
-    --send-bg: #f2f2f2; --send-ink: #0d0d0d;
-    --window-line: #26282b; --window-shadow: rgb(0 0 0 / .35);
-    position: relative; color: var(--text-strong); overflow: clip;
-  }
-  @media (prefers-color-scheme: light) {
-    .hero {
-      --fg: 0 0 0; --shadow-k: .3;
-      --background-base: #ffffff; --background-stronger: #ffffff; --rail-bg: #f9f9f9; --panel-bg: #ffffff;
-      --surface-base: rgb(0 0 0 / .02); --surface-base-hover: rgb(0 0 0 / .04); --surface-raised: rgb(26 28 31 / .06); --surface-overlay: #ffffff;
-      --popover-bg: #ffffff; --composer-bg: #ffffff; --bubble-bg: #ededed;
-      --brand: #2f92df; --blue: #147cc1; --info: #247cc0; --success: #168447; --danger: #d43d37; --term-path: #147c83;
-      --text-strong: #1a1c1f; --text-base: #4f4f4f; --text-weak: #696a6c; --text-weaker: #8c8d8f;
-      --border: #ededed; --border-weak: #f2f2f2; --edge: rgb(0 0 0 / .1);
-      --send-bg: #1a1c1f; --send-ink: #ffffff;
-      --window-line: #e3e4e7; --window-shadow: rgb(0 0 0 / .18);
-    }
-  }
+  .hero{position:relative;color:var(--text-strong)}
   .hero.canvas-only{padding:0;background:transparent;overflow:visible}.hero.canvas-only{height:100%}.hero.canvas-only .app-window{width:100%;height:100%;min-height:0;aspect-ratio:auto}
 
-  .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid var(--window-line);border-radius:14px;background:var(--background-base);box-shadow:0 40px 120px -40px var(--window-shadow);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
+  .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid var(--window-line);border-radius:14px;background:var(--background-base);box-shadow:var(--window-shadow);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
   button,input,textarea{font:inherit}.app-window :global(svg){width:16px;height:16px}.shell-header{height:36px;display:flex;border-bottom:1px solid var(--border-weak);background:var(--background-base)}
   .rail-titlebar{width:260px;flex:0 0 260px;display:flex;align-items:center;border-right:1px solid var(--border);background:var(--rail-bg);overflow:hidden;transition:width .12s cubic-bezier(.2,0,0,1),flex-basis .12s cubic-bezier(.2,0,0,1)}.app-window[data-sidebar=closed] .rail-titlebar{width:0;flex-basis:0;border-right:0}.traffic-lights{width:78px;flex:0 0 78px;display:flex;align-items:center;gap:8px;padding-left:14px}.traffic-lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.traffic-lights i:nth-child(2){background:#febc2e}.traffic-lights i:nth-child(3){background:#28c840}
   .icon-button{width:24px;height:24px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak);cursor:pointer}.icon-button:hover,.icon-button[aria-pressed=true]{background:var(--surface-base-hover);color:var(--text-base)}.icon-button :global(svg){width:15px;height:15px}.rail-hide{margin-left:4px}.header-columns{min-width:0;flex:1;display:flex}.workbench-l1{min-width:0;flex:1;display:flex;align-items:center;gap:4px;padding:0 4px;overflow:hidden}.closed-chrome{display:none;align-items:center;margin-left:-4px}.app-window[data-sidebar=closed] .closed-chrome{display:flex}.closed-chrome .traffic-lights{width:78px}.drag-gap{width:16px}.header-drag{min-width:32px;flex:1}.scope-actions{display:flex;align-items:center;gap:4px}.workspace-toggle{flex:0 0 24px}.app-window[data-panel=open] .workspace-toggle{display:none}.workspace-l1{width:0;display:flex;align-items:center;gap:4px;overflow:hidden;border-left:0;background:var(--background-base);transition:width .15s cubic-bezier(.2,0,0,1)}.workspace-l1>span{flex:1}.app-window[data-panel=open] .workspace-l1{width:62%;border-left:1px solid var(--border)}.workspace-tabs{height:100%;min-width:0;display:flex;align-items:center;gap:2px;padding:0 4px}.workspace-tab{height:28px;min-width:0;max-width:180px;display:flex;align-items:center;gap:7px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--text-weak)}.workspace-tab.active{background:var(--surface-base-hover);color:var(--text-base)}.workspace-tab :global(svg){width:14px;flex:0 0 14px}.workspace-tab span{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.workspace-tab i{font-style:normal;color:var(--text-weak)}
@@ -633,7 +530,6 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
   .workspace-panel{position:relative;width:0;flex:0 0 0;min-width:0;display:flex;flex-direction:column;border-left:0;background:var(--panel-bg);overflow:hidden;transition:width .15s cubic-bezier(.2,0,0,1),flex-basis .15s cubic-bezier(.2,0,0,1)}.app-window[data-panel=open] .workspace-panel{width:62%;flex-basis:62%;border-left:1px solid var(--border)}.workspace-l2{height:36px;flex:0 0 36px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.review-toolbar{width:100%;height:100%;display:flex;align-items:center;gap:9px;padding:0 8px}.review-toolbar>button{height:27px;padding:0 5px;border:0;border-radius:5px;background:transparent;color:var(--text-base);font-size:12px}.review-toolbar>button:hover{background:var(--surface-base-hover)}.review-toolbar>b{color:var(--success);font-size:12px;font-weight:500}.review-toolbar>i{color:var(--danger);font-size:12px;font-style:normal}.review-toolbar>span{flex:1}.panel-view{min-width:300px;min-height:0;flex:1;overflow:auto;color:var(--text-base)}.panel-view[hidden]{display:none}.review-view{display:grid;grid-template-columns:minmax(310px,2.05fr) minmax(175px,1fr);overflow:hidden}.change-list,.repo-tree{min-width:0;overflow:auto;scrollbar-color:rgb(var(--fg) / .16) transparent;scrollbar-width:thin}.repo-tree{border-left:1px solid var(--border)}.file-change{height:34px;display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid var(--border-weak)}.file-change:hover{background:var(--surface-base-hover)}.file-change span{color:var(--info);font:10px var(--font-mono)}.file-change b{min-width:0;overflow:hidden;font-size:12px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.file-change small{color:var(--text-weaker);font:10px var(--font-mono);white-space:nowrap}.file-change.removed small{color:var(--danger)}.file-search{height:30px;display:flex;align-items:center;gap:7px;margin:8px;padding:0 8px;border:1px solid var(--border);border-radius:6px}.file-search :global(svg){width:14px;color:var(--text-weak)}.file-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text-base);font-size:12px}.repo-row{height:30px;display:grid;grid-template-columns:12px minmax(0,1fr) 7px;align-items:center;gap:5px;padding:0 9px;color:var(--text-weak)}.repo-row:hover{background:var(--surface-base-hover)}.repo-row span{font-size:15px}.repo-row b{overflow:hidden;font-size:12px;font-weight:400;text-overflow:ellipsis;white-space:nowrap}.repo-row i{width:6px;height:6px;border-radius:50%}.repo-row.changed i{background:var(--brand)}.repo-row.active{color:var(--success)}.repo-row.active i{background:var(--success)}.show-more{height:34px;margin-left:32px;border:0;background:transparent;color:var(--text-weak);font-size:11px}.tree-row{height:29px;display:grid;grid-template-columns:14px 16px minmax(0,1fr);align-items:center;gap:5px;padding:0 10px}.tree-row:hover{background:var(--surface-base-hover)}.tree-row :global(svg){width:15px;color:var(--text-weak)}.tree-row b{font-size:12px;font-weight:400}.tree-row small{font:9px var(--font-mono);color:var(--info)}.tree-row.indent{padding-left:24px}.tree-row.indent-2{padding-left:42px}.process-head{height:42px;display:flex;align-items:center;gap:7px;padding:0 12px;border-bottom:1px solid var(--border);font-size:12px}.process-head span{padding:1px 5px;border-radius:8px;background:var(--surface-base-hover);font-size:10px}.process-row{height:52px;display:grid;grid-template-columns:8px minmax(0,1fr) 24px;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border-weak)}.process-row>i{width:7px;height:7px;border-radius:50%;background:var(--success)}.process-row div{display:grid;gap:2px}.process-row b{font-size:12px;font-weight:500}.process-row small{color:var(--text-weaker);font-size:10px}.process-row button{border:0;background:transparent;color:var(--text-weak)}
   .terminal-tabs{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid var(--border);font-size:12px}.terminal-tabs button{border:0;background:transparent;color:var(--text-weak)}.terminal-content{padding:14px;color:var(--text-base);font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.terminal-content p{margin:0}.term-path{color:var(--term-path)}.term-branch{color:var(--blue)}.term-green{color:var(--success)}.term-muted{color:var(--text-weak)}.term-cursor{display:inline-block;width:7px;height:13px;background:var(--text-base);vertical-align:-2px;animation:blink 1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
   .mobile-panel-close{display:none!important}
-  @media(prefers-reduced-motion:no-preference){.app-window{animation:appIn .75s .1s cubic-bezier(.2,.75,.2,1) both}@keyframes appIn{from{opacity:0;transform:translateY(18px) scale(.99)}}}
   .review-toolbar .commit-scope{display:flex;align-items:center;gap:6px;white-space:nowrap}.review-toolbar .commit-scope :global(svg){width:13px;height:13px}.review-toolbar>button:not(.commit-scope){width:26px;display:grid;place-items:center;padding:0}.review-toolbar>button>:global(svg){width:16px;height:16px}.repo-row{width:100%;grid-template-columns:12px 16px minmax(0,1fr) 7px;border:0;background:transparent;text-align:left}.repo-row :global(.repo-chevron){width:12px;height:12px;transition:transform .12s}.repo-row[aria-expanded=true] :global(.repo-chevron){transform:rotate(90deg)}.repo-row .repo-folder{width:15px;height:15px}.repo-children{display:grid;padding:2px 0 5px 42px;color:var(--text-weaker);font-size:11px}.repo-children[hidden]{display:none}.repo-children span{height:24px;display:flex;align-items:center}.workspace-tab[data-panel-button].active{background:var(--surface-base-hover);color:var(--text-base)}
   @container(max-width:1050px){.rail-titlebar,.project-rail{width:230px;flex-basis:230px}.timeline-column{padding-left:16px}.app-window[data-environment=expanded] .timeline-column{padding-right:248px}.app-window[data-panel=open] .timeline-column{padding-right:16px}.environment-expanded{width:228px}.app-window[data-panel=open] .workspace-panel{width:52%;flex-basis:52%}.app-window[data-panel=open] .workspace-l1{width:52%}.review-view{grid-template-columns:minmax(240px,1.6fr) minmax(150px,1fr)}.harness-control>b,.harness-control>i{display:none}}
   @media(max-width:58rem){.app-window{min-height:39rem;aspect-ratio:auto}}
@@ -704,18 +600,11 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
   }
   @media(max-width:47.99rem){.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{--composer-left:8px;--composer-right:8px;padding-left:var(--composer-left);padding-right:var(--composer-right)}.workspace-l1{display:flex}.app-window[data-panel=open] .workbench-l1{display:none}.app-window[data-panel=open] .workspace-l1{width:100%;border-left:0}.app-window[data-panel=open][data-panel-width=full] .workspace-l1{width:100%}}
 
-  .app-window:not([data-engaged]) :is(.timeline-scroll, .market-scroll, .panel-view, .repo-tree, .board, .standup-surface) { overflow: hidden; }
   :global(.account-chevron) { scale: 1 -1; }
   .app-window em > :global(svg), .app-window i > :global(svg), .tool-summary span > :global(svg), .tree-row > span > :global(svg) { width: 13px; height: 13px; }
   .app-window em[hidden] { display: none; }
   .terminal-row { font-family: var(--font-mono); font-size: 12px; }
   .terminal-row { display: flex !important; justify-content: flex-start !important; gap: 8px; }
-  [data-spot-target] { transition: box-shadow 150ms ease-out; }
-  .app-window[data-spot="prompt"] [data-spot-target="prompt"],
-  .app-window[data-spot="team"] [data-spot-target="team"],
-  .app-window[data-spot="place"] [data-spot-target="place"],
-  .app-window[data-spot="tools"] [data-spot-target="tools"],
-  .app-window[data-spot="terminal"] [data-spot-target="terminal"] { box-shadow: 0 0 0 2px var(--brand); border-radius: 6px; }
 
   .standup-surface { display: none; flex-direction: column; gap: 16px; padding: 18px 24px 24px; background: var(--background-stronger); overflow: auto; scrollbar-width: none; }
   .app-window[data-surface=standup] .standup-surface { display: flex; }
@@ -735,18 +624,5 @@ const boardColumns: readonly { key: string; label: string; cards: readonly Board
   .standup-columns p { display: grid; gap: 3px; margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-base); color: var(--text-base); font-size: 12.5px; line-height: 1.45; }
   .standup-columns p i { color: var(--text-weaker); font-size: 11px; font-style: normal; }
   .standup-columns .standup-empty { background: none; padding: 8px 0; color: var(--text-weaker); }
-  .plugin-approval { position: absolute; top: 56px; left: 50%; z-index: 20; display: grid; gap: 8px; width: min(100% - 32px, 22rem); padding: 16px; border-radius: 12px; background: var(--popover-bg); box-shadow: 0 0 0 1px var(--border), 0 18px 48px rgb(0 0 0 / calc(.45 * var(--shadow-k))); transform: translateX(-50%); animation: approval-in 220ms cubic-bezier(0.22, 1, 0.36, 1); }
-  .plugin-approval[hidden] { display: none; }
-  .plugin-approval b { color: var(--text-strong); font-size: 14px; font-weight: 600; }
-  .plugin-approval p { margin: 0; color: var(--text-weak); font-size: 12.5px; line-height: 1.5; }
-  .plugin-approval div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-  .plugin-approval button { height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: var(--surface-base-hover); color: var(--text-base); font-size: 12.5px; cursor: pointer; transition: scale 120ms ease-out; }
-  .plugin-approval button.primary { background: var(--send-bg); color: var(--send-ink); }
-  .plugin-approval button:active, .plugin-approval button.is-pressed { scale: .96; }
-  @keyframes approval-in { from { opacity: 0; transform: translate(-50%, -6px); } }
-  .plugin-item[hidden] { display: none !important; }
-  .plugin-item.is-new { animation: plugin-in 420ms cubic-bezier(0.22, 1, 0.36, 1); }
-  @keyframes plugin-in { from { opacity: 0; transform: translateY(-4px); filter: blur(3px); } }
   @media (max-width: 47.99rem) { .standup-columns { grid-template-columns: minmax(0, 1fr); } .standup-head { flex-direction: column; } }
-  @media (prefers-reduced-motion: reduce) { .plugin-approval, .plugin-item.is-new { animation: none; } }
 </style>

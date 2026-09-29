@@ -1,0 +1,55 @@
+---
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+
+const places = [
+  { icon: "monitor", name: "This Mac", detail: "Sessions run in the project's folder", selected: true },
+  { icon: "server", name: "studio-mac", detail: "Connected with the Claxedo CLI" },
+  { icon: "cloud", name: "Daytona", detail: "Cloud sandbox" },
+  { icon: "cloud", name: "Modal", detail: "Cloud sandbox" },
+  { icon: "cloud", name: "Docker", detail: "Sandbox on your Docker host" },
+  { icon: "plus-small", name: "Your own driver", detail: "One open SandboxDriver contract" },
+] as const
+---
+
+<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, a connected machine, or a Daytona, Modal or Docker sandbox">
+  <div class="app-card list">
+    <p class="head">Run this session on</p>
+    {places.map((place) => (
+      <div class:list={["row", { selected: "selected" in place }]}>
+        <Icon name={place.icon} />
+        <span><b>{place.name}</b><small>{place.detail}</small></span>
+        {"selected" in place && <Icon name="check" class="tick" />}
+      </div>
+    ))}
+  </div>
+  <div class="app-card reopen">
+    <p class="head">Rotate relay tokens</p>
+    <p class="where"><Icon name="cloud" />Running in a Daytona sandbox</p>
+    <div class="clients">
+      <span><Icon name="monitor" />Claxedo Desktop</span>
+      <span><Icon name="browser" />app.claxedo.com</span>
+      <span><Icon name="phone" />Your phone</span>
+    </div>
+    <p class="note"><Icon name="check" />Open it from any of them</p>
+  </div>
+</div>
+
+<style>
+  .machines { position: relative; width: 100%; height: 100%; }
+  .list { position: absolute; top: 0; left: 0; width: min(100%, 23rem); padding: 6px; }
+  .head { margin: 0; padding: 8px 10px 6px; color: var(--text-weak); font-size: 12px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; color: var(--text-weak); }
+  .row.selected { background: var(--surface-base-hover); }
+  .row span { display: grid; flex: 1; gap: 1px; }
+  .row b { color: var(--text-strong); font-weight: 400; font-size: 14px; }
+  .row small { color: var(--text-weaker); font-size: 12px; }
+  .row :global(.tick) { color: var(--text-strong); }
+  .reopen { position: absolute; top: 36%; left: min(58%, 19rem); width: 16.5rem; padding: 14px 16px; }
+  .reopen .head { padding: 0 0 2px; color: var(--text-strong); font-size: 15px; }
+  .where, .note { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-weak); font-size: 12px; }
+  .clients { display: grid; margin: 12px 0; border-top: 1px solid var(--border); }
+  .clients span { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--text-base); }
+  .clients :global(svg) { color: var(--text-weak); }
+  .note { color: var(--success); }
+</style>
