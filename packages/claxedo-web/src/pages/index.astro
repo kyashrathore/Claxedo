@@ -54,7 +54,7 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
     <section class="block">
       <header class="section-head">
         <h2>{home.benchmark.title}</h2>
-        <p>{home.benchmark.subtitle} <a class="quiet-link" href={home.benchmark.href}>See the benchmark</a></p>
+        <p>{home.benchmark.subtitle} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
       </header>
       <dl class="metrics">
         {home.benchmark.metrics.map((metric) => (

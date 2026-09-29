@@ -27,7 +27,7 @@ export const home = {
     claims: ["harness-coverage", "core-metrics", "agent-plugins", "connected-placement"],
   },
   points: [
-    { title: "Fast. Light. Yours to extend.", text: "Beats T3 Code and OpenCode on every metric. Missing a feature? Prompt it into the app.", claims: ["core-metrics", "app-plugins-by-prompt"] },
+    { title: "Fast. Light. Yours to extend.", text: "Beats T3 Code and OpenCode on every core metric. Missing a feature? Prompt it into the app.", claims: ["core-metrics", "app-plugins-by-prompt"] },
     { title: "Open source. Live in 5 minutes.", text: "MIT licensed. Deploy it for your whole team on your own Cloudflare.", claims: ["mit-platform", "cloudflare-five-minutes"] },
     { title: "Bring your own sandbox.", text: "Any provider, any machine.", claims: ["bring-your-own-sandbox", "connected-placement"] },
     { title: "Set up plugins once.", text: "Skills and MCP servers for your whole team, on every machine.", claims: ["agent-plugins", "team-plugin-sharing"] },
@@ -35,15 +35,16 @@ export const home = {
   ],
   benchmark: {
     title: "Faster than T3 Code and OpenCode. On every core metric.",
-    subtitle: "Starts faster, switches faster, uses less memory, and idles at zero.",
+    subtitle: "Starts faster. Switches faster. Uses less memory. Sits quiet when idle.",
+    date: "29 September 2026",
     href: `${benchmark}#latest-results`,
     claims: ["core-metrics"],
     metrics: [
-      { lead: "2.3×", label: "faster start", detail: "0.98 s. 2.9× faster than T3 Code, 2.3× faster than OpenCode." },
-      { lead: "2.6×", label: "faster session open", detail: "45 ms. 3.1× faster than T3 Code, 2.6× faster than OpenCode." },
-      { lead: "2.1×", label: "faster return", detail: "27 ms. 2.5× faster than T3 Code, 2.1× faster than OpenCode." },
-      { lead: "1.8×", label: "less memory", detail: "750 MiB. 1.8× less than T3 Code, 2.1× less than OpenCode." },
-      { lead: "0%", label: "idle CPU", detail: "T3 Code idles at 1.6%, OpenCode at 20.4%." },
+      { lead: "2.1×", label: "faster start", detail: "958 ms. 2.9× faster than T3 Code, 2.1× faster than OpenCode." },
+      { lead: "2.1×", label: "faster session open", detail: "48 ms. 2.9× faster than T3 Code, 2.1× faster than OpenCode." },
+      { lead: "1.5×", label: "faster return", detail: "33 ms. 2.0× faster than T3 Code, 1.5× faster than OpenCode." },
+      { lead: "1.8×", label: "less memory", detail: "746 MiB. 1.8× less than T3 Code, 2.0× less than OpenCode." },
+      { lead: "6.5×", label: "less idle CPU", detail: "0.4%. 6.5× less than T3 Code, 42× less than OpenCode." },
     ],
   },
   place: {

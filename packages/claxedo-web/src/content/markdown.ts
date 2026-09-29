@@ -44,7 +44,7 @@ ${home.points.map((point) => `- **${point.title}** ${point.text}`).join("\n")}
 
 ## ${home.benchmark.title}
 
-${home.benchmark.subtitle} Results: ${home.benchmark.href}
+${home.benchmark.subtitle} Benchmark of ${home.benchmark.date}: ${home.benchmark.href}
 
 ${home.benchmark.metrics.map((metric) => `- ${metric.lead} ${metric.label}: ${metric.detail}`).join("\n")}
 

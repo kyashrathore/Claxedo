@@ -19,7 +19,7 @@ describe("public site contract", () => {
 
   test("binds every home page block to publishable claims", () => {
     expect(site.description).toContain("Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent")
-    expect(home.benchmark.metrics.map((metric) => metric.label)).toEqual(["faster start", "faster session open", "faster return", "less memory", "idle CPU"])
+    expect(home.benchmark.metrics.map((metric) => metric.label)).toEqual(["faster start", "faster session open", "faster return", "less memory", "less idle CPU"])
     expect(home.features.map((feature) => feature.id)).toEqual(["prompt", "team", "tools"])
     expect(home.points).toHaveLength(5)
     const publishable = new Set<string>(publishableClaims.map((item) => item.id))
