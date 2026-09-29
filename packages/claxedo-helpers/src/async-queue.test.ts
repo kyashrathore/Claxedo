@@ -28,3 +28,36 @@ test("delivers buffered values before failure", async () => {
   expect(await queue.next()).toEqual({ done: false, value: 1 })
   expect(queue.next()).rejects.toThrow("broken")
 })
+
+test("reports drained once the consumer has taken every pushed value and asks for more", async () => {
+  const queue = new AsyncPushQueue<number>()
+  queue.push(1)
+  queue.push(2)
+  let drained = false
+  const settled = queue.drained().then(() => { drained = true })
+  expect(await queue.next()).toEqual({ done: false, value: 1 })
+  await Promise.resolve()
+  expect(drained).toBe(false)
+  expect(await queue.next()).toEqual({ done: false, value: 2 })
+  await Promise.resolve()
+  expect(drained).toBe(false)
+  const waiting = queue.next()
+  await settled
+  expect(drained).toBe(true)
+  await queue.drained()
+  queue.push(3)
+  expect(await waiting).toEqual({ done: false, value: 3 })
+})
+
+test("reports drained when the queue closes before the consumer asks again", async () => {
+  const ended = new AsyncPushQueue<number>()
+  ended.push(1)
+  const afterEnd = ended.drained()
+  ended.end()
+  await afterEnd
+  const failed = new AsyncPushQueue<number>()
+  failed.push(1)
+  const afterFailure = failed.drained()
+  failed.fail(new Error("broken"))
+  await afterFailure
+})
