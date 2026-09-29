@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import { harnessEffortVerdict } from "@claxedo/agent-runtime-contract"
 import os from "node:os"
 import path from "node:path"
 import { expect, test } from "bun:test"
@@ -532,6 +533,20 @@ test("a turn runs the resolved effort rather than the stored variant", async () 
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
     const request = state.server.requests.find((row) => row.prompt.includes("EFFORTHIGH"))
     expect((request?.body as Record<string, unknown> | undefined)?.reasoning_effort).toBe("high")
+  } finally { await context.close() }
+}, 60_000)
+
+test("capabilities report each model's effort variants, and accept only those", async () => {
+  const variants = { high: { reasoningEffort: "high" }, low: { reasoningEffort: "low" } }
+  const context = await setupConformance({ name: "opencode-effort-levels", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+      provider: { proof: proofProvider({}, { proof: { ...PROOF_MODEL, variants }, plain: { ...PROOF_MODEL, name: "Plain" } }) } }) })
+  try {
+    const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
+    expect(capabilities.effortLevels.status).toBe("resolved")
+    expect(harnessEffortVerdict(capabilities.effortLevels, "proof", "high")).toBe("accepted")
+    expect(harnessEffortVerdict(capabilities.effortLevels, "proof", "max")).toBe("refused")
+    expect(harnessEffortVerdict(capabilities.effortLevels, "plain", "high")).toBe("refused")
   } finally { await context.close() }
 }, 60_000)
 
