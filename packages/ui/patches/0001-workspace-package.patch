@@ -46,7 +46,7 @@ index 49d6d7d130f2d585beca209d24e665293c3785cc..5af63bc2babc4d6ef2b2c6575c12d873
      "build": "rm -rf dist && tsc -p tsconfig.build.json",
      "typecheck": "tsgo --noEmit",
 -    "test": "bun test src --only-failures",
-+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
++    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
      "dev": "vite",
      "generate:tailwind": "bun run script/tailwind.ts",
 -    "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts"

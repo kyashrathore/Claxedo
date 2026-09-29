@@ -13,7 +13,7 @@
 // loud lines in the log), while a genuine hang gets killed twice and fails
 // the task with its name attached.
 //
-// Usage (from a package.json script): node ../../scripts/test-deadline.mjs bun test src
+// Usage (from a package.json script): node ../../script/test-deadline.mjs bun test src
 // Override the budget with CLAXEDO_TEST_DEADLINE_MS.
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"

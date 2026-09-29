@@ -1,7 +1,3 @@
-/**
- * The canonical-helper manifest (`canonical.json`), decoded once for both the
- * ratchet and the worklist so the two cannot disagree about its shape.
- */
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { readJsonFile } from "../../packages/claxedo-helpers/src/fs.ts"

@@ -39,16 +39,14 @@
     "jose": "6.0.11"
   },
   "scripts": {
-    "build": "tsx scripts/build.ts",
+    "build": "bun scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
-    "esbuild": "0.25.12",
-    "tsx": "4.22.3",
     "typescript": "catalog:"
   }
 }
