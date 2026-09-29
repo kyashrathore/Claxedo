@@ -19,13 +19,13 @@ hook, telemetry, routing).
 
 Two adapters wrap that core with a WebSocket runtime:
 
-- **`src/bun.ts`** (`createWorkspaceRelayBun`) — the packaged
-  `workspace-relay` bin and default server bootstrap. Uses `Bun.serve`'s
+- **`src/bun.ts`** (`createWorkspaceRelayBun`) — the local Bun process the
+  e2e suites and the server's host-tunnel tests start. Uses `Bun.serve`'s
   `fetch`/`websocket` handler pair and `Bun.ServerWebSocket`. One process
   holds every host tunnel and pending-response map in local `Map`s (see
-  "Single-instance limitation" below). A host tunnel here registers with a
-  set of `workspaceId`s in one WebSocket connection — one host can serve
-  several workspaces over a single tunnel socket.
+  "Why the deployed relay is per-workspace rooms" below). A host tunnel here
+  registers with a set of `workspaceId`s in one WebSocket connection, so one
+  host can serve several workspaces over a single tunnel socket.
 - **`src/cloudflare.ts`** + **`src/worker.ts`** (`createWorkspaceRelayDurableObjectGateway`,
   `createWorkspaceRelayDurableObjectRoom`) — a stateless Worker gateway that
   routes each request to a per-workspace Durable Object "room" via
@@ -44,7 +44,7 @@ Two adapters wrap that core with a WebSocket runtime:
 Both adapters import their token verification, target/revocation resolvers,
 and directory contract from the same `src/auth.ts`, `src/directory.ts`, and
 `src/server.ts` modules — there is no parallel auth or forwarding
-implementation per runtime. `src/main.ts` is the Bun bin's env-driven
+implementation per runtime. `src/main.ts` is the Bun process's env-driven
 composition root (see [README § Configuration](../README.md#configuration));
 `src/worker.ts` plays the equivalent role for the Cloudflare deployment,
 reading `WorkspaceRelayWorkerEnv` bindings instead of `process.env`.
@@ -236,43 +236,26 @@ The shipped implementation is an in-memory `Map` with:
   workspace-membership check that keeps one host tunnel from serving
   traffic for a workspace it never registered.
 
-The Bun adapter pairs this with its `hostTunnels: Map<hostId, WebSocket>` —
-the directory says a `hostId` *should* be reachable; the local map is the
-only thing that actually holds the live socket. That pairing is exactly the
-single-instance limitation:
+The Bun adapter pairs this with its `hostTunnels: Map<hostId, WebSocket>`:
+the directory says a `hostId` *should* be reachable, and the local map is the
+only thing that holds the live socket.
 
-### Single-instance limitation
+### Why the deployed relay is per-workspace rooms
 
-Presence data (the directory) and the live tunnel socket (the `hostTunnels`
-map) are both process-local in the Bun adapter. A second relay process has
-no way to reach a tunnel socket held by the first, even if it could see that
-`hostId` in a shared directory. So:
-
-- **Today**: one active Bun relay process (or a load balancer with strict
-  per-`hostId` stickiness) owns every host tunnel it accepts. A process, VM,
-  or region failure drops in-flight tunnelled HTTP/WS/SSE/PTY sessions
-  until the workspace runtime reconnects (to whichever instance is up).
-- **A durable directory (Redis, a dedicated coordination DO) is necessary
-  but not sufficient** for a multi-instance host-tunnel relay. It would need
-  to preserve the same semantics — one active owner per `hostId`, TTL
-  extension on pong, immediate removal on disconnect, workspace-membership
-  checks, split-brain prevention on a replacement tunnel — but the harder
-  problem is routing: HTTP/WebSocket/SSE/PTY traffic for a `hostId` must
-  reach the specific process or Durable Object instance that holds that
-  tunnel's live socket, not just any instance that can read presence state.
-- **The Cloudflare Durable Object adapter sidesteps this differently**, not
-  by solving multi-instance for the Bun process: each workspace gets exactly
-  one DO room (Cloudflare's own single-writer-per-DO-id guarantee), so
-  "which instance holds the socket" is answered by DO routing rather than by
-  an application-level directory. That is why a DO host tunnel is
-  restricted to one `workspaceId` per connection — the DO's identity *is*
-  the workspace, so a tunnel serving several workspaces would need to exist
-  in several rooms simultaneously with no shared state between them.
+Presence and the live tunnel socket are both process-local in the Bun adapter,
+so a second Bun process could not reach a tunnel the first one holds even
+through a shared directory: traffic for a `hostId` has to reach the instance
+holding its socket, not just any instance that can read presence. The Durable
+Object adapter answers "which instance holds the socket" with Cloudflare's
+single-writer-per-DO-id routing: each workspace gets exactly one room. That is
+why a DO host tunnel is restricted to one `workspaceId` per connection; the
+room's identity *is* the workspace, and a tunnel serving several workspaces
+would have to live in several rooms with no shared state.
 
 Cloud-VM (`access: "cloud"`) targets do not go through the directory or a
 host tunnel at all — the relay reaches them directly via `fetch()`/upstream
-WebSocket against `target.baseUrl`, so they are unaffected by this
-limitation.
+WebSocket against `target.baseUrl`, so socket ownership does not apply to
+them.
 
 ## Where this sits relative to `claxedo-server`
 
