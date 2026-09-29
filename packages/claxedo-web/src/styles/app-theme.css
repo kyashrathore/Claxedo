@@ -18,7 +18,7 @@
 .app-card {
   border-radius: 12px;
   background: var(--popover-bg);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / .06), 0 2px 4px rgb(15 20 30 / .04), 0 18px 48px -14px rgb(15 20 30 / .3);
+  box-shadow: 0 0 0 1px #e8e8e8, 0 2px 4px rgb(15 20 30 / .04), 0 18px 48px -14px rgb(15 20 30 / .3);
   color: var(--text-strong);
   font: 13px/1.4 var(--font-sans);
   -webkit-font-smoothing: antialiased;

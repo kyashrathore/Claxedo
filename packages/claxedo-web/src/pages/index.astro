@@ -5,7 +5,7 @@ import Footer from "../components/Footer.astro"
 import IconSprite from "../components/IconSprite.astro"
 import HomeHero from "../components/HomeHero.astro"
 import MacDownload from "../components/MacDownload.astro"
-import Scene from "../components/Scene.astro"
+import PlatePanel from "../components/PlatePanel.astro"
 import AddSource from "../components/crops/AddSource.astro"
 import DeployTerminal from "../components/crops/DeployTerminal.astro"
 import EverywhereGrid from "../components/crops/EverywhereGrid.astro"
@@ -42,7 +42,7 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
         <h2>{home.speed.title}</h2>
         <p>{rivals(home.speed.subtitle).map((part) => part.rival ? <strong class="rival">{part.text}</strong> : part.text)} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
       </header>
-      <Scene scene="amber" class="panel metrics-panel">
+      <PlatePanel plate="comorin" x={0.5} y={0.62} class="panel metrics-panel">
         <div class="cards metrics" tabindex="0" role="region" aria-label="Benchmark results"><dl>
           {home.benchmark.metrics.map((metric) => (
             <div class="metric">
@@ -51,7 +51,7 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
             </div>
           ))}
         </dl></div>
-      </Scene>
+      </PlatePanel>
     </section>
 
     <section class="block">
@@ -61,15 +61,15 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
       </header>
       <div class="cards three" tabindex="0" role="region" aria-label={home.prompt.title}>
         <figure class="slide">
-          <Scene scene="dusk" class="panel"><div class="crop" style="--crop-w: 21rem; --crop-top: 7.5rem"><PromptComposer ask={home.prompt.ask} /></div></Scene>
+          <PlatePanel plate="qutb" x={0} y={0.55} class="panel"><div class="crop" style="--crop-w: 21rem; --crop-top: 7.5rem"><PromptComposer ask={home.prompt.ask} /></div></PlatePanel>
           <figcaption>{ask}</figcaption>
         </figure>
         <figure class="slide">
-          <Scene scene="harbor" class="panel"><div class="crop" style="--crop-w: 15rem; --crop-top: 3.5rem"><SidebarNew /></div></Scene>
+          <PlatePanel plate="qutb" x={0.5} y={0.2} class="panel"><div class="crop" style="--crop-w: 15rem; --crop-top: 3.5rem"><SidebarNew /></div></PlatePanel>
           <figcaption>{menu}</figcaption>
         </figure>
         <figure class="slide">
-          <Scene scene="amber" class="panel"><div class="crop from-left" style="--crop-w: 30rem; --phone-scale: .92"><StandupPage /></div></Scene>
+          <PlatePanel plate="qutb" x={1} y={0.85} class="panel"><div class="crop from-left" style="--crop-w: 30rem; --phone-scale: .92"><StandupPage /></div></PlatePanel>
           <figcaption>{page}</figcaption>
         </figure>
       </div>
@@ -81,8 +81,8 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
         <p>{home.openSource.subtitle} <a class="quiet-link" href={home.openSource.href}>Deployment guide</a></p>
       </header>
       <div class="cards two" tabindex="0" role="region" aria-label={home.openSource.title} style="--card-min: 32rem">
-        <div class="slide"><Scene scene="pier" class="panel"><div class="crop" style="--crop-w: 30rem"><OrganizationSettings /></div></Scene></div>
-        <div class="slide"><Scene scene="dusk" class="panel"><div class="crop" style="--crop-w: 28rem"><DeployTerminal /></div></Scene></div>
+        <div class="slide"><PlatePanel plate="jama" x={0} y={0.6} class="panel"><div class="crop" style="--crop-w: 30rem"><OrganizationSettings /></div></PlatePanel></div>
+        <div class="slide"><PlatePanel plate="jama" x={1} y={0.45} class="panel"><div class="crop" style="--crop-w: 28rem"><DeployTerminal /></div></PlatePanel></div>
       </div>
     </section>
 
@@ -92,8 +92,8 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
         <p>{home.sandbox.subtitle}</p>
       </header>
       <div class="cards two" tabindex="0" role="region" aria-label={home.sandbox.title} style="--card-min: 26rem">
-        <div class="slide"><Scene scene="harbor" class="panel"><div class="crop" style="--crop-w: 24rem"><MachineList /></div></Scene></div>
-        <div class="slide"><Scene scene="tide" class="panel"><div class="crop" style="--crop-w: 20rem"><ReopenCard /></div></Scene></div>
+        <div class="slide"><PlatePanel plate="trichinopoly" x={0.1} y={0.55} class="panel"><div class="crop" style="--crop-w: 24rem"><MachineList /></div></PlatePanel></div>
+        <div class="slide"><PlatePanel plate="trichinopoly" x={0.9} y={0.6} class="panel"><div class="crop" style="--crop-w: 20rem"><ReopenCard /></div></PlatePanel></div>
       </div>
     </section>
 
@@ -104,15 +104,15 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
       </header>
       <div class="cards three" tabindex="0" role="region" aria-label={home.plugins.title}>
         <figure class="slide">
-          <Scene scene="lagoon" class="panel"><div class="crop" style="--crop-w: 21rem; --crop-top: 3.5rem"><AddSource /></div></Scene>
+          <PlatePanel plate="humayun" x={0} y={0.6} class="panel"><div class="crop" style="--crop-w: 21rem; --crop-top: 3.5rem"><AddSource /></div></PlatePanel>
           <figcaption>{catalog}</figcaption>
         </figure>
         <figure class="slide">
-          <Scene scene="tide" class="panel"><div class="crop" style="--crop-w: 19rem; --crop-top: 3rem"><PluginToggles /></div></Scene>
+          <PlatePanel plate="humayun" x={0.5} y={0.6} class="panel"><div class="crop" style="--crop-w: 19rem; --crop-top: 3rem"><PluginToggles /></div></PlatePanel>
           <figcaption>{choose}</figcaption>
         </figure>
         <figure class="slide">
-          <Scene scene="slate" class="panel"><div class="crop" style="--crop-w: 23.5rem; --crop-top: 5rem"><EverywhereGrid /></div></Scene>
+          <PlatePanel plate="humayun" x={1} y={0.6} class="panel"><div class="crop" style="--crop-w: 23.5rem; --crop-top: 5rem"><EverywhereGrid /></div></PlatePanel>
           <figcaption>{everywhere}</figcaption>
         </figure>
       </div>
@@ -125,11 +125,11 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
       </header>
       <div class="cards two" tabindex="0" role="region" aria-label={home.workflow.title} style="--card-min: 33rem">
         <figure class="slide">
-          <Scene scene="slate" class="panel"><div class="crop" style="--crop-w: 37rem; --crop-scale: .85"><TerminalChat /></div></Scene>
+          <PlatePanel plate="ramnagar" x={0.2} y={0.7} class="panel"><div class="crop" style="--crop-w: 37rem; --crop-scale: .85"><TerminalChat /></div></PlatePanel>
           <figcaption>{chatOrTerminal}</figcaption>
         </figure>
         <figure class="slide">
-          <Scene scene="ash" class="panel"><div class="crop" style="--crop-w: 34rem; --crop-top: 2.5rem; --crop-w-phone: 17.5rem; --phone-scale: 1"><LayoutThumbs /></div></Scene>
+          <PlatePanel plate="ramnagar" x={1} y={0.7} class="panel"><div class="crop" style="--crop-w: 34rem; --crop-top: 2.5rem; --crop-w-phone: 17.5rem; --phone-scale: 1"><LayoutThumbs /></div></PlatePanel>
           <figcaption>{sidebarOrTabs}</figcaption>
         </figure>
       </div>
@@ -167,7 +167,7 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
   .block :global(.metrics-panel) { padding: 2rem; }
   .metrics { --card-min: 11rem; }
   .metrics dl { display: contents; }
-  .metric { display: grid; align-content: start; gap: .75rem; padding: 1.25rem 1.25rem 1.4rem; border-radius: 12px; background: rgb(255 255 255 / .94); box-shadow: 0 1px 2px rgb(15 20 30 / .06), 0 18px 40px -18px rgb(15 20 30 / .35); }
+  .metric { display: grid; align-content: start; gap: .75rem; padding: 1.25rem 1.25rem 1.4rem; border-radius: 12px; background: #ffffff; box-shadow: 0 0 0 1px #e8e8e8, 0 1px 2px rgb(15 20 30 / .06), 0 18px 40px -18px rgb(15 20 30 / .35); }
   .metric dt { display: grid; gap: .5rem; }
   .lead { font: 400 clamp(3.5rem, 6.2vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .label { color: var(--ink); font-size: 1.0625rem; }
