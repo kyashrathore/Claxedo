@@ -8,6 +8,7 @@ import { eventually } from "../harness/eventually"
 import { applyScriptedPluginProfile } from "../harness/scripted-plugin-profile"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 function idles(stream: EventStream, sessionId: string) {
   return stream.frames.filter((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionId).length
@@ -32,6 +33,7 @@ export async function run() {
     const sessionB = await api.createSession(workspaceB.directory, { harness: SCRIPTED_ACP_HARNESS })
     await api.prompt(workspaceB.directory, sessionB.id, acpScriptToken("h21-reply"))
     await streamB.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionB.id, { label: "H21 initial B idle" })
+    await waitForTitle(streamB, sessionB.id)
     assert.ok(streamB.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === sessionB.id))
     assert.match(assistantText(await api.messages(workspaceB.directory, sessionB.id)), /H21 B continued/)
     await api.promptAsync(workspaceA.directory, sessionA.id, acpScriptToken("h21-hold"))
@@ -60,6 +62,7 @@ export async function run() {
     } finally {
       await stack.acp.release("h21-running")
       await streamA.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionA.id, { label: "H21 A idle after release" })
+      await waitForTitle(streamA, sessionA.id)
       assert.equal((await change).active, true)
     }
     await eventually("workspace A's deferred ACP session/resume", () => resumed(stack.acp.scriptDir, workspaceA.directory))
