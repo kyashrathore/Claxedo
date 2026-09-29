@@ -2,6 +2,8 @@
 
 The native transport carries local plugin folders through the SDK `plugins` option, live `supportedModels()`, `supportedCommands()` and `supportedAgents()` discovery, per query effort, replay confirmed streaming steering, native `/goal` start and stop, and the SDK's per turn usage events. These surfaces are absent from standard ACP. Claude over ACP can receive plugin folders only through its wrapper's version specific `_meta.claudeCode.options` extension.
 
+A steer is written to the running query's input with a fresh uuid. Claude replays it as a user message at the point its conversation took it in; that replay acknowledges the steer and is yielded as `input-incorporated` with the id Claxedo submitted it under, which is where the runtime writes the steered prompt into the reply.
+
 The SDK's `spawnClaudeCodeProcess` callback returns synchronously. `HarnessServices.spawn` returns a promise. `ClaudeProcess` gives the SDK streams immediately, forwards them to the process once `services.spawn` returns, and delegates retirement to that exact `OwnedProcess`. The callback never starts a process directly.
 
 Brokered credentials are selected in `StartInput` by the session owner. `TurnInput.origin` is not used for credential choice. The Claude Code home for a brokered session is a Claxedo owned directory containing scrubbed copies of supported settings files and read only copies of named user configuration entries. It never mirrors account files. A machine owner session without brokered credentials uses their own Claude login.

@@ -9,7 +9,8 @@ import { createSessionDeliveryOwner, type SessionDeliveryOwner } from "../sessio
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
-import { RuntimeStore, type QueuedPromptRecord } from "../store"
+import { RuntimeStore } from "../store"
+import type { QueuedPromptRecord } from "../session/delivery-queue"
 import { FakeTransport } from "../test-support/fake-transport"
 import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
 import { sessionIdle } from "../projection/presentation-events"
@@ -136,8 +137,8 @@ function grantingRoutes(runtime: AgentRuntime, queuedPrompts: SessionDeliveryOwn
 /** Every row the durable queue wrote, kept past the moment its turn starts and the row is dropped. */
 function persistedRows(queue: ReturnType<typeof durableQueue>) {
   const rows: QueuedPromptRecord[] = []
-  const write = queue.store.queuePrompt.bind(queue.store)
-  queue.store.queuePrompt = (record) => {
+  const write = queue.store.deliveryQueue.queuePrompt.bind(queue.store.deliveryQueue)
+  queue.store.deliveryQueue.queuePrompt = (record) => {
     const row = write(record)
     rows.push(row)
     return row
@@ -157,14 +158,15 @@ function durableQueue() {
   let runtime!: AgentRuntime
   const host = createSessionDeliveryOwner({
     store: () => ({
-      queuePrompt: (input) => store.queuePrompt(input),
-      deleteQueuedPrompt: (sessionId, seq) => store.deleteQueuedPrompt(sessionId, seq),
-      replaceQueuedPromptParts: (sessionId, seq, parts) => store.replaceQueuedPromptParts(sessionId, seq, parts),
-      listQueuedPrompts: () => store.listQueuedPrompts(),
-      claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => store.claimQueuedPromptDelivery(sessionId, seq, operationId, mode),
-      settleQueuedPromptDelivery: (sessionId, seq, steering) => store.settleQueuedPromptDelivery(sessionId, seq, steering),
-      setQueuedPromptHeld: (sessionId, seq, held) => store.setQueuedPromptHeld(sessionId, seq, held),
-      completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
+      queuePrompt: (input) => store.deliveryQueue.queuePrompt(input),
+      deleteQueuedPrompt: (sessionId, seq) => store.deliveryQueue.deleteQueuedPrompt(sessionId, seq),
+      replaceQueuedPromptParts: (sessionId, seq, parts) => store.deliveryQueue.replaceQueuedPromptParts(sessionId, seq, parts),
+      listQueuedPrompts: () => store.deliveryQueue.listQueuedPrompts(),
+      claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => store.deliveryQueue.claimQueuedPromptDelivery(sessionId, seq, operationId, mode),
+      settleQueuedPromptDelivery: (sessionId, seq, steering) => store.deliveryQueue.settleQueuedPromptDelivery(sessionId, seq, steering),
+      setQueuedPromptHeld: (sessionId, seq, held) => store.deliveryQueue.setQueuedPromptHeld(sessionId, seq, held),
+      completeQueuedPrompt: (sessionId, seq, operationId) => store.deliveryQueue.completeQueuedPrompt(sessionId, seq, operationId),
+      retireSteeredPrompt: (sessionId, messageId) => store.deliveryQueue.retireSteeredPrompt(sessionId, messageId),
       sessionDirectory: () => "/workspace",
       sessionArchived: () => false,
       messageSessionId: () => undefined,
@@ -379,7 +381,7 @@ describe("how a prompt for a busy session is delivered", () => {
     }))
 
     expect(await response.json()).toEqual({ delivery: "queue" })
-    expect(queue.store.listQueuedPrompts()).toEqual([{
+    expect(queue.store.deliveryQueue.listQueuedPrompts()).toEqual([{
       sessionId: "session_1",
       seq: 1,
       messageId: "msg_durable",
@@ -387,16 +389,16 @@ describe("how a prompt for a busy session is delivered", () => {
       agent: "build",
       model: { providerID: "test", modelID: "fixture" },
       delivery: "queue",
-      queuedAt: queue.store.listQueuedPrompts()[0].queuedAt,
+      queuedAt: queue.store.deliveryQueue.listQueuedPrompts()[0].queuedAt,
       provenance: "loopback-direct",
     }])
 
     release()
-    for (let attempt = 0; attempt < 200 && queue.store.listQueuedPrompts().length > 0; attempt++) {
+    for (let attempt = 0; attempt < 200 && queue.store.deliveryQueue.listQueuedPrompts().length > 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(starts).toHaveLength(1)
-    expect(queue.store.listQueuedPrompts()).toEqual([])
+    expect(queue.store.deliveryQueue.listQueuedPrompts()).toEqual([])
     expect(queue.recoveries).toEqual([])
   })
 
@@ -410,9 +412,9 @@ describe("how a prompt for a busy session is delivered", () => {
         delivery: "queue",
       }))
 
-    for (let i = 0; i < 100 && queue.store.listQueuedPrompts().length; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    for (let i = 0; i < 100 && queue.store.deliveryQueue.listQueuedPrompts().length; i++) await new Promise((resolve) => setTimeout(resolve, 2))
     expect(starts).toHaveLength(1)
-    expect(queue.store.listQueuedPrompts()).toEqual([])
+    expect(queue.store.deliveryQueue.listQueuedPrompts()).toEqual([])
   })
 
   test("a prompt that asked nothing about delivery keeps the empty acknowledgement", async () => {
@@ -587,10 +589,10 @@ describe("a relayed prompt queued on a plane that mints deferred grants", () => 
       ["msg_steer", "relay-replayed", `${QUEUED_GRANT}.msg_steer`],
       ["msg_queue", "relay-replayed", `${QUEUED_GRANT}.msg_queue`],
     ])
-    expect(queue.store.listQueuedPrompts().find((row) => row.messageId === "msg_queue")?.grant).toBe(`${QUEUED_GRANT}.msg_queue`)
+    expect(queue.store.deliveryQueue.listQueuedPrompts().find((row) => row.messageId === "msg_queue")?.grant).toBe(`${QUEUED_GRANT}.msg_queue`)
     expect(JSON.stringify(await (await app.request("http://localhost/session/session_1/queue")).json())).not.toContain(QUEUED_GRANT)
     release()
-    for (let attempt = 0; attempt < 200 && queue.store.listQueuedPrompts().length > 0; attempt++) {
+    for (let attempt = 0; attempt < 200 && queue.store.deliveryQueue.listQueuedPrompts().length > 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(starts.map((turn) => turn.messageId)).toEqual(["msg_steer", "msg_queue"])
@@ -616,7 +618,7 @@ describe("a relayed prompt queued on a plane that mints deferred grants", () => 
     expect(await queued.json()).toMatchObject({ error: { code: "queued_prompt_grant_refused" } })
 
     expect(granted.map((request) => request.turnId)).toEqual(["msg_steer", "msg_queue"])
-    expect(queue.store.listQueuedPrompts()).toEqual([])
+    expect(queue.store.deliveryQueue.listQueuedPrompts()).toEqual([])
     expect(starts).toEqual([])
   })
 
@@ -634,7 +636,7 @@ describe("a relayed prompt queued on a plane that mints deferred grants", () => 
     expect(await queued.json()).toMatchObject({
       error: { code: "queued_prompt_grant_refused", message: "Session session_1 did not grant the queued turn msg_queue: plane unreachable" },
     })
-    expect(queue.store.listQueuedPrompts()).toEqual([])
+    expect(queue.store.deliveryQueue.listQueuedPrompts()).toEqual([])
   })
 
   test("the machine's own user over loopback queues without a grant, whatever the plane could mint", async () => {
@@ -653,7 +655,7 @@ describe("a relayed prompt queued on a plane that mints deferred grants", () => 
     expect(granted).toEqual([])
     expect(rows).toEqual([expect.objectContaining({ messageId: "msg_local", provenance: "loopback-direct" })])
     expect(rows[0]).not.toHaveProperty("grant")
-    for (let attempt = 0; attempt < 200 && queue.store.listQueuedPrompts().length > 0; attempt++) {
+    for (let attempt = 0; attempt < 200 && queue.store.deliveryQueue.listQueuedPrompts().length > 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(starts.map((turn) => turn.messageId)).toEqual(["msg_local"])
@@ -698,11 +700,11 @@ test("synchronous queued submission is a durable acknowledgement, not a request-
   expect(response.status).toBe(202)
   expect(await response.json()).toEqual({ delivery: "queue", messageID: "sync-queued" })
   expect(starts).toEqual([])
-  expect(queue.store.listQueuedPrompts()[0].messageId).toBe("sync-queued")
+  expect(queue.store.deliveryQueue.listQueuedPrompts()[0].messageId).toBe("sync-queued")
   release()
-  for (let i = 0; i < 100 && queue.store.listQueuedPrompts().length; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+  for (let i = 0; i < 100 && queue.store.deliveryQueue.listQueuedPrompts().length; i++) await new Promise((resolve) => setTimeout(resolve, 2))
   expect(starts).toHaveLength(1)
-  expect(queue.store.listQueuedPrompts()).toEqual([])
+  expect(queue.store.deliveryQueue.listQueuedPrompts()).toEqual([])
 })
 
 test("HTTP refuses queue admission when persistence is unavailable", async () => {

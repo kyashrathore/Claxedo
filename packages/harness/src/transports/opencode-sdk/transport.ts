@@ -92,7 +92,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       const binding = await broker.rebind(row.id)
       this.owner = input.credentials.accountOwner
       const session: HarnessSession = { directory: scope.directory, locality: input.locality, binding }
-      this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false,
+      this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false, steers: new Set(),
         ...(firstPartyTools_ ? { firstParty: firstPartyTools_ } : {}) })
       return session
     } catch (error) {
@@ -160,7 +160,9 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (!entry.active) return { ok: false as const, status: "no_active_turn" as const,
       message: "OpenCode session has no active turn" }
-    const admitted = await this.runtime.sessions.prompt(entry.scope, session.binding.upstreamSessionId, promptRequest(input))
+    entry.steers.add(input.userMessageId)
+    const admitted = await this.runtime.sessions.prompt(entry.scope, session.binding.upstreamSessionId,
+      { ...promptRequest(input), id: input.userMessageId })
     if (admitted.delivery === "steer" || admitted.delivery === "queue") return { ok: true as const }
     return { ok: false as const, status: "unknown" as const, message: "OpenCode did not confirm prompt admission" }
   } }

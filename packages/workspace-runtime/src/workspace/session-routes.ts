@@ -31,14 +31,15 @@ export type SessionRoutesMountInput = {
 
 export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
   return {
-    queuePrompt: (input) => store.queuePrompt(input),
-    deleteQueuedPrompt: (sessionId, seq) => store.deleteQueuedPrompt(sessionId, seq),
-    replaceQueuedPromptParts: (sessionId, seq, parts) => store.replaceQueuedPromptParts(sessionId, seq, parts),
-    listQueuedPrompts: () => store.listQueuedPrompts(),
-    claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => store.claimQueuedPromptDelivery(sessionId, seq, operationId, mode),
-    setQueuedPromptHeld: (sessionId, seq, value) => store.setQueuedPromptHeld(sessionId, seq, value),
-    completeQueuedPrompt: (sessionId, seq, operationId) => store.completeQueuedPrompt(sessionId, seq, operationId),
-    settleQueuedPromptDelivery: (sessionId, seq, steering) => store.settleQueuedPromptDelivery(sessionId, seq, steering),
+    queuePrompt: (input) => store.deliveryQueue.queuePrompt(input),
+    deleteQueuedPrompt: (sessionId, seq) => store.deliveryQueue.deleteQueuedPrompt(sessionId, seq),
+    replaceQueuedPromptParts: (sessionId, seq, parts) => store.deliveryQueue.replaceQueuedPromptParts(sessionId, seq, parts),
+    listQueuedPrompts: () => store.deliveryQueue.listQueuedPrompts(),
+    claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => store.deliveryQueue.claimQueuedPromptDelivery(sessionId, seq, operationId, mode),
+    setQueuedPromptHeld: (sessionId, seq, value) => store.deliveryQueue.setQueuedPromptHeld(sessionId, seq, value),
+    completeQueuedPrompt: (sessionId, seq, operationId) => store.deliveryQueue.completeQueuedPrompt(sessionId, seq, operationId),
+    retireSteeredPrompt: (sessionId, messageId) => store.deliveryQueue.retireSteeredPrompt(sessionId, messageId),
+    settleQueuedPromptDelivery: (sessionId, seq, steering) => store.deliveryQueue.settleQueuedPromptDelivery(sessionId, seq, steering),
     sessionDirectory: (sessionId) => store.getSession(sessionId)?.directory,
     sessionArchived: (sessionId) => store.getSession(sessionId)?.time?.archived !== undefined,
     messageSessionId: (messageId) => store.messageSessionId(messageId),

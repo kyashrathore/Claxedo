@@ -31,6 +31,7 @@ import { admitTurnMessageIds, createTurnAdmissions, deliverToBusySession } from 
 import { turnInputFor } from "./turn-input"
 import { turnPrompt, turnStartRecord } from "./turn-record"
 import { runTurn, type TurnRunnerHost } from "./turn-runner"
+import { createSteeredInputs } from "./steered-inputs"
 import { eventSessionId, sessionIdle, toPresentationEvent } from "../projection/presentation-events"
 
 export {
@@ -172,8 +173,9 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const reads = createHarnessReads({ store, transports: input.transports, launch: input.launch, attachments, savedCommands: input.savedCommands, writeMode })
   const requests = createRequestSurface({ store, broker })
 
+  const steers = createSteeredInputs()
   const turnHost: TurnRunnerHost = {
-    store, admissions, recovery, titles, broker, ownerGeneration: input.ownerGeneration, publish,
+    store, admissions, recovery, titles, broker, steers, ownerGeneration: input.ownerGeneration, publish,
     commit: commitAndPublish,
     beginChildTurns: (parentSessionId, context) => childTurns.beginTurn(parentSessionId, context),
   }
@@ -228,10 +230,14 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
           running, turn, prompt, userMessageId, assistantMessageId, directory,
           requested: turn.delivery,
           ...(target?.generation === running.generation ? { ended: target.ended } : {}),
-          ...(steer ? { steer: () => steer.steer(live.session,
-            { turnId: running.assistantMessageId, assistantMessageId: running.assistantMessageId },
-            turnInputFor(prompt, store.getTodos(turn.sessionId), turn.origin)) } : {}),
+          ...(steer ? { steer: () => {
+            steers.expect(running.generation, { ...prompt, userMessageId })
+            return steer.steer(live.session,
+              { turnId: running.assistantMessageId, assistantMessageId: running.assistantMessageId },
+              turnInputFor(prompt, store.getTodos(turn.sessionId), turn.origin))
+          } } : {}),
         })
+        if (delivered.steering && !delivered.steering.ok && delivered.steering.status !== "unknown") steers.forget(running.generation, userMessageId)
         return delivered.delivery === "steer" ? { ...delivered, target: recovery.turnTarget(turn.sessionId, running) } : delivered
       }
       if (turn.delivery === "queue" && store.getSession(turn.sessionId)?.time?.archived !== undefined) {

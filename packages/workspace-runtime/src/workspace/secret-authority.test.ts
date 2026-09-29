@@ -91,7 +91,7 @@ test("a relayed prompt recovered from the queue at mount leases its connection w
   const f = fixture()
   await f.host.runtime.sessions.create({ ...sessionCreate({ id: "queued", harness: runner, workspaceId: "ws" }),
     secretAuthority: { kind: "request", credential: "Bearer relay-proof-long-expired" } })
-  f.host.store.queuePrompt({ sessionId: "queued", messageId: "msg_queued", parts: [{ type: "text", text: "then run the tests" }],
+  f.host.store.deliveryQueue.queuePrompt({ sessionId: "queued", messageId: "msg_queued", parts: [{ type: "text", text: "then run the tests" }],
     delivery: "queue", actor, authority: workspaceAuthority, provenance: "relay-replayed", grant: "deferred-grant-1" })
 
   await f.routes.recoverQueuedPrompts()
@@ -114,7 +114,7 @@ test("a relayed prompt queued behind a running turn is delivered later under its
   await until(() => f.turns.length === 1)
   const queued = await f.relayed("/session/queued/prompt_async", { messageID: "msg_later", delivery: "queue", parts: [{ type: "text", text: "later" }] })
   expect(queued.status, await queued.clone().text()).toBe(200)
-  expect(f.host.store.listQueuedPrompts().map((row) => row.messageId)).toEqual(["msg_later"])
+  expect(f.host.store.deliveryQueue.listQueuedPrompts().map((row) => row.messageId)).toEqual(["msg_later"])
 
   release()
   await until(() => f.turns.length === 2)

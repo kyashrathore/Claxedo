@@ -1,9 +1,16 @@
-import type { AgentRuntimeEvent, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
+import { assistantMessageIdForTurn, type AgentRuntimeEvent, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { createClientPresentationProjection } from "./client-presentation/projection"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
-import { buildAssistantMessage, messageUpdated } from "./presentation-events"
+import {
+  buildAssistantMessage,
+  buildUserMessage,
+  buildUserPromptParts,
+  messagePartUpdated,
+  messageUpdated,
+  runtimeDiagnostic,
+} from "./presentation-events"
 
 export type RuntimeAppendSource = {
   dir: "in" | "out"
@@ -26,6 +33,10 @@ type RuntimeEventStore = {
   }): { payload: AgentPresentationEvent; messageUpdate?: AgentPresentationEvent }
 }
 
+export type SteeredInput = Pick<PromptInput, "parts" | "agent" | "model" | "tools" | "format" | "system" | "variant" | "author"> & {
+  userMessageId: string
+}
+
 function committed(output: { payload: AgentPresentationEvent; messageUpdate?: AgentPresentationEvent }) {
   if (!output) throw new Error("Runtime store appendEvent must return committed output")
   return output
@@ -39,6 +50,7 @@ export function createTurnEventProjector(options: {
   assistantMessageId: string
   created: number
   fencingToken?: number
+  takeSteeredInput?: (messageId: string) => SteeredInput | undefined
   onEvent: (event: AgentPresentationEvent) => void
   onRuntimeEvent?: (event: RuntimeEventEnvelopeInput) => void
 }) {
@@ -71,6 +83,54 @@ export function createTurnEventProjector(options: {
     if (output.messageUpdate) options.onEvent(output.messageUpdate)
   }
 
+  const beginReply = (id: string, parentID: string, source: RuntimeAppendSource) => {
+    for (const event of projection.ingest({ type: "step-start", newMessageId: id })) append(event.payload, source)
+    assistantMessageId = id
+    created = Date.now()
+    append(messageUpdated(buildAssistantMessage({
+      id,
+      sessionID: options.owner.sessionId,
+      parentID,
+      agent: options.input.agent,
+      model: options.input.model,
+      directory: options.directory,
+      created,
+    })), source)
+  }
+
+  /**
+   * The harness took a steered prompt into the running turn at this point in
+   * its stream: the reply so far answers the turn's prompt, the steered prompt
+   * follows it, and everything after answers the steered prompt.
+   */
+  const incorporate = (messageId: string, source: RuntimeAppendSource) => {
+    const steered = options.takeSteeredInput?.(messageId)
+    if (!steered) {
+      append(runtimeDiagnostic({
+        sessionID: options.owner.sessionId,
+        code: "runtime.steer.unknown_input",
+        message: `The harness reported steered input ${messageId}, which this turn did not submit`,
+        severity: "error",
+        eventType: "input-incorporated",
+      }), source)
+      return
+    }
+    const sessionID = options.owner.sessionId
+    append(messageUpdated(buildUserMessage({
+      id: steered.userMessageId,
+      sessionID,
+      agent: steered.agent,
+      ...(steered.model ? { model: steered.model } : {}),
+      ...(steered.tools ? { tools: steered.tools } : {}),
+      ...(steered.format ? { format: steered.format } : {}),
+      ...(steered.system ? { system: steered.system } : {}),
+      ...(steered.variant ? { variant: steered.variant } : {}),
+      ...(steered.author ? { author: steered.author } : {}),
+    })), source)
+    for (const part of buildUserPromptParts(sessionID, steered.userMessageId, steered.parts)) append(messagePartUpdated(part), source)
+    beginReply(assistantMessageIdForTurn(steered.userMessageId), steered.userMessageId, source)
+  }
+
   return {
     assistantMessageId() {
       return assistantMessageId
@@ -79,23 +139,10 @@ export function createTurnEventProjector(options: {
       return created
     },
     project(runtimeEvent: AgentRuntimeEvent, source: RuntimeAppendSource) {
-      for (const event of projection.ingest(runtimeEvent)) append(event.payload, source)
-      if (runtimeEvent.type !== "step-start") {
-        publishRuntime(runtimeEvent)
-        return
-      }
-
-      assistantMessageId = runtimeEvent.newMessageId
-      created = Date.now()
-      append(messageUpdated(buildAssistantMessage({
-        id: assistantMessageId,
-        sessionID: options.owner.sessionId,
-        parentID: options.input.userMessageId ?? options.input.parentMessageId ?? options.owner.sessionId,
-        agent: options.input.agent,
-        model: options.input.model,
-        directory: options.directory,
-        created,
-      })), source)
+      if (runtimeEvent.type === "input-incorporated") incorporate(runtimeEvent.messageId, source)
+      else if (runtimeEvent.type === "step-start") {
+        beginReply(runtimeEvent.newMessageId, options.input.userMessageId ?? options.input.parentMessageId ?? options.owner.sessionId, source)
+      } else for (const event of projection.ingest(runtimeEvent)) append(event.payload, source)
       publishRuntime(runtimeEvent)
     },
     terminalizeOpenTools(message: string, source: RuntimeAppendSource) {

@@ -1373,6 +1373,6 @@ describe("archiving between a queued prompt's claim and its admission", () => {
     open()
     for (let attempt = 0; attempt < 20; attempt++) await settle()
     expect(transport.turns.map(promptText)).toEqual(["first"])
-    expect(wa.store().listQueuedPrompts().map((row) => row.messageId)).toEqual(["msg_gap"])
+    expect(wa.store().deliveryQueue.listQueuedPrompts().map((row) => row.messageId)).toEqual(["msg_gap"])
   })
 })

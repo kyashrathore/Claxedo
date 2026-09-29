@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { PromptDelivery } from "@claxedo/agent-runtime-contract"
 import type { SessionPromptBody } from "./service"
 import type { SessionTurnOrigin } from "../session-access-policy"
-import type { QueuedPromptRecord, QueuedPromptAttempt } from "../store"
+import type { QueuedPromptRecord, QueuedPromptAttempt } from "./delivery-queue"
 import { admitTurnMessageIds } from "../host/turn-admission"
 
 export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release" | { replace: NonNullable<QueuedPromptRecord["parts"]> }
@@ -19,6 +19,7 @@ export type SessionDeliveryStore = {
   settleQueuedPromptDelivery(sessionId: string, seq: number, steering: QueuedPromptAttempt): boolean
   setQueuedPromptHeld(sessionId: string, seq: number, held: boolean): boolean
   completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean
+  retireSteeredPrompt(sessionId: string, messageId: string): boolean
   sessionDirectory(sessionId: string): string | undefined
   sessionArchived(sessionId: string): boolean
   messageSessionId(messageId: string): string | undefined
@@ -31,6 +32,8 @@ export type SessionDeliveryOwner = {
   control(sessionId: string, seq: number, action: QueuedPromptAction): Promise<QueuedControlResult>
   queue(input: Submission): QueuedPromptRecord
   steer(input: Submission): Promise<QueuedControlResult>
+  /** The transcript now holds this user message; a steered row carrying it is done. */
+  incorporated(sessionId: string, messageId: string): void
   wake(sessionId: string): void
   recover(): Promise<void>
   dispose(): Promise<void>
@@ -89,7 +92,11 @@ export function createSessionDeliveryOwner(input: {
   function settle(record: QueuedPromptRecord, operationId: string, mode: "start" | "steer", result: SteeringResult): QueuedControlResult {
     const state = result.ok ? "accepted" : result.status === "unknown" ? "unknown" : "rejected"
     const message = result.ok ? undefined : result.message
-    if (!announced(record.sessionId, store().settleQueuedPromptDelivery(record.sessionId, record.seq, { operationId, mode, state, message }))) {
+    const settled = store().settleQueuedPromptDelivery(record.sessionId, record.seq, { operationId, mode, state, message })
+    // The harness can report where it took the input in, which retires the
+    // row, before the steer call that delivered it returns.
+    if (!settled && result.ok && mode === "steer" && !row(record.sessionId, record.seq)) return { ok: true }
+    if (!announced(record.sessionId, settled)) {
       return { ok: false, status: "conflict", message: "Delivery ownership changed", operationId }
     }
     return result.ok ? { ok: true } : { ok: false, status: state === "unknown" ? "unknown" : "rejected", message: result.message, operationId }
@@ -206,6 +213,7 @@ export function createSessionDeliveryOwner(input: {
       .map(({ grant: _grant, ...item }) => ({ ...item, held: !!item.held })),
     queue(submission) { const record = persist(submission); kick(record.sessionId); return record },
     steer(submission) { const record = persist(submission); return control(record.sessionId, record.seq, "steer") },
+    incorporated(sessionId, messageId) { announced(sessionId, store().retireSteeredPrompt(sessionId, messageId)) },
     control,
     wake: kick,
     async recover() {

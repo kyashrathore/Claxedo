@@ -232,4 +232,31 @@ describe("createTurnEventProjector", () => {
     expect(() => item.terminalizeOpenTools("prompt failed", source)).toThrow("append failed")
     expect(runtime).toEqual([])
   })
+
+  test("a steered prompt is written with its own author and parts, and each is taken in once", () => {
+    const appended: AgentPresentationEvent[] = []
+    const steered = new Map([["msg_steer", {
+      userMessageId: "msg_steer", agent: "build", parts: [{ type: "text" as const, text: "show me with html" }],
+      author: { id: "user-2", name: "Asha", kind: "human" as const },
+    }]])
+    const item = testTurnProjector({
+      appendEvent: (event) => { appended.push(event.payload); return { payload: event.payload } },
+      takeSteeredInput: (messageId) => { const input = steered.get(messageId); steered.delete(messageId); return input },
+    })
+
+    item.project({ type: "input-incorporated", messageId: "msg_steer" }, source)
+    const user = appended.find((event) => event.type === "message.updated" && event.properties.info.role === "user")
+    expect(user?.type === "message.updated" && user.properties.info).toMatchObject({ id: "msg_steer", agent: "build" })
+    expect(JSON.stringify(user)).toContain("Asha")
+    expect(appended.filter((event) => event.type === "message.part.updated").map((event) =>
+      event.type === "message.part.updated" && event.properties.part)).toEqual([
+      expect.objectContaining({ messageID: "msg_steer", type: "text", text: "show me with html" }),
+    ])
+    expect(item.assistantMessageId()).toBe("msg_steer_r")
+
+    appended.length = 0
+    item.project({ type: "input-incorporated", messageId: "msg_steer" }, source)
+    expect(appended.map((event) => event.type)).toEqual(["runtime.diagnostic"])
+    expect(item.assistantMessageId()).toBe("msg_steer_r")
+  })
 })

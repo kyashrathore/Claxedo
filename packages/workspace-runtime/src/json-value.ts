@@ -56,3 +56,7 @@ export function parseRecord(input: string | undefined): Record<string, unknown> 
     return undefined
   }
 }
+
+export function actorKind(input: unknown): "human" | "agent" | undefined {
+  return input === "human" || input === "agent" ? input : undefined
+}

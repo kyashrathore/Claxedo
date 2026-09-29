@@ -37,7 +37,7 @@ export class ClaudeTurns {
 
   async steer(entry: ClaudeEntry, ref: TurnRef, input: TurnInput): Promise<SteerResult> {
     const active = entry.active
-    return active?.id === ref.turnId && active.live ? active.live.input.steer(await claudePrompt(input, entry.session.directory))
+    return active?.id === ref.turnId && active.live ? active.live.input.steer(await claudePrompt(input, entry.session.directory), input.userMessageId)
       : { ok: false as const, status: "no_active_turn" as const, message: "Claude turn is idle" }
   }
 
@@ -172,7 +172,11 @@ export class ClaudeTurns {
       for await (const message of frames) {
         const observed = await observeClaudeSessionMessage(message, entry, entry.broker, signal)
         if (observed.kind === "active-goal") continue
-        if (live.input.observe(observed.message)) continue
+        const incorporated = live.input.observe(observed.message)
+        if (incorporated) {
+          for (const messageId of incorporated) yield { event: { type: "input-incorporated", messageId } }
+          continue
+        }
         if (observed.message.type === "result") { result = observed.message; continue }
         for (const event of await translateClaude(observed.message, runtime, tasks, broker)) yield event
       }

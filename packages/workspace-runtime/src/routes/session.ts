@@ -176,6 +176,9 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
 
   const stopDeliveryWake = eventHub.subscribeGlobal(({ payload }) => {
     if (payload.type === "session.idle") queuedPrompts?.wake(payload.properties.sessionID)
+    if (payload.type === "message.updated" && payload.properties.info.role === "user") {
+      queuedPrompts?.incorporated(payload.properties.sessionID, payload.properties.info.id)
+    }
   })
 
   type HostTurnInput = {

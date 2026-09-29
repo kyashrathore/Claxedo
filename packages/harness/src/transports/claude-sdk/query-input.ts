@@ -3,7 +3,7 @@ import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { SteerResult } from "@claxedo/agent-runtime-contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 
-type Pending = { ids: Set<string>; resolve: (result: SteerResult) => void }
+type Pending = { uuid: string; messageId: string; resolve: (result: SteerResult) => void }
 
 export class ClaudeQueryInput {
   private readonly queue = new AsyncPushQueue<SDKUserMessage>()
@@ -17,22 +17,24 @@ export class ClaudeQueryInput {
     this.queue.push(message)
   }
 
-  steer(input: SDKUserMessage): Promise<SteerResult> {
+  steer(input: SDKUserMessage, messageId: string): Promise<SteerResult> {
     if (!this.steerable) return Promise.resolve({ ok: false, status: "no_active_turn", message: "Claude turn ended" })
     const message = { ...input, uuid: randomUUID() }
-    const result = new Promise<SteerResult>((resolve) => this.pending.add({ ids: new Set([message.uuid]), resolve }))
+    const result = new Promise<SteerResult>((resolve) => this.pending.add({ uuid: message.uuid, messageId, resolve }))
     this.queue.push(message)
     return result
   }
 
-  observe(message: SDKMessage): boolean {
-    if (message.type !== "user" || !("isReplay" in message) || !message.isReplay) return false
+  observe(message: SDKMessage): string[] | undefined {
+    if (message.type !== "user" || !("isReplay" in message) || !message.isReplay) return undefined
+    const incorporated: string[] = []
     for (const item of this.pending) {
-      if (!item.ids.delete(message.uuid) || item.ids.size) continue
+      if (item.uuid !== message.uuid) continue
       this.pending.delete(item)
       item.resolve({ ok: true })
+      incorporated.push(item.messageId)
     }
-    return true
+    return incorporated
   }
 
   endTurn(): void {
