@@ -138,7 +138,7 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     recovery.retainFailure(capture, settled, finalized)
     if (finalized.ok && outcome?.status === "completed") {
       if (run.clearsHandoff) store.updateSessionConfig(sessionId, { handoff: null })
-      void titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session })
+      await titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session })
     }
   } catch (err) {
     if (!admitted()) return

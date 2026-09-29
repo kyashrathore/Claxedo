@@ -1,9 +1,10 @@
 import type { AgentMessage, PromptModel } from "@claxedo/agent-runtime-contract"
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
+import type { RequestDeadline } from "@claxedo/helpers"
 
 export const SESSION_TITLE_MAX_CHARS = 60
 const EXCERPT_MAX_CHARS = 1500
-const TITLE_TURN_TIMEOUT_MS = 20_000
+export const TITLE_TURN_TIMEOUT_MS = 20_000
 
 export const SESSION_TITLE_SYSTEM_PROMPT = [
   `Generate a concise, single-line title of at most ${SESSION_TITLE_MAX_CHARS} characters and under six words where possible for the coding conversation the user provides.`,
@@ -37,13 +38,13 @@ export function transcriptExcerpt(messages: AgentMessage[]) {
   return lines.join("\n\n")
 }
 
-export function sessionTitleRequest(input: { directory: string; model?: PromptModel; messages: AgentMessage[] }): SessionTitleRequest {
+export function sessionTitleRequest(input: { directory: string; model?: PromptModel; messages: AgentMessage[] }, deadline: RequestDeadline): SessionTitleRequest {
   return {
     directory: input.directory,
     system: SESSION_TITLE_SYSTEM_PROMPT,
     user: sessionTitleUserPrompt(transcriptExcerpt(input.messages)),
     ...(input.model ? { model: input.model } : {}),
-    signal: AbortSignal.timeout(TITLE_TURN_TIMEOUT_MS),
+    signal: deadline.signal,
   }
 }
 

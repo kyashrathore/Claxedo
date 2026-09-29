@@ -1,11 +1,12 @@
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
 import { buildSession, sessionUpdated, withDir, type CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
+import { settleAtRequestDeadline } from "@claxedo/helpers"
 import { Log } from "../log"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { AgentRuntimeStore } from "./contracts"
 import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "@claxedo/agent-sdk-runtime"
-import { acceptGeneratedTitle, sessionTitleRequest } from "./title-generation"
+import { acceptGeneratedTitle, sessionTitleRequest, TITLE_TURN_TIMEOUT_MS } from "./title-generation"
 
 const log = Log.create({ service: "agent-runtime" })
 
@@ -22,11 +23,15 @@ type NamedSession = Pick<TitleTarget, "transport" | "session">
  * The runtime's title policy, in one place: a first-prompt placeholder the
  * moment a turn starts on an untitled session, then one harness side turn
  * after the first completed turn unless a higher-ranked title (`harness`
- * streamed during the turn, `user` rename) has landed. Child sessions are
- * named by their spawn observation and never titled here.
+ * streamed during the turn, `user` rename) has landed. The turn runner awaits
+ * that side turn before it publishes the turn's idle, so the title and the
+ * usage the side turn bills land inside the turn that asked for them rather
+ * than racing the next one. Child sessions are named by their spawn
+ * observation and never titled here.
  */
-export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub }) {
+export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub; deadlineMs?: number }) {
   const { store, eventHub } = input
+  const deadlineMs = input.deadlineMs ?? TITLE_TURN_TIMEOUT_MS
   const attempted = new Set<string>()
 
   /**
@@ -71,12 +76,13 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
     if (!naming?.generateTitle || attempted.has(sessionId)) return
     attempted.add(sessionId)
     const model = store.getSessionConfig(sessionId)?.model
+    const deadline = { deadlineAt: Date.now() + deadlineMs, signal: AbortSignal.timeout(deadlineMs) }
     try {
-      const raw = await naming.generateTitle(target.session, sessionTitleRequest({
+      const raw = await settleAtRequestDeadline("Session title generation", deadline, naming.generateTitle(target.session, sessionTitleRequest({
         directory,
         ...(model ? { model } : {}),
         messages: store.getMessages(sessionId),
-      }))
+      }, deadline)), () => {}, (what) => new Error(`${what} did not answer within ${deadlineMs} ms`))
       const title = acceptGeneratedTitle(raw, session.title)
       if (!title) return
       const current = store.getSession(sessionId)

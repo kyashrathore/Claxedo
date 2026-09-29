@@ -487,6 +487,28 @@ describe("POST /session with parentID", () => {
     expect(item.store.getSession("parent")).toMatchObject({ status: "idle", time: { archived: 42 } })
   })
 
+  test("an archive's session update is published after the stopped turn's own end", async () => {
+    const item = fixture()
+    await item.seedParent("parent")
+    item.hold("parent")
+    await item.runtime.turns.start({ sessionId: "parent", parts: [{ type: "text", text: "work" }], origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false } })
+    for (let attempt = 0; attempt < 200 && item.calls.prompts.length === 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+    const before = item.globalEvents.length
+
+    const archived = await item.app.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ time: { archived: 42 } }),
+    })
+    expect(archived.status).toBe(200)
+    const frames = item.globalEvents.slice(before).map((event) => event.payload).flatMap((payload) => {
+      if (payload.type === "session.updated" && payload.properties.info.id === "parent") return [payload.properties.info.time?.archived === 42 ? "archived" : "updated"]
+      return payload.type === "session.idle" && payload.properties.sessionID === "parent" ? ["idle"] : []
+    })
+    expect(frames.at(-1)).toBe("archived")
+    expect(frames).toContain("idle")
+  })
+
   test("a child's finished turn wakes the idle parent through the prompt path with the child's summary", async () => {
     const item = fixture()
     await item.seedParent("parent")

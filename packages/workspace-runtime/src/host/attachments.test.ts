@@ -77,13 +77,13 @@ test("simultaneous session options and prompt share one authoritative ACP restor
     const prompt = f.runtime.turns.start({ sessionId: "saved", text: "continue", origin: LOOPBACK_ORIGIN })
     await f.restoring
     expect(f.requests.filter((request) => request.method === "session/resume")).toHaveLength(1)
-    expect(f.requests.filter((request) => request.method === "session/prompt")).toHaveLength(0)
+    expect(f.requests.filter((request) => request.method === "session/prompt" && request.params?.sessionId === "upstream")).toHaveLength(0)
     expect(f.store.readTurnAuthority("saved")).toBeUndefined()
     f.release()
     await Promise.all([options, prompt])
     await f.runtime.dispose()
     expect(f.requests.filter((request) => request.method === "session/resume")).toHaveLength(1)
-    expect(f.requests.filter((request) => request.method === "session/prompt")).toHaveLength(1)
+    expect(f.requests.filter((request) => request.method === "session/prompt" && request.params?.sessionId === "upstream")).toHaveLength(1)
     expect(JSON.stringify(f.store.getMessages("saved"))).toContain("restored")
     expect(f.store.readTurnAuthority("saved")).toBeUndefined()
   } finally { f.release(); await f.close() }
@@ -96,7 +96,7 @@ test("a cold ACP resume deadline refuses the public turn before admission and pe
   try {
     await expect(f.runtime.turns.start({ sessionId: "saved", text: "must not submit", origin: LOOPBACK_ORIGIN })).rejects.toThrow("timed out")
     expect(f.requests.filter((request) => request.method === "session/resume")).toHaveLength(1)
-    expect(f.requests.filter((request) => request.method === "session/prompt")).toHaveLength(0)
+    expect(f.requests.filter((request) => request.method === "session/prompt" && request.params?.sessionId === "upstream")).toHaveLength(0)
     expect(f.store.readTurnAuthority("saved")).toBeUndefined()
     expect(f.store.getMessages("saved")).toEqual([])
     expect(events).not.toContain("session.error")
@@ -104,7 +104,7 @@ test("a cold ACP resume deadline refuses the public turn before admission and pe
     expect((await f.runtime.turns.start({ sessionId: "saved", text: "retry explicitly", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
     await f.runtime.dispose()
     expect(f.requests.filter((request) => request.method === "session/resume")).toHaveLength(2)
-    expect(f.requests.filter((request) => request.method === "session/prompt")).toHaveLength(1)
+    expect(f.requests.filter((request) => request.method === "session/prompt" && request.params?.sessionId === "upstream")).toHaveLength(1)
     expect(f.store.getSession("saved")?.status).toBe("idle")
   } finally { f.release(); await f.close() }
 }, 15_000)
