@@ -1,0 +1,46 @@
+---
+import "../../styles/app-theme.css"
+---
+
+<div class="thumbs app-theme" role="img" aria-label="The same workspace twice: once with sessions in a sidebar, once with sessions as tabs across the top">
+  <figure>
+    <div class="app-card window sidebar">
+      <div class="bar"><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="body">
+        <div class="rail"><i class="on"></i><i></i><i></i><i></i><i class="short"></i></div>
+        <div class="main"><i class="bubble"></i><i class="line"></i><i class="line short"></i></div>
+      </div>
+    </div>
+    <figcaption>Sidebar</figcaption>
+  </figure>
+  <figure>
+    <div class="app-card window tabs">
+      <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="tab on"></span><span class="tab"></span><span class="tab"></span></div>
+      <div class="body">
+        <div class="main"><i class="bubble"></i><i class="line"></i><i class="line short"></i></div>
+      </div>
+    </div>
+    <figcaption>Tabs</figcaption>
+  </figure>
+</div>
+
+<style>
+  .thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; }
+  figure { display: grid; gap: 10px; margin: 0; }
+  figcaption { color: #ffffff; font-size: 13px; text-align: center; text-shadow: 0 1px 12px rgb(8 24 48 / .4); }
+  .window { overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--rail-bg); }
+  .dots { display: flex; gap: 3px; margin-right: 6px; }
+  .dots i { width: 5px; height: 5px; border-radius: 50%; background: #d8d8da; }
+  .tab { width: 26%; height: 12px; border-radius: 3px; background: var(--surface-base-hover); }
+  .tab.on { background: var(--background-base); box-shadow: 0 0 0 1px var(--border); }
+  .body { display: flex; height: 124px; }
+  .rail { display: grid; align-content: start; gap: 5px; width: 34%; padding: 8px 6px; border-right: 1px solid var(--border); background: var(--rail-bg); }
+  .rail i { height: 7px; border-radius: 3px; background: var(--surface-raised); }
+  .rail i.on { background: #d6d6da; }
+  .rail i.short { width: 60%; }
+  .main { display: grid; align-content: start; gap: 6px; flex: 1; padding: 10px; }
+  .bubble { justify-self: end; width: 55%; height: 14px; border-radius: 6px; background: var(--bubble-bg); }
+  .line { height: 6px; border-radius: 3px; background: var(--surface-raised); }
+  .line.short { width: 70%; }
+</style>

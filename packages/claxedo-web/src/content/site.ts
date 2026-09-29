@@ -26,10 +26,10 @@ export const home = {
     subtitle: "Claude Code, Codex, Cursor, OpenCode and Pi. Your tools. Any machine.",
     claims: ["harness-coverage", "core-metrics", "agent-plugins", "connected-placement"],
   },
-  extend: {
-    title: "Fast. Light. Yours to extend.",
-    subtitle: "Faster than T3 Code and OpenCode on every core metric. Missing a feature? Prompt it into the app.",
-    claims: ["core-metrics", "app-plugins-by-prompt"],
+  speed: {
+    title: "Fast. Light. Efficient.",
+    subtitle: "Faster than T3 Code and OpenCode on every core metric.",
+    claims: ["core-metrics"],
   },
   benchmark: {
     date: "29 September 2026",
@@ -43,6 +43,13 @@ export const home = {
       { lead: "6.5×", label: "less idle CPU", detail: "0.4%. 6.5× less than T3 Code, 42× less than OpenCode." },
     ],
   },
+  prompt: {
+    title: "Missing a feature? Prompt it.",
+    subtitle: "Ask your agent for it. It lands right in the app.",
+    ask: "Add a Standup page that sums up yesterday's sessions.",
+    cards: ["The ask", "Added to the menu", "The page"],
+    claims: ["app-plugins-by-prompt"],
+  },
   openSource: {
     title: "Open source. Live in 5 minutes.",
     subtitle: "MIT licensed. Deploy it for your whole team on your own Cloudflare.",
@@ -51,17 +58,19 @@ export const home = {
   },
   sandbox: {
     title: "Bring your own sandbox.",
-    subtitle: "Any provider, any machine. Pick up every session on desktop, browser or phone.",
+    subtitle: "Any machine, any sandbox. Pick up every session on desktop, browser or phone.",
     claims: ["bring-your-own-sandbox", "connected-placement"],
   },
   plugins: {
     title: "Set up plugins once.",
-    subtitle: "Skills and MCP servers for your whole team, on every machine.",
-    claims: ["agent-plugins", "team-plugin-sharing"],
+    subtitle: "Add your team's plugin repo once. Everyone turns on what they need, in every agent, on every machine.",
+    cards: ["Add to the catalog", "Each teammate chooses", "Every agent, every machine"],
+    claims: ["agent-plugins", "team-plugin-sharing", "agent-plugins-follow-you"],
   },
   workflow: {
     title: "Chat or terminal. Sidebar or tabs.",
-    subtitle: "Every top agent in one composer, and a real terminal right beside it. Work the way you work.",
+    subtitle: "Chat with any agent, or open a real terminal right beside it. Work the way you work.",
+    cards: ["Chat or terminal", "Sidebar or tabs"],
     claims: ["harness-coverage", "sessions-and-terminals", "agent-cli-access", "sidebar-or-tabs"],
   },
   closing: {
@@ -70,7 +79,7 @@ export const home = {
   },
 } as const
 
-export const homeBlocks = [home.hero, home.extend, home.benchmark, home.openSource, home.sandbox, home.plugins, home.workflow, home.closing]
+export const homeBlocks = [home.hero, home.speed, home.benchmark, home.prompt, home.openSource, home.sandbox, home.plugins, home.workflow, home.closing]
 
 /** The pill that downloads the Apple Silicon build directly; every other build is one click away on the download page. */
 export const macDownload = downloads.find((download) => download.platform === "macos-arm64")!

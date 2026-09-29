@@ -5,12 +5,11 @@ import "../../styles/app-theme.css"
 const places = [
   { icon: "monitor", name: "This Mac", detail: "This computer", selected: true },
   { icon: "server", name: "studio-mac", detail: "Your machine" },
-  { icon: "cloud", name: "team-sandbox", detail: "Your provider" },
-  { icon: "plus-small", name: "Add your provider", detail: "Any sandbox you run" },
+  { icon: "cloud", name: "team-sandbox", detail: "Your sandbox" },
 ] as const
 ---
 
-<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, another machine, or a sandbox from your own provider">
+<div class="machines app-theme" role="img" aria-label="Choosing where a session runs: this Mac, another of your machines, or your team sandbox">
   <div class="app-card list">
     <p class="head">Run this session on</p>
     {places.map((place) => (

@@ -7,12 +7,16 @@ import IconSprite from "../components/IconSprite.astro"
 import MacDownload from "../components/MacDownload.astro"
 import HeroSky from "../components/HeroSky.astro"
 import Scene from "../components/Scene.astro"
-import AgentPicker from "../components/crops/AgentPicker.astro"
+import AddSource from "../components/crops/AddSource.astro"
 import DeployTerminal from "../components/crops/DeployTerminal.astro"
+import EverywhereGrid from "../components/crops/EverywhereGrid.astro"
+import LayoutThumbs from "../components/crops/LayoutThumbs.astro"
 import MachineList from "../components/crops/MachineList.astro"
-import MarketplaceCard from "../components/crops/MarketplaceCard.astro"
 import OrganizationSettings from "../components/crops/OrganizationSettings.astro"
+import PluginToggles from "../components/crops/PluginToggles.astro"
+import PromptComposer from "../components/crops/PromptComposer.astro"
 import ReopenCard from "../components/crops/ReopenCard.astro"
+import SidebarNew from "../components/crops/SidebarNew.astro"
 import StandupPage from "../components/crops/StandupPage.astro"
 import TerminalChat from "../components/crops/TerminalChat.astro"
 import { requireClaim } from "../content/claims"
@@ -20,6 +24,11 @@ import { routes } from "../content/routes"
 import { home, homeBlocks, site } from "../content/site"
 
 for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
+
+const rivals = (text: string) => text.split(/(T3 Code|OpenCode)/).map((part, index) => ({ text: part, rival: index % 2 === 1 }))
+const [ask, menu, page] = home.prompt.cards
+const [catalog, choose, everywhere] = home.plugins.cards
+const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
 ---
 
 <Layout title={`Claxedo: ${home.hero.title}`} description={site.description} lightOnly>
@@ -41,18 +50,40 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
 
     <section class="block">
       <header class="section-head">
-        <h2>{home.extend.title}</h2>
-        <p>{home.extend.subtitle} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
+        <h2>{home.speed.title}</h2>
+        <p>{rivals(home.speed.subtitle).map((part) => part.rival ? <strong class="rival">{part.text}</strong> : part.text)} <a class="quiet-link" href={home.benchmark.href}>See the {home.benchmark.date} benchmark</a></p>
       </header>
-      <dl class="metrics">
-        {home.benchmark.metrics.map((metric) => (
-          <div class="metric">
-            <dt><span class="lead">{metric.lead}</span><span class="label">{metric.label}</span></dt>
-            <dd>{metric.detail}</dd>
-          </div>
-        ))}
-      </dl>
-      <Scene scene="amber" class="panel wide after-metrics"><div class="crop centered"><StandupPage /></div></Scene>
+      <Scene scene="amber" class="panel metrics-panel">
+        <div class="cards metrics" tabindex="0" role="region" aria-label="Benchmark results"><dl>
+          {home.benchmark.metrics.map((metric) => (
+            <div class="metric">
+              <dt><span class="lead">{metric.lead}</span><span class="label">{metric.label}</span></dt>
+              <dd>{rivals(metric.detail).map((part) => part.rival ? <strong class="rival">{part.text}</strong> : part.text)}</dd>
+            </div>
+          ))}
+        </dl></div>
+      </Scene>
+    </section>
+
+    <section class="block">
+      <header class="section-head">
+        <h2>{home.prompt.title}</h2>
+        <p>{home.prompt.subtitle}</p>
+      </header>
+      <div class="cards three" tabindex="0" role="region" aria-label={home.prompt.title}>
+        <figure class="slide">
+          <Scene scene="dusk" class="panel"><div class="crop" style="--crop-w: 21rem; --crop-top: 7.5rem"><PromptComposer ask={home.prompt.ask} /></div></Scene>
+          <figcaption>{ask}</figcaption>
+        </figure>
+        <figure class="slide">
+          <Scene scene="harbor" class="panel"><div class="crop" style="--crop-w: 15rem; --crop-top: 3.5rem"><SidebarNew /></div></Scene>
+          <figcaption>{menu}</figcaption>
+        </figure>
+        <figure class="slide">
+          <Scene scene="amber" class="panel"><div class="crop" style="--crop-w: 30rem; --crop-scale: .72"><StandupPage /></div></Scene>
+          <figcaption>{page}</figcaption>
+        </figure>
+      </div>
     </section>
 
     <section class="block">
@@ -60,9 +91,9 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
         <h2>{home.openSource.title}</h2>
         <p>{home.openSource.subtitle} <a class="quiet-link" href={home.openSource.href}>Deployment guide</a></p>
       </header>
-      <div class="two-up">
-        <Scene scene="pier" class="panel"><div class="crop centered" style="--crop-w: 30rem"><OrganizationSettings /></div></Scene>
-        <Scene scene="dusk" class="panel"><div class="crop centered" style="--crop-w: 28rem"><DeployTerminal /></div></Scene>
+      <div class="cards two" tabindex="0" role="region" aria-label={home.openSource.title} style="--card-min: 32rem">
+        <div class="slide"><Scene scene="pier" class="panel"><div class="crop" style="--crop-w: 30rem"><OrganizationSettings /></div></Scene></div>
+        <div class="slide"><Scene scene="dusk" class="panel"><div class="crop" style="--crop-w: 28rem"><DeployTerminal /></div></Scene></div>
       </div>
     </section>
 
@@ -71,9 +102,9 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
         <h2>{home.sandbox.title}</h2>
         <p>{home.sandbox.subtitle}</p>
       </header>
-      <div class="two-up">
-        <Scene scene="harbor" class="panel"><div class="crop centered" style="--crop-w: 24rem"><MachineList /></div></Scene>
-        <Scene scene="tide" class="panel"><div class="crop centered" style="--crop-w: 20rem"><ReopenCard /></div></Scene>
+      <div class="cards two" tabindex="0" role="region" aria-label={home.sandbox.title} style="--card-min: 26rem">
+        <div class="slide"><Scene scene="harbor" class="panel"><div class="crop" style="--crop-w: 24rem"><MachineList /></div></Scene></div>
+        <div class="slide"><Scene scene="tide" class="panel"><div class="crop" style="--crop-w: 20rem"><ReopenCard /></div></Scene></div>
       </div>
     </section>
 
@@ -82,7 +113,20 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
         <h2>{home.plugins.title}</h2>
         <p>{home.plugins.subtitle}</p>
       </header>
-      <Scene scene="lagoon" class="panel wide"><div class="crop centered" style="--crop-w: 29rem"><MarketplaceCard /></div></Scene>
+      <div class="cards three" tabindex="0" role="region" aria-label={home.plugins.title}>
+        <figure class="slide">
+          <Scene scene="lagoon" class="panel"><div class="crop" style="--crop-w: 21rem; --crop-top: 3.5rem"><AddSource /></div></Scene>
+          <figcaption>{catalog}</figcaption>
+        </figure>
+        <figure class="slide">
+          <Scene scene="tide" class="panel"><div class="crop" style="--crop-w: 19rem; --crop-top: 3rem"><PluginToggles /></div></Scene>
+          <figcaption>{choose}</figcaption>
+        </figure>
+        <figure class="slide">
+          <Scene scene="slate" class="panel"><div class="crop" style="--crop-w: 23.5rem; --crop-top: 5rem"><EverywhereGrid /></div></Scene>
+          <figcaption>{everywhere}</figcaption>
+        </figure>
+      </div>
     </section>
 
     <section class="block">
@@ -90,9 +134,15 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
         <h2>{home.workflow.title}</h2>
         <p>{home.workflow.subtitle}</p>
       </header>
-      <div class="two-up">
-        <Scene scene="ash" class="panel"><div class="crop"><AgentPicker /></div></Scene>
-        <Scene scene="slate" class="panel"><div class="crop"><TerminalChat /></div></Scene>
+      <div class="cards two" tabindex="0" role="region" aria-label={home.workflow.title} style="--card-min: 33rem">
+        <figure class="slide">
+          <Scene scene="slate" class="panel"><div class="crop" style="--crop-w: 37rem; --crop-scale: .85"><TerminalChat /></div></Scene>
+          <figcaption>{chatOrTerminal}</figcaption>
+        </figure>
+        <figure class="slide">
+          <Scene scene="ash" class="panel"><div class="crop" style="--crop-w: 32rem; --crop-top: 5rem"><LayoutThumbs /></div></Scene>
+          <figcaption>{sidebarOrTabs}</figcaption>
+        </figure>
       </div>
     </section>
 
@@ -155,19 +205,26 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
   .section-head p { max-width: 52rem; margin: .75rem 0 0; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; }
   .section-head .quiet-link { font-size: inherit; white-space: nowrap; }
 
-  .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2rem; margin: 0; }
-  .metric { display: grid; align-content: start; gap: .75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+  .rival { color: var(--ink); font-weight: 500; white-space: nowrap; }
+
+  .cards { --card-min: 23rem; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(var(--card-min), 1fr); gap: .75rem; margin: 0; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .cards::-webkit-scrollbar { display: none; }
+  .cards > *, .metrics .metric { scroll-snap-align: start; }
+  .cards:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+  .slide { min-width: 0; margin: 0; }
+  .slide figcaption { margin-top: 1rem; color: var(--ink); font-size: 1.0625rem; }
+  .slide :global(.panel) { height: 25rem; }
+  .cards.three .slide :global(.panel) { height: 24rem; }
+  .crop { position: absolute; top: var(--crop-top, 2.75rem); bottom: 0; left: 50%; width: var(--crop-w); translate: -50% 0; scale: var(--crop-scale, 1); transform-origin: 50% 0; }
+
+  .block :global(.metrics-panel) { padding: 2rem; }
+  .metrics { --card-min: 11rem; }
+  .metrics dl { display: contents; }
+  .metric { display: grid; align-content: start; gap: .75rem; padding: 1.25rem 1.25rem 1.4rem; border-radius: 12px; background: rgb(255 255 255 / .94); box-shadow: 0 1px 2px rgb(15 20 30 / .06), 0 18px 40px -18px rgb(15 20 30 / .35); }
   .metric dt { display: grid; gap: .5rem; }
-  .lead { font: 400 clamp(3.5rem, 6.7vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .lead { font: 400 clamp(3.5rem, 6.2vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .label { color: var(--ink); font-size: 1.0625rem; }
   .metric dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.5; }
-
-  .two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-  .block :global(.panel) { height: 25rem; }
-  .block :global(.panel.wide) { height: 28rem; }
-  .block :global(.panel.after-metrics) { margin-top: 3.5rem; }
-  .crop { position: absolute; inset: 2.75rem 0 0 8%; transform-origin: 0 0; }
-  .crop.centered { left: 50%; width: var(--crop-w, 44rem); translate: -50% 0; }
 
   .closing { display: grid; justify-items: center; gap: 1.25rem; width: var(--width); margin: clamp(7rem, 13vw, 11rem) auto 0; text-align: center; }
   .closing h2 { max-width: none; margin: 0 0 .75rem; }
@@ -179,16 +236,13 @@ for (const block of homeBlocks) for (const id of block.claims) requireClaim(id)
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
   }
 
-  @media (max-width: 60rem) {
-    .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
-  }
   @media (max-width: 47.99rem) {
     .lede { font-size: 1.125rem; }
     .hero { --window-h: 32rem; }
-    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1rem; }
-    .two-up { grid-template-columns: minmax(0, 1fr); }
-    .block :global(.panel), .block :global(.panel.wide) { height: auto; aspect-ratio: 1.05; }
-    .block :global(.panel.after-metrics) { margin-top: 2.5rem; }
-    .crop, .crop.centered { inset: 1.75rem 0 0 6%; width: auto; translate: none; scale: .78; }
+    .cards, .cards.two, .cards.three { grid-auto-columns: 85%; margin-inline: calc(-1 * var(--edge)); padding-inline: var(--edge); scroll-padding-inline: var(--edge); }
+    .slide :global(.panel), .cards.three .slide :global(.panel) { height: 22rem; }
+    .crop { top: calc(var(--crop-top, 2.75rem) * .8); left: 6%; translate: none; scale: calc(var(--crop-scale, 1) * .8); transform-origin: 0 0; }
+    .block :global(.metrics-panel) { margin-inline: calc(-1 * var(--edge)); padding: 1.25rem 0; border-radius: 0; }
+    .metrics { grid-auto-columns: 70%; margin-inline: 0; }
   }
 </style>

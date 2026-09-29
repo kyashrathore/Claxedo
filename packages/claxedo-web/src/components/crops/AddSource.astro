@@ -1,0 +1,33 @@
+---
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+
+const found = [
+  ["Skills", 12],
+  ["MCP servers", 4],
+  ["Commands", 6],
+  ["Hooks", 3],
+] as const
+---
+
+<div class="app-card source app-theme" role="img" aria-label="Adding the private github.com/acme/agent-plugins repo to the Marketplace: 12 skills, 4 MCP servers, 6 commands and 3 hooks">
+  <b class="title">Add source</b>
+  <p class="field"><Icon name="github" /><span>github.com/acme/agent-plugins</span><em><Icon name="lock" />Private</em></p>
+  <p class="label">In this repo</p>
+  <div class="found">{found.map(([kind, count]) => <p><span>{kind}</span><b>{count}</b></p>)}</div>
+  <span class="add">Add to Marketplace</span>
+</div>
+
+<style>
+  .source { width: 100%; padding: 16px; }
+  .title { display: block; margin-bottom: 12px; font-size: 16px; font-weight: 500; }
+  .field { display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 10px; border-radius: 8px; box-shadow: 0 0 0 1px var(--border); color: var(--text-strong); font-size: 13px; }
+  .field span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .field em { display: flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; background: var(--surface-base-hover); color: var(--text-base); font-size: 11px; font-style: normal; }
+  .field em :global(svg) { width: 12px; height: 12px; }
+  .label { margin: 14px 0 6px; color: var(--text-weak); font-size: 12px; }
+  .found { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .found p { display: flex; justify-content: space-between; margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-base-hover); color: var(--text-base); font-size: 12.5px; }
+  .found b { color: var(--text-strong); font-weight: 500; }
+  .add { display: block; margin-top: 14px; padding: 8px 0; border-radius: 8px; background: var(--send-bg); color: var(--send-ink); font-size: 13px; text-align: center; }
+</style>

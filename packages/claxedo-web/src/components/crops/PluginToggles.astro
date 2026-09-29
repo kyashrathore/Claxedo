@@ -1,0 +1,37 @@
+---
+import "../../styles/app-theme.css"
+
+const plugins = [
+  { name: "release-notes", kind: "Skill", on: true },
+  { name: "linear", kind: "MCP server", on: true },
+  { name: "frontend-design", kind: "Skill", on: true },
+  { name: "posthog", kind: "MCP server", on: false },
+]
+---
+
+<div class="app-card toggles app-theme" role="img" aria-label="A teammate's plugin list from acme/agent-plugins, with release-notes, linear and frontend-design turned on just for them">
+  <header><b>Your plugins</b><span>Just for you</span></header>
+  <p class="from">From acme/agent-plugins</p>
+  {plugins.map((plugin) => (
+    <p class="row">
+      <span class="name"><b>{plugin.name}</b><small>{plugin.kind}</small></span>
+      <i class:list={["switch", { on: plugin.on }]}></i>
+    </p>
+  ))}
+</div>
+
+<style>
+  .toggles { width: 100%; padding: 14px 16px 8px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  header b { font-size: 16px; font-weight: 500; }
+  header span { color: var(--text-weak); font-size: 12px; }
+  .from { margin: 2px 0 8px; color: var(--text-weaker); font-size: 12px; }
+  .row { display: flex; align-items: center; gap: 12px; margin: 0; padding: 9px 0; border-top: 1px solid var(--border); }
+  .name { display: grid; flex: 1; gap: 1px; }
+  .name b { font-weight: 400; font-size: 13.5px; }
+  .name small { color: var(--text-weaker); font-size: 11.5px; }
+  .switch { position: relative; width: 30px; height: 18px; flex: none; border-radius: 999px; background: #dcdcde; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgb(0 0 0 / .2); }
+  .switch.on { background: var(--send-bg); }
+  .switch.on::after { left: 14px; }
+</style>

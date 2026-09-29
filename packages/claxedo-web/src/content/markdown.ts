@@ -40,13 +40,18 @@ ${site.description}
 
 > ${home.hero.title} ${home.hero.subtitle}
 
-## ${home.extend.title}
+## ${home.speed.title}
 
-${home.extend.subtitle} Benchmark of ${home.benchmark.date}: ${home.benchmark.href}
+${home.speed.subtitle} Benchmark of ${home.benchmark.date}: ${home.benchmark.href}
 
 ${home.benchmark.metrics.map((metric) => `- ${metric.lead} ${metric.label}: ${metric.detail}`).join("\n")}
 
-${[home.openSource, home.sandbox, home.plugins, home.workflow].map((section) => `## ${section.title}\n\n${section.subtitle}${"href" in section ? ` Guide: ${section.href}` : ""}`).join("\n\n")}
+${[home.prompt, home.openSource, home.sandbox, home.plugins, home.workflow].map((section) => [
+  `## ${section.title}`,
+  "",
+  `${section.subtitle}${"href" in section ? ` Guide: ${section.href}` : ""}`,
+  ...("cards" in section ? ["", ...section.cards.map((card) => `- ${card}`)] : []),
+].join("\n")).join("\n\n")}
 
 ${home.closing.text}
 

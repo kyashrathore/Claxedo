@@ -21,7 +21,7 @@ describe("public site contract", () => {
     expect(site.description).toContain("Claude Code, Codex, Cursor, OpenCode, Pi and any ACP agent")
     expect(home.benchmark.metrics.map((metric) => metric.label)).toEqual(["faster start", "faster session open", "faster return", "less memory", "less idle CPU"])
     const publishable = new Set<string>(publishableClaims.map((item) => item.id))
-    expect(homeBlocks).toHaveLength(8)
+    expect(homeBlocks).toHaveLength(9)
     for (const block of homeBlocks) {
       expect(block.claims.length).toBeGreaterThan(0)
       for (const id of block.claims) expect(publishable.has(id)).toBe(true)
