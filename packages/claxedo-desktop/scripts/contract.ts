@@ -194,7 +194,6 @@ export function spec(root = ROOT): Spec {
     "../sdk-next/src",
     "../workspace-runtime/package.json",
     "../workspace-runtime/src",
-    "../workspace-runtime/templates",
   ].filter((entry) => fs.existsSync(path.resolve(root, entry)))
 
   return {
@@ -212,7 +211,6 @@ export function spec(root = ROOT): Spec {
       `out/renderer/${MAIN_RENDERER_DOCUMENT}`,
       "out/renderer/loading.html",
       "out/product-boundary",
-      "out/templates",
       "resources/claxedo-server",
       "resources/host-connector",
       "resources/icons/128x128@2x.png",

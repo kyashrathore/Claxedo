@@ -31,7 +31,7 @@ import {
   resolveLocalServerEntry,
 } from "./local-server"
 import { prepareMermaidRenderer } from "./build-mermaid-renderer"
-import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
+import { copyIcons } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
@@ -48,13 +48,6 @@ try {
   console.log(`Copied ${copied.channel} icons from ${copied.src} to ${copied.dest}`)
 } catch (e) {
   console.warn(`[predev] ${e instanceof Error ? e.message : String(e)}, skipping icon copy`)
-}
-
-try {
-  const copied = copyWorkspaceRuntimeTemplates(path.resolve(PACKAGE_DIR, "templates"))
-  console.log(`Copied workspace-runtime templates from ${copied.src} to ${copied.dest}`)
-} catch (e) {
-  console.warn(`[predev] ${e instanceof Error ? e.message : String(e)}, skipping template copy`)
 }
 
 // In dev we run the generic Electron.app binary, so macOS reads the app name,
