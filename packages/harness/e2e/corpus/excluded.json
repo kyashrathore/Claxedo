@@ -1,13 +1,4 @@
 {
-  "H2-stop": "H-25",
-  "H3-native-permissions": "H-26; same-session update order",
-  "H35.native-handoff": "H-31; missing second-turn session.updated",
-  "H37.options-per-turn": "H-32; optional title usage delta",
-  "H5-native-subagents": "H-27",
-  "H6-goals": "H-28",
-  "H7.unknown-held": "H-30; unpublished queue transition",
-  "H8-restart-mid-turn": "H-29",
-  "H12-title-archive": "H-24",
   "H29-self-hosted-cold-start": "no wire observations: the flow calls cloud helpers and fetch directly, outside the recording clients",
   "H30-cloud-consent": "no wire observations: the flow calls cloud helpers, sendJson and fetch directly, outside the recording clients"
 }

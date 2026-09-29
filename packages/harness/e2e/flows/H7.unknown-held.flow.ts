@@ -44,12 +44,11 @@ async function unknownCase(item: typeof CASES[number]) {
         assert.equal(response.status, 200)
         return await response.json() as Array<{ seq: number; parts: Array<{ text?: string }>; steering?: { state: string; mode: string } }>
       }
-      let firstRows = await queue()
-      const settledBy = Date.now() + 10_000
-      while (!firstRows.some((row) => row.steering?.state === "unknown") && Date.now() < settledBy) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        firstRows = await queue()
-      }
+      await stream.waitFor((frame) => {
+        const payload = frame.data.payload as { type?: string; sessionID?: string; queue?: Array<{ steering?: { state?: string } }> } | undefined
+        return payload?.type === "session.queue" && payload.sessionID === session.id && !!payload.queue?.some((row) => row.steering?.state === "unknown")
+      }, { label: `${item.name} uncertain steer held in the queue` })
+      const firstRows = await queue()
       assert.ok(firstRows.some((row) => row.parts.some((part) => part.text === steered) && row.steering?.state === "unknown" && row.steering.mode === "steer"), `${item.name} uncertain steer was not held: ${JSON.stringify(firstRows)}`)
       const evidence = await fs.readFile(path.join(stack.dataDir, `${item.name}-steer-fault-bin`, "seen.log"), "utf8")
       assert.match(evidence, item.name === "claude" ? /process interrupted before replay/ : /reply withheld/)

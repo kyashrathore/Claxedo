@@ -86,7 +86,9 @@ async function nativeGoal(harnessId: "claude" | "codex") {
     await stream.waitFor((frame) => frameType(frame) === "goal.updated", { label: `${harnessId} Goal frame`, timeoutMs: 60_000 })
     assert.ok(await api.goal(workspace.directory, session.id))
     if (harnessId === "codex") {
-      await stream.waitFor((frame) => frameType(frame) === "session.idle" && stream.frames.indexOf(frame) >= priorFrameCount, { label: "Codex provider Goal turn idle", timeoutMs: 60_000 })
+      const goalTurnIdle = await stream.waitFor((frame) => frameType(frame) === "session.idle" && stream.frames.indexOf(frame) >= priorFrameCount, { label: "Codex provider Goal turn idle", timeoutMs: 60_000 })
+      await stream.waitFor((frame) => frameType(frame) === "session.status" && stream.frames.indexOf(frame) > stream.frames.indexOf(goalTurnIdle)
+        && (frame.data.payload as { properties?: { status?: { type?: string } } }).properties?.status?.type === "busy", { label: "Codex continuing the active Goal", timeoutMs: 60_000 })
       assert.ok((await api.messages(workspace.directory, session.id)).length > priorMessages.length, "Codex Goal must create a stored provider-started turn")
       assert.ok(stack.scripted.requests.some((request) => request.prompt.includes(objective)), "Codex provider-started turn must call the scripted model")
       await api.goalAction(workspace.directory, session.id, "pause")

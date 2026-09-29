@@ -55,6 +55,8 @@ export async function run() {
 
       await sendJson(cloudTransport(stack), "PATCH", `${stack.url}/api/claxedo/credentials/${credentialId}/status`, { status: "revoked" }, "Revoking H32 ACP secret")
       await assert.rejects(api.createSession(workspace.directory, { harness: { id: connectionId, access: "connection" } }), /unavailable|secret|credential/i)
+      await stream.waitFor((frame) => frameType(frame) === "session.lifecycle" && (frame.data.payload as { phase?: string }).phase === "failed",
+        { label: "revoked-secret create failure" })
       assert.deepEqual(stack.egress.attempts, [])
     } finally {
       stream.close()

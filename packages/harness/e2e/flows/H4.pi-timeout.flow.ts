@@ -26,16 +26,12 @@ export async function run() {
       ["Select environment", "Staging"], ["Confirm environment", "Yes"],
       ["Explain environment", "Keep the test isolated"], ["Edit summary", "Edited summary"],
     ]) {
-      const deadline = Date.now() + 30_000
-      let question = (await api.questions(directory)).find((row) => row.sessionID === session.id
+      await stream.waitFor((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id
+        && (frame.data.payload as { properties?: { questions?: Array<{ question?: string }> } }).properties?.questions?.[0]?.question === title,
+      { label: `${title} Pi dialog` })
+      const question = (await api.questions(directory)).find((row) => row.sessionID === session.id
         && (row.questions as Array<{ question?: string }>)[0]?.question === title)
-      while (!question && Date.now() < deadline) {
-        await Bun.sleep(50)
-        question = (await api.questions(directory)).find((row) => row.sessionID === session.id
-          && (row.questions as Array<{ question?: string }>)[0]?.question === title)
-      }
       assert.ok(question, `${title} never surfaced as a Pi dialog`)
-      assert.ok(stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id))
       await api.replyQuestion(directory, question.id, [[answer]])
     }
     await stream.waitFor((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id
