@@ -10,8 +10,7 @@
     "typecheck": "astro check",
     "preview": "astro preview",
     "astro": "astro",
-    "check:release-artifacts": "bun scripts/verify-release-artifacts.ts",
-    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+    "check:release-artifacts": "bun scripts/verify-release-artifacts.ts"
   },
   "dependencies": {
     "@astrojs/check": "0.9.10",

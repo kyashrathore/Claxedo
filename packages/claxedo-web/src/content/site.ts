@@ -1,5 +1,5 @@
 import { benchmark, downloads, github } from "../config"
-import { marketingActions, routes } from "./routes"
+import { routes } from "./routes"
 
 export const site = {
   name: "Claxedo",
@@ -125,4 +125,3 @@ export const commercialNavigation = [
   { label: "Compare", href: routes.compare, key: "compare" },
 ] as const
 
-export const approvedMarketingActions = [marketingActions.download]
