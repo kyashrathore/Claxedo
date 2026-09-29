@@ -333,7 +333,7 @@ const BATCH_REFUSALS: ReadonlySet<number> = new Set([400, 413])
 
 export type CloudWorkspaceUsage = Required<Pick<
   WorkspaceRuntimeServerOptions,
-  "sessionAccessPolicy" | "onCompatEvent" | "onTurnOutcome" | "bindSessionConfig" | "bindSessionParents"
+  "sessionAccessPolicy" | "onPresentationEvent" | "onTurnOutcome" | "bindSessionConfig" | "bindSessionParents"
 >> & {
   /**
    * Stops the periodic flush until the next lease, then resolves once every
@@ -529,7 +529,7 @@ export function cloudWorkspaceUsage(input: {
           },
         }
       : input.policy,
-    onCompatEvent: (event) => void meter.consume(event),
+    onPresentationEvent: (event) => void meter.consume(event),
     onTurnOutcome: ({ sessionId, assistantMessageId, outcome }) => {
       if (outcome.status !== "cancelled" || !assistantMessageId) return
       void meter.settle({

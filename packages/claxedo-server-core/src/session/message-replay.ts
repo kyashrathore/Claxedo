@@ -14,7 +14,6 @@ import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platf
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
 import { ClaxedoSessionMetaTable } from "@claxedo/server-core/session/meta.sql"
 import { asRecord, asString, isRecord } from "@claxedo/helpers/guards"
-import { readRecordedPart } from "@claxedo/workspace-runtime/projection"
 
 function num(input: unknown): number | undefined {
   return typeof input === "number" ? input : undefined
@@ -367,10 +366,8 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       for (const part of selectedParts) {
         const parsed = asRecord(JSON.parse(part.part_json))
         if (!parsed) continue
-        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), readRecordedPart(parsed)])
+        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), parsed])
       }
-      // The SQL above selects by the stored type; an attachment recorded as a
-      // synthetic text reads back as a file part and leaves the surface here.
       const messages = projectLatestSurfaceMessages(infoRows.flatMap((row) => {
         const info = asRecord(JSON.parse(row.info_json))
         return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
@@ -516,12 +513,7 @@ export function readSessionMaxEventOrdinal(sessionId: string): number {
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
-  return terminalizeReplayMessages(
-    rows.map((row) => {
-      const message = readStoredMessage(row.data)
-      return { ...message, parts: message.parts.map(readRecordedPart) }
-    }),
-  )
+  return terminalizeReplayMessages(rows.map((row) => readStoredMessage(row.data)))
 }
 
 const FOREIGN = Symbol("foreign message")

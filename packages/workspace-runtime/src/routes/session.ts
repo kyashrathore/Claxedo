@@ -1,4 +1,4 @@
-import type { SessionConfig, SessionHarness, SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { SessionConfig, SessionHarness, SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import { flushRuntimeSessionDocuments } from "./document-hydration"
@@ -24,7 +24,6 @@ import { requestedSessionHarness } from "./config"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope } from "../projection/compat-events"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -262,7 +261,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       throw error
     }
     const started = runtime
-    const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
+    const publishGlobal = (event: AgentEventEnvelope) => eventHub.publishGlobal(event)
     const scope = () => {
       const active = options.createActiveTurnScope?.({ directory: input.directory, sessionId: input.sessionId })
       if (!lease) return active

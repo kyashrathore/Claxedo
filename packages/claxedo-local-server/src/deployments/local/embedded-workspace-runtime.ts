@@ -1,3 +1,4 @@
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/internals"
 import path from "path"
 import fs from "fs/promises"
@@ -43,7 +44,6 @@ import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-confi
 import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
-import type { CompatEnvelope } from "@claxedo/workspace-runtime/projection"
 
 const log = Log.create({ service: "embedded-workspace-runtime" })
 
@@ -293,7 +293,7 @@ let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] =
 let configuredProcessObserver: ProcessObserver | undefined
 let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
 let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
-let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
+let configuredOnSessionMetaEvent: ((event: AgentEventEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredSessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"] | undefined
@@ -366,7 +366,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
   /** Declared where the policy's loopback arm is the local owner's; otherwise the marker answers. */
   loopbackSessionAuthority?: HostSessionAuthority
-  onSessionMetaEvent?: (event: CompatEnvelope) => void
+  onSessionMetaEvent?: (event: AgentEventEnvelope) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   sessionIdWorkspace?: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
@@ -439,7 +439,7 @@ function options(
     // The observer persists control-plane session metadata. Conversation
     // delivery stays on the workspace's own `wr/events` and is never
     // republished onto the control-plane bus.
-    onCompatEvent: (event) => configuredOnSessionMetaEvent?.(event),
+    onPresentationEvent: (event) => configuredOnSessionMetaEvent?.(event),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),

@@ -1,9 +1,9 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, type SseReplayBuffer } from "../projection/sse"
-import { isRetainedCompatEvent, type CompatEnvelope, type EventSessionDeleted } from "../projection/compat-events"
+import { isRetainedPresentationEvent } from "../projection/presentation-events"
 import { presentationEventsFromRuntimeEnvelope } from "../projection/client-presentation/runtime-envelope"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { AgentEventEnvelope, AgentSessionStarts, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
 import { sep } from "node:path"
 import { errorBody } from "./error-body"
@@ -14,7 +14,7 @@ import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import {
   authorizeSessionEventScope,
-  compatEnvelopeSessionId,
+  envelopeSessionId,
   isSessionEventScopeResponse,
   workspaceRuntimeEventSessionId,
 } from "./session-event-privacy"
@@ -37,7 +37,6 @@ import {
  * directory.
  */
 export type WorkspaceEventFrame =
-  | CompatEnvelope
   | AgentEventEnvelope
   | { directory: string; payload: WorkspaceRuntimeEvent }
 
@@ -112,7 +111,7 @@ function isControlFrame(frame: WorkspaceEventFrame): frame is { directory: strin
  * Frames whose loss strands UI state in a shape nothing else self-heals: an
  * exit/stop that never arrives leaves a terminal or managed process pinned
  * to "running", a missed agent Idle/Error leaves an agent pinned to "Busy",
- * and `isRetainedCompatEvent` names the session-shaped ones. The replay
+ * and `isRetainedPresentationEvent` names the session-shaped ones. The replay
  * buffer keeps a second, independent ring of these, so a burst of chatty
  * frames cannot evict the one frame that settles a state machine, and the
  * fanout sheds them LAST when a slow consumer overflows its pending queue.
@@ -136,13 +135,12 @@ export function isRetainedWorkspaceEventFrame(frame: StreamFrame) {
         return false
     }
   }
-  return isRetainedCompatEvent(frame.payload as CompatEnvelope["payload"])
+  return isRetainedPresentationEvent(frame.payload)
 }
 
-function sessionDeletion(frame: StreamFrame): EventSessionDeleted | undefined {
+function sessionDeletion(frame: StreamFrame): Extract<AgentPresentationEvent, { type: "session.deleted" }> | undefined {
   if (isGapFrame(frame) || isControlFrame(frame)) return undefined
-  const payload = frame.payload as CompatEnvelope["payload"]
-  return payload.type === "session.deleted" ? payload : undefined
+  return frame.payload.type === "session.deleted" ? frame.payload : undefined
 }
 
 function isSessionDeletion(frame: StreamFrame) {
@@ -156,7 +154,7 @@ function deletedSessionParent(frame: StreamFrame): string | undefined {
 export function workspaceEventFrameSessionId(frame: StreamFrame): string | undefined {
   if (isGapFrame(frame)) return undefined
   if (isControlFrame(frame)) return workspaceRuntimeEventSessionId(frame.payload)
-  return compatEnvelopeSessionId(frame as CompatEnvelope)
+  return envelopeSessionId(frame)
 }
 
 /**
@@ -491,7 +489,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         frames.emit(frame)
         fn(frame)
       }
-      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => emit(event))
+      const unsubscribePresentation = options.eventHub.subscribeGlobal((event) => emit(event))
       const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
         for (const event of presentationEventsFromRuntimeEnvelope(envelope)) emit(event)
       })
@@ -500,7 +498,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: unownedLifecyclePayload(event) })
       })
       return () => {
-        unsubscribeCompat()
+        unsubscribePresentation()
         unsubscribeRuntime()
         unsubscribeControl()
       }

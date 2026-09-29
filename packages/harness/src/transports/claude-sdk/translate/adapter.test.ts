@@ -192,7 +192,7 @@ describe("claudeSdkAdapter", () => {
     }).events).toMatchObject([{ type: "thinking-delta", delta: "Reasoning" }])
   })
 
-  test("restores active assistant text stream without duplicating snapshots", () => {
+  test("keeps the active assistant text stream without duplicating snapshots", () => {
     const first = runtime()
     first.ingest({
       source: "claude.sdk.message",
@@ -206,9 +206,7 @@ describe("claudeSdkAdapter", () => {
       },
     })
 
-    const restored = runtime(first.snapshot())
-
-    expect(restored.ingest({
+    expect(first.ingest({
       source: "claude.sdk.message",
       payload: {
         type: "assistant",
@@ -216,7 +214,7 @@ describe("claudeSdkAdapter", () => {
         message: { id: "message-1", content: [{ type: "text", text: "Hi there" }] },
       },
     }).events).toMatchObject([{ type: "text-delta", delta: " there" }])
-    expect(restored.snapshot().adapterState.reconciledAssistantTextByMessageId["message-1"]).toBe("Hi there")
+    expect(first.state().reconciledAssistantTextByMessageId["message-1"]).toBe("Hi there")
   })
 
   test("maps reasoning deltas, streamed tool inputs, and tool results", () => {
@@ -298,8 +296,8 @@ describe("claudeSdkAdapter", () => {
     expect(delta('changes"}')).toMatchObject([{ type: "tool-input", input: { command: "git status --short", description: "Show changes" } }])
   })
 
-  test("projects native task results and preserves IDs across runtime restoration", () => {
-    let agent = runtime()
+  test("projects native task results and keeps task IDs across the turn", () => {
+    const agent = runtime()
     const call = (id: string, name: string, input: unknown, result: unknown, isError = false) => {
       agent.ingest({ source: "claude.sdk.message", payload: {
         type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] },
@@ -311,7 +309,6 @@ describe("claudeSdkAdapter", () => {
     }
     expect(call("create", "TaskCreate", { subject: "Inspect" }, { task: { id: "42", subject: "Inspect" } }))
       .toMatchObject([{ type: "todo-update", todos: [{ id: "42", description: "Inspect", status: "pending" }] }])
-    agent = runtime(agent.snapshot())
     expect(call("denied", "TaskUpdate", { taskId: "42", status: "completed" }, { success: false, taskId: "42" }))
       .toEqual([])
     expect(call("error", "TaskUpdate", { taskId: "42", status: "completed" }, { success: true, taskId: "42", statusChange: { to: "completed" } }, true))

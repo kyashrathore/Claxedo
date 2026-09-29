@@ -30,7 +30,7 @@ test("a Claude Task spawn associates its child with the routed tool call", async
 
 test("the Claude translator seeds restart-visible native todos", () => {
   const { runtime } = claudeTranslator("a1", [{ id: "native-1", content: "Finish review", status: "in_progress", priority: "medium" }])
-  expect(runtime.snapshot().adapterState.tasks).toMatchObject({ "native-1": {
+  expect(runtime.ingest({ source: "claude.sdk.message", payload: { type: "keep_alive" } }).state.tasks).toMatchObject({ "native-1": {
     id: "native-1", description: "Finish review", status: "in_progress",
   } })
 })

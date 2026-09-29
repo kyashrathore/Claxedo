@@ -1,21 +1,10 @@
-import type { CompatEnvelope, CompatEvent } from "./types"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 
-export type { CompatEnvelope, CompatEvent } from "./types"
-
-export type NormalizeCompatEventResult<Event extends CompatEvent = CompatEvent> = {
-  event: Event
-  issues: string[]
-}
-
-export function withDir<Event extends CompatEvent>(directory: string, payload: Event): CompatEnvelope<Event> {
-  return { directory, payload }
-}
-
-export function normalizeCompatEventWithDiagnostics<Event extends CompatEvent>(event: Event): NormalizeCompatEventResult<Event>
+export function normalizePresentationEventWithDiagnostics<Event extends AgentPresentationEvent>(event: Event): { event: Event; issues: string[] }
 // `normalizeValue` rewrites only the leaves a structured consumer cannot carry
 // (bigint, function, symbol, cycles), so the envelope keeps the shape the
 // overload promises; the implementation is typed at the boundary it works on.
-export function normalizeCompatEventWithDiagnostics(event: CompatEvent): { event: unknown; issues: string[] } {
+export function normalizePresentationEventWithDiagnostics(event: AgentPresentationEvent): { event: unknown; issues: string[] } {
   const result = normalizeValue(event, new WeakSet())
   return {
     event: result.value,

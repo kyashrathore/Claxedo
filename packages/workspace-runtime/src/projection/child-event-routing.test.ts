@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AgentRuntimeEvent, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, RuntimeUsageObservation, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
 import {
@@ -10,7 +10,6 @@ import {
 } from "./child-event-routing"
 import type { RuntimeAppendSource } from "./turn-projection"
 import { testTurnProjector } from "../test-support/turn-projector"
-import type { CompatEvent } from "./compat-events"
 
 const source: RuntimeAppendSource = { dir: "in", method: "test" }
 
@@ -35,13 +34,13 @@ function fixture(input: {
   maxCount?: number
   maxBytes?: number
 } = {}) {
-  const journal: Array<{ sessionId: string; agentSessionId?: string; payload: CompatEvent }> = []
-  const parentCompat: CompatEvent[] = []
-  const childCompat: CompatEvent[] = []
+  const journal: Array<{ sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }> = []
+  const parentEvents: AgentPresentationEvent[] = []
+  const childEvents: AgentPresentationEvent[] = []
   const runtime: RuntimeEventEnvelopeInput[] = []
   const diagnostics: AgentRuntimeEvent[] = []
   let childProjectors = 0
-  const appendEvent = (event: { sessionId: string; agentSessionId?: string; payload: CompatEvent }) => {
+  const appendEvent = (event: { sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }) => {
     journal.push(event)
     return { payload: event.payload }
   }
@@ -50,7 +49,7 @@ function fixture(input: {
     owner: { sessionId: "parent-1", getAgentSessionId: () => "provider-parent-1" },
     input: target("parent-1").input,
     assistantMessageId: "parent-assistant-1",
-    onEvent: (event) => parentCompat.push(event),
+    onEvent: (event) => parentEvents.push(event),
     onRuntimeEvent: (event) => runtime.push(event),
   })
   const router = createChildEventRouter({
@@ -63,7 +62,7 @@ function fixture(input: {
         input: child.input,
         assistantMessageId: child.assistantMessageId,
         created: child.created,
-        onEvent: (event) => childCompat.push(event),
+        onEvent: (event) => childEvents.push(event),
         onRuntimeEvent: (event) => runtime.push(event),
       })
     },
@@ -76,8 +75,8 @@ function fixture(input: {
   return {
     router,
     journal,
-    parentCompat,
-    childCompat,
+    parentEvents,
+    childEvents,
     runtime,
     diagnostics,
     childProjectors: () => childProjectors,
@@ -101,7 +100,7 @@ function usage(input: number, observation: Partial<RuntimeUsageObservation> = {}
   }
 }
 
-function meteredOn(events: CompatEvent[]) {
+function meteredOn(events: AgentPresentationEvent[]) {
   return events.flatMap((event) => event.type === "session.usage" && event.properties.observation
     ? [{
         sessionID: event.properties.sessionID,
@@ -131,8 +130,8 @@ describe("createChildEventRouter", () => {
     expect(item.journal.every((event) =>
       event.sessionId === "child-1" && event.agentSessionId === "provider-child-1"
     )).toBe(true)
-    expect(item.parentCompat).toEqual([])
-    expect(item.childCompat.length).toBeGreaterThan(0)
+    expect(item.parentEvents).toEqual([])
+    expect(item.childEvents.length).toBeGreaterThan(0)
     expect(item.runtime.every((event) =>
       event.sessionId === "child-1" && event.agentSessionId === "provider-child-1"
     )).toBe(true)
@@ -156,7 +155,7 @@ describe("createChildEventRouter", () => {
 
     item.router.associate("thread-1", target())
 
-    expect(item.childCompat.flatMap((event) =>
+    expect(item.childEvents.flatMap((event) =>
       event.type === "message.part.delta" ? [event.properties.delta] : []
     )).toEqual(["before reconnect", "after reconnect"])
     expect(item.journal.every((event) => event.sessionId === "child-1")).toBe(true)
@@ -285,8 +284,8 @@ describe("createChildEventRouter", () => {
     item.router.project({ type: "text-delta", delta: "lost" }, source, { kind: "child" })
 
     expect(item.journal).toEqual([])
-    expect(item.parentCompat).toEqual([])
-    expect(item.childCompat).toEqual([])
+    expect(item.parentEvents).toEqual([])
+    expect(item.childEvents).toEqual([])
     expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_missing_correlation"])
     item.router.dispose()
   })
@@ -372,13 +371,13 @@ describe("createChildEventRouter", () => {
       item.router.project(usage(7, { scope: "thread-late:turn-1" }), source, child)
       expire?.()
 
-      expect(meteredOn(item.parentCompat)).toEqual([
+      expect(meteredOn(item.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "delta", scope: "child:late", input: 3 },
         { sessionID: "parent-1", kind: "cumulative", scope: "child:late", input: 25 },
         { sessionID: "parent-1", kind: "cumulative", scope: "thread-late:turn-1", input: 7 },
       ])
       expect(JSON.stringify(item.journal)).not.toContain("child text")
-      expect(item.childCompat).toEqual([])
+      expect(item.childEvents).toEqual([])
       expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_expired"])
       expect(diagnosticDetails(item.diagnostics)).toEqual([{ correlationKey: "late", droppedEvents: 1, rolledUpUsage: 3 }])
       item.router.dispose()
@@ -391,7 +390,7 @@ describe("createChildEventRouter", () => {
       item.router.project(usage(12, { scope: "thread-pending:turn-1" }), source, { kind: "child", correlationKey: "pending" })
       item.router.dispose()
 
-      expect(meteredOn(item.parentCompat)).toEqual([
+      expect(meteredOn(item.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "thread-pending:turn-1", input: 12 },
       ])
       expect(JSON.stringify(item.journal)).not.toContain("unbound transcript")
@@ -405,7 +404,7 @@ describe("createChildEventRouter", () => {
       counted.router.project(usage(4), source, { kind: "child", correlationKey: "overflow" })
       counted.router.project(usage(9, { kind: "delta", providerObservationId: "step-9" }), source, { kind: "child", correlationKey: "overflow" })
 
-      expect(meteredOn(counted.parentCompat)).toEqual([
+      expect(meteredOn(counted.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "child:overflow", input: 4 },
         { sessionID: "parent-1", kind: "delta", scope: "child:overflow", input: 9 },
       ])
@@ -415,7 +414,7 @@ describe("createChildEventRouter", () => {
 
       const sized = fixture({ maxBytes: 64 })
       sized.router.project(usage(6), source, { kind: "child", correlationKey: "too-large" })
-      expect(meteredOn(sized.parentCompat)).toEqual([
+      expect(meteredOn(sized.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "child:too-large", input: 6 },
       ])
       expect(diagnosticCodes(sized.diagnostics)).toEqual(["child_event_route_buffer_bytes_exceeded"])
@@ -429,7 +428,7 @@ describe("createChildEventRouter", () => {
       item.router.project({ type: "text-delta", delta: "after poison" }, source, { kind: "child", correlationKey: "poisoned" })
       item.router.project(usage(30), source, { kind: "child", correlationKey: "poisoned" })
 
-      expect(meteredOn(item.parentCompat)).toEqual([
+      expect(meteredOn(item.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "child:poisoned", input: 30 },
       ])
       expect(JSON.stringify(item.journal)).not.toContain("after poison")
@@ -451,12 +450,12 @@ describe("createChildEventRouter", () => {
       item.router.project({ type: "text-delta", delta: "bound text" }, source, { kind: "child", correlationKey: "late" })
       item.router.project(usage(40), source, { kind: "child", correlationKey: "late" })
 
-      expect(meteredOn(item.parentCompat)).toEqual([
+      expect(meteredOn(item.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "child:late", input: 10 },
         { sessionID: "parent-1", kind: "cumulative", scope: "child:late", input: 40 },
       ])
-      expect(meteredOn(item.childCompat)).toEqual([])
-      expect(JSON.stringify(item.childCompat)).toContain("bound text")
+      expect(meteredOn(item.childEvents)).toEqual([])
+      expect(JSON.stringify(item.childEvents)).toContain("bound text")
       item.router.dispose()
     })
 
@@ -466,7 +465,7 @@ describe("createChildEventRouter", () => {
       item.router.project(usage(5), source, { kind: "child" })
       item.router.project({ type: "text-delta", delta: "lost" }, source, { kind: "child" })
 
-      expect(meteredOn(item.parentCompat)).toEqual([
+      expect(meteredOn(item.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:unknown", input: 5 },
       ])
       expect(JSON.stringify(item.journal)).not.toContain("lost")
@@ -485,7 +484,7 @@ describe("createChildEventRouter", () => {
       item.router.project(usage(7, { nativeSessionId: "child-b" }), source, { kind: "child" })
       item.router.project(usage(9, { nativeSessionId: "child-a" }), source, { kind: "child" })
 
-      expect(meteredOn(item.parentCompat)).toEqual([
+      expect(meteredOn(item.parentEvents)).toEqual([
         { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-a", input: 5 },
         { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-b", input: 7 },
         { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-a", input: 9 },

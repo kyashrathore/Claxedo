@@ -5,8 +5,6 @@ import { createSequentialIdFactory, systemClock } from "@claxedo/agent-runtime-c
 import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import { rawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "./adapter"
-import type { RuntimeSnapshot } from "./state"
-import { assertRuntimeSnapshot, cloneSnapshotValue, runtimeSnapshot } from "./state"
 
 export type TranslateRawHarnessEventInput<State = unknown> = {
   adapter: HarnessEventAdapter<State>
@@ -29,8 +27,7 @@ const DIAGNOSTIC_SURFACE_TYPES: ReadonlySet<AgentRuntimeEvent["type"]> = new Set
 ])
 
 export type AgentEventRuntime<State = unknown> = {
-  ingest: (event: RawHarnessEvent) => TranslateRawHarnessEventResult<State> & { snapshot: RuntimeSnapshot<State> }
-  snapshot: () => RuntimeSnapshot<State>
+  ingest: (event: RawHarnessEvent) => TranslateRawHarnessEventResult<State>
 }
 
 export function translateRawHarnessEvent<State>(
@@ -88,27 +85,15 @@ export function createAgentEventRuntime<State>(options: {
   adapter: HarnessEventAdapter<State>
   clock?: Clock
   createId?: CreateId
-  initialSnapshot?: RuntimeSnapshot<State>
 }): AgentEventRuntime<State> {
   if (!options.harness) throw new Error("createAgentEventRuntime requires harness")
   if (!options.threadId) throw new Error("createAgentEventRuntime requires threadId")
-  const initial = options.initialSnapshot ? assertRuntimeSnapshot(options.initialSnapshot) : undefined
-  if (initial && (initial.harness !== options.harness || initial.threadId !== options.threadId)) {
-    throw new Error("RuntimeSnapshot does not match harness/threadId")
-  }
-  const stateFromSnapshot = initial?.adapterState === undefined ? undefined : cloneSnapshotValue(initial.adapterState)
-  const stateFromAdapter = stateFromSnapshot === undefined ? options.adapter.createInitialState?.() : stateFromSnapshot
-  if (stateFromAdapter === undefined) throw new Error(`Adapter ${options.adapter.name} did not provide initial state`)
-  let state: State = stateFromAdapter
+  const initial = options.adapter.createInitialState?.()
+  if (initial === undefined) throw new Error(`Adapter ${options.adapter.name} did not provide initial state`)
+  let state: State = initial
   const now = options.clock ?? systemClock
   const createId = options.createId ?? createSequentialIdFactory()
   const context = { harness: options.harness, threadId: options.threadId, now, createId }
-
-  const snapshot = () => runtimeSnapshot({
-    harness: options.harness,
-    threadId: options.threadId,
-    adapterState: state,
-  })
 
   return {
     ingest(event) {
@@ -119,8 +104,7 @@ export function createAgentEventRuntime<State>(options: {
         context,
       })
       state = result.state
-      return { ...result, snapshot: snapshot() }
+      return result
     },
-    snapshot,
   }
 }

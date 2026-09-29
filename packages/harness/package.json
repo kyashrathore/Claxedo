@@ -30,10 +30,10 @@
       "import": "./dist/capabilities/index.js"
     },
     "./translate": {
-      "development": "./src/translate/index.ts",
-      "bun": "./src/translate/index.ts",
-      "types": "./dist/translate/index.d.ts",
-      "import": "./dist/translate/index.js"
+      "development": "./src/translate/value.ts",
+      "bun": "./src/translate/value.ts",
+      "types": "./dist/translate/value.d.ts",
+      "import": "./dist/translate/value.js"
     },
     "./broker": {
       "development": "./src/broker/index.ts",

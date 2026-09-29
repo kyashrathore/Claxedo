@@ -1,13 +1,5 @@
 import type { Context } from "hono"
-import type {
-  AgentContentPart,
-  AgentMessage,
-  AgentSession,
-  AgentSessionStartBinding,
-  AgentSessionStarts,
-  SessionConfig,
-  SessionHarness,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentMessage, AgentSession, AgentSessionStartBinding, AgentSessionStarts, SessionConfig, SessionHarness, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -26,7 +18,6 @@ import {
 } from "../session-access-policy"
 import type { ChildSessionHost } from "./session-children"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
-import type { CompatEnvelope } from "../projection/compat-events"
 
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
@@ -131,7 +122,7 @@ export type SessionRouteOptions = {
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
   exposeCommandRoute?: boolean
-  publishGlobal: (event: CompatEnvelope) => void
+  publishGlobal: (event: AgentEventEnvelope) => void
   publishSessionLifecycle?: (event: SessionLifecycleEvent) => void
   resolveWorkspaceId?: (c: Ctx, directory: RuntimeDirectory) => Promise<string | undefined> | string | undefined
   beforeSessionOperation?: (

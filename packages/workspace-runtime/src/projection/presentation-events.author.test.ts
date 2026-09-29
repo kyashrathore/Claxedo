@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildUserMessage, messageUpdated } from "./compat-events"
+import { buildUserMessage, messageUpdated } from "./presentation-events"
 
 const input = {
   id: "msg_1",

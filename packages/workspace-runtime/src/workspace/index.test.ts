@@ -12,7 +12,7 @@ import {
   mountWorkspacePty,
 } from "./index"
 import { loopbackMachineLoginPolicy } from "../testing"
-import { sessionIdle, withDir } from "../projection/compat-events"
+import { sessionIdle, withDir } from "../projection/presentation-events"
 
 function paths(app: Hono) {
   return ((app as { routes?: Array<{ path: string }> }).routes ?? []).map((route) => route.path)

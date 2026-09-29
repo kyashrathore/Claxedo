@@ -299,25 +299,17 @@ describe("createClientPresentationProjection", () => {
 
     expect(projection.ingest({ type: "session-status", status: "busy" }).map((event) => event.payload.type))
       .toEqual(["session.status"])
-    expect(projection.snapshot().state.announcedAssistantMsgId).toBeUndefined()
+    expect(projection.state().announcedAssistantMsgId).toBeUndefined()
   })
 
-  test("a resumed projection does not re-announce a row its consumer already has", () => {
-    const first = createClientPresentationProjection({
-      sessionId: "session-1",
-      directory: "/repo",
-      assistantMessageId: "msg_turn_1_r",
-      announcesAssistantMessage: true,
-    })
-    first.ingest({ type: "text-delta", delta: "hello" })
-
+  test("a projection announces its reply row once", () => {
     const next = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_turn_1_r",
       announcesAssistantMessage: true,
-      initialSnapshot: first.snapshot(),
     })
+    next.ingest({ type: "text-delta", delta: "hello" })
 
     expect(next.ingest({ type: "text-delta", delta: "!" }).map((event) => event.payload.type)).toEqual([
       "message.part.delta",
@@ -338,23 +330,16 @@ describe("createClientPresentationProjection", () => {
     expect(projection.ingest({ type: "text-delta", delta: "lo" }).map((event) => event.payload.type)).toEqual([
       "message.part.delta",
     ])
-    expect(projection.snapshot().state.accumulatedText).toBe("hello")
+    expect(projection.state().accumulatedText).toBe("hello")
   })
 
-  test("resumes from a snapshot without duplicating part ids", () => {
-    const first = createClientPresentationProjection({
-      sessionId: "session-1",
-      directory: "/repo",
-      assistantMessageId: "msg_turn_1_r",
-    })
-    first.ingest({ type: "text-delta", delta: "hello" })
-
+  test("a later text delta keeps the text part's id", () => {
     const next = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_turn_1_r",
-      initialSnapshot: first.snapshot(),
     })
+    next.ingest({ type: "text-delta", delta: "hello" })
 
     expect(next.ingest({ type: "text-delta", delta: "!" })).toEqual([{
       directory: "/repo",
@@ -372,19 +357,11 @@ describe("createClientPresentationProjection", () => {
     }])
   })
 
-  test("restores the current assistant message id after a step-start snapshot", () => {
-    const first = makeProjection()
-    first.ingest({ type: "step-start", newMessageId: "assistant-2" })
+  test("a step-start moves later parts onto the new assistant message", () => {
+    const next = makeProjection()
+    next.ingest({ type: "step-start", newMessageId: "assistant-2" })
 
-    const next = createClientPresentationProjection({
-      sessionId: "session-1",
-      directory: "/repo",
-      assistantMessageId: "msg_turn_1_r",
-      initialSnapshot: first.snapshot(),
-      clock: () => 100,
-    })
-
-    expect(next.ingest({ type: "text-delta", delta: "after reload" })[0]?.payload).toMatchObject({
+    expect(next.ingest({ type: "text-delta", delta: "after the step" }).find((event) => event.payload.type === "message.part.updated")?.payload).toMatchObject({
       type: "message.part.updated",
       properties: {
         part: {
@@ -602,7 +579,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("completed")
+    expect(projection.state().toolStatusByCallId.get("tool-1")).toBe("completed")
   })
 
   test("keeps out-of-order completed tools terminal when metadata arrives later", () => {
@@ -640,7 +617,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("completed")
+    expect(projection.state().toolStatusByCallId.get("tool-1")).toBe("completed")
   })
 
   test("mints tool-output image attachments as file parts on the completed tool state", () => {
@@ -736,7 +713,7 @@ describe("createClientPresentationProjection", () => {
         eventType: "tool-output",
       },
     })
-    expect(projection.snapshot().state.toolOutputsByCallId.get("tool-1")).toBe("done")
+    expect(projection.state().toolOutputsByCallId.get("tool-1")).toBe("done")
   })
 
   test("terminalization sanitizes non-json-safe tool metadata", () => {
@@ -772,12 +749,12 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("error")
+    expect(projection.state().toolStatusByCallId.get("tool-1")).toBe("error")
   })
 
   test("rolls back state when projection translation throws", () => {
     const projection = makeProjection()
-    const before = projection.snapshot()
+    const before = structuredClone(projection.state())
 
     // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
     const events = projection.ingest({
@@ -796,7 +773,7 @@ describe("createClientPresentationProjection", () => {
         message: "bad delta",
       },
     })
-    expect(projection.snapshot()).toEqual(before)
+    expect(projection.state()).toEqual(before)
     // A throw leaves nothing announced either, so the retry still opens with
     // the assistant row its part needs.
     expect(projection.ingest({ type: "text-delta", delta: "ok" }).map((event) => event.payload.type)).toEqual([
@@ -804,41 +781,6 @@ describe("createClientPresentationProjection", () => {
       "message.part.updated",
       "message.part.delta",
     ])
-  })
-
-  test("returns projection snapshots that do not mutate after later tool updates", () => {
-    const projection = makeProjection()
-    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "bash" })
-
-    const snapshot = projection.snapshot()
-    projection.ingest({ type: "tool-output", toolCallId: "tool-1", output: { stdout: "done" } })
-
-    expect(snapshot.state.toolStatusByCallId.get("tool-1")).toBe("running")
-  })
-
-  test("clones restored projection snapshots so projections are independent", () => {
-    const original = makeProjection()
-    original.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "bash" })
-    const snapshot = original.snapshot()
-    const first = createClientPresentationProjection({
-      sessionId: "session-1",
-      directory: "/repo",
-      assistantMessageId: "msg_turn_1_r",
-      initialSnapshot: snapshot,
-      clock: () => 100,
-    })
-    const second = createClientPresentationProjection({
-      sessionId: "session-1",
-      directory: "/repo",
-      assistantMessageId: "msg_turn_1_r",
-      initialSnapshot: snapshot,
-      clock: () => 100,
-    })
-
-    first.ingest({ type: "tool-output", toolCallId: "tool-1", output: { stdout: "done" } })
-
-    expect(snapshot.state.toolStatusByCallId.get("tool-1")).toBe("running")
-    expect(second.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("running")
   })
 
   test("hydrates tool input from ACP metadata and normalizes snake_case keys", () => {
@@ -911,7 +853,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolDisplaysByCallId.get("tool-1")).toEqual({
+    expect(projection.state().toolDisplaysByCallId.get("tool-1")).toEqual({
       intent: "read",
       filePath: "src/index.ts",
       locations: [{ path: "src/index.ts", line: 3 }],
@@ -935,7 +877,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.accumulatedText).toBe("beforeafter")
+    expect(projection.state().accumulatedText).toBe("beforeafter")
   })
 
   test("renders terminal references without duplicating completed tool cards", () => {
@@ -1104,10 +1046,10 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("error")
+    expect(projection.state().toolStatusByCallId.get("tool-1")).toBe("error")
   })
 
-  test("keeps the provider error sentence instead of a placeholder session.error", () => {
+  test("keeps the provider error sentence and classifies it, as every session.error does", () => {
     const projection = makeProjection()
     const status = projection.ingest({ type: "session-status", status: "error" })
     const failed = projection.ingest({
@@ -1125,7 +1067,7 @@ describe("createClientPresentationProjection", () => {
           sessionID: "session-1",
           error: {
             name: "UnknownError",
-            data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+            data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours.", firstTurnErrorClass: "usage_limit" },
           },
         },
       },
@@ -1139,7 +1081,7 @@ describe("createClientPresentationProjection", () => {
    expect(makeProjection().ingest({ type: "session-compaction", phase: "completed" })[0]?.payload.type).toBe("session.compacted")
  })
 
-test("file references keep attachment IDs across replay and snapshot restore without duplicate terminal parts", () => {
+test("file references keep attachment IDs across replay and a repeated completion without duplicate terminal parts", () => {
   const complete = {
     type: "tool-output" as const, toolCallId: "view-1", output: "",
     attachments: [{ kind: "tool-file" as const, path: "/tmp/shot.png", mime: "image/*", filename: "shot.png" }],
@@ -1153,10 +1095,9 @@ test("file references keep attachment IDs across replay and snapshot restore wit
   expect(project().events).toEqual(first.events)
   const part = first.events.find((event) => event.payload.type === "message.part.updated")?.payload
   expect(part).toMatchObject({ properties: { part: { state: { attachments: [{ url: "", location: { kind: "tool-file", path: "/tmp/shot.png" } }] } } } })
-  const snapshot = first.projection.snapshot()
-  const restored = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "msg_turn_1_r", initialSnapshot: snapshot, clock: () => 100 })
-  expect(restored.ingest(complete).every((event) => event.payload.type !== "message.part.updated")).toBe(true)
-  expect(restored.snapshot().state.toolAttachmentsByCallId).toEqual(snapshot.state.toolAttachmentsByCallId)
+  const attachments = structuredClone(first.projection.state().toolAttachmentsByCallId)
+  expect(first.projection.ingest(complete).every((event) => event.payload.type !== "message.part.updated")).toBe(true)
+  expect(first.projection.state().toolAttachmentsByCallId).toEqual(attachments)
 })
 
 describe("client-presentation retained state hardening", () => {
@@ -1169,7 +1110,7 @@ describe("client-presentation retained state hardening", () => {
         properties: { part: { callID: toolCallId, type: "tool" } },
       })
     }
-    const state = projection.snapshot().state
+    const state = projection.state()
     expect(state.toolNamesByCallId.get("__proto__")).toBe("read")
     expect(state.toolNamesByCallId.get("constructor")).toBe("read")
     expect(state.toolNamesByCallId.get("toString")).toBe("read")
@@ -1182,7 +1123,7 @@ describe("client-presentation retained state hardening", () => {
     for (let i = 0; i < count; i++) {
       projection.ingest({ type: "tool-start", toolCallId: `tool-${i}`, toolName: "read" })
     }
-    const state = projection.snapshot().state
+    const state = projection.state()
     expect(state.toolNamesByCallId.size).toBe(RETAINED_TOOL_CALLS_MAX)
     expect(state.toolInputsByCallId.size).toBeLessThanOrEqual(RETAINED_TOOL_CALLS_MAX)
     expect(state.toolNamesByCallId.has("tool-0")).toBe(false)

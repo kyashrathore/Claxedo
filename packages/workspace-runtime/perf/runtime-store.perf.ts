@@ -6,7 +6,7 @@ import path from "node:path"
 
 import { RuntimeStore } from "../src/store"
 import { num, rec } from "../src/json-value"
-import { messagePartUpdated } from "../src/projection/compat-events"
+import { messagePartUpdated } from "../src/projection/presentation-events"
 
 const roots: string[] = []
 

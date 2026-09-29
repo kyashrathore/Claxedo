@@ -37,7 +37,7 @@ in-process sources with different jobs:
 
 - **`RuntimeEventHub`** ([`src/runtime-event-hub.ts`](../src/runtime-event-hub.ts))
   is the hub for session/runtime events. Session routes publish Claxedo
-  client-presentation `CompatEnvelope` events to its global channel and
+  presentation events (`AgentEventEnvelope`) to its global channel and
   runtime-channel events (subagent revisions, goal changes) to its runtime
   channel. `GET /api/wr/events` (SSE, `mountWorkspaceCore()`) serves the
   first and projects the second onto the wire as `subagent.updated` /

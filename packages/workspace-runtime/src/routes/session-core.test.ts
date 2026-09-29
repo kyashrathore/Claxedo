@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { AgentRuntimeContractError, NO_HARNESS_EFFORT, type AgentPermissionModeState, type AgentToolPart, type HarnessInstructionChannel, type SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
@@ -18,7 +18,7 @@ import { createHostFixture, sessionCreate, testLaunch, type HostFixture } from "
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
-import { type CompatEnvelope, sessionIdle } from "../projection/compat-events"
+import { sessionIdle } from "../projection/presentation-events"
 
 const CODEX: SessionHarness = { id: "codex", access: "native" }
 const WORKSPACE = "/workspace"
@@ -1091,7 +1091,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   test("a renamed session answers and announces its store's times after the write, never the adapter's accepted copy", async () => {
     const h = harness()
     await seed(h, "session_1")
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const app = sessionRoutes(h, { publishGlobal: (event) => events.push(event) })
 
     const response = await app.request("http://localhost/session/session_1", {
@@ -1116,7 +1116,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       test(`a created session that ${readBack} is deleted before it is registered, projected or announced (${managed ? "managed" : "unmanaged"})`, async () => {
         const calls: string[] = []
         const lifecycle: SessionLifecycleEvent[] = []
-        const events: CompatEnvelope[] = []
+        const events: AgentEventEnvelope[] = []
         const h = harness({ onClose: (session) => calls.push(`close:${session.binding.sessionId}`) })
         const options: Partial<RouteOptions> = {
           getSession: untimedRow ? fixedTimes(h, () => undefined) : () => null,
@@ -1150,7 +1150,7 @@ describe("createSessionRoutes directory-less sessions", () => {
 
       test(`a forked child that ${readBack} is deleted before it is registered, projected or announced (${managed ? "managed" : "unmanaged"})`, async () => {
         const calls: string[] = []
-        const events: CompatEnvelope[] = []
+        const events: AgentEventEnvelope[] = []
         const h = harness({
           fork: async (_session, _messageId, childId) => { calls.push("fork"); return { upstreamSessionId: `upstream-${childId}` } },
           onClose: (session) => calls.push(`close:${session.binding.sessionId}`),
@@ -1560,7 +1560,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("refuses a prompt for a session this runtime does not hold before publishing prompt events", async () => {
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const h = harness()
     const app = sessionRoutes(h, { publishGlobal: (event) => events.push(event) })
     const prompt = { agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture", parts: [{ type: "text", text: "hello" }] }
@@ -1575,7 +1575,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("can run message turns through the agent runtime facade, which sets the turn's own mode on the harness once and stores it", async () => {
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const set: string[] = []
     const winner: AgentPermissionModeState = { modes: [{ id: "winner-mode", name: "Winner" }], currentModeId: "winner-mode", appliesFrom: "next-turn" }
     const h = harness({
@@ -1613,7 +1613,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("a prompt_async whose turn fails to start publishes the failure once, with its cause instead of 'Stream error'", async () => {
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const runtime = {
       turns: {
         start: async () => {
@@ -1654,7 +1654,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("returns sender-only structured conflicts for message and prompt_async", async () => {
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const runtime = {
       turns: {
         start: async () => {
@@ -1888,7 +1888,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       },
     })
     await seed(h, "session_1", "/work")
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     h.eventHub.subscribeGlobal((event) => events.push(event))
     const app = sessionRoutes(h, {
       resolveDirectory: () => "/work",
@@ -1930,7 +1930,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     const disposal = new Promise<void>((resolve) => { completeDisposal = resolve })
     let disposed = false
     let consumed = false
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const runtime = {
       turns: {
         start: async (input: { onAdmitted?: () => void }) => {
@@ -2017,7 +2017,7 @@ test("question listing filters the authoritative workspace inventory without res
 
 test("delete publishes the removed identity only after durable deletion succeeds", async () => {
   for (const fail of [false, true]) {
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const order: string[] = []
     const h = harness({ onClose: () => { order.push("harness") } })
     await seed(h, "deleted")
@@ -2047,7 +2047,7 @@ describe("createSessionRoutes session instructions", () => {
     let held: Promise<void> | undefined
     let release: (() => void) | undefined
     const configRead = { fails: false }
-    const events: CompatEnvelope[] = []
+    const events: AgentEventEnvelope[] = []
     const watchers = new Set<() => void>()
     function notify() {
       for (const watcher of watchers) watcher()
@@ -2106,7 +2106,7 @@ describe("createSessionRoutes session instructions", () => {
     return { app, h, turns, entered, model, configRead, events, settled }
   }
 
-  function sessionErrors(events: CompatEnvelope[]) {
+  function sessionErrors(events: AgentEventEnvelope[]) {
     return events.filter((event) => event.payload.type === "session.error")
   }
 

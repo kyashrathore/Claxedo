@@ -198,7 +198,7 @@ import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 import type { InjectedSandboxDriver } from "../../workspace/supervisor/options"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
-import { toCompatEvent } from "@claxedo/workspace-runtime/projection"
+import { toPresentationEvent } from "@claxedo/workspace-runtime/projection"
 
 // Exported (not just used internally) so the embedded per-workspace
 // `onSessionMetaEvent` tap wired through `configureEmbeddedWorkspaceRuntime`
@@ -1928,8 +1928,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       if (event.payload.type === "session.updated") {
         void projectLocalSessionMetaFromEvent(services.projectionStore, event)
       }
-      const compat = toCompatEvent({ type: event.payload.type, properties: event.payload.properties })
-      if (compat) void localTurnMeter.consume({ directory: event.directory ?? "", payload: compat })
+      const presentation = toPresentationEvent({ type: event.payload.type, properties: event.payload.properties })
+      if (presentation) void localTurnMeter.consume({ directory: event.directory ?? "", payload: presentation })
     },
     onTurnOutcome: ({ sessionId, assistantMessageId, outcome }) => {
       if (outcome.status !== "cancelled" || !assistantMessageId) return

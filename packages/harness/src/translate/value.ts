@@ -1,8 +1,4 @@
-import { asRecord, asText, isRecord } from "@claxedo/agent-runtime-contract"
-
-export { isRecord }
-export const object = asRecord
-export const text = asText
+import { asRecord, asText } from "@claxedo/agent-runtime-contract"
 
 export function jsonText(value: unknown): string {
   try {
@@ -14,7 +10,7 @@ export function jsonText(value: unknown): string {
 
 export function optionLabels(value: unknown) {
   if (!Array.isArray(value)) return []
-  return value.flatMap((item) => text(item) ?? text(asRecord(item)?.label) ?? [])
+  return value.flatMap((item) => asText(item) ?? asText(asRecord(item)?.label) ?? [])
 }
 
 export function boundKeyedMap<V>(map: Map<string, V>, max: number) {
@@ -56,7 +52,7 @@ export function pathFields(
     return value.filter((item): item is string => typeof item === "string" && !!item)
   })
   for (const key of keys) {
-    const value = text(row[key])
+    const value = asText(row[key])
     if (value) paths.push(value)
   }
   return [...new Set(paths)]

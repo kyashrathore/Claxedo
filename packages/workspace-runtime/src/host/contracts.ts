@@ -1,19 +1,5 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
-import type {
-  AgentRuntimeHealth,
-  AgentSessionStartBinding,
-  RecoveryBudgets,
-  RecoveryError,
-  RecoveryFacts,
-  RecoveryOperation,
-  RecoveryOutcome,
-  RecoveryRequest,
-  RecoveryTurnTarget,
-  SessionConfig,
-  SessionHarness,
-  SessionModelGroup,
-  SteerResult,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeHealth, AgentSessionStartBinding, RecoveryBudgets, RecoveryError, RecoveryFacts, RecoveryOperation, RecoveryOutcome, RecoveryRequest, RecoveryTurnTarget, SessionConfig, SessionHarness, SessionModelGroup, SteerResult, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { ConnectionSecretAuthority, PromptDelivery, PromptDeliveryRequest, PromptInput, PromptModel } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { TurnActor, TurnOrigin } from "@claxedo/harness/contract"
@@ -21,7 +7,6 @@ import type { RuntimeStore } from "../store"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { LaunchComposer } from "./launch"
 import type { TransportResolver } from "./transports"
-import type { CompatEvent } from "../projection/compat-events"
 
 /**
  * The store a runtime host runs on. The broker ports read its SQLite tables
@@ -29,14 +14,14 @@ import type { CompatEvent } from "../projection/compat-events"
  */
 export type AgentRuntimeStore = RuntimeStore
 
-export type AgentRuntimeStreamEvent = AgentRuntimeEvent | CompatEvent
+export type AgentRuntimeStreamEvent = AgentRuntimeEvent | AgentPresentationEvent
 
 export type RuntimeDirectory = string | undefined
 
 export type AgentRuntimePermissionDecision = "allow_once" | "allow_always" | "deny" | "reject_always"
 
 export type AgentRuntimeInteractionResult = {
-  events: CompatEvent[]
+  events: AgentPresentationEvent[]
 }
 
 /**

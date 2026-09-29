@@ -1,14 +1,12 @@
-import { createAgentEventRuntime } from "../../../translate/runtime"
-import type { RuntimeSnapshot } from "../../../translate/state"
-import { claudeSdkAdapter, type ClaudeSdkAdapterState } from "../translate/adapter"
+import { claudeSdkAdapter } from "../translate/adapter"
+import { translatorRuntime } from "../../../test-support/translator-runtime"
 
-export function claudeRuntime(initialSnapshot?: RuntimeSnapshot<ClaudeSdkAdapterState>) {
-  return createAgentEventRuntime({
+export function claudeRuntime() {
+  return translatorRuntime({
     harness: "claude-sdk",
     threadId: "thread-1",
     adapter: claudeSdkAdapter(),
     clock: () => 0,
     createId: (prefix = "id") => `${prefix}-1`,
-    ...(initialSnapshot ? { initialSnapshot } : {}),
   })
 }

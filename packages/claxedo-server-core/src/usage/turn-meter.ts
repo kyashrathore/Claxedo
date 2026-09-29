@@ -1,3 +1,4 @@
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import {
   isRepeatedUsageObservation,
   recordUsageObservation,
@@ -16,7 +17,7 @@ import {
   type UsageRevisionWriter,
 } from "./contracts"
 import type { TurnMeterState, TurnMeterStateStore } from "./turn-meter-state"
-import { type CompatEnvelope, eventSessionId } from "@claxedo/workspace-runtime/projection"
+import { eventSessionId } from "@claxedo/workspace-runtime/projection"
 
 type TurnContext = {
   sessionRef: string
@@ -85,7 +86,7 @@ function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
 
 export type TurnMeter = {
   start(): Promise<void>
-  consume(event: CompatEnvelope): Promise<void>
+  consume(event: AgentEventEnvelope): Promise<void>
   settle(input: {
     sessionId: string
     messageId: string
@@ -297,7 +298,7 @@ export function createTurnMeter(input: {
     }
   }
 
-  async function consumeOne(event: CompatEnvelope) {
+  async function consumeOne(event: AgentEventEnvelope) {
     await initialize()
     const sessionId = eventSessionId(event.payload)
     if (!sessionId) return

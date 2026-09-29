@@ -1,48 +1,21 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { canonicalToolName, type AgentSessionTitleSource, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
-import { boundKeyedMap, object, text } from "@claxedo/harness/translate"
-import { userMessageIdForAssistantReply } from "@claxedo/agent-runtime-contract"
-import type { RuntimeProjection } from "@claxedo/harness/translate"
-import type { ProjectionSnapshot } from "@claxedo/harness/translate"
-import { projectionSnapshot } from "@claxedo/harness/translate"
-import { normalizeCompatEventWithDiagnostics, type CompatEnvelope, withDir } from "./normalize"
+import { asRecord as object, asText as text, canonicalToolName, userMessageIdForAssistantReply } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentEventEnvelope, AgentMessageInfo, AgentRuntimeEvent, AgentSnapshotFileDiff, RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
+import { boundKeyedMap } from "@claxedo/harness/translate"
+import { messagePartUpdated, messagePartDelta, messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionCompacted, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, messageUpdated, sessionConfig, sessionUsage, runtimeDiagnostic, buildSession, recovering, withDir } from "../presentation-events"
+import { normalizePresentationEventWithDiagnostics } from "./normalize"
 import {
   createClientPresentationProjectionState,
   RETAINED_PART_IDS_MAX,
   RETAINED_TOOL_CALLS_MAX,
   type ClientPresentationProjectionState,
 } from "./state"
-import type {
-  EventMessageCompleted,
-  EventMessageUpdated,
-  EventMessagePartDelta,
-  EventMessagePartUpdated,
-  EventPermissionAsked,
-  EventQuestionAsked,
-  EventQuestionReplied,
-  EventRuntimeDiagnostic,
-  EventSessionAgent,
-  EventSessionCompacted,
-  EventSessionConfig,
-  EventSessionDiff,
-  EventSessionError,
-  EventSessionIdle,
-  EventSessionStatus,
-  EventSessionUpdated,
-  EventSessionUsage,
-  EventTodoUpdated,
-  ClientPresentationPart,
-  ClientPresentationSnapshotFileDiff,
-  ClientPresentationStatus,
-  ClientPresentationTodo,
-  PermissionRequest,
-  QuestionRequest,
-} from "./types"
 
-export type ClientPresentationProjection = RuntimeProjection<CompatEnvelope, ClientPresentationProjectionState> & {
+export type ClientPresentationProjection = {
   name: "client-presentation"
-  terminalizeOpenTools: (error: string) => CompatEnvelope[]
+  ingest: (event: AgentRuntimeEvent) => AgentEventEnvelope[]
+  state: () => ClientPresentationProjectionState
+  terminalizeOpenTools: (error: string) => AgentEventEnvelope[]
 }
 
 /** Session metadata has no assistant message or turn owner. */
@@ -50,7 +23,7 @@ export function projectSessionCommands(
   sessionId: string,
   directory: string,
   chunk: Extract<AgentRuntimeEvent, { type: "available-commands-update" }>,
-): CompatEnvelope {
+): AgentEventEnvelope {
   return withDir(directory, {
     type: "session.commands",
     properties: { sessionID: sessionId, commands: chunk.commands },
@@ -88,7 +61,6 @@ export type ClientPresentationProjectionOptions = {
     variant?: string
   }
   clock?: () => number
-  initialSnapshot?: ProjectionSnapshot<ClientPresentationProjectionState>
 }
 
 type CompatContext = ClientPresentationProjectionState & {
@@ -103,150 +75,8 @@ type CompatContext = ClientPresentationProjectionState & {
   turnAssistantMsgId: string
 }
 
-type ToolPart = Extract<ClientPresentationPart, { type: "tool" }>
+type ToolPart = Extract<AgentContentPart, { type: "tool" }>
 type ToolStateStatus = ToolPart["state"]["status"]
-
-function messagePartUpdated(part: ClientPresentationPart, time: number): EventMessagePartUpdated {
-  return {
-    id: `message.part.updated:${part.messageID}:${part.id}`,
-    type: "message.part.updated",
-    properties: {
-      sessionID: part.sessionID,
-      part,
-      time,
-    },
-  }
-}
-
-function messagePartDelta(input: {
-  sessionID: string
-  messageID: string
-  partID: string
-  field: string
-  delta: string
-}): EventMessagePartDelta {
-  return {
-    id: `message.part.delta:${input.messageID}:${input.partID}`,
-    type: "message.part.delta",
-    properties: input,
-  }
-}
-
-function messageCompleted(sessionID: string, messageID: string, cancelled?: true): EventMessageCompleted {
-  return {
-    type: "message.completed",
-    properties: { sessionID, messageID, ...(cancelled ? { cancelled } : {}) },
-  }
-}
-
-function permissionAsked(properties: PermissionRequest): EventPermissionAsked {
-  return {
-    id: `permission.asked:${properties.id}`,
-    type: "permission.asked",
-    properties,
-  }
-}
-
-function questionAsked(properties: QuestionRequest): EventQuestionAsked {
-  return {
-    id: `question.asked:${properties.id}`,
-    type: "question.asked",
-    properties,
-  }
-}
-
-function questionReplied(sessionID: string, requestID: string, answers: Array<Array<string>>): EventQuestionReplied {
-  return {
-    id: `question.replied:${requestID}`,
-    type: "question.replied",
-    properties: { sessionID, requestID, answers },
-  }
-}
-
-function todoUpdated(sessionID: string, todos: ClientPresentationTodo[]): EventTodoUpdated {
-  return {
-    id: `todo.updated:${sessionID}`,
-    type: "todo.updated",
-    properties: { sessionID, todos },
-  }
-}
-
-function sessionStatus(sessionID: string, status: ClientPresentationStatus): EventSessionStatus {
-  return {
-    id: `session.status:${sessionID}`,
-    type: "session.status",
-    properties: { sessionID, status },
-  }
-}
-
-function sessionCompacted(sessionID: string): EventSessionCompacted {
-  return {
-    id: `session.compacted:${sessionID}`,
-    type: "session.compacted",
-    properties: { sessionID },
-  }
-}
-
-function sessionDiff(sessionID: string, diff: ClientPresentationSnapshotFileDiff[]): EventSessionDiff {
-  return {
-    id: `session.diff:${sessionID}`,
-    type: "session.diff",
-    properties: { sessionID, diff },
-  }
-}
-
-function sessionIdle(sessionID: string): EventSessionIdle {
-  return {
-    id: `session.idle:${sessionID}`,
-    type: "session.idle",
-    properties: { sessionID },
-  }
-}
-
-function sessionError(
-  message: string,
-  sessionID?: string,
-  facts: { errorClass?: FirstTurnErrorClass; account?: TurnAccount } = {},
-): EventSessionError {
-  return {
-    id: `session.error:${sessionID ?? "global"}`,
-    type: "session.error",
-    properties: {
-      ...(sessionID ? { sessionID } : {}),
-      error: {
-        name: "UnknownError",
-        data: {
-          message,
-          ...(facts.errorClass ? { firstTurnErrorClass: facts.errorClass } : {}),
-          ...(facts.account ? { account: facts.account } : {}),
-        },
-      },
-    },
-  }
-}
-
-function sessionUpdated(info: EventSessionUpdated["properties"]["info"]): EventSessionUpdated {
-  return {
-    id: `session.updated:${info.id}`,
-    type: "session.updated",
-    properties: { sessionID: info.id, info },
-  }
-}
-
-function sessionAgent(sessionID: string, agentId: string): EventSessionAgent {
-  return {
-    type: "session.agent",
-    properties: { sessionID, agentId },
-  }
-}
-
-function messageUpdated(info: EventMessageUpdated["properties"]["info"]): EventMessageUpdated {
-  return {
-    id: `message.updated:${info.id}`,
-    type: "message.updated",
-    properties: { sessionID: info.sessionID, info },
-  }
-}
 
 /**
  * The assistant row a turn's parts hang from.
@@ -271,7 +101,7 @@ function announcedAssistantMessage(
   now: number,
   parentID: string,
   identity?: ClientPresentationProjectionOptions["announceAssistantIdentity"],
-): EventMessageUpdated["properties"]["info"] {
+): AgentMessageInfo & { sessionID: string } {
   return {
     id: ctx.assistantMsgId,
     sessionID: ctx.sessionId,
@@ -296,7 +126,7 @@ const PART_BEARING_COMPAT_EVENTS = new Set([
 ])
 
 /** The message a part-bearing compat event files against, if it is one. */
-function partBearingMessageId(event: CompatEnvelope): string | undefined {
+function partBearingMessageId(event: AgentEventEnvelope): string | undefined {
   if (!PART_BEARING_COMPAT_EVENTS.has(event.payload.type)) return undefined
   const properties = object(event.payload.properties)
   return text(object(properties?.part)?.messageID) ?? text(properties?.messageID)
@@ -315,7 +145,7 @@ function partBearingMessageId(event: CompatEnvelope): string | undefined {
  */
 function withAnnouncedAssistantMessage(
   ctx: CompatContext,
-  events: CompatEnvelope[],
+  events: AgentEventEnvelope[],
   now: () => number,
   announces: boolean,
   identity?: ClientPresentationProjectionOptions["announceAssistantIdentity"],
@@ -343,28 +173,6 @@ function withAnnouncedAssistantMessage(
     ]
   }
   return [withDir(ctx.directory, messageUpdated(announcedAssistantMessage(ctx, now(), parentID, identity))), ...events]
-}
-
-function sessionConfig(properties: EventSessionConfig["properties"]): EventSessionConfig {
-  return {
-    type: "session.config",
-    properties,
-  }
-}
-
-function sessionUsage(properties: EventSessionUsage["properties"]): EventSessionUsage {
-  return {
-    type: "session.usage",
-    properties,
-  }
-}
-
-function runtimeDiagnostic(properties: EventRuntimeDiagnostic["properties"]): EventRuntimeDiagnostic {
-  return {
-    id: `runtime.diagnostic:${properties.sessionID}:${properties.code}`,
-    type: "runtime.diagnostic",
-    properties,
-  }
 }
 
 function projectionDiagnostic(properties: {
@@ -401,50 +209,11 @@ function lossyCompatDiagnostic(ctx: CompatContext, eventType: string, message: s
   }))
 }
 
-/**
- * `title` absent leaves the stored title alone; `null` clears it. A harness
- * that reports only `updatedAt` must not blank a title it never mentioned.
- */
-function buildSession(input: {
-  id: string
-  directory: string
-  title?: string | null
-  titleSource?: AgentSessionTitleSource
-  created: number
-  updated: number
-  parentID?: string
-  sessionRef?: string
-  host?: "workspace"
-  workspaceID?: string
-}): EventSessionUpdated["properties"]["info"] {
-  return {
-    id: input.id,
-    slug: input.id,
-    projectID: input.directory,
-    directory: input.directory,
-    ...(input.parentID ? { parentID: input.parentID } : {}),
-    ...(input.sessionRef ? { sessionRef: input.sessionRef } : {}),
-    ...(input.host ? { host: input.host } : {}),
-    ...(input.workspaceID ? { workspaceID: input.workspaceID } : {}),
-    ...(input.title !== undefined ? { title: input.title, titleSource: input.titleSource ?? "harness" } : {}),
-    version: "local",
-    time: { created: input.created, updated: input.updated },
-  }
-}
-
 function timestamp(value: unknown, fallback: number) {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value !== "string") return fallback
   const parsed = Date.parse(value)
   return Number.isFinite(parsed) ? parsed : fallback
-}
-
-function recovering(message = "Recovering ACP client..."): Extract<ClientPresentationStatus, { type: "recovering" }> {
-  return {
-    type: "recovering",
-    kind: "process_restart",
-    message,
-  }
 }
 
 function normalizeInputKeys(input: Record<string, unknown>): Record<string, unknown> {
@@ -668,7 +437,7 @@ function seen(ctx: CompatContext, id: string): boolean {
   return ctx.partIdMap.has(id)
 }
 
-function partEvent(directory: string, part: ClientPresentationPart, time: number): CompatEnvelope {
+function partEvent(directory: string, part: AgentContentPart, time: number): AgentEventEnvelope {
   return withDir(directory, messagePartUpdated(part, time))
 }
 
@@ -690,9 +459,9 @@ function filePart(input: {
   mime: string
   url: string
   filename?: string
-  location?: Extract<ClientPresentationPart, { type: "file" }>["location"]
-  source?: Extract<ClientPresentationPart, { type: "file" }>["source"]
-}): Extract<ClientPresentationPart, { type: "file" }> {
+  location?: Extract<AgentContentPart, { type: "file" }>["location"]
+  source?: Extract<AgentContentPart, { type: "file" }>["source"]
+}): Extract<AgentContentPart, { type: "file" }> {
   return {
     id: input.id,
     sessionID: input.ctx.sessionId,
@@ -752,7 +521,7 @@ function toolState(input: {
   now: number
   output?: string
   error?: string
-  attachments: Extract<ClientPresentationPart, { type: "file" }>[]
+  attachments: Extract<AgentContentPart, { type: "file" }>[]
 }): ToolPart["state"] {
   if (input.status === "pending") {
     return {
@@ -863,7 +632,7 @@ function unifiedPatch(path: string, oldText: string | undefined, newText: string
   ].join("\n")
 }
 
-function snapshotFileDiff(chunk: Extract<AgentRuntimeEvent, { type: "file-diff" }>): ClientPresentationSnapshotFileDiff {
+function snapshotFileDiff(chunk: Extract<AgentRuntimeEvent, { type: "file-diff" }>): AgentSnapshotFileDiff {
   const stats = lineStats(chunk.oldText, chunk.newText)
   return {
     file: chunk.path,
@@ -890,8 +659,8 @@ function userMessageText(
   messageId: string,
   delta: string,
   now: () => number,
-): CompatEnvelope[] {
-  const events: CompatEnvelope[] = []
+): AgentEventEnvelope[] {
+  const events: AgentEventEnvelope[] = []
   const eventTime = now()
   if (ctx.announcedUserMsgId !== messageId) {
     ctx.announcedUserMsgId = messageId
@@ -931,7 +700,7 @@ function deltaText(
   type: "text" | "reasoning",
   delta: string,
   now: () => number,
-): CompatEnvelope[] {
+): AgentEventEnvelope[] {
   const seqKey = type === "text" ? "textPartSeq" : "reasoningPartSeq"
   const splitKey = type === "text" ? "splitText" : "splitReasoning"
   const partKey = () => `${ctx.assistantMsgId}-${type}${ctx[seqKey] > 0 ? `-${ctx[seqKey]}` : ""}`
@@ -942,7 +711,7 @@ function deltaText(
   const key = partKey()
   const fresh = !seen(ctx, key)
   const id = seqId(ctx, key)
-  const base: ClientPresentationPart =
+  const base: AgentContentPart =
     type === "text"
       ? {
           id,
@@ -1055,9 +824,9 @@ function questionAnswers(chunk: Extract<AgentRuntimeEvent, { type: "question-ans
   })
 }
 
-function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number): CompatEnvelope[] {
+function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number): AgentEventEnvelope[] {
   const endedAt = now()
-  const events: CompatEnvelope[] = []
+  const events: AgentEventEnvelope[] = []
   for (const [toolCallId, status] of ctx.toolStatusByCallId) {
     if (status !== "running" && status !== "pending") continue
     const tool = ctx.toolNamesByCallId.get(toolCallId) ?? toolCallId
@@ -1080,7 +849,7 @@ function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => numb
   return events
 }
 
-function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatContext, now: () => number): CompatEnvelope[] {
+function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatContext, now: () => number): AgentEventEnvelope[] {
   const split = () => {
     ctx.splitText = true
     ctx.splitReasoning = true
@@ -1691,10 +1460,10 @@ function normalizeProjectionEvents(
   ctx: CompatContext,
   phase: "ingest" | "terminalize",
   eventType: string | undefined,
-  events: CompatEnvelope[],
+  events: AgentEventEnvelope[],
 ) {
   const normalized = events.map((event) => {
-    const result = normalizeCompatEventWithDiagnostics(event.payload)
+    const result = normalizePresentationEventWithDiagnostics(event.payload)
     return {
       envelope: { directory: event.directory, payload: result.event },
       issues: result.issues,
@@ -1716,13 +1485,13 @@ function normalizeProjectionEvents(
 }
 
 export function createClientPresentationProjection(options: ClientPresentationProjectionOptions): ClientPresentationProjection {
-  let state = createClientPresentationProjectionState(options.initialSnapshot?.state)
+  let state = createClientPresentationProjectionState()
   const now = options.clock ?? Date.now
 
   const run = (
     phase: "ingest" | "terminalize",
     eventType: string | undefined,
-    project: (ctx: CompatContext) => CompatEnvelope[],
+    project: (ctx: CompatContext) => AgentEventEnvelope[],
   ) => {
     const next = createClientPresentationProjectionState(state)
     const ctx = createContext(options, next)
@@ -1750,8 +1519,6 @@ export function createClientPresentationProjection(options: ClientPresentationPr
     terminalizeOpenTools(error) {
       return run("terminalize", undefined, (ctx) => terminalizeOpenTools(ctx, error, now))
     },
-    snapshot() {
-      return projectionSnapshot("client-presentation", state)
-    },
+    state: () => state,
   } satisfies ClientPresentationProjection
 }

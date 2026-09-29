@@ -12,7 +12,7 @@ import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-a
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { FakeTransport } from "../test-support/fake-transport"
 import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
-import { sessionIdle } from "../projection/compat-events"
+import { sessionIdle } from "../projection/presentation-events"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []

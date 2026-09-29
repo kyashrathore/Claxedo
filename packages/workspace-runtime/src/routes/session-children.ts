@@ -1,4 +1,4 @@
-import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
+import type { SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { createHmac, randomUUID } from "crypto"
 import type { AgentMessage, AgentSession } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
@@ -7,7 +7,6 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import { num, str } from "../json-value"
-import type { CompatEnvelope } from "../projection/compat-events"
 
 /** `providerKind` of a subagent row whose child is a session this runtime created itself. */
 export const HOST_CHILD_PROVIDER_KIND = "claxedo"
@@ -55,7 +54,7 @@ export type ChildSessionHostInput = {
   pendingWakes: () => Promise<PendingChildWake[]> | PendingChildWake[]
   getSession: (sessionId: string, directory: string) => Promise<AgentSession | null | undefined> | AgentSession | null | undefined
   getMessages: (sessionId: string, directory: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
-  subscribeGlobal?: (fn: (event: CompatEnvelope) => void) => () => void
+  subscribeGlobal?: (fn: (event: AgentEventEnvelope) => void) => () => void
   /**
    * Starts the parent turn that carries a child's summary. Resolves once the
    * turn is admitted (`started`) or refused because the parent is mid-turn
@@ -367,7 +366,7 @@ function wakeText(row: HostChildRow, summary: ChildSummary) {
   return summary.text ? `${heading}\n\n${summary.text}` : `${heading}\n\n(no summary was produced)`
 }
 
-function attentionChange(payload: CompatEnvelope["payload"]): { kind: "add" | "remove"; sessionId: string; requestId: string } | undefined {
+function attentionChange(payload: AgentEventEnvelope["payload"]): { kind: "add" | "remove"; sessionId: string; requestId: string } | undefined {
   switch (payload.type) {
     case "permission.asked":
       return { kind: "add", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.id}` }

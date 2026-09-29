@@ -935,7 +935,7 @@ describe("embedded workspace runtime", () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     const { controlBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
-    const events: import("@claxedo/workspace-runtime/projection").CompatEnvelope[] = []
+    const events: import("@claxedo/agent-runtime-contract").AgentEventEnvelope[] = []
     const controlPlaneEvents: unknown[] = []
     const unsubscribe = controlBus.subscribe((event) => controlPlaneEvents.push(event))
     configureEmbeddedWorkspaceRuntime({ onSessionMetaEvent: (event) => events.push(event) })

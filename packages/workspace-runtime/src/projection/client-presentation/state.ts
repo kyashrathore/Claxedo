@@ -1,4 +1,3 @@
-import { cloneSnapshotValue } from "@claxedo/harness/translate"
 import type { RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
 
 export const RETAINED_TOOL_CALLS_MAX = 256
@@ -44,9 +43,8 @@ export type ClientPresentationProjectionState = {
   splitReasoning: boolean
 }
 
-function keyedMap<V>(value: Map<string, V> | Record<string, V> | undefined): Map<string, V> {
-  const cloned = cloneSnapshotValue(value ?? {})
-  return cloned instanceof Map ? cloned : new Map(Object.entries(cloned))
+function keyedMap<V>(value: Map<string, V> | undefined): Map<string, V> {
+  return value ? structuredClone(value) : new Map()
 }
 
 export function createClientPresentationProjectionState(

@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { withClaxedoMessageAuthor } from "../../../workspace-runtime/src/projection/client-presentation/author"
-import type { EventMessageUpdated } from "../../../workspace-runtime/src/projection/client-presentation/types"
+import type { AgentMessageInfo } from "@claxedo/agent-runtime-contract"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-signed-"))
 const previous = Object.fromEntries([
@@ -302,7 +302,7 @@ describe("two-user signed app transport", () => {
         time: { created: index + 1 },
         agent: "build",
         model: { providerID: "openai", modelID: "gpt-5" },
-      } as EventMessageUpdated["properties"]["info"], {
+      } as AgentMessageInfo, {
         id: profile.actor_public_id,
         name: profile.actor_name,
         avatarUrl: profile.actor_avatar_url,

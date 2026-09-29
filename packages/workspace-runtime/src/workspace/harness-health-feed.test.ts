@@ -1,12 +1,12 @@
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
-import type { EventHarnessHealth } from "../projection/compat-events"
 import { createHarnessHealthFeed, type SessionHarnessHealth } from "./harness-health-feed"
 
 const OK: SessionHarnessHealth = { harnessHealth: { status: "ok" } }
 const LOST: SessionHarnessHealth = { harnessHealth: { status: "degraded", reason: "harness_process_lost", message: "exited" } }
 
 function feedOver(health: Map<string, SessionHarnessHealth>) {
-  const published: { directory: string; event: EventHarnessHealth["properties"] }[] = []
+  const published: { directory: string; event: Extract<AgentPresentationEvent, { type: "harness.health" }>["properties"] }[] = []
   const reads: string[] = []
   const feed = createHarnessHealthFeed({
     read: async (sessionId) => {
@@ -71,7 +71,7 @@ describe("harness health feed", () => {
 
   test("a read answered after a newer one is dropped", async () => {
     const answers: ((value: SessionHarnessHealth) => void)[] = []
-    const published: EventHarnessHealth["properties"][] = []
+    const published: Extract<AgentPresentationEvent, { type: "harness.health" }>["properties"][] = []
     const feed = createHarnessHealthFeed({
       read: () => new Promise((resolve) => answers.push(resolve)),
       publish: (_directory, event) => published.push(event),

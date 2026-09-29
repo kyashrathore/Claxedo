@@ -1,3 +1,4 @@
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test, vi } from "vitest"
 import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
@@ -16,7 +17,7 @@ import {
   claxedoWorkspaceRuntimeBootFromEnv,
   claxedoWorkspaceRuntimeLaunch,
 } from "./runtime-boot"
-import { type CompatEnvelope, buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
+import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
 
 describe("claxedo workspace-runtime boot policy", () => {
   test("installs the clone placeholder as a GitHub-only authorization header before boot returns", async () => {
@@ -243,10 +244,10 @@ describe("claxedo workspace-runtime boot policy", () => {
         })),
         envelope(messageCompleted("ses_boot", "msg_reply")),
         assistant("msg_tail"),
-      ]) options.onCompatEvent!(event)
+      ]) options.onPresentationEvent!(event)
       await policy.endTurn?.(turn)
       expect(await policy.releaseTurn!(turn)).toEqual({ released: true })
-      options.onCompatEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
+      options.onPresentationEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
 
       await options.onDrain!()
 
@@ -259,7 +260,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       expect(existsSync(path.join(store, "usage.sqlite"))).toBe(true)
 
       const unmetered = await claxedoWorkspaceRuntimeBootFromEnv(relay)
-      expect(unmetered.options.onCompatEvent).toBeUndefined()
+      expect(unmetered.options.onPresentationEvent).toBeUndefined()
       expect(unmetered.options.onDrain).toBeUndefined()
       expect(unmetered.options.sessionAccessPolicy).toBeUndefined()
     } finally {
@@ -340,6 +341,6 @@ describe("claxedo cors policy", () => {
   })
 })
 
-function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
+function envelope(payload: AgentEventEnvelope["payload"]): AgentEventEnvelope {
   return { directory: "/workspace", payload }
 }

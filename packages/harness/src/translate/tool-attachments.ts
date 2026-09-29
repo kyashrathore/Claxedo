@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeToolAttachment } from "@claxedo/agent-runtime-contract"
-import { text } from "./value"
+import { asText as text } from "@claxedo/agent-runtime-contract"
 
 export const TOOL_ATTACHMENT_INLINE_MAX_BYTES = 128 * 1024
 

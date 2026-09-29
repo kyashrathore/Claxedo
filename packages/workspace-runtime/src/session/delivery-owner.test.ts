@@ -8,7 +8,7 @@ import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "./delivery-owner"
-import { sessionIdle } from "../projection/compat-events"
+import { sessionIdle } from "../projection/presentation-events"
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []

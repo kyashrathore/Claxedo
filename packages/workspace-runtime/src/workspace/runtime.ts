@@ -1,4 +1,4 @@
-import type { RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import type { RecoveryTurnTarget, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { DEFAULT_RECOVERY_BUDGETS, type AgentRuntimeHealth, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { BrokerPorts } from "@claxedo/harness/broker"
 import { createHarnessComposer } from "@claxedo/harness/compose"
@@ -46,7 +46,7 @@ import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
 import type { ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
-import { type CompatEnvelope, harnessHealthChanged } from "../projection/compat-events"
+import { harnessHealthChanged } from "../projection/presentation-events"
 
 export type { RuntimeRunner } from "./snapshot"
 
@@ -61,7 +61,7 @@ export type WorkspaceHostOptions = {
   /** Host observer for the durable turn.finish outcome after store commit. */
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Direct observer for canonical compatibility events produced by this host. */
-  onCompatEvent?: (event: CompatEnvelope) => void
+  onPresentationEvent?: (event: AgentEventEnvelope) => void
   /**
    * Direct observer for the canonical runtime events produced by this host.
    *
@@ -192,7 +192,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   const sessionParents: WorkspaceEventParents = {
     parentSessionIdFor: (sessionId) => (store().getSession(sessionId) as { parentID?: string | null } | null)?.parentID ?? undefined,
   }
-  const cleanupCompatObserver = options.onCompatEvent ? eventHub.subscribeGlobal(options.onCompatEvent) : () => undefined
+  const cleanupPresentationObserver = options.onPresentationEvent ? eventHub.subscribeGlobal(options.onPresentationEvent) : () => undefined
   const cleanupRuntimeObserver = options.onRuntimeEvent ? eventHub.subscribeRuntime(options.onRuntimeEvent) : () => undefined
   const env = options.env ?? process.env
   const harnessStateRoot = options.harnessStateRoot ?? defaultHarnessStateRoot(env)
@@ -822,7 +822,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         ])
         if (runtimeResult && !runtimeResult.ok) throw runtimeResult.error
         checkpoint.clear()
-        cleanupCompatObserver()
+        cleanupPresentationObserver()
         cleanupRuntimeObserver()
         closeEvents()
         sessionToolPrompts.clear()
