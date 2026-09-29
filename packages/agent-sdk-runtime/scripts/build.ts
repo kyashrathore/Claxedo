@@ -18,8 +18,6 @@ const ENTRIES = [
   "src/compat-events.ts",
   "src/status.ts",
   "src/provider-projection.ts",
-  "src/stores/memory.ts",
-  "src/stores/sqlite.ts",
   "src/session-start-store.ts",
 ]
 

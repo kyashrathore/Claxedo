@@ -4222,3 +4222,101 @@ void it("a writer carrying no lease is refused, whether or not the session grant
   assert.equal(store.getSession("s2")?.status, "busy")
   store.close()
 })
+
+void describe("session starts", () => {
+  const binding = { sessionId: "starting", workspaceId: "workspace", directory: "/work", connectionId: "connection:agent", operationId: "creation" }
+
+  void it("a pending creation has immutable ownership and no executable or visible session", () => {
+    const store = new RuntimeStore(tmp())
+    const record = store.sessionStarts.begin(binding)
+    assert.equal(record.status, "starting")
+    assert.equal(store.getSession(binding.sessionId), null)
+    assert.equal(store.getExecutionBinding(binding.sessionId), null)
+    assert.deepEqual(store.listSessions(binding.directory), [])
+    for (const key of ["workspaceId", "directory", "connectionId", "operationId"] as const) {
+      assert.throws(() => store.sessionStarts.begin({ ...binding, [key]: "different" }), /another operation/)
+    }
+    record.binding.directory = "/tampered"
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.binding.directory, "/work")
+    assert.throws(() => store.sessionStarts.begin({ ...binding, upstreamSessionId: "fabricated" } as typeof binding), /Invalid pending/)
+  })
+
+  void it("a settled creation cannot be promoted by a stale or competing completion", () => {
+    const store = new RuntimeStore(tmp())
+    store.sessionStarts.begin(binding)
+    assert.throws(() => store.sessionStarts.finish({ ...binding, operationId: "other" }, { status: "created", upstreamSessionId: "agent-session" }), /does not match/)
+    assert.throws(() => store.sessionStarts.finish({ ...binding, connectionId: "other" }, { status: "created", upstreamSessionId: "agent-session" }), /does not match/)
+    store.sessionStarts.finish(binding, { status: "failed", error: "agent disconnected" })
+    assert.throws(() => store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "agent-session" }), /already settled/)
+    assert.equal(store.sessionStarts.finish(binding, { status: "failed", error: "agent disconnected" }).status, "failed")
+  })
+
+  void it("a retired creation frees the id and a stale operation cannot reach its replacement", () => {
+    const store = new RuntimeStore(tmp())
+    store.sessionStarts.begin(binding)
+    store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "agent-session" })
+    for (const key of ["workspaceId", "directory", "connectionId", "operationId"] as const) {
+      assert.equal(store.sessionStarts.retire({ ...binding, [key]: "different" }), false)
+    }
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "created")
+    assert.equal(store.sessionStarts.retire(binding), true)
+    assert.equal(store.sessionStarts.get(binding.sessionId), undefined)
+    assert.equal(store.sessionStarts.retire(binding), false)
+
+    const replacement = { ...binding, operationId: "retry" }
+    assert.equal(store.sessionStarts.begin(replacement).status, "starting")
+    assert.equal(store.sessionStarts.retire(binding), false)
+    assert.throws(() => store.sessionStarts.finish(binding, { status: "failed", error: "late" }), /does not match/)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "starting")
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.binding.operationId, "retry")
+  })
+
+  void it("retirement compares binding fields, not the stored record, and outlives the process", () => {
+    const root = tmp()
+    let store = new RuntimeStore(root)
+    store.sessionStarts.begin(binding)
+    store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "real-upstream" })
+    store.close()
+
+    store = new RuntimeStore(root)
+    // Same five fields, written in the order no serialized record would carry.
+    const reordered = {
+      operationId: binding.operationId,
+      connectionId: binding.connectionId,
+      directory: binding.directory,
+      workspaceId: binding.workspaceId,
+      sessionId: binding.sessionId,
+    }
+    assert.equal(store.sessionStarts.retire({ ...reordered, connectionId: "connection:other" }), false)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "created")
+    assert.equal(store.sessionStarts.retire(reordered), true)
+    store.close()
+
+    store = new RuntimeStore(root)
+    assert.equal(store.sessionStarts.get(binding.sessionId), undefined)
+    assert.equal(store.sessionStarts.begin({ ...binding, operationId: "retry" }).status, "starting")
+    store.close()
+    store = new RuntimeStore(root)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.binding.operationId, "retry")
+    store.close()
+  })
+
+  void it("a created session keeps its startup question and its execution binding across a reopen", () => {
+    const root = tmp()
+    let store = new RuntimeStore(root)
+    const starting = store.sessionStarts.begin(binding)
+    store.appendEvent({ sessionId: binding.sessionId, payload: questionAsked({ id: "question", sessionID: binding.sessionId, questions: [{ header: "Agent", question: "Choose", options: [] }] }) })
+    store.close()
+    store = new RuntimeStore(root)
+    assert.deepEqual(store.sessionStarts.get(binding.sessionId), starting)
+    assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
+    store.bindSession({ ...binding, agentSessionId: "real-upstream", upstreamSessionId: "real-upstream" })
+    store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "real-upstream" })
+    assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
+    store.close()
+    store = new RuntimeStore(root)
+    assert.equal(store.sessionStarts.get(binding.sessionId)?.status, "created")
+    assert.equal(store.getExecutionBinding(binding.sessionId)?.upstreamSessionId, "real-upstream")
+    store.close()
+  })
+})

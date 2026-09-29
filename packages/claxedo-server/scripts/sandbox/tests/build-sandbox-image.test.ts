@@ -312,8 +312,6 @@ describe("build-sandbox-image", () => {
     // The host-bundle root is present. Every dist here is gitignored, so a
     // missing root would leave a fresh checkout bundling against a stale dist.
     expect(index("workspace-runtime")).toBeGreaterThanOrEqual(0)
-    expect(index("opencode-server-adapter")).toBeGreaterThanOrEqual(0)
-    expect(index("opencode-server-adapter")).toBeLessThan(index("workspace-runtime"))
     expect(index("claxedo-mcp")).toBeGreaterThan(index("workspace-runtime"))
 
     // workspace-runtime's known @claxedo deps are all present and precede it.

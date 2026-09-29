@@ -41,14 +41,6 @@
       "status": "integration",
       "purpose": "A transcript's outline of turns without their content, folded from the rows any store reads for it."
     },
-    "@claxedo/agent-sdk-runtime/stores/memory": {
-      "status": "stable",
-      "purpose": "In-memory runtime store for tests, demos, and ephemeral hosts."
-    },
-    "@claxedo/agent-sdk-runtime/stores/sqlite": {
-      "status": "stable",
-      "purpose": "Local durable runtime store."
-    },
     "@claxedo/agent-sdk-runtime/stores/session-start": {
       "status": "integration",
       "purpose": "Durable session creation ownership on a host-supplied SQLite database."
@@ -71,8 +63,6 @@
     "@claxedo/agent-sdk-runtime/message-page": "e6cb0d7d00582bd893c831b0a0a45c7846d5cbb8c6e4da1e7e97d43d16143e26",
     "@claxedo/agent-sdk-runtime/turn-page": "0226306abc11186ec83809c879a5b5bf386f9d4b6c2e1edf1dcd585986073280",
     "@claxedo/agent-sdk-runtime/turn-outline": "b1bc58e8df5d22562f55df20adba09b835d6c5c8d5206518d30bd3c4262ba27f",
-    "@claxedo/agent-sdk-runtime/stores/memory": "32220d1acd467fa28c5b404eb8ca247d0f26d9bb911f18987a0d288b74720274",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "524590d4bd0c76d24fcacab32c034455aec6ab621d01a90e35f3ba044bc2f1dd",
     "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
   },
   "valueExports": {
@@ -148,17 +138,6 @@
       "sessionModelGroupJson",
       "widestPermissionModeUnder"
     ],
-    "@claxedo/agent-sdk-runtime/stores/memory": [
-      "MemoryRuntimeStore",
-      "createMemoryRuntimeStore"
-    ],
-    "@claxedo/agent-sdk-runtime/stores/sqlite": [
-      "RecoveryOperationIdCollisionError",
-      "RuntimeStoreCorruptionError",
-      "SqliteRuntimeStore",
-      "UnsupportedRuntimeStoreSchemaError",
-      "createSqliteRuntimeStore"
-    ],
     "@claxedo/agent-sdk-runtime/stores/session-start": [
       "sqliteSessionStarts"
     ]
@@ -209,18 +188,6 @@
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "type",
       "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
-    },
-    "createMemoryRuntimeStore": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/stores/memory",
-      "kind": "function",
-      "purpose": "Create an ephemeral runtime store."
-    },
-    "createSqliteRuntimeStore": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/stores/sqlite",
-      "kind": "function",
-      "purpose": "Create a local durable runtime store."
     },
     "isProviderUnavailable": {
       "import": "@claxedo/agent-sdk-runtime",

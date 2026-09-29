@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import * as rootApi from "./index"
-import * as memoryApi from "./stores/memory"
-import * as sqliteApi from "./stores/sqlite"
 import * as sessionStartApi from "./session-start-store"
 
 const root = path.resolve(import.meta.dirname, "..")
@@ -22,8 +20,6 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "docs/api-manifest.j
 }
 const modules: Record<string, Record<string, unknown>> = {
   [pkg.name]: rootApi,
-  [`${pkg.name}/stores/memory`]: memoryApi,
-  [`${pkg.name}/stores/sqlite`]: sqliteApi,
   [`${pkg.name}/stores/session-start`]: sessionStartApi,
 }
 

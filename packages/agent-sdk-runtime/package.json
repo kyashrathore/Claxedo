@@ -76,20 +76,6 @@
       "import": "./dist/turn-outline.mjs",
       "default": "./dist/turn-outline.mjs"
     },
-    "./stores/memory": {
-      "development": "./src/stores/memory.ts",
-      "bun": "./src/stores/memory.ts",
-      "types": "./dist/stores/memory.d.ts",
-      "import": "./dist/stores/memory.mjs",
-      "default": "./dist/stores/memory.mjs"
-    },
-    "./stores/sqlite": {
-      "development": "./src/stores/sqlite.ts",
-      "bun": "./src/stores/sqlite.ts",
-      "types": "./dist/stores/sqlite.d.ts",
-      "import": "./dist/stores/sqlite.mjs",
-      "default": "./dist/stores/sqlite.mjs"
-    },
     "./stores/session-start": {
       "development": "./src/session-start-store.ts",
       "bun": "./src/session-start-store.ts",
@@ -123,9 +109,6 @@
     "@claxedo/agent-event-runtime": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "13.0.1"
   },
   "devDependencies": {
     "@tsconfig/bun": "1.0.9",
