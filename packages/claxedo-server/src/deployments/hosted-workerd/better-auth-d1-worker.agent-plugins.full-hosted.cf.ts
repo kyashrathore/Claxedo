@@ -2,18 +2,18 @@ import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sandbox-driver"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import {
-  composeBetterAuthD1AgentPluginsCandidate,
+  composeBetterAuthD1AgentPlugins,
   stringEnvironment,
-  type BetterAuthD1AgentPluginsCandidateWorkerEnv,
-} from "./better-auth-d1-candidate-worker.agent-plugins.cf"
-import { createBetterAuthD1CandidateWorker } from "./better-auth-d1-candidate-worker.cf"
+  type BetterAuthD1AgentPluginsWorkerEnv,
+} from "./better-auth-d1-worker.agent-plugins.cf"
+import { createBetterAuthD1Worker } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 
 export { LiveSyncRoom }
 
 /**
- * The full-hosted Agent Plugins candidate: the Agent Plugins composition plus
+ * The full-hosted Agent Plugins Worker: the Agent Plugins composition plus
  * cloud workspace execution. It is the only entry that bundles a sandbox
  * provider, so a control-plane-only artifact keeps its closure, and it fails
  * closed at composition when the selected driver's configuration is missing —
@@ -24,7 +24,7 @@ export { LiveSyncRoom }
  * manager's stale-takeover and compare-and-set rules hold across isolates.
  */
 const composition = settledCompositionCache(
-  (env: BetterAuthD1AgentPluginsCandidateWorkerEnv) => {
+  (env: BetterAuthD1AgentPluginsWorkerEnv) => {
     const driver = hostedSandboxDriver(stringEnvironment(env))
     if (!driver) {
       throw new HostedWorkerCompositionError(
@@ -32,7 +32,7 @@ const composition = settledCompositionCache(
         "full-hosted entry requires a completely configured CLAXEDO_SANDBOX_DRIVER",
       )
     }
-    return composeBetterAuthD1AgentPluginsCandidate(env, {
+    return composeBetterAuthD1AgentPlugins(env, {
       sandbox: {
         driver,
         leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
@@ -42,5 +42,5 @@ const composition = settledCompositionCache(
   (created) => created.authReady,
 )
 
-const handler = createBetterAuthD1CandidateWorker({ composition })
+const handler = createBetterAuthD1Worker({ composition })
 export default handler

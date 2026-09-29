@@ -183,7 +183,7 @@ branch to the `CommonDeploymentProfile` union.
 **One honest caveat.** `authAdapter` and `controlPlaneAdapter` are currently
 *descriptive only* — nothing downstream dispatches on them. The real selection
 happens statically in the worker entrypoint
-([`better-auth-d1-candidate-worker.cf.ts`](../packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts)),
+([`better-auth-d1-worker.cf.ts`](../packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-worker.cf.ts)),
 which imports one compose function by name. So your port needs **both**: a new
 profile member *and* a new `.cf.ts` entrypoint that calls your compose
 function. Do not expect setting the profile string alone to change which

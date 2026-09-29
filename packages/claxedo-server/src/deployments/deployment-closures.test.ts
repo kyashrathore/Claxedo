@@ -14,24 +14,22 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 
 const ROOT = path.resolve(import.meta.dirname, "../..")
 
-const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
-const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
+const BETTER_AUTH_D1_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-worker.cf.ts"
 const BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY =
-  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"
+  "src/deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.full-hosted.cf.ts"
 const BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY =
-  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
+  "src/deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.cf.ts"
 const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
 
 /**
  * Measured with `runtimeOnly: true`, the edges that survive compilation, and
  * recorded with no headroom: a fall lowers the number with it, and growth is a
- * deliberate bump someone reads. The locked entry sits below the positive
- * control's floor and is measured in its own test.
+ * deliberate bump someone reads.
  */
 const ENTRIES = [
-  { name: "candidate", entry: BETTER_AUTH_D1_CANDIDATE_ENTRY, modules: 104, packages: 20 },
-  { name: "candidate-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 148, packages: 22 },
-  { name: "candidate-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 153, packages: 22 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 99, packages: 20 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 143, packages: 22 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 148, packages: 22 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -65,77 +63,16 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
   })
 
-  it("keeps the Better Auth D1 locked entry resource-closed", () => {
-    const result = closure(BETTER_AUTH_D1_LOCKED_ENTRY, { runtimeOnly: true })
+  it("keeps the Better Auth D1 Worker free of optional provider implementations", () => {
+    const result = closure(BETTER_AUTH_D1_ENTRY, { runtimeOnly: true })
     const files = result.modules.map((module) => module.relative)
-    expect(files).toContain(BETTER_AUTH_D1_LOCKED_ENTRY)
-    expect(files).toContain("src/platform/auth/better-auth-d1-foundation.ts")
-    expect(files).toContain("src/deployments/hosted-workerd/better-auth-d1-release-state.cf.ts")
-    expect(result.unresolved).toEqual([])
-    expect(result.opaque).toEqual([])
-    // The release operator, release identity, paired-recovery proof, and their
-    // dependency-neutral gate modules are explicit fail-closed edges, as is
-    // `settled-composition-cache.ts`: the per-isolate rule that a Better Auth
-    // composition may be reused only after its lazy init settles.
-    // +1: `platform/auth/mcp-oauth-scopes.ts`, the MCP scope and resource
-    // names the OAuth provider registers. A dependency-free leaf over string
-    // literals, so it adds no edge of its own.
-    // +1: `platform/auth/oauth-consent-revocation.ts`, owned by
-    // `better-auth-d1-foundation.ts`'s plugin list, which every Better Auth
-    // composition here shares: Better Auth deletes a consent without revoking
-    // its opaque access and refresh tokens, and this Worker issues both. A
-    // plugin over `better-auth/api`, already in this graph, so no package edge.
-    // +1: `platform/auth/device-approval-transaction.ts`, from that same
-    // plugin list. Better Auth authorizes `/device/approve` on the short,
-    // hand-typed user code plus whoever claimed it, so an approval here also
-    // carries an HMAC over the request row the approver was shown. Another
-    // plugin over `better-auth/api`, so no package edge.
-    expect(result.modules.length).toBeLessThanOrEqual(17)
-    // The release identity reads its empty-service manifest ID from the
-    // dependency-neutral `@claxedo/service-contract` rather than owning a
-    // second string. No service implementation enters the locked graph; the
-    // forbidden-package assertions below enforce that half.
-    //
-    // `@claxedo/helpers` enters through `better-auth-d1-operator.cf.ts`, which
-    // narrows an operator request body with the canonical `assertRecord`. The
-    // `@claxedo/helpers/guards` subpath has zero imports and no host APIs, so
-    // it stays workerd-valid and adds no transitive edge of its own.
-    expect(result.packages.length).toBeLessThanOrEqual(8)
-    expect(result.packages).toContain("@claxedo/service-contract")
-
-    const forbiddenFiles = files.filter((file) =>
-      [
-        "authority/hosted-services",
-        "core-worker.cf",
-        "documents/",
-        "billing/",
-        "sandbox",
-      ].some((value) => file.toLowerCase().includes(value)),
-    )
-    expect(forbiddenFiles).toEqual([])
-    expect(
-      result.packages.filter((name) =>
-        [
-          "@claxedo/documents-service",
-          "@claxedo/sandbox-manager",
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
-  })
-
-  it("keeps the phase-gated cutover Worker separate from locked and optional provider implementations", () => {
-    const result = closure(BETTER_AUTH_D1_CANDIDATE_ENTRY, { runtimeOnly: true })
-    const files = result.modules.map((module) => module.relative)
-    expect(files).toContain(BETTER_AUTH_D1_CANDIDATE_ENTRY)
-    expect(files).toContain("src/deployments/hosted-workerd/better-auth-d1-operator.cf.ts")
+    expect(files).toContain(BETTER_AUTH_D1_ENTRY)
     expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
     expect(
       files.filter((file) =>
         [
-          "better-auth-d1-locked-worker",
           "billing/",
           "documents/",
         ].some((value) => file.toLowerCase().includes(value)),
@@ -151,8 +88,8 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
   })
 
-  it("keeps the plain candidate free of Agent Plugins and the feature candidate closed over exactly it", () => {
-    const plain = closure(BETTER_AUTH_D1_CANDIDATE_ENTRY, { runtimeOnly: true })
+  it("keeps the plain Worker free of Agent Plugins and the feature Worker closed over exactly it", () => {
+    const plain = closure(BETTER_AUTH_D1_ENTRY, { runtimeOnly: true })
     const plainFiles = plain.modules.map((module) => module.relative)
     expect(plainFiles.filter((file) => file.includes("src/agent-plugins/") || file.includes("connections/hosted-d1/"))).toEqual([])
 
@@ -161,7 +98,7 @@ describe("server deployment entry closures", () => {
     expect(feature.unresolved).toEqual([])
     expect(feature.opaque).toEqual([])
     expect(files).toContain(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY)
-    expect(files).toContain(BETTER_AUTH_D1_CANDIDATE_ENTRY)
+    expect(files).toContain(BETTER_AUTH_D1_ENTRY)
     expect(files).toContain("src/agent-plugins/hosted-composition.ts")
     expect(files).toContain("src/agent-plugins/activation/d1-store.ts")
     expect(files).toContain("src/connections/hosted-d1/setup.ts")
@@ -170,7 +107,6 @@ describe("server deployment entry closures", () => {
     expect(
       files.filter((file) =>
         [
-          "better-auth-d1-locked-worker",
           "packages/claxedo-local-server/src",
           "billing/",
           "documents/",
@@ -185,9 +121,9 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
   })
 
-  it("keeps sandbox providers out of every control-plane-only candidate and inside the full-hosted one", () => {
+  it("keeps sandbox providers out of every control-plane-only Worker and inside the full-hosted one", () => {
     const providerMarkers = ["sandbox-manager/src/drivers/", "src/sandbox/stores/d1.ts", "hosted-sandbox-driver.ts"]
-    for (const entry of [BETTER_AUTH_D1_CANDIDATE_ENTRY, BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY]) {
+    for (const entry of [BETTER_AUTH_D1_ENTRY, BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY]) {
       const files = closure(entry, { runtimeOnly: true }).modules.map((module) => module.relative)
       expect(files.filter((file) => providerMarkers.some((marker) => file.includes(marker)))).toEqual([])
     }
@@ -204,7 +140,7 @@ describe("server deployment entry closures", () => {
     // Still no desktop product, billing, or the retired stack.
     expect(
       files.filter((file) =>
-        ["better-auth-d1-locked-worker", "packages/claxedo-local-server/src", "billing/", "convex"].some((value) =>
+        ["packages/claxedo-local-server/src", "billing/", "convex"].some((value) =>
           file.toLowerCase().includes(value),
         ),
       ),

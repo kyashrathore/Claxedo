@@ -4,7 +4,6 @@ import {
   CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS,
   certifiedHostedWorkerArtifact,
   type CertifiedHostedWorkerArtifactId,
-  type CertifiedHostedWorkerEnvironment,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 
 export const SERVER_ROOT = path.resolve(import.meta.dirname, "../..")
@@ -12,45 +11,20 @@ export const REPO_ROOT = path.resolve(SERVER_ROOT, "../..")
 export const WORKERD_BOUNDARY_DIST = path.join(SERVER_ROOT, "dist-boundary/workerd")
 
 /**
- * The gate bundles the staging release train.
- *
- * Only the Worker name and `CLAXEDO_ENVIRONMENT_ID` differ between the two
- * environments, so staging exercises the same module graph while keeping a
- * production Worker name out of a CI artifact.
- */
-export const WORKERD_BOUNDARY_ENVIRONMENT: CertifiedHostedWorkerEnvironment = "staging"
-
-/**
- * The artifact whose closure the deployed product actually serves.
- *
- * The release train publishes the locked entry first and the candidate at
- * cutover (see scripts/deploy/release-better-auth-d1.ts); the candidate is the
- * one that composes the whole hosted core, so its graph is the recorded
+ * The artifact whose closure the deployed product serves by default: the
+ * plain Worker composes the whole hosted core, so its graph is the recorded
  * `server-workerd` boundary manifest.
  */
-export const WORKERD_BOUNDARY_MANIFEST_ARTIFACT: CertifiedHostedWorkerArtifactId =
-  "user-deployed-better-auth-d1-candidate"
+export const WORKERD_BOUNDARY_MANIFEST_ARTIFACT: CertifiedHostedWorkerArtifactId = "user-deployed-better-auth-d1"
 
 /**
- * The documented fail-closed answer of each certified entry, by artifact.
- *
- * Every certified entry answers an unconfigured request with 503 and a code
- * naming why it refused — the locked worker's and candidate's `catch` arms
- * (better-auth-d1-locked-worker.cf.ts, better-auth-d1-candidate-worker.cf.ts)
- * and the bootstrap gate the bridge re-exports
- * (better-auth-d1-bootstrap-gate.cf.ts). The smoke asserts the exact code so a
- * change that starts answering an unconfigured deployment some other way — or
- * that boots far enough to reach product code without bindings — fails here.
+ * Every certified entry answers an unconfigured request with 503 and the code
+ * of its `catch` arm (`createBetterAuthD1Worker` in better-auth-d1-worker.cf.ts,
+ * which both Agent Plugins entries wrap). The smoke asserts the exact code so
+ * a change that starts answering an unconfigured deployment some other way —
+ * or that boots far enough to reach product code without bindings — fails here.
  */
-const FAIL_CLOSED: Readonly<Record<CertifiedHostedWorkerArtifactId, { status: number; code: string }>> = Object.freeze({
-  "user-deployed-better-auth-d1-locked": { status: 503, code: "deployment_unavailable" },
-  "user-deployed-better-auth-d1-candidate": { status: 503, code: "deployment_candidate_unavailable" },
-  // Both Agent Plugins entries wrap the candidate handler
-  // (`createBetterAuthD1CandidateWorker`), so they refuse the same way.
-  "user-deployed-better-auth-d1-candidate-agent-plugins": { status: 503, code: "deployment_candidate_unavailable" },
-  "user-deployed-better-auth-d1-candidate-agent-plugins-full-hosted": { status: 503, code: "deployment_candidate_unavailable" },
-  "user-deployed-better-auth-d1-live-sync-migration-bridge": { status: 503, code: "deployment_bootstrap" },
-})
+const FAIL_CLOSED = Object.freeze({ status: 503, code: "deployment_candidate_unavailable" })
 
 export type WorkerdBoundaryTarget = Readonly<{
   artifactId: CertifiedHostedWorkerArtifactId
@@ -73,7 +47,7 @@ export type WorkerdBoundaryTarget = Readonly<{
  */
 export const WORKERD_BOUNDARY_TARGETS: readonly WorkerdBoundaryTarget[] = CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS.map(
   (artifactId) => {
-    const artifact = certifiedHostedWorkerArtifact(artifactId, WORKERD_BOUNDARY_ENVIRONMENT)
+    const artifact = certifiedHostedWorkerArtifact(artifactId)
     const outputDirectory = path.join(WORKERD_BOUNDARY_DIST, artifactId)
     // Wrangler names its emitted module after the entry file.
     const bundleName = `${path.basename(artifact.entrypointFromPackageRoot, ".ts")}.js`
@@ -84,7 +58,7 @@ export const WORKERD_BOUNDARY_TARGETS: readonly WorkerdBoundaryTarget[] = CERTIF
       bundleFile: path.join(outputDirectory, bundleName),
       metafileFile: path.join(outputDirectory, "meta.json"),
       configFile: path.join(outputDirectory, "boundary-wrangler.toml"),
-      failClosed: FAIL_CLOSED[artifactId],
+      failClosed: FAIL_CLOSED,
     })
   },
 )

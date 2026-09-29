@@ -8,13 +8,12 @@ import {
   type EsbuildMetafile,
 } from "../../../../script/product-boundary/normalize-build-manifest"
 import { certifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
-import { renderHostedCoreWranglerConfig } from "../deploy/render-hosted-core-config"
 import { stageWorkerControlPlaneMigrations } from "../deploy/staged-control-plane-migrations"
+import { renderWorkerWranglerConfig } from "../deploy/wrangler-config"
 import {
   REPO_ROOT,
   SERVER_ROOT,
   WORKERD_BOUNDARY_DIST,
-  WORKERD_BOUNDARY_ENVIRONMENT,
   WORKERD_BOUNDARY_MANIFEST_ARTIFACT,
   WORKERD_BOUNDARY_TARGETS,
   type WorkerdBoundaryTarget,
@@ -32,11 +31,11 @@ import { asRecord, isRecord, parseJson } from "@claxedo/server-core/platform/jso
  * by accident.
  */
 const PLACEHOLDER = {
-  deploymentId: "boundary-dry-run-deployment",
+  workerName: "claxedo-boundary-dry-run",
   authDatabase: { name: "claxedo-auth-boundary-dry-run", id: "00000000-0000-4000-8000-00000000dead" },
   controlPlaneDatabase: { name: "claxedo-core-boundary-dry-run", id: "00000000-0000-4000-8000-00000000beef" },
-  limiter: { owner: "core" as const, environment: WORKERD_BOUNDARY_ENVIRONMENT, namespaceId: "3999999999" },
-  userDeployedOrganization: { id: "org_boundary_dry_run", name: "Boundary dry run" },
+  requestLimiterNamespaceId: "3999999999",
+  agentPluginsBucket: "claxedo-agent-plugins-boundary-dry-run",
 }
 
 const CONFIG_FILE = path.join(SERVER_ROOT, ".claxedo-workerd-boundary-wrangler.toml")
@@ -44,17 +43,17 @@ const STAGED_MIGRATIONS = path.join(SERVER_ROOT, ".claxedo-workerd-boundary-migr
 const WRANGLER = path.join(SERVER_ROOT, "node_modules/.bin/wrangler")
 
 function boundaryWranglerConfig(target: WorkerdBoundaryTarget, controlPlaneMigrationsDir: string) {
-  const artifact = certifiedHostedWorkerArtifact(target.artifactId, WORKERD_BOUNDARY_ENVIRONMENT)
-  return renderHostedCoreWranglerConfig({
-    artifactId: target.artifactId,
-    deploymentId: PLACEHOLDER.deploymentId,
+  const artifact = certifiedHostedWorkerArtifact(target.artifactId)
+  return renderWorkerWranglerConfig({
+    workerName: PLACEHOLDER.workerName,
+    artifact,
+    configDirectory: SERVER_ROOT,
     authDatabase: PLACEHOLDER.authDatabase,
     controlPlaneDatabase: PLACEHOLDER.controlPlaneDatabase,
     controlPlaneMigrationsDir,
-    limiter: PLACEHOLDER.limiter,
-    // The renderer rejects the pairing in either direction: only a
-    // cutover-capable artifact carries the one user-deployed organization.
-    ...(artifact.resources.liveSyncRoom ? { userDeployedOrganization: PLACEHOLDER.userDeployedOrganization } : {}),
+    requestLimiterNamespaceId: PLACEHOLDER.requestLimiterNamespaceId,
+    ...(artifact.agentPlugins ? { agentPluginsBucket: PLACEHOLDER.agentPluginsBucket } : {}),
+    variables: { CLAXEDO_SANDBOX_POSTURE: artifact.sandboxPosture },
   })
 }
 
@@ -107,8 +106,8 @@ function buildEveryCertifiedArtifact() {
   const staged = stageWorkerControlPlaneMigrations({ configDirectory: SERVER_ROOT, stageInto: STAGED_MIGRATIONS })
   for (const target of WORKERD_BOUNDARY_TARGETS) {
     fs.mkdirSync(target.outputDirectory, { recursive: true })
-    // The renderer resolves `main` and `migrations_dir` from the package root,
-    // so its config has to be written there.
+    // `main` and `migrations_dir` are rendered relative to the package root,
+    // so the config has to be written there.
     const config = boundaryWranglerConfig(target, staged.migrationsDir)
     fs.writeFileSync(CONFIG_FILE, config)
     const result = spawnSync(

@@ -1,12 +1,12 @@
 import type { Policy } from "../policy.ts"
 
 const SRC = "packages/claxedo-server/src"
-const ENTRY = `${SRC}/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts`
+const ENTRY = `${SRC}/deployments/hosted-workerd/better-auth-d1-worker.cf.ts`
 
 /**
- * `@claxedo/server` ships to Cloudflare only. The candidate Worker is the entry
- * whose graph `build:workerd-boundary` records as `server-workerd.json`,
- * because it composes the whole hosted core; the locked, bridge and Agent
+ * `@claxedo/server` ships to Cloudflare only. The plain Better Auth D1 Worker
+ * is the entry whose graph `build:workerd-boundary` records as
+ * `server-workerd.json`, because it composes the whole hosted core; the Agent
  * Plugins entries are measured by `src/deployments/deployment-closures.test.ts`.
  *
  * Every forbidden name below is something the workerd runtime cannot load or
@@ -15,7 +15,7 @@ const ENTRY = `${SRC}/deployments/hosted-workerd/better-auth-d1-candidate-worker
  */
 export const serverWorkerd: Policy = {
   id: "server-workerd",
-  summary: "@claxedo/server Cloudflare Worker (src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts)",
+  summary: "@claxedo/server Cloudflare Worker (src/deployments/hosted-workerd/better-auth-d1-worker.cf.ts)",
   packageDir: "packages/claxedo-server",
   entry: ENTRY,
   roots: [SRC],
@@ -36,7 +36,7 @@ export const serverWorkerd: Policy = {
   ],
 
   control: {
-    minModules: 100,
+    minModules: 50,
     requiredModules: [
       ENTRY,
       `${SRC}/deployments/hosted-workerd/core-worker.cf.ts`,
@@ -44,7 +44,7 @@ export const serverWorkerd: Policy = {
     ],
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
-  ceilings: { modules: 104, packages: 20 },
+  ceilings: { modules: 99, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

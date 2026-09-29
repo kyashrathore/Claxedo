@@ -10,7 +10,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | 1 | `plan` | nothing — selects components | `.github/actions/detect-ci-changes` |
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
-| 3 | `control-plane` | Better Auth + D1 Worker **and the browser app** | `packages/claxedo-server/scripts/deploy/staging-release.ts` |
+| 3 | `control-plane` | Better Auth + D1 Worker **and the browser app** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
 | 6 | `result` | nothing — fails the run if a selected component did not succeed | inline |
@@ -33,18 +33,15 @@ from `test.yml`'s `push.branches`: a push trigger would run the same suite a
 second time in a run the deploy does not depend on.
 
 The whole run shares the `claxedo-cloud-deploy` concurrency group with
-`deploy-claxedo-app-staging.yml`, and a queued run waits instead of cancelling:
-a cancelled release leaves the ledger holding a candidate revision nothing
-activated.
+`deploy-claxedo-app-staging.yml`, and a queued run waits instead of cancelling.
 
 ### The browser app is not a separate job
 
-`release-better-auth-d1.ts --cutover` builds the app against the API origin it
-is releasing, hashes it into the release identity (`CLAXEDO_BROWSER_BUILD_ID`),
-publishes it to the `claxedo-user-deployed-app-staging` Worker bound to
-`CLAXEDO_STAGING_APP_ORIGIN`, and verifies the deployed
-`claxedo-browser-build.json` carries that exact hash. That is the staging web
-app. The Cloudflare Pages project `claxedo-app-staging` is the retired
+`deploy-user-cloudflare.ts` builds the app against the API origin it deploys,
+publishes it to the `claxedo-user-deployed-app-staging` Worker on
+`CLAXEDO_STAGING_APP_ORIGIN`, and waits until the served
+`claxedo-browser-build.json` carries the hash of that build. That is the staging
+web app. The Cloudflare Pages project `claxedo-app-staging` is the retired
 Clerk/Convex-era app; `deploy-claxedo-app-staging.yml` still deploys it on
 dispatch, and pointing it at this control plane means repointing the `staging`
 environment's `CLAXEDO_CONTROL_PLANE_URL` and `CLAXEDO_APP_URL` first.
@@ -70,26 +67,25 @@ is one of its outputs: the Worker and its build script, plus every package
 has no base commit, so it selects the ~4.5 GB image build — pick one component
 by name to avoid that.
 
-## Staging is unavailable for about ten minutes
+## Staging runs the user deploy
 
-`staging-release.ts` runs `release-better-auth-d1.ts --staging --cutover
---agent-plugins --deploy`, which writes ledger phase `locked` about two minutes
-in, then uploads and promotes the Worker with health-convergence retries. Only
-the `prepare-better-auth-d1.ts --dev-open --staging` that follows writes phase
-`open`. Between those points every route on the API origin answers
-`503 {"error":{"code":"deployment_phase_denied"}}` (or
-`deployment_candidate_unavailable`), the hosted app fails to boot, and enrolled
-hosts stop heartbeating. Do not diagnose "the app failed to start" during this
-window; check the ledger phase first.
+The `control-plane` job is `bun run deploy:user-cloudflare -- --agent-plugins`,
+the same command a user runs against their own account
+(`public-docs/user-deployed-cloudflare.md`), with staging's names passed as
+settings: the Worker keeps `claxedo-user-deployed-locked-staging` and the app
+keeps `claxedo-user-deployed-app-staging`, because their Durable Object
+namespace and custom domains live on those names. It finds the two D1
+databases by name, applies their migrations, provisions the native OAuth
+clients, deploys the Worker with `wrangler deploy`, and waits until `/health`
+names the version it deployed. The new version serves as soon as Cloudflare
+switches traffic.
 
-The release mints `CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT` 90 days out. The
-candidate Worker re-checks it on every request, so a staging deployment that is
-not re-released within that window starts answering `503
-deployment_candidate_unavailable` on `/api/claxedo/*` while `/health` still
-reports the release open. Release 84 was minted with a two-day window on
-2026-09-05 and died on 2026-09-07.
+Staging's databases still hold tables no code reads: `deploymentRelease*`,
+`deploymentCutover*` and `deploymentRecoveryEpoch` in the auth database and
+`control_plane_recovery_epochs` in the control plane. Their restrict foreign
+keys make a drop impossible on D1, and a fresh database never creates them.
 
-A release also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
+A deploy also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
 Worker out of band. That is correct: hosted credentials moved to
 `CONTROL_PLANE_DB` (dev `1ed25c7c4f`) and no source reads the KV namespace.
 
@@ -99,13 +95,18 @@ Dispatch `deploy-staging` from the Actions tab and pick `components`:
 `control-plane`, `relay` or `sandbox-image`. The gates still run; the other
 components are skipped and `result` does not require them.
 
-## Checking the inputs without releasing
+## Deploying from a laptop
 
-`staging-release.ts --staging --dry-run` prints every derived input — the
-predecessor read from the live ledger, the minted release id, the sequence and
-the two commands — without deploying. It reads the variables `deploy-staging`
-takes from the `staging` GitHub environment, and is the fastest way to check
-that environment is wired.
+Export the same settings the `control-plane` job sets (see its `env:` block in
+`deploy-staging.yml`) and run, from `packages/claxedo-server`:
+
+```
+bun run deploy:user-cloudflare -- --agent-plugins --dry-run
+bun run deploy:user-cloudflare -- --agent-plugins
+```
+
+The dry run prints the plan and bundles the Worker without Cloudflare
+credentials, and is the fastest way to check the environment is wired.
 
 ## The desktop app is not part of this
 
@@ -119,48 +120,10 @@ workflow, not to this one.
 
 ## Recovery
 
-**The release refuses: split deployment.** A previous release that failed at
-candidate health leaves the Worker with the incumbent at 100% and the candidate
-at 0%, and `ensureCutoverLiveSyncLifecycle` refuses it before touching the
-ledger. `staging-release.ts` detects it up front and prints the exact command:
-
-```
-wrangler versions deploy '<incumbent-version-id>@100%' --name claxedo-user-deployed-locked-staging --yes
-```
-
-Confirm `wrangler deployments status --name claxedo-user-deployed-locked-staging --json`
-lists one version, then rerun the workflow.
-
-**The release refuses: a candidate revision above the active one.** The same
-failure also leaves a `locked` state-history row at `active + 1` that the next
-successor insert would collide with. Roll it back:
-
-```
-bun run scripts/deploy/prepare-better-auth-d1.ts --rollback-candidate --staging
-```
-
-with the stranded release's identity from
-`packages/claxedo-server/.artifacts/deployments/staging-<releaseId>.json`
-(worker/browser/platform-version/auth-configuration/recovery-epoch), the same
-`CLAXEDO_PREVIOUS_*` the failed release used, `CLAXEDO_ROLLBACK_OPERATION_ID`,
-`CLAXEDO_WRANGLER_CONFIG` pointing at any config carrying both D1 bindings, and
-`BETTER_AUTH_SECRET` / `CLAXEDO_AUTH_INTROSPECTION_SECRET`. That writes a
-`prewrite_rollback` row and moves the active pointer to it; the next release
-reads the restored revision by itself.
-
-**The release refuses: the active phase is `locked`.** A previous release
-registered and activated a candidate but never dev-opened. Finish it:
-
-```
-bun run scripts/deploy/prepare-better-auth-d1.ts --dev-open --staging
-```
-
-**Every route 503s and the tag on the served version is `-`.** Someone ran
-`wrangler secret put` against the Worker, which deploys an untagged "Secret
-Change" version the release gate refuses. Redeploy the tagged release version
-(`wrangler versions list --name <worker> --json` names it by release sequence),
-and provision new secrets through `CLAXEDO_RELEASE_SECRETS_FILE` instead so the
-tagged version carries them.
+**A deploy broke staging.** Roll the Worker back to the previous version with
+`wrangler rollback --name claxedo-user-deployed-locked-staging` (and
+`--name claxedo-user-deployed-app-staging` for the app). Migrations are
+forward-only; `wrangler d1 time-travel restore` restores data.
 
 **The relay answers `mode: "node"` or stops resolving targets.** A deploy that
 omitted `CLAXEDO_CENTRAL_URL` removed it from the Worker. Rerun the `relay`
