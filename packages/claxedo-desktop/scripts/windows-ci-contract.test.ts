@@ -46,6 +46,13 @@ describe("Windows CI contract", () => {
       expect(desktopManifest.scripts[lane]).toContain(`bun test ./scripts/${file}`)
       expect(desktopManifest.scripts.test).toContain(`bun run ${lane}`)
     }
+    // The runtime recovery smoke forks the server bundle, which only the
+    // release jobs build, so they run it instead of `test`.
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/runtime-recovery-smoke.test.ts'")
+    expect(desktopManifest.scripts["test:runtime-recovery"]).toContain("bun test ./scripts/runtime-recovery-smoke.test.ts")
+    for (const release of [releaseWorkflow, releaseGatesWorkflow]) {
+      expect(release.indexOf("run: bun run test:runtime-recovery")).toBeGreaterThan(release.indexOf("- name: Build desktop"))
+    }
     expect(acceptance.indexOf("\nbun run build\n")).toBeLessThan(acceptance.indexOf("\nbun run test\n"))
   })
 

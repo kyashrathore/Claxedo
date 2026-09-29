@@ -55,8 +55,8 @@ Project creation:
   `/api/claxedo/integrations` by the self-hosted app and, on hosted, by the
   Agent Plugins composition (`agent-plugins/hosted-composition.ts` →
   `createHostedD1ConnectionsSetup`), which both the plain and the
-  `full-hosted` candidate workers go through
-  (`hosted-workerd/better-auth-d1-candidate-worker.agent-plugins*.cf.ts`).
+  `full-hosted` Workers go through
+  (`hosted-workerd/better-auth-d1-worker.agent-plugins*.cf.ts`).
   The list is the mount root (`GET /api/claxedo/integrations`); the
   `/connections` sub-path is not a route, which is why a probe of
   `/api/claxedo/integrations/connections` answered 404 on staging tonight.

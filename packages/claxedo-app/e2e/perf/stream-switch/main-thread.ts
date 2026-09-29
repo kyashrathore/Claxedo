@@ -1,5 +1,5 @@
 import fs from "node:fs"
-import type { TraceEvent } from "../../../perf-harness/src/trace-events"
+import type { TraceEvent } from "../../harness/trace-events"
 import type { createSourceMapper } from "../panel/trace"
 
 type Mapper = ReturnType<typeof createSourceMapper>

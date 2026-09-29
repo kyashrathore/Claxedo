@@ -107,7 +107,7 @@ test("the packaged output always names the local renderer document and separate 
   expect(desktopContractSpec(ROOT).output).toContain("resources/host-connector")
   expect(desktopContractSpec(ROOT).input).toEqual(expect.arrayContaining([
     "scripts/bundle-host-connector.ts",
-    "scripts/host-connector-entry.ts",
+    "src/host-connector-child/entry.ts",
     "src/main/host-connector/child-artifact.ts",
     "src/main/host-connector/child-protocol.ts",
     "src/main/host-connector/child-supervisor.ts",

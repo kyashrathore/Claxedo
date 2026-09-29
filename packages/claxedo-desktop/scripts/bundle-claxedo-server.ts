@@ -144,7 +144,7 @@ export function resolveDeferredServerEntry(entry: string) {
   if (specifiers.length !== 1) {
     throw new Error(
       `expected exactly one dynamic import in ${entry}, found ${specifiers.length}: ${specifiers.join(", ")}. ` +
-        `The compile cache is generated from the chunk behind it; see scripts/claxedo-server-boot.ts.`,
+        `The compile cache is generated from the chunk behind it; see src/server/boot.ts.`,
     )
   }
   const resolved = path.resolve(path.dirname(entry), specifiers[0])

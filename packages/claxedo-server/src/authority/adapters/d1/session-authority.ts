@@ -829,8 +829,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   /**
-   * A wake, a subagent or a channel message admits a turn the same way the
-   * reader does, so only the actor kind this store resolved for the admitted
+   * A subagent's completion or a channel message admits a turn the same way
+   * the reader does, so only the actor kind this store resolved for the admitted
    * principal tells them apart. Stamping the lease's own admission time makes an
    * exact retry idempotent; max() stops a host whose clock ran backwards from
    * moving a session's last prompt earlier than one already recorded.

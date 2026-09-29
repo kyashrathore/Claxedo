@@ -1,7 +1,7 @@
 import type { Browser, CDPSession, Page } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../harness/painted-frames"
 import { acpScriptToken } from "../../../harness/e2e/harness/acp/script"
 import type { ClaxedoApi } from "../harness/api"
 import type { Stack } from "../harness/stack"

@@ -45,6 +45,7 @@ jobs:
       boundary_local_server: ${{ steps.changed.outputs.boundary_local_server }}
       boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
       boundary_server: ${{ steps.changed.outputs.boundary_server }}
+      app_checks: ${{ steps.changed.outputs.app_checks }}
     steps:
       - name: Checkout repository history
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -73,6 +74,21 @@ jobs:
 
       - name: Check repository documentation links
         run: bun run docs:check-links
+
+  app-checks:
+    name: app rule checks
+    needs: changes
+    if: needs.changes.outputs.app_checks == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run the app's rule checks
+        run: bun run --cwd packages/claxedo-app check
 
   unit:
     name: unit (${{ matrix.settings.name }}, ${{ matrix.lane }})
@@ -165,12 +181,11 @@ jobs:
       # Linux runs two package tasks to match the runner's core count. Windows
       # runs one package task at a time: its OpenCode suite contains wall-clock
       # and child-process contracts that become unreliable when the 5,700-test
-      # app suite runs beside it. Turbo defaults to 10 parallel tasks; several
-      # newly-wired suites assert on wall-clock behaviour (wakes' timer coalescing and
-      # workspace-runtime's PTY byte forwarding) and fail their 5s timeouts
-      # when starved of CPU.
-      # Measured: at 21-way parallelism on a fast many-core dev machine those
-      # three went red; serialized on the same machine, all three pass. A
+      # app suite runs beside it. Turbo defaults to 10 parallel tasks;
+      # workspace-runtime's PTY byte forwarding asserts on wall-clock behaviour
+      # and fails its 5s timeouts when starved of CPU.
+      # At 21-way parallelism on a fast many-core dev machine the wall-clock
+      # suites went red; serialized on the same machine, they pass. A
       # 2-core runner at concurrency 10 is strictly worse. Serial Windows adds
       # only the app suite's roughly two-minute tail and keeps every test intact.
       - name: Run unit tests
@@ -229,7 +244,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, docs, unit]
+    needs: [changes, docs, app-checks, unit]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate to pass
@@ -237,8 +252,10 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
+          APP_CHECKS_RESULT: ${{ needs.app-checks.result }}
           DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
           UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
+          APP_CHECKS_SELECTED: ${{ needs.changes.outputs.app_checks }}
         run: |
           require_gate() {
             label="$1"
@@ -260,3 +277,4 @@ jobs:
           }
           require_gate "Documentation" "$DOCS_SELECTED" "$DOCS_RESULT"
           require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
+          require_gate "App rule checks" "$APP_CHECKS_SELECTED" "$APP_CHECKS_RESULT"

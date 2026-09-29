@@ -1,9 +1,9 @@
 name: deploy-staging
 
 # Everything merged to `staging` ships from here: control plane, relay, sandbox
-# image. The browser app is not a job — the control-plane release publishes it
-# (release-better-auth-d1.ts `publishBrowser`). The desktop app is not either —
-# it is tag-driven (`claxedo-v*` -> release-claxedo.yml).
+# image. The browser app is not a job — the control-plane deploy publishes it
+# (deploy-user-cloudflare.ts). The desktop app is not either — it is
+# tag-driven (`claxedo-v*` -> release-claxedo.yml).
 
 on:
   push:
@@ -22,9 +22,7 @@ on:
           - sandbox-image
 
 # Shared with deploy-claxedo-app-staging.yml: one Claxedo cloud deploy at a
-# time, and a queued run waits rather than being cancelled mid-release — a
-# cancelled release leaves the ledger holding a candidate revision nothing
-# activated.
+# time, and a queued run waits rather than being cancelled mid-deploy.
 concurrency:
   group: claxedo-cloud-deploy
   cancel-in-progress: false
@@ -129,78 +127,56 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
       CLAXEDO_AUTH_INTROSPECTION_SECRET: ${{ secrets.CLAXEDO_AUTH_INTROSPECTION_SECRET }}
-      CLAXEDO_ADAPTER_PROFILE: better-auth-d1
-      CLAXEDO_PRODUCT_POSTURE: user-deployed
+      # Staging keeps the Worker names its Durable Object namespace and custom
+      # domains already live on.
+      CLAXEDO_WORKER_NAME: claxedo-user-deployed-locked-staging
+      CLAXEDO_APP_WORKER_NAME: claxedo-user-deployed-app-staging
+      CLAXEDO_AGENT_PLUGINS_BUCKET: claxedo-agent-plugins-staging
       CLAXEDO_SANDBOX_POSTURE: full-hosted
       CLAXEDO_SANDBOX_DRIVER: cloudflare
       CLAXEDO_AUTH_METHODS: ${{ vars.CLAXEDO_AUTH_METHODS }}
       GITHUB_CLIENT_ID: ${{ vars.CLAXEDO_GITHUB_CLIENT_ID }}
-      CLAXEDO_ENVIRONMENT_ID: ${{ vars.CLAXEDO_ENVIRONMENT_ID }}
       CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: ${{ vars.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID }}
       CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: ${{ vars.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME }}
-      CLAXEDO_STAGING_DEPLOYMENT_ID: ${{ vars.CLAXEDO_STAGING_DEPLOYMENT_ID }}
-      CLAXEDO_STAGING_API_ORIGIN: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
-      CLAXEDO_STAGING_APP_ORIGIN: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
-      CLAXEDO_STAGING_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
-      CLAXEDO_STAGING_AUTH_D1_DATABASE_ID: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_ID }}
-      CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
-      CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID }}
-      CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
-      CLAXEDO_STAGING_SANDBOX_WORKER_URL: ${{ vars.CLAXEDO_STAGING_SANDBOX_WORKER_URL }}
-      # release-better-auth-d1.ts refuses a release whose two environments share
-      # a deployment id, origin, database or limiter namespace, so the
-      # production side of every pair is an input even on a staging run.
-      CLAXEDO_PRODUCTION_DEPLOYMENT_ID: ${{ vars.CLAXEDO_PRODUCTION_DEPLOYMENT_ID }}
-      CLAXEDO_PRODUCTION_API_ORIGIN: ${{ vars.CLAXEDO_PRODUCTION_API_ORIGIN }}
-      CLAXEDO_PRODUCTION_APP_ORIGIN: ${{ vars.CLAXEDO_PRODUCTION_APP_ORIGIN }}
-      CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL }}
-      CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID: ${{ vars.CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID }}
-      CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME }}
-      CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_ID: ${{ vars.CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_ID }}
-      CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_NAME }}
+      CLAXEDO_DEPLOYMENT_ID: ${{ vars.CLAXEDO_STAGING_DEPLOYMENT_ID }}
+      CLAXEDO_API_ORIGIN: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+      CLAXEDO_APP_ORIGIN: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
+      CLAXEDO_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
+      CLAXEDO_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
+      CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
+      CLAXEDO_SANDBOX_WORKER_URL: ${{ vars.CLAXEDO_STAGING_SANDBOX_WORKER_URL }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Verify the release inputs are configured
+      - name: Verify the deploy inputs are configured
         run: |
           set -euo pipefail
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID BETTER_AUTH_SECRET \
             CLAXEDO_AUTH_INTROSPECTION_SECRET CLAXEDO_AUTH_METHODS GITHUB_CLIENT_ID \
-            CLAXEDO_ENVIRONMENT_ID CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID \
-            CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME CLAXEDO_STAGING_DEPLOYMENT_ID \
-            CLAXEDO_STAGING_API_ORIGIN CLAXEDO_STAGING_APP_ORIGIN \
-            CLAXEDO_STAGING_WORKSPACE_RELAY_URL CLAXEDO_STAGING_AUTH_D1_DATABASE_ID \
-            CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID \
-            CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME CLAXEDO_STAGING_SANDBOX_WORKER_URL \
-            CLAXEDO_PRODUCTION_DEPLOYMENT_ID CLAXEDO_PRODUCTION_API_ORIGIN \
-            CLAXEDO_PRODUCTION_APP_ORIGIN CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL \
-            CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME \
-            CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_ID CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_NAME; do
+            CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME \
+            CLAXEDO_DEPLOYMENT_ID CLAXEDO_API_ORIGIN CLAXEDO_APP_ORIGIN CLAXEDO_WORKSPACE_RELAY_URL \
+            CLAXEDO_AUTH_D1_DATABASE_NAME CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME CLAXEDO_SANDBOX_WORKER_URL; do
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
           done
 
-      # The release builds the browser app, which consumes the @claxedo
+      # The deploy builds the browser app, which consumes the @claxedo
       # workspace packages as their published dist (script/published-exports-plugin.ts).
       # A fresh checkout has none, and Vite fails to resolve @claxedo/helpers.
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 
-      - name: Print the derived release inputs
+      - name: Print the deploy plan and bundle the Worker offline
         working-directory: packages/claxedo-server
-        run: bun scripts/deploy/staging-release.ts --staging --dry-run
+        run: bun run deploy:user-cloudflare -- --agent-plugins --dry-run
 
-      # ~10 minutes of unavailability: the ledger goes `locked` at cutover and
-      # every product route answers 503 until --dev-open writes `open`.
-      - name: Release the control plane
+      - name: Deploy the control plane and the app
         working-directory: packages/claxedo-server
-        run: bun scripts/deploy/staging-release.ts --staging
+        run: bun run deploy:user-cloudflare -- --agent-plugins
 
-  # Staging's relay is the Worker-safe Durable Object relay
-  # (packages/workspace-relay/src/worker.ts), which is what the control plane's
-  # CLAXEDO_WORKSPACE_RELAY_URL names. deploy-relay.yml deploys the Fly process
-  # relay and stays a production dispatch.
+  # The relay is the Durable Object Worker (packages/workspace-relay/src/worker.ts)
+  # that the control plane's CLAXEDO_WORKSPACE_RELAY_URL names.
   relay:
     name: workspace relay (Cloudflare Durable Object)
     needs: [plan, gate, unit, control-plane]

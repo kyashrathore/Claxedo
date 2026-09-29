@@ -1,10 +1,13 @@
 # @claxedo/server
 
-Claxedo's control-plane / gateway server. Node-only Hono app.
+Claxedo's control plane. It deploys to Cloudflare as the Workers in
+`src/deployments/hosted-workerd/`. `src/deployments/self-hosted-node/` is a
+Node composition that is not deployed: the app and harness e2e suites and this
+package's integration tests boot it.
 
-## Self-hosted machine operators
+## Machine operators in the Node composition
 
-In signed self-hosted mode, machine-wide plugin configuration, machine enrollment and deleting a
+When the Node composition runs signed, machine-wide plugin configuration, machine enrollment and deleting a
 workspace placed on this machine require an authenticated subject listed in
 `CLAXEDO_OPERATOR_SUBJECTS` (comma-separated).
 Use the stable user ID returned by the embedded issuer's signup/signin response,
@@ -32,9 +35,8 @@ first-party integration. Do not treat those root exports as a stable public
 framework API.
 
 A future public package should use the `@claxedo/control-plane` name or a thin
-wrapper package with explicit stable exports. Until then, publish/release checks
-must keep `private: true`, run `bun run check:package-boundary`, and inspect
-`npm pack --dry-run` before any archive leaves a developer machine.
+wrapper package with explicit stable exports. Until then the manifest keeps
+`private: true` and the package is never packed or published.
 
 ## Workspace-Runtime Host Composition And Sandbox Image
 
@@ -55,15 +57,10 @@ runtime `harnesses` descriptor. An `npm publish` of
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).
 
-## Local Env Files And Release Artifacts
+## Local Env Files
 
 Local `.env` and `.env.local` files are ignored in this package. Keep real
 values local; use `.env.example` for placeholder names only.
-
-The package manifest uses a `files` allowlist and `scripts/maintenance/check-package-boundary.ts`
-fails if `npm pack --dry-run` would include non-example env files, generated
-build output, package test artifacts, dependency directories, nested deploy
-packages, lockfiles under `src`, or Dockerfiles under `src`.
 
 ## Test runner: Vitest
 
@@ -77,9 +74,9 @@ This package uses **Vitest**, not `bun test`. The choice is intentional and
 the rubric item Q13 ("pick one test runner per package") landed on this
 combination for the following reasons:
 
-- **Node-only target.** This package targets `node >=22 <25` (see
-  `engines` in `package.json`). It is started in production with
-  `node --import tsx src/main.ts`. There is no browser-condition concern
+- **No browser target.** The suite runs under Node (`engines` in
+  `package.json`), and the Worker code runs in its own `*.workerd.test.ts`
+  and `*.miniflare.test.ts` files. There is no browser-condition concern
   here, so the main reason `claxedo-app` reaches for `bun test` does not
   apply.
 - **`vi.mock` / `vi.hoisted` ergonomics match how this code is tested.**
@@ -94,8 +91,8 @@ combination for the following reasons:
   existing tests would each need to grow into kitchen-sink mock
   declarations to be safe under `bun test`, which is an outsized cost
   to switch runners.
-- **`tsx` already handles TypeScript loading** for the dev/start scripts,
-  and Vitest's built-in TS support matches that toolchain without an
+- **`tsx` already handles TypeScript loading** where the e2e suites boot the
+  Node composition, and Vitest's built-in TS support matches that toolchain without an
   extra preload step.
 
 ## Why a different runner from `claxedo-app`

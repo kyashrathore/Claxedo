@@ -29,7 +29,7 @@ const diagnosticsBoundaryFiles = [
     scopes: ["ProcessDiagnosticsBridge"],
   },
   {
-    file: "packages/claxedo-desktop/scripts/performance-diagnostics-smoke.ts",
+    file: "packages/claxedo-desktop/scripts/diagnostics-smoke-evidence.ts",
     scopes: ["DiagnosticsSmokeEvidence"],
   },
 ] as const

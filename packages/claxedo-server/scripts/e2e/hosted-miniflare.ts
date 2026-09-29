@@ -4,8 +4,8 @@ import path from "node:path"
 import { Miniflare } from "miniflare"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
 import { betterAuthDeploymentConfigurationId } from "../../src/platform/auth/better-auth-configuration"
-import { betterAuthD1PreparationCommands } from "../deploy/prepare-better-auth-d1"
-import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "../deploy/provision-user-deployed-owner-claim"
+import { provisionBetterAuthNativeClients } from "../../src/platform/auth/better-auth-native-clients"
+import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "../deploy/claim-owner"
 import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/workspace-authority"
 
 type Input = {
@@ -53,20 +53,11 @@ async function main(input: Input) {
     CLAXEDO_PRIVATE_REPO_HOSTS: new URL(input.gitUrl).hostname,
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_DEPLOYMENT_ID: "hosted-e2e-deployment",
-    CLAXEDO_RELEASE_SEQUENCE: "1",
-    CLAXEDO_RELEASE_ID: "hosted-e2e-release",
-    CLAXEDO_WORKER_BUILD_ID: `sha256:${"1".repeat(64)}`,
-    CLAXEDO_BROWSER_BUILD_ID: "browser-absent-v1",
-    CLAXEDO_RELAY_BUILD_ID: "relay-absent-v1",
-    CLAXEDO_CANDIDATE_STATE_REVISION: "0",
-    CLAXEDO_CANDIDATE_OPERATION_ID: "initialize:hosted-e2e-release",
-    CLAXEDO_REQUEST_LIMITER_NAMESPACE_ID: "1930000001",
     CLAXEDO_AUTH_METHODS: "github",
     BETTER_AUTH_URL: apiOrigin,
     CLAXEDO_APP_ORIGIN: apiOrigin,
     BETTER_AUTH_SECRET: "hosted-e2e-better-auth-secret-at-least-32-characters",
     CLAXEDO_AUTH_INTROSPECTION_SECRET: "hosted-e2e-introspection-secret-at-least-32-characters",
-    CLAXEDO_RELEASE_OPERATOR_SECRET: "hosted-e2e-operator-secret-at-least-32-characters",
     GITHUB_CLIENT_ID: "hosted-e2e-github-client",
     GITHUB_CLIENT_SECRET: "hosted-e2e-github-secret",
     CLAXEDO_WORKSPACE_RELAY_URL: input.relayUrl,
@@ -79,13 +70,8 @@ async function main(input: Input) {
     CLAXEDO_PUBLIC_URL: apiOrigin,
     CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL: "https://gateway.hosted-e2e.test/",
     CLAXEDO_MCP_OAUTH_CLIENTS: JSON.stringify({ "https://auth.hosted-e2e.test": { clientId: "hosted-e2e-mcp-client" } }),
-    CLAXEDO_ENVIRONMENT_ID: "hosted-e2e-environment",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "hosted-e2e-organization",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Hosted E2E",
-    CLAXEDO_CANARY_JOURNEY_ID: "hosted-e2e-journey",
-    CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT: String(Date.now() + 60 * 60 * 1000),
-    CLAXEDO_RECOVERY_EPOCH: `paired-d1-v1:sha256:${"2".repeat(64)}`,
-    CLAXEDO_DEV_DISABLE_RELEASE_GATES: "1",
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
     methods: ["github"], apiOrigin, appOrigin: apiOrigin, githubClientId: env.GITHUB_CLIENT_ID,
@@ -122,23 +108,7 @@ async function main(input: Input) {
   try {
     const auth = await mf.getD1Database("AUTH_DB")
     const control = await mf.getD1Database("CONTROL_PLANE_DB")
-    for (const mode of ["register-candidate", "activate-candidate", "dev-open"] as const) {
-      const commands = await betterAuthD1PreparationCommands({
-        env: { ...env, CLAXEDO_PLATFORM_VERSION_ID: "11111111-1111-4111-8111-111111111111",
-          CLAXEDO_BROWSER_BUILD_ID: "browser-absent-v1", CLAXEDO_RELAY_BUILD_ID: "relay-absent-v1",
-          CLAXEDO_WRANGLER_CONFIG: input.config },
-        staging: true,
-        mode,
-      })
-      for (const command of commands) {
-        if (command.args[1] === "migrations") continue
-        const binding = command.args[2]
-        const sql = command.args[command.args.indexOf("--command") + 1]
-        const target = binding === "AUTH_DB" ? auth : control
-        const result = await target.prepare(sql).all()
-        if (command.verify && result.results.length === 0) throw new Error(`${mode} ${command.verify} returned no rows`)
-      }
-    }
+    await provisionBetterAuthNativeClients(auth, apiOrigin, env.BETTER_AUTH_SECRET, env.CLAXEDO_AUTH_INTROSPECTION_SECRET)
     await mf.ready
     process.on("message", (message: unknown) => {
       if (!message || typeof message !== "object" || !("subject" in message) || typeof message.subject !== "string" ||
@@ -156,7 +126,7 @@ async function main(input: Input) {
             expiresAt: Date.now() + 5 * 60_000,
             createdAt: Date.now(),
           }
-          await control.prepare(ownerClaimMutationSql(provisioning, "provision")).run()
+          await control.prepare(ownerClaimMutationSql(provisioning)).run()
           process.send?.({ id: message.id, claim })
         } catch (error) {
           process.send?.({ id: message.id, error: error instanceof Error ? error.message : String(error) })

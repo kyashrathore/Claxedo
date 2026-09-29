@@ -2693,12 +2693,6 @@ export function createSqliteWorkspaceAuthority(
       if (!role || !roleAtLeast(role, minimumRole)) denied()
       return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.subject ? { userId: who.subject } : {}), ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
-    async recordActorRuntimeAccessToken(args) {
-      const db = database()
-      const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`).get(args.actorId)
-      if (!who || who.kind !== "human" || args.actorKind !== "human") denied()
-      return recordUserRuntimeToken(who, args)
-    },
     async resolveChannelMachineAccess(identity, workspaceId) {
       const db = database()
       const who = linkedChannelUser(db, identity)

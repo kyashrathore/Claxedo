@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { describeBuildLog, runBunBuild } from "./bun-build"
+import { buildPackage, describeBuildLog, runBunBuild } from "./bun-build"
 
 function workspace(files: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bun-build-test-"))
@@ -126,5 +126,36 @@ describe("describeBuildLog fallbacks", () => {
   test("passes primitives through", () => {
     expect(describeBuildLog("plain text")).toBe("plain text")
     expect(describeBuildLog(undefined)).toBe("undefined")
+  })
+})
+
+describe("buildPackage", () => {
+  test("replaces dist with bundles built from package-relative entrypoints", async () => {
+    const root = workspace({ "entry.ts": "export const value = 1\n" })
+    fs.mkdirSync(path.join(root, "dist"))
+    fs.writeFileSync(path.join(root, "dist/stale.mjs"), "")
+
+    await buildPackage({
+      root,
+      declarations: false,
+      bundles: [{ entrypoints: ["entry.ts"], target: "node", format: "esm", naming: "[name].mjs" }],
+    })
+
+    expect(fs.readdirSync(path.join(root, "dist"))).toEqual(["entry.mjs"])
+  })
+
+  // The published-exports plugin resolves @claxedo/* before Bun applies
+  // `external`, so without its guard these imports would be bundled.
+  test("leaves a declared external @claxedo package as an import", async () => {
+    const root = workspace({ "entry.ts": 'export { isRecord } from "@claxedo/helpers/guards"\n' })
+
+    for (const external of [{ external: ["@claxedo/helpers"] }, { external: ["@claxedo/*"] }, { packages: "external" as const }]) {
+      await buildPackage({
+        root,
+        declarations: false,
+        bundles: [{ entrypoints: ["entry.ts"], target: "node", format: "esm", naming: "[name].mjs", ...external }],
+      })
+      expect(fs.readFileSync(path.join(root, "dist/entry.mjs"), "utf8")).toContain('from "@claxedo/helpers/guards"')
+    }
   })
 })

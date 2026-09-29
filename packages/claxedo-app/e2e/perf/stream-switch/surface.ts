@@ -9,7 +9,7 @@ import { git } from "../../../../harness/e2e/harness/git"
 import { prepareHarness } from "../../harness/global-setup"
 import { startStack } from "../../harness/stack"
 import type { Workspace } from "../../../../harness/e2e/harness/workspaces"
-import { installPaintedFrames } from "../../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../../harness/painted-frames"
 import { seedScriptedSession } from "../seed"
 import type { ScreenBounds } from "./screen"
 

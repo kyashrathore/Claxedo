@@ -21,7 +21,6 @@ const FORBIDDEN_BARE = [
 const FORBIDDEN_LOCAL = [
   "bun.ts",
   "main.ts",
-  "synthetic.ts",
 ]
 
 type ImportRef = { spec: string; typeOnly: boolean }
@@ -85,7 +84,7 @@ describe("workspace relay Worker import graph", () => {
     expect(visitedRel).toContain("server.ts")
   })
 
-  test("does not import local Bun entrypoints or synthetic probes", () => {
+  test("does not import local Bun entrypoints", () => {
     const leaked = visitedRel.filter((rel) => FORBIDDEN_LOCAL.some((bad) => rel.endsWith(bad)))
     expect(leaked, `local-only relay modules leaked into the Worker graph: ${leaked.join(", ")}`).toEqual([])
   })

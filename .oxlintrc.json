@@ -175,8 +175,7 @@
     {
       "files": [
         "packages/claxedo-web/src/**/*.test.ts",
-        "packages/ui/src/**/*.test.ts", "packages/ui/src/**/*.test.tsx",
-        "packages/ui/src/**/*.stories.tsx", "packages/ui/src/storybook/**"
+        "packages/ui/src/**/*.test.ts", "packages/ui/src/**/*.test.tsx"
       ],
       "rules": {
         "no-console": "off"

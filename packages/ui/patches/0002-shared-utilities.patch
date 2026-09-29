@@ -338,7 +338,7 @@ index 0000000000000000000000000000000000000000..ff48ed08caa6b696941a13d532801fd1
 +})
 diff --git a/src/utils/report-error.ts b/src/utils/report-error.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..dfdd6e9843771aa11515d00955cd306d43e9de2e
+index 0000000000000000000000000000000000000000..02b336b80173cdb3840b80fff7ee6be8a8818eeb
 --- /dev/null
 +++ b/src/utils/report-error.ts
 @@ -0,0 +1,17 @@
@@ -348,7 +348,7 @@ index 0000000000000000000000000000000000000000..dfdd6e9843771aa11515d00955cd306d
 +
 +/**
 + * The app owns error tracking; this package cannot depend on it. The app
-+ * installs its reporter once at boot, and until then (storybook, tests, the
++ * installs its reporter once at boot, and until then (tests, the
 + * session app) a reported error is dropped rather than written to the console.
 + */
 +export function setUiErrorReporter(next: UiErrorReporter | undefined) {

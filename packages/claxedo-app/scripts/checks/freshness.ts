@@ -1,6 +1,6 @@
 import { join } from "node:path"
 import { applyBaseline, isTestFile, type Baselined, type Candidate } from "./lib/baseline"
-import { codeExtensions, listFiles, parseArgs, rel, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, under } from "./lib/files"
 import { freshnessPath, readFreshnessTable, type FreshnessEntry, type FreshnessTable } from "./lib/freshness-table"
 import { readSource, startLine, ts } from "./lib/parse"
 import { eventsInvalidating, invalidationTablePath, keyReferences, queryKeysPath, readEventInvalidations, readTemplates, type KeyTemplates } from "./lib/query-keys"
@@ -26,20 +26,19 @@ type Reference = { readonly file: string; readonly line: number }
 type References = { readonly reads: ReadonlyMap<string, Reference>; readonly unknown: readonly Candidate[] }
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions).filter((file) => !isTestFile(file))
-  const templates = readTemplates(root)
-  const table = readFreshnessTable(root)
-  const references = collectReferences(root, files, templates)
+  const files = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTestFile(file))
+  const templates = readTemplates(packageRoot)
+  const table = readFreshnessTable(packageRoot)
+  const references = collectReferences(packageRoot, files, templates)
   const ttlNames = new Set(table.entries.filter((entry) => entry.kind === "ttl").map((entry) => entry.name))
   const applied = new Set<string>()
   const candidates: Candidate[] = [
     ...references.unknown,
-    ...tableViolations(root, table, references, templates),
-    ...files.flatMap((file) => optionViolations(root, file, ttlNames, applied)),
+    ...tableViolations(packageRoot, table, references, templates),
+    ...files.flatMap((file) => optionViolations(packageRoot, file, ttlNames, applied)),
     ...unappliedTtl(table, applied),
   ]
-  finish("freshness", root, applyBaseline(root, baseline, candidates), files.length)
+  finish("freshness", packageRoot, applyBaseline(packageRoot, baseline, candidates), files.length)
 }
 
 function collectReferences(root: string, files: readonly string[], templates: KeyTemplates): References {

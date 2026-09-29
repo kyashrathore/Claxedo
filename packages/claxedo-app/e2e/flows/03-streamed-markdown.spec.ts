@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { installPaintedFrames } from "../../perf-harness/src/browser/painted-frames"
+import { installPaintedFrames } from "../harness/painted-frames"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test } from "../harness"
 
 type FenceFrame = { height: number; complete: boolean }

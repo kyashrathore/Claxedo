@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, rel, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, under } from "./lib/files"
 import { endLine, lineCount, readSource, startLine, type Source } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { containsJsx, functionName, isFunctionNode, walk, type FunctionNode } from "./lib/tree"
@@ -9,21 +9,20 @@ const componentLimit = 120
 const measuredOnly = ["src/transcript", "src/session/view/timeline"]
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const appFiles = listFiles(root, ["src", "scripts"], codeExtensions)
-  const e2eFiles = new Set(listFiles(root, ["e2e"], codeExtensions))
+  const appFiles = listFiles(packageRoot, ["src", "scripts"], codeExtensions)
+  const e2eFiles = new Set(listFiles(packageRoot, ["e2e"], codeExtensions))
   const violations: Violation[] = []
   const measured: Violation[] = []
   for (const file of [...appFiles, ...e2eFiles]) {
     const source = readSource(file)
     const found = e2eFiles.has(file) ? fileSize(source) : [...fileSize(source), ...functionSizes(source)]
-    const bucket = measuredOnly.some((folder) => under(root, file, folder)) ? measured : violations
+    const bucket = measuredOnly.some((folder) => under(packageRoot, file, folder)) ? measured : violations
     bucket.push(...found)
   }
   for (const item of measured) {
-    console.error(`measured, not enforced: ${rel(root, item.file)}:${item.line}: ${item.message}`)
+    console.error(`measured, not enforced: ${rel(packageRoot, item.file)}:${item.line}: ${item.message}`)
   }
-  finish("size", root, violations, appFiles.length + e2eFiles.size)
+  finish("size", packageRoot, violations, appFiles.length + e2eFiles.size)
 }
 
 function fileSize({ file, text }: Source): Violation[] {

@@ -1,8 +1,7 @@
 # Writing your own auth or storage port
 
 Claxedo ships one certified stack: **Better Auth** for identity and
-**Cloudflare D1** for the control-plane database, with SQLite for the
-self-hosted single binary. This page is for the case where you want a
+**Cloudflare D1** for the control-plane database. This page is for the case where you want a
 different one — Clerk, Convex, Auth0, Postgres, your own service — and want to
 know exactly where your code plugs in and what it has to satisfy.
 
@@ -35,12 +34,11 @@ nothing in the neutral graph changes.
 | Sandbox leases | `SandboxLeaseStore` in [`sandbox-manager`](../packages/sandbox-manager/src/index.ts) | SQLite |
 | Connections / credentials | conformance kit in [`@claxedo/connections`](../packages/claxedo-connections/src/conformance/index.ts) | memory, SQLite |
 
-Two smaller ports exist for narrower work: `WakeStore` in
-[`@claxedo/wakes`](../packages/wakes/src/store.ts), and
+A smaller port exists for narrower work:
 `WorkspaceRuntimeRouteContribution` in
 [`@claxedo/workspace-runtime`](../packages/workspace-runtime/src/route-contribution.ts)
-for adding route groups to a workspace runtime without the runtime importing
-your feature.
+adds route groups to a workspace runtime without the runtime importing your
+feature.
 
 ## The one seam that matters
 
@@ -76,11 +74,10 @@ The Better Auth + D1 adapter that fills this in is
 [`better-auth-d1-compose.ts`](../packages/claxedo-server/src/authority/adapters/worker/better-auth-d1-compose.ts).
 **Read it as your template.** Your port is a sibling of that file.
 
-For the self-hosted Node binary the equivalent seam is
-`ControlPlaneServicesOptions` in
-[`authority/services.ts`](../packages/claxedo-server/src/authority/services.ts),
-whose comment states the rule plainly: *the authority is always injected by the
-composition site; the generic services never construct one.*
+The rule the ports follow is stated on `ControlPlaneServicesOptions` in
+[`authority/services.ts`](../packages/claxedo-server/src/authority/services.ts):
+*the authority is always injected by the composition site; the generic services
+never construct one.*
 
 ## A Clerk identity port, concretely
 
@@ -186,7 +183,7 @@ branch to the `CommonDeploymentProfile` union.
 **One honest caveat.** `authAdapter` and `controlPlaneAdapter` are currently
 *descriptive only* — nothing downstream dispatches on them. The real selection
 happens statically in the worker entrypoint
-([`better-auth-d1-candidate-worker.cf.ts`](../packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts)),
+([`better-auth-d1-worker.cf.ts`](../packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-worker.cf.ts)),
 which imports one compose function by name. So your port needs **both**: a new
 profile member *and* a new `.cf.ts` entrypoint that calls your compose
 function. Do not expect setting the profile string alone to change which

@@ -67,8 +67,9 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
   const accountBinding = resolveAccountBindingSelection(
     binding ?? (env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER),
   )
-  // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
-  // src/deployments/local/port.ts) — the port `claxedo-server dev` listens on.
+  // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-local-server
+  // (src/deployments/local/port.ts), the port the desktop's local server
+  // listens on.
   // `CLAXEDO_DEV_PROXY_TARGET` names the server the dev proxy forwards to when
   // the app's own origin is configured as its server (local signed web
   // development: VITE_CLAXEDO_SERVER_URL is this dev server's HTTPS origin).

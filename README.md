@@ -36,23 +36,22 @@ All 10 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@claxedo/workspace-runtime`](https://www.npmjs.com/package/@claxedo/workspace-runtime)               | Per-workspace host runtime for agent sessions, terminals, processes, files, diffs, and relay attachment                                 |
 | [`@claxedo/agent-runtime-contract`](https://www.npmjs.com/package/@claxedo/agent-runtime-contract)     | Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events                                  |
-| [`@claxedo/workspace-relay`](https://www.npmjs.com/package/@claxedo/workspace-relay)                   | Relay/tunnel server that routes authenticated traffic to workspace runtimes, with Bun and Cloudflare adapters                           |
+| [`@claxedo/workspace-relay`](https://www.npmjs.com/package/@claxedo/workspace-relay)                   | Relay/tunnel that routes authenticated traffic to workspace runtimes, deployed as a Cloudflare Worker                                   |
 | [`@claxedo/workspace-relay-protocol`](https://www.npmjs.com/package/@claxedo/workspace-relay-protocol) | Wire types, message validation, and token verifier interfaces for the workspace relay tunnel protocol                                   |
 | [`@claxedo/sandbox-contract`](https://www.npmjs.com/package/@claxedo/sandbox-contract)                 | Dependency-neutral sandbox driver identity and credential configuration contracts                                                       |
 | [`@claxedo/sandbox-manager`](https://www.npmjs.com/package/@claxedo/sandbox-manager)                   | Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker |
 | [`@claxedo/channels`](https://www.npmjs.com/package/@claxedo/channels)                                 | Channel ingress routing GitHub, Slack, Telegram, Discord, and WhatsApp messages into Claxedo runtimes                                   |
 | [`@claxedo/connections`](https://www.npmjs.com/package/@claxedo/connections)                           | Integration registry, credential store ports, OAuth attempt machine, and token service for linking external accounts                    |
 | [`@claxedo/mcp`](https://www.npmjs.com/package/@claxedo/mcp)                                           | MCP server and CLI for Claxedo documents, processes, logs, sessions, and browser tools                                                  |
-| [`@claxedo/wakes`](https://www.npmjs.com/package/@claxedo/wakes)                                       | Resume an idle agent session from an out-of-band trigger — a durable wake fired by time, an external event, or an authorized approval   |
 
 
 ## Layout
 
 - `packages/claxedo-server` — hosted control plane (runs local/cloud/hybrid sessions; embeds the published OpenCode SDK host via `@claxedo/workspace-runtime/opencode`)
-- `packages/claxedo-local-server` — the desktop's self-hosted server; `packages/claxedo-server-core` — storage- and vendor-agnostic core shared by both servers
+- `packages/claxedo-local-server` — the desktop's local server; `packages/claxedo-server-core` — storage- and vendor-agnostic core shared by both servers
 - `packages/claxedo-app` — web app (Solid); `packages/claxedo-desktop` — Electron shell
 - `packages/workspace-runtime`, `workspace-relay*`, `sandbox-manager` — session execution + routing
-- `packages/{channels,connections,wakes,mcp,agent-*}` — first-party `@claxedo/*` capabilities
+- `packages/{channels,connections,mcp,agent-*}` — first-party `@claxedo/*` capabilities
 - `packages/ui` — shared OpenCode UI used by the app and desktop
 - `packages/cli` — the `claxedo` CLI (`@claxedo/cli`: `login`, `connect`, `host`, `status`, `deploy`, `documents`, `logout`); one-line install in [its README](./packages/cli/README.md)
 

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { traceEventsFrom, type TraceEvent } from "../../perf-harness/src/trace-events"
+import { traceEventsFrom, type TraceEvent } from "../harness/trace-events"
 const CATEGORIES = ["devtools.timeline", "disabled-by-default-devtools.timeline", "blink.console"]
 const STAMP = "corpus-inserted"
 

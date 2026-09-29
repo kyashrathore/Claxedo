@@ -1,8 +1,6 @@
 # Cloudflare Worker config for the Claxedo Workspace Relay.
 #
-# This deploys the Worker-safe Durable Object relay (src/worker.ts) used by the
-# Cloudflare-first deployment shape. The Bun relay remains available for local
-# development and non-Cloudflare regional container deployments.
+# The deployed relay: the Worker-safe Durable Object relay in src/worker.ts.
 #
 # Build / verify (no Cloudflare account needed):
 #   npx wrangler deploy --dry-run --outdir dist-worker

@@ -1,20 +1,19 @@
-import { codeExtensions, listFiles, parseArgs, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, under } from "./lib/files"
 import { compilerOptions, createResolver, importsOf, readSource, startLine } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 
 const wireSpecifier = /(^|\/)server\/wire(\/|$)/
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
   const resolve = createResolver(compilerOptions())
-  const files = listFiles(root, ["src", "e2e"], codeExtensions)
+  const files = listFiles(packageRoot, ["src", "e2e"], codeExtensions)
   const violations: Violation[] = []
   for (const file of files) {
-    if (under(root, file, "src/server")) continue
+    if (under(packageRoot, file, "src/server")) continue
     const { sf } = readSource(file)
     for (const { specifier, node } of importsOf(sf)) {
       const target = resolve(file, specifier)
-      const reaches = target ? under(root, target, "src/server/wire") : wireSpecifier.test(specifier)
+      const reaches = target ? under(packageRoot, target, "src/server/wire") : wireSpecifier.test(specifier)
       if (!reaches) continue
       violations.push({
         file,
@@ -23,7 +22,7 @@ function main(): never {
       })
     }
   }
-  finish("adapter-boundary", root, violations, files.length)
+  finish("adapter-boundary", packageRoot, violations, files.length)
 }
 
 main()

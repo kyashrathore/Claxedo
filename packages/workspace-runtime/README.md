@@ -100,7 +100,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/routes` | Neutral `/api/wr/*` route manifest. |
 | `@claxedo/workspace-runtime/http` | Shared bearer-token, bounded-body, and error-response primitives for host-supplied routes. |
 | `@claxedo/workspace-runtime/route-contribution` | Host route-contribution contracts and lifecycle-safe route mounting. |
-| `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, the fake transport and connection provider, and the OpenCode engine this runtime composes (its runtime, scope and fixtures) for tools outside the workspace graph, such as `claxedo-app/perf-harness`, which resolve packages only through `claxedo-app`'s dependencies and so can't reach `@claxedo/harness` directly. |
+| `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, the loopback login policy, and the fake transport and connection provider. |
 
 Root runtime value exports:
 `FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`,

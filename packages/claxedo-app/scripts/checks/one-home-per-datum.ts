@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { moduleStateExceptions } from "./data/module-state-exceptions"
-import { codeExtensions, listFiles, parseArgs, rel, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel, under } from "./lib/files"
 import { importsOf, readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, hasExportModifier, isTopLevel, literalText, unwrap, walk } from "./lib/tree"
@@ -34,14 +34,13 @@ const mutators = ["add", "set", "delete", "clear"]
 type ModuleState = { readonly binding: string; readonly message: string }
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions)
+  const files = listFiles(packageRoot, ["src"], codeExtensions)
   const violations: Violation[] = []
   const used = new Set<string>()
   const mutatedExports = exportedMutations(files)
   for (const file of files) {
     const { sf } = readSource(file)
-    const inServer = under(root, file, "src/server")
+    const inServer = under(packageRoot, file, "src/server")
     for (const { specifier, node } of importsOf(sf)) {
       if (!retiredPackages.some((pattern) => pattern.test(specifier))) continue
       violations.push({ file, line: startLine(node, sf), message: `imports ${specifier}; pushed data lives in the domain's Solid store` })
@@ -51,7 +50,7 @@ function main(): never {
         if (message) violations.push({ file, line: startLine(node, sf), message })
       }
       for (const state of moduleState(node, sf, mutatedExports)) {
-        const exception = namedException(rel(root, file), state.binding)
+        const exception = namedException(rel(packageRoot, file), state.binding)
         if (exception) used.add(exception)
         else violations.push({ file, line: startLine(node, sf), message: state.message })
       }
@@ -60,7 +59,7 @@ function main(): never {
   for (const { file, binding } of moduleStateExceptions) {
     if (!used.has(`${file}#${binding}`)) violations.push({ file, line: 1, message: `named module-state exception ${binding} matches nothing; remove it from data/module-state-exceptions.ts` })
   }
-  finish("one-home-per-datum", root, violations, files.length)
+  finish("one-home-per-datum", packageRoot, violations, files.length)
 }
 
 function cacheWrite(node: ts.Node, inServer: boolean): string | undefined {

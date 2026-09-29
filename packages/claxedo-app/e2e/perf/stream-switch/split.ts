@@ -1,4 +1,4 @@
-import type { TraceEvent } from "../../../perf-harness/src/trace-events"
+import type { TraceEvent } from "../../harness/trace-events"
 import { createSourceMapper } from "../panel/trace"
 import { forcingFrame, mapTraceFrame, readMainThread } from "./main-thread"
 

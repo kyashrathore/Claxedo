@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 11 public `@claxedo/*` packages.
+ * The one publisher for the 10 public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -24,16 +24,20 @@
  * `workspace:`/`catalog:` specifier in any consumer-facing section — before
  * anything is published. A version already on the registry is skipped.
  */
-import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
+import { readPackageJson, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
-import { publishedVersionDrift, type PublishedVersionPackage } from "./check-published-versions"
+import {
+  defaultCommandRunner,
+  publishedVersionDrift,
+  type CommandRunner,
+  type PublishedVersionPackage,
+} from "./check-published-versions"
 
-export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes" | "cli"
+export type PackageTrack = "helpers" | "runtime" | "apps" | "cli"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -47,7 +51,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 11 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 10 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -57,7 +61,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/helpers", dir: "packages/claxedo-helpers", track: "helpers" },
   { name: "@claxedo/agent-runtime-contract", dir: "packages/agent-runtime-contract", track: "runtime" },
   { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime" },
-  { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes" },
   // Tier 1
   { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime" },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps" },
@@ -79,8 +82,6 @@ export function selectPackages(selector: PackageSelector): readonly ClaxedoPacka
 
 const CONSUMER_SECTIONS = ["dependencies", "peerDependencies", "optionalDependencies"] as const
 const ALL_SECTIONS = [...CONSUMER_SECTIONS, "devDependencies"] as const
-
-export { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
 
@@ -191,15 +192,6 @@ function buildWithDependencies(
   }
   run("npm", ["run", "build", "--workspace", item.name], root)
   built.add(item.name)
-}
-
-export function defaultCommandRunner(cmd: string, args: string[], cwd = repoRoot, env?: NodeJS.ProcessEnv) {
-  return execFileSync(cmd, args, {
-    cwd,
-    env: env ? { ...process.env, ...env } : process.env,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim()
 }
 
 /** `npm pack --json` can prefix notices; take the JSON array off the end. */
@@ -473,13 +465,13 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes", "cli"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "cli"]
 
 export function parseArgs(argv: readonly string[]) {
-  const selectorArg = argValue(argv, "--track") ?? "others"
+  const selectorArg = argValue(argv, "--track")
   const selector = SELECTORS.find((candidate) => candidate === selectorArg)
   if (!selector) {
-    throw new Error(`--track must be one of ${SELECTORS.join(", ")} (got ${selectorArg})`)
+    throw new Error(`--track must be one of ${SELECTORS.join(", ")} (got ${selectorArg ?? "none"})`)
   }
   const onlyArg = argValue(argv, "--packages")
   return {

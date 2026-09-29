@@ -16,14 +16,12 @@ console.log(`[build] local server bundle at ${requireLocalServerBundle(root)}`)
 // Keep the missing-bundle gate dependency-light and first. Besides making the
 // error actionable, this prevents build/manifest modules from doing any work
 // before the one production input they consume has been proven to exist.
-const [contract, manifests, utils] = await Promise.all([
+const [contract, manifests] = await Promise.all([
   import("./contract"),
   import("./product-boundary-manifests"),
-  import("./utils"),
 ])
 const { write, verify } = contract
 const { clearDesktopBoundaryManifests, verifyDesktopBoundaryManifestSet } = manifests
-const { copyWorkspaceRuntimeTemplates } = utils
 clearDesktopBoundaryManifests(root)
 
 const proc = Bun.spawn({
@@ -38,9 +36,6 @@ const proc = Bun.spawn({
 if (await proc.exited !== 0) {
   process.exit(1)
 }
-
-const copied = copyWorkspaceRuntimeTemplates(path.join(root, "out/templates"))
-console.log(`[build] copied workspace-runtime templates from ${copied.src} to ${copied.dest}`)
 
 const boundaryManifests = verifyDesktopBoundaryManifestSet(root)
 console.log(`[build] product boundary manifests: ${boundaryManifests.join(", ")}`)

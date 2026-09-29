@@ -1,39 +1,19 @@
-#!/usr/bin/env bun
-// Loadgen for the Cloudflare-relay re-evaluation bench. Opens N direct + N
-// relayed HTTP/WS pairs against a target, measures the same metric set as the
-// original June Cloudflare-relay evaluation (HTTP/WS p99 overhead vs direct,
-// relayed vs direct WS delivery, connect p95, upstream-open p95, holder setup,
-// upstream failure codes), and emits a JSON artifact plus a markdown row.
-// Direct and relayed are always measured in the same run window so
-// provider/network variance cancels.
+// Opens N direct + N relayed HTTP/WS pairs against one target in the same run
+// window, so network variance cancels, and reports relay overhead: HTTP/WS p99
+// overhead vs direct, relayed vs direct WS delivery, connect and upstream-open
+// p95, holder setup and upstream failure codes.
 //
 // The relay is exercised through its real workspace routes
-// (/workspaces/<id>/...) with a real Runtime Access Token — no relay code path
-// is stubbed. Only the RAT issuer (bench identity) and the target-resolution
-// resolver are bench-provided, mirroring how the control plane would supply
-// them in production.
-//
-// Usage:
-//   bun bench/loadgen.ts \
-//     --relay ws://127.0.0.1:7777 --relay-http http://127.0.0.1:7777 \
-//     --direct-ws ws://127.0.0.1:9001 --direct-http http://127.0.0.1:9001 \
-//     --workspace ws_bench --path /api/claxedo/pty/pty_1/connect \
-//     --connections 20 --concurrency 20 --ws-messages 4 --http-requests 20 \
-//     --row-id local-smoke --shape "c20/load20" --trace --out bench/reports
+// (/workspaces/<id>/...) with a real Runtime Access Token. Only the token
+// issuer (the bench identity) and the target resolver are bench-provided.
 
-import { mkdir, writeFile } from "node:fs/promises"
-import { join } from "node:path"
-import { readFile } from "node:fs/promises"
-import { benchIdentityFromPrivatePem, createBenchIdentity, type BenchIdentity } from "./lib/tokens"
 import { probeWebSocket, type WsProbeResult } from "./lib/ws"
+import type { BenchIdentity } from "./lib/tokens"
 import {
   evaluateGates,
-  markdownRow,
-  MARKDOWN_HEADER,
   overheadMs,
   percentile,
   round2,
-  shapeLabel,
   type RowMetrics,
 } from "./lib/stats"
 
@@ -55,7 +35,7 @@ export type LoadgenConfig = {
   // Total WS holder connections to open (per direct and per relayed).
   connections: number
   // Max concurrent connection ATTEMPTS. Equal to connections = full burst.
-  // Lower than connections = paced opens (H1 mechanism probe).
+  // Lower than connections = paced opens.
   concurrency: number
   wsMessagesPerConnection: number
   wsMessageBytes: number
@@ -67,49 +47,11 @@ export type LoadgenConfig = {
   // Extra header the relay forwards to select the RAT-carrying auth style.
   // "subprotocol" (default) uses claxedo-rat.<token>; "header" uses Bearer.
   ratStyle: "subprotocol" | "header"
-  // Origin header sent on relayed WS upgrades to satisfy the Bun relay's
-  // allowlist (localhost/127.0.0.1 with a port, or *.opencode.ai).
+  // Origin header sent on relayed WS upgrades; it must be one the relay's
+  // CORS allowlist admits.
   relayOrigin: string
-  // Cloud path: PKCS8 private-key PEM (file path or PEM text) whose PUBLIC half
-  // the deployed relay trusts via CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM.
-  // When set, RATs are minted from it instead of a throwaway identity — so the
-  // loadgen and the deployed relay agree on the signing key. Ignored when
-  // `identity` is passed directly (local in-process gates).
-  ratPrivateKeyPem?: string
-  identity?: BenchIdentity
-}
-
-const DEFAULT_CONFIG: Omit<LoadgenConfig, "rowId" | "shape" | "relayWsUrl" | "relayHttpUrl" | "directWsUrl" | "directHttpUrl"> = {
-  workspaceId: "ws_bench",
-  wsPath: "/api/claxedo/pty/pty_1/connect",
-  httpPath: "/api/wr/health",
-  connections: 20,
-  concurrency: 20,
-  wsMessagesPerConnection: 4,
-  wsMessageBytes: 64,
-  httpRequests: 20,
-  httpConcurrency: 20,
-  requestTrace: true,
-  openTimeoutMs: 30_000,
-  messageTimeoutMs: 30_000,
-  ratStyle: "subprotocol",
-  relayOrigin: "http://localhost:5173",
-}
-
-const RAT_STYLES = ["subprotocol", "header"] as const satisfies readonly LoadgenConfig["ratStyle"][]
-
-/**
- * `--rat-style` comes off the command line as free text. Validating it here
- * means a typo fails loudly instead of quietly falling through to the
- * subprotocol branch and reporting numbers for the wrong auth style.
- */
-function ratStyle(value: string): LoadgenConfig["ratStyle"] {
-  const match = RAT_STYLES.find((style) => style === value)
-  if (!match) {
-    console.error(`loadgen: --rat-style must be one of ${RAT_STYLES.join(", ")} (got "${value}")`)
-    return process.exit(2)
-  }
-  return match
+  // Its public half must be the relay's CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM.
+  identity: BenchIdentity
 }
 
 /** Run an async task factory over `total` items with a bounded worker pool. */
@@ -228,20 +170,8 @@ function flatRtts(probes: WsProbeResult[]): number[] {
   return probes.flatMap((p) => p.rtts)
 }
 
-async function resolveIdentity(config: LoadgenConfig): Promise<BenchIdentity> {
-  if (config.identity) return config.identity
-  if (config.ratPrivateKeyPem) {
-    const pem = config.ratPrivateKeyPem.includes("BEGIN")
-      ? config.ratPrivateKeyPem.replaceAll("\\n", "\n")
-      : await readFile(config.ratPrivateKeyPem, "utf8")
-    return benchIdentityFromPrivatePem(pem, { workspaceId: config.workspaceId })
-  }
-  return createBenchIdentity({ workspaceId: config.workspaceId })
-}
-
 export async function runRow(config: LoadgenConfig): Promise<RowMetrics> {
-  const identity = await resolveIdentity(config)
-  const rat = await identity.mintRat({ workspaceId: config.workspaceId })
+  const rat = await config.identity.mintRat({ workspaceId: config.workspaceId })
 
   const http = await runHttpPhase(config, rat)
   const ws = await runWsPhase(config, rat)
@@ -286,96 +216,4 @@ export async function runRow(config: LoadgenConfig): Promise<RowMetrics> {
     ...(trace ? { trace } : {}),
   }
   return { ...base, gates: evaluateGates(base) }
-}
-
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
-
-function parseArgs(argv: string[]): { config: LoadgenConfig; outDir?: string } {
-  const map = new Map<string, string>()
-  const flags = new Set<string>()
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    if (!arg.startsWith("--")) continue
-    const key = arg.slice(2)
-    const value = argv[i + 1]
-    if (value === undefined || value.startsWith("--")) {
-      flags.add(key)
-    } else {
-      map.set(key, value)
-      i++
-    }
-  }
-  const num = (key: string, fallback: number) => (map.has(key) ? Number(map.get(key)) : fallback)
-  const str = (key: string, fallback: string) => map.get(key) ?? fallback
-  const require = (key: string) => {
-    const value = map.get(key)
-    if (!value) {
-      console.error(`loadgen: missing required --${key}`)
-      process.exit(2)
-    }
-    return value
-  }
-  const connections = num("connections", DEFAULT_CONFIG.connections)
-  const wsMessagesPerConnection = num("ws-messages", DEFAULT_CONFIG.wsMessagesPerConnection)
-  const config: LoadgenConfig = {
-    rowId: str("row-id", `row-${Date.now()}`),
-    shape: str(
-      "shape",
-      shapeLabel({ concurrency: num("concurrency", connections), wsMessagesPerConnection, connections }),
-    ),
-    relayWsUrl: require("relay"),
-    relayHttpUrl: str("relay-http", require("relay").replace(/^ws/, "http")),
-    directWsUrl: require("direct-ws"),
-    directHttpUrl: str("direct-http", require("direct-ws").replace(/^ws/, "http")),
-    workspaceId: str("workspace", DEFAULT_CONFIG.workspaceId),
-    wsPath: str("path", DEFAULT_CONFIG.wsPath),
-    httpPath: str("http-path", DEFAULT_CONFIG.httpPath),
-    connections,
-    concurrency: num("concurrency", connections),
-    wsMessagesPerConnection,
-    wsMessageBytes: num("ws-message-bytes", DEFAULT_CONFIG.wsMessageBytes),
-    httpRequests: num("http-requests", DEFAULT_CONFIG.httpRequests),
-    httpConcurrency: num("http-concurrency", num("concurrency", connections)),
-    requestTrace: flags.has("trace") || map.get("trace") === "1",
-    openTimeoutMs: num("open-timeout-ms", DEFAULT_CONFIG.openTimeoutMs),
-    messageTimeoutMs: num("message-timeout-ms", DEFAULT_CONFIG.messageTimeoutMs),
-    ratStyle: ratStyle(str("rat-style", DEFAULT_CONFIG.ratStyle)),
-    relayOrigin: str("relay-origin", DEFAULT_CONFIG.relayOrigin),
-    ...(map.has("rat-private-key-pem") ? { ratPrivateKeyPem: map.get("rat-private-key-pem")! } : {}),
-  }
-  return { config, ...(map.has("out") ? { outDir: map.get("out") } : {}) }
-}
-
-export async function writeReport(row: RowMetrics, outDir: string): Promise<{ jsonPath: string; mdPath: string }> {
-  await mkdir(outDir, { recursive: true })
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const base = `${row.rowId}-${stamp}`
-  const jsonPath = join(outDir, `${base}.json`)
-  const mdPath = join(outDir, `${base}.md`)
-  await writeFile(jsonPath, JSON.stringify(row, null, 2))
-  await writeFile(mdPath, `${MARKDOWN_HEADER}\n| ${markdownRow(row)}\n`)
-  return { jsonPath, mdPath }
-}
-
-async function main() {
-  const { config, outDir } = parseArgs(process.argv.slice(2))
-  console.error(`[loadgen] row=${config.rowId} shape=${config.shape} relay=${config.relayHttpUrl} target=${config.directHttpUrl}`)
-  const row = await runRow(config)
-  console.log(JSON.stringify(row, null, 2))
-  console.error(`\n${MARKDOWN_HEADER}\n| ${markdownRow(row)}`)
-  if (outDir) {
-    const { jsonPath, mdPath } = await writeReport(row, outDir)
-    console.error(`[loadgen] wrote ${jsonPath}`)
-    console.error(`[loadgen] wrote ${mdPath}`)
-  }
-  process.exit(row.gates.pass ? 0 : 1)
-}
-
-if (import.meta.main) {
-  main().catch((err) => {
-    console.error("[loadgen] failed:", err)
-    process.exit(2)
-  })
 }

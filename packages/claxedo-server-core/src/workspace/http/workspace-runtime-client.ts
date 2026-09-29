@@ -16,7 +16,6 @@ export type WorkspaceRuntimeClientOptions = {
   defaultHomeRegion?: ClaxedoRegion
   runtimeActor?: Pick<RelayTokenInput, "principalKind" | "userId" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
   auth?: RelayTokenInput["auth"]
-  delegatedActor?: boolean
   channelIdentity?: RelayTokenInput["channelIdentity"]
   orgId?: string
   role?: RelayTokenInput["role"]
@@ -110,7 +109,6 @@ export function createWorkspaceRuntimeClient(input: {
   const principal = {
     ...(options.runtimeActor ?? CONTROL_PLANE_RUNTIME_ACTOR),
     role: options.role,
-    ...(options.delegatedActor ? { delegatedActor: true } : {}),
     ...(options.auth ? { auth: options.auth } : {}),
     ...(options.channelIdentity ? { channelIdentity: options.channelIdentity } : {}),
     orgId,

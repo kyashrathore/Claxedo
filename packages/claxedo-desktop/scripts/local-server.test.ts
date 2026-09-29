@@ -13,12 +13,8 @@ import {
 } from "./local-server"
 
 /**
- * The desktop's server, resolved once.
- *
- * These assert on RESOLVED VALUES, never on file text. The guard this replaces
- * checked that `prebuild.ts` contained the string `"../claxedo-local-server"`
- * — which it did, in a `const` nothing read. The path was correct and dead;
- * the test could not tell the difference.
+ * These assert on RESOLVED VALUES, never on file text: a path string in a
+ * `const` nothing reads would satisfy a text check.
  */
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
@@ -35,7 +31,7 @@ test("the server child, development, and production preparation resolve ONE entr
   // rather than coincidental — but the child's import is a literal in another
   // file, and that literal is what actually runs. Resolve it independently and
   // compare the files, so a renamed subpath in either place fails here.
-  const childSource = fs.readFileSync(path.join(import.meta.dir, "claxedo-server-entry.ts"), "utf8")
+  const childSource = fs.readFileSync(path.join(PACKAGE_DIR, "src/server/entry.ts"), "utf8")
   const imported = childSource.match(/^import\s*\{[^}]*\}\s*from\s*"(@claxedo\/local-server[^"]*)"/m)?.[1]
 
   expect(imported).toBe(LOCAL_SERVER_ENTRY)

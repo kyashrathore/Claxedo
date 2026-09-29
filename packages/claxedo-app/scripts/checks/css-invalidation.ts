@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, resolve as resolvePath } from "node:path"
 import { applyBaseline, isTestFile, type Baselined, type Candidate } from "./lib/baseline"
-import { codeExtensions, listFiles, parseArgs, repoRoot, styleExtensions, under } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, repoRoot, styleExtensions, under } from "./lib/files"
 import { parseStylesheet, type Declaration, type StyleRule } from "./lib/css"
 import { compilerOptions, createResolver, importsOf, readSource, startLine, ts, type Resolver } from "./lib/parse"
 import { finish } from "./lib/report"
@@ -34,12 +34,11 @@ const styleImport = /@import\s+(?:url\()?["']([^"']+)["']/g
 const utilityToken = /^-?(?:[\w[\]/.-]+:)*(?:space-[xy]-[\w[\].-]+|divide-[xy](?:-[\w[\].-]+)?)$/
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const appSheets = listFiles(root, ["src"], styleExtensions)
-  const code = listFiles(root, ["src"], codeExtensions).filter((file) => !isTestFile(file))
+  const appSheets = listFiles(packageRoot, ["src"], styleExtensions)
+  const code = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTestFile(file))
   const sheets = [...appSheets, ...kitSheets(code, appSheets)]
   const candidates = [...sheets.flatMap(sheetViolations), ...code.flatMap(utilityViolations)]
-  finish("css-invalidation", root, applyBaseline(root, baseline, candidates), sheets.length + code.length)
+  finish("css-invalidation", packageRoot, applyBaseline(packageRoot, baseline, candidates), sheets.length + code.length)
 }
 
 function kitSheets(code: readonly string[], sheets: readonly string[]): string[] {

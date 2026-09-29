@@ -12,8 +12,8 @@
  *
  * Keep in sync with `DEFAULT_CLAXEDO_SERVER_PORT` in
  * `packages/claxedo-desktop/src/main/server-port.ts`. If the two disagree, the
- * development attach path breaks: the desktop app probes one port while
- * `claxedo-server dev` listens on another, so `bun dev` silently starts a
- * second, embedded server instead of attaching to the running one.
+ * development attach path breaks: the desktop app probes one port while the
+ * local server listens on another, so `bun dev` silently starts a second,
+ * embedded server instead of attaching to the running one.
  */
 export const DEFAULT_CLAXEDO_SERVER_PORT = 2593

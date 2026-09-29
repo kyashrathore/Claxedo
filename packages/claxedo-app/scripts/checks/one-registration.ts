@@ -1,4 +1,4 @@
-import { codeExtensions, listFiles, parseArgs, rel } from "./lib/files"
+import { codeExtensions, listFiles, packageRoot, rel } from "./lib/files"
 import { compilerOptions, createProgram, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { walk } from "./lib/tree"
@@ -6,8 +6,7 @@ import { walk } from "./lib/tree"
 type Registration = { readonly file: string; readonly line: number; readonly owner: ts.Node }
 
 function main(): never {
-  const { root } = parseArgs(process.argv.slice(2))
-  const files = listFiles(root, ["src"], codeExtensions).filter((file) => !/\.test\.tsx?$/.test(file))
+  const files = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !/\.test\.tsx?$/.test(file))
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()
   const keys = new Map<string, Registration[]>()
@@ -21,10 +20,10 @@ function main(): never {
     })
   }
   const violations = [
-    ...duplicates(root, keys, (key, other) => `i18n key "${key}" is also defined by the dictionary in ${other}; one owner per key`),
-    ...duplicates(root, commands, (id, other) => `command id "${id}" is also registered in ${other}; one owner per command`),
+    ...duplicates(packageRoot, keys, (key, other) => `i18n key "${key}" is also defined by the dictionary in ${other}; one owner per key`),
+    ...duplicates(packageRoot, commands, (id, other) => `command id "${id}" is also registered in ${other}; one owner per command`),
   ]
-  finish("one-registration", root, violations, files.length)
+  finish("one-registration", packageRoot, violations, files.length)
 }
 
 function recordDictionary(node: ts.CallExpression, checker: ts.TypeChecker, keys: Map<string, Registration[]>): void {

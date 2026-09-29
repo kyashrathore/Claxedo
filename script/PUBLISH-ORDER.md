@@ -1,17 +1,17 @@
 # Publish order
 
-Dependency-ordered publish sequence for the 13 public `@claxedo/*` packages,
+Dependency-ordered publish sequence for the 10 public `@claxedo/*` packages,
 derived from the actual `dependencies` in each `packages/*/package.json`.
 
 - **Re-derived:** 2026-09-14
-- **Previous release:** 2026-07-30 (`0.7.0` / `0.4.0` / `0.3.0`)
+- **Previous release:** 2026-07-30 (`0.7.0` / `0.4.0`)
 
 `packages/claxedo-server` is `"private": true` and is **not** published; it is
 the workspace that hosts the release tooling, nothing more.
 
 ## Version scheme
 
-Five version tracks. Packages on a track move together, one step at a time.
+Four version tracks. Packages on a track move together, one step at a time.
 `publish-claxedo-packages.ts` reads every version from the repo — the tracks
 are a review convention it selects on (`--track`), not a number it computes.
 The cost is that a package with no content change still gets a bump; the
@@ -23,7 +23,6 @@ mistake that has actually bitten this repo.
 | helpers | `helpers` | — | **0.1.0** |
 | runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.7.0 | **0.8.0** |
 | apps | `channels`, `connections` | 0.4.0 | **0.5.0** |
-| wakes | `wakes` | 0.3.0 | **0.4.0** |
 | cli | `cli` | — | **0.1.0** |
 
 `agent-runtime-contract` has never been published: the 0.7.0 release pinned it
@@ -59,7 +58,7 @@ fails when a package directory changed after its `version` was last set and
 that version is already on npm. Bump the track before merging such a change.
 
 Each track moves a **minor** when at least one package on it added public
-API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 / 0.4.0 (2026-09-06):
+API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 (2026-09-06):
 
 - helpers — first release. `@claxedo/helpers` is the canonical owner for the
   small predicates and string/fs/path/process/net helpers the workspace kept
@@ -75,8 +74,6 @@ API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 / 0.4.0 (2026-09-06):
   `workspace-relay-protocol` rides the track.
 - apps — `connections` changed with the control-plane migration;
   `channels` rides the track.
-- wakes — 0.4.0 was bumped in the repo before this release and never
-  published; it ships now.
 - cli — first release (2026-09-14). `@claxedo/cli` replaces the never-published
   `@opencode-ai/cli` (`lildax`) manifest that lived in `packages/cli`.
 
@@ -85,7 +82,6 @@ API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 / 0.4.0 (2026-09-06):
 ```
 Tier 0 — no @claxedo/* dependencies
   helpers
-  wakes
 
 Tier 1
   agent-runtime-contract -> helpers
@@ -107,7 +103,7 @@ Tier 4
   cli                -> workspace-runtime            (build-time only: helpers)
 ```
 
-`helpers` sits under everything but `wakes`: eleven of the other twelve import a
+`helpers` sits under every other package: each imports a
 canonical guard or string helper from it, which is what pulls `agent-runtime-contract`,
 `workspace-relay-protocol`, `sandbox-contract`, `channels` and `connections`
 out of tier 0 and pushes `sandbox-manager` and `workspace-runtime` down a tier. `sandbox-manager` still depends on
@@ -126,7 +122,7 @@ Do not run `npm publish` by hand. Both paths below build, pack, inspect the
 real tarball, and skip any package whose exact version is already on the
 registry, so they are safe to re-run after a partial failure.
 
-### One command for all 13
+### One command for all 10
 
 ```bash
 # from the repo root
@@ -137,7 +133,7 @@ bun run --cwd packages/claxedo-server release:packages --track all
 `release:packages` reads each version from its `package.json` — there is no
 `--version` argument, because the bump is meant to be a reviewed commit rather
 than a number typed at release time. `--track` accepts `all` or a version
-track name (`helpers`, `runtime`, `apps`, `wakes`, `cli`). `--packages a,b` selects by
+track name (`helpers`, `runtime`, `apps`, `cli`). `--packages a,b` selects by
 name or directory. `--tag` sets the dist-tag (default `latest`); `--no-provenance`
 disables provenance.
 
@@ -158,7 +154,7 @@ It refuses to publish when any of these is true, per package:
 ### Via GitHub Actions
 
 `claxedo-packages-release.yml` — `workflow_dispatch` with a `track` choice
-(`all`, `helpers`, `runtime`, `apps`, `wakes`, `cli`), `npm_tag`, and a `dry_run` toggle that
+(`all`, `helpers`, `runtime`, `apps`, `cli`), `npm_tag`, and a `dry_run` toggle that
 defaults to **true**. Uses the existing `NPM_TOKEN` secret and `id-token:
 write` for provenance. The same workflow runs `--track all --dry-run`
 automatically on every push to `dev` (and on PRs) touching any public package
@@ -189,7 +185,6 @@ for name in \
   @claxedo/workspace-runtime \
   @claxedo/channels \
   @claxedo/connections \
-  @claxedo/wakes \
   @claxedo/cli \
 ; do
   echo "$name -> $(npm view "$name" version 2>/dev/null || echo 'NOT FOUND')"
@@ -197,7 +192,7 @@ done
 ```
 
 Expect `0.1.0` for `@claxedo/helpers`, `0.8.0` for the runtime track, `0.5.0`
-for the apps track, `0.4.0` for `@claxedo/wakes`, and `0.1.0` for
+for the apps track, and `0.1.0` for
 `@claxedo/cli`. A line still showing the old version means either the
 registry has not finished indexing (retry) or that package's publish failed and
 must be re-run before anything downstream of it in the graph above.
@@ -209,8 +204,8 @@ not need to be invoked separately.
 
 ## Known issues, deliberately not fixed here
 
-- `wakes` and `workspace-runtime` still carry `Copyright (c) 2025 opencode`
-  in `LICENSE`; the other 11 read `Copyright (c) 2026 Claxedo`. Cosmetic, and a
+- `workspace-runtime` still carries `Copyright (c) 2025 opencode`
+  in `LICENSE`; the other nine read `Copyright (c) 2026 Claxedo`. Cosmetic, and a
   call for the owner rather than the release tooling.
 - `packages/sandbox-manager/src/runtime-version.ts` pins
   `DEFAULT_WORKSPACE_RUNTIME_VERSION = "0.5.2"`, which is a **sandbox image

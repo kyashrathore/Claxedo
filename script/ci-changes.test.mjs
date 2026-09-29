@@ -45,6 +45,16 @@ await test("shared kit changes are ordinary code changes", () => {
   assert.equal(result.boundary_server, false)
 })
 
+await test("the app's rule checks run for app and kit code and nothing else", () => {
+  for (const file of ["packages/claxedo-app/src/rail/switcher-items.ts", "packages/claxedo-app/scripts/checks/budget.ts", "packages/ui/src/context/marked.tsx"]) {
+    assert.equal(classifyChangedFiles([file]).app_checks, true, file)
+  }
+  for (const file of ["packages/claxedo-server/src/workspace/routes/session.ts", "packages/claxedo-app/README.md", "packages/ui/src/README.md"]) {
+    assert.equal(classifyChangedFiles([file]).app_checks, false, file)
+  }
+  assert.equal(classifyChangedFiles([]).app_checks, true)
+})
+
 await test("server changes select Windows and the server boundary", () => {
   const result = classifyChangedFiles(["packages/claxedo-server/src/workspace/routes/session.ts"])
   assert.equal(result.unit, true)
