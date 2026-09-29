@@ -77,7 +77,7 @@ function FileContext(props: { readonly path: string }): JSX.Element {
   const files = useFiles()
   const label = () => (files.markdownSource(props.path) ? t("panel.markdown.preview") : t("panel.markdown.source"))
   return (
-    <div class="flex min-w-0 items-center gap-2">
+    <div class="flex min-w-0 flex-1 items-center gap-2">
       <Icon name="document-text" size="small" class="shrink-0 text-icon-weak-base" />
       <span class="truncate font-mono text-xs text-text-weak" title={props.path}>
         {props.path}
@@ -175,7 +175,7 @@ function ToolbarRow(): JSX.Element {
         </Match>
         <Match when={true}>
           <ToolbarContext leads={leads()} class="px-2">
-            <div class="flex min-w-0 items-center gap-2">
+            <div class="flex min-w-0 flex-1 items-center gap-2">
               <span
                 class="text-sm"
                 classList={{
