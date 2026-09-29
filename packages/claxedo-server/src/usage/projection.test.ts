@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks"
 import { describe, expect, test } from "vitest"
 import { mergeUsageSeries, usageModelKey, usageSeriesFromExternal, usageSeriesFromFacts } from "@claxedo/server-core/usage/projection"
 import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
@@ -69,5 +70,31 @@ describe("usage projection", () => {
     })
 
     expect(external.totals).toMatchObject({ turnCount: 3, input: 5, output: 1 })
+  })
+
+  test("projects 7, 30 and 90 days of 120 turns a day within their budgets", () => {
+    const day = 86_400_000
+    const now = Date.UTC(2026, 7, 9, 12)
+    const facts: TurnUsageRevision[] = []
+    for (let offset = 0; offset < 90; offset += 1) {
+      for (let turn = 0; turn < 120; turn += 1) {
+        facts.push({
+          ...fact(1, 100),
+          hostId: `host-${turn % 3}`,
+          sessionId: `s-${turn % 4}`,
+          sessionRef: `central:s-${turn % 4}`,
+          messageId: `m-${offset}-${turn}`,
+          observedAt: now - offset * day - turn,
+        })
+      }
+    }
+    const budgetMs = { 7: 40, 30: 80, 90: 180 } as const
+    for (const days of [7, 30, 90] as const) {
+      const started = performance.now()
+      const series = usageSeriesFromFacts({ facts, since: now - days * day, until: now, timeZone: "UTC" })
+      const elapsed = performance.now() - started
+      expect(series.daily.length).toBeLessThanOrEqual(days + 1)
+      expect(elapsed).toBeLessThanOrEqual(budgetMs[days])
+    }
   })
 })

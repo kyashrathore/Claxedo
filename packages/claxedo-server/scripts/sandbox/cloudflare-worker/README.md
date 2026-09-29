@@ -23,8 +23,8 @@ wrangler secret put API_TOKEN
 ```
 
 The container image `COPY`s the in-repo workspace-runtime host bundle from
-`.build/` (produced by `build-sandbox-image.ts --bundle-only`, or automatically
-by `scripts/deploy/deploy-hosted.ts --target cloudflare-sandbox`). Native
+`.build/` (produced by `build-sandbox-image.ts --bundle-only`, which the
+`deploy-cloudflare-sandbox-worker` workflow runs before `npm run deploy`). Native
 modules and ACP bins are npm-installed inside the image from the generated
 `.build/package.json`, pinned to the versions in
 `packages/workspace-runtime/package.json`. Publishing
@@ -48,8 +48,8 @@ snapshot claxedo-workspace-runtime-<version>-<buildId>-v<schema>
 Every build prints these prominently and writes
 `packages/claxedo-server/scripts/sandbox/.build/build-info.json`
 (`{ imageTag, snapshotName, buildId, coreVersion }`).
-`scripts/deploy/deploy-hosted.ts --target cloudflare-sandbox` and the two
-GitHub workflows echo this file after bundling.
+The `deploy-cloudflare-sandbox-worker` and `claxedo-sandbox-image` workflows
+echo this file after bundling.
 
 The runtime side (sandbox-manager `image.ts`, read at import by the
 supervisor/drivers) resolves the snapshot/image name from these env vars, in

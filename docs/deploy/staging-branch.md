@@ -101,20 +101,13 @@ Dispatch `deploy-staging` from the Actions tab and pick `components`:
 `control-plane`, `relay` or `sandbox-image`. The gates still run; the other
 components are skipped and `result` does not require them.
 
-## Releasing from a laptop
+## Checking the inputs without releasing
 
-When the `staging` GitHub environment is not configured yet,
-`packages/claxedo-server/scripts/deploy/staging-release.local.sh` assembles the
-same inputs from local sources — `CLOUDFLARE_API_TOKEN` through
-`script/load-server-env.sh`, and `BETTER_AUTH_SECRET` /
-`CLAXEDO_AUTH_INTROSPECTION_SECRET` from the login keychain item
-`claxedo-cf-acceptance-260830-232009-3851` / `deployment`, a JSON object keyed
-by those names. It defaults to `--dry-run`; `--release` is the explicit opt-in.
-
-`staging-release.ts --staging --dry-run` on its own prints every derived input —
-the predecessor read from the live ledger, the minted release id, the sequence
-and the two commands — without deploying, and is the fastest way to check the
-environment is wired.
+`staging-release.ts --staging --dry-run` prints every derived input — the
+predecessor read from the live ledger, the minted release id, the sequence and
+the two commands — without deploying. It reads the variables `deploy-staging`
+takes from the `staging` GitHub environment, and is the fastest way to check
+that environment is wired.
 
 ## The desktop app is not part of this
 

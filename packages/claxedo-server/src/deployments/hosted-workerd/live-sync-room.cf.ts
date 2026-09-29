@@ -55,10 +55,11 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
 /**
  * Held connections one room admits, across both hold mechanisms.
  *
- * This is a deliberate margin below the room's measured capacity under
- * workerd, not a guess: staying well under that ceiling keeps org-wide
- * fan-out latency low, and comfortably clears the org sizes this work
- * targets, which is what makes sharding unnecessary.
+ * Under workerd (miniflare, clients in-process) one room held 4,000
+ * connections and fanned an org-scoped nudge to all of them in 100 ms (p99
+ * 90 ms); at 2,000 the fan-out took 48 ms (p99 44 ms). Half the held figure
+ * keeps org-wide fan-out latency low and comfortably clears the org sizes
+ * this work targets, which is what makes sharding unnecessary.
  *
  * Room work per nudge is one attachment read plus an `eventVisibleTo` filter
  * per held connection, so cost is linear in this number with a very small
@@ -75,11 +76,11 @@ export const DEFAULT_MAX_CONNECTIONS = 2_000
  */
 const MAX_CONNECTIONS_CEILING = 16_000
 /**
- * Deployment override, read off the Worker env so the cap can be retuned (or
- * driven past its default by the capacity harness) without a code change. Both
- * counters resolve through this function — the WS and SSE paths hold
- * connections in different places but share one budget, and a room that
- * admitted the full cap on each would hold twice what was measured safe.
+ * Deployment override, read off the Worker env so the cap can be retuned
+ * without a code change. Both counters resolve through this function — the WS
+ * and SSE paths hold connections in different places but share one budget, and
+ * a room that admitted the full cap on each would hold twice what was measured
+ * safe.
  */
 function maxConnections(env: LiveSyncRoomEnv): number {
   const raw = env.LIVE_SYNC_MAX_CONNECTIONS
@@ -471,12 +472,12 @@ export class LiveSyncRoom {
    *  - The window the fix targets is the reconnect gap, and a room that was
    *    just woken by the nudge is still live across it.
    *
-   * The cost is a sequence that resets on eviction. That is not silent on
-   * reconnect: `cursorAhead` turns a cursor from a lost sequence into the gap
-   * notice — but only at connect time. A connection held across the reset sees
-   * the sequence go backwards with no notice; measured fail-safe both ways
-   * (post-reset frames still deliver, and a stale cursor gets the gap notice
-   * on its next reconnect) — see scripts/drill/live-sync-post-reset-resume-probe.ts.
+   * The cost is a sequence that resets on eviction. `cursorAhead` runs only at
+   * connect time, so a connection held across the reset sees ids go backwards
+   * with no notice. That stays safe: frames published after the reset still
+   * reach the held connection, and when it next reconnects with its cursor
+   * from the lost sequence, `cursorAhead` turns that cursor into the gap
+   * notice.
    */
   private readonly retained = createSseReplayBuffer<ControlPlaneEvent>({ isTerminal: isRetainedControlPlaneEvent })
   private readonly replays = new Map<string, {
