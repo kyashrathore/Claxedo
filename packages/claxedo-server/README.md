@@ -32,9 +32,8 @@ first-party integration. Do not treat those root exports as a stable public
 framework API.
 
 A future public package should use the `@claxedo/control-plane` name or a thin
-wrapper package with explicit stable exports. Until then, publish/release checks
-must keep `private: true`, run `bun run check:package-boundary`, and inspect
-`npm pack --dry-run` before any archive leaves a developer machine.
+wrapper package with explicit stable exports. Until then the manifest keeps
+`private: true` and the package is never packed or published.
 
 ## Workspace-Runtime Host Composition And Sandbox Image
 
@@ -55,15 +54,10 @@ runtime `harnesses` descriptor. An `npm publish` of
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).
 
-## Local Env Files And Release Artifacts
+## Local Env Files
 
 Local `.env` and `.env.local` files are ignored in this package. Keep real
 values local; use `.env.example` for placeholder names only.
-
-The package manifest uses a `files` allowlist and `scripts/maintenance/check-package-boundary.ts`
-fails if `npm pack --dry-run` would include non-example env files, generated
-build output, package test artifacts, dependency directories, nested deploy
-packages, lockfiles under `src`, or Dockerfiles under `src`.
 
 ## Test runner: Vitest
 
