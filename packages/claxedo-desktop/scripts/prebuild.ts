@@ -46,10 +46,10 @@ async function copyIcons() {
 
 async function bundleServer() {
   // The BOOT stub, not the product entry: it seeds the compile cache and then
-  // reaches `claxedo-server-entry.ts` through a dynamic import, so the 9.11 MB
+  // reaches `src/server/entry.ts` through a dynamic import, so the 9.11 MB
   // closure behind it is compiled after the cache is live. See
-  // scripts/claxedo-server-boot.ts.
-  const src = path.resolve(SCRIPT_DIR, "claxedo-server-boot.ts")
+  // src/server/boot.ts.
+  const src = path.resolve(PACKAGE_DIR, "src/server/boot.ts")
   const dest = path.resolve(RESOURCES_DIR, "claxedo-server")
 
   if (!fs.existsSync(src)) {

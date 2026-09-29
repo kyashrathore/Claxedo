@@ -229,7 +229,7 @@ export const desktopAccountComposition: Policy = {
     // `src/main/account/oauth-flow.ts`, which speaks HTTP.
     "@claxedo/server",
     // Main composes the local server as a separate child process
-    // (`scripts/claxedo-server-entry.ts`), never in-process.
+    // (`src/server/entry.ts`), never in-process.
     "@claxedo/local-server",
     "@claxedo/host-connector",
   ],

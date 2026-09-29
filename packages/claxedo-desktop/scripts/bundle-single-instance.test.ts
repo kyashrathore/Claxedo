@@ -30,7 +30,7 @@ const OUT = path.join(os.tmpdir(), `claxedo-bundle-instance-${process.pid}`)
  * ONE build, shared by both tests. A second `Bun.build` in the same process
  * fails with phantom `EISDIR reading file` / `Unexpected reading file` errors
  * on files that are also LOADED MODULES of the test process (reproduced
- * minimally on bun 1.3.14: import scripts/diagnostics-child-transport.ts —
+ * minimally on bun 1.3.14: import src/server/diagnostics-child-transport.ts —
  * which loads the workspace-runtime graph — then call `bundleClaxedoServer`
  * twice; the second build reports those errors on hono/jose/agent-* files the
  * first build read fine). Both tests inspect the same artifact anyway, so a
@@ -38,7 +38,7 @@ const OUT = path.join(os.tmpdir(), `claxedo-bundle-instance-${process.pid}`)
  */
 let bundled: Promise<unknown> | undefined
 function bundleOnce() {
-  bundled ??= emitClaxedoServerBundle(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
+  bundled ??= emitClaxedoServerBundle(path.resolve(import.meta.dir, "../src/server/boot.ts"), OUT)
   return bundled
 }
 

@@ -33,7 +33,7 @@ describe("desktop server launch wiring", () => {
   test("the server child imports the declared server entry", () => {
     // Anchored to an `import` statement: a bare-substring check is satisfied by
     // prose that names the package.
-    expect(read("scripts/claxedo-server-entry.ts")).toMatch(
+    expect(read("src/server/entry.ts")).toMatch(
       new RegExp(`^import [^\\n]* from "${DESKTOP_SERVER_ENTRY}"$`, "m"),
     )
   })
@@ -61,7 +61,7 @@ describe("desktop server launch wiring", () => {
   test("both preparation paths bundle through the one bundler helper", () => {
     for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
       expect(read(script), script).toContain('from "./bundle-claxedo-server"')
-      expect(read(script), script).toContain("claxedo-server-entry.ts")
+      expect(read(script), script).toContain("src/server/")
     }
   })
 
@@ -129,6 +129,6 @@ describe("desktop server launch wiring", () => {
 
     expect(Object.keys(deps)).toContain("@claxedo/local-server")
     expect(Object.keys(deps)).toContain("@claxedo/app")
-    expect(read("scripts/claxedo-server-entry.ts")).not.toContain("../../claxedo-server/src")
+    expect(read("src/server/entry.ts")).not.toContain("../../claxedo-server/src")
   })
 })

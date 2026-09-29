@@ -26,7 +26,7 @@ import {
   type HostConnectorProviderConfig,
   type HostConnectorServingEndpoints,
   type HostEnrollmentOperation,
-} from "../src/main/host-connector/child-protocol"
+} from "../main/host-connector/child-protocol"
 
 type ChildPort = {
   postMessage(message: HostConnectorChildMessage): void

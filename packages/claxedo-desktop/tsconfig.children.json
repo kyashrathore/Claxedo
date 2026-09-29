@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The server and Host Connector children are Electron utility processes,
+    // not Vite pages, and compose packages written against Bun's ambient types
+    // (`@claxedo/local-server` and `@claxedo/host-connector` typecheck the
+    // same way).
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "electron"],
+    "outDir": "node_modules/.ts-dist-children"
+  },
+  "include": ["src/server", "src/host-connector-child"],
+  "exclude": ["src/**/*.test.ts"]
+}

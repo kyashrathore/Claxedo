@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import type { DiagnosticsTransportMessage } from "../src/shared/diagnostics-transport"
+import type { DiagnosticsTransportMessage } from "../shared/diagnostics-transport"
 import { createDiagnosticsChildTransport, windowsIdentityProbeCommand } from "./diagnostics-child-transport"
 
 const binding = { pid: 50, launchId: "server-launch", generation: "server-generation" }

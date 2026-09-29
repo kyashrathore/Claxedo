@@ -35,7 +35,7 @@ test("the server child, development, and production preparation resolve ONE entr
   // rather than coincidental — but the child's import is a literal in another
   // file, and that literal is what actually runs. Resolve it independently and
   // compare the files, so a renamed subpath in either place fails here.
-  const childSource = fs.readFileSync(path.join(import.meta.dir, "claxedo-server-entry.ts"), "utf8")
+  const childSource = fs.readFileSync(path.join(PACKAGE_DIR, "src/server/entry.ts"), "utf8")
   const imported = childSource.match(/^import\s*\{[^}]*\}\s*from\s*"(@claxedo\/local-server[^"]*)"/m)?.[1]
 
   expect(imported).toBe(LOCAL_SERVER_ENTRY)

@@ -132,7 +132,7 @@ test("the separately built child entry imports the connector while its main asse
   // Positive control for every negative assertion below. The executable owns
   // the implementation; the dependency-light Electron supervisor owns only
   // the fixed protocol and lifecycle.
-  const childEntry = path.join(import.meta.dir, "host-connector-entry.ts")
+  const childEntry = path.join(PACKAGE_DIR, "src/host-connector-child/entry.ts")
   expect(
     specifiers(fs.readFileSync(childEntry, "utf8")).filter(
       (specifier) => specifier === CONNECTOR || specifier.startsWith(`${CONNECTOR}/`),
@@ -152,7 +152,7 @@ test("the separately built child entry imports the connector while its main asse
 })
 
 test("the bundled local-server's import closure never reaches Host Connector", () => {
-  const closure = walk(path.join(import.meta.dir, "claxedo-server-entry.ts"))
+  const closure = walk(path.join(PACKAGE_DIR, "src/server/entry.ts"))
 
   // Positive controls first: the walk must have gone where the bundle goes.
   expect(closure.unresolved).toEqual([])

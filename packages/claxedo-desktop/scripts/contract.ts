@@ -148,12 +148,9 @@ export function spec(root = ROOT): Spec {
     "scripts/build.ts",
     "scripts/build-memory-impact-helper.ts",
     "scripts/bundle-claxedo-server.ts",
-    "scripts/claxedo-server-entry.ts",
-    "scripts/claxedo-server-startup.ts",
     "scripts/contract.ts",
     "scripts/finalize-latest-yml.ts",
     "scripts/bundle-host-connector.ts",
-    "scripts/host-connector-entry.ts",
     // How the desktop resolves its server, and what the packaged app may
     // contain: both decide the artifact, so both belong in its fingerprint.
     "scripts/local-server.ts",
@@ -167,6 +164,7 @@ export function spec(root = ROOT): Spec {
     "scripts/verify-package-contents.ts",
     "vite.renderer.ts",
     "src",
+    "src/host-connector-child/entry.ts",
     "src/main/host-connector/child-artifact.ts",
     "src/main/host-connector/child-protocol.ts",
     "src/main/host-connector/child-supervisor.ts",

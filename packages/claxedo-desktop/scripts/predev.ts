@@ -157,9 +157,9 @@ async function patchDevBundleMetadata() {
 await buildPublishedPackages(path.resolve(PACKAGE_DIR, "../.."), (message) => console.log(`[predev] ${message}`))
 
 // The BOOT stub, not the product entry: it seeds the compile cache and then
-// reaches `claxedo-server-entry.ts` through a dynamic import, so the 9.11 MB
+// reaches `src/server/entry.ts` through a dynamic import, so the 9.11 MB
 // closure behind it is compiled after the cache is live.
-const serverSource = path.resolve(SCRIPT_DIR, "claxedo-server-boot.ts")
+const serverSource = path.resolve(PACKAGE_DIR, "src/server/boot.ts")
 const serverEntry = localServerBundleEntry(PACKAGE_DIR)
 const serverDest = path.dirname(serverEntry)
 let serverDeferredEntry: string | undefined
@@ -171,12 +171,8 @@ console.log(`[predev] Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLoc
 
 if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),
-  serverSource,
-  // The boot stub's own imports: they seed the compile cache before the
-  // product entry loads, so an edit to them is a new server bundle too.
-  path.resolve(SCRIPT_DIR, "claxedo-server-startup.ts"),
+  path.resolve(PACKAGE_DIR, "src/server"),
   path.resolve(PACKAGE_DIR, "src/shared/compile-cache.ts"),
-  path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts"),
   path.resolve(PACKAGE_DIR, "src/shared/claxedo-server-lifecycle.ts"),
   path.resolve(CLAXEDO_SERVER_DIR, "src"),
   // The shared core beneath it. Without this, editing a core module leaves the

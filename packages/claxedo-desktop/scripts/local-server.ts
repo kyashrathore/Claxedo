@@ -33,7 +33,7 @@ export const LOCAL_SERVER_PACKAGE = "@claxedo/local-server"
 /**
  * The declared entry the desktop server child imports.
  *
- * `scripts/claxedo-server-entry.ts` imports this exact specifier;
+ * `src/server/entry.ts` imports this exact specifier;
  * `product-mode-contract.test.ts` holds the two together.
  */
 export const LOCAL_SERVER_ENTRY = "@claxedo/local-server/self-hosted-execution"
@@ -43,6 +43,12 @@ export const LOCAL_SERVER_PACKAGE_PATH = "../claxedo-local-server"
 
 /** The bundled artifact `prebuild`/`predev` produce and Electron main launches. */
 export const LOCAL_SERVER_BUNDLE_PATH = "resources/claxedo-server"
+
+/**
+ * The server child's bundle entry: the boot stub that seeds the compile cache
+ * and then reaches `src/server/entry.ts` through a dynamic import.
+ */
+export const LOCAL_SERVER_BOOT_SOURCE_PATH = "src/server/boot.ts"
 
 const DESKTOP_DIR = path.resolve(import.meta.dirname, "..")
 
@@ -103,6 +109,10 @@ export function resolveLocalServerMigrationJournal(desktopDir = DESKTOP_DIR): st
     )
   }
   return directory
+}
+
+export function localServerBootSource(desktopDir = DESKTOP_DIR): string {
+  return path.join(desktopDir, LOCAL_SERVER_BOOT_SOURCE_PATH)
 }
 
 /** The bundled server's entry file, wherever the desktop package lives. */

@@ -1,6 +1,16 @@
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 
-export function claxedoServerStartup(env: NodeJS.ProcessEnv) {
+export type ClaxedoServerStartup = {
+  port: number
+  daemonProtocol: typeof CLAXEDO_DAEMON_PROTOCOL
+  daemonToken: string
+  daemonGeneration: string
+  daemonDiscoveryPath: string
+  serverCompileCacheDir: string | undefined
+  dataDir: string | undefined
+}
+
+export function claxedoServerStartup(env: NodeJS.ProcessEnv): ClaxedoServerStartup {
   const port = Number(env.CLAXEDO_CHILD_PORT)
   if (!Number.isInteger(port) || port <= 0) {
     throw new Error("Claxedo server utility process is missing its startup configuration")

@@ -23,7 +23,7 @@
     "test:bundle-single": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test ./scripts/bundle-single-instance.test.ts --max-concurrency=1 --reporter=junit --reporter-outfile=.artifacts/unit/bundle-single-junit.xml",
     "test:server-boot": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test ./scripts/claxedo-server-boot.test.ts --max-concurrency=1 --reporter=junit --reporter-outfile=.artifacts/unit/server-boot-junit.xml",
     "test:electron-boundary": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test ./scripts/renderer-daemon-access.electron.test.ts --max-concurrency=1 --reporter=junit --reporter-outfile=.artifacts/unit/electron-boundary-junit.xml",
-    "typecheck": "tsgo -b",
+    "typecheck": "tsgo -b tsconfig.json tsconfig.children.json",
     "predev": "bun ./scripts/predev.ts",
     "dev": "GOMAXPROCS=2 electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",
