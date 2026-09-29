@@ -20,10 +20,6 @@ the in-repo workspace-runtime host into `.build/`, which the Dockerfiles copy.
 Runs hosted deploy commands and Worker-safety checks. These scripts deploy or
 dry-run deploy targets; they do not run smoke tests or browser tests.
 
-## `smoke/`
-
-Self-hosted restart and upgrade probes.
-
 ## `maintenance/`
 
 Operator jobs against a deployed control plane, such as draining a retired
