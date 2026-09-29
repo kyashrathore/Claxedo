@@ -99,7 +99,7 @@ export const claxedoCapabilities: Record<CapabilityKey, string> = {
   selfHost: "Yes — single node, or Better Auth + D1 on your own Cloudflare",
   license: "Open source",
   backing: "Independent · open source",
-  pricing: "Free during beta; bring your own provider + sandbox",
+  pricing: "Free; bring your own provider + sandbox",
 }
 
 export type Competitor = {
@@ -295,7 +295,7 @@ export const competitors: readonly Competitor[] = [
       team: "The free tier is for one user; paid Pro adds unlimited users and team collaboration.",
       openSource: "Elastic License 2.0 — source-available, not OSI-approved open source.",
       selfHost: "The source-available app and host server can run locally or headlessly, but organization and remote-device access use Superset's hosted relay/control plane; no supported self-hosted relay is documented.",
-      remote: "Remote workspaces are a paid Pro beta delivered through Superset's hosted relay.",
+      remote: "Remote workspaces are a paid Pro feature delivered through Superset's hosted relay.",
       crossPlatform: "macOS is supported, Linux x64 AppImage builds are experimental, and Windows is planned.",
     },
     capabilities: {
@@ -304,7 +304,7 @@ export const competitors: readonly Competitor[] = [
       harnesses: "14 named fully supported agents plus any CLI-based agent",
       interfaces: "Desktop IDE, CLI, TypeScript SDK, and MCP server with diff, editor, browser, and automation surfaces",
       platforms: "macOS supported; Linux x64 experimental; Windows planned; iOS coming",
-      remote: "Paid Pro remote-workspaces beta through Superset's hosted relay",
+      remote: "Paid Pro remote workspaces through Superset's hosted relay",
       selfHost: "The app and host server can run locally or headlessly; organization and remote-device access depend on Superset's hosted control plane",
       license: "Elastic License 2.0 (source-available, not OSI-open)",
       backing: "YC (Spring 2026)",
@@ -318,7 +318,7 @@ export const competitors: readonly Competitor[] = [
     ],
     claxedoDiffers: [
       "Permissive open source rather than Elastic License 2.0 source availability.",
-      "A relay included as a core primitive rather than Superset's paid hosted remote-workspaces beta.",
+      "A relay included as a core primitive rather than Superset's paid hosted remote workspaces.",
       "Fully supported desktop clients on macOS, Windows, and Linux; Superset supports macOS, offers experimental Linux builds, and plans Windows.",
       "A self-hostable multi-user control plane; Superset's organization and remote-device paths depend on its hosted service.",
     ],

@@ -29,7 +29,6 @@ for (const id of pricing.claims) requireClaim(id)
       <div class="bring">
         <h2>What you bring</h2>
         <dl class="list">{pricing.bring.map((item) => <div><dt>{item.title}</dt><dd>{item.text}</dd></div>)}</dl>
-        <p class="note">{pricing.note}</p>
       </div>
     </section>
   </main>
@@ -44,7 +43,6 @@ for (const id of pricing.claims) requireClaim(id)
   .price-card .price { margin: .25rem 0 1.5rem; color: var(--ink); font: 400 clamp(4rem, 7vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; }
   .price-card .list { margin-bottom: 1.75rem; }
   .bring h2 { margin: 0 0 1.25rem; font-size: 1.5rem; letter-spacing: -.015em; }
-  .note { margin: 1.25rem 0 0; color: var(--ink-soft); font-size: .9375rem; }
   @media (max-width: 52rem) {
     .pricing { grid-template-columns: minmax(0, 1fr); }
   }

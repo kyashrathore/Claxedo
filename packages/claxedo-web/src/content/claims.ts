@@ -13,8 +13,8 @@ export type Claim = {
 
 export const claims = [
   {
-    id: "free-beta",
-    publicWording: "Claxedo is free during beta.",
+    id: "free",
+    publicWording: "Claxedo is free.",
     owner: "Claxedo product",
     evidence: ["packages/claxedo-server/src/billing/entitlement.ts"],
     status: "verified",

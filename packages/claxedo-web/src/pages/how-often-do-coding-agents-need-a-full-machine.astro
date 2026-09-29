@@ -62,7 +62,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
             </div>
             <div class="threshold-copy">
               <p>If <code>y ≥ {seconds(study.metrics.medianFullMachineReturnIntervalMs)}</code>, the machine will not be ready for at least half of the observed returns. Turning it off between calls would slow the agent instead of saving useful capacity.</p>
-              <p>Even when <code>y &lt; {seconds(study.metrics.medianFullMachineReturnIntervalMs)}</code>, actual savings still depend on VM billing, minimum billing periods, and idle-retention policy.</p>
+              <p>Even when <code>y &lt; {seconds(study.metrics.medianFullMachineReturnIntervalMs)}</code>, actual savings still depend on VM pricing, minimum charge periods, and idle-retention policy.</p>
             </div>
           </div>
         </section>
@@ -121,7 +121,7 @@ const description = `Across ${integer.format(study.scope.executionCalls)} coding
               <article><span>Coverage</span><strong>{percent(study.metrics.turnCoveragePercent)}</strong><p>Execution-call turn coverage. Unresolved calls were reported separately rather than counted as lightweight or machine-required.</p></article>
               <article><span>Privacy</span><strong>Local first</strong><p>Raw transcripts, prompts, commands, paths, tool inputs, repository names, and user identifiers remain local.</p></article>
               <article><span>Measured</span><strong>Execution demand</strong><p>Observed runtime requirements and intervals between full-machine calls inside the same turn.</p></article>
-              <article><span>Not measured</span><strong>Environment readiness</strong><p>Provisioning, synchronization, restoration time, VM billing, and idle-retention cost require execution-platform telemetry.</p></article>
+              <article><span>Not measured</span><strong>Environment readiness</strong><p>Provisioning, synchronization, restoration time, VM pricing, and idle-retention cost require execution-platform telemetry.</p></article>
             </div>
             <p class="claim-note">Verified public claim: {studyClaim.publicWording}</p>
           </div>

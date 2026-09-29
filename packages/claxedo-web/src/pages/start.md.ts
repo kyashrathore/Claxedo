@@ -10,7 +10,7 @@ Claxedo is the open workspace layer around existing coding-agent harnesses.
 - Product overview: ${canonicalUrl("/")}
 - Open Claxedo Cloud: https://app.claxedo.com
 - Download Claxedo Desktop: ${canonicalUrl("/download")}
-- Current beta terms: ${canonicalUrl("/pricing")}
+- Pricing: ${canonicalUrl("/pricing")}
 - Local mode works without a Claxedo account. Bring your own models and compute.
 
 ## Source

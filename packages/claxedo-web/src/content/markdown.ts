@@ -82,8 +82,6 @@ ${pricing.included.map((item) => `- ${item}`).join("\n")}
 
 ${pricing.bring.map((item) => `- **${item.title}:** ${item.text}`).join("\n")}
 
-${pricing.note}
-
 - Download: ${canonicalUrl(routes.download)}
 - Pricing page (HTML): ${canonicalUrl(routes.pricing)}
 `

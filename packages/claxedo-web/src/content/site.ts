@@ -22,7 +22,7 @@ export const home = {
   hero: {
     title: "Own your coding agent app.",
     subtitle: "Open source. Host it yourself. Every agent, no lock-in.",
-    claims: ["mit-platform", "cloudflare-five-minutes", "harness-coverage", "free-beta"],
+    claims: ["mit-platform", "cloudflare-five-minutes", "harness-coverage", "free"],
   },
   speed: {
     title: "Fast. Light. Efficient.",
@@ -83,13 +83,13 @@ export const homeBlocks = [home.hero, home.speed, home.benchmark, home.prompt, h
 export const macDownload = downloads.find((download) => download.platform === "macos-arm64")!
 
 export const pricing = {
-  title: "Free while in beta.",
+  title: "Free.",
   subtitle: "Every agent and every feature, with no subscription. Bring your own models and machines.",
   price: "$0",
-  plan: "Claxedo, in beta",
+  plan: "Claxedo",
   included: [
     "Claxedo Desktop, local-first with no account",
-    "Claxedo Cloud, free during beta",
+    "Claxedo Cloud",
     "MIT-licensed app, control plane and runtime",
     "macOS, Windows and Linux",
   ],
@@ -98,8 +98,7 @@ export const pricing = {
     { title: "Compute", text: "Your laptop, your servers or your own sandbox provider." },
     { title: "Your deployment", text: "Self-host it and it's yours to run." },
   ],
-  note: "Paid plans and prices will be published before billing starts.",
-  claims: ["free-beta", "desktop-local-mode", "mit-platform", "bring-your-own-sandbox"],
+  claims: ["free", "desktop-local-mode", "mit-platform", "bring-your-own-sandbox"],
 } as const
 
 export const downloadPage = {

@@ -60,7 +60,7 @@ if (["/", "/pricing"].includes(normalizedPath)) {
     operatingSystem: "Web",
     url: routes.app,
     isAccessibleForFree: true,
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free during beta" },
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free" },
     publisher: { "@id": canonicalUrl("/#organization") },
   })
 }
@@ -75,7 +75,7 @@ if (["/", "/download", "/pricing"].includes(normalizedPath)) {
     softwareVersion: version,
     url: canonicalUrl("/download"),
     isAccessibleForFree: true,
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free during beta" },
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free" },
     publisher: { "@id": canonicalUrl("/#organization") },
   })
 }
