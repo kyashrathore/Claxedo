@@ -52,38 +52,16 @@ import dither from "../assets/home/daniell-taj-dither.webp"
 </script>
 
 <style>
-  /*
-   * The plate hangs from the demo window's top edge: `--cut` is the image row
-   * that lands on that edge (row 376 is the terrace; the dome's finial is row
-   * 288, so the Taj stands 88 rows tall), and `--rise` how far the plate
-   * reaches above it. Over the text column it keeps to the band between the
-   * text and the window; right of `--clear` the whole Taj stands beside the
-   * text, its sky fading out before the top of the plate.
-   */
   .daniell {
-    --dot: 2px;
-    --tuck: 2rem;
-    --rise: var(--beside);
-    --cut: 376;
-    --shift: 36rem;
-    --band-top: calc(100% - var(--tuck) - var(--band));
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% - var(--tuck));
-    width: 100vw;
-    height: calc(var(--rise) + var(--tuck));
-    translate: -50% 0;
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to bottom, transparent var(--band-top), #000 calc(var(--band-top) + var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem)), linear-gradient(to bottom, transparent, #000 30%);
-    -webkit-mask-composite: source-over, source-in;
-    mask-image: linear-gradient(to bottom, transparent var(--band-top), #000 calc(var(--band-top) + var(--band) / 2)), linear-gradient(to right, transparent var(--clear), #000 calc(var(--clear) + 8rem)), linear-gradient(to bottom, transparent, #000 30%);
-    mask-composite: add, intersect;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 26%, #000 46%, #000 86%, transparent);
+    mask-image: linear-gradient(to bottom, transparent 26%, #000 46%, #000 86%, transparent);
   }
   .daniell img, .daniell :global(.field) {
     position: absolute;
-    left: calc(50% + var(--shift));
-    top: calc(var(--rise) - var(--cut) * var(--dot));
-    width: calc(var(--dot) * 960);
+    left: calc(50% + var(--daniell-shift, 9.625rem));
+    top: var(--daniell-top, -17.5rem);
+    width: calc(var(--daniell-dot, 2px) * 960);
     max-width: none;
     height: auto;
     aspect-ratio: 960 / 609;
@@ -91,17 +69,13 @@ import dither from "../assets/home/daniell-taj-dither.webp"
     image-rendering: pixelated;
   }
   .daniell img { opacity: 0; }
-  /* On a phone the text spans the width, so the plate keeps to the band and centres the dome. */
   @media (max-width: 47.99rem) {
     .daniell {
-      --dot: 1px;
-      --rise: var(--band);
-      --cut: 372;
-      --shift: 4.8rem;
-      -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%);
-      -webkit-mask-composite: source-over;
-      mask-image: linear-gradient(to bottom, transparent, #000 45%);
-      mask-composite: add;
+      --daniell-dot: 1px;
+      --daniell-top: 10.5rem;
+      --daniell-shift: 4.8rem;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 34%, #000 52%, #000 86%, transparent);
+      mask-image: linear-gradient(to bottom, transparent 34%, #000 52%, #000 86%, transparent);
     }
   }
 </style>

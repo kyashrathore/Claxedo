@@ -120,7 +120,7 @@ h1, h2, h3 { color: var(--ink); }
 .status-line span::before { content: ""; width: .38rem; height: .38rem; border-radius: 50%; background: var(--success); }
 .rule-grid { }
 
-.nav { position: sticky; top: 0; z-index: 50; padding-inline: var(--gutter); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(16px); }
+.nav { position: sticky; top: 0; z-index: 50; padding-inline: var(--gutter); background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(16px); }
 .nav-inner { display: grid; grid-template-columns: auto 1fr auto; align-items: center; min-height: 4rem; gap: 1rem; padding-block: .5rem; }
 .nav-logo { display: inline-flex; align-items: center; gap: .6rem; color: var(--ink); font: 500 .95rem/1 var(--font-sans); letter-spacing: -.02em; text-decoration: none; }
 .brand-mark { width: 1.4rem; height: 1.4rem; background: currentColor; -webkit-mask: url("/brand/claxedo-mark.svg") center / contain no-repeat; mask: url("/brand/claxedo-mark.svg") center / contain no-repeat; }
