@@ -53,7 +53,7 @@ const style = `--sky-0:${sky[0]};--sky-1:${sky[1]};--horizon:${horizon};--glow:$
       radial-gradient(55% 22% at calc(100% - var(--sun)) calc(var(--line) - 26%), rgb(255 255 255 / .22), transparent 100%),
       repeating-linear-gradient(180deg, rgb(255 255 255 / .05) 0 3px, transparent 3px 11px),
       linear-gradient(180deg, var(--sky-0) 0%, var(--sky-1) calc(var(--line) - 16%), var(--horizon) var(--line), var(--ground-0) calc(var(--line) + 5%), var(--ground-1) 100%);
-    filter: blur(14px) saturate(.92);
+    filter: blur(var(--soften, 14px)) saturate(.92);
   }
   .scene::after {
     content: "";

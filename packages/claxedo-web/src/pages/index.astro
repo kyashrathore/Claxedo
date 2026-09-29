@@ -131,6 +131,7 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
     --width: min(100% - 2 * var(--edge), 80rem);
     overflow-x: clip;
   }
+  :global(.nav) { background: var(--bg); backdrop-filter: none; }
   :global(.nav-links a) { font-size: .9375rem; font-weight: 400; }
   :global(.nav .btn-pill) { font-weight: 400; font-size: .875rem; }
   .home :global(.btn-pill) { min-height: 2.75rem; padding: 0 1.4rem; font: 400 1rem/1 var(--font-sans); letter-spacing: -.01em; }
@@ -139,22 +140,22 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
 
   h1, h2, h3 { font-family: var(--font-display); font-weight: 400; color: var(--ink); text-wrap: balance; }
 
-  .hero { padding-top: clamp(3.5rem, 7vw, 5.5rem); }
+  .hero { padding-top: clamp(2rem, 3.5vw, 2.5rem); }
   .intro { display: grid; justify-items: center; gap: 0; width: var(--width); margin-inline: auto; text-align: center; }
   h1 { max-width: 12em; margin: 0; font-size: clamp(2.5rem, 4.4vw, 4rem); line-height: 1.06; letter-spacing: -.025em; }
-  .lede { max-width: 34rem; margin: 1.25rem 0 2rem; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
-  .intro .quiet-link { margin-top: 1rem; font-size: .875rem; }
+  .lede { max-width: 34rem; margin: 1rem 0 1.75rem; color: var(--ink-soft); font-size: 1.25rem; line-height: 1.45; text-wrap: balance; }
+  .intro .quiet-link { margin-top: .75rem; font-size: .875rem; }
 
-  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: clamp(3rem, 6vw, 4.5rem) auto 0; }
+  .stage { position: relative; width: min(100% - 2 * var(--edge), 72rem); margin: 3rem auto 0; }
   .window { position: relative; z-index: 1; height: clamp(30rem, 48vw, 44rem); }
   .float { position: absolute; top: 53%; right: -3.5rem; z-index: 2; }
-  .stage :global(.patch) { position: absolute; z-index: 0; border-radius: 3px; }
-  .stage :global(.patch-1) { left: -9.5rem; top: 12%; width: 9rem; height: 11rem; }
-  .stage :global(.patch-2) { left: 16%; top: -3.25rem; width: 6rem; height: 5.25rem; }
-  .stage :global(.patch-3) { left: 47%; top: -2.75rem; width: 5rem; height: 4.5rem; }
-  .stage :global(.patch-4) { right: -8.5rem; top: -1.5rem; width: 8.5rem; height: 9rem; }
-  .stage :global(.patch-5) { right: -7rem; top: 62%; width: 7.5rem; height: 7rem; }
-  .stage :global(.patch-6) { left: -6.5rem; top: 70%; width: 7.5rem; height: 7.5rem; }
+  .stage :global(.patch) { --soften: 2px; position: absolute; z-index: 0; border-radius: 3px; }
+  .stage :global(.patch-1) { right: calc(100% - 3rem); top: 9%; width: min((100vw - 100%) / 2 + 5rem, 14rem); height: 10.5rem; }
+  .stage :global(.patch-2) { left: 7%; top: -4.5rem; width: 7.5rem; height: 6rem; }
+  .stage :global(.patch-3) { left: 71%; top: -3.25rem; width: 4.25rem; height: 4.25rem; }
+  .stage :global(.patch-4) { left: calc(100% - 2.5rem); top: -2rem; width: min((100vw - 100%) / 2 + 4rem, 13rem); height: 13rem; }
+  .stage :global(.patch-5) { left: -5rem; top: 63%; width: 6.5rem; height: 8.5rem; }
+  .stage :global(.patch-6) { left: 34%; top: calc(100% - 2.5rem); width: 8rem; height: 5rem; }
 
   .block { width: var(--width); margin: clamp(6rem, 11vw, 9.5rem) auto 0; }
   .block.follows { margin-top: clamp(3.5rem, 6vw, 5rem); }
@@ -166,23 +167,23 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
   .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2rem; margin: 0; }
   .metric { display: grid; align-content: start; gap: .75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
   .metric dt { display: grid; gap: .5rem; }
-  .lead { font: 400 clamp(3rem, 5.4vw, 5rem)/.95 var(--font-display); letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+  .lead { font: 400 clamp(3.5rem, 6.7vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .label { color: var(--ink); font-size: 1.0625rem; }
   .metric dd { margin: 0; color: var(--ink-soft); font-size: .875rem; line-height: 1.5; }
 
   .two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
   .three-up { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
-  .tile :global(.panel) { aspect-ratio: 1.6; }
-  .three-up .tile :global(.panel) { aspect-ratio: 1.25; }
-  .crop { position: absolute; inset: 11% 0 0 8%; transform-origin: 0 0; }
+  .two-up .tile :global(.panel) { height: 25rem; }
+  .three-up .tile :global(.panel) { height: 20rem; }
+  .crop { position: absolute; inset: 2.75rem 0 0 8%; transform-origin: 0 0; }
   .three-up .crop { scale: .8; }
   .tile h3 { margin: 1.5rem 0 .5rem; font-size: 1.25rem; line-height: 1.3; letter-spacing: -.015em; }
   .tile p { max-width: 36rem; margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.5; text-wrap: pretty; }
   .tile .quiet-link { display: inline-block; margin-top: .75rem; }
 
   .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: center; gap: clamp(2.5rem, 7vw, 6.5rem); }
-  .split :global(.panel) { aspect-ratio: 1.45; }
-  .split .crop { inset: 13% 0 0 8%; }
+  .split :global(.panel) { height: 30rem; }
+  .split .crop { inset: 3.5rem 0 0 8%; }
   .split-copy { display: grid; justify-items: start; gap: 1.25rem; }
   .split-copy p { max-width: 28rem; margin: 0 0 .75rem; color: var(--ink-soft); font-size: 1.125rem; line-height: 1.5; }
 
@@ -203,21 +204,22 @@ const featureScenes: Record<(typeof home.features)[number]["id"], SceneName> = {
   @media (max-width: 60rem) {
     .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2.5rem; }
     .three-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
-    .three-up .tile :global(.panel) { aspect-ratio: 1.6; }
+    .three-up .tile :global(.panel) { height: 24rem; }
     .split { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 47.99rem) {
     .lede { font-size: 1.125rem; }
-    .stage { margin-top: 5rem; }
+    .stage { margin-top: 5.5rem; }
+    .stage :global(.patch-6) { display: none; }
     .window { height: 32rem; }
-    .float { position: relative; top: auto; right: auto; margin: -4.5rem -.25rem 0 auto; width: fit-content; }
+    .float { position: relative; top: auto; right: auto; margin: -.75rem auto 0; width: fit-content; }
     .float :global(.standup-card) { width: min(17.5rem, 100vw - 3rem); }
     .stage :global(.patch-2) { left: 4%; }
     .stage :global(.patch-3) { left: auto; right: 6%; }
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1rem; }
     .two-up { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
-    .tile :global(.panel), .three-up .tile :global(.panel), .split :global(.panel) { aspect-ratio: 1.05; }
-    .crop { inset: 9% 0 0 6%; scale: .78; }
+    .tile :global(.panel), .three-up .tile :global(.panel), .two-up .tile :global(.panel), .split :global(.panel) { height: auto; aspect-ratio: 1.05; }
+    .crop, .split .crop { inset: 1.75rem 0 0 6%; scale: .78; }
     .three-up .crop { scale: .7; }
   }
 </style>
