@@ -16,7 +16,6 @@ const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
 export const D1_CHANNEL_RUNTIME_AUTHORITY_METHODS = [
   "resolveRuntimeMachineAccess",
-  "recordActorRuntimeAccessToken",
   "resolveChannelMachineAccess",
   "resolveWorkspaceOwner",
   "recordChannelRuntimeAccessToken",
@@ -212,12 +211,6 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
     if (!access || access.role_rank < roleRank(minimumRole)) throw denied()
     return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank), userId: who.userId }
-  }
-
-  async recordActorRuntimeAccessToken(args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) {
-    const who = await this.requireActor(args.actorId)
-    if (args.actorKind !== who.actorKind) throw denied()
-    return this.recordUserRuntimeToken(who, args)
   }
 
   /**
