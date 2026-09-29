@@ -5,7 +5,6 @@ import Footer from "../components/Footer.astro"
 import IconSprite from "../components/IconSprite.astro"
 import HomeHero from "../components/HomeHero.astro"
 import MacDownload from "../components/MacDownload.astro"
-import HeroSky from "../components/HeroSky.astro"
 import Scene from "../components/Scene.astro"
 import AddSource from "../components/crops/AddSource.astro"
 import DeployTerminal from "../components/crops/DeployTerminal.astro"
@@ -36,9 +35,7 @@ const [chatOrTerminal, sidebarOrTabs] = home.workflow.cards
   <Nav />
   <IconSprite />
   <main id="main-content" class="home">
-    <HomeHero title={home.hero.title} subtitle={home.hero.subtitle} tone="sky">
-      <HeroSky slot="backdrop" class="backdrop" />
-    </HomeHero>
+    <HomeHero title={home.hero.title} subtitle={home.hero.subtitle} />
 
     <section class="block">
       <header class="section-head">

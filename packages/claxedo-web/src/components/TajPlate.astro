@@ -1,0 +1,85 @@
+---
+import dither from "../assets/home/daniell-taj-dither.webp"
+---
+
+<div class="plate" aria-hidden="true">
+  <img src={dither.src} width={dither.width} height={dither.height} alt="" decoding="async" data-taj-plate />
+  <noscript><style>.plate img { opacity: 1; }</style></noscript>
+</div>
+
+<script>
+  const plate = document.querySelector<HTMLImageElement>("[data-taj-plate]")
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const reveal = (image: HTMLImageElement) => {
+    const { naturalWidth: width, naturalHeight: height } = image
+    const source = document.createElement("canvas")
+    source.width = width
+    source.height = height
+    const read = source.getContext("2d")!
+    read.drawImage(image, 0, 0)
+    const bits = read.getImageData(0, 0, width, height).data
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+    image.after(canvas)
+    const draw = canvas.getContext("2d")!
+    const frame = draw.createImageData(width, height)
+    const order = new Float32Array(width * height).map(() => Math.random())
+    const block = 8
+    const across = Math.ceil(width / block)
+    const density = new Float32Array(across * Math.ceil(height / block))
+    for (let i = 0; i < width * height; i++) if (bits[i * 4 + 3] > 0) density[Math.floor(i / width / block) * across + Math.floor((i % width) / block)] += 1 / block ** 2
+    const start = performance.now()
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - start) / 1200)
+      const settled = 1 - (1 - progress) ** 3
+      for (let i = 0; i < order.length; i++) {
+        const on = order[i] < settled ? bits[i * 4 + 3] > 0 : Math.random() < density[Math.floor(i / width / block) * across + Math.floor((i % width) / block)]
+        frame.data[i * 4] = frame.data[i * 4 + 1] = frame.data[i * 4 + 2] = 170
+        frame.data[i * 4 + 3] = on ? 255 : 0
+      }
+      draw.putImageData(frame, 0, 0)
+      if (progress < 1) requestAnimationFrame(step)
+      else {
+        image.style.opacity = "1"
+        canvas.remove()
+      }
+    }
+    requestAnimationFrame(step)
+  }
+  if (plate) {
+    if (still) plate.style.opacity = "1"
+    else if (plate.complete) reveal(plate)
+    else plate.addEventListener("load", () => reveal(plate), { once: true })
+  }
+</script>
+
+<style>
+  /* Anchored to the demo window's top edge, so the dome keeps its place above the window whatever height the text above takes. */
+  .plate {
+    --dot: 2px;
+    --finial: 92;
+    position: absolute;
+    left: 50%;
+    top: calc(-1 * var(--stage-gap));
+    width: 100vw;
+    height: calc(var(--stage-gap) + 14px);
+    translate: -50% 0;
+    overflow: hidden;
+  }
+  .plate img, .plate :global(canvas) {
+    position: absolute;
+    left: 50%;
+    top: calc(.75rem - var(--finial) * var(--dot));
+    width: calc(var(--dot) * 560);
+    max-width: none;
+    height: auto;
+    aspect-ratio: 560 / 347;
+    translate: -50% 0;
+    image-rendering: pixelated;
+  }
+  .plate img { opacity: 0; }
+  @media (max-width: 47.99rem) {
+    .plate { --dot: 1px; }
+  }
+</style>

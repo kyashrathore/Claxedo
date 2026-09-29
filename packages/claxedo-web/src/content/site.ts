@@ -22,9 +22,9 @@ export const site = {
 /** Every block names the claims behind its words; the home page refuses to build if one is not publishable. */
 export const home = {
   hero: {
-    title: "Every coding agent, in one fast app.",
-    subtitle: "Claude Code, Codex, Cursor, OpenCode and Pi. Your tools. Any machine.",
-    claims: ["harness-coverage", "core-metrics", "agent-plugins", "connected-placement"],
+    title: "Own your coding agent app.",
+    subtitle: "Open source. Host it yourself. Every agent, no lock-in, no team plan.",
+    claims: ["mit-platform", "cloudflare-five-minutes", "harness-coverage", "free-beta"],
   },
   speed: {
     title: "Fast. Light. Efficient.",
@@ -77,13 +77,6 @@ export const home = {
     text: "Open source. Local‑first. No account needed.",
     claims: ["mit-platform", "desktop-local-mode"],
   },
-} as const
-
-/** The owner's chosen hero copy, tried against three backgrounds on the /lab/hero-* routes before it replaces `home.hero`. */
-export const heroCandidate = {
-  title: "Own your coding agent app.",
-  subtitle: "Open source. Host it yourself. Every agent, no lock-in, no team plan.",
-  claims: ["mit-platform", "cloudflare-five-minutes", "harness-coverage", "free-beta"],
 } as const
 
 export const homeBlocks = [home.hero, home.speed, home.benchmark, home.prompt, home.openSource, home.sandbox, home.plugins, home.workflow, home.closing]

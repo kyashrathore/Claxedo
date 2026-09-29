@@ -15,7 +15,7 @@ export default defineConfig({
       serialize: (item) => ({ ...item, url: item.url === 'https://claxedo.com' ? `${item.url}/` : item.url, lastmod: buildDate }),
       filter: (page) => {
         const pathname = new URL(page).pathname.replace(/\/$/, '') || '/';
-        return pathname !== '/app' && !pathname.startsWith('/lab/') && !expiredComparisonPaths.includes(pathname);
+        return pathname !== '/app' && !expiredComparisonPaths.includes(pathname);
       },
     }),
   ],
