@@ -48,6 +48,7 @@ describe("certified hosted Worker renderer", () => {
       "DOCUMENTS_SERVICE",
       "DOCUMENTS_DB",
       "DOCUMENTS_BUCKET",
+      "WAKE_LANE",
       "CLAXEDO_DOCUMENTS",
       "r2_buckets",
       "durable_objects",
@@ -88,7 +89,7 @@ describe("certified hosted Worker renderer", () => {
     expect(config).toContain('main = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
-    expect(config).not.toMatch(/DOCUMENTS|POLAR|BILLING/i)
+    expect(config).not.toMatch(/WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
   })
 
   test("rejects unknown artifacts instead of accepting a free-form main", () => {
