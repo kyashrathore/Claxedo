@@ -1,11 +1,4 @@
-import {
-  foldTurnOutline,
-  TURN_OUTLINE_LIMIT,
-  TURN_OUTLINE_SNIPPET_LENGTH,
-  type OutlineTextRow,
-  type OutlineUserRow,
-  type TurnOutline,
-} from "@claxedo/agent-sdk-runtime/turn-outline"
+import { foldTurnOutline, TURN_OUTLINE_LIMIT, TURN_OUTLINE_SNIPPET_LENGTH, type OutlineTextRow, type OutlineUserRow, type TurnOutline } from "@claxedo/agent-runtime-contract"
 
 export type TurnOutlineDatabase = {
   prepare<Row>(sql: string): { all(...params: unknown[]): Row[] }

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { workspaceRuntimeBus } from "../bus"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
-import { sessionIdle, withDir } from "../compat-events"
+import { sessionIdle, withDir } from "@claxedo/agent-runtime-contract"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import {
   createWorkspaceHost,

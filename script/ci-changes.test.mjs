@@ -61,7 +61,7 @@ await test("server-core changes select every boundary that consumes it", () => {
 })
 
 await test("cross-platform process runtime changes retain the Windows unit leg", () => {
-  const result = classifyChangedFiles(["packages/agent-sdk-runtime/src/harnesses/shared/windows-process.ts"])
+  const result = classifyChangedFiles(["packages/process-ownership/src/windows-process.ts"])
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
 })
@@ -116,7 +116,7 @@ await test("the sandbox image is selected by the Worker and every package baked 
     "packages/sandbox-contract/src/index.ts",
     "packages/sandbox-manager/src/daytona.ts",
     "packages/workspace-runtime/src/workspace/runtime.ts",
-    "packages/agent-sdk-runtime/src/harnesses/pi/index.ts",
+    "packages/harness/src/compose.ts",
     "packages/agent-runtime-contract/src/elicitation.ts",
     ".github/workflows/deploy-cloudflare-sandbox-worker.yml",
   ]) {

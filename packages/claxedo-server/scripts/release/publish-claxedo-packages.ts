@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 12 public `@claxedo/*` packages.
+ * The one publisher for the 11 public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -47,7 +47,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 12 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 11 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -65,7 +65,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },
   // Tier 2
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime" },
-  { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime" },
   // Tier 3
   { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
   // Tier 4
@@ -112,8 +111,8 @@ export const WORKSPACE_PIN = "workspace:*"
  * Every `@claxedo/*` dependency of a public package must be exactly
  * `workspace:*` in the repo. Any literal version — `0.7.0`, `workspace:0.7.0`,
  * `^0.7.0` — is a pin that has to be kept in sync by hand and that Bun stops
- * resolving to the checkout the moment the sibling's version moves (a stale pin
- * once shipped workspace-runtime against an older agent-sdk-runtime).
+ * resolving to the checkout the moment the sibling's version moves, so the
+ * package ships against an older sibling.
  */
 export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<string>) {
   const bad: string[] = []

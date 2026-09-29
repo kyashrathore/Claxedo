@@ -1,16 +1,8 @@
-import {
-  foldTurnOutline,
-  TURN_OUTLINE_LIMIT,
-  TURN_OUTLINE_SNIPPET_LENGTH,
-  type OutlineTextRow,
-  type OutlineUserRow,
-  type TurnOutline,
-} from "@claxedo/agent-sdk-runtime/turn-outline"
+import { foldTurnOutline, TURN_OUTLINE_LIMIT, TURN_OUTLINE_SNIPPET_LENGTH, type OutlineTextRow, type OutlineUserRow, type TurnOutline } from "@claxedo/agent-runtime-contract"
 
 import { asRecord, numberField, stringField } from "../platform/json/index"
 import type { StoredMessageColumn, StoredMessageQuery } from "./stored-messages"
 
-export type { TurnOutline, TurnOutlineEntry } from "@claxedo/agent-sdk-runtime/turn-outline"
 
 function flag(record: Record<string, unknown> | undefined, key: string): number | null {
   const value = record?.[key]

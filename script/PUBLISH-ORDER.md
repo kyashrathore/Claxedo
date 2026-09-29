@@ -21,7 +21,7 @@ mistake that has actually bitten this repo.
 | Track | Packages | Previous | This release |
 |---|---|---|---|
 | helpers | `helpers` | — | **0.1.0** |
-| runtime | `agent-runtime-contract`, `agent-event-runtime`, `agent-sdk-runtime`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.7.0 | **0.8.0** |
+| runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.7.0 | **0.8.0** |
 | apps | `channels`, `connections` | 0.4.0 | **0.5.0** |
 | wakes | `wakes` | 0.3.0 | **0.4.0** |
 | cli | `cli` | — | **0.1.0** |
@@ -40,8 +40,8 @@ one-line installer documented in `packages/cli/README.md`. 0.1.0 is its first
 release.
 
 `helpers` rides its own track because both other tracks depend on it —
-`agent-event-runtime`, `agent-sdk-runtime` and `workspace-runtime` on the
-runtime track, `connections` on apps. Folding it into either would
+`agent-runtime-contract` and `workspace-runtime` on the runtime track,
+`connections` on apps. Folding it into either would
 make the other track's packages pin a number that moves for reasons unrelated
 to them. 0.1.0 is its first release.
 
@@ -91,18 +91,17 @@ Tier 1
   agent-runtime-contract -> helpers
   workspace-relay-protocol -> helpers
   sandbox-contract   -> helpers
-  agent-event-runtime -> agent-runtime-contract, helpers
   channels           -> helpers
   connections        -> helpers
   workspace-relay    -> workspace-relay-protocol, helpers
 
 Tier 2
   sandbox-manager    -> sandbox-contract, helpers
-  agent-sdk-runtime  -> agent-event-runtime, agent-runtime-contract, helpers
 
 Tier 3
-  workspace-runtime  -> agent-sdk-runtime, agent-event-runtime, agent-runtime-contract,
-                        workspace-relay, workspace-relay-protocol, helpers
+  workspace-runtime  -> agent-runtime-contract, workspace-relay,
+                        workspace-relay-protocol, helpers,
+                        harness and process-ownership (private)
 
 Tier 4
   cli                -> workspace-runtime            (build-time only: helpers)
@@ -182,8 +181,7 @@ release.
 ```bash
 for name in \
   @claxedo/helpers \
-  @claxedo/agent-event-runtime \
-  @claxedo/agent-sdk-runtime \
+  @claxedo/agent-runtime-contract \
   @claxedo/sandbox-contract \
   @claxedo/sandbox-manager \
   @claxedo/workspace-relay \

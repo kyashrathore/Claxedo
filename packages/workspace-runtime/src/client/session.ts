@@ -14,11 +14,12 @@ import type {
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type { HarnessCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-sdk-runtime"
+import type { HarnessCapabilities } from "../host/capabilities"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { ConfigOptionsPreview } from "@claxedo/harness/contract"
 import type { AgentRuntimeRecoveryInspection } from "../host/contracts"
-import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import type { FirstRead, TurnPage } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
+import type { FirstRead, TurnPage } from "@claxedo/agent-runtime-contract"
 import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions

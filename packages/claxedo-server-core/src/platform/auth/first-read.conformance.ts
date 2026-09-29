@@ -1,4 +1,4 @@
-import { projectTurn, type TurnPageRequest, type FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import { projectTurn, type TurnPageRequest, type FirstRead } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
 import type { PrivateSessionInventoryRow } from "./private-session-authority"
 import { registerTranscriptSession, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"

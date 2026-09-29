@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { parseMessagePageInput, parseSessionPartInput } from "./message-page"
 
 describe("message page input", () => {

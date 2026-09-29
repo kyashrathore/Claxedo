@@ -77,15 +77,15 @@ describe("build-sandbox-image", () => {
         dependencies: {
           "better-sqlite3": "12.10.0",
           "@lydell/node-pty": "1.2.0-beta.14",
-          "@claxedo/agent-sdk-runtime": "0.5.1",
+          "@claxedo/harness": "0.5.1",
           "@opencode-ai/plugin": "0.0.0-beta-18684",
           "@opencode-ai/sdk": "0.0.0-beta-18684",
           koffi: "3.1.6",
           hono: "4.12.12",
         },
       },
-      "agent-sdk-runtime": {
-        name: "@claxedo/agent-sdk-runtime",
+      harness: {
+        name: "@claxedo/harness",
         dependencies: { hono: "4.10.7", "just-bash": "3.0.1" },
       },
     }
@@ -223,23 +223,23 @@ describe("build-sandbox-image", () => {
 
   test("workspace package build order is topological (dependencies before dependents, workspace-runtime last)", () => {
     // Fake graph:
-    //   workspace-runtime -> agent-sdk-runtime, workspace-relay
-    //   agent-sdk-runtime -> agent-event-runtime
+    //   workspace-runtime -> harness, workspace-relay
+    //   harness -> agent-runtime-contract
     //   workspace-relay   -> workspace-relay-protocol
     const packages: Record<string, { name: string; dependencies: Record<string, string> }> = {
       "workspace-runtime": {
         name: "@claxedo/workspace-runtime",
         dependencies: {
-          "@claxedo/agent-sdk-runtime": "0.5.1",
+          "@claxedo/harness": "0.5.1",
           "@claxedo/workspace-relay": "0.5.1",
           "better-sqlite3": "12.10.0",
         },
       },
-      "agent-sdk-runtime": {
-        name: "@claxedo/agent-sdk-runtime",
-        dependencies: { "@claxedo/agent-event-runtime": "0.5.1" },
+      harness: {
+        name: "@claxedo/harness",
+        dependencies: { "@claxedo/agent-runtime-contract": "0.5.1" },
       },
-      "agent-event-runtime": { name: "@claxedo/agent-event-runtime", dependencies: {} },
+      "agent-runtime-contract": { name: "@claxedo/agent-runtime-contract", dependencies: {} },
       "workspace-relay": {
         name: "@claxedo/workspace-relay",
         dependencies: { "@claxedo/workspace-relay-protocol": "0.5.1" },
@@ -256,8 +256,8 @@ describe("build-sandbox-image", () => {
 
     // Every dependency comes before its dependent.
     const before = (a: string, b: string) => names.indexOf(a) < names.indexOf(b)
-    expect(before("@claxedo/agent-event-runtime", "@claxedo/agent-sdk-runtime")).toBe(true)
-    expect(before("@claxedo/agent-sdk-runtime", "@claxedo/workspace-runtime")).toBe(true)
+    expect(before("@claxedo/agent-runtime-contract", "@claxedo/harness")).toBe(true)
+    expect(before("@claxedo/harness", "@claxedo/workspace-runtime")).toBe(true)
     expect(before("@claxedo/workspace-relay-protocol", "@claxedo/workspace-relay")).toBe(true)
     expect(before("@claxedo/workspace-relay", "@claxedo/workspace-runtime")).toBe(true)
     // This graph has one root, so it closes the order.
@@ -266,13 +266,13 @@ describe("build-sandbox-image", () => {
   })
 
   test("workspace package build order visits a shared dependency once", () => {
-    // Diamond: both agent-sdk-runtime and workspace-relay depend on shared.
+    // Diamond: both harness and workspace-relay depend on shared.
     const packages: Record<string, { name: string; dependencies: Record<string, string> }> = {
       "workspace-runtime": {
         name: "@claxedo/workspace-runtime",
-        dependencies: { "@claxedo/agent-sdk-runtime": "0.5.1", "@claxedo/workspace-relay": "0.5.1" },
+        dependencies: { "@claxedo/harness": "0.5.1", "@claxedo/workspace-relay": "0.5.1" },
       },
-      "agent-sdk-runtime": { name: "@claxedo/agent-sdk-runtime", dependencies: { "@claxedo/shared": "0.5.1" } },
+      harness: { name: "@claxedo/harness", dependencies: { "@claxedo/shared": "0.5.1" } },
       "workspace-relay": { name: "@claxedo/workspace-relay", dependencies: { "@claxedo/shared": "0.5.1" } },
       shared: { name: "@claxedo/shared", dependencies: {} },
     }
@@ -315,7 +315,7 @@ describe("build-sandbox-image", () => {
     expect(index("claxedo-mcp")).toBeGreaterThan(index("workspace-runtime"))
 
     // workspace-runtime's known @claxedo deps are all present and precede it.
-    for (const dep of ["agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay"]) {
+    for (const dep of ["harness", "agent-runtime-contract", "workspace-relay-protocol", "workspace-relay"]) {
       expect(index(dep), dep).toBeGreaterThanOrEqual(0)
       expect(index(dep), dep).toBeLessThan(index("workspace-runtime"))
     }

@@ -23,8 +23,8 @@ import {
   type RecoverySessionTarget,
   type RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
-import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import { AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
+import type { RuntimeDirectory } from "./contracts"
+import { AgentRuntimeStaleTurnError } from "../store"
 import type { Deadline } from "@claxedo/harness/contract"
 import { normalizeDirectory } from "./execution-binding"
 import type {

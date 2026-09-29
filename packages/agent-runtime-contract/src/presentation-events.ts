@@ -1,23 +1,13 @@
-import type {
-  AgentContentPart,
-  AgentMessageAuthor,
-  AgentMessageInfo,
-  AgentPermission,
-  AgentPermissionReply,
-  AgentPresentationEvent,
-  PromptInput,
-  AgentQuestion,
-  AgentPresentationSession,
-  AgentRuntimeHealth,
-  AgentSessionTitleSource,
-  AgentSession,
-  AgentTodo,
-  ConnectionRuntimeStatus,
-} from "@claxedo/agent-runtime-contract"
-import { parseAgentContentPart, promptPartId, withClaxedoMessageAuthor, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/helpers/guards"
-import type { StatusCompat } from "./status"
+import type { AgentContentPart, AgentMessageInfo, AgentPermission, AgentPermissionReply, AgentQuestion, AgentTodo } from "./content"
+import type { AgentMessageAuthor, AgentPresentationSession, AgentSession, AgentSessionTitleSource, PromptFormat, PromptInput } from "./sessions"
+import type { AgentRuntimeStatus } from "./availability"
+import type { AgentPresentationEvent, AgentEventEnvelope } from "./events"
+import { promptPartId } from "./content"
+import type { FirstTurnErrorClass } from "./turn-error-classes"
+import type { TurnAccount } from "./turn-account"
+import { asRecord } from "./values"
 import { firstTurnErrorData } from "./first-turn-error"
+import { withClaxedoMessageAuthor } from "./message-author"
 
 type EventMessageUpdated = Extract<AgentPresentationEvent, { type: "message.updated" }>
 type EventMessageCompleted = Extract<AgentPresentationEvent, { type: "message.completed" }>
@@ -26,72 +16,29 @@ type EventMessagePartDelta = Extract<AgentPresentationEvent, { type: "message.pa
 type EventPermissionAsked = Extract<AgentPresentationEvent, { type: "permission.asked" }>
 type EventPermissionReplied = Extract<AgentPresentationEvent, { type: "permission.replied" }>
 type EventQuestionAsked = Extract<AgentPresentationEvent, { type: "question.asked" }>
-type EventQuestionReplied = Extract<AgentPresentationEvent, { type: "question.replied" }>
 type EventQuestionRejected = Extract<AgentPresentationEvent, { type: "question.rejected" }>
-type EventRuntimeDiagnostic = Extract<AgentPresentationEvent, { type: "runtime.diagnostic" }>
-type EventSessionAgent = Extract<AgentPresentationEvent, { type: "session.agent" }>
-type EventSessionCompacted = Extract<AgentPresentationEvent, { type: "session.compacted" }>
-type EventSessionConfig = Extract<AgentPresentationEvent, { type: "session.config" }>
-type EventSessionDiff = Extract<AgentPresentationEvent, { type: "session.diff" }>
 type EventSessionError = Extract<AgentPresentationEvent, { type: "session.error" }>
 type EventSessionIdle = Extract<AgentPresentationEvent, { type: "session.idle" }>
 type EventSessionStatus = Extract<AgentPresentationEvent, { type: "session.status" }>
 type EventSessionUpdated = Extract<AgentPresentationEvent, { type: "session.updated" }>
 type EventSessionUsage = Extract<AgentPresentationEvent, { type: "session.usage" }>
 type EventTodoUpdated = Extract<AgentPresentationEvent, { type: "todo.updated" }>
-
-export type CompatPart = AgentContentPart
-export type CompatPromptFormat =
-  | { type: "json_schema"; name?: string; schema?: unknown; strict?: boolean; provider_payload?: unknown }
-  | { type: string; provider_payload?: unknown; [key: string]: unknown }
-
-export type EventServerHeartbeat = {
-  type: "server.heartbeat"
-  properties: Record<string, never>
-}
-
-export type EventSessionDeleted = {
-  type: "session.deleted"
-  /** `parentID` names a subsession, whose deletion leaves the visible session count alone. */
-  properties: { info: { id: string; directory: string; parentID?: string } }
-}
+type EventSessionDeleted = Extract<AgentPresentationEvent, { type: "session.deleted" }>
+type EventHarnessHealth = Extract<AgentPresentationEvent, { type: "harness.health" }>
 
 export function sessionDeleted(id: string, directory: string, parentID?: string): EventSessionDeleted {
   return { type: "session.deleted", properties: { info: { id, directory, ...(parentID ? { parentID } : {}) } } }
-}
-
-/** What `readRuntimeHealth` and `readConnectionState` answer for one session, pushed when either changes. */
-export type EventHarnessHealth = {
-  type: "harness.health"
-  properties: {
-    sessionID: string
-    harnessHealth: AgentRuntimeHealth
-    connectionState?: ConnectionRuntimeStatus & { connectionId: string }
-  }
 }
 
 export function harnessHealthChanged(properties: EventHarnessHealth["properties"]): EventHarnessHealth {
   return { type: "harness.health", properties }
 }
 
-type SdkRuntimeOnlyEvent = EventServerHeartbeat | EventSessionDeleted | EventHarnessHealth
-
-export type CompatEvent = AgentPresentationEvent | SdkRuntimeOnlyEvent
-
-export type CompatEnvelope = {
-  directory: string
-  payload: CompatEvent
-}
-
-// These helpers are the package-level constructors for Claxedo client-presentation
-// events. Route/adapters should use them instead of hand-assembling shapes
-// except when they are validating external harness payloads.
-
 /**
- * The presentation-shaped frames an adapter's stream may carry as-is: the
+ * The presentation frames a transport's stream may carry as-is: the
  * runtime commits one of these to the session's event log and publishes it
  * on the hub's global channel, and projects everything else as a raw
- * `AgentRuntimeEvent`. Deliberately a subset of `CompatEvent["type"]`:
+ * `AgentRuntimeEvent`. Deliberately a subset of `AgentPresentationEvent["type"]`:
  * `subagent.updated` and `goal.*` exist on the wire only as the projection
  * of their `subagent-updated` / `goal-*` runtime events, so admitting the
  * dot form here would publish a second copy outside the runtime channel;
@@ -99,7 +46,7 @@ export type CompatEnvelope = {
  * global channel; `message.removed` and `message.part.removed` have no
  * producer in this runtime.
  */
-const kinds: ReadonlySet<string> = new Set<CompatEvent["type"]>([
+const kinds: ReadonlySet<string> = new Set<AgentPresentationEvent["type"]>([
   "message.updated",
   "message.part.updated",
   "message.part.delta",
@@ -127,21 +74,21 @@ const kinds: ReadonlySet<string> = new Set<CompatEvent["type"]>([
   "server.heartbeat",
 ])
 
-export function withDir(directory: string, payload: CompatEvent): CompatEnvelope {
+export function withDir(directory: string, payload: AgentPresentationEvent): AgentEventEnvelope {
   return { directory, payload }
 }
 
-/** An unknown frame is a compat event when it names one of `kinds` and carries a properties object. */
-function isCompatEvent(value: unknown): value is CompatEvent {
+/** An unknown frame is a transport presentation frame when it names one of `kinds` and carries a properties object. */
+function isTransportPresentationEvent(value: unknown): value is AgentPresentationEvent {
   const row = asRecord(value)
   return !!row && typeof row.type === "string" && kinds.has(row.type) && !!asRecord(row.properties)
 }
 
-export function toCompatEvent(input: unknown): CompatEvent | null {
-  return isCompatEvent(input) ? input : null
+export function toPresentationEvent(input: unknown): AgentPresentationEvent | null {
+  return isTransportPresentationEvent(input) ? input : null
 }
 
-export function eventSessionId(event: CompatEvent): string | undefined {
+export function eventSessionId(event: AgentPresentationEvent): string | undefined {
   // Global stream frames may be partial. A frame without a valid session
   // identity is ignored without terminating the shared stream.
   const properties = (event.properties ?? {}) as {
@@ -164,7 +111,7 @@ export function eventSessionId(event: CompatEvent): string | undefined {
   }
 }
 
-export function isTerminalCompatEvent(event: CompatEvent): event is Extract<CompatEvent, { type: "session.idle" | "session.error" }> {
+function isTerminalPresentationEvent(event: AgentPresentationEvent): event is Extract<AgentPresentationEvent, { type: "session.idle" | "session.error" }> {
   return event.type === "session.idle" || event.type === "session.error"
 }
 
@@ -174,10 +121,10 @@ export function isTerminalCompatEvent(event: CompatEvent): event is Extract<Comp
  * before the turn ends — a lost one pins a turn to busy, a subagent to
  * running, or a tool row to "Running" with its clock still ticking. A tool's
  * start and input snapshots are chatty and stay evictable. Distinct from
- * `isTerminalCompatEvent`, which is the adapters' "the prompt is over".
+ * `isTerminalPresentationEvent`, which is a transport's "the prompt is over".
  */
-export function isRetainedCompatEvent(event: CompatEvent): boolean {
-  if (isTerminalCompatEvent(event)) return true
+export function isRetainedPresentationEvent(event: AgentPresentationEvent): boolean {
+  if (isTerminalPresentationEvent(event)) return true
   if (event.type === "message.part.updated") {
     const part = event.properties.part
     return part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")
@@ -196,7 +143,7 @@ export function buildUserMessage(input: {
   model?: { providerID: string; modelID: string }
   created?: number
   tools?: Record<string, boolean>
-  format?: CompatPromptFormat
+  format?: PromptFormat
   system?: string
   variant?: string
   author?: AgentMessageAuthor
@@ -280,17 +227,8 @@ export function messageUpdated(info: EventMessageUpdated["properties"]["info"]):
   }
 }
 
-/** A submitted prompt as it enters the transcript: its user message, then its parts. */
-export function userPromptEvents(input: Parameters<typeof buildUserMessage>[0] & { parts: PromptInput["parts"] }): CompatEvent[] {
-  const { parts, ...message } = input
-  return [
-    messageUpdated(buildUserMessage(message)),
-    ...buildUserPromptParts(input.sessionID, input.id, parts).map(messagePartUpdated),
-  ]
-}
-
-export function buildUserPromptParts(sessionID: string, messageID: string, parts: PromptInput["parts"]): CompatPart[] {
-  return parts.map((part, index): CompatPart => ({
+export function buildUserPromptParts(sessionID: string, messageID: string, parts: PromptInput["parts"]): AgentContentPart[] {
+  return parts.map((part, index): AgentContentPart => ({
     ...part,
     id: promptPartId(messageID, index),
     sessionID,
@@ -298,25 +236,7 @@ export function buildUserPromptParts(sessionID: string, messageID: string, parts
   }))
 }
 
-/**
- * A part read back from persistence. Until 2026-09-17 the recorder above wrote
- * an attachment as a synthetic text part holding the file part's JSON, which
- * no reader drew; rows written that way read back as the file part they were.
- */
-export function readRecordedPart<T extends Record<string, unknown>>(part: T): T | CompatPart {
-  if (part.type !== "text" || part.synthetic !== true || typeof part.text !== "string" || !part.text.startsWith('{"')) return part
-  let record: unknown
-  try {
-    record = JSON.parse(part.text)
-  } catch {
-    return part
-  }
-  const row = asRecord(record)
-  if (row?.type !== "file") return part
-  return parseAgentContentPart({ ...row, id: part.id, sessionID: part.sessionID, messageID: part.messageID }) ?? part
-}
-
-export function messagePartUpdated(part: CompatPart): EventMessagePartUpdated {
+export function messagePartUpdated(part: AgentContentPart): EventMessagePartUpdated {
   return {
     id: `message.part.updated:${part.messageID}:${part.id}`,
     type: "message.part.updated",
@@ -373,14 +293,6 @@ export function questionAsked(properties: AgentQuestion): EventQuestionAsked {
   }
 }
 
-export function questionReplied(sessionID: string, requestID: string, answers: Array<Array<string>>): EventQuestionReplied {
-  return {
-    id: `question.replied:${requestID}`,
-    type: "question.replied",
-    properties: { sessionID, requestID, answers },
-  }
-}
-
 export function questionRejected(sessionID: string, requestID: string): EventQuestionRejected {
   return {
     id: `question.rejected:${requestID}`,
@@ -397,27 +309,11 @@ export function todoUpdated(sessionID: string, todos: Array<AgentTodo>): EventTo
   }
 }
 
-export function sessionStatus(sessionID: string, status: StatusCompat): EventSessionStatus {
+export function sessionStatus(sessionID: string, status: AgentRuntimeStatus): EventSessionStatus {
   return {
     id: `session.status:${sessionID}`,
     type: "session.status",
     properties: { sessionID, status },
-  }
-}
-
-export function sessionCompacted(sessionID: string): EventSessionCompacted {
-  return {
-    id: `session.compacted:${sessionID}`,
-    type: "session.compacted",
-    properties: { sessionID },
-  }
-}
-
-export function sessionDiff(sessionID: string, diff: EventSessionDiff["properties"]["diff"]): EventSessionDiff {
-  return {
-    id: `session.diff:${sessionID}`,
-    type: "session.diff",
-    properties: { sessionID, diff },
   }
 }
 
@@ -455,20 +351,6 @@ export function sessionUpdated(info: AgentSession): EventSessionUpdated {
   }
 }
 
-export function sessionAgent(sessionID: string, agentId: string): EventSessionAgent {
-  return {
-    type: "session.agent",
-    properties: { sessionID, agentId },
-  }
-}
-
-export function sessionConfig(properties: EventSessionConfig["properties"]): EventSessionConfig {
-  return {
-    type: "session.config",
-    properties,
-  }
-}
-
 export function sessionUsage(properties: EventSessionUsage["properties"]): EventSessionUsage {
   return {
     type: "session.usage",
@@ -476,9 +358,3 @@ export function sessionUsage(properties: EventSessionUsage["properties"]): Event
   }
 }
 
-export function runtimeDiagnostic(properties: EventRuntimeDiagnostic["properties"]): EventRuntimeDiagnostic {
-  return {
-    type: "runtime.diagnostic",
-    properties,
-  }
-}

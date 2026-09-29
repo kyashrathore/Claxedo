@@ -21,7 +21,6 @@
   "license": "MIT",
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.3.0",
-    "@claxedo/agent-sdk-runtime": "workspace:*",
     "@anthropic-ai/sdk": "0.115.0",
     "@axe-core/playwright": "4.12.1",
     "@claxedo/workspace-runtime": "workspace:*",

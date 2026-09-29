@@ -136,7 +136,6 @@
     "@anthropic-ai/claude-agent-sdk": "0.3.220",
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/agent-runtime-contract": "workspace:*",
-    "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",

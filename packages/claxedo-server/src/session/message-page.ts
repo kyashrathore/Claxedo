@@ -1,7 +1,4 @@
-import {
-  AgentMessagePageError,
-  type AgentMessagePageInput,
-} from "@claxedo/agent-sdk-runtime/message-page"
+import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 
 const MAX_MESSAGE_PAGE_LIMIT = 500
 

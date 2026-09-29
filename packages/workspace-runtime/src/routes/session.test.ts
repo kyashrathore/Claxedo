@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import type { GoalCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope, CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { AgentEventEnvelope, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
 import type { Hono } from "hono"
 import { createStoreBrokerPorts } from "../broker-ports"
@@ -471,9 +471,9 @@ describe("session prompt route", () => {
   })
 
   it("returns the final JSON reply and forwards prompt fields", async () => {
-    const seen: CompatEnvelope[] = []
+    const seen: AgentEventEnvelope[] = []
     const wa = await workspaceApp({
-      onCompatEvent: (event) => seen.push(event),
+      onPresentationEvent: (event) => seen.push(event),
       fakeTransport: { turn: async function* ({ session }) {
         yield { type: "text-delta", delta: "done" }
         yield { type: "finish", sessionId: session.binding.sessionId }
@@ -532,7 +532,7 @@ describe("session prompt route", () => {
   it("returns a synthetic error reply when the harness turn throws", async () => {
     const seen: string[] = []
     const wa = await workspaceApp({
-      onCompatEvent: (event) => seen.push(event.payload.type),
+      onPresentationEvent: (event) => seen.push(event.payload.type),
       fakeTransport: { turn: async function* () { throw new Error("adapter unavailable") } },
     })
     await wa.createSession("s1")
@@ -899,9 +899,9 @@ describe("session prompt route", () => {
 
   it("publishes session.updated on the hub only — the workspace stream carries it once", async () => {
     const bus: string[] = []
-    const hubEvents: CompatEvent[] = []
+    const hubEvents: AgentPresentationEvent[] = []
     const wa = await workspaceApp({
-      onCompatEvent: (event) => hubEvents.push(event.payload),
+      onPresentationEvent: (event) => hubEvents.push(event.payload),
       fakeTransport: { turn: async function* ({ session }) {
         yield { type: "session-title", title: "Prompt-derived title" }
         yield { type: "finish", sessionId: session.binding.sessionId }
@@ -941,8 +941,8 @@ describe("session prompt route", () => {
   })
 
   it("publishes initial user parts for prompt_async", async () => {
-    const seen: CompatEvent[] = []
-    const wa = await workspaceApp({ onCompatEvent: (event) => seen.push(event.payload) })
+    const seen: AgentPresentationEvent[] = []
+    const wa = await workspaceApp({ onPresentationEvent: (event) => seen.push(event.payload) })
     await wa.createSession("s1", { title: "Demo" })
     seen.length = 0
 
@@ -968,9 +968,9 @@ describe("session prompt route", () => {
 
   it("publishes question reply with the pending question session id", async () => {
     const answers: RequestAnswer[] = []
-    const seen: CompatEvent[] = []
+    const seen: AgentPresentationEvent[] = []
     const wa = await workspaceApp({
-      onCompatEvent: (event) => seen.push(event.payload),
+      onPresentationEvent: (event) => seen.push(event.payload),
       transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId, 2), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
     })
     await wa.createSession("s1")
@@ -1011,9 +1011,9 @@ describe("session prompt route", () => {
 
   it("publishes question reject with the pending question session id", async () => {
     const answers: RequestAnswer[] = []
-    const seen: CompatEvent[] = []
+    const seen: AgentPresentationEvent[] = []
     const wa = await workspaceApp({
-      onCompatEvent: (event) => seen.push(event.payload),
+      onPresentationEvent: (event) => seen.push(event.payload),
       transport: () => scripted({ question: asking((sessionId) => question("q1", sessionId), answers) }, { capabilities: { requests: { permissions: false, questions: true, elicitation: false } } }),
     })
     await wa.createSession("s1")
@@ -1168,9 +1168,9 @@ it("publishes a successful session deletion once, on the hub the workspace strea
 
 it("publishes the canonical permission reply event when a permission is answered", async () => {
   const answers: RequestAnswer[] = []
-  const published: CompatEvent[] = []
+  const published: AgentPresentationEvent[] = []
   const wa = await workspaceApp({
-    onCompatEvent: (event) => published.push(event.payload),
+    onPresentationEvent: (event) => published.push(event.payload),
     transport: () => scripted({ permission: asking((sessionId) => permission("permission_1", sessionId), answers) }, { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
   })
   await wa.createSession("session_owner")
@@ -1181,7 +1181,7 @@ it("publishes the canonical permission reply event when a permission is answered
   const response = await wa.json("/session/session_owner/permissions/permission_1", { response: "once" })
 
   expect(response.status).toBe(200)
-  const reply: CompatEvent = {
+  const reply: AgentPresentationEvent = {
     id: "permission.replied:session_owner:permission_1",
     type: "permission.replied",
     properties: { sessionID: "session_owner", requestID: "permission_1", reply: "once" },
@@ -1218,7 +1218,7 @@ it("requires an offered provider option and forwards its opaque ID to the harnes
 
 it("settles each offered provider option with the kind the harness offered it as", async () => {
   const answers: RequestAnswer[] = []
-  const published: CompatEvent[] = []
+  const published: AgentPresentationEvent[] = []
   const options = [
     { optionId: "provider/once", kind: "allow_once" as const, name: "Allow once" },
     { optionId: "provider/always", kind: "allow_always" as const, name: "Always allow" },
@@ -1227,7 +1227,7 @@ it("settles each offered provider option with the kind the harness offered it as
   ]
   const ask = (requestId: string) => asking((sessionId) => permission(requestId, sessionId, { options }), answers)
   const wa = await workspaceApp({
-    onCompatEvent: (event) => published.push(event.payload),
+    onPresentationEvent: (event) => published.push(event.payload),
     transport: () => scripted({ always: ask("permission-always"), reject: ask("permission-reject"), never: ask("permission-never") },
       { capabilities: { requests: { permissions: true, questions: false, elicitation: false } } }),
   })
@@ -1255,13 +1255,13 @@ it("settles each offered provider option with the kind the harness offered it as
 
 it("answers and declines an elicitation-only harness's requests through the question routes", async () => {
   const answers: RequestAnswer[] = []
-  const published: CompatEvent[] = []
+  const published: AgentPresentationEvent[] = []
   const elicitation = (requestId: string): TurnRequest => ({
     kind: "elicitation", requestId, mode: "form", message: "Name the branch",
     schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
   })
   const wa = await workspaceApp({
-    onCompatEvent: (event) => published.push(event.payload),
+    onPresentationEvent: (event) => published.push(event.payload),
     transport: () => scripted({ form: asking(() => elicitation("elicit-form"), answers), decline: asking(() => elicitation("elicit-decline"), answers) },
       { capabilities: { requests: { permissions: false, questions: false, elicitation: true } } }),
   })

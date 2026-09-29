@@ -81,7 +81,6 @@
     "@better-auth/oauth-provider": "1.7.1",
     "@claxedo/account-contract": "workspace:*",
     "@claxedo/agent-runtime-contract": "workspace:*",
-    "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/channels": "workspace:*",
     "@claxedo/connections": "workspace:*",

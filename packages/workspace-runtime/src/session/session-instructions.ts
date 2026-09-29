@@ -3,7 +3,7 @@ import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 /** UTF-8 bytes. The block is stored whole and delivered whole. */
 export const SESSION_INSTRUCTIONS_MAX_BYTES = 64 * 1024
 
-export function sessionInstructionsByteLength(instructions: string): number {
+function sessionInstructionsByteLength(instructions: string): number {
   return new TextEncoder().encode(instructions).length
 }
 

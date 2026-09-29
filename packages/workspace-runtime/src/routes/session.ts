@@ -10,11 +10,11 @@ import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
 import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
-import type { TurnOutline } from "@claxedo/agent-sdk-runtime/turn-outline"
+import type { TurnOutline } from "@claxedo/agent-runtime-contract"
 import { isAgentRuntimeTurnAdmissionError, type AgentRuntime, type AgentRuntimeRecovery } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
 import type { AgentContentPart, AgentMessage, AgentMessageAuthor, AgentSession, PromptDelivery } from "@claxedo/agent-runtime-contract"
-import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
+import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { workspaceRuntimeBus } from "../bus"
 import { errorMessage } from "@claxedo/helpers"
 import { rec, str } from "../json-value"
@@ -22,7 +22,7 @@ import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runti
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
 import type { SessionPromptBody } from "../session/service"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 
@@ -262,7 +262,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       throw error
     }
     const started = runtime
-    const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
+    const publishGlobal = (event: AgentEventEnvelope) => eventHub.publishGlobal(event)
     const scope = () => {
       const active = options.createActiveTurnScope?.({ directory: input.directory, sessionId: input.sessionId })
       if (!lease) return active

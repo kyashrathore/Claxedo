@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { assistantMessageIdForTurn, type SteerResult } from "@claxedo/agent-runtime-contract"
-import type { PromptDeliveryRequest, PromptInput } from "@claxedo/agent-sdk-runtime"
+import type { PromptDeliveryRequest, PromptInput } from "@claxedo/agent-runtime-contract"
 import {
   AgentRuntimeMessageIdConflictError,
   type AgentRuntimeStore,

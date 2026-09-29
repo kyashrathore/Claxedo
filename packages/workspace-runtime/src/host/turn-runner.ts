@@ -1,6 +1,6 @@
 import type { AgentExecutionBinding, AgentTurnOutcome, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "./contracts"
 import { createTurnBroker, type BrokerOwner, type TurnAuthority } from "@claxedo/harness/broker"
 import { TransportError, type RoutedEvent, type TurnOrigin } from "@claxedo/harness/contract"
 import { createChildEventRouter } from "../projection/child-event-routing"

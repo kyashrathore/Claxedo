@@ -9,7 +9,9 @@ import {
   type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { admitSessionInstructions, type ConnectionSecretAuthority, type RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import { admitSessionInstructions } from "../session/session-instructions"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
+import type { RuntimeDirectory } from "./contracts"
 import { createSessionBroker, type createRequestBroker, type SessionBrokerContext } from "@claxedo/harness/broker"
 import { CredentialSelectionError, sessionAccountOwner } from "@claxedo/harness/registry"
 import { applySessionConfigUpdate, type HarnessSession, type SessionBroker, type TurnActor } from "@claxedo/harness/contract"

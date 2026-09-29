@@ -1,4 +1,5 @@
-import type { AgentMessage, AgentTurnOutcome } from "./index"
+import type { AgentMessage } from "./content"
+import type { AgentTurnOutcome } from "./sessions"
 
 /** The most messages a numeric page may ask for; every producer rejects a larger `limit`. */
 export const AGENT_MESSAGE_PAGE_LIMIT = 500
@@ -103,12 +104,7 @@ export function projectLatestSurfaceMessages<TMessage extends LatestSurfaceMessa
   return messages.map(projectLatestSurfaceMessage)
 }
 
-/**
- * An authoritative message-page producer rejected the request.
- *
- * Kept in this dependency-light module so HTTP and persistence boundaries can
- * preserve producer status without importing the harness adapter catalog.
- */
+/** An authoritative message-page producer rejected the request. */
 export class AgentMessagePageError extends Error {
   constructor(
     readonly status: number,

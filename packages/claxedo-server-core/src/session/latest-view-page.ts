@@ -1,4 +1,4 @@
-import { projectLatestSurfaceMessages, type LatestSurfaceMessage } from "@claxedo/agent-sdk-runtime/message-page"
+import { projectLatestSurfaceMessages, type LatestSurfaceMessage } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
 
 export type LatestView = "latest-turn" | "latest-surface"

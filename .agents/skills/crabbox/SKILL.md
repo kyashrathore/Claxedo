@@ -60,7 +60,7 @@ When the Windows umbrella lane has already identified one failing package, use
 the configured focused package job before paying to rerun every package:
 
 ```sh
-./script/cbx-ci.ts run focus-agent-sdk-runtime-windows
+./script/cbx-ci.ts run focus-harness-windows
 ./script/cbx-ci.ts run focus-server-core-windows
 ```
 

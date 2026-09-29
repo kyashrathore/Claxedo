@@ -17,6 +17,7 @@ export * from "./harness-permission-modes"
 export * from "./harness-table"
 export * from "./harnesses"
 export * from "./message-author"
+export * from "./presentation-events"
 export * from "./permissions"
 export * from "./custom-provider-headers"
 export * from "./pi-providers"
@@ -51,6 +52,8 @@ export {
   normalizeRecoveryTarget,
   recoveryTargetsMatch,
   parseRecoveryTarget,
+  recoveryScopeKey,
+  recoveryTargetSessionId,
 } from "./recovery/targets"
 export {
   RECOVERY_ACTIONS,
@@ -118,9 +121,13 @@ export * from "./session-titles"
 export * from "./sessions"
 export * from "./subagents"
 export * from "./tool-header"
+export * from "./turn-outline"
+export * from "./turn-page"
 export * from "./tool-names"
 export * from "./turn-account"
 export * from "./turn-error-classes"
+export * from "./first-turn-error"
+export * from "./message-page"
 export * from "./usage-windows"
 export * from "./values"
 export * from "./agent-runtime-event"

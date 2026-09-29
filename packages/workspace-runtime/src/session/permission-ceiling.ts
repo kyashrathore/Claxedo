@@ -5,7 +5,7 @@ import type { AgentPermissionMode, AutoLevel } from "@claxedo/agent-runtime-cont
  * the only comparison that holds across harnesses, so a ceiling is expressed
  * as a level and never as another harness's mode id.
  */
-export const AUTO_LEVEL_ORDER: readonly AutoLevel[] = ["ask", "auto", "full"]
+const AUTO_LEVEL_ORDER: readonly AutoLevel[] = ["ask", "auto", "full"]
 
 export function isAutoLevel(value: unknown): value is AutoLevel {
   return typeof value === "string" && (AUTO_LEVEL_ORDER as readonly string[]).includes(value)
@@ -49,19 +49,6 @@ export function widestPermissionModeUnder(
   return [...modes]
     .filter((mode) => mode.level !== undefined && permissionCeilingAdmits(ceiling, mode.level))
     .sort((left, right) => comparePermissionLevels(permissionModeLevel(right), permissionModeLevel(left)))[0]
-}
-
-export class PermissionCeilingError extends Error {
-  readonly code = "permission_ceiling_exceeded"
-
-  constructor(readonly ceiling: AutoLevel, readonly requested: { modeId: string; level: AutoLevel }) {
-    super(`Permission mode "${requested.modeId}" (${requested.level}) widens the ${ceiling} ceiling`)
-    this.name = "PermissionCeilingError"
-  }
-}
-
-export function isPermissionCeilingError(error: unknown): error is PermissionCeilingError {
-  return error instanceof PermissionCeilingError
 }
 
 /**

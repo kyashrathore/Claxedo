@@ -57,10 +57,6 @@ export type {
   ConnectionSecretUnavailableReason,
   PublicConnectionUnavailable,
 } from "./connection-secrets"
-export type {
-  ConnectionSecretLease,
-  ConnectionSecretResolver,
-} from "@claxedo/agent-sdk-runtime"
 import { isMissingFile } from "@claxedo/helpers/fs"
 
 const log = Log.create({ service: "agent-config" })

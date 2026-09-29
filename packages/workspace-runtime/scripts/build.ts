@@ -31,8 +31,6 @@ const LIBRARY_EXTERNALS = [
   // owned by the installed contract package, just as the SDK build does.
   "@claxedo/agent-runtime-contract",
   "@claxedo/agent-runtime-contract/*",
-  "@claxedo/agent-sdk-runtime",
-  "@claxedo/agent-sdk-runtime/*",
   "@claxedo/process-ownership",
   "@claxedo/process-ownership/*",
   "@claxedo/harness",

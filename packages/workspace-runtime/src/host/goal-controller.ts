@@ -1,7 +1,6 @@
 import type { AgentGoalMutationResult, GoalAction, GoalCapabilities } from "@claxedo/agent-runtime-contract"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
-import { GoalCapabilityError, requireGoalAction } from "@claxedo/agent-sdk-runtime/adapters"
+import type { RuntimeDirectory } from "./contracts"
 import type { NativeGoalOperations } from "@claxedo/harness/contract"
 import type { AttachedSession, UnattachedRead } from "./attachments"
 import { normalizeDirectory } from "./execution-binding"
@@ -132,7 +131,7 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
   /**
    * The single Goal mutation path. `stop` is deliberately ungated: it is the
    * safety valve that must end a running Goal even on a harness that offers no
-   * pause/resume/delete, so it is not one of `GOAL_ACTIONS`.
+   * pause/resume/delete, so no declared goal action gates it.
    */
   const mutate = async (
     sessionId: string,
@@ -144,13 +143,8 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     // finish and be replaced across either of them.
     const capture = input.captureTurn(sessionId, requestedDirectory)
     const context = await availableContext(sessionId, requestedDirectory)
-    if (mutation !== "stop") {
-      try {
-        requireGoalAction(context.capabilities, mutation)
-      } catch (error) {
-        const message = error instanceof GoalCapabilityError ? error.message : `Goal action '${mutation}' is unavailable`
-        throw new AgentRuntimeGoalError("goal_action_unavailable", message)
-      }
+    if (mutation !== "stop" && !goalActionAvailable(context.capabilities, mutation)) {
+      throw new AgentRuntimeGoalError("goal_action_unavailable", `Goal action '${mutation}' is not available`)
     }
     const result = await perform(context, mutation)
     publishResult(sessionId, context.directory, result)
@@ -223,4 +217,12 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
       },
     },
   }
+}
+
+function goalActionAvailable(capabilities: GoalCapabilities, action: GoalAction): boolean {
+  if (!capabilities.implemented || !capabilities.available) return false
+  if (action === "pause" || action === "resume") {
+    return capabilities.actions.includes("pause") && capabilities.actions.includes("resume")
+  }
+  return capabilities.actions.includes(action)
 }

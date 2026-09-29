@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
-import { credentialSnapshot } from "@claxedo/agent-sdk-runtime"
+import { credentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { stopHostServing } from "@claxedo/host-serving/serving"
 import { CredentialSelectionError, selectSessionCredentials } from "@claxedo/harness/registry"
 

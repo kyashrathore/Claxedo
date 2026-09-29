@@ -1,6 +1,6 @@
 import { asRecord, type AgentSessionStart, type AgentSessionStartBinding, type AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 
-export interface SessionStartPersistence {
+interface SessionStartPersistence {
   get(sessionId: string): unknown
   put(record: AgentSessionStart): void
   /** Removes the row only while every binding field still matches. */
@@ -10,12 +10,12 @@ export interface SessionStartPersistence {
 const fields = ["sessionId", "workspaceId", "directory", "connectionId", "operationId"] as const
 
 /** Identity of a creation operation, compared field by field rather than by serialized shape. */
-export function sameSessionStartBinding(a: AgentSessionStartBinding, b: AgentSessionStartBinding): boolean {
+function sameSessionStartBinding(a: AgentSessionStartBinding, b: AgentSessionStartBinding): boolean {
   return fields.every(field => a[field] === b[field])
 }
 
 /** Creation ownership is durable independently of a provider execution binding. */
-export class SessionStartStore implements AgentSessionStarts {
+class SessionStartStore implements AgentSessionStarts {
   constructor(private readonly persistence: SessionStartPersistence) {}
 
   get(sessionId: string): AgentSessionStart | undefined {
@@ -74,7 +74,7 @@ function readStartBinding(value: unknown): AgentSessionStartBinding {
   return { sessionId: String(row.sessionId), workspaceId: String(row.workspaceId), directory: String(row.directory), connectionId: String(row.connectionId), operationId: String(row.operationId) }
 }
 
-export function readSessionStart(value: unknown): AgentSessionStart {
+function readSessionStart(value: unknown): AgentSessionStart {
   const row = asRecord(value)
   if (!row || typeof row.createdAt !== "number" || !Number.isFinite(row.createdAt) || typeof row.updatedAt !== "number" || !Number.isFinite(row.updatedAt)) throw new Error("Invalid session creation record")
   const base = { binding: readStartBinding(row.binding), createdAt: row.createdAt, updatedAt: row.updatedAt }
@@ -84,7 +84,7 @@ export function readSessionStart(value: unknown): AgentSessionStart {
   throw new Error("Invalid session creation outcome")
 }
 
-/** Both durable runtime stores use the same additive table and transition owner. */
+/** The runtime store's creation-ownership table, whose transitions `SessionStartStore` owns. */
 export function sqliteSessionStarts(db: {
   exec(sql: string): unknown
   prepare(sql: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown }

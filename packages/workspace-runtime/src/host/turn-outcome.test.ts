@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { AgentRuntimeStreamEvent, AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
-import { sessionIdle } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { AgentRuntimeStreamEvent } from "./contracts"
+import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { sessionIdle } from "@claxedo/agent-runtime-contract"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./turn-outcome"
 
 function settle(payloads: AgentRuntimeStreamEvent[]) {

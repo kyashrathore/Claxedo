@@ -35,7 +35,6 @@ const DOC_PREFIXES = [
 ]
 
 const WINDOWS_PREFIXES = [
-  "packages/agent-sdk-runtime/",
   "packages/claxedo-desktop/",
   "packages/claxedo-host-connector/",
   "packages/claxedo-host-serving/",
@@ -43,6 +42,8 @@ const WINDOWS_PREFIXES = [
   "packages/claxedo-server/",
   "packages/claxedo-server-core/",
   "packages/cli/",
+  "packages/harness/",
+  "packages/process-ownership/",
   "packages/sandbox-manager/",
   "packages/wakes/",
   "packages/workspace-relay/",
@@ -52,13 +53,14 @@ const WINDOWS_PREFIXES = [
 ]
 
 const SERVER_DEPENDENCY_PREFIXES = [
-  "packages/agent-sdk-runtime/",
   "packages/claxedo-channels/",
   "packages/claxedo-connections/",
   "packages/claxedo-local-server/",
   "packages/claxedo-mcp/",
   "packages/claxedo-server/",
   "packages/claxedo-server-core/",
+  "packages/harness/",
+  "packages/process-ownership/",
   "packages/sandbox-contract/",
   "packages/sandbox-manager/",
   "packages/wakes/",
@@ -72,8 +74,9 @@ const SERVER_DEPENDENCY_PREFIXES = [
 // package `build-sandbox-image.ts` bundles into the host it ships.
 const SANDBOX_IMAGE_PREFIXES = [
   "packages/agent-runtime-contract/",
-  "packages/agent-sdk-runtime/",
   "packages/claxedo-server/scripts/sandbox/",
+  "packages/harness/",
+  "packages/process-ownership/",
   "packages/sandbox-contract/",
   "packages/sandbox-manager/",
   "packages/workspace-runtime/",

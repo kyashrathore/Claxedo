@@ -1,7 +1,7 @@
 import type { SessionListKeysetPage } from "../../session/navigation-list"
 import type { SignedControlPlaneAuth } from "./auth"
 import type { LatestView } from "../../session/latest-view-page"
-import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-sdk-runtime/turn-page"
+import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 
 /** Canonical application actor identity. Provider subjects never cross this port. */

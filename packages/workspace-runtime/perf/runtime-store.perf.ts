@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { messagePartUpdated } from "../src/compat-events"
+import { messagePartUpdated } from "@claxedo/agent-runtime-contract"
 import { RuntimeStore } from "../src/store"
 import { num, rec } from "../src/json-value"
 

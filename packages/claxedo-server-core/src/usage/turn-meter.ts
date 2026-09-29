@@ -6,8 +6,8 @@ import {
   usageStreamsTotal,
   type RuntimeTokenUsage,
 } from "@claxedo/agent-runtime-contract"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
-import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import { eventSessionId } from "@claxedo/agent-runtime-contract"
 import { jsonRecord } from "../platform/runtime/lib/json"
 import {
   knownTokenCategories,
@@ -86,7 +86,7 @@ function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
 
 export type TurnMeter = {
   start(): Promise<void>
-  consume(event: CompatEnvelope): Promise<void>
+  consume(event: AgentEventEnvelope): Promise<void>
   settle(input: {
     sessionId: string
     messageId: string
@@ -298,7 +298,7 @@ export function createTurnMeter(input: {
     }
   }
 
-  async function consumeOne(event: CompatEnvelope) {
+  async function consumeOne(event: AgentEventEnvelope) {
     await initialize()
     const sessionId = eventSessionId(event.payload)
     if (!sessionId) return

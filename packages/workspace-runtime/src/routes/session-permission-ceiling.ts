@@ -1,12 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import type { AgentPermissionMode, AgentPermissionModeState, AgentSession, AutoLevel } from "@claxedo/agent-runtime-contract"
-import {
-  narrowerPermissionLevel,
-  permissionCeilingAdmits,
-  permissionModeLevel,
-  widestPermissionModeUnder,
-  type RuntimeDirectory,
-} from "@claxedo/agent-sdk-runtime"
+import { narrowerPermissionLevel, permissionCeilingAdmits, permissionModeLevel, widestPermissionModeUnder } from "../session/permission-ceiling"
+import type { RuntimeDirectory } from "../host/contracts"
 import type { AgentRuntime, HarnessTarget } from "../host/runtime"
 import { errorBody } from "./error-body"
 import {

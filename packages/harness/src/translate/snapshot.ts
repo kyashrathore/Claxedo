@@ -1,6 +1,6 @@
 import { cloneSnapshotValue } from "@claxedo/helpers"
 
-export const RUNTIME_SNAPSHOT_VERSION = 1
+const RUNTIME_SNAPSHOT_VERSION = 1
 
 export type RuntimeSnapshot<State = unknown> = {
   version: typeof RUNTIME_SNAPSHOT_VERSION

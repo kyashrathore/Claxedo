@@ -1,5 +1,5 @@
 import { declaredPermissionModes } from "@claxedo/agent-runtime-contract"
-import { sessionUpdated, withDir } from "@claxedo/agent-sdk-runtime/compat-events"
+import { sessionUpdated, withDir } from "@claxedo/agent-runtime-contract"
 import type { KeptPermissionMode } from "@claxedo/harness/contract"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { AgentRuntimeStore } from "./contracts"

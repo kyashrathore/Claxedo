@@ -1,11 +1,7 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { createClientPresentationProjection } from "./client-presentation/projection"
 import { asRecord } from "@claxedo/helpers/guards"
-import {
-  buildAssistantMessage,
-  messageUpdated,
-  type CompatEvent,
-} from "@claxedo/agent-sdk-runtime/compat-events"
+import { buildAssistantMessage, messageUpdated, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
 
@@ -24,13 +20,13 @@ type RuntimeEventStore = {
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string
-    payload: CompatEvent
+    payload: AgentPresentationEvent
     source?: RuntimeAppendSource
     fencingToken?: number
-  }): { payload: CompatEvent; messageUpdate?: CompatEvent }
+  }): { payload: AgentPresentationEvent; messageUpdate?: AgentPresentationEvent }
 }
 
-function committed(output: { payload: CompatEvent; messageUpdate?: CompatEvent }) {
+function committed(output: { payload: AgentPresentationEvent; messageUpdate?: AgentPresentationEvent }) {
   if (!output) throw new Error("Runtime store appendEvent must return committed output")
   return output
 }
@@ -43,7 +39,7 @@ export function createTurnEventProjector(options: {
   assistantMessageId: string
   created: number
   fencingToken?: number
-  onEvent: (event: CompatEvent) => void
+  onEvent: (event: AgentPresentationEvent) => void
   onRuntimeEvent?: (event: RuntimeEventEnvelopeInput) => void
 }) {
   let assistantMessageId = options.assistantMessageId
@@ -63,7 +59,7 @@ export function createTurnEventProjector(options: {
       payload,
     })
   }
-  const append = (payload: CompatEvent, source: RuntimeAppendSource) => {
+  const append = (payload: AgentPresentationEvent, source: RuntimeAppendSource) => {
     const output = committed(options.store.appendEvent({
       sessionId: options.owner.sessionId,
       agentSessionId: options.owner.getAgentSessionId(),
@@ -124,7 +120,7 @@ export function createTurnEventProjector(options: {
 
 export type TurnEventProjector = ReturnType<typeof createTurnEventProjector>
 
-function terminalizedToolRuntimeEvent(payload: CompatEvent, message: string): AgentRuntimeEvent | undefined {
+function terminalizedToolRuntimeEvent(payload: AgentPresentationEvent, message: string): AgentRuntimeEvent | undefined {
   if (payload.type !== "message.part.updated") return undefined
   const part = asRecord(payload.properties.part)
   if (part?.type !== "tool") return undefined

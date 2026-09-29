@@ -578,10 +578,10 @@ the intake holds that frame and every later one behind a catalog re-read
 
 **F.4 Projection** — the host projects a turn's raw harness frames through
 `createClientPresentationProjection`
-(`packages/agent-event-runtime/src/projections/client-presentation`) before
+(`packages/workspace-runtime/src/projection/client-presentation`) before
 they reach the wire; the client projects nothing. The reply id is minted
 from the prompt by `assistantMessageIdForTurn`
-(`packages/agent-event-runtime/src/contracts/turn-message-ids.ts`,
+(`packages/agent-runtime-contract/src/turn-message-ids.ts`,
 `${userMessageId}_r`), and `packages/workspace-runtime/src/session/service.ts`
 announces the assistant row under it for a turn nobody on the client
 started.

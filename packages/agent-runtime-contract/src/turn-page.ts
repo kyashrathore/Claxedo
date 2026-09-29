@@ -10,8 +10,9 @@ import {
   turnFoldShape,
   turnSegments,
   type PartRef,
-} from "@claxedo/agent-runtime-contract/turn-fold"
-import { toolOpensByDefault, toolPartHeader, type AgentAssistantMessage, type AgentContentPart, type AgentMessage } from "@claxedo/agent-runtime-contract"
+} from "./turn-fold"
+import { toolOpensByDefault, toolPartHeader } from "./tool-header"
+import type { AgentAssistantMessage, AgentContentPart, AgentMessage } from "./content"
 import type { TurnOutline } from "./turn-outline"
 
 export const TURN_PAGE_TURN_CAP = 24

@@ -19,7 +19,7 @@ import { pluginRoots } from "./test-support/launch"
  * The launch assertions restate each driver's parser contract exactly
  * (`claudePluginConfigs`, `cursorPluginRoots`, `codexPluginLaunch`, and the
  * OpenCode managed-config hook), because those parsers are internal to
- * `@claxedo/agent-sdk-runtime` and cannot be imported across the package
+ * `@claxedo/harness` and cannot be imported across the package
  * boundary. Anything this file accepts must be accepted there too.
  */
 

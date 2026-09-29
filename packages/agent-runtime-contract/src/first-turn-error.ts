@@ -1,4 +1,6 @@
-import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS, type FirstTurnErrorClass, type TurnAccount } from "@claxedo/agent-runtime-contract"
+import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "./credential-broker-errors"
+import type { FirstTurnErrorClass } from "./turn-error-classes"
+import type { TurnAccount } from "./turn-account"
 
 /**
  * The broker's verdict, out of the vocabulary the broker itself writes.
@@ -38,7 +40,7 @@ export function classifyFirstTurnError(error: unknown): FirstTurnErrorClass {
   return "unknown"
 }
 
-/** `errorClass` is the harness adapter's structured class; the message is read only without one. */
+/** `errorClass` is the transport's structured class; the message is read only without one. */
 export function firstTurnErrorData(message: string, facts: { errorClass?: FirstTurnErrorClass; account?: TurnAccount } = {}) {
   return {
     message,

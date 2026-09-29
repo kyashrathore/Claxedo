@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { toolPartHeader } from "@claxedo/agent-runtime-contract"
-import type { AgentContentPart, AgentMessage } from "./index"
+import { toolPartHeader } from "./tool-header"
+import type { AgentContentPart, AgentMessage } from "./content"
 import {
   TURN_PAGE_BYTE_CAP,
   TURN_PAGE_TURN_CAP,
@@ -58,7 +58,7 @@ const tool = (name: string, output = "ok"): AgentContentPart => ({
   state: { status: "completed", input: { command: "ls" }, output, title: name, metadata: {}, time: { start: 1, end: 2 } },
 })
 
-function workedTurn(prompt: string, answer: string): AgentMessage[] {
+function workedTurn(prompt: string, answer: string): [AgentMessage, AgentMessage, AgentMessage] {
   const id = nextId("user")
   return [user(id, prompt), assistant(id, [text("Looking."), tool("bash"), tool("read")]), assistant(id, [text(answer)])]
 }
@@ -178,7 +178,8 @@ describe("readTurnPage", () => {
     const turns = [workedTurn("Older", "Older answer."), workedTurn("Big", huge), workedTurn("Newest", "Short.")]
     const page = await readTurnPage(turnReader(turns).read, viewport(10_000))
     expect(page.turns.map((turn) => drawnTexts(turn)[0])).toEqual(["Big", "Newest"])
-    expect(drawnTexts(page.turns[0]).at(-1)).toBe(huge)
+    const [big] = page.turns
+    expect(big && drawnTexts(big).at(-1)).toBe(huge)
   })
 
   test("a read before a cursor has no byte cap, so it pages past a large turn until the viewport fills", async () => {

@@ -1,5 +1,5 @@
 import type { RecoveryTarget, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import type { RuntimeDirectory } from "@claxedo/agent-sdk-runtime"
+import type { RuntimeDirectory } from "./contracts"
 import type { AgentRuntimeEventEnvelope } from "./contracts"
 import type { TurnAdmissionFence } from "./turn-admission"
 

@@ -36,13 +36,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import {
-  projectionRenewalDue,
-  projectionRenewalDueAt,
-  type AgentTurnOutcome,
-  type CompatEnvelope,
-  type ConnectionSecretResolver,
-} from "@claxedo/agent-sdk-runtime"
+import { projectionRenewalDue, projectionRenewalDueAt, type AgentTurnOutcome, type AgentEventEnvelope, type ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
 import { ConnectionUnavailableError, createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { localConnectionSecretScope } from "./connection-secret-scope"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
@@ -298,7 +292,7 @@ let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] =
 let configuredProcessObserver: ProcessObserver | undefined
 let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
 let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
-let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
+let configuredOnSessionMetaEvent: ((event: AgentEventEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredSessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"] | undefined
@@ -371,7 +365,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
   /** Declared where the policy's loopback arm is the local owner's; otherwise the marker answers. */
   loopbackSessionAuthority?: HostSessionAuthority
-  onSessionMetaEvent?: (event: CompatEnvelope) => void
+  onSessionMetaEvent?: (event: AgentEventEnvelope) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   sessionIdWorkspace?: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
@@ -444,7 +438,7 @@ function options(
     // The observer persists control-plane session metadata. Conversation
     // delivery stays on the workspace's own `wr/events` and is never
     // republished onto the control-plane bus.
-    onCompatEvent: (event) => configuredOnSessionMetaEvent?.(event),
+    onPresentationEvent: (event) => configuredOnSessionMetaEvent?.(event),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),

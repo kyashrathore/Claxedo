@@ -51,8 +51,8 @@ import {
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-sdk-runtime/turn-page"
+import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
+import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-runtime-contract"
 import { messagePageCursor, parseMessagePageInput, parseSessionPartInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"

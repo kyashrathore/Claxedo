@@ -173,8 +173,6 @@ export function spec(root = ROOT): Spec {
     "src/main/host-connector/child-supervisor.ts",
     "src/main/host-connector/electron-child.ts",
     "src/main/host-connector/identity-store.ts",
-    "../agent-sdk-runtime/package.json",
-    "../agent-sdk-runtime/src",
     "../claxedo-app/package.json",
     "../claxedo-app/public",
     "../claxedo-app/src",

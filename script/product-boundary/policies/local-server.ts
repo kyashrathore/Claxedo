@@ -155,9 +155,8 @@ export const localServer: Policy = {
   //    launcher that cannot reach its HTTP. Workspace ownership stays in each
   //    workspace's RuntimeStore; what lives here spans every workspace at once,
   //    so no single one of them can hold it. They reach `@claxedo/helpers`,
-  //    `@claxedo/agent-runtime-contract`, the ClaxedoDB engine and the
-  //    scope-key owner in `@claxedo/agent-sdk-runtime/adapters`, all already
-  //    here.
+  //    `@claxedo/agent-runtime-contract` (which owns the recovery scope key)
+  //    and the ClaxedoDB engine, all already here.
   //  - `app/daemon-admission.ts` now actually reachable: the composition mounts
   //    its capability admission and its machine-recovery fence, so the module
   //    this comment already claimed was in the closure is in it.
@@ -239,7 +238,6 @@ export const localServer: Policy = {
       { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/process-ownership" },
-      { packageDir: "packages/agent-sdk-runtime" },
       // The loopback credential broker the desktop composition mounts; its
       // published entry is dist-only and it bundles against
       // @claxedo/agent-runtime-contract, built above it.

@@ -149,3 +149,18 @@ export function parseRecoveryTarget(input: unknown): RecoveryTarget {
     ...(row.writeAuthority !== undefined ? { writeAuthority: requireRecoveryText(row.writeAuthority, "invalid_target", "writeAuthority") } : {}),
   }
 }
+
+/**
+ * The row a repeated recovery request is compared under. A turn operation and a
+ * session operation share their session's key, so a caller cannot escape its
+ * own uniqueness by naming a different turn of the same session.
+ */
+export function recoveryScopeKey(target: RecoveryTarget): string {
+  if (target.scope === "machine") return `machine:${target.machineId}`
+  if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
+  return `session:${target.workspaceId}:${target.sessionId}`
+}
+
+export function recoveryTargetSessionId(target: RecoveryTarget): string | null {
+  return target.scope === "turn" || target.scope === "session" ? target.sessionId : null
+}

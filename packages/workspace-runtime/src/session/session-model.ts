@@ -1,14 +1,11 @@
-import type { SessionConfig } from "@claxedo/agent-runtime-contract"
-import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import type { PromptModel, SessionHarness } from "./index"
-import { harnessKey } from "@claxedo/agent-runtime-contract"
+import { harnessKey, type HarnessInstructionChannel, type PromptModel, type SessionConfig, type SessionHarness } from "@claxedo/agent-runtime-contract"
 
 /**
  * The `modelID` a session carries while it has selected no model. Harnesses
  * resolve it themselves: the Claude SDK serves a model row under exactly this
  * id, so the driver forwards it rather than translating it away.
  */
-export const DEFAULT_MODEL_ID = "default"
+const DEFAULT_MODEL_ID = "default"
 
 const NATIVE_COMPATIBILITY_MODEL: PromptModel = {
   providerID: "anthropic",

@@ -45,8 +45,7 @@ your product
 @claxedo/workspace-relay
 @claxedo/workspace-relay-protocol
 @claxedo/workspace-runtime
-@claxedo/agent-sdk-runtime
-@claxedo/agent-event-runtime
+@claxedo/agent-runtime-contract
 ```
 
 Each layer can be used independently. Full workspace products usually start
@@ -60,8 +59,7 @@ artifacts, and projection are product features, not public runtime-package APIs.
 | Package | Use it for |
 | --- | --- |
 | `@claxedo/workspace-runtime` | Run or embed a per-workspace host next to the project directory the agent should work on. |
-| `@claxedo/agent-sdk-runtime` | Embed one `AgentRuntime` facade over configured connections, native SDK harnesses, or Pi. |
-| `@claxedo/agent-event-runtime` | Normalize raw harness events into a canonical `AgentRuntimeEvent` stream and project them into compatibility formats. |
+| `@claxedo/agent-runtime-contract` | Type and validate the sessions, messages, runtime events and presentation events every runtime package and client shares. |
 | `@claxedo/workspace-relay-protocol` | Use tunnel wire types and token verifier contracts without pulling in Hono or server code. |
 | `@claxedo/workspace-relay` | Run the relay process that connects browsers/gateways to workspace-runtime hosts. |
 
@@ -69,11 +67,9 @@ artifacts, and projection are product features, not public runtime-package APIs.
 
 - [Workspace Runtime](./workspace-runtime.md): what the Workspace Host is,
   what it owns, how to run it, and how to embed it.
-- [Agent SDK Runtime](../packages/agent-sdk-runtime/README.md): the
-  `createAgentRuntime()` facade, first-party stores, and supported harness
-  factories.
-- [Agent Event Runtime](../packages/agent-event-runtime/README.md): event
-  normalization and projections.
+- [Agent Runtime Contract](../packages/agent-runtime-contract/README.md): the
+  session, message, runtime-event and presentation-event types every runtime
+  package and client shares.
 - [Machines, Workspaces and Sessions](./machines-and-sessions.md): working with
   your own machines, cloud environments and the sessions that run on them.
 - [Using an ACP Agent](./using-agent-connections.md): add an external agent

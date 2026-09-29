@@ -11,7 +11,9 @@ import type {
   SessionHarness,
 } from "@claxedo/agent-runtime-contract"
 import { harnessKey } from "@claxedo/agent-runtime-contract"
-import { PermissionModeRefusedError, type ConnectionSecretAuthority, type HarnessCapabilities } from "@claxedo/agent-sdk-runtime"
+import { PermissionModeRefusedError } from "../session/permission-ceiling"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
+import type { HarnessCapabilities } from "./capabilities"
 import type { ConfigOptionsPreview, ConfigTarget, HarnessSession, TurnActor } from "@claxedo/harness/contract"
 import type { AttachedSession, SessionAttachments } from "./attachments"
 import { harnessCapabilitiesFor } from "./capabilities"

@@ -166,8 +166,8 @@ describe("createClientPresentationProjection", () => {
   })
 
   test("the host composition announces nothing — its own producer owns the row", () => {
-    // `createTurnEventProjector` (agent-sdk-runtime) and the workspace
-    // runtime's `createPromptEventProjection` append their own
+    // The workspace runtime's `createTurnEventProjector` and
+    // `createPromptEventProjection` append their own
     // `buildAssistantMessage` row at turn start, complete with the agent and
     // model this lane never carries. A row announced here would land after it
     // and overwrite it with a thinner one.

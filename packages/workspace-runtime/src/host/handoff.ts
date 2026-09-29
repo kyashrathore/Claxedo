@@ -6,8 +6,9 @@ import {
   type AgentExecutionBinding,
   type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
-import { renderSessionHandoff, renderSessionTranscript, type AgentMessage } from "@claxedo/agent-sdk-runtime"
-import { messagePartUpdated, type CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import { renderSessionHandoff, renderSessionTranscript } from "./session-handoff"
+import type { AgentMessage } from "@claxedo/agent-runtime-contract"
+import { messagePartUpdated, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { applySessionConfigUpdate } from "@claxedo/harness/contract"
 import type { AttachedSession } from "./attachments"
 import type { AgentRuntimeStore } from "./contracts"
@@ -302,7 +303,7 @@ export async function releaseKeptHandoffSource(input: KeptSourceInput) {
 export function announceHandoff(input: KeptSourceInput & {
   userMessageId: string
   store: Pick<AgentRuntimeStore, "updateSessionConfig">
-  commit(event: CompatEvent): void
+  commit(event: AgentPresentationEvent): void
 }) {
   const { config } = input
   if (!config?.handoff?.pending || config.handoff.announced) return
@@ -349,7 +350,7 @@ export function announceContextRebuild(input: {
   config: SessionConfig
   binding: AgentExecutionBinding
   store: Pick<AgentRuntimeStore, "getMessages">
-  commit(event: CompatEvent): void
+  commit(event: AgentPresentationEvent): void
 }) {
   if (!input.config.handoff?.pending || input.config.handoff.reason !== "missing-session") return
   const agentSessionId = input.binding.upstreamSessionId

@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
-  liveProviderBinding,
   projectionRenewalDueAt,
-  providerBinding,
-  ProviderCredentialUnavailableError,
   providerProjection,
-  providerProjectionKey,
   providerProjectionRecord,
 } from "./provider-projection"
 
@@ -58,9 +54,8 @@ describe("provider projection", () => {
 
   test("a binding without an expiry is valid and never due for renewal", () => {
     const resolved = providerProjection(native, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" })!
-    expect(liveProviderBinding("claude", resolved, () => 2_000_000_000_000)).toMatchObject({
-      placeholder: "dtn_secret_abc",
-    })
+    expect(resolved).toMatchObject({ placeholder: "dtn_secret_abc" })
+    expect(resolved).not.toHaveProperty("expiresAt")
     expect(projectionRenewalDueAt({ "claude-sdk": resolved }, 1_000)).toBeUndefined()
   })
 
@@ -114,14 +109,6 @@ describe("provider projection", () => {
     expect(providerProjection({ ...minted, apiPath: "" })).toMatchObject({ apiPath: "" })
   })
 
-  test("an unavailable account stops the launch by name instead of reaching the implicit tier", () => {
-    const refusal = () => providerBinding("cursor", { unavailable: true, reason: "auth_failed" })
-    expect(refusal).toThrow(ProviderCredentialUnavailableError)
-    // The turn-outcome classifier reads the message, so the word is load-bearing.
-    expect(refusal).toThrow("the cursor credential selected for this workspace cannot be used: auth_failed")
-    expect(providerBinding("cursor", undefined)).toBeUndefined()
-  })
-
   test("renewal falls at half of the placeholder's own remaining lifetime", () => {
     const appliedAt = 1_000_000
     const expiresAt = appliedAt + 60 * 60 * 1000
@@ -142,7 +129,6 @@ describe("the account a binding spends", () => {
 
   test("rides the binding without changing what the harness spawns on", () => {
     expect(providerProjection({ ...minted, account })).toEqual({ ...minted, account })
-    expect(providerProjectionKey(providerProjection({ ...minted, account }))).toBe(providerProjectionKey(minted))
   })
 
   test("a malformed account makes the row unreadable rather than unnamed", () => {

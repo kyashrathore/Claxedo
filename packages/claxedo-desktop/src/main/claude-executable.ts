@@ -8,9 +8,6 @@ import { delimiter, join, win32 } from "node:path"
  * pathToClaudeCodeExecutable and the ACP adapter reads CLAUDE_CODE_EXECUTABLE.
  * A GUI-launched app often has a trimmed PATH, so we also probe the standard
  * install locations. Returns `undefined` when Claude Code is not installed.
- *
- * (agent-sdk-runtime has a richer resolver, but claxedo-desktop's main process
- * does not depend on it, so this keeps a minimal copy.)
  */
 export function resolveSystemClaude(): string | undefined {
   const isWin = process.platform === "win32"

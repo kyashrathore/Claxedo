@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildUserMessage, messageUpdated } from "./compat-events"
+import { buildUserMessage, messageUpdated } from "./presentation-events"
 
 const input = {
   id: "msg_1",
@@ -9,7 +9,7 @@ const input = {
   created: 1,
 }
 
-describe("compat message author projection", () => {
+describe("message author projection", () => {
   test("projects a signed author under info.claxedo without renaming the event", () => {
     expect(messageUpdated(buildUserMessage({
       ...input,

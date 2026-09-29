@@ -40,7 +40,6 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*"
   },

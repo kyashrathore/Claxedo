@@ -36,7 +36,6 @@ packages/claxedo-web/public/core.js
 # Workspace dists — built fresh in the image (Dockerfile build stage) so the
 # image never silently depends on a locally-built dist. Excluding them forces
 # the fresh-clone reproducibility path.
-packages/agent-sdk-runtime/dist
 packages/workspace-runtime/dist
 packages/sandbox-manager/dist
 packages/claxedo-connections/dist

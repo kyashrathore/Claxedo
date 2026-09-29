@@ -1,6 +1,6 @@
 import type { Context } from "hono"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { eventSessionId, type CompatEnvelope } from "../compat-events"
+import { eventSessionId, type AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceRuntimeEvent } from "../bus"
 import {
   sessionAccessContext,
@@ -145,7 +145,7 @@ export async function authorizeSessionEventScope(
   }
 }
 
-export function compatEnvelopeSessionId(event: CompatEnvelope) {
+export function envelopeSessionId(event: AgentEventEnvelope) {
   return eventSessionId(event.payload)
 }
 

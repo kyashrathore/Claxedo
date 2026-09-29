@@ -3,7 +3,7 @@ import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, Pr
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
+import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"

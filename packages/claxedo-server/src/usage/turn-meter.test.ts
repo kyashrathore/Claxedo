@@ -3,10 +3,10 @@ import { drizzle } from "drizzle-orm/better-sqlite3"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
-import { messageCompleted, messageUpdated, sessionError, sessionUsage } from "@claxedo/agent-sdk-runtime/compat-events"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import { messageCompleted, messageUpdated, sessionError, sessionUsage } from "@claxedo/agent-runtime-contract"
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import { buildAssistantMessage } from "@claxedo/agent-sdk-runtime/compat-events"
+import { buildAssistantMessage } from "@claxedo/agent-runtime-contract"
 import type { TurnUsageRevision, UsageRevisionWriteResult } from "@claxedo/server-core/usage/contracts"
 import { CLAXEDO_MIGRATION_JOURNAL } from "@claxedo/server-core/platform/db/journal"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
@@ -33,7 +33,7 @@ function harness() {
   return { meter, facts, writeRevision }
 }
 
-function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
+function envelope(payload: AgentEventEnvelope["payload"]): AgentEventEnvelope {
   return { directory: "/private/path-must-not-persist", payload }
 }
 

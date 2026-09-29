@@ -3,12 +3,8 @@ import {
   parseHarnessEffortLevels,
   sessionVariantForEffort,
 } from "@claxedo/agent-runtime-contract"
-import {
-  isAgentMessage,
-  renderSessionHandoff,
-  type AgentMessage,
-  type SessionHarness,
-} from "@claxedo/agent-sdk-runtime"
+import { isAgentMessage, type AgentMessage, type SessionHarness } from "@claxedo/agent-runtime-contract"
+import { renderSessionHandoff } from "@claxedo/workspace-runtime/host"
 import { asFiniteNumber, asRecord, isRecord } from "@claxedo/helpers/guards"
 import {
   sessionCreateRequest,

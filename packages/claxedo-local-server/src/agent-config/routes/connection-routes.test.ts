@@ -4,7 +4,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor } from "@claxedo/agent-runtime-contract"
 import type { AcpProviderConfig as AcpConnectionProviderConfig } from "@claxedo/harness/providers"
 
 const root = path.join(os.tmpdir(), `agent-config-connections-${randomUUID().slice(0, 8)}`)

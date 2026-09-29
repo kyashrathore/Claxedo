@@ -40,8 +40,8 @@ function runOnce(attempt) {
         `\n[test-deadline] ${process.cwd()} exceeded ${deadlineMs}ms (attempt ${attempt}) - killing test process tree ${child.pid}`,
       )
       if (process.platform === "win32" && child.pid) {
-        // Windows has no signals and the runner may have children (see
-        // agent-sdk-runtime's killHarnessProcess for the same reasoning).
+        // Windows has no signals and the runner may have children, so the
+        // tree goes through `taskkill /T` as process-ownership's retirement does.
         spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" })
       } else {
         child.kill("SIGKILL")

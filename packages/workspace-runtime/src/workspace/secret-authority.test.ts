@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { Hono } from "hono"
-import type { ConnectionSecretAuthority } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
 import { SessionRoutes } from "../routes/session"
 import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"

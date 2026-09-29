@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "vitest"
 import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
-import { credentialSnapshot } from "@claxedo/agent-sdk-runtime"
+import { credentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { adoptConnectedHostOwner, CONNECTED_HOST_PLACEMENT, installHostProviderConfigAuthority, setHostProviderConfig } from "@claxedo/host-serving/runtime"
 import { resetHostEnrolledOwner } from "@claxedo/host-serving/serving"
 import { CredentialSelectionError, selectSessionCredentials } from "@claxedo/harness/registry"

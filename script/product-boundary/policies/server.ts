@@ -164,7 +164,6 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-helpers" },
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/process-ownership" },
-      { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/sandbox-contract" },
       // The credential broker this deployment mounts; its published entry is

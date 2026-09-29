@@ -1,7 +1,7 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { cloneSnapshotValue } from "@claxedo/helpers"
 
-export const PROJECTION_SNAPSHOT_VERSION = 1
+const PROJECTION_SNAPSHOT_VERSION = 1
 
 export type ProjectionSnapshot<State = unknown> = {
   version: typeof PROJECTION_SNAPSHOT_VERSION

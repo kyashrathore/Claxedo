@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
 import type { AgentPermissionMode, AgentPermissionModeState, SessionHarness } from "@claxedo/agent-runtime-contract"
-import type { AgentSession } from "@claxedo/agent-sdk-runtime"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { AgentSession } from "@claxedo/agent-runtime-contract"
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { ConfigOperations } from "@claxedo/harness/contract"
 import type { AgentRuntime } from "../host/runtime"
 import type { RuntimeEventEnvelope } from "../projection/runtime-event-hub"
@@ -130,7 +130,7 @@ function fixture(input: {
   const { store, runtime } = host
   const runtimeEvents: RuntimeEventEnvelope[] = []
   host.eventHub.subscribeRuntime((event) => { runtimeEvents.push(event) })
-  const globalEvents: CompatEnvelope[] = []
+  const globalEvents: AgentEventEnvelope[] = []
   host.eventHub.subscribeGlobal((event) => { globalEvents.push(event) })
   const routes = SessionRoutes(async () => runtime, {
     eventHub: host.eventHub,

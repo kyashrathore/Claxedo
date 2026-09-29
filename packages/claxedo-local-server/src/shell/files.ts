@@ -143,7 +143,7 @@ export type GrepMatch = {
 // catastrophic pattern on the server thread — only `terminate()` can. Matches
 // collected before the deadline stand, which the response contract already
 // tolerates through `limit`. Same convention as the elicitation pattern
-// evaluator in agent-sdk-runtime. A burst of searches must not fan out into
+// evaluator in agent-runtime-contract. A burst of searches must not fan out into
 // unbounded threads, so the worker count is capped as well.
 const GREP_SCAN_TIMEOUT_MS = 2_000
 const GREP_SCAN_MAX_WORKERS = 4

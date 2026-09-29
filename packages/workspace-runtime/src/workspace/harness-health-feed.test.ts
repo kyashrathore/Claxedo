@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { EventHarnessHealth } from "../compat-events"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { createHarnessHealthFeed, type SessionHarnessHealth } from "./harness-health-feed"
+
+type EventHarnessHealth = Extract<AgentPresentationEvent, { type: "harness.health" }>
 
 const OK: SessionHarnessHealth = { harnessHealth: { status: "ok" } }
 const LOST: SessionHarnessHealth = { harnessHealth: { status: "degraded", reason: "harness_process_lost", message: "exited" } }

@@ -30,7 +30,7 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -161,7 +161,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
 
   type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
   let settleTurnOutcome: TurnOutcomeHandler = () => undefined
-  let consumeRuntimeEvent = (event: CompatEnvelope) => {
+  let consumeRuntimeEvent = (event: AgentEventEnvelope) => {
     if (event.payload.type === "session.updated") {
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }
