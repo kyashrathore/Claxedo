@@ -5,7 +5,7 @@ import * as path from "node:path"
 import { assertDataDirUntouched } from "./build-compile-cache"
 
 test("the daemon entry proves it was launched before it opens any store", () => {
-  const source = fs.readFileSync(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), "utf8")
+  const source = fs.readFileSync(path.resolve(import.meta.dir, "../src/server/entry.ts"), "utf8")
   const gate = source.indexOf("claxedoServerStartup(process.env)")
   // The CALL, parentheses included. The bare identifier matches the import
   // first, which sits above every gate by definition and made this pass or

@@ -23,7 +23,6 @@ import {
   type HostedOperationName,
 } from "./hosted-operations"
 import type { AccountState } from "./account-service"
-import { accountPerfEnabled, accountPerfMark, accountPerfNow } from "./account-perf"
 
 export const ACCOUNT_STATE_CHANNEL = "claxedo.account.state"
 export const ACCOUNT_STATE_CHANGED_CHANNEL = "claxedo.account.stateChanged"
@@ -195,15 +194,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
       // The operation name is bound HERE, at registration, not taken from the
       // message. A renderer can choose which channel to call and cannot choose
       // what that channel does.
-      const started = accountPerfNow()
-      try {
-        return await service.run(name, asRecord(input) ?? {})
-      } finally {
-        accountPerfMark("account.unary_ipc_handler_ms", {
-          operation: name,
-          ms: accountPerfNow() - started,
-        })
-      }
+      return service.run(name, asRecord(input) ?? {})
     })
   }
 
@@ -256,8 +247,6 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
       clearTimeout(stream.reservationTimer)
       delete stream.reservationTimer
     }
-    const openInvokeAt = accountPerfNow()
-    let chunkSeq = 0
     let running: Promise<void>
     try {
       running = service.openStream({
@@ -266,21 +255,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
         signal: stream.controller.signal,
         onChunk: (text) => {
           if (activeStreams.get(streamId) !== stream || stream.sender.isDestroyed()) return
-          const seq = chunkSeq++
-          const sentAt = accountPerfNow()
-          if (accountPerfEnabled() && seq === 0) {
-            accountPerfMark("account.stream_chunk_ipc_first_ms", {
-              streamId,
-              operation: stream.operation,
-              ms: sentAt - openInvokeAt,
-              bytes: text.length,
-            })
-          }
-          stream.sender.send(ACCOUNT_STREAM_CHUNK_CHANNEL, {
-            streamId,
-            text,
-            ...(accountPerfEnabled() ? { seq, sentAt } : {}),
-          })
+          stream.sender.send(ACCOUNT_STREAM_CHUNK_CHANNEL, { streamId, text })
         },
       })
     } catch (error) {

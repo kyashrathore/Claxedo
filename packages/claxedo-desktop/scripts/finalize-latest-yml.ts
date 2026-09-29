@@ -1,14 +1,9 @@
 #!/usr/bin/env bun
 
-// This finalizes electron-updater's generic feed — latest.yml / latest-mac.yml /
-// latest-linux*.yml for stable, beta*.yml for beta (CLAXEDO_UPDATE_CHANNEL picks
-// the base name; each variant's feed must stay separate so a beta release can
-// never overwrite stable metadata or vice versa). It does not speak Tauri's
-// updater format (latest.json + minisign .sig, as served by the retired
-// claxedo-v0.0.59 release), and it does not need to: that build predates launch
-// and has no installed users to carry forward, so no compat shim is required.
-// The unused TAURI_SIGNING_* repo secrets are leftovers from that era and can
-// be removed.
+// Finalizes electron-updater's generic feed: latest.yml / latest-mac.yml /
+// latest-linux*.yml for stable, beta*.yml for beta. CLAXEDO_UPDATE_CHANNEL picks
+// the base name, and each feed stays a separate file so a beta release can
+// never overwrite stable metadata or the reverse.
 
 import { $ } from "bun"
 import path from "path"

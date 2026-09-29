@@ -8,7 +8,7 @@ import { runBunBuild } from "../../../script/bun-build"
 export const HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA = "claxedo.host-connector-child/v1"
 
 const PACKAGE_DIR = resolve(import.meta.dir, "..")
-const DEFAULT_ENTRY = resolve(import.meta.dir, "host-connector-entry.ts")
+const DEFAULT_ENTRY = resolve(PACKAGE_DIR, "src/host-connector-child/entry.ts")
 const DEFAULT_OUTPUT_DIR = resolve(PACKAGE_DIR, "resources/host-connector")
 
 export type HostConnectorChildManifest = {

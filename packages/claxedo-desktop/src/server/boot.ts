@@ -15,8 +15,8 @@
 // Everything this file may import is therefore load-bearing: every module
 // reachable STATICALLY from here is compiled BEFORE seeding and can never be
 // cached. Keep it to the startup contract and the cache itself.
-import { enableShippedCompileCaches } from "../src/shared/compile-cache"
-import { claxedoServerStartup } from "./claxedo-server-startup"
+import { enableShippedCompileCaches } from "../shared/compile-cache"
+import { claxedoServerStartup } from "./startup"
 
 const startup = claxedoServerStartup(process.env)
 
@@ -38,4 +38,4 @@ if (compileCache.status === "failed") {
 // statement, with the cache already live and already seeded. The build
 // generates this bundle's cache by importing the chunk this resolves to — see
 // scripts/build-compile-cache.ts.
-await import("./claxedo-server-entry")
+await import("./entry")

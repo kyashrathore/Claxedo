@@ -208,23 +208,7 @@ logger.log("app starting", {
   version: app.getVersion(),
   packaged: IS_PACKAGED,
 })
-watchProcessMainLoopPerformance()
-
 setupApp()
-
-function watchProcessMainLoopPerformance() {
-  if (!process.env.CLAXEDO_PERF_READY_SELECTOR) return
-
-  const intervalMs = 16
-  let previous = performance.now()
-  setInterval(() => {
-    const now = performance.now()
-    const gap = Math.round(now - previous - intervalMs)
-    previous = now
-    if (gap < 100) return
-    logger.warn(`[startup-perf] main-loop gap=${String(gap)}ms`)
-  }, intervalMs).unref()
-}
 
 function setupApp() {
   ensureLoopbackNoProxy()
@@ -697,7 +681,6 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
     packaged: IS_PACKAGED,
     wsl: getWslConfig().enabled,
     deepLinks: pendingDeepLinks,
-    ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 
   logger.log("loading main window alongside embedded server")

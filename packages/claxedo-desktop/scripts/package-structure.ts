@@ -58,11 +58,11 @@ export const ALL_NATIVE_MODULES: readonly string[] = [
 /**
  * The only directories of build output that ship inside the asar.
  *
- * `out` is everything electron-vite emits — main, preload, renderer, the
- * copied local-server bundle, and the workspace-runtime templates. Nothing in
- * `resources/` goes in the asar: the ACP adapters, the diagnostics helper, and
- * the diagnostics helpers ship as `extraResources` beside it, because they are
- * executed as separate processes and asar paths are not real filesystem paths.
+ * `out` is everything electron-vite emits: main, preload, renderer and the
+ * copied local-server bundle. Nothing else from `resources/` goes in the asar:
+ * the Host Connector child, the Mermaid renderer and the diagnostics helper
+ * ship as `extraResources` beside it, because they are executed as separate
+ * processes and asar paths are not real filesystem paths.
  *
  * `resources/icons` is declared but currently contributes nothing: measured on
  * a real `package:mac` run, the packaged asar holds only `out`, `package.json`

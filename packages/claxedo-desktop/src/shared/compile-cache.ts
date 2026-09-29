@@ -66,7 +66,7 @@ import { nodeErrorCode } from "./node-error"
  *     graph during instantiation, before any module body runs. A cache enabled
  *     from inside a module body therefore cannot cache the graph that body
  *     belongs to — not on launch one, not on launch fifty. That is why the
- *     server bundle is entered through `scripts/claxedo-server-boot.ts`, which
+ *     server bundle is entered through `src/server/boot.ts`, which
  *     seeds and only then `await import()`s the product entry: the 9.11 MB
  *     closure is compiled on the far side of a dynamic boundary, after this
  *     module has run.

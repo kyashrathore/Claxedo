@@ -1,7 +1,7 @@
 /**
  * The server child's readiness handshake over Node IPC.
  *
- * `claxedo-server-entry.ts` sends this message the moment the server's listen
+ * `src/server/entry.ts` sends this message the moment the server's listen
  * callback fires; Electron main (`main/index.ts`) resolves its `listening`
  * gate on it and cross-checks the port it assigned. Both sides import the same
  * builder/parser pair so the shape can never drift between them, and the

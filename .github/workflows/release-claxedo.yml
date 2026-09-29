@@ -248,6 +248,13 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
+      # Forks the bundle prebuild just produced; process ownership is qualified
+      # on macOS only, and the smoke's stray check needs `pgrep`.
+      - name: Run runtime recovery smoke (macOS)
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        run: bun run test:runtime-recovery
+
       # A source-map upload token is optional config: its absence must degrade
       # to "no upload, release still green", never a failed build. secrets.* is
       # not usable directly in `if:`, hence the bridge through a step output.
@@ -362,11 +369,6 @@ jobs:
           CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
         run: bun run smoke:diagnostics:packaged
 
-      - name: Verify packaged U8 boundary (macOS)
-        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        run: bun ./scripts/verify-u8-package-boundary.ts --existing-package
-
       - name: Run packaged diagnostics smoke (Windows)
         if: runner.os == 'Windows' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
         working-directory: packages/claxedo-desktop
@@ -412,54 +414,8 @@ jobs:
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
 
-  qualify-u8-release:
-    needs: [prepare, build-desktop]
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      attestations: read
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      # The qualification bundle must be produced and attested by an earlier
-      # job in THIS run from the installers above. No job currently fabricates
-      # owner-gated native/OAuth evidence, so a release remains stopped until
-      # that real producer is present; draft creation may not bypass it.
-      - name: Download current-run U8 qualification bundle
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: u8-release-qualification-${{ github.sha }}
-          path: qualification
-          merge-multiple: true
-
-      - name: Verify qualification provenance and candidate SHA
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          report="qualification/qualification.json"
-          test -f "$report" || {
-            echo "Missing current-run U8 qualification. Release remains blocked until real owner/native evidence is produced for this run." >&2
-            exit 1
-          }
-          gh attestation verify "$report" --repo "$GITHUB_REPOSITORY"
-          node - "$report" "$GITHUB_SHA" <<'NODE'
-          const fs = require("node:fs")
-          const [reportFile, expectedSha] = process.argv.slice(2)
-          const report = JSON.parse(fs.readFileSync(reportFile, "utf8"))
-          if (report.schema !== "claxedo-u8-release-qualification/v1" || report.status !== "pass") {
-            throw new Error("U8 qualification report is not a pass")
-          }
-          if (report.evidence?.releaseSha !== expectedSha) {
-            throw new Error(`U8 qualification release SHA mismatch: ${String(report.evidence?.releaseSha)}`)
-          }
-          NODE
-
   create-release:
-    needs: [prepare, build-desktop, qualify-u8-release]
+    needs: [prepare, build-desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write

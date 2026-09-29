@@ -4,14 +4,14 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 
 import { createProcessObserver } from "@claxedo/workspace-runtime"
-import { parseLinuxStartTicks } from "../src/main/diagnostics/process-identity"
+import { parseLinuxStartTicks } from "../main/diagnostics/process-identity"
 import {
   matchesDiagnosticsBinding,
   parseDiagnosticsTransportMessage,
   type DiagnosticsBinding,
   type DiagnosticsOperationResult,
   type DiagnosticsOwnerEvent,
-} from "../src/shared/diagnostics-transport"
+} from "../shared/diagnostics-transport"
 
 export function createDiagnosticsChildTransport(options: {
   binding: DiagnosticsBinding
@@ -27,6 +27,8 @@ export function createDiagnosticsChildTransport(options: {
   const requestOrder: string[] = []
   const observer = createProcessObserver({
     sink(event) {
+      // The diagnostics transport carries no ownership-fault message.
+      if (event.type === "ownership") return
       if (event.type === "updated" && event.pid !== undefined) {
         const operationId = ownerOperations.get(event.ownerId)
         const operation = operationId ? operations.get(operationId) : undefined

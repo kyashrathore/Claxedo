@@ -7,7 +7,7 @@ import {
   evaluateDiagnosticsEvidence,
   pairedCpuOverhead,
   requirePackagedSourceHealth,
-} from "./performance-diagnostics-smoke"
+} from "./diagnostics-smoke-evidence"
 
 describe("performance diagnostics release evidence", () => {
   test("accepts retained startup attribution, separated server ownership, and honest churn", () => {

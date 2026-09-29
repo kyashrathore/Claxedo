@@ -21,7 +21,7 @@ test("desktop server bundle emits the Agent Plugins route and activation authori
   const script = [
     'import path from "node:path"',
     'import { emitClaxedoServerBundle } from "./bundle-claxedo-server.ts"',
-    'await emitClaxedoServerBundle(path.resolve("claxedo-server-boot.ts"), process.env.TEST_AGENT_PLUGINS_OUT)',
+    'await emitClaxedoServerBundle(path.resolve("../src/server/boot.ts"), process.env.TEST_AGENT_PLUGINS_OUT)',
   ].join(";")
   const child = Bun.spawn([process.execPath, "-e", script], {
     cwd: import.meta.dir,

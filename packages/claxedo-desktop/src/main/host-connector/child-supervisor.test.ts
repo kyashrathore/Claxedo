@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
 import { HOST_ENROLLMENT_HEARTBEAT_PATH, type FetchLike } from "@claxedo/host-connector/machine-transport"
 
-import { runHostConnectorChild } from "../../../scripts/host-connector-entry"
+import { runHostConnectorChild } from "../../host-connector-child/entry"
 import type {
   HostConnectorBootstrapIdentity,
   HostConnectorParentMessage,

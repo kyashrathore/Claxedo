@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 /**
  * Packaging invariants, checked against an already-packaged app (the app.asar
  * under dist, any platform). Wire in after electron-builder (package.ts).
@@ -322,17 +321,6 @@ export function verifyPackageContents(
     }
   }
   return { asars, failures }
-}
-
-if (import.meta.main) {
-  const { asars, failures } = verifyPackageContents()
-  if (failures.length > 0) {
-    console.error(`[verify-package-contents] packaging invariant violated:\n${failures.join("\n")}`)
-    process.exit(1)
-  }
-  console.log(
-    `[verify-package-contents] ok — ${asars.length} package(s) contain only bundled output + native modules and a working Mermaid renderer`,
-  )
 }
 
 /**

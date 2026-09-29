@@ -10,22 +10,22 @@ import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-c
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
-import { claxedoServerStartup } from "./claxedo-server-startup"
+import type { DiagnosticsBinding } from "../shared/diagnostics-transport"
+import { claxedoServerStartup } from "./startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
-import { CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE, claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
-import { recordStartupClock } from "../src/shared/startup-clock-probe"
+import { CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE, claxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
+import { recordStartupClock } from "../shared/startup-clock-probe"
 import { CLAXEDO_DAEMON_SERVICE } from "@claxedo/helpers/claxedo-daemon"
 import {
   clearClaxedoDaemonDiscovery,
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
-} from "../src/main/server-daemon-discovery"
+} from "../main/server-daemon-discovery"
 import { launchErrorText, readCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 import path from "node:path"
 
 // The V8 compile cache is already enabled and already seeded by the time this
-// module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
+// module is COMPILED, let alone evaluated: `boot.ts` is the
 // bundle's entry and reaches this file through a dynamic import. It cannot be
 // done from here — a graph is compiled before its own bodies run, so a cache
 // switched on in this body would arrive 9.11 MB too late.
@@ -144,7 +144,7 @@ let stopping: Promise<number> | undefined
  * the machine still had work — which then fences the next generation from boot.
  * Exiting is `exit()` below, once whoever asked has its answer.
  */
-const stop = () => {
+const releaseOwnedWork = () => {
   stopping ??= server.stop().then(
     (outcome) => {
       ownership.stop()
@@ -168,12 +168,12 @@ const stop = () => {
 
 const exit = (trigger: string, code?: number) => {
   log.info("daemon exit requested", { trigger, pid: process.pid })
-  void stop().then((stopped) => {
+  void releaseOwnedWork().then((stopped) => {
     clearDiscovery()
     process.exit(code ?? stopped)
   })
 }
-requestStop = stop
+requestStop = releaseOwnedWork
 requestExit = exit
 process.once("SIGTERM", () => exit("SIGTERM"))
 process.once("SIGINT", () => exit("SIGINT"))

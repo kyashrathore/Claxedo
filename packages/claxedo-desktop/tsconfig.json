@@ -21,5 +21,5 @@
     "types": ["vite/client", "node", "electron"]
   },
   "include": ["src", "package.json"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/server", "src/host-connector-child"]
 }

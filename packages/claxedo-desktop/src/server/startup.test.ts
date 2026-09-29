@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { claxedoServerStartup } from "./claxedo-server-startup"
+import { claxedoServerStartup } from "./startup"
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 
 const DAEMON_ENV = {

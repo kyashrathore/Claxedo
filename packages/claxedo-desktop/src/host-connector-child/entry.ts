@@ -26,7 +26,7 @@ import {
   type HostConnectorProviderConfig,
   type HostConnectorServingEndpoints,
   type HostEnrollmentOperation,
-} from "../src/main/host-connector/child-protocol"
+} from "../main/host-connector/child-protocol"
 
 type ChildPort = {
   postMessage(message: HostConnectorChildMessage): void
@@ -43,17 +43,7 @@ type Pending<T> = {
   reject(error: Error): void
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<T>((accept, refuse) => {
-    resolve = accept
-    reject = refuse
-  })
-  return { promise, resolve, reject }
-}
-
-function requireString(value: unknown, field: string, operation: string): string {
+function requireOperationField(value: unknown, field: string, operation: string): string {
   if (typeof value !== "string" || !value) throw new Error(`operation "${operation}" returned no ${field}`)
   return value
 }
@@ -117,7 +107,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
     input?: Record<string, unknown>,
   ): Promise<unknown> => {
     const requestId = crypto.randomUUID()
-    const pending = deferred<unknown>()
+    const pending = Promise.withResolvers<unknown>()
     account.set(requestId, pending)
     send({ type: "account-operation", requestId, name, ...(input ? { input } : {}) })
     return pending.promise.finally(() => account.delete(requestId))
@@ -133,8 +123,8 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
   const enrollMachine = async (keys: HostKeyPair, hostId: string, displayName?: string) => {
     const nonceOperation = HOST_ENROLLMENT_OPERATIONS.createRequest
     const challenge = await requestAccountOperation(nonceOperation, { hostId })
-    const requestId = requireString(readField(challenge, "request_id"), "request_id", nonceOperation)
-    const nonce = requireString(readField(challenge, "nonce"), "nonce", nonceOperation)
+    const requestId = requireOperationField(readField(challenge, "request_id"), "request_id", nonceOperation)
+    const nonce = requireOperationField(readField(challenge, "nonce"), "nonce", nonceOperation)
 
     const enrollOperation = HOST_ENROLLMENT_OPERATIONS.enroll
     const enrollment = readRecord(
@@ -147,7 +137,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
       }),
       "enrollment",
     )
-    return requireString(readField(enrollment, "enrollment_id"), "enrollment_id", enrollOperation)
+    return requireOperationField(readField(enrollment, "enrollment_id"), "enrollment_id", enrollOperation)
   }
 
   /**
@@ -180,7 +170,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
       privateKeyJwk,
       sealingPrivateKeyJwk: sealing.privateKeyJwk,
     }
-    const stored = deferred<void>()
+    const stored = Promise.withResolvers<void>()
     identityStored.set(requestId, stored)
     send({ type: "identity-created", requestId, identity })
     await stored.promise.finally(() => identityStored.delete(requestId))
@@ -195,7 +185,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
    */
   const createSealingKey = async (requestId: string) => {
     const sealing = await createMachineSealingKeyPair()
-    const stored = deferred<void>()
+    const stored = Promise.withResolvers<void>()
     sealingKeyStored.set(requestId, stored)
     send({ type: "sealing-key-created", requestId, sealingPrivateKeyJwk: sealing.privateKeyJwk })
     await stored.promise.finally(() => sealingKeyStored.delete(requestId))
@@ -210,7 +200,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
    */
   const storeProviderConfig = async (config: HostConnectorProviderConfig) => {
     const requestId = crypto.randomUUID()
-    const stored = deferred<void>()
+    const stored = Promise.withResolvers<void>()
     providerConfigStored.set(requestId, stored)
     send({ type: "provider-config", requestId, ...config })
     await stored.promise.finally(() => providerConfigStored.delete(requestId))
