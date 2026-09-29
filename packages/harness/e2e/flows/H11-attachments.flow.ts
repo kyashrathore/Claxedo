@@ -9,7 +9,7 @@ import { unexpectedEgress } from "../harness/egress-guard"
 import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { directTransport } from "../harness/transport"
-import { liveParts, waitForIdle } from "../harness/turn-observations"
+import { liveParts, waitForIdle, waitForTitle } from "../harness/turn-observations"
 import { frameSessionId, frameType } from "../harness/stream"
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
@@ -52,8 +52,9 @@ async function acpAttachments(stack: Stack, api: ClaxedoApi) {
   const session = await api.createSession(directory, { harness: SCRIPTED_ACP_HARNESS })
   const sent = parts("H11_ACP_OK")
   sent[0].text += ` ${acpScriptToken("h11-attachments")}`
-  await api.promptParts(directory, session.id, sent)
+  await api.promptParts(directory, session.id, sent, { title: true })
   await waitForIdle(stream, session.id)
+  await waitForTitle(stream, session.id)
   const prompt = await readCapturedAcpPrompt(stack.acp.scriptDir, "h11-attachments")
   assert.ok(prompt.some((block) => block.type === "image" && block.data === PNG), "ACP agent did not receive image bytes")
   const resource = prompt.find((block) => block.type === "resource") as { resource?: { mimeType?: string; blob?: string } } | undefined
@@ -71,8 +72,9 @@ async function nativeAttachments(stack: Stack, api: ClaxedoApi, harness: "claude
   const session = await api.createSession(directory, { harness: { id: harness, access: "native" } })
   const marker = `H11_${harness.toUpperCase()}_OK`
   const before = stack.scripted.requests.length
-  await api.promptParts(directory, session.id, parts(marker))
+  await api.promptParts(directory, session.id, parts(marker), { title: harness === "codex" })
   await waitForIdle(stream, session.id)
+  if (harness === "codex") await waitForTitle(stream, session.id)
   const messages = await api.messages(directory, session.id)
   assertStoredAttachments(messages, stream, session.id)
   assert.match(assistantText(messages), new RegExp(marker))
@@ -107,8 +109,9 @@ async function piAttachments(stack: Stack, api: ClaxedoApi) {
 
   const session = await api.createSession(directory, { harness: { id: "pi", access: "native" }, model })
   const before = stack.scripted.requests.length
-  await api.promptParts(directory, session.id, parts(marker).slice(0, 2), { model })
+  await api.promptParts(directory, session.id, parts(marker).slice(0, 2), { model, title: true })
   await waitForIdle(stream, session.id)
+  await waitForTitle(stream, session.id)
   const messages = await api.messages(directory, session.id)
   assert.ok(messages[0]?.parts.some((part) => part.type === "file" && part.mime === "image/png" && String(part.url).includes(PNG)), "Pi image was not stored")
   const image = messages[0]?.parts.find((part) => part.type === "file" && part.mime === "image/png")

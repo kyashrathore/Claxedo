@@ -1,5 +1,5 @@
-import { errorMessage } from "@claxedo/helpers"
-import type { PromptModel, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
+import { errorMessage, singleFlightUntil } from "@claxedo/helpers"
+import type { AdapterCancelOutcome, PromptModel, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
@@ -47,6 +47,7 @@ function piRpcPromptBody(turn: TurnInput): { message: string; images?: { type: "
 export class PiRpcTransport implements HarnessTransport {
   readonly kind = "pi-rpc" as const
   private readonly entries = new Map<string, Entry>()
+  private readonly stops = new WeakMap<Entry, (deadline: Deadline) => Promise<AdapterCancelOutcome>>()
   private readonly disposeAbort = new AbortController()
   private readonly host: PiLaunchHost
   private readonly probes: PiDraftProbes
@@ -191,12 +192,18 @@ export class PiRpcTransport implements HarnessTransport {
     }
   }
 
-  async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
+  async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome> {
     const entry = this.entry(session)
     if (!entry.busy || !entry.prompted) {
       entry.stopUnprompted?.()
-      return { execution: "terminal" as const, cleanup: "unknown" as const }
+      return { execution: "terminal", cleanup: "unknown" }
     }
+    const stop = this.stops.get(entry) ?? singleFlightUntil((stopBy: Deadline) => this.stopPrompted(entry, stopBy), () => false)
+    this.stops.set(entry, stop)
+    return stop(deadline)
+  }
+
+  private async stopPrompted(entry: Entry, deadline: Deadline): Promise<AdapterCancelOutcome> {
     try {
       const results = await Promise.allSettled([
         entry.rpc.request("clear_queue", {}, deadline),

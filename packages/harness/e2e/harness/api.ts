@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { ascendingMessageIds } from "./message-ids"
-import { frameSessionId, frameType, openEventStream, type EventStream, type StreamFrame } from "./stream"
+import { frameSessionId, frameType, isGeneratedTitle, openEventStream, type EventStream, type StreamFrame } from "./stream"
 import { directTransport, type HttpTransport } from "./transport"
 import { activateCorpus } from "./wire-corpus"
 
@@ -233,12 +233,13 @@ export class ClaxedoApi {
     return messageId ?? this.nextMessageId()
   }
 
-  prompt(directory: string, id: string, text: string, options: { messageId?: string; model?: ModelChoice } = {}) {
-    return this.turn(directory, id, [{ type: "text", text }], this.turnId(options.messageId), options.model)
+  /** `title` also awaits the generated title the turn asks for, which the runtime publishes after the turn's idle. */
+  prompt(directory: string, id: string, text: string, options: { messageId?: string; model?: ModelChoice; title?: boolean } = {}) {
+    return this.turn(directory, id, [{ type: "text", text }], this.turnId(options.messageId), options.model, options.title)
   }
 
-  promptParts(directory: string, id: string, parts: MessagePart[], options: { model?: ModelChoice } = {}) {
-    return this.turn(directory, id, parts, this.turnId(), options.model)
+  promptParts(directory: string, id: string, parts: MessagePart[], options: { model?: ModelChoice; title?: boolean } = {}) {
+    return this.turn(directory, id, parts, this.turnId(), options.model, options.title)
   }
 
   /**
@@ -246,7 +247,7 @@ export class ClaxedoApi {
    * ended, idle or failed. A request held open for the whole turn is cut by the
    * client's fetch deadline (300 s in Bun), which a long turn outlasts.
    */
-  private async turn(directory: string, id: string, parts: MessagePart[], messageId: string, model?: ModelChoice) {
+  private async turn(directory: string, id: string, parts: MessagePart[], messageId: string, model?: ModelChoice, title?: boolean) {
     const stream = await (this.options.events ?? ((target: string) => openEventStream(this.url, target)))(directory)
     try {
       await this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/prompt_async`, {
@@ -258,6 +259,7 @@ export class ClaxedoApi {
         },
       })
       await stream.waitFor(turnEnded(id, messageId), { label: `end of turn ${messageId}`, timeoutMs: TURN_TIMEOUT_MS })
+      if (title) await stream.waitFor((frame) => isGeneratedTitle(frame, id), { label: `title after turn ${messageId}`, timeoutMs: TURN_TIMEOUT_MS })
     } finally {
       stream.close()
     }

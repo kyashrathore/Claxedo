@@ -1,4 +1,5 @@
 import type { SessionLifecycleEvent } from "./routes/session-route-options"
+import type { QueuedPromptView } from "./session/delivery-owner"
 import { rec } from "./json-value"
 
 type Subscriber<T> = (event: T) => unknown
@@ -91,6 +92,8 @@ export type WorkspaceRuntimeEvent =
   | { type: "process.crashed"; directory: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
   | { type: "process.status"; directory: string; configId: string; status: string }
   | { type: "process.config.changed"; directory: string; configs: unknown[] }
+  /** A session's whole queue as it stands after a write changed it. */
+  | { type: "session.queue"; directory: string; sessionID: string; queue: QueuedPromptView[] }
   | SessionLifecycleEvent
 
 type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>

@@ -6,6 +6,7 @@ import { armPiRpcFault, piRpcFaultEvidence } from "../harness/pi-rpc-fault"
 import { forgetStoredAccounts, ownerPiAgentDir, writeOwnerPiModels } from "../harness/pi-owner"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 const extension = `export default function (pi) {
   pi.registerCommand("h18-ui", {
@@ -43,8 +44,9 @@ export async function run() {
     await armPiRpcFault(stack.dataDir)
     let rpcError: unknown
     try {
-      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H18START", { model })
+      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H18START", { model, title: true })
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H18 start idle" })
+      await waitForTitle(stream, session.id)
     } catch (error) { rpcError = error }
     const faultEvidence = await piRpcFaultEvidence(stack.dataDir)
     assert.match(faultEvidence, /^injected ([^\n]+)\nreal \1\n$/, "H18 injected both malformed replies before Pi's real reply")

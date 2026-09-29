@@ -6,6 +6,7 @@ import { writePiDialogExtension } from "../harness/pi-dialog-extension"
 import { forgetStoredAccounts, ownerPiAgentDir, writeOwnerPiModels } from "../harness/pi-owner"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startStack({ label: "h4-pi-timeout" })
@@ -26,16 +27,12 @@ export async function run() {
       ["Select environment", "Staging"], ["Confirm environment", "Yes"],
       ["Explain environment", "Keep the test isolated"], ["Edit summary", "Edited summary"],
     ]) {
-      const deadline = Date.now() + 30_000
-      let question = (await api.questions(directory)).find((row) => row.sessionID === session.id
+      await stream.waitFor((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id
+        && (frame.data.payload as { properties?: { questions?: Array<{ question?: string }> } }).properties?.questions?.[0]?.question === title,
+      { label: `${title} Pi dialog` })
+      const question = (await api.questions(directory)).find((row) => row.sessionID === session.id
         && (row.questions as Array<{ question?: string }>)[0]?.question === title)
-      while (!question && Date.now() < deadline) {
-        await Bun.sleep(50)
-        question = (await api.questions(directory)).find((row) => row.sessionID === session.id
-          && (row.questions as Array<{ question?: string }>)[0]?.question === title)
-      }
       assert.ok(question, `${title} never surfaced as a Pi dialog`)
-      assert.ok(stream.frames.some((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id))
       await api.replyQuestion(directory, question.id, [[answer]])
     }
     await stream.waitFor((frame) => frameType(frame) === "question.asked" && frameSessionId(frame) === session.id
@@ -51,6 +48,7 @@ export async function run() {
     })
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id,
       { label: "Pi timeout turn idle" })
+    await waitForTitle(stream, session.id)
     assert.match(assistantText(await api.messages(directory, session.id)), /PI_TIMEOUT/)
     assert.equal((await api.session(directory, session.id)).id, session.id)
     assert.deepEqual(stack.egress.attempts, [])

@@ -6,6 +6,7 @@ import { hostedFetch, signInHostedPerson } from "../harness/hosted-auth"
 import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startHostedStack("h31-accounts")
@@ -36,7 +37,7 @@ export async function run() {
     })
     try {
       const session = await hostedSession(stack, owner, workspace, { id: "pi", access: "native" }, model)
-      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H31OWNER", { model })
+      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H31OWNER", { model, title: true })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "H31 owner settlement", timeoutMs: 60_000 })
       const spent = stack.model.requests.find((request) => request.prompt.includes("H31OWNER"))
@@ -45,6 +46,7 @@ export async function run() {
       }
       assert.equal(spent.authorization, "Bearer hosted-owner-key",
         `C-12: owner turn spent another person's OpenAI account: ${JSON.stringify({ memberKeySpent: spent.authorization === "Bearer hosted-member-key", owner: owner.id, member: member.id })}`)
+      await waitForTitle(stream, session.id)
     } finally {
       stream.close()
     }

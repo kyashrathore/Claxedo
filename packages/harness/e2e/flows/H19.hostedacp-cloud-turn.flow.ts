@@ -7,6 +7,7 @@ import { hostedFetch } from "../harness/hosted-auth"
 import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startHostedStack("h19-hosted-acp")
@@ -39,10 +40,11 @@ export async function run() {
         }
         throw error
       }
-      await api.prompt(workspace.directory, session.id, acpScriptToken("h19-hosted"))
+      await api.prompt(workspace.directory, session.id, acpScriptToken("h19-hosted"), { title: true })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "hosted ACP settlement", timeoutMs: 60_000 })
       assert.equal(frameType(settled), "session.idle", `hosted ACP turn failed: ${JSON.stringify(settled)}`)
+      await waitForTitle(stream, session.id)
       assert.match(assistantText(await api.messages(workspace.directory, session.id)), /HOSTED_ACP_TURN/)
     } finally {
       stream.close()

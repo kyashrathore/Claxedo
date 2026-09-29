@@ -7,6 +7,7 @@ import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { RuntimeStore } from "../store"
+import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "./delivery-owner"
 import { sessionIdle } from "../projection/presentation-events"
 
@@ -67,7 +68,7 @@ function submission(messageID = "message") {
 }
 function owner(runtimeStore: RuntimeStore, options: Partial<Parameters<typeof createSessionDeliveryOwner>[0]> = {}) {
   const created = createSessionDeliveryOwner({ store: () => port(runtimeStore, "/workspace"),
-    whenIdle: async () => ({ abandon() {} }), startTurn: async (input) => { input.onDelivery("start") }, ...options })
+    whenIdle: async () => ({ abandon() {} }), startTurn: async (input) => { input.onDelivery("start") }, changed: () => {}, ...options })
   owners.push(created)
   return created
 }
@@ -215,7 +216,7 @@ test("dispose abandons the idle handoff without deleting or executing durable in
 })
 
 test("a runtime without persistence refuses enqueue instead of keeping a request-only queue", () => {
-  const host = createSessionDeliveryOwner({ store: () => undefined, whenIdle: async () => ({ abandon() {} }), startTurn: async () => {} })
+  const host = createSessionDeliveryOwner({ store: () => undefined, whenIdle: async () => ({ abandon() {} }), startTurn: async () => {}, changed: () => {} })
   expect(() => host.queue(submission())).toThrow("cannot persist")
 })
 
@@ -472,4 +473,48 @@ test("a relayed row queued without a grant carries an origin without one", async
   await until(() => runtimeStore.listQueuedPrompts().length === 0)
   expect(starts[0].origin).toEqual({ provenance: "relay-replayed", actor: submission().actor, authority })
   expect(starts[0].origin).not.toHaveProperty("grant")
+})
+
+test("every change to a session's queue is announced for that session once the row reflects it", async () => {
+  const runtimeStore = store(root())
+  const seen: Array<Array<string | undefined>> = []
+  const running = gate()
+  let queue!: ReturnType<typeof createSessionDeliveryOwner>
+  queue = owner(runtimeStore, {
+    changed: (sessionId) => { seen.push(queue.list(sessionId).map((row) => row.steering?.state ?? "queued")) },
+    startTurn: async (input) => { await running.promise; input.onDelivery("start") },
+  })
+  queue.queue(submission())
+  await until(() => seen.length === 2)
+  running.resolve()
+  await until(() => seen.length === 3)
+  expect(seen).toEqual([["queued"], ["dispatching"], []])
+})
+
+test("the session routes publish each queue change on the workspace bus as the session's whole queue", async () => {
+  const runtimeStore = store(root())
+  runtimeStore.queuePrompt({ sessionId: "session_1", messageId: "local", parts: [], delivery: "queue", provenance: "loopback-direct" })
+  const frames: Extract<WorkspaceRuntimeEvent, { type: "session.queue" }>[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => { if (event.type === "session.queue") frames.push(event) })
+  const runtime = {
+    turns: { whenIdle: async () => ({ abandon() {} }), start: async (input: AgentRuntimeTurnStartInput) => {
+      input.onAdmitted?.()
+      return { sessionId: input.sessionId, userMessageId: input.messageId, assistantMessageId: "reply", delivery: "start",
+        prompt: { userMessageId: input.messageId, assistantMessageId: "reply", parts: input.parts, agent: "build", model: { providerID: "test", modelID: "fixture" } } }
+    } },
+    events: { list: async () => [], subscribe: () => (async function* () { yield { payload: sessionIdle("session_1") } })() },
+  } as unknown as AgentRuntime
+  const host = SessionRoutes(async () => runtime, { queuedPrompts: () => port(runtimeStore, "/workspace"), requestedSessionHarness: HARNESS })
+  try {
+    await host.recoverQueuedPrompts()
+    await until(() => frames.length === 2)
+    expect(frames.map((frame) => ({ directory: frame.directory, sessionID: frame.sessionID,
+      queue: frame.queue.map((row) => [row.messageId, row.steering?.state]) }))).toEqual([
+      { directory: "/workspace", sessionID: "session_1", queue: [["local", "dispatching"]] },
+      { directory: "/workspace", sessionID: "session_1", queue: [] },
+    ])
+  } finally {
+    unsubscribe()
+    await host.dispose()
+  }
 })

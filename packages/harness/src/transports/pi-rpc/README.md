@@ -13,3 +13,5 @@ A launch no session owns (a probe, or a start that failed before the session was
 The transport starts only through `HarnessServices.spawn`. A failed RPC exchange makes that launch unusable; it does not prove the operating system process exited. The owner of the process must retire it and report the result. RPC records split on LF, preserving Unicode line separators inside JSON strings, and a response must match both the pending id and command.
 
 The runtime's old Pi adapter remains the only production path until the atomic P3 cutover. This folder is exercised through the contract conformance suite against pinned Pi and the scripted model server.
+
+A stop sends `clear_queue` and `abort` once per turn: the turn's own abort signal and the runtime's cancellation reach `cancel` together, and they share the one request pair in flight. Pi answers every `clear_queue` with a `queue_update` event, and a second pair's event would land before or after `agent_settled` depending on when Pi read it. Source: pinned Pi `dist/core/agent-session.js` (`clearQueue`, `abort`).

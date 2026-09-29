@@ -5,7 +5,7 @@ import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { permissionOptions } from "./permissions"
 import { ClaudeProcess } from "./process"
 import { askClaudePermission } from "./requests"
-import type { claudeTranslator } from "./events"
+import type { ClaudeMirroredUsage } from "./mirrored-usage"
 import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
 const protocolClaudePermissionMap = { deny: "deny" } as const
@@ -18,8 +18,7 @@ type Launch = {
   prompt: Parameters<typeof query>[0]["prompt"]
   abort: AbortController
   processes: Set<ClaudeProcess>
-  runtime: ReturnType<typeof claudeTranslator>["runtime"]
-  assistantMessageId: string
+  mirroredUsage: ClaudeMirroredUsage
   turnId?: string
   clear?: boolean
   model?: string
@@ -50,8 +49,7 @@ export class ClaudeQueryLauncher {
       ...permissionOptions(current.config, connectionGrantKeys(current.config.permissionState, session.binding.connectionId)),
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
       mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort,
-      ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, {
-        runtime: spec.runtime, assistantMessageId: spec.assistantMessageId, directory: input.directory }), sessionStoreFlush: "eager" as const }),
+      ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, spec.mirroredUsage), sessionStoreFlush: "eager" as const }),
       ...(spec.model && (spec.model !== "default" || !spec.agent) ? { model: spec.model } : {}),
       ...(spec.effort ? { effort: spec.effort } : {}),
       ...(spec.system ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } } : {}),

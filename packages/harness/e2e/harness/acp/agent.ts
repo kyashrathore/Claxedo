@@ -52,7 +52,7 @@ function defaultScript(text: string): AcpScript {
 
 async function scriptFor(text: string, dir: string): Promise<AcpScript> {
   const name = lastAcpScriptName(text)
-  if (!name) return defaultScript(text)
+  if (!name || isTitlePrompt(text)) return defaultScript(text)
   const script = await readAcpScript(dir, name)
   if (!script) throw RequestError.internalError(undefined, `No scripted ACP script named "${name}" in ${dir}`)
   return script

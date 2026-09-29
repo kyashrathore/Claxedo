@@ -4,6 +4,7 @@ import path from "node:path"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startStack({ label: "h20-pi-session-owner" })
@@ -25,6 +26,7 @@ export async function run() {
     const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
     await api.promptAsync(workspace.directory, session.id, "Reply with exactly this one token: H20OWNER")
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H20 owner turn" })
+    await waitForTitle(stream, session.id)
     assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H20OWNER/, "H20 owner turn stored answer")
     assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("H20OWNER")), "H20 owner account reached model server")
     const afterOwner = stream.frames.length

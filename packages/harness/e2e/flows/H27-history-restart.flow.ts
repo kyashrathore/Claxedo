@@ -7,7 +7,7 @@ import { connectScriptedProviders } from "../harness/scripted-providers"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport } from "../harness/transport"
-import { assertStoredPartsMatchLive, waitForIdle } from "../harness/turn-observations"
+import { assertStoredPartsMatchLive, waitForIdle, waitForTitle } from "../harness/turn-observations"
 
 type History = { name: string; directory: string; sessionId: string; messages: MessageRow[]; todos?: Awaited<ReturnType<ClaxedoApi["todos"]>> }
 
@@ -34,8 +34,9 @@ async function createHistory(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" |
   })
   const session = await api.createSession(directory, { harness, ...(model ? { model } : {}) })
   const prompt = name === "acp" ? `Show history. ${acpScriptToken("h27-history")}` : `Reply with exactly this one token: ${marker}`
-  await api.prompt(directory, session.id, prompt, model ? { model } : {})
+  await api.prompt(directory, session.id, prompt, { ...(model ? { model } : {}), title: name !== "claude" })
   await waitForIdle(stream, session.id)
+  if (name !== "claude") await waitForTitle(stream, session.id)
   const messages = await api.messages(directory, session.id)
   assert.match(assistantText(messages), new RegExp(marker))
   assertStoredPartsMatchLive(messages, stream, session.id)
@@ -45,9 +46,6 @@ async function createHistory(stack: Stack, api: ClaxedoApi, name: "acp" | "pi" |
     assert.ok(todos.some((todo) => todo.content.includes(expected)), `${name} todo was not stored: ${JSON.stringify(todos)}`)
     assert.ok(stream.frames.some((frame) => frameType(frame) === "todo.updated" && frameSessionId(frame) === session.id), `${name} todo was not streamed`)
   }
-  if (name === "pi") await stream.waitFor((frame) => frameType(frame) === "session.updated" && frameSessionId(frame) === session.id
-    && (frame.data.payload as { properties?: { info?: { titleSource?: string } } }).properties?.info?.titleSource === "harness",
-  { label: "Pi history title" })
   assert.equal((await api.session(directory, session.id)).id, session.id)
   stream.close()
   console.log(`H27 ${name}: live and stored history${todos ? " and todos" : ""} prepared`)

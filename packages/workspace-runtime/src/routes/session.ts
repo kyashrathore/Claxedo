@@ -164,8 +164,15 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
         store: options.queuedPrompts,
         startTurn: (input) => startHostTurn(input),
         whenIdle: async (sessionId) => (await runtimeFor()).turns.whenIdle(sessionId),
+        changed: (sessionId) => publishQueue(sessionId),
       })
     : undefined
+
+  function publishQueue(sessionId: string) {
+    const directory = options.queuedPrompts?.()?.sessionDirectory(sessionId)
+    if (!directory || !queuedPrompts) return
+    workspaceRuntimeBus.publish({ type: "session.queue", directory, sessionID: sessionId, queue: queuedPrompts.list(sessionId) })
+  }
 
   const stopDeliveryWake = eventHub.subscribeGlobal(({ payload }) => {
     if (payload.type === "session.idle") queuedPrompts?.wake(payload.properties.sessionID)

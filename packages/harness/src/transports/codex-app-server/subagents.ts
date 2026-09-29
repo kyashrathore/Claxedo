@@ -29,6 +29,7 @@ export type SubagentHost = {
   permissionMode: string | undefined
   settings: CodexTurnSettings
   children: Map<string, CodexEvents>
+  drained: () => Promise<void>
 }
 
 type ToolResult = { contentItems: { type: "inputText"; text: string }[]; success: boolean }
@@ -74,10 +75,14 @@ async function spawnChild(host: SubagentHost, broker: TurnBroker, call: SpawnCal
     const child = await observeChild(host, broker, call, childThreadId, "running", call.label)
     if (child) broker.associateChild(childThreadId, child)
     await runChildTurn(host, broker, childThreadId, call.prompt, mode)
+    await host.drained()
     await observeChild(host, broker, call, childThreadId, "completed", call.label)
     return toolResult(`Subagent ${childThreadId} completed successfully.`, true)
   } catch (error) {
-    if (childThreadId) await observeChild(host, broker, call, childThreadId, "failed", errorMessage(error))
+    if (childThreadId) {
+      await host.drained()
+      await observeChild(host, broker, call, childThreadId, "failed", errorMessage(error))
+    }
     return toolResult(`Subagent failed: ${errorMessage(error)}`, false)
   }
 }

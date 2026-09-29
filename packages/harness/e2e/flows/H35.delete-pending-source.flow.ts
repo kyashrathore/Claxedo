@@ -7,6 +7,7 @@ import { acpScriptToken } from "../harness/acp/script"
 import { startStack } from "../harness/stack"
 import { processAlive } from "../harness/process-alive"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startStack({ label: "h35-delete" })
@@ -16,8 +17,9 @@ export async function run() {
     const stream = await stack.events(workspace.directory)
     await stack.acp.write("h35-source", { steps: [{ kind: "text", text: "H35 source kept" }] })
     const session = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
-    await api.prompt(workspace.directory, session.id, `H35 source ${acpScriptToken("h35-source")}`)
+    await api.prompt(workspace.directory, session.id, `H35 source ${acpScriptToken("h35-source")}`, { title: true })
     await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "ACP source turn" })
+    await waitForTitle(stream, session.id)
     assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H35 source kept/)
     const pid = Number(await fs.readFile(path.join(stack.acp.scriptDir, "agent.pid"), "utf8"))
     assert.ok(processAlive(pid), "source ACP process exited before the handoff")

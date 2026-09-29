@@ -4,6 +4,7 @@ import { asRecord } from "@claxedo/agent-runtime-contract"
 import { goalSnapshotFromRecord, type SessionBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudeTranslator } from "./events"
+import type { ClaudeMirroredUsage } from "./mirrored-usage"
 
 export function activeGoal(sessionId: string, message: SDKActiveGoalMessage): RuntimeGoalSnapshot | null {
   if (!message.value) return null
@@ -29,10 +30,8 @@ export function transcriptGoal(sessionId: string, entry: SessionStoreEntry, prev
   { invalid: () => new TransportError("claude", "protocol", "Claude returned an invalid goal") })
 }
 
-export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: {
-  runtime: ReturnType<typeof claudeTranslator>["runtime"]; assistantMessageId: string; directory: string
-}): SessionStore {
-  const runtime = usage?.runtime ?? claudeTranslator(broker.sessionId).runtime
+export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: ClaudeMirroredUsage): SessionStore {
+  let titles: ReturnType<typeof claudeTranslator>["runtime"] | undefined
   return {
     async append(key, entries) {
       for (const entry of entries) {
@@ -41,19 +40,15 @@ export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usa
           const id = message?.id
           const counts = asRecord(message?.usage)
           if (typeof id === "string" && counts) {
-            const events = usage.runtime.ingest({ source: "claude.sdk", method: "claude/subagent-usage", payload: {
-              parent_tool_use_id: null, session_id: key.sessionId,
-              message: { id, usage: counts, ...(typeof message?.model === "string" ? { model: message.model } : {}) },
-            } }).events
-            for (const event of events) if (event.type === "usage") broker.meter({ sessionId: broker.sessionId,
-              directory: usage.directory, assistantMessageId: usage.assistantMessageId, usage: event })
+            usage.observe({ upstreamSessionId: key.sessionId, id, usage: counts, ...(typeof message?.model === "string" ? { model: message.model } : {}) })
           }
         }
         if (signal.aborted) continue
         const goal = transcriptGoal(broker.sessionId, entry, broker.goal.read())
         if (goal !== undefined) await broker.goal.publish(goal)
         if (entry.type === "ai-title" || entry.type === "custom-title") {
-          const events = runtime.ingest({ source: "claude.sdk", method: "claude/session-store", payload: entry }).events
+          titles ??= claudeTranslator(broker.sessionId).runtime
+          const events = titles.ingest({ source: "claude.sdk", method: "claude/session-store", payload: entry }).events
           for (const event of events) if (event.type === "session-title") await broker.publish(event)
         }
       }

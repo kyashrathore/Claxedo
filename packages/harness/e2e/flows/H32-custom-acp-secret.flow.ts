@@ -6,6 +6,7 @@ import { acpScriptToken } from "../harness/acp/script"
 import { cloudApi, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 import { sendJson } from "../harness/transport"
 
 export async function run() {
@@ -46,8 +47,9 @@ export async function run() {
         }
         throw error
       }
-      await api.prompt(workspace.directory, session.id, acpScriptToken("h32-secret"))
+      await api.prompt(workspace.directory, session.id, acpScriptToken("h32-secret"), { title: true })
       await stream.waitFor((frame) => frameType(frame) === "session.idle", { label: "custom ACP secret turn" })
+      await waitForTitle(stream, session.id)
       const messages = await api.messages(workspace.directory, session.id)
       assert.match(assistantText(messages), new RegExp(createHash("sha256").update(secret).digest("hex")))
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"), "custom ACP secret turn emitted no live text")
@@ -55,6 +57,8 @@ export async function run() {
 
       await sendJson(cloudTransport(stack), "PATCH", `${stack.url}/api/claxedo/credentials/${credentialId}/status`, { status: "revoked" }, "Revoking H32 ACP secret")
       await assert.rejects(api.createSession(workspace.directory, { harness: { id: connectionId, access: "connection" } }), /unavailable|secret|credential/i)
+      await stream.waitFor((frame) => frameType(frame) === "session.lifecycle" && (frame.data.payload as { phase?: string }).phase === "failed",
+        { label: "revoked-secret create failure" })
       assert.deepEqual(stack.egress.attempts, [])
     } finally {
       stream.close()

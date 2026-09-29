@@ -29,9 +29,9 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held"; 
   return { rpc, requests, emit, listenerCount: () => listeners.size }
 }
 
-function host(rpc: CodexRpc): SubagentHost & { children: Map<string, CodexEvents> } {
+function host(rpc: CodexRpc, drained: () => Promise<void> = async () => {}): SubagentHost & { children: Map<string, CodexEvents> } {
   return { rpc, directory: "/work", threadId: "parent-1", brokered: false, permissionMode: "full-access",
-    settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new Map() }
+    settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new Map(), drained }
 }
 
 function broker(signal = new AbortController().signal) {
@@ -60,6 +60,21 @@ test("spawn_agent starts a subagent thread under the parent's mode and settings 
     ["running", "call-1", "child-1", "review"], ["completed", "call-1", "child-1", "review"]])
   expect(associations).toEqual([["child-1", { sessionId: "child-session", assistantMessageId: "child-a1", created: 1 }]])
   expect(subagents.children.has("child-1")).toBe(true)
+})
+
+test("a child's end is observed only after the parent turn has projected everything the child streamed before it", async () => {
+  for (const childOutcome of ["completed", "failed"] as const) {
+    const { rpc } = scriptedRpc({ childOutcome })
+    const { turnBroker, observations } = broker()
+    let drain!: () => void
+    const drained = new Promise<void>((resolve) => { drain = resolve })
+    const pending = answerCodexToolCall(host(rpc, () => drained), turnBroker, call({ task_name: "review", message: "Inspect this" }))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(observations.map((row) => row.status)).toEqual(["running"])
+    drain()
+    await pending
+    expect(observations.map((row) => row.status)).toEqual(["running", childOutcome])
+  }
 })
 
 test("a failed child turn reports a failed observation and a failed tool result", async () => {

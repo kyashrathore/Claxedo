@@ -1,5 +1,6 @@
 import { scriptedClaude } from "../transports/claude-sdk/test-support/transport"
 import { claudeTranslator } from "../transports/claude-sdk/events"
+import { ClaudeMirroredUsage } from "../transports/claude-sdk/mirrored-usage"
 import { createServer, type Server } from "node:http"
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
@@ -618,10 +619,11 @@ describe("Claude permission persistence", () => {
       const launch = new ClaudeQueryLauncher({ firstPartyMcp: () => undefined } as unknown as HarnessServices,
         { executable: "claude", configRoot: "/tmp/claude-permissions", userConfigRoot: "/tmp/claude-permissions-owner", env: {} },
         ((call) => { captured = call; return {} as Query }) as typeof query)
+      const broker = { sessionId, config: () => start.config } as SessionBroker
       await launch.launch({ input: start, session: { directory: start.directory, locality: start.locality,
         binding: { ...authority, sessionId, connectionId: "claude-sdk" } },
-        broker: { sessionId, config: () => start.config } as SessionBroker, abort: new AbortController(), processes: new Set(),
-        prompt: "hello", runtime: claudeTranslator("a1").runtime, assistantMessageId: "a1" })
+        broker, abort: new AbortController(), processes: new Set(), prompt: "hello",
+        mirroredUsage: new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: start.directory }) })
       const value = captured!.options!
       return { allow: (value.settings as { permissions: { allow: string[]; deny: string[] } }).permissions.allow,
         deny: (value.settings as { permissions: { deny: string[] } }).permissions.deny, directories: value.additionalDirectories }

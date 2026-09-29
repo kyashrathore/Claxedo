@@ -5,6 +5,7 @@ import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 const CASES = [
   { name: "pi", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
@@ -39,17 +40,17 @@ async function unknownCase(item: typeof CASES[number]) {
       assert.equal(answer.status, 202, `${item.name} unknown steer HTTP: ${JSON.stringify(body)}`)
       assert.ok(body.status === "pending" || body.status === "unknown", `${item.name} steer receipt: ${JSON.stringify(body)}`)
       await stream.waitFor((frame) => (frameType(frame) === "session.idle" || frameType(frame) === "session.error") && frameSessionId(frame) === session.id, { label: `${item.name} unknown steer settled` })
+      if (item.name !== "claude") await waitForTitle(stream, session.id)
       const queue = async () => {
         const response = await fetch(new URL(`/session/${encodeURIComponent(session.id)}/queue?directory=${encodeURIComponent(workspace.directory)}`, stack.url))
         assert.equal(response.status, 200)
         return await response.json() as Array<{ seq: number; parts: Array<{ text?: string }>; steering?: { state: string; mode: string } }>
       }
-      let firstRows = await queue()
-      const settledBy = Date.now() + 10_000
-      while (!firstRows.some((row) => row.steering?.state === "unknown") && Date.now() < settledBy) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        firstRows = await queue()
-      }
+      await stream.waitFor((frame) => {
+        const payload = frame.data.payload as { type?: string; sessionID?: string; queue?: Array<{ steering?: { state?: string } }> } | undefined
+        return payload?.type === "session.queue" && payload.sessionID === session.id && !!payload.queue?.some((row) => row.steering?.state === "unknown")
+      }, { label: `${item.name} uncertain steer held in the queue` })
+      const firstRows = await queue()
       assert.ok(firstRows.some((row) => row.parts.some((part) => part.text === steered) && row.steering?.state === "unknown" && row.steering.mode === "steer"), `${item.name} uncertain steer was not held: ${JSON.stringify(firstRows)}`)
       const evidence = await fs.readFile(path.join(stack.dataDir, `${item.name}-steer-fault-bin`, "seen.log"), "utf8")
       assert.match(evidence, item.name === "claude" ? /process interrupted before replay/ : /reply withheld/)

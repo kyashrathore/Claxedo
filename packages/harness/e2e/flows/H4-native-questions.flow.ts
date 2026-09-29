@@ -3,6 +3,7 @@ import { ClaxedoApi, assistantText, type QuestionRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "AskUserQuestion" },
@@ -46,6 +47,7 @@ export async function run() {
       await api.replyQuestion(directory, row.id, [["Staging"], ["Keep the test isolated"]])
       await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id,
         { label: `${harness.id} question turn idle`, timeoutMs: 60_000 })
+      if (harness.id === "codex") await waitForTitle(stream, session.id)
       assert.equal((await api.questions(directory)).some((question) => question.id === row.id), false)
       const messages = await api.messages(directory, session.id)
       assert.match(assistantText(messages), new RegExp(marker))

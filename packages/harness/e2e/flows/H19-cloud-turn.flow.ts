@@ -6,6 +6,7 @@ import { cloudAcpScript } from "../harness/cloud-faults"
 import { cloudApi, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
 import { startStack } from "../harness/stack"
 import { frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
   const stack = await startStack({ label: "h19-cloud-acp", cloud: true })
@@ -26,8 +27,9 @@ export async function run() {
     })
     try {
       const session = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
-      await api.prompt(workspace.directory, session.id, `Reply ${acpScriptToken("h19-cloud")}`)
+      await api.prompt(workspace.directory, session.id, `Reply ${acpScriptToken("h19-cloud")}`, { title: true })
       await stream.waitFor((frame) => frameType(frame) === "session.idle", { label: "cloud ACP idle" })
+      await waitForTitle(stream, session.id)
       const messages = await api.messages(workspace.directory, session.id)
       assert.match(assistantText(messages), /H19_CLOUD_ACP/)
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"), "cloud ACP emitted no live text frame")

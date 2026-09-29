@@ -65,7 +65,7 @@ test("a native Goal starts under the admitted turn's identity and answers with t
   expect(goals.turnId("s1")).toBe("goal-turn")
   finish()
   await state.settled()
-  expect(specs[0]).toMatchObject({ turnId: "goal-turn", assistantMessageId: "goal-assistant" })
+  expect(specs[0]).toMatchObject({ turnId: "goal-turn" })
 })
 
 test("a native Goal whose turn ends before Claude reports it fails its start", async () => {

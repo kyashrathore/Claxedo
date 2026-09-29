@@ -28,7 +28,11 @@ export async function run() {
       headers: { "content-type": "application/json", "x-claxedo-directory": workspace.directory },
       body: JSON.stringify({ command: "/bin/cat", args: [], cwd: ".", sessionId: session.id }),
     })
-    assert.equal(terminal.status, 200, await terminal.text())
+    const created = await terminal.text()
+    assert.equal(terminal.status, 200, created)
+    const terminalId = (JSON.parse(created) as { id: string }).id
+    await before.waitFor((frame) => frameType(frame) === "pty.created"
+      && (frame.data.payload as { info?: { id?: string } }).info?.id === terminalId, { label: "terminal created" })
     before.close()
     const fault = await blockProcessIdentity(stack.dataDir)
     await stack.daemon.killAndRestart({ pathPrefix: fault.bin })

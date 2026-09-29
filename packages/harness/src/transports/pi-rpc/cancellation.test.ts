@@ -72,3 +72,13 @@ test("Pi reports terminal only after the entry observes settlement", async () =>
     .toEqual({ execution: "terminal", cleanup: "unknown" })
   expect(f.commands).toEqual(["clear_queue", "abort"])
 })
+
+test("Pi sends one clear_queue and one abort for concurrent stops of one turn, and a later stop sends its own", async () => {
+  const f = fixture("ok")
+  const deadline = { at: Date.now() + 1000, signal: new AbortController().signal }
+  const [first, second] = await Promise.all([f.transport.cancel(f.session, turn, deadline), f.transport.cancel(f.session, turn, deadline)])
+  expect(f.commands).toEqual(["clear_queue", "abort"])
+  expect(second).toEqual(first)
+  await f.transport.cancel(f.session, turn, deadline)
+  expect(f.commands).toEqual(["clear_queue", "abort", "clear_queue", "abort"])
+})

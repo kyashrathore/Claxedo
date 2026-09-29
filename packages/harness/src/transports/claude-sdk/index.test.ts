@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
-import type { Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { query, Query, SDKMessage, SessionStore } from "@anthropic-ai/claude-agent-sdk"
 import type { HarnessServices, SessionBroker, StartInput, TurnBroker, TurnInput } from "../../contract"
 import { ClaudeSdkTransport } from "./index"
-import type { ClaudeQueryLauncher } from "./query-options"
+import { ClaudeQueryLauncher } from "./query-options"
 
 const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local",
   owner: { kind: "machine-owner" }, config: { harness: { id: "claude", access: "native" } },
@@ -56,7 +56,7 @@ test("a turn without a resolved model launches Claude's default, not the start m
   try { for await (const _event of value.send(session, turn, { signal: new AbortController().signal } as TurnBroker)) {} }
   finally { await value.dispose() }
   expect(specs).toHaveLength(1)
-  expect(specs[0]).toMatchObject({ model: "default", turnId: "t1", assistantMessageId: "a1" })
+  expect(specs[0]).toMatchObject({ model: "default", turnId: "t1" })
   expect(specs[0]?.system).toBeUndefined()
 })
 
@@ -162,4 +162,30 @@ test("an aborted Claude turn signal ends the stream before launch without an err
     expect(events).toEqual([])
     expect(specs).toEqual([])
   } finally { await value.dispose() }
+})
+
+test("subagent usage the SDK mirrors ahead of the stream is metered at the turn's result, after the stream's own usage", async () => {
+  const log: [string, number | null][] = []
+  const tokens = (usage: unknown) => (usage as { observation: { tokens: { input: number | null } } }).observation.tokens.input
+  const options = { executable: "claude", configRoot: "/tmp/claude-test", userConfigRoot: "/tmp/claude-user", env: {} }
+  const runQuery = ((call: Parameters<typeof query>[0]) => ({ async *[Symbol.asyncIterator]() {
+    const store = call.options?.sessionStore as SessionStore
+    await store.append({ projectKey: "p", sessionId: "up1", subpath: "agent-1" },
+      [{ type: "assistant", message: { id: "child-request", model: "claude-sonnet-4-5", usage: { input_tokens: 5, output_tokens: 5 } } }])
+    yield { type: "stream_event", session_id: "up1", parent_tool_use_id: null, uuid: "e1",
+      event: { type: "message_start", message: { id: "main-request", model: "claude-sonnet-4-5", usage: { input_tokens: 1, output_tokens: 1 } } } } as unknown as SDKMessage
+    yield { type: "result", subtype: "success", is_error: false, session_id: "up1", uuid: "r1" } as unknown as SDKMessage
+  }, close() {} }) as unknown as Query) as typeof query
+  const launchServices = { ...services, firstPartyMcp: () => undefined } as unknown as HarnessServices
+  const value = new ClaudeSdkTransport(services, options)
+  Object.assign(value, { launcher: new ClaudeQueryLauncher(launchServices, options, runQuery) })
+  const broker = { ...sessionBroker, sessionId: "s1", goal: { read: () => null, publish: async () => {} }, publish: async () => {},
+    meter: (usage: { usage: unknown }) => { log.push(["mirror", tokens(usage.usage)]) } } as unknown as SessionBroker
+  const session = await value.start(input, broker)
+  try {
+    for await (const routed of value.send(session, turn, { signal: new AbortController().signal } as TurnBroker)) {
+      if (routed.event.type === "usage") log.push(["stream", tokens(routed.event)])
+    }
+  } finally { await value.dispose() }
+  expect(log).toEqual([["stream", 1], ["mirror", 6], ["stream", 6]])
 })

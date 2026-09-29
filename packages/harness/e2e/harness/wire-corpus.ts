@@ -1,10 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
+import { REPO_ROOT } from "./node-loader"
 
 type Observation = { kind: "http"; method: string; route: string; status: number; body: unknown }
   | { kind: "stream"; route: string; frames: unknown[] }
-
-const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -117,13 +116,6 @@ export function comparisonShape(rows: Observation[]) {
   const specials = new Map<string, string>()
   const http = rows.map((row, index) => {
     if (row.kind !== "http") return undefined
-    if (flow === "H35.intermediate-release" && row.method === "GET" && /^\/session\/[^/]+$/.test(row.route.split("?")[0] ?? "")) {
-      return normalize({ ...row, body: { id: object(row.body).id } }, ids, specials, "", `http:${index}`)
-    }
-    if (flow === "H35.native-handoff" && row.method === "GET" && /^\/session\/[^/]+$/.test(row.route.split("?")[0] ?? "")) {
-      const { title: _title, titleSource: _titleSource, ...body } = object(row.body)
-      return normalize({ ...row, body }, ids, specials, "", `http:${index}`)
-    }
     if (row.method === "GET" && row.route.startsWith("/api/claxedo/usage")) {
       const source = object(row.body)
       const breakdown = object(source.breakdown)
@@ -234,7 +226,7 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
     return scopedId(ids, value, "repo", scope)
   }
   let result = value.includes("%2F") ? decodeURIComponent(value) : value
-  result = result.split(REPO_ROOT).join("<repo>").split(process.execPath).join("<bun>")
+  result = result.replaceAll(REPO_ROOT, "<repo>").replaceAll(process.execPath, "<bun>")
   result = result.replace(/(?:(?:\/private)?\/var\/folders\/[^/]+\/[^/]+\/T|\/tmp)\/(?:claxedo-e2e|claxedo-hosted|h19-product-host)-[^/\s"?]+/g, "<data-dir>")
   result = result.replace(/<data-dir>\/workspaces\/[^/\s"?]+/g, (directory) => {
     return scopedId(ids, directory, "workspace", scope)
@@ -307,10 +299,7 @@ if (mode) {
     const target = new URL(input instanceof Request ? input.url : String(input))
     const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     const accept = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept")
-    const unsynchronizedReadback = method === "GET" && (
-      (flow === "H7.unknown-held" && /^\/session\/[^/]+\/queue$/.test(target.pathname))
-      || (flow !== "H0-smoke" && target.pathname === "/api/claxedo/health")
-    )
+    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && target.pathname === "/api/claxedo/health"
     const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
     const reply = await nativeFetch(input, init)
     if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
