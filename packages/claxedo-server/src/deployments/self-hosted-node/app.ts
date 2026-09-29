@@ -2020,12 +2020,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     },
   })
 
-  // Loopback by default (safe for local dev); containers/self-host set
-  // CLAXEDO_SERVER_HOST=0.0.0.0 to accept external traffic.
   const server = serve({
     fetch: built.app.fetch,
     port,
-    hostname: process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1",
+    hostname: "127.0.0.1",
   })
   built.injectWebSocket(server)
   // `closeAllConnections` reaches only the sockets the HTTP parser still owns.
