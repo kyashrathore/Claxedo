@@ -120,8 +120,8 @@ const ENTRIES = [
   // CLAXEDO_PRIVATE_REPO_HOSTS that the self-hosted and hosted deployments
   // share. No package edge.
   // `script/product-boundary/policies/server.ts` holds the review; this is the
-  // same measurement recorded a second time, so the two must agree. 130/40.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 130, packages: 40 },
+  // same measurement recorded a second time, so the two must agree. 130/39.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 130, packages: 39 },
 ] as const
 
 /** The remaining cloud compositions. */

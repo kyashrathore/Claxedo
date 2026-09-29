@@ -6,7 +6,7 @@ import {
   type AgentExecutionBinding,
   type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
-import { renderSessionHandoff, renderSessionTranscript } from "./session-handoff"
+import { renderSessionHandoff, renderSessionTranscript } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
 import { messagePartUpdated, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { applySessionConfigUpdate } from "@claxedo/harness/contract"

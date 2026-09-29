@@ -1,4 +1,6 @@
-import { asRecord, harnessKey, type AgentMessage, type SessionHarness } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage } from "./content"
+import { harnessKey, type SessionHarness } from "./harnesses"
+import { asRecord } from "./values"
 
 const MAX_TRANSCRIPT_CHARS = 60_000
 const MAX_TURN_SIDE_CHARS = 29_000

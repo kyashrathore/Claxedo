@@ -117,6 +117,7 @@ export {
   RecoveryContractError,
 } from "./recovery/validation"
 export * from "./session-group"
+export * from "./session-handoff"
 export * from "./session-titles"
 export * from "./sessions"
 export * from "./subagents"

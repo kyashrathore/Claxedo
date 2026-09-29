@@ -4,7 +4,7 @@ import {
   sessionVariantForEffort,
 } from "@claxedo/agent-runtime-contract"
 import { isAgentMessage, type AgentMessage, type SessionHarness } from "@claxedo/agent-runtime-contract"
-import { renderSessionHandoff } from "@claxedo/workspace-runtime/host"
+import { renderSessionHandoff } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord, isRecord } from "@claxedo/helpers/guards"
 import {
   sessionCreateRequest,

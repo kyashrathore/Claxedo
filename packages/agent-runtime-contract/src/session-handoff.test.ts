@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AgentContentPart, AgentMessage, AgentMessageError } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentMessage, AgentMessageError } from "./content"
 import { renderSessionHandoff } from "./session-handoff"
 
 const SESSION = "ses_handoff"

@@ -207,8 +207,8 @@ export const localServer: Policy = {
   //    the account vocabulary the app, this daemon and the hosted server
   //    share): whose account a person spends and where a stored account may
   //    be delivered. The subpath is import-free.
-  //    80/30, no headroom.
-  ceilings: { modules: 80, packages: 30 },
+  //    80/29, no headroom.
+  ceilings: { modules: 80, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
