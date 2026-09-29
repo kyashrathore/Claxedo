@@ -61,7 +61,6 @@
     "smoke:self-hosted-boundary": "node scripts/boundary/smoke-self-hosted.mjs",
     "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
     "smoke:workerd-boundary": "node --import tsx scripts/boundary/smoke-workerd.ts",
-    "smoke:documents-session": "bun run scripts/smoke/documents-session-roundtrip.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node scripts/test/unit.mjs",
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
