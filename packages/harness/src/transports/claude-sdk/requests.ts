@@ -14,7 +14,7 @@ const protocolPermissionMap = {
   ],
 } as const
 
-export async function askClaudePermission(input: StartInput, broker: TurnBroker, toolName: string,
+export async function askClaudePermission(input: StartInput, broker: Pick<TurnBroker, "ask" | "signal">, toolName: string,
   toolInput: Record<string, unknown>, options: Parameters<CanUseTool>[2], turnId?: string) {
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   if (toolName === "AskUserQuestion") {

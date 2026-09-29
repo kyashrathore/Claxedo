@@ -30,7 +30,7 @@ export function transcriptGoal(sessionId: string, entry: SessionStoreEntry, prev
   { invalid: () => new TransportError("claude", "protocol", "Claude returned an invalid goal") })
 }
 
-export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: ClaudeMirroredUsage): SessionStore {
+export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: Pick<ClaudeMirroredUsage, "observe">): SessionStore {
   let titles: ReturnType<typeof claudeTranslator>["runtime"] | undefined
   return {
     async append(key, entries) {

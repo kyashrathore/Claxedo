@@ -56,7 +56,8 @@ test("a turn without a resolved model launches Claude's default, not the start m
   try { for await (const _event of value.send(session, turn, { signal: new AbortController().signal } as TurnBroker)) {} }
   finally { await value.dispose() }
   expect(specs).toHaveLength(1)
-  expect(specs[0]).toMatchObject({ model: "default", turnId: "t1" })
+  expect(specs[0]).toMatchObject({ model: "default" })
+  expect(specs[0]?.turn?.()).toBeUndefined()
   expect(specs[0]?.system).toBeUndefined()
 })
 

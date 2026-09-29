@@ -20,8 +20,8 @@ test("turns and native goals share session options while clear forbids tools", a
   const broker = { sessionId: "s1", config: () => input.config, goal: { read: () => null, publish: async () => {} } } as unknown as SessionBroker
   const mirroredUsage = new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: "/work" })
   const launcher = new ClaudeQueryLauncher(services, { executable: "claude", configRoot: "/tmp/claxedo", userConfigRoot: "/tmp/user", env: {} }, runQuery)
-  const base = { session, input, broker, abort: new AbortController(), processes: new Set<ClaudeProcess>(), mirroredUsage }
-  await launcher.launch({ ...base, prompt: "turn", turnBroker: { signal: new AbortController().signal } as TurnBroker,
+  const base = { session, input, broker, abort: new AbortController(), processes: new Set<ClaudeProcess>(), usage: mirroredUsage }
+  await launcher.launch({ ...base, prompt: "turn", turn: () => ({ broker: { signal: new AbortController().signal } as TurnBroker, turnId: "t1" }),
     model: "default", agent: "reviewer", system: "system", partialMessages: true })
   await launcher.launch({ ...base, prompt: "/goal Ship" })
   await launcher.launch({ ...base, prompt: "/goal clear", clear: true })

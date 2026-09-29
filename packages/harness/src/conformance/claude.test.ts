@@ -623,7 +623,7 @@ describe("Claude permission persistence", () => {
       await launch.launch({ input: start, session: { directory: start.directory, locality: start.locality,
         binding: { ...authority, sessionId, connectionId: "claude-sdk" } },
         broker, abort: new AbortController(), processes: new Set(), prompt: "hello",
-        mirroredUsage: new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: start.directory }) })
+        usage: new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: start.directory }) })
       const value = captured!.options!
       return { allow: (value.settings as { permissions: { allow: string[]; deny: string[] } }).permissions.allow,
         deny: (value.settings as { permissions: { deny: string[] } }).permissions.deny, directories: value.additionalDirectories }

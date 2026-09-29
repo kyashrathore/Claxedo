@@ -10,16 +10,17 @@ import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
 const protocolClaudePermissionMap = { deny: "deny" } as const
 
+export type ClaudeLaunchTurn = { broker: TurnBroker; turnId: string }
+
 type Launch = {
   session: HarnessSession
   input: StartInput
   broker: SessionBroker
-  turnBroker?: TurnBroker
+  turn?: () => ClaudeLaunchTurn | undefined
   prompt: Parameters<typeof query>[0]["prompt"]
   abort: AbortController
   processes: Set<ClaudeProcess>
-  mirroredUsage: ClaudeMirroredUsage
-  turnId?: string
+  usage: Pick<ClaudeMirroredUsage, "observe">
   clear?: boolean
   model?: string
   effort?: EffortLevel
@@ -41,7 +42,7 @@ export class ClaudeQueryLauncher {
     private readonly runQuery: typeof query = query) {}
 
   async launch(spec: Launch): Promise<Query> {
-    const { input, session, broker, turnBroker, abort, processes } = spec
+    const { input, session, broker, abort, processes } = spec
     const current = { ...input, config: broker.config() }
     const context = await claudeLaunchContext(input, this.options, input.sessionId)
     return this.runQuery({ prompt: spec.prompt, options: {
@@ -49,15 +50,17 @@ export class ClaudeQueryLauncher {
       ...permissionOptions(current.config, connectionGrantKeys(current.config.permissionState, session.binding.connectionId)),
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
       mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort,
-      ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, spec.mirroredUsage), sessionStoreFlush: "eager" as const }),
+      ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, spec.usage), sessionStoreFlush: "eager" as const }),
       ...(spec.model && (spec.model !== "default" || !spec.agent) ? { model: spec.model } : {}),
       ...(spec.effort ? { effort: spec.effort } : {}),
       ...(spec.system ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } } : {}),
       ...(spec.agent ? { agent: spec.agent } : {}),
       ...(spec.partialMessages ? { includePartialMessages: true, extraArgs: { "replay-user-messages": null } } : {}),
-      canUseTool: (name, payload, options) => spec.clear || !turnBroker
-        ? Promise.resolve({ behavior: protocolClaudePermissionMap.deny, message: "Clearing the native Goal cannot run tools" })
-        : askClaudePermission(current, turnBroker, name, payload, options, spec.turnId),
+      canUseTool: (name, payload, options) => {
+        if (spec.clear) return Promise.resolve({ behavior: protocolClaudePermissionMap.deny, message: "Clearing the native Goal cannot run tools" })
+        const turn = spec.turn?.()
+        return askClaudePermission(current, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId)
+      },
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, input.sessionId)
         processes.add(child)

@@ -1,12 +1,18 @@
 import { expect, test } from "bun:test"
-import { ClaudeTurnInput } from "./turn-input"
+import { ClaudeQueryInput } from "./query-input"
 
 const message = (text: string) => ({ type: "user" as const, session_id: "", message: {
   role: "user" as const, content: [{ type: "text" as const, text }],
 }, parent_tool_use_id: null })
 
+function opened(first: ReturnType<typeof message>) {
+  const input = new ClaudeQueryInput()
+  input.open(first)
+  return input
+}
+
 test("steering resolves only after the matching replay", async () => {
-  const input = new ClaudeTurnInput(message("first"))
+  const input = opened(message("first"))
   const iterator = input.stream[Symbol.asyncIterator]()
   expect((await iterator.next()).value.message.content).toEqual([{ type: "text", text: "first" }])
   const accepted = input.steer(message("second"))
@@ -24,26 +30,28 @@ test("steering resolves only after the matching replay", async () => {
 })
 
 test.each(["ended", "failed"] as const)("an unreplayed steer settles %s", async (outcome) => {
-  const input = new ClaudeTurnInput(message("first"))
+  const input = opened(message("first"))
   const pending = input.steer(message("second"))
+  input.close()
   input.settle(outcome)
   expect(await pending).toEqual({ ok: false, status: outcome === "ended" ? "declined" : "unknown", message: "Claude did not replay the steer" })
   expect(await input.steer(message("late"))).toMatchObject({ ok: false, status: "no_active_turn" })
 })
 
 test("ordinary user messages cannot acknowledge a steer", async () => {
-  const input = new ClaudeTurnInput(message("first"))
+  const input = opened(message("first"))
   const iterator = input.stream[Symbol.asyncIterator]()
   await iterator.next()
   const pending = input.steer(message("second"))
   const written = (await iterator.next()).value
   expect(input.observe(written)).toBe(false)
+  input.close()
   input.settle("ended")
   expect(await pending).toMatchObject({ ok: false, status: "declined" })
 })
 
 test("closed stdin rejects a new steer while delivering the one already written", async () => {
-  const input = new ClaudeTurnInput(message("first"))
+  const input = opened(message("first"))
   const iterator = input.stream[Symbol.asyncIterator]()
   await iterator.next()
   const pending = input.steer(message("second"))
@@ -54,4 +62,18 @@ test("closed stdin rejects a new steer while delivering the one already written"
   expect(input.observe({ ...written, isReplay: true })).toBe(true)
   expect(await pending).toEqual({ ok: true })
   expect((await iterator.next()).done).toBe(true)
+})
+
+test("a turn ended on an open query refuses steers but keeps stdin open for the next turn", async () => {
+  const input = opened(message("first"))
+  const iterator = input.stream[Symbol.asyncIterator]()
+  await iterator.next()
+  input.endTurn()
+  expect(await input.steer(message("late"))).toMatchObject({ ok: false, status: "no_active_turn" })
+  input.open(message("next turn"))
+  expect((await iterator.next()).value.message.content).toEqual([{ type: "text", text: "next turn" }])
+  const steered = input.steer(message("steer the next turn"))
+  expect((await iterator.next()).value.message.content).toEqual([{ type: "text", text: "steer the next turn" }])
+  input.settle("failed")
+  expect(await steered).toMatchObject({ ok: false, status: "unknown" })
 })

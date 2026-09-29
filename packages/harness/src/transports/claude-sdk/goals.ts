@@ -3,7 +3,7 @@ import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
 import { nativeGoalPrompt } from "../../contract"
 import { claudeStreamEndedWithoutResult } from "./errors"
-import { ClaudeProcess } from "./process"
+import { ClaudeProcess, retireClaudeProcesses } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 import { observeClaudeSessionMessage } from "./session-events"
 import { claudeTranslator, translateClaude } from "./events"
@@ -84,8 +84,9 @@ export class ClaudeGoals {
     const onAbort = () => abort.abort()
     if (turnBroker?.signal.aborted) onAbort()
     else turnBroker?.signal.addEventListener("abort", onAbort, { once: true })
-    const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turnBroker, prompt, abort, processes, mirroredUsage,
-      ...(turn ? { turnId: turn.turnId } : {}), clear })
+    const launchTurn = turnBroker && turn ? { broker: turnBroker, turnId: turn.turnId } : undefined
+    const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turn: () => launchTurn, prompt, abort, processes,
+      usage: mirroredUsage, clear })
     let sawResult = false
     let stopped = false
     try {
@@ -111,7 +112,7 @@ export class ClaudeGoals {
       mirroredUsage.release()
       turnBroker?.signal.removeEventListener("abort", onAbort)
       stream.close()
-      await Promise.all([...processes].map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
+      await retireClaudeProcesses(processes)
     }
     if (stopped && turnBroker) yield { event: { type: "finish", sessionId: entry.session.binding.sessionId } }
   }

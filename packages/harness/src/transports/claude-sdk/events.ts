@@ -10,9 +10,9 @@ const knownTypes = { assistant: true, auth_status: true, conversation_reset: tru
   rate_limit_event: true, result: true, stream_event: true, system: true, tool_progress: true,
   tool_use_summary: true, user: true } satisfies Record<SDKMessage["type"], true>
 
-export function claudeTranslator(threadId: string, todos: TurnInput["todos"] = []) {
+export function claudeTranslator(threadId: string, todos: TurnInput["todos"] = [], tasks: ClaudeTaskLedger = createClaudeTaskLedger()) {
   const seed = todos.filter((todo) => todo.id).map((todo) => ({ id: todo.id!, description: todo.content, status: todo.status }))
-  return { runtime: createAgentEventRuntime({ harness: "claude", threadId, adapter: claudeSdkAdapter(seed) }), tasks: createClaudeTaskLedger() }
+  return { runtime: createAgentEventRuntime({ harness: "claude", threadId, adapter: claudeSdkAdapter(seed) }), tasks }
 }
 
 export async function translateClaude(message: SDKMessage, runtime: AgentEventRuntime<ClaudeSdkAdapterState>, tasks: ClaudeTaskLedger,

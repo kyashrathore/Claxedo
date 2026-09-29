@@ -9,6 +9,13 @@ function claudeRetirementDeadline(): Deadline {
   return { at: Date.now() + 5_000, signal: new AbortController().signal }
 }
 
+export async function retireClaudeProcesses(processes: Set<ClaudeProcess>, deadline: Deadline = claudeRetirementDeadline()): Promise<void> {
+  await Promise.all([...processes].map(async (child) => {
+    await child.retire(deadline)
+    processes.delete(child)
+  }))
+}
+
 export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   readonly stdin = new PassThrough()
   readonly stdout = new PassThrough()
