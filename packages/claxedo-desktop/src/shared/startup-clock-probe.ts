@@ -2,9 +2,8 @@
  * Startup clock probe. HARNESS/DIAGNOSTIC ONLY — inert unless asked for.
  *
  * This side only WRITES. Reading the log back and turning it into the lead is
- * the benchmark harness's job and lives there
- * (`@claxedo/perf-harness`, `agent-claxedo-launcher.ts`), so the product never
- * carries a parser it does not use.
+ * the job of the benchmark driver on the `agent-app-benchmark` branch, so the
+ * product never carries a parser it does not use.
  *
  * Cold-boot reasoning kept stalling on one unmeasurable quantity: the LEAD, the
  * distance between the moment the local server can serve a request and the
