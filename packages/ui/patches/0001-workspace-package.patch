@@ -10,14 +10,25 @@ What: the kit is a workspace package of this monorepo, not a published npm packa
 - tsconfig resolves workspace packages through their `development` export, so a
   typecheck reads sibling source and never needs a build;
 - script/pack.ts and script/publish.ts are removed: they import @opencode-ai/script,
-  which this repository does not have, and the kit is never published from here.
+  which this repository does not have, and the kit is never published from here;
+- the ./storybook/* subpaths and the story and MDX exclusions in `files` and both
+  tsconfigs are removed: sync-upstream vendors no stories and nothing runs Storybook.
 Why: without these the kit does not typecheck or test inside this workspace.
 
 diff --git a/package.json b/package.json
-index 49d6d7d130f2d585beca209d24e665293c3785cc..db5869f31ca087106c7d3577119e0ada32242b07 100644
+index 49d6d7d130f2d585beca209d24e665293c3785cc..5af63bc2babc4d6ef2b2c6575c12d87396842d88 100644
 --- a/package.json
 +++ b/package.json
-@@ -36,6 +36,7 @@
+@@ -20,8 +20,6 @@
+     "src/**/*.tsx",
+     "!src/**/*.test.ts",
+     "!src/**/*.test.tsx",
+-    "!src/**/*.stories.ts",
+-    "!src/**/*.stories.tsx",
+     "src/**/*.css",
+     "src/theme/themes/*.json",
+     "src/components/app-icons/sprite.svg",
+@@ -36,11 +34,10 @@
      "./package.json": "./package.json",
      "./*": "./src/components/*.tsx",
      "./i18n/*": "./src/i18n/*.ts",
@@ -25,7 +36,12 @@ index 49d6d7d130f2d585beca209d24e665293c3785cc..db5869f31ca087106c7d3577119e0ada
      "./hooks": "./src/hooks/index.ts",
      "./context": "./src/context/index.ts",
      "./context/*": "./src/context/*.tsx",
-@@ -58,53 +59,41 @@
+-    "./storybook/scaffold": "./src/storybook/scaffold.tsx",
+-    "./storybook/fixtures": "./src/storybook/fixtures.ts",
+     "./styles": "./src/styles/index.css",
+     "./styles/tailwind": "./src/styles/tailwind/index.css",
+     "./theme": "./src/theme/index.ts",
+@@ -58,53 +55,41 @@
    "scripts": {
      "build": "rm -rf dist && tsc -p tsconfig.build.json",
      "typecheck": "tsgo --noEmit",
@@ -167,11 +183,22 @@ index ba81ab7dfee881a9a5984983c3fd68d231818b8b..00000000000000000000000000000000
 -} finally {
 -  await rm(tarball, { force: true })
 -}
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+index dec30faf19aea1eb2dc15e3cd7898d8eaedff714..8e243239eb03bd61a2d889810e31be0a04435261 100644
+--- a/tsconfig.build.json
++++ b/tsconfig.build.json
+@@ -10,5 +10,5 @@
+     "emitDeclarationOnly": true
+   },
+   "include": ["src"],
+-  "exclude": ["**/*.stories.*", "**/*.test.*", "**/*.mdx"]
++  "exclude": ["**/*.test.*"]
+ }
 diff --git a/tsconfig.json b/tsconfig.json
-index 25f6a3dcc45c16a35dcb568700b9ebcb17b83896..1d30acca9769fde681accb625ceadd59e5c5bd6e 100644
+index 25f6a3dcc45c16a35dcb568700b9ebcb17b83896..071c2053782292b6073545ff4da5e1aa916d7d4e 100644
 --- a/tsconfig.json
 +++ b/tsconfig.json
-@@ -12,6 +12,9 @@
+@@ -12,11 +12,13 @@
      "isolatedModules": true,
      "module": "ESNext",
      "moduleResolution": "bundler",
@@ -181,3 +208,9 @@ index 25f6a3dcc45c16a35dcb568700b9ebcb17b83896..1d30acca9769fde681accb625ceadd59
      "noEmit": true,
      "lib": ["es2023", "dom", "dom.iterable"],
      // Type Checking & Safety
+     "strict": true,
+     "types": ["vite/client", "bun"]
+-  },
+-  "exclude": ["**/*.stories.*", "**/*.mdx"]
++  }
+ }

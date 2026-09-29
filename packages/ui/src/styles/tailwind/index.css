@@ -4,12 +4,10 @@
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @source "../../";
 /* Only the kit's own source: each app declares its own @source, so the kit entry
-   never scans a sibling package. Tests and stories never render; their fixture
+   never scans a sibling package. Tests never render; their fixture
    strings would register as candidates (a test's "[file:src/a.ts]" once emitted
    `.\[file\:src\/a\.ts\]{file:src/a.ts}` into the shipped CSS). */
 @source not "../../**/*.test.*";
-@source not "../../**/*.stories.*";
-@source not "../../storybook";
 @import "./utilities.css";
 
 @import "../foundation.css";
