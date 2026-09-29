@@ -36,7 +36,6 @@ describe("generated Better Auth D1 locked Wrangler config", () => {
       "durable_objects",
       "[[migrations]]",
       "[triggers]",
-      "wake_lane",
       "live_sync_room",
       "claxedo_documents",
       "polar",

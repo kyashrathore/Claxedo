@@ -35,12 +35,11 @@ nothing in the neutral graph changes.
 | Sandbox leases | `SandboxLeaseStore` in [`sandbox-manager`](../packages/sandbox-manager/src/index.ts) | SQLite |
 | Connections / credentials | conformance kit in [`@claxedo/connections`](../packages/claxedo-connections/src/conformance/index.ts) | memory, SQLite |
 
-Two smaller ports exist for narrower work: `WakeStore` in
-[`@claxedo/wakes`](../packages/wakes/src/store.ts), and
+A smaller port exists for narrower work:
 `WorkspaceRuntimeRouteContribution` in
 [`@claxedo/workspace-runtime`](../packages/workspace-runtime/src/route-contribution.ts)
-for adding route groups to a workspace runtime without the runtime importing
-your feature.
+adds route groups to a workspace runtime without the runtime importing your
+feature.
 
 ## The one seam that matters
 

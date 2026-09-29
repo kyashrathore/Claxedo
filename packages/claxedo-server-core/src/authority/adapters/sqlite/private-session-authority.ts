@@ -981,8 +981,8 @@ function listFields(row: SessionRow) {
 }
 
 /**
- * A wake, a subagent or a channel message admits a turn the same way the reader
- * does, so only the actor kind this store resolved for the admitted principal
+ * A subagent's completion or a channel message admits a turn the same way the
+ * reader does, so only the actor kind this store resolved for the admitted principal
  * tells them apart. MAX stops a host whose clock ran backwards from moving a
  * session's last prompt earlier than one already recorded.
  */

@@ -374,7 +374,6 @@
         "@claxedo/server-core": "workspace:*",
         "@claxedo/service-contract": "workspace:*",
         "@claxedo/tasks": "workspace:*",
-        "@claxedo/wakes": "workspace:*",
         "@claxedo/workspace-relay": "workspace:*",
         "@claxedo/workspace-relay-protocol": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
@@ -652,22 +651,6 @@
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
         "typescript": "catalog:",
-      },
-    },
-    "packages/wakes": {
-      "name": "@claxedo/wakes",
-      "version": "0.4.0",
-      "dependencies": {
-        "better-sqlite3": "13.0.1",
-        "ms": "2.1.3",
-        "ulid": "3.0.2",
-      },
-      "devDependencies": {
-        "@types/better-sqlite3": "7.6.13",
-        "@types/bun": "catalog:",
-        "@types/ms": "2.1.0",
-        "typescript": "catalog:",
-        "vitest": "2.1.9",
       },
     },
     "packages/workspace-relay": {
@@ -1213,8 +1196,6 @@
     "@claxedo/telemetry": ["@claxedo/telemetry@workspace:packages/claxedo-telemetry"],
 
     "@claxedo/usage-contract": ["@claxedo/usage-contract@workspace:packages/usage-contract"],
-
-    "@claxedo/wakes": ["@claxedo/wakes@workspace:packages/wakes"],
 
     "@claxedo/web": ["@claxedo/web@workspace:packages/claxedo-web"],
 
@@ -4517,8 +4498,6 @@
     "ufo": ["ufo@1.6.4", "", {}, "sha512-JFNbkD1Svwe0KvGi8GOeLcP4kAWQ609twvCdcHxq1oSL8svv39ZuSvajcD8B+5D0eL4+s1Is2D/O6KN3qcTeRA=="],
 
     "uint8array-extras": ["uint8array-extras@1.5.0", "", {}, "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="],
-
-    "ulid": ["ulid@3.0.2", "", { "bin": { "ulid": "dist/cli.js" } }, "sha512-yu26mwteFYzBAot7KVMqFGCVpsF6g8wXfJzQUHvu1no3+rRRSFcSV2nKeYvNPLD2J4b08jYBDhHUjeH0ygIl9w=="],
 
     "ultrahtml": ["ultrahtml@1.6.0", "", {}, "sha512-R9fBn90VTJrqqLDwyMph+HGne8eqY1iPfYhPzZrvKpIfwkWZbcYlfpsb8B9dTvBfpy1/hqAD7Wi8EKfP9e8zdw=="],
 

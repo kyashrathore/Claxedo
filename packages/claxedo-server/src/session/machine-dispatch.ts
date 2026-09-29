@@ -22,7 +22,7 @@ import { isComposedAuthorityPort } from "../authority/composed-authority"
 import { eventSessionId } from "@claxedo/workspace-runtime/projection"
 
 export type MachineSessionCaller =
-  SignedControlPlaneAuth | { kind: "channel"; identity: ChannelMachineIdentity } | { kind: "actor"; actorId: string }
+  SignedControlPlaneAuth | { kind: "channel"; identity: ChannelMachineIdentity }
 export type MachineSessionCreate = {
   workspaceId: string
   title?: string
@@ -48,27 +48,24 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         message: "Register or open this machine workspace first",
       })
     const channelIdentity = caller && "identity" in caller ? caller.identity : undefined
-    const delegatedActor = caller && "kind" in caller && caller.kind === "actor" ? caller.actorId : undefined
     const auth = signedCaller(caller)
     let runtimeOptions = options
     let embeddedHeaders: HeadersInit | undefined
-    if (auth || channelIdentity || delegatedActor) {
+    if (auth || channelIdentity) {
       if (!services.authority)
         throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
       const channelAccess = channelIdentity
         ? await services.authority.resolveChannelMachineAccess(channelIdentity, workspaceId)
         : undefined
-      const access = delegatedActor
-        ? await services.authority.resolveRuntimeMachineAccess(delegatedActor, workspaceId)
-        : channelAccess
-          ? channelAccess
-          : await services.authority
-              .openWorkspace(auth!, { workspaceId })
-              .then(async (result) => ({
-                ...(await resolveRuntimeActor(services.authority!, auth!)),
-                orgId: result.workspace?.org_id,
-                role: result.role,
-              }))
+      const access = channelAccess
+        ? channelAccess
+        : await services.authority
+            .openWorkspace(auth!, { workspaceId })
+            .then(async (result) => ({
+              ...(await resolveRuntimeActor(services.authority!, auth!)),
+              orgId: result.workspace?.org_id,
+              role: result.role,
+            }))
       const actor = access
       const orgId = access.orgId
       const role = access.role
@@ -84,7 +81,6 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
         ...(channelIdentity && channelAccess
           ? { channelIdentity: { ...channelIdentity, identityVersion: channelAccess.identityVersion } }
           : {}),
-        delegatedActor: !!delegatedActor,
         orgId,
         role,
         runtimeActor: { ...actor, principalKind: actor.actorKind === "human" ? "user" : "service" },

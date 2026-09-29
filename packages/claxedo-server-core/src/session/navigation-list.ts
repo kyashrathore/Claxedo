@@ -39,7 +39,7 @@ export type SessionNavigationRow = {
   updatedAt: number
   /**
    * When a human last started a turn here. `updatedAt` moves for any actor's turn —
-   * a wake, a subagent, a channel message — so the session list bands on this instead.
+   * a subagent's completion, a channel message — so the session list bands on this instead.
    * Absent for a session only agents have driven, and for one that predates the field.
    */
   lastHumanTurnAt?: number

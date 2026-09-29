@@ -50,7 +50,7 @@ describe("certified core resource ownership", () => {
       "CLAXEDO_REQUEST_LIMITER",
     ])
     expect(config).not.toMatch(
-      /WAKE_LANE|DOCUMENTS|CLAXEDO_DOCUMENTS|LIVE_SYNC_ROOM|r2_buckets|durable_objects|crons|POLAR/i,
+      /DOCUMENTS|CLAXEDO_DOCUMENTS|LIVE_SYNC_ROOM|r2_buckets|durable_objects|crons|POLAR/i,
     )
   })
 
@@ -71,7 +71,7 @@ describe("certified core resource ownership", () => {
     expect(config).toContain('name = "claxedo-user-deployed-locked"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
-    expect(config).not.toMatch(/WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
+    expect(config).not.toMatch(/DOCUMENTS|POLAR|BILLING/i)
   })
 
   test("the lifecycle bridge adds only LiveSyncRoom while retaining the fail-closed bootstrap handler", async () => {
