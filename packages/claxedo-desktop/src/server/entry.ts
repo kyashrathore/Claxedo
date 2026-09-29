@@ -144,7 +144,7 @@ let stopping: Promise<number> | undefined
  * the machine still had work — which then fences the next generation from boot.
  * Exiting is `exit()` below, once whoever asked has its answer.
  */
-const stop = () => {
+const releaseOwnedWork = () => {
   stopping ??= server.stop().then(
     (outcome) => {
       ownership.stop()
@@ -168,12 +168,12 @@ const stop = () => {
 
 const exit = (trigger: string, code?: number) => {
   log.info("daemon exit requested", { trigger, pid: process.pid })
-  void stop().then((stopped) => {
+  void releaseOwnedWork().then((stopped) => {
     clearDiscovery()
     process.exit(code ?? stopped)
   })
 }
-requestStop = stop
+requestStop = releaseOwnedWork
 requestExit = exit
 process.once("SIGTERM", () => exit("SIGTERM"))
 process.once("SIGINT", () => exit("SIGINT"))
