@@ -5,17 +5,20 @@ import { AsyncPushQueue } from "@claxedo/helpers"
 
 type Pending = { ids: Set<string>; resolve: (result: SteerResult) => void }
 
-export class ClaudeTurnInput {
+export class ClaudeQueryInput {
   private readonly queue = new AsyncPushQueue<SDKUserMessage>()
   private readonly pending = new Set<Pending>()
-  private ended = false
-
-  constructor(opening: SDKUserMessage) { this.queue.push(opening) }
+  private steerable = false
 
   readonly stream: AsyncIterable<SDKUserMessage> = this.queue
 
+  open(message: SDKUserMessage): void {
+    this.steerable = true
+    this.queue.push(message)
+  }
+
   steer(input: SDKUserMessage): Promise<SteerResult> {
-    if (this.ended) return Promise.resolve({ ok: false, status: "no_active_turn", message: "Claude turn ended" })
+    if (!this.steerable) return Promise.resolve({ ok: false, status: "no_active_turn", message: "Claude turn ended" })
     const message = { ...input, uuid: randomUUID() }
     const result = new Promise<SteerResult>((resolve) => this.pending.add({ ids: new Set([message.uuid]), resolve }))
     this.queue.push(message)
@@ -32,13 +35,17 @@ export class ClaudeTurnInput {
     return true
   }
 
+  endTurn(): void {
+    this.steerable = false
+  }
+
   close(): void {
-    this.ended = true
+    this.steerable = false
     this.queue.end()
   }
 
   settle(outcome: "ended" | "failed"): void {
-    this.close()
+    this.steerable = false
     for (const item of this.pending) item.resolve({ ok: false, status: outcome === "ended" ? "declined" : "unknown", message: "Claude did not replay the steer" })
     this.pending.clear()
   }
