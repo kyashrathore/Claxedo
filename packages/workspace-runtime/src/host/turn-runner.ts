@@ -174,7 +174,8 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     }
     finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok)
     if (titled) {
-      void titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session })
+      void titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session,
+        turnMessageId: prompt.assistantMessageId })
     }
   }
 }

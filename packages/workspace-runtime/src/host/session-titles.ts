@@ -1,9 +1,10 @@
-import type { PromptInput } from "@claxedo/agent-runtime-contract"
+import type { PromptInput, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import { buildSession, sessionUpdated, withDir, type CompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
 import { Log } from "../log"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
+import type { SessionSlot } from "../projection/session-order"
 import type { AgentRuntimeStore } from "./contracts"
 import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "@claxedo/agent-sdk-runtime"
 import { acceptGeneratedTitle, sessionTitleRequest, TITLE_TURN_TIMEOUT_MS } from "./title-generation"
@@ -63,28 +64,38 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
 
   /**
    * Names the session from its first completed turn. The caller starts this
-   * after that turn's idle and never waits for it, so the title lands after
-   * that idle; a later turn's frames are not held for it. The harness is told
-   * the title before the frame goes out, so a harness that echoes a rename
-   * (Pi) does it before a reader that waited for the title starts another turn.
+   * right after that turn's idle and never waits for it. The session's slot
+   * opens before the first await: the session's turnless frames wait behind
+   * the title until it is published or dropped at its deadline, and the
+   * first frame of a later turn releases the slot at once, so a later turn is
+   * never held. The harness is told the title before the frame goes out, so
+   * a harness that echoes a rename (Pi) does it before a reader that waited
+   * for the title can start another turn.
    */
-  async function generate(target: TitleTarget) {
+  function generate(target: TitleTarget & { turnMessageId: string }): Promise<void> {
     const session = store.getSession(target.sessionId)
-    if (!session || session.parentID || session.titleSource === "user" || session.titleSource === "harness") return
+    if (!session || session.parentID || session.titleSource === "user" || session.titleSource === "harness") return Promise.resolve()
     const naming = target.transport.naming
-    if (!naming?.generateTitle || attempted.has(target.sessionId)) return
+    if (!naming?.generateTitle || attempted.has(target.sessionId)) return Promise.resolve()
     attempted.add(target.sessionId)
+    const slot = eventHub.openSlot(target.sessionId, target.turnMessageId)
+    const ask = (request: SessionTitleRequest) => naming.generateTitle?.(target.session, request) ?? Promise.resolve(null)
+    return nameSession(target, ask, session.title, slot).finally(slot.close)
+  }
+
+  async function nameSession(target: TitleTarget, generateTitle: (request: SessionTitleRequest) => Promise<string | null>,
+    placeholderTitle: Parameters<typeof acceptGeneratedTitle>[1], slot: SessionSlot) {
     const { sessionId, directory } = target
     const model = store.getSessionConfig(sessionId)?.model
     const deadline = { deadlineAt: Date.now() + deadlineMs, signal: AbortSignal.timeout(deadlineMs) }
     const expired = (what: string) => new Error(`${what} did not answer within ${deadlineMs} ms`)
     try {
-      const raw = await settleAtRequestDeadline("Session title generation", deadline, naming.generateTitle(target.session, sessionTitleRequest({
+      const raw = await settleAtRequestDeadline("Session title generation", deadline, generateTitle(sessionTitleRequest({
         directory,
         ...(model ? { model } : {}),
         messages: store.getMessages(sessionId),
       }, deadline)), () => {}, expired)
-      const title = acceptGeneratedTitle(raw, session.title)
+      const title = acceptGeneratedTitle(raw, placeholderTitle)
       if (!title) return
       const current = store.getSession(sessionId)
       const created = current?.time?.created
@@ -108,7 +119,7 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
       } catch (error) {
         log.warn("Harness did not take the session title in time", { sessionId, error: error instanceof Error ? error.message : String(error) })
       }
-      eventHub.publishGlobal(withDir(directory, committed))
+      slot.publishGlobal(withDir(directory, committed))
     } catch (error) {
       log.warn("Session title generation failed", { sessionId, harness: target.session.binding.connectionId, error: error instanceof Error ? error.message : String(error) })
     }

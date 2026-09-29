@@ -5,7 +5,7 @@ import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler, type WorkspaceEventStreamFrame } from "./events"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
 import type { AgentSessionStart, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import { questionAsked, messagePartUpdated, sessionDeleted, withDir, type CompatEnvelope } from "../compat-events"
+import { questionAsked, messagePartUpdated, sessionDeleted, sessionStatus, withDir, type CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
 
@@ -153,6 +153,24 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("raw runtime frames stay off the wire")
     const pty = frames.find((f) => f.payload?.type === "pty.exited")
     expect(pty.directory).toBe(DIRECTORY)
+  })
+
+  test("a session's control frames wait behind its open slot with its turnless frames, and a later turn's frame releases them", () => {
+    const { hub, bus, frames } = harness({})
+    const seen: string[] = []
+    const unsubscribe = frames.subscribe((frame) => { if ("payload" in frame) seen.push(frame.payload.type) })
+    const slot = hub.openSlot("ses-slot", "msg_asking")
+    bus.publish({ type: "session.queue", directory: DIRECTORY, sessionID: "ses-slot", queue: [] })
+    hub.publishGlobal({ directory: DIRECTORY, payload: sessionStatus("ses-slot", { type: "idle" }) })
+    expect(seen).toEqual([])
+    slot.close()
+    expect(seen).toEqual(["session.queue", "session.status"])
+    const next = hub.openSlot("ses-slot", "msg_asking")
+    bus.publish({ type: "session.queue", directory: DIRECTORY, sessionID: "ses-slot", queue: [] })
+    hub.publishGlobal(part("ses-slot", "prt-next", { status: "running" }))
+    unsubscribe()
+    next.close()
+    expect(seen).toEqual(["session.queue", "session.status", "session.queue", "message.part.updated"])
   })
 
   test("the frame tap and the runtime's own stream are fed by one subscription: each of the three sources' frames reaches both once, verbatim", async () => {
