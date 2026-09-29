@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import { copyText } from "@/lib/clipboard"
 import { useServer, type Machine } from "@/server"
-import { Button, ClaxedoIconButton } from "@/ui"
+import { Button, ClaxedoIconButton, Tag } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { SettingsGroup, SettingsIntro, SettingsList, SettingsRow } from "./section"
 
@@ -65,15 +65,39 @@ function AddMachine(props: { readonly empty: boolean }) {
 }
 
 function machineStatus(machine: Machine): SettingsKey {
-  if (machine.isThisMachine) return machine.online ? "settings.machines.connectedHere" : "settings.machines.offlineHere"
-  return machine.online ? "settings.machines.connected" : "settings.machines.offline"
+  if (!machine.online) return "settings.machines.offline"
+  if (!machine.isThisMachine) return "settings.machines.connected"
+  return machine.enrolled ? "settings.machines.reachableElsewhere" : "settings.machines.reachableHereOnly"
+}
+
+function listedMachines(machines: readonly Machine[]): readonly Machine[] {
+  const listed = machines.filter((machine) => machine.enrolled || machine.isThisMachine)
+  return [...listed.filter((machine) => machine.isThisMachine), ...listed.filter((machine) => !machine.isThisMachine)]
+}
+
+function MachineRow(props: { readonly machine: Machine }) {
+  const t = useTranslator(settingsDictionary)
+  return (
+    <SettingsRow
+      leading={<span class="settings-dot" data-tone={props.machine.online ? "success" : "muted"} aria-hidden="true" />}
+      title={
+        <span class="settings-machine-title">
+          <span>{props.machine.name}</span>
+          <Show when={props.machine.isThisMachine}>
+            <Tag>{t("settings.machines.thisComputer")}</Tag>
+          </Show>
+        </span>
+      }
+      description={t(machineStatus(props.machine))}
+    />
+  )
 }
 
 export function MachinesSection() {
   const t = useTranslator(settingsDictionary)
   const server = useServer()
   const query = useQuery(() => server.queries.machines.list())
-  const machines = createMemo(() => (query.data ?? []).filter((machine) => machine.enrolled))
+  const machines = createMemo(() => listedMachines(query.data ?? []))
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.machines.description")} />
@@ -93,15 +117,7 @@ export function MachinesSection() {
       <SettingsGroup title={t("settings.machines.yours")} description={t("settings.machines.yours.description")}>
         <Show when={machines().length > 0}>
           <SettingsList>
-            <For each={machines()}>
-              {(machine) => (
-                <SettingsRow
-                  leading={<span class="settings-dot" data-tone={machine.online ? "success" : "muted"} aria-hidden="true" />}
-                  title={machine.name}
-                  description={t(machineStatus(machine))}
-                />
-              )}
-            </For>
+            <For each={machines()}>{(machine) => <MachineRow machine={machine} />}</For>
           </SettingsList>
         </Show>
         <AddMachine empty={machines().length === 0} />

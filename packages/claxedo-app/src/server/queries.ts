@@ -37,13 +37,13 @@ function placementQueries(transport: Transport, workspaces: Workspaces) {
   return { list, byProject }
 }
 
-export function createQueries(transport: Transport, workspaces: Workspaces): ServerQueries {
+export function createQueries(transport: Transport, workspaces: Workspaces, thisMachineReport?: () => Promise<unknown>): ServerQueries {
   const cloud = cloudQueries(transport)
   return {
     livePlugins: livePluginQueries(transport),
     projects: projectQueries(transport, workspaces),
     placements: placementQueries(transport, workspaces),
-    machines: machineQueries(transport, workspaces),
+    machines: machineQueries(transport, workspaces, thisMachineReport),
     accounts: accountQueries(transport),
     usage: usageQueries(transport),
     marketplace: marketplaceQueries(transport),

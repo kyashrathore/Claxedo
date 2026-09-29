@@ -3,6 +3,7 @@ import type { RunHostedOperation } from "@claxedo/account-contract"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
+import { desktopMachineReport } from "@/lib/desktop-bridge"
 import { ClockProvider } from "@/lib/clock"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
@@ -30,7 +31,8 @@ function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {
-  const server = createServer({ serverUrl: props.serverUrl, ...props.access })
+  const report = desktopMachineReport()
+  const server = createServer({ serverUrl: props.serverUrl, ...props.access, ...(report ? { thisMachineReport: report } : {}) })
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>
