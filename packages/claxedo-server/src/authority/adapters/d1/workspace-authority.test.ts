@@ -12,6 +12,8 @@ import {
   type D1AuthorityProductPolicy,
 } from "./workspace-authority"
 import { D1OrgMemberAuthority } from "./org-member-authority"
+import { D1SessionAuthority } from "./session-authority"
+import { D1AuditAuthority } from "./audit-authority"
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
 
@@ -102,14 +104,14 @@ async function signed(
 }
 
 describe("D1 hosted workspace authority", () => {
-  test("reads the principal's identity row once per request auth object", async () => {
+  test("reads the principal's identity row once per request auth object, whichever authority class asks", async () => {
     const { authority: seeded, database } = await setup({ kind: "claxedo-hosted" })
     let identityReads = 0
     const counted = new Proxy(database, {
       get(target, key, receiver) {
         if (key === "prepare") {
           return (sql: string) => {
-            if (sql.includes("from auth_identities ai")) identityReads += 1
+            if (sql.includes("from auth_identities identity")) identityReads += 1
             return target.prepare(sql)
           }
         }
@@ -123,10 +125,18 @@ describe("D1 hosted workspace authority", () => {
       now: () => 1_800_000_000_000,
       randomId: (prefix) => `${prefix}_memo`,
     })
+    const sessions = new D1SessionAuthority(counted, { deploymentId: "deployment-a" })
+    const audit = new D1AuditAuthority(counted, { deploymentId: "deployment-a" })
     const auth = await signed(seeded, identity("alice"))
 
     await authority.usersMe(auth)
-    await Promise.all([authority.listOrgs(auth), authority.resolveOrgId(auth), authority.listWorkspaces(auth)])
+    await Promise.all([
+      authority.listOrgs(auth),
+      authority.resolveOrgId(auth),
+      authority.listWorkspaces(auth),
+      sessions.listSessions(auth, { workspaceId: "ws_any" }),
+      audit.auditAllow(auth, { action: "workspace.memo" }),
+    ])
     expect(identityReads).toBe(1)
 
     const next = await signed(seeded, identity("alice"))

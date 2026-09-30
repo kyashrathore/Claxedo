@@ -22,7 +22,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
-import { activeOrgMemberSql, PROJECT_ACCESS_SQL, workspaceAccessSql } from "../../authority/adapters/d1/project-role"
+import { may, maySql } from "../../authority/adapters/d1/authorization"
 import { isRecord } from "@claxedo/helpers/guards"
 
 /** The project scope a user default addresses; never a real project ID. */
@@ -40,7 +40,7 @@ const CLAXEDO_SCOPE_KEY = "claxedo"
  */
 export type AgentPluginActivationAuthority = Pick<
   WorkspaceAuthority,
-  "usersMe" | "resolveOrgId" | "authorizeProject" | "listOrgs"
+  "usersMe" | "resolveOrgId" | "authorizeProject"
 >
 
 export type D1SignedAgentPluginActivationStoreInput = {
@@ -86,20 +86,6 @@ type InstanceRow = {
   plugin_instance_id: string
 }
 
-type ProjectAccessRow = {
-  org_id: string
-  role_rank: number
-}
-
-type WorkspaceAccessRow = {
-  workspace_id: string
-  org_id: string
-  project_id: string
-  owner_user_id: string
-  backing: string
-  role_rank: number
-}
-
 type WorkspaceRow = {
   workspace_id: string
   org_id: string
@@ -107,15 +93,6 @@ type WorkspaceRow = {
   owner_user_id: string
   backing: string
 }
-
-/**
- * The runtime reads below carry an audience-bound token instead of a signed
- * bearer, so they cannot go through the authority port; they evaluate the
- * same membership and rank statements the authority does.
- */
-const ORG_MEMBERSHIP_SQL = `select 1 as present where ${activeOrgMemberSql("?", "?")}`
-
-const WORKSPACE_ACCESS_SQL = workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null")
 
 const PIN_COLUMNS = "plugin_instance_id, artifact_digest, source_id, relative_path, source_revision"
 
@@ -130,11 +107,6 @@ function text(value: unknown, detail: string) {
 
 function revisionNumber(value: unknown) {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) invalid("revision")
-  return value
-}
-
-function roleRank(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value)) invalid("access rank")
   return value
 }
 
@@ -339,7 +311,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   async mutateOrganizationDefault(auth: SignedControlPlaneAuth, input: MutateSignedOrganizationDefault) {
     const harnessIds = requireHarnesses(input.harnessIds)
     const scope = await this.scope(auth)
-    await this.requireOrganizationAdmin(auth, scope)
+    await this.requireOrganizationAdmin(scope)
     const operation = await operationId("mutateOrganizationDefault", {
       plugin_instance_id: input.pluginInstanceId,
       harness_ids: input.harnessIds,
@@ -431,14 +403,9 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   }
 
   private async requireMembership(ownerUserId: string, organizationId: string) {
-    const [user, membership] = await Promise.all([
-      this.database
-        .prepare(`select 1 as present from users where user_id = ? and state = 'active'`)
-        .bind(ownerUserId)
-        .first<PresenceRow>(),
-      this.database.prepare(ORG_MEMBERSHIP_SQL).bind(ownerUserId, organizationId, ownerUserId).first<PresenceRow>(),
-    ])
-    if (!user || !membership) throw denied("Agent Plugins organization membership is required")
+    if (!(await may(this.database, { userId: ownerUserId }, "member", { kind: "org", orgId: organizationId }))) {
+      throw denied("Agent Plugins organization membership is required")
+    }
   }
 
   /** The whole desired world of one cloud workspace, from its canonical owner. */
@@ -494,7 +461,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     input: UpdateSignedArtifactPin,
   ) {
     const scope = await this.scope(auth)
-    if (authority === "organization") await this.requireOrganizationAdmin(auth, scope)
+    if (authority === "organization") await this.requireOrganizationAdmin(scope)
     const operation = await operationId("updatePin", {
       authority,
       plugin_instance_id: input.pluginInstanceId,
@@ -583,13 +550,10 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     if (!result.ok) throw denied("Agent Plugins project access denied")
   }
 
-  private async requireOrganizationAdmin(auth: SignedControlPlaneAuth, scope: Scope) {
-    const orgs = await this.authority.listOrgs(auth)
-    if (!Array.isArray(orgs)) invalid("organization list")
-    const administrator = orgs.some((row) => isRecord(row)
-      && row.org_id === scope.orgId
-      && (row.role === "owner" || row.role === "admin"))
-    if (!administrator) throw denied("Agent Plugins organization admin access required")
+  private async requireOrganizationAdmin(scope: Scope) {
+    if (!(await may(this.database, { userId: scope.userId }, "administer", { kind: "org", orgId: scope.orgId }))) {
+      throw denied("Agent Plugins organization admin access required")
+    }
   }
 
   private async requireRuntimeAccess(input: {
@@ -598,32 +562,12 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     projectId: string
     workspaceId: string
   }) {
-    const { ownerUserId, organizationId, projectId, workspaceId } = input
-    const [user, membership, project, workspace] = await Promise.all([
-      this.database
-        .prepare(`select 1 as present from users where user_id = ? and state = 'active'`)
-        .bind(ownerUserId)
-        .first<PresenceRow>(),
-      this.database.prepare(ORG_MEMBERSHIP_SQL).bind(ownerUserId, organizationId, ownerUserId).first<PresenceRow>(),
-      this.database
-        .prepare(PROJECT_ACCESS_SQL)
-        .bind(ownerUserId, projectId, organizationId)
-        .first<ProjectAccessRow>(),
-      this.database
-        .prepare(WORKSPACE_ACCESS_SQL)
-        .bind(ownerUserId, workspaceId)
-        .first<WorkspaceAccessRow>(),
-    ])
-    if (!user || !membership) throw denied("Agent Plugins organization membership is required")
-    if (!project || project.org_id !== organizationId || roleRank(project.role_rank) < 1) {
-      throw denied("Agent Plugins project access denied")
-    }
-    if (!workspace
-      || workspace.org_id !== organizationId
-      || workspace.project_id !== projectId
-      || roleRank(workspace.role_rank) < 1) {
-      throw denied("Agent Plugins workspace access denied")
-    }
+    const operates = maySql({ userId: input.ownerUserId }, "operate", { kind: "workspace", alias: "w" })
+    const workspace = await this.database
+      .prepare(`select 1 from workspaces w where w.workspace_id = ? and w.org_id = ? and w.project_id = ? and ${operates.sql}`)
+      .bind(input.workspaceId, input.organizationId, input.projectId, ...operates.bind)
+      .first()
+    if (!workspace) throw denied("Agent Plugins workspace access denied")
   }
 
   private async revisionRow(orgId: string) {

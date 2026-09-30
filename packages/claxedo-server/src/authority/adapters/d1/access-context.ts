@@ -1,16 +1,16 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { FindAccountByEmail, MemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
-import { activeOrgMemberSql, organizationAdminSql } from "./project-role"
+import type { BoundSql } from "./authorization"
 
 export type AccessPrincipal = { userId: string; actorId: string }
 
 /**
  * What the organization, team and project-member modules share with the
- * workspace authority that resolves their callers: one database, one
- * deployment, one clock, one principal cache per request, and the product's
- * rule on which organizations may be addressed at all.
+ * workspace authority: one database, one deployment, one clock, the caller as
+ * `requireHuman` resolves it, and the product's rule on which organizations
+ * may be addressed at all.
  */
 export type D1AccessContext = {
   database: D1Database
@@ -20,6 +20,74 @@ export type D1AccessContext = {
   principal: (auth: SignedControlPlaneAuth) => Promise<AccessPrincipal>
   assertOrganizationAllowed: (orgId: string) => void
   findAccountByEmail?: FindAccountByEmail
+}
+
+export type HumanPrincipal = { userId: string; actorId: string; actorKind: "human" }
+
+type IdentityRow = {
+  user_id: string
+  user_state: "active" | "suspended" | "deleted"
+  actor_id: string
+  actor_kind: "human" | "agent"
+  actor_state: "active" | "suspended" | "revoked"
+  unlinked_at: number | null
+}
+
+/**
+ * One request = one `SignedControlPlaneAuth` object, and a request asks
+ * several D1 authority classes for its principal (the route's own lookup, then
+ * every store and port it calls). The identity row cannot change the answer
+ * within that request, so it is read once per auth object and database; a
+ * refusal is not remembered.
+ */
+const resolved = new WeakMap<SignedControlPlaneAuth, WeakMap<D1Database, Map<string, Promise<HumanPrincipal>>>>()
+
+/**
+ * The signed caller as this deployment's active human: the identity is still
+ * linked to the user the token names, the actor is that user's human actor,
+ * and both are active.
+ */
+export function requireHuman(database: D1Database, deploymentId: string, auth: SignedControlPlaneAuth): Promise<HumanPrincipal> {
+  let byDatabase = resolved.get(auth)
+  if (!byDatabase) resolved.set(auth, (byDatabase = new WeakMap()))
+  let byDeployment = byDatabase.get(database)
+  if (!byDeployment) byDatabase.set(database, (byDeployment = new Map()))
+  const existing = byDeployment.get(deploymentId)
+  if (existing) return existing
+  const pending = resolveHuman(database, deploymentId, auth).catch((cause: unknown) => {
+    byDeployment.delete(deploymentId)
+    throw cause
+  })
+  byDeployment.set(deploymentId, pending)
+  return pending
+}
+
+async function resolveHuman(database: D1Database, deploymentId: string, auth: SignedControlPlaneAuth): Promise<HumanPrincipal> {
+  const principal = auth.principal
+  if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
+  if (principal.deploymentId !== deploymentId || principal.actorKind !== "human") {
+    throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal belongs to another authority domain")
+  }
+  const row = await database
+    .prepare(`
+      select identity.user_id, person.state as user_state, actor.actor_id, actor.kind as actor_kind,
+        actor.state as actor_state, identity.unlinked_at
+      from auth_identities identity
+      join users person on person.user_id = identity.user_id
+      join actors actor on actor.actor_id = ? and actor.user_id = person.user_id
+      where identity.adapter = ? and identity.issuer = ? and identity.subject = ?
+    `)
+    .bind(principal.actorId, principal.identity.adapter, principal.identity.issuer, principal.identity.subject)
+    .first<IdentityRow>()
+  if (
+    !row || row.unlinked_at !== null || row.user_id !== principal.userId
+    || row.actor_id !== principal.actorId || row.actor_kind !== "human"
+  ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
+  if (row.user_state === "deleted") throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
+  if (row.user_state !== "active" || row.actor_state !== "active") {
+    throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
+  }
+  return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
 }
 
 const ACCESS_ERROR_STATUS = {
@@ -59,16 +127,6 @@ export function requireText(value: string, name: string) {
     throw new D1AccessAuthorityError("invalid_input", `${name} must be a non-empty string of at most 512 characters`)
   }
   return result
-}
-
-export async function canAdminOrganization(database: D1Database, userId: string, orgId: string) {
-  return !!(await database.prepare(`select ${organizationAdminSql("?", "?")} as allowed`)
-    .bind(userId, orgId, userId).first<{ allowed: number }>())?.allowed
-}
-
-export async function isActiveOrgMember(database: D1Database, userId: string, orgId: string) {
-  return !!(await database.prepare(`select ${activeOrgMemberSql("?", "?")} as present`)
-    .bind(userId, orgId, userId).first<{ present: number }>())?.present
 }
 
 /**
@@ -118,8 +176,6 @@ export async function resolveMemberUser(
     .bind(requireText(selectors.providerSubject!, "providerSubject"))
     .first<{ user_id: string }>()
 }
-
-export type BoundSql = { sql: string; bind: unknown[] }
 
 const ACCESS_CHANGE_ACTION_PREFIXES = ["org.", "team.", "project.member."] as const
 

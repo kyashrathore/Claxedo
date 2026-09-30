@@ -446,7 +446,7 @@ describe("remote access service", () => {
     const { authority, service, stopMachineTunnel } = setup()
     await service.enable(auth, { startAtLogin: false })
     const box = machineIdentity("host_box")
-    const invitation = await authority.createHostInvitation!(auth, { scope: { allowed_roots: ["/srv"], visibility: "owner" } })
+    const invitation = await authority.createHostInvitation!(auth, { scope: { allowed_roots: ["/srv"] } })
     const parts = invitationTokenParts(invitation.token)!
     await authority.redeemHostInvitation!({
       invitationId: parts.invitationId,

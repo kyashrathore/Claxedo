@@ -15,7 +15,7 @@
  * adapter, exported on its own entry.
  */
 
-export type HostScope = { revision: number; allowed_roots: string[]; visibility: "owner" | "org" }
+export type HostScope = { revision: number; allowed_roots: string[] }
 
 export type HostState = {
   host_id: string
@@ -273,7 +273,6 @@ function scopeRecord(value: unknown): HostScope {
   return {
     revision: stateNumber(record.revision, "scope.revision"),
     allowed_roots: stateStrings(record.allowed_roots, "scope.allowed_roots"),
-    visibility: record.visibility === "org" ? "org" : "owner",
   }
 }
 

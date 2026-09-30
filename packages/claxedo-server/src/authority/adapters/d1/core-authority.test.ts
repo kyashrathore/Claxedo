@@ -290,7 +290,7 @@ describe("composed Better Auth + D1 authority", () => {
       workspaceId: "ws_team_sharing",
     })).rejects.toMatchObject({ code: "workspace_authorization_denied" })
 
-    await authority.recordRuntimeAccessToken(bob, {
+    await expect(authority.recordRuntimeAccessToken(bob, {
       jti: "jti_team_bob",
       workspaceId: "ws_team_sharing",
       hostId: "host_team",
@@ -298,18 +298,13 @@ describe("composed Better Auth + D1 authority", () => {
       actorKind: "human",
       role: "viewer",
       expiresAt: Date.now() + 60_000,
-    })
+    })).rejects.toMatchObject({ status: 403 })
     await expect(authority.revokeSessionShare!(alice, {
       sessionId: "ses_team_sharing",
       workspaceId: "ws_team_sharing",
       grantId: firstGrant.grant_id,
-    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    })).resolves.toMatchObject({ revoked: true })
     expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toEqual([])
-    expect(await authority.runtimeAccessTokenActive({
-      jti: "jti_team_bob",
-      workspaceId: "ws_team_sharing",
-      hostId: "host_team",
-    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
   })
 
   test("has no unimplemented full-authority capabilities", () => {
@@ -422,7 +417,7 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ revoked: false })
   })
 
-  test("a channel-bound org member is refused on another person's workspace whatever their project grant or its visibility", async () => {
+  test("a channel-bound org member is refused on another person's workspace whatever their project grant", async () => {
     const { authority, database } = await setup()
     const alice = await signed(authority, "visibility-alice")
     const bob = await signed(authority, "visibility-bob")
@@ -450,10 +445,7 @@ describe("composed Better Auth + D1 authority", () => {
       .bind(project!.project_id, bob.principal!.userId)
       .run()
 
-    for (const visible of [0, 1]) {
-      await database.prepare("update workspaces set org_member_visible = ? where workspace_id = 'ws_alice'").bind(visible).run()
-      await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
-    }
+    await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
   })
 
   test("records only the configured canonical service actor and enforces deployment, workspace, JTI, and revocation", async () => {

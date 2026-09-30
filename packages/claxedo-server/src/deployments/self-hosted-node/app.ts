@@ -417,7 +417,7 @@ export function embeddedManagedPrivateSessionPolicy(
     let subject: string | undefined
     if (input.actor.actorKind === "human") {
       try {
-        subject = (await authority.resolveRuntimeMachineAccess(input.actor.actorId, input.authority.workspaceId, "viewer")).userId
+        subject = (await authority.resolveRuntimeMachineAccess(input.actor.actorId, input.authority.workspaceId)).userId
       } catch {
         subject = undefined
       }
@@ -497,7 +497,7 @@ export function embeddedManagedPrivateSessionPolicy(
   policy.authorizeHost = async (input) => {
     try {
       const claims = await streamClaims(input, WORKSPACE_STREAM_LEASE_SESSION, "read", input.lease)
-      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId, input.minimumRole)
+      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId)
       if (current.actorKind !== claims.actorKind || current.orgId !== claims.orgId) {
         throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority no longer matches this actor")
       }

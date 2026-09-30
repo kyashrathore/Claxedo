@@ -94,7 +94,6 @@ describe("SQLite host-connect upgrade", () => {
     db.exec(PRE_SCHEMA)
     expect(columns(db, "host_enrollments")).not.toContain("key_version")
     expect(columns(db, "host_workspace_assignments")).not.toContain("revision")
-    expect(columns(db, "workspaces")).not.toContain("org_member_visible")
     expect(columns(db, "workspaces")).not.toContain("host_assignment_revision")
     expect(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('host_invitations', 'host_request_nonces', 'host_assignment_readiness')`).all())
       .toEqual([])
@@ -129,10 +128,10 @@ describe("SQLite host-connect upgrade", () => {
       { workspace_id: "ws_idle", host_id: "host_live", revision: 1 },
       { workspace_id: "ws_served", host_id: "host_live", revision: 1 },
     ])
-    expect(db.prepare(`SELECT workspace_id, org_member_visible, remote_directory, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
+    expect(db.prepare(`SELECT workspace_id, remote_directory, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
       .toEqual([
-        { workspace_id: "ws_idle", org_member_visible: 1, remote_directory: "/srv/idle", host_assignment_revision: 1 },
-        { workspace_id: "ws_served", org_member_visible: 1, remote_directory: "/srv/app", host_assignment_revision: 1 },
+        { workspace_id: "ws_idle", remote_directory: "/srv/idle", host_assignment_revision: 1 },
+        { workspace_id: "ws_served", remote_directory: "/srv/app", host_assignment_revision: 1 },
       ])
     expect(db.prepare(`SELECT session_id, creator_actor_id, operation_id FROM session_history`).all())
       .toEqual([{ session_id: "ses_1", creator_actor_id: OWNER, operation_id: "op_1" }])

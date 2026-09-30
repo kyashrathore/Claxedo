@@ -241,14 +241,9 @@ function enrollmentScope(row: Pick<HostEnrollmentRow, "scope_json" | "scope_revi
   return hostEnrollmentScope(row.scope_json, row.scope_revision)
 }
 
-/** 0 withholds the implicit org-member role; an account enrollment has no scope and hides nothing. */
-function orgMemberVisible(scope: HostScopeDefinition | undefined) {
-  return scope?.visibility === "owner" ? 0 : 1
-}
-
 function validatedScope(input: HostScopeDefinition): HostScopeDefinition {
-  if (!Array.isArray(input.allowed_roots) || (input.visibility !== "owner" && input.visibility !== "org")) {
-    throw new SqliteHostConnectError("invalid_input", "scope requires allowed_roots and a visibility")
+  if (!Array.isArray(input.allowed_roots)) {
+    throw new SqliteHostConnectError("invalid_input", "scope requires allowed_roots")
   }
   const roots = input.allowed_roots.map((root) => {
     const normalized = typeof root === "string" ? normalizePosixDirectory(root) : undefined
@@ -257,13 +252,13 @@ function validatedScope(input: HostScopeDefinition): HostScopeDefinition {
     }
     return normalized
   })
-  return { allowed_roots: [...new Set(roots)], visibility: input.visibility }
+  return { allowed_roots: [...new Set(roots)] }
 }
 
 function scopeDefinitionJson(json: string): HostScopeDefinition {
   const scope = hostEnrollmentScope(json, 0)
   if (!scope) throw new Error("host_invitation_scope_malformed")
-  return { allowed_roots: scope.allowed_roots, visibility: scope.visibility }
+  return { allowed_roots: scope.allowed_roots }
 }
 
 /**
@@ -864,30 +859,10 @@ export function createSqliteWorkspaceAuthority(
     return grants.some((grant) => shareTargetsUser(db, grant, who))
   }
 
-  /**
-   * What a session share is worth on the workspace that holds the session: a
-   * grantee has no role there and still has to reach the machine serving it,
-   * so the grant floors them at `viewer` — enough to open the placement and be
-   * handed a Runtime Access Token, and nothing more. Read and write on the
-   * session itself stay the session authority's answer, asked per request, so
-   * the level never rides on this role.
-   */
-  const workspaceRoleWithSessionShares = (db: SqliteAuthorityDb, workspace: WorkspaceRow, who: AuthorityUser) => {
-    const direct = workspaceRoleForUser(db, workspace, who)
-    if (direct || workspace.deleted_at) return direct
-    const grants = db.prepare<unknown[], SessionShareTargetRow>(`
-      SELECT grant_row.granted_to_user_token_identifier, grant_row.granted_to_org_id, grant_row.granted_to_team_id
-      FROM session_share_grants grant_row
-      JOIN session_history session ON session.session_id = grant_row.session_id AND session.deleted_at IS NULL
-      WHERE grant_row.workspace_id = ? AND grant_row.revoked_at IS NULL
-    `).all(workspace.workspace_id)
-    return grants.some((grant) => shareTargetsUser(db, grant, who)) ? "viewer" as const : undefined
-  }
-
-  /** The workspace lookup every Runtime Access Token path shares, share included. */
+  /** The workspace lookup every Runtime Access Token path shares. */
   const requireRuntimeTokenWorkspace = (db: SqliteAuthorityDb, who: AuthorityUser, workspaceId: string) => {
     const workspace = workspaceByPublicId(db, workspaceId)
-    if (!workspace || !workspaceRoleWithSessionShares(db, workspace, who)) throw new Error("Workspace not found")
+    if (!workspace || !workspaceRoleForUser(db, workspace, who)) throw new Error("Workspace not found")
     return workspace
   }
 
@@ -912,7 +887,7 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace) denied()
-      const currentRole = workspaceRoleWithSessionShares(db, workspace, who)
+      const currentRole = workspaceRoleForUser(db, workspace, who)
       if (!currentRole || !roleAtLeast(currentRole, args.role)) denied()
       const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
       if (existing) throw new Error("Runtime Access Token already recorded")
@@ -1397,7 +1372,7 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace || workspace.deleted_at) denied()
-      const role = workspaceRoleWithSessionShares(db, workspace, who)
+      const role = workspaceRoleForUser(db, workspace, who)
       if (!role) denied()
       return {
         allowed: true,
@@ -1927,7 +1902,6 @@ export function createSqliteWorkspaceAuthority(
               repo_name = COALESCE(?, repo_name),
               git_branch = COALESCE(?, git_branch),
               remote_directory = COALESCE(?, remote_directory),
-              org_member_visible = ?,
               updated_at = ?
             WHERE workspace_id = ?
           `).run(
@@ -1936,7 +1910,6 @@ export function createSqliteWorkspaceAuthority(
             args.repoName ?? null,
             args.gitBranch ?? null,
             remoteDirectory ?? null,
-            orgMemberVisible(scope),
             now,
             args.workspaceId,
           )
@@ -1946,8 +1919,8 @@ export function createSqliteWorkspaceAuthority(
             INSERT INTO workspaces (
               workspace_id, org_id, project_id, owner_token_identifier, backing,
               display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
-              org_member_visible, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'local-worktree', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'local-worktree', ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             args.workspaceId,
             orgId,
@@ -1959,7 +1932,6 @@ export function createSqliteWorkspaceAuthority(
             args.repoName ?? null,
             args.gitBranch ?? null,
             remoteDirectory ?? null,
-            orgMemberVisible(scope),
             now,
             now,
           )
@@ -2269,11 +2241,7 @@ export function createSqliteWorkspaceAuthority(
         `).all(enrollment.host_id, enrollment.owner_token_identifier)
         const retired: string[] = []
         for (const assignment of assigned) {
-          if (assignment.remote_directory !== null && directoryWithinRoots(assignment.remote_directory, scope.allowed_roots)) {
-            db.prepare(`UPDATE workspaces SET org_member_visible = ?, updated_at = ? WHERE workspace_id = ?`)
-              .run(orgMemberVisible(scope), now, assignment.workspace_id)
-            continue
-          }
+          if (assignment.remote_directory !== null && directoryWithinRoots(assignment.remote_directory, scope.allowed_roots)) continue
           db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`).run(assignment.workspace_id)
           db.prepare(`DELETE FROM host_assignment_readiness WHERE workspace_id = ?`).run(assignment.workspace_id)
           db.prepare(retireMachinePlacedWorkspaceSql("workspace_id = ?")).run(now, now, assignment.workspace_id)
@@ -2683,14 +2651,14 @@ export function createSqliteWorkspaceAuthority(
       }))
       return { can_manage_shares: true, grants, participants, teams }
     },
-    async resolveRuntimeMachineAccess(actorId, workspaceId, minimumRole = "editor") {
+    async resolveRuntimeMachineAccess(actorId, workspaceId) {
       const db = database()
       const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId)
       if (!who || who.kind !== "human") denied()
       const workspace = workspaceByPublicId(db, workspaceId)
       if (!workspace) denied()
       const role = workspaceRoleForUser(db, workspace, who)
-      if (!role || !roleAtLeast(role, minimumRole)) denied()
+      if (!role) denied()
       return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.subject ? { userId: who.subject } : {}), ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async resolveChannelMachineAccess(identity, workspaceId) {
@@ -2720,7 +2688,7 @@ export function createSqliteWorkspaceAuthority(
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
             .get(args.actorId)
         : undefined
-      const currentRole = workspace && who ? workspaceRoleWithSessionShares(db, workspace, who) : undefined
+      const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const userAllowed = args.principalKind === "user"
         && who
         && who.kind === args.actorKind
@@ -2781,7 +2749,7 @@ export function createSqliteWorkspaceAuthority(
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
             .get(token.actor_id)
         : undefined
-      const currentRole = workspace && who ? workspaceRoleWithSessionShares(db, workspace, who) : undefined
+      const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const authorizationChanged = !workspace
         || !!workspace.deleted_at
         || (token.principal_kind === "user" && (

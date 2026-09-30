@@ -68,7 +68,6 @@ const absolutePath = z.string().min(1).max(1_024)
 const scopeBody = z
   .object({
     allowed_roots: z.array(absolutePath).max(50),
-    visibility: z.enum(["owner", "org"]),
   })
   .strict()
 
@@ -583,7 +582,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         if (!authority.updateHostEnrollmentScope) throw unsupportedError("Enrollment scope")
         return await authority.updateHostEnrollmentScope(auth, {
           enrollmentId: routeParam(c, "id"),
-          scope: { allowed_roots: body.allowed_roots, visibility: body.visibility },
+          scope: { allowed_roots: body.allowed_roots },
         })
       }, "PATCH", {
         limiter: controlPlaneRateLimiter,
@@ -729,7 +728,7 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
         if (!authority.createHostInvitation) throw unsupportedError("Host invitations")
         await authority.usersMe(auth)
         const created = await authority.createHostInvitation(auth, {
-          scope: { allowed_roots: body.scope.allowed_roots, visibility: body.scope.visibility },
+          scope: { allowed_roots: body.scope.allowed_roots },
           ...(body.displayName ? { displayName: body.displayName } : {}),
           ...(body.expiresInMs === undefined ? {} : { expiresInMs: body.expiresInMs }),
         })

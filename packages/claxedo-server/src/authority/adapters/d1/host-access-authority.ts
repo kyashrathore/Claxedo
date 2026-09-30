@@ -42,7 +42,8 @@ import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-c
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
-import { activeOrgMemberSql, workspaceRoleRankSql } from "./project-role"
+import { maySql, type WorkspaceAction } from "./authorization"
+import { requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
@@ -92,15 +93,6 @@ export type D1HostAccessAuthorityOptions = {
 
 type Principal = { userId: string; actorId: string; actorKind: "human" | "agent" }
 
-type PrincipalRow = {
-  user_id: string
-  user_state: "active" | "suspended" | "deleted"
-  actor_id: string
-  actor_kind: "human" | "agent"
-  actor_state: "active" | "suspended" | "revoked"
-  unlinked_at: number | null
-}
-
 type WorkspaceRow = {
   workspace_id: string
   org_id: string
@@ -109,7 +101,6 @@ type WorkspaceRow = {
   home_region: string | null
   remote_directory: string | null
   host_assignment_revision: number
-  role_rank: number
 }
 
 type EnrollmentRequestRow = {
@@ -290,14 +281,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * heartbeat's readiness row, and routing requires all three. Cold-registers
    * the workspace row exactly as the retired per-workspace registration did.
    *
-   * The owner's rank is decided against the record as it stands — a retired
+   * Ownership is decided against the record as it stands — a retired
    * machine-placed row included, since assigning it is what revives it — so a
    * refused request writes nothing. The cold registration, the revival, the
    * directory and the next assignment revision then land in one batch guarded
    * on the workspace counter and the enrollment's scope revision this call
    * validated, so a scope that moved in between leaves neither an assignment
-   * nor a workspace behind; the enrollment's scope decides both whether the
-   * directory is allowed and whether ordinary org members see the workspace.
+   * nor a workspace behind; the enrollment's scope decides whether the
+   * directory is allowed.
    * A stored directory is written back in its normalized form even when the
    * request omits one, so a row an older writer left un-normalized is
    * repaired by the next assignment.
@@ -333,7 +324,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (invitationOrgId && args.orgId && args.orgId !== invitationOrgId) {
       throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
     }
-    const orgMemberVisible = scope?.visibility !== "owner"
     // The workspace half is the admission `authorizeWorkspaceHostAssignment`
     // already gave this caller; the invitation and scope rules below are the
     // machine half, which only an assignment can know.
@@ -371,7 +361,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
         ...(remoteDirectory ? { remoteDirectory } : {}),
         ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
-        orgMemberVisible,
       })).statements
     }
     // The assigning owner describes the workspace the machine serves — name,
@@ -382,7 +371,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ...(args.repoName ? [["repo_name", args.repoName] as [string, string]] : []),
       ...(args.gitBranch ? [["git_branch", args.gitBranch] as [string, string]] : []),
       ...(remoteDirectory ? [["remote_directory", remoteDirectory] as [string, string]] : []),
-      ["org_member_visible", orgMemberVisible ? 1 : 0],
     ]
     const counter = workspace?.host_assignment_revision ?? 0
     const revision = counter + 1
@@ -392,7 +380,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ...registration,
       this.database.prepare(`
         update workspaces set deleted_at = null, host_assignment_revision = ?,
-          ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
+          ${description.map(([column]) => `${column} = ?, `).join("")}updated_at = ?
         where workspace_id = ? and host_assignment_revision = ? and backing = 'local-worktree'
           and exists (
             select 1 from host_enrollments
@@ -431,7 +419,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   async unassignWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireWorkspaceAccess(who, workspaceId, "admin")
+    await this.requireWorkspaceAccess(who, workspaceId, "administer")
     const now = this.now()
     const [result] = await this.database.batch([
       this.database.prepare(`
@@ -447,7 +435,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   async activeWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireWorkspaceAccess(who, workspaceId, "read")
+    await this.requireWorkspaceAccess(who, workspaceId, "open")
     const row = await this.database.prepare(`
       select assignment.workspace_id, assignment.host_id,
         enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
@@ -893,12 +881,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
       `).bind(...outsideRoots()),
-      this.database.prepare(`
-        update workspaces set org_member_visible = ?, updated_at = ?
-        where workspace_id in (
-          select workspace_id from host_workspace_assignments where host_id = ? and owner_actor_id = ?
-        )
-      `).bind(scope.visibility === "owner" ? 0 : 1, now, row.host_id, row.owner_actor_id),
       this.deleteAssertion(assertionId),
     ], "Host enrollment scope changed concurrently")
     const audit = await this.database.prepare(`select metadata_json from authority_audit_events where event_id = ?`)
@@ -1246,46 +1228,19 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[4]) }
   }
 
-  private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal belongs to another authority domain")
-    }
-    const row = await this.database.prepare(`
-      select ai.user_id, u.state as user_state, a.actor_id, a.kind as actor_kind,
-        a.state as actor_state, ai.unlinked_at
-      from auth_identities ai
-      join users u on u.user_id = ai.user_id
-      join actors a on a.actor_id = ? and a.user_id = u.user_id
-      where ai.adapter = ? and ai.issuer = ? and ai.subject = ?
-    `).bind(
-      principal.actorId,
-      principal.identity.adapter,
-      principal.identity.issuer,
-      principal.identity.subject,
-    ).first<PrincipalRow>()
-    if (
-      !row || row.unlinked_at !== null || row.user_id !== principal.userId || row.actor_id !== principal.actorId
-      || row.actor_kind !== "human"
-    ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    if (row.user_state === "deleted") throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
-    if (row.user_state !== "active" || row.actor_state !== "active") {
-      throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
-    }
-    return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
+  private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
-  private async requireWorkspaceAccess(
-    actor: Principal,
-    workspaceId: string,
-    action: "read" | "admin",
-    revivable = false,
-  ) {
+  private async requireWorkspaceAccess(actor: Principal, workspaceId: string, action: WorkspaceAction) {
+    const allowed = maySql(actor, action, { kind: "workspace", alias: "workspace" })
     const row = await this.database.prepare(`
-      ${workspaceAccessCte(action === "read" ? 1 : 3, revivable)}
-      select * from authorized_workspace
-    `).bind(actor.actorId, workspaceId).first<WorkspaceRow>()
+      select workspace.workspace_id, workspace.org_id, workspace.project_id,
+        workspace.backing, workspace.home_region, workspace.remote_directory,
+        workspace.host_assignment_revision
+      from workspaces workspace
+      where workspace.workspace_id = ? and ${allowed.sql}
+    `).bind(workspaceId, ...allowed.bind).first<WorkspaceRow>()
     if (!row) throw denied()
     return row
   }
@@ -1302,7 +1257,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     args: { workspaceId: string; orgId?: string; projectId?: string },
   ): Promise<{ registration: "existing" | "cold"; workspace?: WorkspaceRow }> {
     if (await this.assignableWorkspaceExists(args.workspaceId)) {
-      const workspace = await this.requireWorkspaceAccess(who, args.workspaceId, "admin", true)
+      const workspace = await this.requireWorkspaceAccess(who, args.workspaceId, "assign_host")
       requireLocalWorkspace(workspace)
       return { registration: "existing", workspace }
     }
@@ -1629,32 +1584,6 @@ class SqlJson {
 }
 
 
-/**
- * `revivable` admits a retired machine-placed row: its assignment is what
- * revives it, so the owner's rank is decided against the record as it is
- * before anything is written. Every other reader sees live rows only.
- */
-function workspaceAccessCte(rank: 1 | 3, revivable = false) {
-  return `with current_actor as (
-    select actor.actor_id, actor.user_id
-    from actors actor join users user on user.user_id = actor.user_id and user.state = 'active'
-    where actor.actor_id = ? and actor.state = 'active'
-  ), authorized_workspace as (
-    select workspace.workspace_id, workspace.org_id, workspace.project_id,
-      workspace.backing, workspace.home_region, workspace.remote_directory,
-      workspace.host_assignment_revision,
-      ${workspaceRoleRankSql({ user: "current_actor.user_id", ownerUserId: "workspace.owner_user_id" })} as role_rank
-    from current_actor
-    join workspaces workspace on workspace.workspace_id = ?
-      and ${revivable ? "(workspace.deleted_at is null or workspace.backing = 'local-worktree')" : "workspace.deleted_at is null"}
-    join projects project
-      on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
-    where ${activeOrgMemberSql("workspace.org_id", "current_actor.user_id")}
-    group by workspace.workspace_id
-    having role_rank >= ${rank}
-  )`
-}
-
 export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
   return [
     "claxedo.host-enrollment.enroll.v1",
@@ -1676,16 +1605,13 @@ function requireScope(input: HostScopeDefinition): HostScopeDefinition {
     if (!normalized) throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be absolute paths")
     return normalized
   })
-  if (input.visibility !== "owner" && input.visibility !== "org") {
-    throw new D1HostAccessAuthorityError("invalid_input", "scope.visibility must be 'owner' or 'org'")
-  }
-  return { allowed_roots: [...new Set(roots)], visibility: input.visibility }
+  return { allowed_roots: [...new Set(roots)] }
 }
 
 function storedScope(json: string): HostScopeDefinition {
   const scope = hostEnrollmentScope(json, 0)
   if (!scope) throw new D1HostAccessAuthorityError("resource_conflict", "Stored invitation scope is malformed")
-  return { allowed_roots: scope.allowed_roots, visibility: scope.visibility }
+  return { allowed_roots: scope.allowed_roots }
 }
 
 function supersededGeneration(servingGeneration: number) {

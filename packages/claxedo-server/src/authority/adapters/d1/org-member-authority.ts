@@ -7,16 +7,13 @@ import type {
 } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
   accessAuditStatement,
-  canAdminOrganization,
   D1AccessAuthorityError,
-  isActiveOrgMember,
   requireText,
   resolveMemberUser,
   type AccessPrincipal,
-  type BoundSql,
   type D1AccessContext,
 } from "./access-context"
-import { organizationAdminSql } from "./project-role"
+import { may, maySql, type BoundSql } from "./authorization"
 
 export const D1_ORG_MEMBER_AUTHORITY_METHODS = [
   "listOrgMembers",
@@ -45,7 +42,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   async listOrgMembers(auth: SignedControlPlaneAuth, args: { orgId: string }): Promise<OrgMember[]> {
     const who = await this.context.principal(auth)
     const orgId = requireText(args.orgId, "orgId")
-    if (!(await isActiveOrgMember(this.database, who.userId, orgId))) return []
+    if (!(await may(this.database, who, "member", { kind: "org", orgId }))) return []
     const result = await this.database
       .prepare(`
         select member.user_id, member.user_id as public_id,
@@ -224,7 +221,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   private async adminOrganization(who: AccessPrincipal, value: string) {
     const orgId = requireText(value, "orgId")
     this.context.assertOrganizationAllowed(orgId)
-    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw new D1AccessAuthorityError("org_admin_required")
     }
     return orgId
@@ -252,8 +249,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   ) {
     if (current.founder && next !== "owner") throw new D1AccessAuthorityError("org_owner_protected")
     if (current.role !== "owner" && next !== "owner") return
-    const caller = await this.membership(orgId, who.userId)
-    if (!caller.founder && caller.role !== "owner") throw new D1AccessAuthorityError("org_owner_required")
+    if (!(await may(this.database, who, "own", { kind: "org", orgId }))) throw new D1AccessAuthorityError("org_owner_required")
   }
 
   /**
@@ -273,11 +269,8 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     next: OrgMemberRole | null,
     requireActiveMembership = next === null,
   ): BoundSql {
-    const callerIsOwner = `exists (
-      select 1 from org_memberships caller_row
-      where caller_row.org_id = guard_org.org_id and caller_row.user_id = ?
-        and caller_row.role = 'owner' and caller_row.revoked_at is null
-    )`
+    const administers = maySql(who, "administer", { kind: "org", orgId: "guard_org.org_id" })
+    const owns = maySql(who, "own", { kind: "org", orgId: "guard_org.org_id" })
     const targetIsOwner = `exists (
       select 1 from org_memberships target_row
       where target_row.org_id = guard_org.org_id and target_row.user_id = guard_target.user_id
@@ -288,12 +281,9 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         select 1 from orgs guard_org
         join users guard_target on guard_target.user_id = ?${next === null ? "" : " and guard_target.state = 'active'"}
         where guard_org.org_id = ? and guard_org.deleted_at is null
-          and ${organizationAdminSql("guard_org.org_id", "?")}
+          and ${administers.sql}
           and (guard_org.owner_user_id <> guard_target.user_id or ? = 'owner')
-          and (
-            guard_org.owner_user_id = ? or ${callerIsOwner}
-            or (coalesce(?, '') <> 'owner' and not ${targetIsOwner})
-          )
+          and (${owns.sql} or (coalesce(?, '') <> 'owner' and not ${targetIsOwner}))
           ${requireActiveMembership ? `and exists (
             select 1 from org_memberships active_row
             where active_row.org_id = guard_org.org_id and active_row.user_id = guard_target.user_id
@@ -305,7 +295,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
               and unchanged_row.revoked_at is null and unchanged_row.role = ?
           )`}
       )`,
-      bind: [userId, orgId, who.userId, who.userId, next, who.userId, who.userId, next, ...(next === null ? [] : [next])],
+      bind: [userId, orgId, ...administers.bind, next, ...owns.bind, next, ...(next === null ? [] : [next])],
     }
   }
 

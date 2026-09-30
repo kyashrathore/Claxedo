@@ -621,11 +621,14 @@ export function createSqlitePrivateSessionAuthority(input: {
     async grantSessionParticipant(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
-      participantAdministrator(db, actor, value.sessionId, value.workspaceId)
+      const { workspace } = participantAdministrator(db, actor, value.sessionId, value.workspaceId)
       const participantId = required(value.participantActorId, "participantActorId")
-      if (!db.prepare(`SELECT 1 FROM users WHERE token_identifier = ?`).get(participantId)) {
-        throw new SqlitePrivateSessionAuthorityError("invalid_input", "Participant actor does not exist")
-      }
+      const participant = db.prepare<unknown[], AuthorityUser & { kind: string }>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
+        .get(participantId)
+      if (!participant) throw new SqlitePrivateSessionAuthorityError("invalid_input", "Participant actor does not exist")
+      // Only a share crosses people: a participant is an agent actor this store
+      // mints with no person behind it, or the workspace's owner.
+      if (participant.kind !== "agent" && !authorizeWorkspaceForUser(db, workspace, participant, "read")) denied()
       const at = now()
       db.prepare(`
         INSERT INTO session_participants (
@@ -647,17 +650,10 @@ export function createSqlitePrivateSessionAuthority(input: {
       if (participantId === current.row.creator_actor_id) {
         throw new SqlitePrivateSessionAuthorityError("actor_authorization_denied", "Session creator cannot be revoked")
       }
-      const at = now()
       const removed = db.prepare(`
         UPDATE session_participants SET revoked_at = ?
         WHERE session_id = ? AND workspace_id = ? AND participant_actor_id = ? AND revoked_at IS NULL
-      `).run(at, value.sessionId, value.workspaceId, participantId).changes > 0
-      if (removed) {
-        db.prepare(`
-          UPDATE runtime_access_tokens SET revoked_at = ?
-          WHERE workspace_id = ? AND actor_id = ? AND revoked_at IS NULL
-        `).run(at, value.workspaceId, participantId)
-      }
+      `).run(now(), value.sessionId, value.workspaceId, participantId).changes > 0
       return { removed }
     },
     async listSessions(auth, value) {

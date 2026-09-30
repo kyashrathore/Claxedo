@@ -160,7 +160,7 @@ const enrollmentIdOf = (m: Machine) => [...m.cp.enrollments.keys()][0]
 
 /** The invitation minted on the owner's laptop, then the box's user-data: token file, repo, `claxedo connect … --install-service`. */
 async function cloudInit(m: Machine) {
-  const invitation = await m.cp.createInvitation({ displayName: "ec2-host", scope: { allowed_roots: [m.root], visibility: "owner" } })
+  const invitation = await m.cp.createInvitation({ displayName: "ec2-host", scope: { allowed_roots: [m.root] } })
   return await provision({
     tokenFile: m.tokenFile,
     token: invitation.token,
@@ -436,7 +436,7 @@ async function inProcessHost() {
       const since = await lastBeatAt()
       let argv = ["--foreground"]
       if (!(await store.load())?.enrollment) {
-        const invitation = await cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [root], visibility: "owner" } })
+        const invitation = await cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [root] } })
         const tokenFile = path.join(home, "invite.txt")
         await fs.writeFile(tokenFile, invitation.token)
         argv = ["--token-file", tokenFile, "--root", root]

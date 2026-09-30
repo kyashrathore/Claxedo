@@ -638,7 +638,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     let subject: string | undefined
     if (principal.principalKind === "user") {
       try {
-        subject = (await options.authority.resolveRuntimeMachineAccess?.(principal.actorId, claims.workspaceId, "viewer"))?.userId
+        subject = (await options.authority.resolveRuntimeMachineAccess?.(principal.actorId, claims.workspaceId))?.userId
       } catch {
         subject = undefined
       }

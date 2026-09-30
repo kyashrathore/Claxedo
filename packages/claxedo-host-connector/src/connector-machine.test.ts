@@ -129,7 +129,7 @@ describe("start", () => {
       "/api/claxedo/host/enrollments/heartbeat",
     ])
     expect(h.beats()[0]?.body).toMatchObject({ generation: 1, acks: [], sessionAuthority: "managed-private" })
-    expect(h.scopes).toEqual([{ revision: 1, allowed_roots: ["/srv"], visibility: "owner" }])
+    expect(h.scopes).toEqual([{ revision: 1, allowed_roots: ["/srv"] }])
     expect(h.seen, "no assignments means nothing to reconcile").toEqual([])
   })
 
@@ -368,11 +368,11 @@ describe("assignment discovery", () => {
     // scope must be in force when the new revision is validated, or the host
     // would ack a folder the owner just excluded.
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
-    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 2, allowed_roots: ["/srv/only"], visibility: "owner" }
+    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 2, allowed_roots: ["/srv/only"] }
     h.tick()
     await vi.waitFor(() => expect(h.ackFailures).toHaveLength(1))
 
-    expect(h.scopes.at(-1)).toEqual({ revision: 2, allowed_roots: ["/srv/only"], visibility: "owner" })
+    expect(h.scopes.at(-1)).toEqual({ revision: 2, allowed_roots: ["/srv/only"] })
     expect(h.state().scope?.revision).toBe(2)
     expect(String(h.ackFailures[0])).toContain("outside this host's roots")
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
@@ -384,7 +384,7 @@ describe("assignment discovery", () => {
     // answer a replayed pre-restart response carries still says revision 1 —
     // wider roots the owner has since removed.
     const h = await machineHost(cp, { scopeRevision: 2 })
-    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 1, allowed_roots: ["/"], visibility: "owner" }
+    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 1, allowed_roots: ["/"] }
 
     await h.connector.start()
 
@@ -392,9 +392,9 @@ describe("assignment discovery", () => {
     expect(h.state().scope?.revision, "the stored scope is untouched").toBe(1)
 
     // A genuinely newer revision is still the owner's word and lands.
-    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 3, allowed_roots: ["/srv/only"], visibility: "owner" }
+    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 3, allowed_roots: ["/srv/only"] }
     await h.connector.beat()
-    expect(h.scopes).toEqual([{ revision: 3, allowed_roots: ["/srv/only"], visibility: "owner" }])
+    expect(h.scopes).toEqual([{ revision: 3, allowed_roots: ["/srv/only"] }])
   })
 
   test("a scope the caller could not store is delivered again on the next beat", async () => {
@@ -415,7 +415,7 @@ describe("assignment discovery", () => {
     await h.connector.beat()
 
     expect(attempts).toBe(2)
-    expect(h.scopes).toEqual([{ revision: 1, allowed_roots: ["/srv"], visibility: "owner" }])
+    expect(h.scopes).toEqual([{ revision: 1, allowed_roots: ["/srv"] }])
     expect(h.state().scope?.revision).toBe(1)
   })
 

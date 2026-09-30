@@ -115,7 +115,7 @@ describe("a connect fleet on the signed self-hosted node", () => {
     const invitation = await json<{ token: string }>(await composed.app.request("/api/claxedo/host/invitations", {
       method: "POST",
       headers: owner,
-      body: JSON.stringify({ displayName: "box", scope: { allowed_roots: ["/srv"], visibility: "owner" }, expiresInMs: 60_000 }),
+      body: JSON.stringify({ displayName: "box", scope: { allowed_roots: ["/srv"] }, expiresInMs: 60_000 }),
     }))
     const parts = invitationTokenParts(invitation.token)!
     const redeemed = await json<{ enrollment: { enrollment_id: string }; resumed: boolean }>(

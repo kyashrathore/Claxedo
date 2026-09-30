@@ -27,7 +27,7 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
  * deliberate bump someone reads.
  */
 const ENTRIES = [
-  // Every entry carries the D1 access model: the project-role query, the access
+  // Every entry carries the D1 access model: the authorization rules, the access
   // context, the org-member, project-member and team authorities, the host
   // access error contract, and the verified-email account lookup.
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 104, packages: 19 },

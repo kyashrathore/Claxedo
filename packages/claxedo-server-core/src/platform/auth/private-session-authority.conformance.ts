@@ -33,11 +33,16 @@ export type PrivateSessionAuthorityConformanceHarness = {
   turnAuthority?: SessionTurnAuthority
   setWorkspaceAvailable(available: boolean): Promise<void>
   workspaceId: string
+  /** The workspace's owner, and so the only person who may create a session in it. */
   creator: {
     auth: SignedControlPlaneAuth
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
   }
-  participant: {
+  /**
+   * A member of the workspace's organization holding a project role on it,
+   * who does not own the workspace and holds no share.
+   */
+  member: {
     auth: SignedControlPlaneAuth
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
   }
@@ -52,9 +57,9 @@ export type PrivateSessionAuthorityConformanceReport = {
     released: true
   }
   access: {
-    deniedBeforeGrant: true
-    allowedAfterGrant: true
-    deniedAfterRevoke: true
+    memberRefusedTheSession: true
+    memberRefusedCreation: true
+    participantGrantRefused: true
   }
   attribution: {
     canonicalActorPreserved: true
@@ -70,7 +75,7 @@ export type PrivateSessionAuthorityConformanceReport = {
 export async function exercisePrivateSessionAuthorityConformance(
   harness: PrivateSessionAuthorityConformanceHarness,
 ): Promise<PrivateSessionAuthorityConformanceReport> {
-  const { authority, workspaceId, creator, participant } = harness
+  const { authority, workspaceId, creator, member } = harness
   const sessionId = "ses_private_session_contract"
   const operationId = "op_private_session_contract"
 
@@ -110,7 +115,7 @@ export async function exercisePrivateSessionAuthorityConformance(
   }
   await authority.authorizeRuntimeSessionStart(startInput)
   for (const invalid of [
-    { ...startInput, ...participant.runtime },
+    { ...startInput, ...member.runtime },
     { ...startInput, sessionId: "ses_unreserved" },
     { ...startInput, workspaceId: "workspace_unrelated" },
     { ...startInput, registrationOperationId: "op_unreserved" },
@@ -168,37 +173,43 @@ export async function exercisePrivateSessionAuthorityConformance(
     action: "write",
   })
 
-  const deniedBeforeGrant = await rejects(() =>
-    authority.authorizeSessionRead(participant.auth, { sessionId, workspaceId }),
+  invariant(
+    await rejects(() => authority.authorizeSessionRead(member.auth, { sessionId, workspaceId })),
+    "an organization or project role exposed a session on another person's workspace",
   )
-  invariant(deniedBeforeGrant, "workspace authority alone exposed a private session")
-
-  const grant = await authority.grantSessionParticipant(creator.auth, {
-    sessionId,
-    workspaceId,
-    participantActorId: participant.runtime.actorId,
-  })
-  invariant(grant.participant_id === participant.runtime.actorId, "participant grant returned a different actor")
-  await authority.authorizeSessionRead(participant.auth, { sessionId, workspaceId })
-  await authority.authorizeRuntimeSession({
-    ...participant.runtime,
-    sessionId,
-    workspaceId,
-    action: "read",
-  })
+  invariant(
+    await rejects(() => authority.authorizeRuntimeSession({ ...member.runtime, sessionId, workspaceId, action: "read" })),
+    "an organization or project role admitted the runtime to a session on another person's workspace",
+  )
+  invariant(
+    await rejects(() => authority.reserveSession(member.auth, {
+      operationId: "op_private_session_member", sessionId: "ses_private_session_member", workspaceId, kind: "create",
+    })),
+    "someone who does not own the workspace reserved a session in it",
+  )
+  invariant(
+    await rejects(() => authority.grantSessionParticipant(creator.auth, {
+      sessionId, workspaceId, participantActorId: member.runtime.actorId,
+    })),
+    "a participant grant admitted someone who does not own the workspace",
+  )
+  invariant(
+    await rejects(() => authority.authorizeSessionRead(member.auth, { sessionId, workspaceId })),
+    "a refused participant grant admitted its target",
+  )
 
   let fencingToken: number | undefined
   if (harness.turnAuthority) {
     for (const turnId of ["message_canonical_actor", "message_forged_actor"]) {
       const lease = await harness.turnAuthority.acquireSessionTurn({
-        ...participant.runtime,
+        ...creator.runtime,
         sessionId,
         workspaceId,
         turnId,
       })
       fencingToken = lease.fencingToken
       await harness.turnAuthority.releaseSessionTurn({
-        ...participant.runtime,
+        ...creator.runtime,
         sessionId,
         workspaceId,
         turnId,
@@ -207,7 +218,7 @@ export async function exercisePrivateSessionAuthorityConformance(
       })
     }
   }
-  await authority.syncSessionMessages(participant.auth, {
+  await authority.syncSessionMessages(creator.auth, {
     sessionId,
     workspaceId,
     maxEventOrdinal: 1,
@@ -220,7 +231,7 @@ export async function exercisePrivateSessionAuthorityConformance(
           role: "user",
           claxedo: {
             author: {
-              id: participant.runtime.actorId,
+              id: creator.runtime.actorId,
               kind: "human",
               name: "untrusted display name",
             },
@@ -232,7 +243,7 @@ export async function exercisePrivateSessionAuthorityConformance(
         info: {
           id: "message_forged_actor",
           role: "user",
-          claxedo: { author: { id: creator.runtime.actorId, kind: "human" } },
+          claxedo: { author: { id: member.runtime.actorId, kind: "human" } },
         },
         parts: [],
       },
@@ -259,33 +270,17 @@ export async function exercisePrivateSessionAuthorityConformance(
   const canonicalAuthor = asRecord(asRecord(asRecord(canonical?.info)?.claxedo)?.author)
   const forgedAuthor = asRecord(asRecord(asRecord(forged?.info)?.claxedo)?.author)
   invariant(
-    canonicalAuthor?.id === participant.runtime.actorId &&
-      canonicalAuthor.kind === participant.runtime.actorKind &&
+    canonicalAuthor?.id === creator.runtime.actorId &&
+      canonicalAuthor.kind === creator.runtime.actorKind &&
       canonicalAuthor.name === undefined,
     "canonical actor attribution trusted caller-supplied display metadata",
   )
   invariant(
     harness.turnAuthority
-      ? forgedAuthor?.id === participant.runtime.actorId && forgedAuthor.kind === participant.runtime.actorKind
+      ? forgedAuthor?.id === creator.runtime.actorId && forgedAuthor.kind === creator.runtime.actorKind
       : forgedAuthor === undefined,
     "message projection preserved a forged actor",
   )
-
-  const revoked = await authority.revokeSessionParticipant(creator.auth, {
-    sessionId,
-    workspaceId,
-    participantActorId: participant.runtime.actorId,
-  })
-  invariant(revoked.removed, "active participant was not revoked")
-  const deniedAfterRevoke = await rejects(() =>
-    authority.authorizeRuntimeSession({
-      ...participant.runtime,
-      sessionId,
-      workspaceId,
-      action: "read",
-    }),
-  )
-  invariant(deniedAfterRevoke, "revoked participant retained runtime session authority")
 
   const compensatedSessionId = "ses_private_session_compensation_contract"
   const compensatedOperationId = "op_private_session_compensation_contract"
@@ -392,7 +387,7 @@ export async function exercisePrivateSessionAuthorityConformance(
   return {
     scenarios: PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS,
     lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
-    access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
+    access: { memberRefusedTheSession: true, memberRefusedCreation: true, participantGrantRefused: true },
     attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
   }
 }
@@ -401,8 +396,7 @@ export type RuntimeForkReservationConformanceReport = {
   forkReservedUnderAWritableParent: true
   registeredChildIsPrivateToItsCreator: true
   refusedUnderAnUnreadableParent: true
-  refusedUnderAFollowOnlyParent: true
-  revokedParentRefusesStartupAndRegistration: true
+  refusedToAShareHolderAtEitherLevel: true
   refusedForAMismatchedIntent: true
 }
 
@@ -414,13 +408,17 @@ export type RuntimeForkReservationConformanceReport = {
  * pairings below are refused before anything is written. The runtime-principal
  * entrypoint is the one under test: the route reaches it with an actor it took
  * from a verified proof, never from the request body.
+ *
+ * Creating a session on a machine, a fork included, is the workspace owner's
+ * alone: a share on the parent admits its holder to that session and to
+ * nothing it would create.
  */
 export async function exerciseRuntimeForkReservationConformance(
-  harness: Pick<PrivateSessionAuthorityConformanceHarness, "authority" | "workspaceId" | "creator" | "participant"> & {
+  harness: Pick<PrivateSessionAuthorityConformanceHarness, "authority" | "workspaceId" | "creator" | "member"> & {
     setParentShare(sessionId: string, level: "follow" | "send" | null): Promise<void>
   },
 ): Promise<RuntimeForkReservationConformanceReport> {
-  const { authority, workspaceId, creator, participant } = harness
+  const { authority, workspaceId, creator, member } = harness
   const parentSessionId = "ses_fork_reservation_parent"
   const sessionId = "ses_fork_reservation_child"
 
@@ -463,53 +461,30 @@ export async function exerciseRuntimeForkReservationConformance(
   await authority.authorizeRuntimeSession({ ...creator.runtime, sessionId, workspaceId, action: "write" })
   invariant(
     await rejects(() =>
-      authority.authorizeRuntimeSession({ ...participant.runtime, sessionId, workspaceId, action: "read" }),
+      authority.authorizeRuntimeSession({ ...member.runtime, sessionId, workspaceId, action: "read" }),
     ),
-    "a registered child was readable by a workspace member who is not on it",
+    "a registered child was readable by an organization member who is not on it",
   )
 
-  invariant(
-    await rejects(() =>
-      authority.reserveRuntimeSession(participant.runtime, {
-        operationId: "op_fork_reservation_under_private_parent",
-        sessionId: "ses_fork_reservation_stranger",
-        workspaceId,
-        kind: "fork",
-        parentSessionId,
-      }),
-    ),
-    "a fork was reserved under a parent its creator cannot read",
-  )
-
-  // Prove workspace creation is available, so a denial below is specifically
-  // the private parent's grant rather than an unrelated workspace role.
-  await authority.reserveRuntimeSession(participant.runtime, {
-    operationId: "op_fork_member_root", sessionId: "ses_fork_member_root", workspaceId, kind: "create",
-  })
-  const sharedFork = {
-    operationId: "op_fork_shared_parent", sessionId: "ses_fork_shared_parent", workspaceId,
+  const memberFork = {
+    operationId: "op_fork_member", sessionId: "ses_fork_member", workspaceId,
     kind: "fork" as const, parentSessionId,
   }
-  await harness.setParentShare(parentSessionId, "follow")
-  await authority.authorizeRuntimeSession({ ...participant.runtime, sessionId: parentSessionId, workspaceId, action: "read" })
-  invariant(await rejects(() => authority.reserveRuntimeSession(participant.runtime, sharedFork)),
-    "a follow-only parent grant admitted a child that can wake it")
-  await harness.setParentShare(parentSessionId, "send")
-  await authority.reserveRuntimeSession(participant.runtime, sharedFork)
-  const startup = { ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, registrationOperationId: sharedFork.operationId }
-  await authority.authorizeRuntimeSessionStart(startup)
+  invariant(await rejects(() => authority.reserveRuntimeSession(member.runtime, memberFork)),
+    "someone who does not own the workspace forked a session in it")
+  invariant(
+    await rejects(() => authority.reserveRuntimeSession(member.runtime, {
+      operationId: "op_fork_member_root", sessionId: "ses_fork_member_root", workspaceId, kind: "create",
+    })),
+    "someone who does not own the workspace reserved a root session in it",
+  )
+  for (const level of ["follow", "send"] as const) {
+    await harness.setParentShare(parentSessionId, level)
+    await authority.authorizeRuntimeSession({ ...member.runtime, sessionId: parentSessionId, workspaceId, action: "read" })
+    invariant(await rejects(() => authority.reserveRuntimeSession(member.runtime, memberFork)),
+      `a ${level} share on the parent admitted its holder to fork it`)
+  }
   await harness.setParentShare(parentSessionId, null)
-  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(startup)),
-    "a reserved child started after parent authority was revoked")
-  const register = { ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, operationId: sharedFork.operationId, createdAt: Date.now(), updatedAt: Date.now() }
-  invariant(await rejects(() => authority.registerRuntimeSession(register)),
-    "a reserved child registered after parent authority was revoked")
-  invariant(await rejects(() => authority.authorizeRuntimeSession({ ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, action: "read" })),
-    "a refused child registration published a private session")
-  await harness.setParentShare(parentSessionId, "send")
-  await authority.authorizeRuntimeSessionStart(startup)
-  await authority.registerRuntimeSession(register)
-  await authority.authorizeRuntimeSession({ ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, action: "write" })
 
   invariant(
     await rejects(() =>
@@ -539,8 +514,7 @@ export async function exerciseRuntimeForkReservationConformance(
     forkReservedUnderAWritableParent: true,
     registeredChildIsPrivateToItsCreator: true,
     refusedUnderAnUnreadableParent: true,
-    refusedUnderAFollowOnlyParent: true,
-    revokedParentRefusesStartupAndRegistration: true,
+    refusedToAShareHolderAtEitherLevel: true,
     refusedForAMismatchedIntent: true,
   }
 }
@@ -555,7 +529,7 @@ export type PrivateSessionAdoptionConformanceHarness = {
     auth: SignedControlPlaneAuth
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
   }
-  /** A workspace member who may write there but does not own the machine. */
+  /** A member of the workspace's organization who does not own the workspace or the machine. */
   member: {
     auth: SignedControlPlaneAuth
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
@@ -567,16 +541,17 @@ export type PrivateSessionAdoptionConformanceReport = {
   adoptedForEnrollmentOwner: true
   idempotent: true
   refusedForMember: true
-  refusedWhenHeldByAnotherCreator: true
+  refusedWhileAReservationHoldsIt: true
 }
 
 /**
  * The adoption contract both adapters answer: a session the host already held
  * becomes the enrollment owner's, once, and nobody else's.
  *
- * Every session id here stands for a transcript created on the machine before
- * remote access existed, so none of them is reserved first — which is the
- * whole point, and why no other action in the port can reach this state.
+ * Every adopted session id stands for a transcript created on the machine
+ * before remote access existed, so none of them is reserved first — which is
+ * the whole point, and why no other action in the port can reach this state.
+ * The one id reserved below is the case where that is not so.
  */
 export async function exercisePrivateSessionAdoptionConformance(
   harness: PrivateSessionAdoptionConformanceHarness,
@@ -623,7 +598,7 @@ export async function exercisePrivateSessionAdoptionConformance(
     await rejects(() =>
       authority.authorizeRuntimeSession({ ...member.runtime, sessionId, workspaceId, action: "read" }),
     ),
-    "adoption made a private session visible to a workspace member",
+    "adoption made a private session visible to an organization member",
   )
 
   const again = await adopt(owner, sessionId)
@@ -637,27 +612,19 @@ export async function exercisePrivateSessionAdoptionConformance(
 
   invariant(
     await rejects(() => adopt(member, "ses_member_attempt")),
-    "a workspace member who does not own the machine adopted a session",
+    "an organization member who does not own the machine adopted a session",
   )
 
-  const held = "ses_created_by_the_member"
-  await authority.reserveSession(member.auth, {
-    operationId: "op_created_by_the_member",
+  const held = "ses_reserved_before_adoption"
+  await authority.reserveSession(owner.auth, {
+    operationId: "op_reserved_before_adoption",
     sessionId: held,
     workspaceId,
     kind: "create",
   })
-  await authority.registerRuntimeSession({
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    ...member.runtime,
-    operationId: "op_created_by_the_member",
-    sessionId: held,
-    workspaceId,
-  })
   invariant(
     await rejects(() => adopt(owner, held)),
-    "adoption claimed a session already registered to another creator",
+    "adoption claimed a session a live reservation already holds",
   )
 
   return {
@@ -665,7 +632,7 @@ export async function exercisePrivateSessionAdoptionConformance(
     adoptedForEnrollmentOwner: true,
     idempotent: true,
     refusedForMember: true,
-    refusedWhenHeldByAnotherCreator: true,
+    refusedWhileAReservationHoldsIt: true,
   }
 }
 
@@ -674,11 +641,13 @@ export type SessionShareLevelConformanceHarness = {
   /** The share-grant surface, which lives on the workspace authority in both adapters. */
   shares: Pick<WorkspaceAuthority, "grantSessionShare" | "revokeSessionShare" | "listSessionShares">
   workspaceId: string
-  /** A session the creator already registered, so only the share decides the grantee's access. */
+  /** A session the workspace's owner registered, so only the share decides the grantee's access. */
   sessionId: string
+  /** A second session the owner registered in the same workspace and shared with nobody. */
+  otherSessionId: string
   creator: { auth: SignedControlPlaneAuth }
   /**
-   * A member of the session's organization holding NO role on the workspace,
+   * A member of the session's organization who does not own the workspace,
    * so the share is the only thing that can admit them and a write proves the
    * level alone carries it.
    */
@@ -703,6 +672,7 @@ export type SessionShareLevelConformanceReport = {
   sendWritesWithoutWorkspaceRank: true
   downgradeEndsWriting: true
   revokeEndsReading: true
+  shareReachesNoOtherSession: true
   organizationAdministratorRefusedWithoutAGrant: true
   offerRefusedOutsideTheOrganization: true
 }
@@ -718,7 +688,7 @@ export type SessionShareLevelConformanceReport = {
 export async function exerciseSessionShareLevelConformance(
   harness: SessionShareLevelConformanceHarness,
 ): Promise<SessionShareLevelConformanceReport> {
-  const { authority, shares, workspaceId, sessionId, creator, grantee, organizationAdministrator, outsider } = harness
+  const { authority, shares, workspaceId, sessionId, otherSessionId, creator, grantee, organizationAdministrator, outsider } = harness
   // Bound rather than called through `shares`: one adapter is a class whose
   // methods read `this`, and the port declares all three optional, so the
   // narrowing has to survive into the closures below.
@@ -759,6 +729,16 @@ export async function exerciseSessionShareLevelConformance(
   invariant(await listedLevels() === "send", "the listed grant did not carry its raised level")
   await runtime("read")
   await runtime("write")
+  invariant(
+    asArray(await authority.listSessions(grantee.auth, { workspaceId })).map((row) => asRecord(row)?.session_id).join() === sessionId,
+    "a share holder listed a session other than the one shared with them",
+  )
+  for (const action of ["read", "write"] as const) {
+    invariant(
+      await rejects(() => authority.authorizeRuntimeSession({ ...grantee.runtime, sessionId: otherSessionId, workspaceId, action })),
+      `a share admitted its holder to ${action} another session in the workspace`,
+    )
+  }
 
   const lowered = await grant("follow")
   invariant(
@@ -796,6 +776,7 @@ export async function exerciseSessionShareLevelConformance(
     sendWritesWithoutWorkspaceRank: true,
     downgradeEndsWriting: true,
     revokeEndsReading: true,
+    shareReachesNoOtherSession: true,
     organizationAdministratorRefusedWithoutAGrant: true,
     offerRefusedOutsideTheOrganization: true,
   }
@@ -831,59 +812,47 @@ export type SessionShareRuntimeTokenConformanceHarness = {
   >
   workspaceId: string
   hostId: string
-  /** A session its creator holds by owning the workspace, so only the share can admit the grantee. */
+  /** A session the workspace's owner registered, so only the share can admit the grantee. */
   sessionId: string
-  creator: { auth: SignedControlPlaneAuth }
-  /**
-   * A member of the session's organization holding NO role on the workspace.
-   * Every admission below is the share's, on the wire as well as in the
-   * session.
-   */
+  owner: {
+    auth: SignedControlPlaneAuth
+    runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
+    /** Removes the owner from the workspace's organization; the last step of the suite. */
+    leaveOrganization: () => Promise<void>
+  }
+  /** A member of the session's organization who does not own the workspace. */
   grantee: {
     auth: SignedControlPlaneAuth
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
     /** How this adapter's grant route names the grantee. */
     target: { grantedToTokenIdentifier: string } | { grantedToUserId: string }
   }
-  /**
-   * Someone who reached the workspace through the organization alone and
-   * created a session there, so leaving the organization is the only thing
-   * that changes between the two halves of the offboarding case.
-   */
-  offboarded: {
-    auth: SignedControlPlaneAuth
-    runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
-    sessionId: string
-    leaveOrganization: () => Promise<void>
-  }
   /** A future timestamp on this adapter's clock. */
   expiresAt: number
 }
 
 export type SessionShareRuntimeTokenConformanceReport = {
-  tokenRefusedBeforeTheShare: true
-  sendGranteeMintsAViewerTokenAndWrites: true
-  shareNeverWidensTheTokenRole: true
-  followGranteeKeepsTheTokenAndLosesTheTurn: true
-  offboardedCreatorLosesReadWriteAndToken: true
+  workspaceRefusedToAShareHolder: true
+  workspaceTokenRefusedToAShareHolder: true
+  sendShareDrivesTheTurn: true
+  downgradeEndsTheTurn: true
+  ownerHoldsTheWorkspaceToken: true
+  offboardedOwnerLosesSessionWorkspaceAndToken: true
 }
 
 /**
- * The Runtime Access Token follows the session share.
+ * A session share reaches the session and never the workspace.
  *
- * A grantee reaches the machine serving the workspace through a token the
- * control plane mints and rechecks, so a share that admits them in the session
- * authority and nowhere else is a grant they cannot use. Every case here is a
- * pair: what the session authority answers, and what the wire does about it.
- *
- * The level is deliberately absent from the token. A downgrade must not revoke
- * the wire — the grantee keeps reading and streaming — so the two halves of
- * `follow` are asserted together.
+ * A Runtime Access Token that names only a workspace reaches everything the
+ * machine serves for it, so it is the workspace owner's alone: a share holder
+ * at either level is refused the workspace and such a token, while the
+ * session authority still answers what their level carries. Leaving the
+ * organization ends the owner's session, workspace and token together.
  */
 export async function exerciseSessionShareRuntimeTokenConformance(
   harness: SessionShareRuntimeTokenConformanceHarness,
 ): Promise<SessionShareRuntimeTokenConformanceReport> {
-  const { sessions, workspace, workspaceId, hostId, sessionId, creator, grantee, offboarded, expiresAt } = harness
+  const { sessions, workspace, workspaceId, hostId, sessionId, owner, grantee, expiresAt } = harness
   // Bound rather than called through the object: one adapter is a class whose
   // methods read `this`, and the port declares `grantSessionShare` optional.
   const openWorkspace = workspace.openWorkspace.bind(workspace)
@@ -895,7 +864,7 @@ export async function exerciseSessionShareRuntimeTokenConformance(
   const mint = (
     who: { auth: SignedControlPlaneAuth; runtime: { actorId: string; actorKind: "human" } },
     jti: string,
-    role: "viewer" | "editor",
+    role: "viewer" | "owner",
   ) => recordToken(who.auth, {
     jti,
     workspaceId,
@@ -906,67 +875,52 @@ export async function exerciseSessionShareRuntimeTokenConformance(
     expiresAt,
   })
   const active = async (jti: string) => asRecord(await tokenActive({ jti, workspaceId, hostId }))?.active === true
-  const asGrantee = (action: "read" | "write") =>
-    sessions.authorizeRuntimeSession({ ...grantee.runtime, sessionId, workspaceId, action })
-  const asOffboarded = (action: "read" | "write") =>
-    sessions.authorizeRuntimeSession({
-      ...offboarded.runtime,
-      sessionId: offboarded.sessionId,
-      workspaceId,
-      action,
-    })
+  const as = (who: typeof owner | typeof grantee, action: "read" | "write") =>
+    sessions.authorizeRuntimeSession({ ...who.runtime, sessionId, workspaceId, action })
   const share = (level: "follow" | "send") =>
-    grantShare(creator.auth, { sessionId, workspaceId, level, ...grantee.target })
+    grantShare(owner.auth, { sessionId, workspaceId, level, ...grantee.target })
 
-  invariant(
-    await rejects(() => openWorkspace(grantee.auth, { workspaceId })),
-    "a workspace opened for someone holding neither a rank nor a share",
-  )
-  invariant(
-    await rejects(() => mint(grantee, "rat_conformance_unshared", "viewer")),
-    "a runtime token was minted before any share existed",
-  )
+  for (const level of [undefined, "send", "follow"] as const) {
+    if (level) await share(level)
+    invariant(
+      await rejects(() => openWorkspace(grantee.auth, { workspaceId })),
+      `the workspace opened for ${level ? `a ${level} share holder` : "someone holding no share"}`,
+    )
+    for (const role of ["viewer", "owner"] as const) {
+      invariant(
+        await rejects(() => mint(grantee, `rat_conformance_${level ?? "unshared"}_${role}`, role)),
+        `a workspace runtime token was minted for ${level ? `a ${level} share holder` : "someone holding no share"}`,
+      )
+    }
+    if (level === "send") await as(grantee, "write")
+    if (level === "follow") {
+      await as(grantee, "read")
+      invariant(await rejects(() => as(grantee, "write")), "a downgraded share holder kept driving the turn")
+    }
+  }
 
-  await share("send")
-  const opened = asRecord(await openWorkspace(grantee.auth, { workspaceId }))
-  invariant(
-    opened?.allowed === true && opened.role === "viewer",
-    "a send grantee did not open the workspace as a viewer",
-  )
-  await mint(grantee, "rat_conformance_share", "viewer")
-  invariant(await active("rat_conformance_share"), "the grantee's runtime token was not active once minted")
-  invariant(
-    await rejects(() => mint(grantee, "rat_conformance_editor", "editor")),
-    "a session share minted a runtime token above viewer",
-  )
-  await asGrantee("write")
+  const opened = asRecord(await openWorkspace(owner.auth, { workspaceId }))
+  invariant(opened?.allowed === true && opened.role === "owner", "the workspace did not open for its owner")
+  await mint(owner, "rat_conformance_owner", "owner")
+  invariant(await active("rat_conformance_owner"), "the owner's runtime token was not active once minted")
 
-  await share("follow")
-  invariant(await active("rat_conformance_share"), "a downgrade revoked the wire instead of the turn")
-  await asGrantee("read")
-  invariant(await rejects(() => asGrantee("write")), "a downgraded grantee kept writing")
-
-  await mint(offboarded, "rat_conformance_offboarded", "viewer")
-  await asOffboarded("write")
-  await offboarded.leaveOrganization()
-  invariant(await rejects(() => asOffboarded("read")), "an offboarded creator kept reading the session they created")
-  invariant(await rejects(() => asOffboarded("write")), "an offboarded creator kept writing the session they created")
+  await owner.leaveOrganization()
+  invariant(await rejects(() => as(owner, "read")), "an offboarded owner kept reading their session")
+  invariant(await rejects(() => as(owner, "write")), "an offboarded owner kept writing their session")
+  invariant(await rejects(() => openWorkspace(owner.auth, { workspaceId })), "an offboarded owner kept opening the workspace")
+  invariant(!await active("rat_conformance_owner"), "an offboarded owner's runtime token stayed active")
   invariant(
-    await rejects(() => openWorkspace(offboarded.auth, { workspaceId })),
-    "an offboarded creator kept opening the workspace",
-  )
-  invariant(!await active("rat_conformance_offboarded"), "an offboarded creator's runtime token stayed active")
-  invariant(
-    await rejects(() => mint(offboarded, "rat_conformance_offboarded_again", "viewer")),
-    "an offboarded creator was minted a new runtime token",
+    await rejects(() => mint(owner, "rat_conformance_owner_again", "owner")),
+    "an offboarded owner was minted a new runtime token",
   )
 
   return {
-    tokenRefusedBeforeTheShare: true,
-    sendGranteeMintsAViewerTokenAndWrites: true,
-    shareNeverWidensTheTokenRole: true,
-    followGranteeKeepsTheTokenAndLosesTheTurn: true,
-    offboardedCreatorLosesReadWriteAndToken: true,
+    workspaceRefusedToAShareHolder: true,
+    workspaceTokenRefusedToAShareHolder: true,
+    sendShareDrivesTheTurn: true,
+    downgradeEndsTheTurn: true,
+    ownerHoldsTheWorkspaceToken: true,
+    offboardedOwnerLosesSessionWorkspaceAndToken: true,
   }
 }
 
@@ -975,13 +929,13 @@ export type SessionWriteClassConformanceHarness = {
   /** The share-grant surface, which lives on the workspace authority in both adapters. */
   shares: Pick<WorkspaceAuthority, "grantSessionShare">
   workspaceId: string
-  /** A session the creator already registered, so only the share admits the grantee. */
+  /** A session the workspace's owner registered, so only the share admits the grantee. */
   sessionId: string
   creator: {
     auth: SignedControlPlaneAuth
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
   }
-  /** A member of the session's organization holding NO role on the workspace. */
+  /** A member of the session's organization who does not own the workspace. */
   grantee: {
     runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
     /** How this adapter's grant route names the grantee. */
@@ -1001,9 +955,8 @@ export type SessionWriteClassConformanceReport = {
  *
  * A share carries the agent's turn — prompting it, answering what it asks,
  * stopping it — and nothing else. Shell, permission mode, deletion, forks and
- * the rest arrive as the same `write` action and are the creator's and the
- * participants', so the runtime names the class and the store has to
- * distinguish the two. The operations behind each class are the runtime's
+ * the rest arrive as the same `write` action and are the workspace owner's,
+ * so the runtime names the class and the store has to distinguish the two. The operations behind each class are the runtime's
  * route table, pinned there rather than here.
  */
 export async function exerciseSessionWriteClassConformance(
