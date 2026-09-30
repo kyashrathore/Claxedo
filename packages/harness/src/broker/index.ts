@@ -33,6 +33,17 @@ export function createTurnBroker(owner: BrokerOwner, context: TurnBrokerContext)
   }
 }
 
+function sessionChildren(owner: BrokerOwner, sessionId: string): Pick<SessionBroker, "observeSubagent" | "associateChild" | "publishChild"> {
+  return {
+    observeSubagent: (observation) => owner.subagents.observe(sessionId, observation),
+    associateChild: (correlationKey, child) => owner.subagents.associate(sessionId, correlationKey, child),
+    publishChild: async (event) => {
+      if (event.route?.kind !== "child") throw new Error("Only a child-routed event can be published outside a turn")
+      await owner.ports.drainChildEvent(sessionId, event)
+    },
+  }
+}
+
 export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerContext): SessionBroker {
   const { ports } = owner
   if (context.start && (context.start.sessionId !== context.sessionId || context.start.directory !== context.directory ||
@@ -62,7 +73,8 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
       }
       ports.meterUsage(usage)
     },
-    publish: (event) => ports.publishSessionEvent(context.sessionId, event),
+    publish: async (event) => { if (event.type !== "background-work") await ports.publishSessionEvent(context.sessionId, event) },
+    ...sessionChildren(owner, context.sessionId),
     goal: goalPort(ports, context.sessionId),
     config: () => ports.config(context.sessionId),
     reportFailure: (error) => ports.reportOwnerFailure(context.sessionId, error),
