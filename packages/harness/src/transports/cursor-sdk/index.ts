@@ -19,6 +19,7 @@ import { cursorModelId, hostSession } from "./launch"
 import { CursorModelCatalog, catalogKey, cursorCatalogModels, cursorModelOptions } from "./models"
 import { cursorPermissionModeState } from "./permission-modes"
 import type { HostModel } from "./protocol"
+import { steerCursorTurn } from "./steer"
 import { cursorSessionTitle } from "./title"
 import { cursorPrompt, streamCursorRun } from "./turn"
 
@@ -229,6 +230,13 @@ export class CursorSdkTransport implements HarnessTransport {
       const entry = this.entry(session)
       return cursorSessionTitle({ host: await this.current(entry), request, log: this.services.log,
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins) })
+    },
+  }
+
+  readonly steer = {
+    steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {
+      const entry = this.entry(session)
+      return steerCursorTurn(entry, this.registry.existing(entry.host), input)
     },
   }
 

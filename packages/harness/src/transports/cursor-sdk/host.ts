@@ -138,6 +138,8 @@ export class CursorHostRuntime {
       else if (command.kind === "open") {
         const agent = await this.open(command.session)
         this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId } })
+      } else if (command.kind === "steer") {
+        this.post({ id: command.id, kind: "result", value: { steer: await (this.runs.get(command.sessionId)?.steer(command.text) ?? "no_run") } })
       } else if (command.kind === "cancel") {
         const pending = this.runs.get(command.sessionId)
         if (pending) {

@@ -20,3 +20,7 @@ export function cursorRunStatusUnknown(status: string): TransportError {
 export function cursorStopPending(what: string): TransportError {
   return new TransportError("cursor", "worker", `${what}: Cursor cancelled the run, and it had not ended by the stop's deadline`, { retryable: true })
 }
+
+export function cursorSteerUnanswered(): TransportError {
+  return new TransportError("cursor", "sdk", "Cursor answered the steer with no outcome", { retryable: false })
+}

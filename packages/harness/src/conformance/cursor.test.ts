@@ -45,6 +45,10 @@ async function backend(): Promise<CursorBackend> {
       server.defaultScript(marker)
     },
     unrunnableTurn: withUndeliverableFile,
+    hold: (marker) => server.holdText(marker),
+    held: (marker) => server.textHeld(marker),
+    steerIncorporationUnreported: true,
+    credentialsPerCommand: true,
     close: async () => {
       console.log(`Cursor outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
@@ -257,6 +261,22 @@ test("a host that stops answering a cancel is retired", async () => {
   await expect(host.call({ kind: "close", sessionId: "s" })).rejects.toThrow("Cursor SDK host retired")
 })
 
+test("a credential update on one session reaches its next turn on the host it shares with another session", async () => {
+  const state = await backend()
+  const context = await setupConformance({ name: "shared-rotation", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    await collect(context, context.turn("CURSOR_SCRIPT:conformance"))
+    const processes = context.services.processes.length
+    const { credentials } = context.backend
+    const rotated = { ...credentials, leaseGeneration: "rotated", providers: { cursor: { ...credentials.providers.cursor!, placeholder: "cursor-rotated-placeholder" } } }
+    expect(await context.transport.configure(context.session, { credentials: rotated })).toEqual({ state: "applied" })
+    expect((await collect(context, context.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
+    expect(context.services.processes).toHaveLength(processes)
+    expect(state.server.requests.some((request) => request.path === "/auth/exchange_user_api_key"
+      && request.headers.authorization === "Bearer cursor-rotated-placeholder")).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
 test("two bindings use separate SDK hosts", async () => {
   const first = await backend()
   const second = await backend()
@@ -376,6 +396,32 @@ test("a stop interrupts the SDK run, the turn ends cancelled, and the stop repor
     await draining
     expect(outcome).toEqual({ execution: "terminal", cleanup: "unknown" })
     expect(events.filter((item) => ["finish", "cancelled", "error"].includes(item.event.type)).map((item) => item.event.type)).toEqual(["cancelled"])
+  } finally { await context.close() }
+}, 60_000)
+
+test("a steer reaches the running Cursor turn, a steer Cursor turns back is declined, and neither is written into the reply", async () => {
+  const state = await backend()
+  state.server.script("steered", { steps: [{ kind: "text", text: "STEERED-DONE" }] })
+  state.server.script("refusing", { steps: [{ kind: "text", text: "REFUSED-DONE" }], steer: "rejected" })
+  const context = await setupConformance({ name: "steer", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    for (const [name, expected] of [["steered", { ok: true }], ["refusing", { ok: false, status: "declined" }]] as const) {
+      const release = state.server.holdText(`CURSOR_SCRIPT:${name}`)
+      const turn = context.turn(`CURSOR_SCRIPT:${name}`)
+      const running = collect(context, turn)
+      await state.server.textHeld(`CURSOR_SCRIPT:${name}`)
+      const result = await pollUntil(async () => {
+        const answer = await context.transport.steer?.steer(context.session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId },
+          context.turn(`Also mention STEER-${name}`, `msg_${name}`))
+        return answer && !answer.ok && answer.status === "no_active_turn" ? undefined : answer
+      }, Date.now() + 10_000)
+      expect(result).toMatchObject(expected)
+      release()
+      const events = (await running).map((item) => item.event)
+      expect(events.some((event) => event.type === "finish")).toBe(true)
+      expect(events.some((event) => event.type === "input-incorporated")).toBe(false)
+    }
+    expect(state.server.steers.map((steer) => steer.text)).toEqual([expect.stringContaining("STEER-steered"), expect.stringContaining("STEER-refusing")])
   } finally { await context.close() }
 }, 60_000)
 

@@ -24,6 +24,7 @@ export type HostCommand =
   | { id: number; kind: "title"; session: HostSession; prompt: string }
   | { id: number; kind: "models"; apiKey: string }
   | { id: number; kind: "cancel"; sessionId: string }
+  | { id: number; kind: "steer"; sessionId: string; text: string }
   | { id: number; kind: "close"; sessionId: string }
 
 export type HostRequest = HostCommand extends infer Command
@@ -32,7 +33,9 @@ export type HostRequest = HostCommand extends infer Command
 
 export type HostRunError = { message: string; code?: string }
 
-export type HostResult = { agentId?: string; runId?: string; status?: string; result?: string; error?: HostRunError; models?: HostModel[] }
+export type HostSteerOutcome = "complete_delivered" | "revert_to_followup" | "no_run" | "unsupported"
+
+export type HostResult = { agentId?: string; runId?: string; status?: string; result?: string; error?: HostRunError; models?: HostModel[]; steer?: HostSteerOutcome }
 
 export type HostFailure = { message: string; name?: string; code?: string; retryable?: boolean }
 
@@ -41,7 +44,7 @@ export type HostReply =
   | { id: number; kind: "event"; message: SDKMessage }
   | ({ id: number; kind: "error" } & HostFailure)
 
-const commandKinds: readonly string[] = ["open", "run", "title", "models", "cancel", "close"]
+const commandKinds: readonly string[] = ["open", "run", "title", "models", "cancel", "steer", "close"]
 const replyKinds: readonly string[] = ["result", "event", "error"]
 
 function frameOf(value: unknown, kinds: readonly string[]): boolean {
