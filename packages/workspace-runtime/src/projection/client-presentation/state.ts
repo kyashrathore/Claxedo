@@ -10,6 +10,15 @@ export type OpenReasoningPart = {
   readonly text: string
 }
 
+/**
+ * The notice parts a turn has drawn. Mutated in place through the context, so
+ * it is cloned whole with the rest of the state and never reassigned.
+ */
+export type NoticeProjectionState = {
+  noticeCount: number
+  runningCompactionPartId?: string
+}
+
 export type ClientPresentationProjectionState = {
   assistantMsgId?: string
   /**
@@ -50,6 +59,7 @@ export type ClientPresentationProjectionState = {
   splitReasoning: boolean
   /** The reasoning part still streaming; the next content event ends it with `time.end`. */
   openReasoning?: OpenReasoningPart
+  notices: NoticeProjectionState
 }
 
 function keyedMap<V>(value: Map<string, V> | undefined): Map<string, V> {
@@ -81,5 +91,6 @@ export function createClientPresentationProjectionState(
     splitText: initial?.splitText ?? false,
     splitReasoning: initial?.splitReasoning ?? false,
     openReasoning: initial?.openReasoning,
+    notices: initial?.notices ? structuredClone(initial.notices) : { noticeCount: 0 },
   }
 }

@@ -1787,3 +1787,29 @@
     color: var(--transcript-tool-hover-color, var(--text-strong));
   }
 }
+
+[data-component="notice-part"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--text-weak);
+
+  [data-slot="notice-part-icon"] {
+    display: inline-flex;
+    flex: 0 0 auto;
+    padding-top: 2px;
+    color: var(--icon-base);
+  }
+
+  [data-slot="notice-part-text"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  &[data-tone="warn"] [data-slot="notice-part-icon"],
+  &[data-tone="error"] [data-slot="notice-part-icon"] {
+    color: var(--icon-critical-active);
+  }
+}

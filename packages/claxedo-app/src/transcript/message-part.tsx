@@ -58,6 +58,8 @@ import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
+import { MessageDivider } from "./message-divider"
+import { NoticePartDisplay } from "./notice-part"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
@@ -1395,29 +1397,12 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   )
 }
 
-export function MessageDivider(props: { label: string; icon?: IconProps["name"] }) {
-  return (
-    <div data-component="compaction-part">
-      <div data-slot="compaction-part-divider">
-        <span data-slot="compaction-part-line" />
-        <span data-slot="compaction-part-label" class="text-12-regular text-text-weak">
-          <Show when={props.icon}>
-            <span data-slot="compaction-part-icon">
-              <Icon name={props.icon!} size="small" />
-            </span>
-          </Show>
-          {props.label}
-        </span>
-        <span data-slot="compaction-part-line" />
-      </div>
-    </div>
-  )
-}
-
 PART_MAPPING["compaction"] = function CompactionPartDisplay() {
   const i18n = useTranscriptI18n()
   return <MessageDivider label={i18n.t("transcript.messagePart.compaction")} icon="archive" />
 }
+
+PART_MAPPING["notice"] = NoticePartDisplay
 
 PART_MAPPING["text"] = function TextPartDisplay(props) {
   const i18n = useTranscriptI18n()

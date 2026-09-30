@@ -40,6 +40,8 @@ const en = {
   "transcript.sessionTurn.retry.attempt": "attempt #{{attempt}}",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - attempt #{{attempt}}",
   "transcript.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
+  "transcript.notice.compacting": "Compacting conversation…",
+  "transcript.notice.compactionFailed": "Compaction failed: {{error}}",
   "transcript.sessionTurn.status.gatheringContext": "Exploring",
   "transcript.sessionTurn.status.gatheredContext": "Explored",
   "transcript.messagePart.diagnostic.error": "Error",

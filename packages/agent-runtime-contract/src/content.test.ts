@@ -40,6 +40,17 @@ test("each variant is checked against the fields it declares", () => {
   expect(isAgentContentPart({ ...identity, type: "compaction", auto: "yes" })).toBe(false)
 })
 
+test("a notice part carries one of the notices the transcript draws", () => {
+  const notice = { ...identity, type: "notice" as const, time: { created: 1 } }
+  expect(isAgentContentPart({ ...notice, notice: { kind: "harness", code: "claude_sdk.notification", message: "Done", severity: "info" } })).toBe(true)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "harness", code: "c", message: "m", severity: "debug" } })).toBe(false)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "compaction", status: "running" } })).toBe(true)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "compaction", status: "failed", error: "too long" } })).toBe(true)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "compaction", status: "failed" } })).toBe(false)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "invented" } })).toBe(false)
+  expect(isAgentContentPart({ ...notice, time: undefined, notice: { kind: "compaction", status: "completed" } })).toBe(false)
+})
+
 test("a file part's url is a renderable reference, not an arbitrary scheme", () => {
   const file = { ...identity, type: "file" as const, mime: "image/png" }
   for (const url of ["", "docs/shot.webp", "data:image/png;base64,iVBOR", "file:///tmp/huge.png", "https://files.example/shot.png"]) {

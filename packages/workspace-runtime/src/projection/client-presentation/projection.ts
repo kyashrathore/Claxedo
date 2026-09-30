@@ -2,8 +2,11 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { asRecord as object, asText as text, canonicalToolName, userMessageIdForAssistantReply } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart, AgentEventEnvelope, AgentMessageInfo, AgentRuntimeEvent, AgentSnapshotFileDiff, RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
 import { boundKeyedMap } from "@claxedo/harness/translate"
-import { messagePartUpdated, messagePartDelta, messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionCompacted, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, messageUpdated, sessionConfig, sessionUsage, runtimeDiagnostic, buildSession, recovering, withDir } from "../presentation-events"
+import { messagePartUpdated, messagePartDelta, messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, messageUpdated, sessionConfig, sessionUsage, runtimeDiagnostic, buildSession, recovering, withDir } from "../presentation-events"
 import { normalizePresentationEventWithDiagnostics } from "./normalize"
+import { partEvent, seen, seqId, type CompatContext } from "./context"
+import { projectCompaction, projectHarnessNotice } from "./notices"
+import { projectHarnessDiagnostic } from "./harness-diagnostics"
 import {
   createClientPresentationProjectionState,
   RETAINED_PART_IDS_MAX,
@@ -61,18 +64,6 @@ export type ClientPresentationProjectionOptions = {
     variant?: string
   }
   clock?: () => number
-}
-
-type CompatContext = ClientPresentationProjectionState & {
-  sessionId: string
-  directory: string
-  assistantMsgId: string
-  /**
-   * The reply id the TURN was opened with. `assistantMsgId` follows the engine
-   * as a turn steps onto new messages; this one does not, so the user message
-   * the turn answers stays recoverable from it for every step.
-   */
-  turnAssistantMsgId: string
 }
 
 type ToolPart = Extract<AgentContentPart, { type: "tool" }>
@@ -425,22 +416,6 @@ function toolContentText(content: Extract<AgentRuntimeEvent, { type: "tool-conte
  * mints with its message id as `scoped`, while the key stays the lookup that
  * later events for the same call find the part by.
  */
-function seqId(ctx: CompatContext, key: string, scoped = key): string {
-  if (!ctx.partIdMap.has(key)) {
-    const seq = ctx.partIdMap.size
-    ctx.partIdMap.set(key, `${String(seq).padStart(6, "0")}_${scoped}`)
-  }
-  return ctx.partIdMap.get(key) ?? key
-}
-
-function seen(ctx: CompatContext, id: string): boolean {
-  return ctx.partIdMap.has(id)
-}
-
-function partEvent(directory: string, part: AgentContentPart, time: number): AgentEventEnvelope {
-  return withDir(directory, messagePartUpdated(part, time))
-}
-
 function dataUrl(mime: string, data: string) {
   if (data.startsWith("data:")) return data
   return `data:${mime};base64,${data}`
@@ -909,75 +884,16 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       return [withDir(ctx.directory, sessionStatus(ctx.sessionId, { type: chunk.status }))]
 
     case "session-compaction":
-      return chunk.phase === "completed" && chunk.metadata?.aborted !== true && !chunk.metadata?.error
-        ? [withDir(ctx.directory, sessionCompacted(ctx.sessionId))]
-        : []
+      return projectCompaction(ctx, chunk, now)
 
     case "harness-notice":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: chunk.code,
-        message: chunk.message,
-        severity: chunk.severity ?? "info",
-        details: chunk.details,
-        raw: chunk.raw,
-      }))]
+      return projectHarnessNotice(ctx, chunk, now)
 
     case "auth-status":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: "runtime.auth_status",
-        message: `Auth status: ${chunk.status}`,
-        severity: chunk.status === "unauthenticated" ? "warn" : "info",
-        auth: {
-          status: chunk.status,
-          authMode: chunk.authMode,
-          planType: chunk.planType,
-          metadata: chunk.metadata,
-        },
-        raw: chunk.raw,
-      }))]
-
     case "rate-limit":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: "runtime.rate_limit",
-        message: chunk.status === "limited" ? "Rate limit reached" : "Rate limit updated",
-        severity: chunk.status === "limited" ? "warn" : "info",
-        rateLimit: {
-          status: chunk.status,
-          usedPercent: chunk.usedPercent,
-          resetsAt: chunk.resetsAt,
-          windowDurationMins: chunk.windowDurationMins,
-          limitId: chunk.limitId,
-          limitName: chunk.limitName,
-          reason: chunk.reason,
-          metadata: chunk.metadata,
-        },
-        raw: chunk.raw,
-      }))]
-
     case "mcp-server-status":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: "runtime.mcp_server_status",
-        message: chunk.error ?? `MCP server ${chunk.serverName} is ${chunk.status}`,
-        severity: chunk.status === "failed" || chunk.status === "cancelled" ? "warn" : "info",
-        mcp: {
-          serverName: chunk.serverName,
-          status: chunk.status,
-          error: chunk.error,
-        },
-        raw: chunk.raw,
-      }))]
+    case "diagnostic":
+      return [projectHarnessDiagnostic(ctx, chunk)]
 
     case "text-delta":
       return deltaText(ctx, "text", chunk.delta, now)
@@ -1413,18 +1329,6 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         contextUsed: chunk.contextUsed,
         ...(chunk.observation ? { observation: chunk.observation } : {}),
         ...(chunk.cost ? { cost: chunk.cost } : {}),
-      }))]
-
-    case "diagnostic":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: chunk.diagnostic.code,
-        message: chunk.diagnostic.message,
-        severity: chunk.diagnostic.severity,
-        diagnostic: chunk.diagnostic,
-        raw: chunk.raw,
       }))]
 
     case "goal-updated":

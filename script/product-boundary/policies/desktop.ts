@@ -394,7 +394,11 @@ export const desktopRenderer: Policy = {
   // `server/harness-commands.ts`, parsed by `server/wire/harness-commands.ts`;
   // and onboarding's choice of where the first project lives, the draft it
   // holds and the creation Finish opens are `onboarding/{place,model,finish}.ts`.
-  ceilings: { modules: 1229, packages: 36 },
+  // The transcript draws a harness's notices and compaction boundaries from the
+  // contract's `transcript-notice.ts` through `transcript/notice-part.tsx`, whose
+  // pure view (`notice-view.ts`) its unit test reaches directly, on the divider
+  // it shares with the compaction part (`message-divider.tsx`).
+  ceilings: { modules: 1232, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

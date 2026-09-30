@@ -507,28 +507,6 @@ describe("createClientPresentationProjection", () => {
   test("projects session harness surfaces into compat diagnostics and status", () => {
     const projection = makeProjection()
 
-    expect(projection.ingest({ type: "session-compaction", phase: "completed" })[0]?.payload).toMatchObject({
-      type: "session.compacted",
-      properties: {
-        sessionID: "session-1",
-      },
-    })
-
-    expect(projection.ingest({
-      type: "harness-notice",
-      code: "codex_app_server.warning",
-      message: "Careful",
-      severity: "warn",
-    })[0]?.payload).toMatchObject({
-      type: "runtime.diagnostic",
-      properties: {
-        sessionID: "session-1",
-        code: "codex_app_server.warning",
-        message: "Careful",
-        severity: "warn",
-      },
-    })
-
     expect(projection.ingest({
       type: "rate-limit",
       status: "limited",
@@ -1143,12 +1121,6 @@ describe("createClientPresentationProjection", () => {
     }])
   })
 })
-
- test("does not announce a successful compaction after an abort or error", () => {
-   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { aborted: true } })).toEqual([])
-   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { error: "provider failed" } })).toEqual([])
-   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed" })[0]?.payload.type).toBe("session.compacted")
- })
 
 test("file references keep attachment IDs across replay and a repeated completion without duplicate terminal parts", () => {
   const complete = {

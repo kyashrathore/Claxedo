@@ -1,6 +1,7 @@
 import type { AgentMessageAuthor } from "./sessions"
 import { isRecord } from "./values"
 import { canonicalToolName } from "./tool-names"
+import { isTranscriptNotice, type TranscriptNotice } from "./transcript-notice"
 
 /** Token accounting, reported identically by assistant messages and step-finish parts. */
 export type AgentTokenUsage = {
@@ -269,6 +270,10 @@ export type AgentHandoffPart = AgentPartBase<"handoff"> & {
   from: { id: string; access: string; connection?: unknown }
   to: { id: string; access: string; connection?: unknown }
 }
+export type AgentNoticePart = AgentPartBase<"notice"> & {
+  notice: TranscriptNotice
+  time: { created: number }
+}
 
 export type AgentContentPart =
   | AgentTextPart
@@ -284,6 +289,7 @@ export type AgentContentPart =
   | AgentRetryPart
   | AgentCompactionPart
   | AgentHandoffPart
+  | AgentNoticePart
 
 export type AgentPromptResponse = {
   info: AgentAssistantMessage
@@ -501,6 +507,8 @@ function hasVariantFields(part: Record<string, unknown>): boolean {
       return typeof part.auto === "boolean"
     case "handoff":
       return isHandoffEnd(part.from) && isHandoffEnd(part.to)
+    case "notice":
+      return isTranscriptNotice(part.notice) && isRecord(part.time) && typeof part.time.created === "number"
     default:
       return false
   }

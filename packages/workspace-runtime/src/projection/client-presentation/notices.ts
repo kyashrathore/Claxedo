@@ -1,0 +1,61 @@
+import type { AgentEventEnvelope, AgentRuntimeEventOf, TranscriptNotice } from "@claxedo/agent-runtime-contract"
+import { runtimeDiagnostic, sessionCompacted, withDir } from "../presentation-events"
+import { partEvent, seqId, type CompatContext } from "./context"
+
+type HarnessNotice = AgentRuntimeEventOf<"harness-notice">
+type Compaction = AgentRuntimeEventOf<"session-compaction">
+
+function nextNoticePartId(ctx: CompatContext): string {
+  ctx.notices.noticeCount += 1
+  return seqId(ctx, `${ctx.assistantMsgId}-notice-${ctx.notices.noticeCount}`)
+}
+
+function noticePart(ctx: CompatContext, id: string, notice: TranscriptNotice, now: number): AgentEventEnvelope {
+  ctx.splitText = true
+  ctx.splitReasoning = true
+  return partEvent(ctx.directory, { id, sessionID: ctx.sessionId, messageID: ctx.assistantMsgId, type: "notice", notice, time: { created: now } }, now)
+}
+
+export function appendNotice(ctx: CompatContext, notice: TranscriptNotice, now: number): AgentEventEnvelope {
+  return noticePart(ctx, nextNoticePartId(ctx), notice, now)
+}
+
+function noticeDiagnostic(ctx: CompatContext, chunk: HarnessNotice): AgentEventEnvelope {
+  return withDir(ctx.directory, runtimeDiagnostic({
+    sessionID: ctx.sessionId,
+    harness: chunk.harness,
+    threadId: chunk.threadId,
+    code: chunk.code,
+    message: chunk.message,
+    severity: chunk.severity ?? "info",
+    details: chunk.details,
+    raw: chunk.raw,
+  }))
+}
+
+export function projectHarnessNotice(ctx: CompatContext, chunk: HarnessNotice, now: () => number): AgentEventEnvelope[] {
+  const severity = chunk.severity ?? "info"
+  if (severity === "debug" || !ctx.assistantMsgId) return [noticeDiagnostic(ctx, chunk)]
+  return [appendNotice(ctx, { kind: "harness", code: chunk.code, message: chunk.message, severity }, now())]
+}
+
+function compactionOutcome(chunk: Compaction): TranscriptNotice {
+  if (chunk.metadata?.aborted === true) return { kind: "compaction", status: "failed", error: "Compaction was stopped" }
+  const error = chunk.metadata?.error
+  if (error) return { kind: "compaction", status: "failed", error: String(error) }
+  return { kind: "compaction", status: "completed" }
+}
+
+export function projectCompaction(ctx: CompatContext, chunk: Compaction, now: () => number): AgentEventEnvelope[] {
+  if (!ctx.assistantMsgId) return []
+  if (chunk.phase === "started") {
+    const id = nextNoticePartId(ctx)
+    ctx.notices.runningCompactionPartId = id
+    return [noticePart(ctx, id, { kind: "compaction", status: "running" }, now())]
+  }
+  const id = ctx.notices.runningCompactionPartId ?? nextNoticePartId(ctx)
+  ctx.notices.runningCompactionPartId = undefined
+  const outcome = compactionOutcome(chunk)
+  const part = noticePart(ctx, id, outcome, now())
+  return outcome.kind === "compaction" && outcome.status === "completed" ? [part, withDir(ctx.directory, sessionCompacted(ctx.sessionId))] : [part]
+}
