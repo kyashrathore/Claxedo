@@ -234,6 +234,9 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
   result = result.replace(/-private-var-folders-[^/]+/g, (directory) => special(specials, "encoded-workspace", directory, scope))
   result = result.replace(/(\/codex-owner-[0-9a-f]+\/homes\/)(codex-[0-9a-f]{16})\b/g, (_match, store: string, home: string) =>
     `${store}${special(specials, "codex-home", home, scope)}`)
+  result = result.replace(/(?:\/private)?\/tmp\/claude-\d+\//g, "<claude-tmp>/")
+  result = result.replace(/(agentId: |to: '|\/tasks\/)(a[0-9a-f]{16})\b/g, (_match, context: string, agent: string) =>
+    `${context}${special(specials, "claude-agent", agent, scope)}`)
   result = result.replace(/([?&](?:since|until)=)\d+/g, "$1<time>")
   result = result.replace(/(?:127\.0\.0\.1|localhost):\d+/g, "localhost:<port>")
   result = result.replace(/\/tmp\/cc-socks\/\d+\.sock/g, (socket) => special(specials, "socket", socket, scope))

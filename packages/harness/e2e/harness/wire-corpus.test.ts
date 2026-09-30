@@ -168,6 +168,11 @@ test("a Codex session home named in a Codex warning is run-local", () => {
   expect(warning("e614cd53e077b5e8")).toEqual(warning("86cd0cb8fdc841a9"))
 })
 
+test("a Claude background agent's id and its task file under Claude's temp root are run-local", () => {
+  const launched = (agent: string) => normalizeWireCorpus({ output: `agentId: ${agent} (Use SendMessage with to: '${agent}')\noutput_file: /private/tmp/claude-501/-private-var-folders-t2-x/ses_11111111/tasks/${agent}.output` })
+  expect(launched("a8a58028709803b6d")).toEqual(launched("a010a4860fd4930ec"))
+})
+
 test("the checkout root and the runtime executable are environment facts", () => {
   const agent = path.resolve(import.meta.dirname, "../../../..", "packages/harness/e2e/harness/acp/agent.ts")
   const result = normalizeWireCorpus({ command: process.execPath, args: [agent] }) as { command: string; args: string[] }
