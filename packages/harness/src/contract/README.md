@@ -62,3 +62,10 @@ A protocol event a transport doesn't recognize becomes a `diagnostic` event with
 
 - **`services.healthChanged()` is called whenever a fact `health.runtime` or `health.connection` answers from changes.** A process lost under a session, its replacement, an ACP connection observation, and an ACP cancel the agent acknowledged but did not act on (and that prompt's end) each call it once. It carries nothing: the host reads both answers again for the sessions it watches and publishes only a changed one, so a transport never publishes health itself.
 - **A lost process is `degraded` with reason `harness_process_lost` until a replacement for that session starts** (`ProcessLosses`). A deliberate retirement is not a loss. An ACP agent that acknowledged a cancel whose prompt is still open at the cancel deadline reads the same until that prompt settles or the session closes.
+
+## Harness versions
+
+- **A transport that launches a program the person installed declares the versions it supports as a `HarnessVersionRange`, and the range is the tested range.** `min` and `max` are exactly the two versions the flows and conformance run (`bun run --cwd packages/harness flows:versions`). The transport reads the version the program reports about itself, from a frame it receives anyway, and passes it to its one `HarnessVersionGate`.
+  - Below `min` the turn fails with the transport's `configuration` error, not retryable, naming the installed and minimum versions and asking the person to update.
+  - A missing or unreadable version is a `protocol` error, never a pass.
+  - Above `max` the turn runs: frames a newer program adds must be ignorable by the translator. The first such report in the process publishes one `<transport>.untested_version` diagnostic through the session broker.

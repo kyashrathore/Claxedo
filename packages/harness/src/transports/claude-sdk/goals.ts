@@ -1,6 +1,6 @@
 import { AbortError, type SDKActiveGoalMessage, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
+import type { HarnessSession, HarnessVersionGate, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
 import { nativeGoalPrompt } from "../../contract"
 import { claudeStreamEndedWithoutResult } from "./errors"
 import { ClaudeProcess, retireClaudeProcesses } from "./process"
@@ -17,7 +17,7 @@ export type ClaudeGoalEntry = { session: HarnessSession; input: StartInput }
 export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
 
-  constructor(private readonly launcher: ClaudeQueryLauncher) {}
+  constructor(private readonly launcher: ClaudeQueryLauncher, private readonly versions: HarnessVersionGate) {}
 
   async start(entry: ClaudeGoalEntry, broker: SessionBroker, objective: string): Promise<AgentGoalMutationResult> {
     const { input } = entry
@@ -91,7 +91,7 @@ export class ClaudeGoals {
     let stopped = false
     try {
       for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        const observed = await observeClaudeSessionMessage(message, entry, broker, abort.signal)
+        const observed = await observeClaudeSessionMessage(message, entry, broker, abort.signal, this.versions)
         if (observed.kind === "active-goal") continue
         const current = observed.message
         if (current.type === "result") { sawResult = true; mirroredUsage.release() }

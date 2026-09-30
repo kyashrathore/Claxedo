@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import type { HarnessServices, HarnessSession, ProviderTurnInput, ProviderTurnResult, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
+import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { ClaudeSdkTransport } from "./index"
 import type { ClaudeQueryLauncher } from "./query-options"
 
@@ -12,7 +13,7 @@ const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: "/wor
 const services = { log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices
 
 const frame = (value: Record<string, unknown>) => ({ session_id: "up1", uuid: crypto.randomUUID(), ...value }) as unknown as SDKMessage
-const init = () => frame({ type: "system", subtype: "init" })
+const init = (version: string = CLAUDE_CODE_RANGE.max) => frame({ type: "system", subtype: "init", claude_code_version: version })
 const background = (...ids: string[]) => frame({ type: "system", subtype: "background_tasks_changed",
   tasks: ids.map((id) => ({ task_id: id, task_type: "local_bash", description: "sleep" })) })
 const notification = (id: string) => frame({ type: "system", subtype: "task_notification", task_id: id, status: "completed", output_file: "/tmp/out", summary: "done" })
@@ -217,5 +218,16 @@ test("bookkeeping frames between turns wait for Claude's own turn instead of ope
   await claude.stdinClosed
   claude.frames.end()
   await own[0]!.done
+  await transport.dispose()
+})
+
+test("a turn on a Claude Code older than the tested range fails with the update message", async () => {
+  const { transport, session, launches } = await setup()
+  const turn = collect(transport.send(session, userTurn("t1", "hello"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  launches[0]!.frames.push(init("2.1.150"))
+  await expect(turn).rejects.toMatchObject({ transport: "claude", code: "configuration", retryable: false,
+    detail: { installed: "2.1.150", minimum: CLAUDE_CODE_RANGE.min } })
+  launches[0]!.frames.end()
   await transport.dispose()
 })

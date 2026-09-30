@@ -20,6 +20,8 @@ import type { TestServices } from "./test-support/services"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { AbortError, type CanUseTool, type Query, type SDKMessage, type PermissionUpdate, type query } from "@anthropic-ai/claude-agent-sdk"
 import type { HarnessBinding, HarnessServices, SessionBroker, SpawnCommand, StartInput, RoutedEvent, TurnInput } from "../contract"
+import { HarnessVersionGate } from "../contract"
+import { CLAUDE_CODE_RANGE } from "../transports/claude-sdk/cli-version"
 import { ClaudeGoals } from "../transports/claude-sdk/goals"
 import { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
 import { askClaudePermission } from "../transports/claude-sdk/requests"
@@ -557,7 +559,7 @@ function memoryBroker() {
 
 test("a runtime cancel of the admitted Goal turn settles cancelled and pauses the Goal", async () => {
   const { ports, broker } = memoryBroker()
-  const goals = new ClaudeGoals(abortingLauncher())
+  const goals = new ClaudeGoals(abortingLauncher(), new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   expect((await goals.start(goalEntry(), broker, "Ship")).ok).toBe(true)
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(broker.goal.read()?.status).toBe("active")
@@ -570,7 +572,7 @@ test("a runtime cancel of the admitted Goal turn settles cancelled and pauses th
 
 test("the transport's own Goal abort ends the run as a cancellation, not a failure", async () => {
   const { broker } = memoryBroker()
-  const goals = new ClaudeGoals(abortingLauncher())
+  const goals = new ClaudeGoals(abortingLauncher(), new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   expect((await goals.start(goalEntry(), broker, "Ship")).ok).toBe(true)
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(await goals.cancel("s1")).toEqual({ state: "completed" })

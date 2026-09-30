@@ -6,8 +6,9 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { applySessionConfigUpdate, attachedSessionEntry, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { applySessionConfigUpdate, attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
 import { withTurnAccount } from "../../translate/turn-account"
+import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { claudeBinding } from "./credentials"
 import { TransportError } from "../../contract/errors"
 import { ClaudeGoals } from "./goals"
@@ -43,8 +44,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
   constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {
     this.models = new ClaudeModelCatalog(services, options)
     this.launcher = new ClaudeQueryLauncher(services, options)
-    this.goalRuntime = new ClaudeGoals(this.launcher)
-    this.turns = new ClaudeTurns(() => this.launcher, this.models)
+    const versions = new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk")
+    this.goalRuntime = new ClaudeGoals(this.launcher, versions)
+    this.turns = new ClaudeTurns(() => this.launcher, this.models, versions)
   }
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {

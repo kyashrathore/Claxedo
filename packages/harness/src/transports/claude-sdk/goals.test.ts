@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { HarnessSession, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
+import { HarnessVersionGate, type HarnessSession, type SessionBroker, type StartInput, type TurnBroker, type TurnRef } from "../../contract"
+import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { ClaudeGoals } from "./goals"
 import type { ClaudeQueryLauncher } from "./query-options"
 
@@ -57,7 +58,7 @@ test("a native Goal starts under the admitted turn's identity and answers with t
       yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
     } })
   } } as unknown as ClaudeQueryLauncher
-  const goals = new ClaudeGoals(launcher)
+  const goals = new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   const started = await goals.start(entry(), state.value, "Ship")
   expect(state.published).toHaveLength(1)
   expect(started).toEqual({ ok: true, goal: state.value.goal.read() })
@@ -73,7 +74,7 @@ test("a native Goal whose turn ends before Claude reports it fails its start", a
   const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {
     yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
   } }) } as unknown as ClaudeQueryLauncher
-  const goals = new ClaudeGoals(launcher)
+  const goals = new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   expect(await goals.start(entry(), state.value, "Ship")).toEqual({ ok: false, status: "failed", message: "Claude ended before reporting the Goal" })
   expect(state.published).toEqual([])
 })
@@ -84,7 +85,7 @@ test("a dead native Goal query settles failed and blocks the active Goal", async
     yield ACTIVE_GOAL
     throw new Error("query died")
   } }) } as unknown as ClaudeQueryLauncher
-  const goals = new ClaudeGoals(launcher)
+  const goals = new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
   await state.settled()
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -100,7 +101,7 @@ test("an unconfirmed clear leaves the Goal blocked", async () => {
   const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {
     yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
   } }) } as unknown as ClaudeQueryLauncher
-  const result = await new ClaudeGoals(launcher).stop(entry(), state.value)
+  const result = await new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk")).stop(entry(), state.value)
   expect(result).toMatchObject({ ok: false, status: "failed" })
   expect(state.value.goal.read()).toMatchObject({ status: "blocked", lastReason: "Claude did not confirm clearing the native Goal" })
 })
@@ -121,7 +122,7 @@ test("stop drains the admitted Goal turn before clearing it", async () => {
       order.push("goal drained")
     } })
   } } as unknown as ClaudeQueryLauncher
-  const goals = new ClaudeGoals(launcher)
+  const goals = new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   const current = entry()
   expect((await goals.start(current, state.value, "Ship")).ok).toBe(true)
   const stopped = await goals.stop(current, state.value)
@@ -138,7 +139,7 @@ test("goal cancellation returns a failed settlement when owned retirement fails"
       if (!spec.abort.signal.aborted) await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
     } })
   } } as unknown as ClaudeQueryLauncher
-  const goals = new ClaudeGoals(launcher)
+  const goals = new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   expect((await goals.start(entry(), state.value, "Ship")).ok).toBe(true)
   expect(await goals.cancel("s1")).toEqual({ state: "failed", error: "retirement failed" })
 })
@@ -146,7 +147,20 @@ test("goal cancellation returns a failed settlement when owned retirement fails"
 test("a Goal stream that ends without a result fails with the transport's protocol error", async () => {
   const state = broker()
   const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {} }) } as unknown as ClaudeQueryLauncher
-  const goals = new ClaudeGoals(launcher)
+  const goals = new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
   expect(await goals.start(entry(), state.value, "Ship")).toEqual({ ok: false, status: "failed", message: "Claude SDK stream ended without a result" })
   expect(await state.settled()).toEqual({ state: "failed", error: "Claude SDK stream ended without a result" })
+})
+
+test("a Goal on a Claude Code older than the tested range fails its start with the update message", async () => {
+  const state = broker()
+  const launcher = { launch: async () => stream({ async *[Symbol.asyncIterator]() {
+    yield { type: "system", subtype: "init", claude_code_version: "2.1.150", session_id: "up1" } as SDKMessage
+    yield ACTIVE_GOAL
+    yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "up1" } as SDKMessage
+  } }) } as unknown as ClaudeQueryLauncher
+  const started = await new ClaudeGoals(launcher, new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk")).start(entry(), state.value, "Ship")
+  expect(started).toMatchObject({ ok: false, status: "failed" })
+  expect(!started.ok && started.message).toContain("Claude Code 2.1.150 is installed")
+  expect(state.published).toEqual([])
 })

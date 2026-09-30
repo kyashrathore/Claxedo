@@ -75,6 +75,7 @@
     "check": "bun scripts/check.ts",
     "test": "bun run check && bun test src scripts e2e/harness && bun run test:node",
     "flows": "bun e2e/flows/run.ts",
+    "flows:versions": "bun e2e/flows/version-matrix.ts",
     "corpus": "bun e2e/harness/corpus.ts",
     "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts",
     "test:node": "bun run build && node --test scripts/package.node.mjs"
