@@ -1,3 +1,4 @@
+import type { SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk"
 import { expect, test } from "bun:test"
 import { background, collect, frame, init, rebound, reply, result, setup, texts, turnBroker, until, userTurn } from "./test-support/live"
 
@@ -69,8 +70,11 @@ test("a Goal whose turn fails clears the native Goal so Claude stops pursuing it
   await transport.dispose()
 })
 
+const clearedGoalStatus = { type: "attachment", timestamp: "2026-09-30T14:35:51.965Z",
+  attachment: { type: "goal_status", met: true, sentinel: true, condition: "Ship" } } as unknown as SessionStoreEntry
+
 test("stop interrupts the Goal turn, which then does not report success, and clears and pauses the Goal", async () => {
-  const { transport, session, claude, own, launches } = await goalStarted()
+  const { transport, session, claude, own, launches, goals } = await goalStarted()
   const stopped = transport.goals.stop(rebound(session))
   await until(() => claude.controls.includes("interrupt"))
   claude.frames.push(interrupted())
@@ -82,8 +86,10 @@ test("stop interrupts the Goal turn, which then does not report success, and cle
   expect(launches[1]!.prompts).toEqual(["/goal clear"])
   launches[1]!.frames.push(init())
   launches[1]!.replay(0)
+  await launches[1]!.transcript(clearedGoalStatus)
   launches[1]!.frames.push(cleared())
   expect(await stopped).toMatchObject({ ok: true, goal: { status: "paused" } })
+  expect(goals.map((goal) => goal?.status ?? null)).toEqual(["active", "paused"])
   launches[1]!.frames.end()
   await transport.dispose()
 })

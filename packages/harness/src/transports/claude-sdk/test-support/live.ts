@@ -1,9 +1,10 @@
 import { expect } from "bun:test"
-import type { Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { Query, SDKMessage, SDKUserMessage, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import type { HarnessServices, HarnessSession, ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../../contract"
 import { CLAUDE_CODE_RANGE } from "../cli-version"
+import { goalSessionStore } from "../goal-state"
 import { ClaudeSdkTransport } from "../index"
 import type { ClaudeQueryLauncher } from "../query-options"
 
@@ -24,7 +25,7 @@ export const reply = (text: string) => frame({ type: "assistant", parent_tool_us
 export const result = () => frame({ type: "result", subtype: "success", is_error: false, num_turns: 1, result: "ok" })
 
 type Claude = { frames: AsyncPushQueue<SDKMessage>; prompts: string[]; users: SDKUserMessage[]; controls: string[]
-  stdinClosed: Promise<void>; stdinOpen: () => boolean; replay: (index: number) => void }
+  stdinClosed: Promise<void>; stdinOpen: () => boolean; replay: (index: number) => void; transcript: (entry: SessionStoreEntry) => Promise<void> }
 
 export function scriptedLaunches(options: { failFirst?: unknown } = {}) {
   const launches: Claude[] = []
@@ -46,7 +47,9 @@ export function scriptedLaunches(options: { failFirst?: unknown } = {}) {
     })()
     spec.abort.signal.addEventListener("abort", () => frames.end(), { once: true })
     const replay = (index: number) => frames.push({ ...users[index]!, session_id: "up1", isReplay: true } as unknown as SDKMessage)
-    launches.push({ frames, prompts, users, controls, stdinClosed, stdinOpen: () => open, replay })
+    const store = goalSessionStore(spec.broker, spec.abort.signal)
+    const transcript = (entry: SessionStoreEntry) => store.append({ projectKey: "work", sessionId: "up1" }, [entry])
+    launches.push({ frames, prompts, users, controls, stdinClosed, stdinOpen: () => open, replay, transcript })
     return { [Symbol.asyncIterator]: () => frames[Symbol.asyncIterator](), close() { controls.push("close"); frames.end() },
       async interrupt() { controls.push("interrupt") }, async stopTask(task: string) { controls.push(`stop ${task}`) } } as unknown as Query
   } } as unknown as ClaudeQueryLauncher
