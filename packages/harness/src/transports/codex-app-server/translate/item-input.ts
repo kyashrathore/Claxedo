@@ -46,18 +46,12 @@ function webSearchInput(row: Record<string, unknown>): Input {
   return present({ ...(query ? { query } : {}), ...(url ? { url } : {}), ...(pattern ? { pattern } : {}) })
 }
 
-function dynamicInput(row: Record<string, unknown>): Input {
-  if (row.arguments === undefined || row.arguments === null) return structuredInput(row)
-  return asRecord(row.arguments) ?? { arguments: row.arguments }
-}
-
 function mcpInput(row: Record<string, unknown>): Input {
   return Object.fromEntries(["server", "tool", "arguments", "pluginId"].flatMap((key) => row[key] === undefined ? [] : [[key, row[key]]]))
 }
 
 const ITEM_INPUTS: Readonly<Record<string, (row: Record<string, unknown>) => Input>> = {
   mcpToolCall: mcpInput,
-  dynamicToolCall: dynamicInput,
   hookPrompt: hookPromptInput,
   webSearch: webSearchInput,
   fileChange: (row) => {

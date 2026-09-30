@@ -116,31 +116,12 @@ test("a declined or failed patch is an error, never a success", () => {
   }
 })
 
-const spawnArguments = { task_name: "security-auth-review", message: "Review the last 25 commits for authorization regressions." }
-
-test("a dynamic tool call keeps its arguments and its result", () => {
+test("a failed collab tool call is an error naming the tool", () => {
+  const call = { type: "collabAgentToolCall", id: "collab-1", tool: "sendInput", senderThreadId: "thread-1", receiverThreadIds: ["thread-2"],
+    prompt: "Keep going", model: null, reasoningEffort: null, agentsStates: {} }
   const agent = runtime()
-  expect(item(agent, "item/started", {
-    type: "dynamicToolCall", id: "exec-spawn-1", namespace: null, tool: "spawn_agent", arguments: spawnArguments, status: "inProgress", contentItems: null, success: null,
-  })).toMatchObject([
-    { type: "tool-start", toolCallId: "exec-spawn-1", toolName: "spawn_agent" },
-    { type: "tool-input", toolCallId: "exec-spawn-1", input: spawnArguments },
-  ])
-  expect(item(agent, "item/completed", {
-    type: "dynamicToolCall", id: "exec-spawn-1", namespace: null, tool: "spawn_agent", arguments: spawnArguments, status: "completed",
-    contentItems: [{ type: "inputText", text: "Subagent 01a0bd55 completed successfully." }], success: true,
-  })).toMatchObject([{ type: "tool-output", toolCallId: "exec-spawn-1", output: "Subagent 01a0bd55 completed successfully." }])
-})
-
-test("a failed dynamic tool call is an error carrying its reason", () => {
-  const agent = runtime()
-  expect(item(agent, "item/completed", {
-    type: "dynamicToolCall", id: "exec-spawn-2", namespace: null, tool: "spawn_agent", arguments: spawnArguments, status: "failed",
-    contentItems: [{ type: "inputText", text: "agent limit reached" }], success: false,
-  }).at(-1)).toMatchObject({ type: "tool-error", toolCallId: "exec-spawn-2", error: "agent limit reached" })
-  expect(item(runtime(), "item/completed", {
-    type: "dynamicToolCall", id: "exec-other", namespace: null, tool: "capture", arguments: {}, status: "completed", contentItems: null, success: false,
-  }).at(-1)).toMatchObject({ type: "tool-error", toolCallId: "exec-other", error: "capture failed" })
+  item(agent, "item/started", { ...call, status: "inProgress" })
+  expect(item(agent, "item/completed", { ...call, status: "failed" }).at(-1)).toMatchObject({ type: "tool-error", toolCallId: "collab-1", error: "sendInput failed" })
 })
 
 test("a web search row carries the query Codex settled on and its results", () => {
