@@ -24,7 +24,7 @@ function notices(messages: MessageRow[]): Record<string, unknown>[] {
   return messages.flatMap((message) => message.parts).flatMap((part) => (part.type === "notice" && isRecord(part.notice) ? [part.notice] : []))
 }
 
-test("44 a model request Claude retries shows as retrying, then the reply lands", async ({ stack, api, app }) => {
+test("45 a model request Claude retries shows as retrying, then the reply lands", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("notices-retry")
   const session = await claudeSession(api, workspace.directory, "Retry")
   const clear = stack.scripted.scriptError({ marker: "RETRIED", status: 429, message: "Rate limit reached for requests" })
@@ -38,7 +38,7 @@ test("44 a model request Claude retries shows as retrying, then the reply lands"
   await expect(app.getByText(/retrying/)).toHaveCount(0)
 })
 
-test("44 /compact draws the compaction boundary in the reply", async ({ stack, api, app }) => {
+test("45 /compact draws the compaction boundary in the reply", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("notices-compact")
   const session = await claudeSession(api, workspace.directory, "Compact")
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
@@ -51,7 +51,7 @@ test("44 /compact draws the compaction boundary in the reply", async ({ stack, a
     .toContainEqual({ kind: "compaction", status: "completed" })
 })
 
-test("44 /clear draws a boundary, keeps the earlier turns, and the next turn starts fresh", async ({ stack, api, app }) => {
+test("45 /clear draws a boundary, keeps the earlier turns, and the next turn starts fresh", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("notices-clear")
   const session = await claudeSession(api, workspace.directory, "Clear")
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
@@ -70,7 +70,7 @@ test("44 /clear draws a boundary, keeps the earlier turns, and the next turn sta
   expect(after.every((request) => !JSON.stringify(request.body).includes("BEFORECLEAR"))).toBe(true)
 })
 
-test("44 a prompt a Claude hook blocks says why in the transcript", async ({ stack, api, app }) => {
+test("45 a prompt a Claude hook blocks says why in the transcript", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("notices-hook")
   await fs.mkdir(path.join(workspace.directory, ".claude"), { recursive: true })
   await fs.writeFile(path.join(workspace.directory, ".claude", "settings.json"), JSON.stringify({
