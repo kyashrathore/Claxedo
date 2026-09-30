@@ -29,6 +29,7 @@ function spawnNative(entry: Entry, threadId: string, spawn: ChildSpawn): void {
       { ...described, ...(toolCallId ? { toolCallId, toolCallRole: "spawn" } : {}) })
     if (ref) entry.broker.associateChild(threadId, ref)
   }, reportTo(entry))
+  for (const message of entry.children.claim(threadId)) codexChildFrame(entry, child, message)
 }
 
 function taskName(agentPath: string | undefined): string {

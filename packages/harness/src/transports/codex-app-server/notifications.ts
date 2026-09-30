@@ -11,8 +11,7 @@ import type { ThreadOwnership } from "./usage"
 function usageOwnership(entry: Entry, threadId: string | undefined): ThreadOwnership {
   if (!threadId) return "unknown"
   if (entry.children.has(threadId)) return "owned"
-  const streaming = entry.state === "busy" || entry.providerTurn !== undefined
-  if (threadId === entry.session.binding.upstreamSessionId) return streaming ? "owned" : "detached"
+  if (threadId === entry.session.binding.upstreamSessionId) return parentRunning(entry) ? "owned" : "detached"
   return entry.sideThreads.has(threadId) ? "side" : "unknown"
 }
 
@@ -42,7 +41,14 @@ export function codexNotificationOutsideTurn(entry: Entry, message: RpcMessage):
     codexChildFrame(entry, child, message)
     return
   }
-  if (threadId === entry.session.binding.upstreamSessionId) sessionThreadNotification(entry, message)
+  if (threadId === entry.session.binding.upstreamSessionId) {
+    if (message.method === "turn/completed") entry.children.forgetUnclaimed()
+    sessionThreadNotification(entry, message)
+  } else if (threadId && !entry.sideThreads.has(threadId) && parentRunning(entry)) entry.children.hold(threadId, message)
+}
+
+function parentRunning(entry: Entry): boolean {
+  return entry.state === "busy" || entry.providerTurn !== undefined
 }
 
 function sessionThreadNotification(entry: Entry, message: RpcMessage): void {

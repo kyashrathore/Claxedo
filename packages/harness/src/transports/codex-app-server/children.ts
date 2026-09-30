@@ -50,6 +50,7 @@ export class CodexChild {
 
 export class CodexChildren {
   private readonly byThread = new Map<string, CodexChild>()
+  private readonly unclaimed = new Map<string, RpcMessage[]>()
   private agents = 0
 
   constructor(private readonly backgroundWork: (work: BackgroundWork) => void) {}
@@ -68,6 +69,20 @@ export class CodexChildren {
     const state = child.move(move)
     this.changed()
     return state
+  }
+
+  hold(threadId: string, message: RpcMessage): void {
+    this.unclaimed.set(threadId, [...this.unclaimed.get(threadId) ?? [], message])
+  }
+
+  claim(threadId: string): RpcMessage[] {
+    const held = this.unclaimed.get(threadId) ?? []
+    this.unclaimed.delete(threadId)
+    return held
+  }
+
+  forgetUnclaimed(): void {
+    this.unclaimed.clear()
   }
 
   byCall(toolCallId: string): CodexChild | undefined {

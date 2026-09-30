@@ -150,6 +150,23 @@ test("a v1 collab spawn binds each receiver before its frames route, and a later
   } finally { await peer.close() }
 })
 
+test("what a v1 child thread says before its parent's spawn call completes reaches that child once the spawn binds it", async () => {
+  const { peer, host, running } = await nativeSession()
+  try {
+    const spawn = { id: "call_1", tool: "spawnAgent", prompt: "Reply with exactly NATIVECHILDTASK" }
+    peer.emit(collabAgentToolCall("item/started", PARENT, "turn-current", { ...spawn, receiverThreadIds: [], agentsStates: {} }))
+    peer.emit({ method: "warning", params: { threadId: CHILD, message: "Model metadata for `gpt-4.1` not found." } })
+    await settle()
+    peer.emit(collabAgentToolCall("item/completed", PARENT, "turn-current", { ...spawn, receiverThreadIds: [CHILD],
+      agentsStates: { [CHILD]: { status: "pendingInit", message: null } } }))
+    await settle()
+    expect(host.delivered.filter((row) => row.event.event.type === "harness-notice").map((row) => row.event.route))
+      .toEqual([{ kind: "child", correlationKey: CHILD }])
+    peer.emit(turnCompleted(PARENT, "turn-current"))
+    await running
+  } finally { await peer.close() }
+})
+
 test("a v2 interaction opens the child's next turn under its call", async () => {
   const { peer, host, running } = await nativeSession()
   try {
