@@ -1,21 +1,13 @@
--- "team" names only a row in `teams`. The three columns that used it for
--- something org-wide take the org's word instead, and rows already holding the
--- old value are rewritten as they are copied:
---
---   orgs.kind (from 0002): 'team' becomes 'shared'.
---   hosted_connection_attempts.scope (from 0020): 'team' becomes 'org'.
---   hosted_provider_account_sources.source (from 0044): 'team' becomes 'org'.
---
 -- SQLite cannot ALTER a CHECK constraint, so each table is rebuilt with its
 -- indexes.
 --
 -- Every foreign key to `orgs` is DEFERRABLE INITIALLY DEFERRED and none
--- cascades, so dropping `orgs` orphans the rows that reference it until commit. The
--- rebuild re-creates `orgs` under its own name and inserts the rows back, which
--- settles each orphan; building `orgs_next` and renaming it would leave every
--- orphan counted and fail the commit. The `orgs` statements carry no blank line
--- between them so a runner that splits a migration on blank lines still
--- applies them in one transaction.
+-- cascades, so dropping `orgs` orphans the rows that reference it until
+-- commit. The rebuild re-creates `orgs` under its own name and inserts the rows
+-- back, which settles each orphan; building `orgs_next` and renaming it would
+-- leave every orphan counted and fail the commit. The `orgs` statements carry
+-- no blank line between them so a runner that splits a migration on blank
+-- lines still applies them in one transaction.
 
 create table orgs_previous as select * from orgs;
 drop table orgs;

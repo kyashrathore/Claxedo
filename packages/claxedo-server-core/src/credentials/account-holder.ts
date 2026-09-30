@@ -53,7 +53,6 @@ export function spendsAccount(
   return spent !== null && accountHolderOf(row.owner, machineOwnerUserId) === holder
 }
 
-/** The owner of the row a person spends for a provider: NULL for the org account, theirs otherwise. */
 export function spentRowOwner(sources: AccountSources, providerId: string, person: string): string | null {
   return sources[providerId] === "org" ? null : person
 }

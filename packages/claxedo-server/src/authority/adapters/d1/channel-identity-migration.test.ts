@@ -108,11 +108,6 @@ async function signed(authority: D1WorkspaceAuthority, subject: string): Promise
   }
 }
 
-/**
- * The rows `createHostedOrganization` shipped before `orgs.kind` said
- * 'shared': the pre-boundary schema admits only 'team', so today's producer
- * cannot seed it.
- */
 async function createPreOrgKindOrganization(database: D1Database, owner: SignedControlPlaneAuth) {
   await database.batch([
     database.prepare(

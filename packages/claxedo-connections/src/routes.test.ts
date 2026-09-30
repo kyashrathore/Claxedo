@@ -631,7 +631,6 @@ describe("integrations routes", () => {
     const orgA = partitioned("org-a", "alice")
     const orgB = partitioned("org-b", "bob")
 
-    // Org connect through org A's app writes the org A partition key.
     expect((await orgA.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
     const aListing = (await (await orgA.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
     expect(aListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
@@ -653,7 +652,6 @@ describe("integrations routes", () => {
 
   test("ownerlessRows: 'refuse' makes owner-absent rows unreachable on every surface", async () => {
     const { app: selfHost, service } = harness()
-    // Seed an owner-absent (self-host org) row through the default app.
     expect((await selfHost.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
     const seeded = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string }> }
     const ownerless = seeded.connections[0].id
@@ -683,11 +681,9 @@ describe("integrations routes", () => {
     const denied = await noOrgKey.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
     expect(denied.status).toBe(422)
     expect(await denied.json()).toEqual({ ok: false, code: "org_scope_requires_org_partition" })
-    // Listing without an org key surfaces personal rows only.
     const personalOnly = (await (await noOrgKey.request("/")).json()) as { connections: unknown[] }
     expect(personalOnly.connections).toEqual([])
 
-    // The self-host app still sees its org row — untouched semantics.
     const still = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
     expect(still.connections).toEqual([expect.objectContaining({ id: ownerless, scope: "org" })])
   })

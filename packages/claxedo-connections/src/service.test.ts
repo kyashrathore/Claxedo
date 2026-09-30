@@ -321,7 +321,6 @@ describe("connections service", () => {
 
   test("removeOwner cascades one owner's personal rows and spares org + other owners", async () => {
     const { service, credentials, connections } = harness()
-    // connection-1: org, connection-2: alice, connection-3: bob.
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
     await service.connect({ integrationId: "fake", owner: "alice", fields: {}, secret: "good" })
     await service.connect({ integrationId: "fake", owner: "bob", fields: {}, secret: "good" })
@@ -331,7 +330,6 @@ describe("connections service", () => {
     // Alice's row + credential are gone.
     expect(await connections.get("fake", "alice")).toBeUndefined()
     expect(await credentials.get("integration:connection-2")).toBeUndefined()
-    // Org and bob survive untouched.
     expect(await connections.get("fake", undefined)).toMatchObject({ id: "connection-1" })
     expect(await connections.get("fake", "bob")).toMatchObject({ id: "connection-3" })
     expect(await credentials.get("integration:connection-1")).toMatchObject({ status: "available" })
