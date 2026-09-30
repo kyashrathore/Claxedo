@@ -20,6 +20,17 @@ export class CodexDeadlineError extends CodexTransportError {
   constructor(message: string) { super("process", message) }
 }
 
+export class CodexRequestTimeout extends CodexTransportError {
+  constructor(readonly method: string, ms: number) { super("process", `Codex ${method} did not answer within ${ms}ms`) }
+}
+
+export function codexChannelError(reason: "frame" | "stdout" | "exit" | "write", cause: unknown, stderr: string): CodexTransportError {
+  if (reason === "frame") return new CodexTransportError("protocol", "Invalid Codex JSON-RPC frame", { cause })
+  const exit = reason === "exit" && cause && typeof cause === "object" && "code" in cause ? cause as { code: number | null; signal: string | null } : undefined
+  const ended = exit ? `Codex app-server exited with ${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`}` : `Codex ${reason} failed`
+  return new CodexTransportError("process", stderr ? `${ended}: ${stderr}` : ended, { cause })
+}
+
 export function codexRpcError(error: { code: number; message: string }): CodexTransportError {
   if (/^no active turn to interrupt$/i.test(error.message)) return new CodexNoActiveTurnError()
   return new CodexTransportError("protocol", error.message)

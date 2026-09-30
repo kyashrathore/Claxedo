@@ -1,5 +1,5 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import type { Entry } from "./index"
+import type { Entry } from "./entry"
 import { CodexEvents, publishCodexQuota } from "./events"
 import { snapshotFromCodexGoal } from "./goals"
 import { admitCodexProviderTurn } from "./provider-turn"

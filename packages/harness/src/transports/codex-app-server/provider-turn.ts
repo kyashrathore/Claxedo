@@ -8,7 +8,7 @@ import type { RpcMessage } from "./rpc"
 import type { CodexUsageLedger } from "./usage"
 
 export type CodexProviderTurn = { id: string; queue: AsyncPushQueue<RoutedEvent>; events: CodexEvents; turnBroker?: TurnBroker }
-export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker; usage: CodexUsageLedger; providerTurn?: CodexProviderTurn }
+export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker; usage: CodexUsageLedger; providerTurn?: CodexProviderTurn; idle(): void }
 
 export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMessage): void {
   const id = asString(asRecordOrEmpty(asRecordOrEmpty(message.params).turn).id)
@@ -25,6 +25,7 @@ export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMes
     settled: (settlement) => {
       if (settlement.state === "failed") entry.broker.reportFailure(new CodexTransportError("session", settlement.error))
       if (settlement.state !== "completed") { queue.end(); clear() }
+      entry.idle()
     },
   })
   const providerTurn: CodexProviderTurn = { id, queue, events }

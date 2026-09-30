@@ -21,7 +21,7 @@ function goalEntry(stop: () => Promise<AdapterCancelOutcome>, ranCommand: boolea
     publish: async (event: unknown) => { calls.push("publish-notice"); notices.push(event) } } as unknown as SessionBroker
   const terminals = { stop: async () => { calls.push("turn/interrupt"); return stop() }, ranCommand: () => ranCommand } as unknown as CodexTerminals
   const entry = { rpc, broker, goal: null, terminals, providerTurn: { id: "turn-1" } }
-  return { goals: createCodexGoals(() => entry), calls, notices, entry }
+  return { goals: createCodexGoals(async () => entry), calls, notices, entry }
 }
 
 test.each(["stop", "pause"] as const)("Codex %s keeps the goal when the turn is not confirmed stopped", async (action) => {

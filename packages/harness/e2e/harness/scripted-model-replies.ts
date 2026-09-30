@@ -292,7 +292,7 @@ export async function respondResponses(
         content: [{ type: "output_text", text: reply.text, annotations: [], logprobs: [] }],
       }
   const thought = reply.kind === "text" ? reply.reasoning : undefined
-  const summarized = body.reasoning?.summary !== undefined && body.reasoning.summary !== null && body.reasoning.summary !== "none"
+  const summarized = !body.reasoning || Boolean(body.reasoning.summary)
   const reasoning: ResponsesReasoningItem | undefined = thought
     ? { type: "reasoning", id: `rs_${sequence}`, summary: summarized ? [{ type: "summary_text", text: thought }] : [], status: "completed" }
     : undefined

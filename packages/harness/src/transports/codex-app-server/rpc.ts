@@ -3,7 +3,10 @@ import { asRecordOrEmpty, asString, assertRecord } from "@claxedo/helpers/guards
 import { errorMessage } from "@claxedo/helpers"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
-import { CodexRequestRefusal, CodexTransportError, codexRpcError } from "./errors"
+import { codexChannelError, CodexRequestRefusal, CodexRequestTimeout, CodexTransportError, codexRpcError } from "./errors"
+
+const STDERR_TAIL = 2_000
+const ANSI = /\x1b\[[0-9;]*m/g
 
 export type RpcMessage = { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: { code: number; message: string } }
 
@@ -17,15 +20,19 @@ export class CodexRpc {
   private readonly pending: PendingRpcRequests<number>
   private readonly listeners = new Set<(message: RpcMessage) => void>()
   private handler?: (message: RpcMessage) => Promise<unknown>
+  private stderr = ""
 
   constructor(readonly process: OwnedProcess, clock: HarnessServices["clock"]) {
     this.pending = new PendingRpcRequests(clock)
-    this.channel = new NdjsonOwnedProcess(process, clock, (value) => this.receive(this.decode(value)), (reason, cause) =>
-      new CodexTransportError(reason === "frame" ? "protocol" : "process",
-        reason === "frame" ? "Invalid Codex JSON-RPC frame" : `Codex ${reason} failed`, { cause }),
+    process.stderr.setEncoding("utf8")
+    process.stderr.on("data", (chunk: string) => { this.stderr = `${this.stderr}${chunk.replace(ANSI, "")}`.slice(-STDERR_TAIL) })
+    this.channel = new NdjsonOwnedProcess(process, clock, (value) => this.receive(this.decode(value)),
+      (reason, cause) => codexChannelError(reason, cause, this.stderr.trim()),
     (error) => console.error("Codex process retirement failed", error))
     this.channel.onFailure((error) => this.pending.fail(error))
   }
+
+  get alive(): boolean { return this.channel.alive }
 
   onMessage(listener: (message: RpcMessage) => void): () => void {
     this.listeners.add(listener)
@@ -39,9 +46,8 @@ export class CodexRpc {
   request(method: string, params?: unknown, ms = 30_000): Promise<unknown> {
     if (!this.channel.alive) return Promise.reject(new CodexTransportError("process", `Codex ${method} was not sent after process exit`))
     const id = ++this.serial
-    return this.pending.request(id, undefined, ms, () =>
-      new CodexTransportError("protocol", `Codex ${method} did not answer within ${ms}ms`),
-    () => this.channel.send({ id, method, params }))
+    return this.pending.request(id, undefined, ms, () => new CodexRequestTimeout(method, ms),
+      () => this.channel.send({ id, method, params }))
   }
 
   notify(method: string, params?: unknown): void {
@@ -84,7 +90,11 @@ export class CodexRpc {
   }
 
   retire(deadline: Deadline): Promise<void> {
-    this.channel.fail(new CodexTransportError("process", "Codex process retired"), false)
+    return this.abandon(new CodexTransportError("process", "Codex process retired"), deadline)
+  }
+
+  abandon(reason: Error, deadline: Deadline): Promise<void> {
+    this.channel.fail(reason, false)
     return this.process.retire(deadline).then((outcome) => {
       if (!outcome.stopped) throw new CodexTransportError("process", outcome.error.message)
     })

@@ -17,11 +17,11 @@ export function snapshotFromCodexGoal(sessionId: string, value: unknown): Runtim
   })
 }
 
-type ResolveGoalEntry = (session: HarnessSession) => GoalEntry
+type ResolveGoalEntry = (session: HarnessSession) => Promise<GoalEntry>
 
 async function setGoalState(resolve: ResolveGoalEntry, session: HarnessSession, params: Record<string, unknown>): Promise<AgentGoalMutationResult> {
   try {
-    const entry = resolve(session)
+    const entry = await resolve(session)
     const result = asRecordOrEmpty(await entry.rpc.request("thread/goal/set", { threadId: session.binding.upstreamSessionId, ...params }))
     const goal = snapshotFromCodexGoal(session.binding.sessionId, result.goal)
     entry.goal = goal
@@ -32,7 +32,7 @@ async function setGoalState(resolve: ResolveGoalEntry, session: HarnessSession, 
 
 async function clearGoalState(resolve: ResolveGoalEntry, session: HarnessSession): Promise<AgentGoalMutationResult<null>> {
   try {
-    const entry = resolve(session)
+    const entry = await resolve(session)
     const result = asRecordOrEmpty(await entry.rpc.request("thread/goal/clear", { threadId: session.binding.upstreamSessionId }))
     if (result.cleared !== true) return { ok: false, status: "not_found", message: "No Codex goal exists" }
     entry.goal = null
@@ -42,7 +42,7 @@ async function clearGoalState(resolve: ResolveGoalEntry, session: HarnessSession
 }
 
 async function interrupt(resolve: ResolveGoalEntry, session: HarnessSession): Promise<void> {
-  const entry = resolve(session)
+  const entry = await resolve(session)
   const turnId = entry.providerTurn?.id ?? entry.turn?.id
   if (!turnId) return
   const stopped = await entry.terminals.stop(turnId, { at: Date.now() + 10_000, signal: new AbortController().signal })
@@ -53,15 +53,21 @@ async function interrupt(resolve: ResolveGoalEntry, session: HarnessSession): Pr
     details: { turnId, cleanup: stopped.cleanup, ...(stopped.error ? { error: stopped.error } : {}) } })
 }
 
+async function readCodexGoal(entry: GoalEntry, session: HarnessSession): Promise<RuntimeGoalSnapshot | null> {
+  const result = asRecordOrEmpty(await entry.rpc.request("thread/goal/get", { threadId: session.binding.upstreamSessionId }))
+  entry.goal = result.goal ? snapshotFromCodexGoal(session.binding.sessionId, result.goal) : null
+  return entry.goal
+}
+
+export async function reconcileCodexGoal(entry: GoalEntry & { session: HarnessSession }): Promise<void> {
+  const goal = await readCodexGoal(entry, entry.session)
+  const held = entry.broker.goal.read()
+  if (held?.status !== goal?.status || held?.objective !== goal?.objective) await entry.broker.goal.publish(goal)
+}
+
 export function createCodexGoals(resolve: ResolveGoalEntry): NativeGoalOperations {
   return {
-    async read(session) {
-      const entry = resolve(session)
-      const result = asRecordOrEmpty(await entry.rpc.request("thread/goal/get", { threadId: session.binding.upstreamSessionId }))
-      const goal = result.goal ? snapshotFromCodexGoal(session.binding.sessionId, result.goal) : null
-      entry.goal = goal
-      return goal
-    },
+    read: async (session) => readCodexGoal(await resolve(session), session),
     start: (session, objective) => setGoalState(resolve, session, { objective }),
     pause: async (session) => {
       try { await interrupt(resolve, session) }

@@ -33,7 +33,7 @@ export function codexThreadStartParams(input: StartInput, config: ThreadConfig, 
 
 export function codexThreadResumeParams(threadId: string, input: Pick<StartInput, "directory">, config: ThreadConfig,
   mode: CodexPermissionSettings): v2.ThreadResumeParams {
-  return { threadId, cwd: input.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config }
+  return { threadId, cwd: input.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, excludeTurns: true }
 }
 
 export async function codexTurnParams(turn: TurnInput, threadId: string, directory: string,

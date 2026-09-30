@@ -51,14 +51,17 @@ const methods: Record<string, Shape> = {
     model: optional(text), serviceTier: optional(text), serviceTierForTurn: optional(text), effort: optional(text),
     summary: optional(oneOf("auto", "concise", "detailed", "none")), personality, outputSchema: json } },
   "turn/interrupt": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text } },
+  "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
 }
+
+export class CodexScriptedFailure extends Error {}
 
 export class CodexPeer {
   private phase: "new" | "initializing" | "ready" = "new"
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[]) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; goal?: unknown } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -84,7 +87,11 @@ export class CodexPeer {
     assert.equal(typeof frame.id, "number", `${frame.method} requires a request id`)
     assert(methods[frame.method], `Unscripted Codex method: ${frame.method}`)
     assert(conforms(params, methods[frame.method]), `Invalid Codex ${frame.method} parameters: ${JSON.stringify(params)}`)
-    if (frame.method === "model/list") return { data: this.models }
+    if (frame.method === "model/list") {
+      if (this.script.modelListFailures) { this.script.modelListFailures--; throw new CodexScriptedFailure("model catalog unavailable") }
+      return { data: this.models }
+    }
+    if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "turn/start") return this.start(params)
     if (frame.method === "turn/interrupt") {
       assert.equal(this.threads.get(String(params.threadId)), params.turnId, "turn/interrupt must name the thread's active turn")

@@ -1,7 +1,7 @@
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { HarnessServices, HarnessSession, RoutedEvent, TurnBroker, TurnInput } from "../../contract"
-import type { Entry } from "./index"
+import type { Entry } from "./entry"
 import { CodexEvents } from "./events"
 import { CodexTransportError } from "./errors"
 import { codexThreadResumeParams, codexTurnParams } from "./input"
@@ -9,7 +9,7 @@ import { codexTurnSettings, type CodexModel } from "./models"
 import { codexPermissionSettings } from "./modes"
 import { startCodexTurn } from "./recovery"
 import { projectCodexThreadConfig } from "./configuration"
-import type { RpcMessage } from "./rpc"
+import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { codexHostSubagentObservation } from "./subagents"
 
 function hostSubagents(threadId: string, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>) {
@@ -74,8 +74,8 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const threadId = session.binding.upstreamSessionId
   const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
   const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services), mode)
-  if (entry.turn) entry.turn.settings = settings
-  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume))
+  entry.settings = settings
+  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume, codexRetirementDeadline(services)))
   const id = asString(asRecordOrEmpty(result.turn).id)
   if (!id) throw new CodexTransportError("protocol", "Codex turn/start returned no turn id")
   if (entry.turn) entry.turn.id = id
@@ -86,7 +86,7 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
   if (entry.state !== "ready" || entry.providerTurn) throw new CodexTransportError("session", "Codex turn already active")
   entry.state = "busy"
   const queue = new AsyncPushQueue<RoutedEvent>()
-  entry.turn = { broker, queue, settings: {}, steers: new Set(), started: startTurn(entry, session, turn, services, models) }
+  entry.turn = { broker, queue, steers: new Set(), started: startTurn(entry, session, turn, services, models) }
   const listener = listenTurn(entry, session, queue, broker)
   const onAbort = () => { void cancel().catch((error: unknown) => entry.broker.reportFailure(error)) }
   broker.signal.addEventListener("abort", onAbort, { once: true })
@@ -100,5 +100,6 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
     broker.signal.removeEventListener("abort", onAbort)
     entry.turn = undefined
     if (entry.state === "busy") entry.state = "ready"
+    entry.idle()
   }
 }

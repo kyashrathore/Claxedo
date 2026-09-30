@@ -11,7 +11,7 @@ import { PINNED_CODEX } from "../../../e2e/harness/pinned-codex"
 import { listenOnLoopback, reservePort, releasePort } from "../../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../../e2e/harness/scripted-model-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../../e2e/harness/egress-guard"
-import { CodexAppServerTransport } from "../../transports/codex-app-server"
+import { CodexAppServerTransport, type Entry } from "../../transports/codex-app-server"
 import type { HarnessTransport, ResolvedCredentials } from "../../contract"
 
 export type CodexBackend = SuiteBackend & {
@@ -55,9 +55,10 @@ export async function codexBackend(): Promise<CodexBackend> {
   }
 }
 
-export function recordingBackend(): { backend: () => Promise<CodexBackend>; frames: Frame[] } {
+export function recordingBackend(): { backend: () => Promise<CodexBackend>; frames: Frame[]; received: Frame[] } {
   const frames: Frame[] = []
-  return { frames, backend: async () => {
+  const received: Frame[] = []
+  return { frames, received, backend: async () => {
     const state = await codexBackend()
     state.configureServices = (services) => {
       const spawn = services.spawn.bind(services)
@@ -68,6 +69,12 @@ export function recordingBackend(): { backend: () => Promise<CodexBackend>; fram
           for (const line of chunk.trim().split("\n")) frames.push(JSON.parse(line))
           return write(chunk)
         }) as typeof owned.stdin.write
+        let partial = ""
+        owned.stdout.on("data", (chunk: Buffer | string) => {
+          const lines = `${partial}${chunk.toString()}`.split("\n")
+          partial = lines.pop() ?? ""
+          for (const line of lines) if (line.trim()) received.push(JSON.parse(line))
+        })
         return owned
       }
     }
@@ -126,6 +133,10 @@ export async function hashes(root: string): Promise<Record<string, string>> {
   return rows
 }
 
+export function codexEntry(transport: HarnessTransport, sessionId: string): Entry {
+  return (transport as unknown as { sessions: { entries: Map<string, Entry> } }).sessions.entries.get(sessionId)!
+}
+
 export function entryHome(transport: HarnessTransport, sessionId: string): string {
-  return (transport as unknown as { entries: Map<string, { home: string }> }).entries.get(sessionId)!.home
+  return codexEntry(transport, sessionId).home
 }

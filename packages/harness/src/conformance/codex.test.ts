@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { runConformance, setupConformance } from "./test-support/run"
-import { codexBackend as backend, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend, type CodexBackend } from "./test-support/codex"
+import { codexBackend as backend, codexEntry, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend, type CodexBackend } from "./test-support/codex"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
@@ -255,7 +255,7 @@ test("a login the app-server persists through the linked auth.json lands in the 
     const { "auth.json": _auth, ...before } = await hashes(ownerHome)
     const home = entryHome(context.transport, "s1")
     expect((await fs.lstat(path.join(home, "auth.json"))).isSymbolicLink()).toBe(true)
-    const rpc = (context.transport as unknown as { entries: Map<string, { rpc: CodexRpc }> }).entries.get("s1")!.rpc
+    const rpc = codexEntry(context.transport, "s1").rpc
     expect(await rpc.request("account/login/start", { type: "apiKey", apiKey: "owner-key-2" })).toEqual({ type: "apiKey" })
     expect(await fs.readFile(path.join(ownerHome, "auth.json"), "utf8")).toContain("owner-key-2")
     expect((await fs.lstat(path.join(home, "auth.json"))).isSymbolicLink()).toBe(true)
