@@ -30,6 +30,7 @@ export type SessionListInternal = SessionList & {
   readonly apply: (event: ServerEvent) => void
   readonly readRow: (row: SessionRow) => void
   readonly readStatus: (ref: SessionRef, status: SessionStatus, sentAt: number) => void
+  readonly readBackgroundWork: (ref: SessionRef, active: boolean, sentAt: number) => void
   readonly opened: (sessionId: SessionId) => void
   readonly closed: (sessionId: SessionId) => void
   readonly sendStarted: (sessionId: SessionId, clientRequestId: string, at: number) => void
@@ -98,6 +99,8 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
       return list.send({ type: "sessionRemoved", ref: event.ref, at: Date.now() })
     case "statusChanged":
       return list.send({ type: "statusChanged", ref: event.ref, status: event.status, at: Date.now() })
+    case "backgroundWorkChanged":
+      return list.send({ type: "backgroundWorkChanged", ref: event.ref, active: event.active, at: Date.now() })
     case "streamGap":
       return reads.requestReread("replace")
     case "sessionsChanged":
@@ -111,8 +114,9 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
   const cache = createRowViewCache()
   const entries = createMemo(() => state().entries)
   const statuses = createMemo(() => state().statuses)
+  const backgroundWork = createMemo(() => state().backgroundWork)
   const order = createMemo(() => visibleOrder({ entries: entries(), windows: windows() }))
-  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses() }, openRequests: requests.openBySession(), cache }))
+  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork() }, openRequests: requests.openBySession(), cache }))
   const entryOf = createKeyedReads(entries)
   const statusOf = createKeyedReads(statuses)
   return {
@@ -151,6 +155,7 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
     apply: (event) => routeServerEvent(list, reads, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
+    readBackgroundWork: (ref, active, sentAt) => send({ type: "backgroundWorkRead", ref, active, sentAt }),
     opened: (sessionId) => send({ type: "sessionOpened", sessionId }),
     closed: (sessionId) => send({ type: "sessionClosed", sessionId }),
     sendStarted: (sessionId, clientRequestId, at) => send({ type: "sendStarted", sessionId, clientRequestId, at }),

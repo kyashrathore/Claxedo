@@ -8,6 +8,7 @@ export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionRef }
   | { readonly type: "statusChanged"; readonly ref: SessionRef; readonly status: SessionStatus }
+  | { readonly type: "backgroundWorkChanged"; readonly ref: SessionRef; readonly active: boolean }
   | { readonly type: "messageUpserted"; readonly ref: SessionRef; readonly message: TranscriptMessage }
   | { readonly type: "messageRemoved"; readonly ref: SessionRef; readonly messageId: string }
   | { readonly type: "partUpserted"; readonly ref: SessionRef; readonly part: TranscriptPart }

@@ -17,6 +17,7 @@ type CachedView = {
   readonly entry: ConfirmedEntry | PendingEntry
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
+  readonly backgroundWork: boolean
   readonly view: SessionRowView
 }
 
@@ -45,15 +46,16 @@ function cachedView(
   entry: ConfirmedEntry | PendingEntry,
   status: SessionStatusView,
   waitingOnUser: boolean,
+  backgroundWork: boolean,
 ): CachedView {
-  if (hit && hit.entry === entry && hit.status === status && hit.waitingOnUser === waitingOnUser) return hit
-  const view: SessionRowView = { ...entry.row, status, waitingOnUser, pending: entry.kind === "pending" }
-  return { entry, status, waitingOnUser, view }
+  if (hit && hit.entry === entry && hit.status === status && hit.waitingOnUser === waitingOnUser && hit.backgroundWork === backgroundWork) return hit
+  const view: SessionRowView = { ...entry.row, status, waitingOnUser, backgroundWork, pending: entry.kind === "pending" }
+  return { entry, status, waitingOnUser, backgroundWork, view }
 }
 
 export function rowViews(input: {
   readonly order: readonly SessionRef[]
-  readonly data: Pick<ListData, "entries" | "statuses">
+  readonly data: Pick<ListData, "entries" | "statuses" | "backgroundWork">
   readonly openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>
   readonly cache: RowViewCache
 }): ReadonlyMap<SessionId, SessionRowView> {
@@ -65,7 +67,8 @@ export function rowViews(input: {
     if (!entry || entry.kind === "tombstone") continue
     const status = input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS
     const waitingOnUser = (input.openRequests.get(id)?.length ?? 0) > 0 || input.data.statuses.get(id)?.waitingOnUser === true
-    const cached = cachedView(input.cache.current.get(id), entry, status, waitingOnUser)
+    const backgroundWork = input.data.backgroundWork.get(id)?.active === true
+    const cached = cachedView(input.cache.current.get(id), entry, status, waitingOnUser, backgroundWork)
     next.set(id, cached)
     views.set(id, cached.view)
   }

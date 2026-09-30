@@ -106,7 +106,7 @@ function harnessHealthEvent(properties: Record<string, unknown>, ref: SessionRef
   return { type: "harnessHealthChanged", ref, health, ...(connectionState ? { connectionState } : {}) }
 }
 
-function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
+function activityEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "session.status": {
@@ -117,6 +117,18 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
       return { type: "statusChanged", ref, status: { kind: "idle" } }
     case "session.error":
       return { type: "statusChanged", ref, status: sessionStatusFromTurnError(properties.error) }
+    case "session.background-work":
+      return typeof properties.active === "boolean" ? { type: "backgroundWorkChanged", ref, active: properties.active } : undefined
+    case "harness.health":
+      return harnessHealthEvent(properties, ref)
+    default:
+      return undefined
+  }
+}
+
+function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
+  const properties = frame.properties ?? {}
+  switch (frame.type) {
     case "session.updated":
       return isSessionInfo(properties.info) ? { type: "sessionUpserted", row: sessionRowFromSession(properties.info, ref) } : undefined
     case "session.deleted":
@@ -139,8 +151,6 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
       const todos = todosFromWire(properties.todos)
       return todos ? { type: "todosChanged", ref, todos } : undefined
     }
-    case "harness.health":
-      return harnessHealthEvent(properties, ref)
     default:
       return undefined
   }
@@ -204,11 +214,11 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
   }
 }
 
-const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
+const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff|background-work)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
   if (!SESSION_FRAME.test(frame.type)) return controlEvent(frame, address)
   const ref = refOf(frame, address)
   if (!ref) return undefined
-  return transcriptEvent(frame, ref) ?? lifecycleEvent(frame, ref) ?? requestEvent(frame, ref)
+  return transcriptEvent(frame, ref) ?? activityEvent(frame, ref) ?? lifecycleEvent(frame, ref) ?? requestEvent(frame, ref)
 }

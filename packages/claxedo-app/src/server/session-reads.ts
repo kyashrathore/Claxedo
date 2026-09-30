@@ -77,6 +77,7 @@ export function startSessionReads(context: SessionContext, ref: SessionRef, shap
   return {
     first,
     status: Promise.all([first, opened]).then(([read, view]) => (view ? context.status.read(ref, read.row.lastTurn, view.status) : STOPPED_STATUS)),
+    backgroundWork: fact((view) => factValue(view.backgroundWork), false),
     requests: fact((view) => factValue(view.requests), []),
     todos: fact(todosOf, []),
     goal: fact(goalOf, NO_GOAL),

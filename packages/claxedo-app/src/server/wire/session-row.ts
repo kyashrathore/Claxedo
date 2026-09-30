@@ -3,6 +3,7 @@ import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
 import type { ListedStatus, ModelChoice, SessionRef, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
+import { backgroundWorkFromWire } from "./status"
 
 export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
@@ -91,5 +92,5 @@ export function listedStatusFromListItem(item: unknown): ListedStatus | undefine
   if (!status || typeof status !== "object") return undefined
   const { kind, awaitingInput } = status as { kind?: unknown; awaitingInput?: unknown }
   if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "recovering") return undefined
-  return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true }
+  return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true, backgroundWork: backgroundWorkFromWire(status) }
 }

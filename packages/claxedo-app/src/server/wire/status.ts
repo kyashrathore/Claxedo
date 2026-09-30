@@ -44,6 +44,10 @@ function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
   }
 }
 
+export function backgroundWorkFromWire(value: unknown): boolean {
+  return isRecord(value) && value.backgroundWork === true
+}
+
 export function sessionStatusFromWire(value: unknown): SessionStatus | undefined {
   const status = runtimeStatusFromWire(value)
   return status ? sessionStatusFromRuntime(status) : undefined

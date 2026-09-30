@@ -141,7 +141,7 @@ export type Subagent = AgentSubagentUpdate
 
 export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number }
 
-export type ListedStatus = { readonly status: SessionStatus; readonly waitingOnUser: boolean }
+export type ListedStatus = { readonly status: SessionStatus; readonly waitingOnUser: boolean; readonly backgroundWork: boolean }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
@@ -188,6 +188,7 @@ export type SessionFirstRead = {
 export type SessionReads = {
   readonly first: Promise<SessionFirstRead>
   readonly status: Promise<SessionStatus>
+  readonly backgroundWork: Promise<boolean>
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>
   readonly goal: Promise<SessionGoalState>

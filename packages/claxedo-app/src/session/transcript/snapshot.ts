@@ -36,6 +36,7 @@ function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>,
 function landSides(context: TranscriptContext, reads: SessionReads, sentAt: number): void {
   const { ref, deps } = context
   landSide(context, "status", reads.status, (status) => deps.list.readStatus(ref, status, sentAt))
+  landSide(context, "background work", reads.backgroundWork, (active) => deps.list.readBackgroundWork(ref, active, sentAt))
   reads.requests.then(
     (requests) => deps.requests.read(ref, requests, sentAt),
     (cause) => deps.requests.readFailed(ref, toAppError(cause), sentAt),

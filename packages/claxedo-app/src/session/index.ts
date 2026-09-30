@@ -31,6 +31,7 @@ export type SentPrompt = PromptInput & { readonly messageId: string; readonly se
 export type SessionRowView = SessionRow & {
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
+  readonly backgroundWork: boolean
   readonly pending: boolean
 }
 
@@ -127,4 +128,5 @@ export type SessionStores = {
 }
 
 export { SessionStoresProvider, useSessionStores } from "./store/provider"
+export { sessionActivity, type SessionActivity } from "./list/activity"
 export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"

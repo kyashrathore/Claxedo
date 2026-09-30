@@ -15,7 +15,7 @@ import {
   tombstoneRow,
   upsertRow,
 } from "./rows"
-import { pageStatusesRead, statusChanged, statusRead } from "./statuses"
+import { backgroundWorkChanged, backgroundWorkRead, pageStatusesRead, statusChanged, statusRead } from "./statuses"
 
 type More = ReadonlyMap<ProjectId, MorePhase>
 
@@ -25,6 +25,7 @@ function data(state: ListState): ListData {
   return {
     entries: state.entries,
     statuses: state.statuses,
+    backgroundWork: state.backgroundWork,
     open: state.open,
     windows: state.windows,
     failures: state.failures,
@@ -44,6 +45,8 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
       return tombstoneRow(state, event.ref, event.at)
     case "statusChanged":
       return statusChanged(state, event.ref, event.status, event.at)
+    case "backgroundWorkChanged":
+      return backgroundWorkChanged(state, event.ref, event.active, event.at)
     default:
       return unreachable(event)
   }
@@ -108,11 +111,23 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
   }
 }
 
+function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRead" | "statusRead" | "backgroundWorkRead" }>): ListData {
+  switch (event.type) {
+    case "rowRead":
+      return upsertRow(state, event.row)
+    case "statusRead":
+      return statusRead(state, event.ref, event.status, event.sentAt)
+    case "backgroundWorkRead":
+      return backgroundWorkRead(state, event.ref, event.active, event.sentAt)
+  }
+}
+
 export function listTransition(state: ListState, event: ListEvent): ListState {
   switch (event.type) {
     case "sessionUpserted":
     case "sessionRemoved":
     case "statusChanged":
+    case "backgroundWorkChanged":
       return serverEvent(state, event)
     case "fetchStarted":
     case "fetched":
@@ -125,9 +140,9 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "rereadFailed":
       return fetchEvent(state, event) ?? state
     case "rowRead":
-      return withData(state, upsertRow(state, event.row))
     case "statusRead":
-      return withData(state, statusRead(state, event.ref, event.status, event.sentAt))
+    case "backgroundWorkRead":
+      return withData(state, sessionRead(state, event))
     case "sessionOpened":
       return withData(state, openSession(state, event.sessionId))
     case "sessionClosed":

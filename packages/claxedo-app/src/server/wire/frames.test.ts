@@ -31,6 +31,16 @@ test("frames: a harness.health frame becomes the session's harnessHealthChanged"
   })
 })
 
+test("frames: a session.background-work frame becomes the session's backgroundWorkChanged", () => {
+  const frame = (active: unknown) => frameFromWire({ directory: "/work", payload: { type: "session.background-work", properties: { sessionID: "s1", active } } })
+  const started = frame(true)
+  const settled = frame(false)
+  const garbled = frame("yes")
+  expect(started && serverEventFromFrame(started, address)).toEqual({ type: "backgroundWorkChanged", ref, active: true })
+  expect(settled && serverEventFromFrame(settled, address)).toEqual({ type: "backgroundWorkChanged", ref, active: false })
+  expect(garbled && serverEventFromFrame(garbled, address)).toBeUndefined()
+})
+
 test("frames: a harness.health frame without a known health status is dropped", () => {
   const frame = frameFromWire({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
   expect(frame && serverEventFromFrame(frame, address)).toBeUndefined()

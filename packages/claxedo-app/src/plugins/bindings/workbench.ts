@@ -1,22 +1,17 @@
 import { createEffect, createRoot, on, runWithOwner } from "solid-js"
 import type { WorkbenchApi, WorkbenchTab, WorkbenchTabStatus } from "@claxedo/plugin-api"
-import type { SessionRowView } from "@/session"
+import { sessionActivity, type SessionActivity, type SessionRowView } from "@/session"
 import { PluginEntryError, type BindingScope } from "./services"
 
+const TAB_STATUS: Readonly<Record<SessionActivity, WorkbenchTabStatus>> = {
+  waiting: "attention",
+  working: "working",
+  failed: "failed",
+  idle: "idle",
+}
+
 function tabStatusOf(row: SessionRowView | undefined): WorkbenchTabStatus {
-  if (!row) return "idle"
-  if (row.waitingOnUser) return "attention"
-  switch (row.status.kind) {
-    case "working":
-    case "retrying":
-    case "recovering":
-      return "working"
-    case "failed":
-      return "failed"
-    case "idle":
-    case "unknown":
-      return "idle"
-  }
+  return row ? TAB_STATUS[sessionActivity(row)] : "idle"
 }
 
 function openTabs(scope: BindingScope): readonly WorkbenchTab[] {

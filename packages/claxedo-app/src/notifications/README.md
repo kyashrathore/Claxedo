@@ -6,7 +6,7 @@ Owns: the alert sound and the system notification a session raises when it needs
 
 `createAlertDetector` reads the server's event stream:
 
-- **agent:** a session's status goes idle after working, retrying or recovering. A status that arrives idle with nothing before it is a reconnect, not a finished turn, and raises nothing; `session.idle` and `session.status` both report idle, and the transition fires once.
+- **agent:** a session stops being in progress: its status goes idle after working, retrying or recovering with no background work left, or its background work settles while its status is idle. A turn that ends while background work runs raises nothing, because the session is still in progress. A status that arrives idle with nothing before it is a reconnect, not a finished turn, and raises nothing; `session.idle` and `session.status` both report idle, and the transition fires once.
 - **errors:** a session's status turns failed.
 - **permissions:** a permission request opens (a question does not).
 

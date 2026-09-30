@@ -32,6 +32,12 @@ export type StatusEntry = {
   readonly waitingOnUser: boolean
 }
 
+export type BackgroundWorkEntry = {
+  readonly active: boolean
+  readonly at: number
+  readonly source: "event" | "read"
+}
+
 export type FetchedPage = {
   readonly projectId: ProjectId
   readonly rows: readonly SessionRow[]
@@ -53,6 +59,7 @@ export type ProjectWindow = { readonly tail: OrderKey; readonly nextAfter: strin
 export type ListData = {
   readonly entries: ReadonlyMap<SessionId, ListEntry>
   readonly statuses: ReadonlyMap<SessionId, StatusEntry>
+  readonly backgroundWork: ReadonlyMap<SessionId, BackgroundWorkEntry>
   readonly open: ReadonlySet<SessionId>
   readonly windows: ReadonlyMap<ProjectId, ProjectWindow>
   readonly failures: ReadonlyMap<ProjectId, AppError>
@@ -63,6 +70,7 @@ export type ServerListEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionRef; readonly at: number }
   | { readonly type: "statusChanged"; readonly ref: SessionRef; readonly status: SessionStatus; readonly at: number }
+  | { readonly type: "backgroundWorkChanged"; readonly ref: SessionRef; readonly active: boolean; readonly at: number }
 
 export type MorePhase =
   | { readonly kind: "idle" }
@@ -110,6 +118,7 @@ export type ListEvent =
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
   | { readonly type: "statusRead"; readonly ref: SessionRef; readonly status: SessionStatus; readonly sentAt: number }
+  | { readonly type: "backgroundWorkRead"; readonly ref: SessionRef; readonly active: boolean; readonly sentAt: number }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }
   | { readonly type: "sessionClosed"; readonly sessionId: SessionId }
   | { readonly type: "createStarted"; readonly clientRequestId: string; readonly row: SessionRow }
@@ -126,6 +135,7 @@ export const initialListState: ListState = {
   kind: "subscribing",
   entries: new Map(),
   statuses: new Map(),
+  backgroundWork: new Map(),
   open: new Set(),
   windows: new Map(),
   failures: new Map(),
